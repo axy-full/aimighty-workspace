@@ -212,8 +212,15 @@ export const productionSchema = z.object({
       description: z.string().max(2000), prompt: z.string().max(5000), soulId: z.string().max(200).optional(), referenceAssetId: z.string().max(100).optional(),
       takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20), selected: z.string().max(100).optional(),
       job: z.object({ id: z.string().uuid(), status: z.enum(['quoted', 'submitted']) }).strict().optional(),
-      model: z.enum(['soul_cinematic', 'soul_2', 'soul_location', 'soul_cast']).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
+      /* The connected account's Soul model an entry was built with (soul_cinematic, soul_2, soul_location, soul_cast, …):
+         kept loading after Cast moved to the platform's key, so old projects stay whole (read-only where the model is gone). */
+      model: z.string().regex(/^soul_[a-z0-9_]{1,40}$/).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
       category: z.enum(['character', 'environment', 'prop']).optional(), elementId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+      /* A character's Soul ID in this workspace and its render settings on the platform's key; its renders in flight. */
+      identityId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+      soulStrength: z.number().gt(0).max(1).optional(), soulBatch: z.union([z.literal(1), z.literal(4)]).optional(),
+      soulResolution: z.enum(['720p', '1080p']).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime(), batch: z.union([z.literal(1), z.literal(4)]) }).strict()).max(10).optional(),
     }).strict()).max(100),
     agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),

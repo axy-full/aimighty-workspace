@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
+import { SOUL_VERSIONS, type SoulVersion } from "./soulRenderTypes";
 
 /**
  * Where a custom reference (a trained identity) was accepted, as a versioned
@@ -18,9 +19,9 @@ export const SOUL_REFERENCE_ORIGINS = {
 export type SoulReferenceOrigin = keyof typeof SOUL_REFERENCE_ORIGINS;
 export const SOUL_REFERENCE_ORIGIN: SoulReferenceOrigin = "api-v1";
 export const LEGACY_SOUL_REFERENCE_ORIGIN: SoulReferenceOrigin = "dev-v1";
-/** The render family a reference is trained for. v1 keeps continuity with existing identity renders. */
-export const SOUL_MODEL_VERSIONS = ["v1", "v2", "cinema"] as const;
-export type SoulModelVersion = (typeof SOUL_MODEL_VERSIONS)[number];
+/** The render family a reference is trained for (lib/soulRenderTypes.ts). v1 is the default when none is chosen. */
+export const SOUL_MODEL_VERSIONS = SOUL_VERSIONS;
+export type SoulModelVersion = SoulVersion;
 export const SOUL_MODEL_VERSION: SoulModelVersion = "v1";
 
 /** A stored marker. A row saved before markers existed was accepted by the earlier host. */

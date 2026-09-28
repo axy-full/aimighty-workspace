@@ -85,7 +85,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     /* Owner, 24 September: where the world is built, before Cast & Elements. The shell renders its own
        view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
     ["environment", "Environment", "Environment", "Build the world", "boards"],
-    ["cast", "Cast", "Cast & Elements", "Built with Soul Cinema", "cast"],
+    ["cast", "Cast", "Cast & Elements", "Characters that stay themselves", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],
     /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.

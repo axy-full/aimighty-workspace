@@ -6,7 +6,7 @@ import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageMod
 import { estimateImageCostUsd } from "../vendorPricing";
 import { soulCharacterGenerationEnabled } from "../vendorRates";
 import { recoveryFetch } from "../recovery";
-import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId } from "../mock";
+import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId, mockTag } from "../mock";
 import { fixtureBytes } from "../mockFs";
 import {
   HiggsfieldHttpError, higgsfieldConfigured, higgsfieldCredentials,
@@ -14,6 +14,8 @@ import {
 } from "../higgsfield";
 
 import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, MARKETING_PATH } from "../higgsfieldMarketing";
+import { isSoulRenderModel, soulVersionOf, SOUL_RENDER_BATCHES } from "../soulRenderTypes";
+import { estimateSoulRender, soulRenderInput, soulRenderPreflightError, SOUL_RENDER_PATHS } from "../soulRender";
 
 const API_ORIGIN = "https://api.higgsfield.ai";
 const ENDPOINT = `${API_ORIGIN}/higgsfield-ai/soul/character`;
@@ -95,6 +97,7 @@ export const higgsfield: EngineAdapter = {
   estimate(req) {
     if (req.kind === "video" && isGenjutsuModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
     if (req.kind === "image" && req.model.id === MARKETING_IMAGE_MODEL_ID) return req.higgsfieldVendorCostUsd ?? null;
+    if (req.kind === "image" && isSoulRenderModel(req.model.id)) return req.soulVendorCostUsd ?? null;
     if (req.kind !== "image" || req.model.id !== SOUL_CHARACTER_MODEL_ID || !soulCharacterGenerationEnabled()) return null;
     return estimateImageCostUsd(req.model.id, req.size, 0)?.net ?? null;
   },
@@ -119,6 +122,7 @@ export const higgsfield: EngineAdapter = {
     }
     if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Choose a supported connected model.");
     const marketing = req.model.id === MARKETING_IMAGE_MODEL_ID;
+    const soulVersion = soulVersionOf(req.model.id);
     const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
     sameCredentials(fingerprint);
     let input: Record<string, unknown>;
@@ -130,16 +134,28 @@ export const higgsfield: EngineAdapter = {
         const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>);
         if (!(req.higgsfieldVendorCostUsd! > 0) || fresh !== req.higgsfieldVendorCostUsd) throw new Error("changed quote");
       } catch { throw marketingPreflightError(); }
+    } else if (soulVersion) {
+      // Soul Standard / Soul 2 / Soul Cinema: the same body priced again, read-only,
+      // before the sole paid POST. A changed or missing price sends nothing.
+      try {
+        if (req.references.length) throw new Error("references");
+        const body = soulRenderInput(req.model.id, { prompt: req.prompt, referenceId: req.soulReferenceId ?? "", strength: req.soulStrength ?? 1,
+          batch: req.soulBatch ?? 1, resolution: req.size, ratio: req.ratio });
+        const fresh = await estimateSoulRender(req.model.id, body);
+        if (!(req.soulVendorCostUsd! > 0) || fresh !== req.soulVendorCostUsd) throw new Error("changed quote");
+        input = body;
+      } catch { throw soulRenderPreflightError(); }
     } else {
       input = soulCharacterInput(req);
       if (!soulCharacterGenerationEnabled())
         throw new HiggsfieldHttpError(400, "Identity render is awaiting verified availability and pricing.");
     }
     if (engineMock()) return { handle: {
-      provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint,
+      // A mock batch says its size in its id, so the mock collection returns that many stills.
+      provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield", soulVersion ? `b${req.soulBatch ?? 1}` : undefined), credentialFingerprint: fingerprint,
     } };
     // Exactly one POST. Ambiguous failures retain the durable paid claim.
-    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : ENDPOINT, "POST", input);
+    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : soulVersion ? `${API_ORIGIN}/${SOUL_RENDER_PATHS[soulVersion]}` : ENDPOINT, "POST", input);
     const ref = typeof result.request_id === "string" ? result.request_id : "";
     if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
     // Persist an accepted UUID even if its status URL is malformed. Poll validates
@@ -155,7 +171,8 @@ export const higgsfield: EngineAdapter = {
     sameCredentials(handle.credentialFingerprint);
     let raw: Record<string, unknown>;
     if (engineMock() && isMockJob(handle.ref)) {
-      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: [{ url: fixtureUrl("still.png") }], video: { url: fixtureUrl("clip.mp4") } };
+      const stills = isSoulRenderModel(handle.model) ? Math.max(1, Number(mockTag(handle.ref)?.replace(/^b/, "")) || 1) : 1;
+      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: Array.from({ length: stills }, () => ({ url: fixtureUrl("still.png") })), video: { url: fixtureUrl("clip.mp4") } };
     } else {
       raw = await call(soulStatusUrl(handle.endpoint, handle.ref), "GET");
       if (raw.request_id !== handle.ref) throw new Error("The connected account returned a different request identifier.");
@@ -166,6 +183,7 @@ export const higgsfield: EngineAdapter = {
     const status = statuses[String(raw.status)];
     if (!status) throw new Error("The connected account returned an unknown request status.");
     let master: string | null = null;
+    let masters: string[] | null = null;
     let video: string | null = null;
     if (status === "succeeded" && isGenjutsuModel(handle.model)) {
       const output = raw.video;
@@ -175,11 +193,14 @@ export const higgsfield: EngineAdapter = {
     }
     if (status === "succeeded" && !isGenjutsuModel(handle.model)) {
       const images = raw.images;
-      if (!Array.isArray(images) || images.length !== 1)
+      /* A Soul render delivers its batch (1 or 4 stills); every other still request exactly one. */
+      const most = isSoulRenderModel(handle.model) ? Math.max(...SOUL_RENDER_BATCHES) : 1;
+      if (!Array.isArray(images) || images.length < 1 || images.length > most)
         throw new Error("The connected account returned an unexpected image count. The request remains available for collection.");
-      master = engineMock() && isMockJob(handle.ref) ? fixtureUrl("still.png") : imageUrl(images[0]?.url);
+      masters = images.map((image) => engineMock() && isMockJob(handle.ref) ? fixtureUrl("still.png") : imageUrl((image as { url?: unknown } | null)?.url));
+      master = masters[0];
     }
-    return { status, imageUrl: master, videoUrl: video, totalTokens: null,
+    return { status, imageUrl: master, imageUrls: masters, videoUrl: video, totalTokens: null,
       error: raw.status === "nsfw" ? "The connected account rejected this generation during moderation." :
         status === "failed" ? "The connected account could not complete this generation." : null,
       vendorStartedAt: null, vendorEndedAt: null, raw };

@@ -1,4 +1,5 @@
 import { GENJUTSU_MODELS, GENJUTSU_LABELS } from "./genjutsuTypes";
+import { SOUL_RENDER_MODELS, SOUL_RENDER_RATIOS, SOUL_RENDER_RESOLUTIONS, SOUL_VERSIONS, SOUL_VERSION_LABELS, isSoulRenderModel } from "./soulRenderTypes";
 import { hasVendorName, neutralModelText } from "./vendorNames";
 import type { TaskId } from "./tasks";
 import { FPS } from "./transport";
@@ -155,9 +156,13 @@ export type ModelDef = {
 };
 
 export const MARKETING_IMAGE_MODEL_ID = "higgsfield/marketing-studio-image";
-export const isHiggsfieldImageModel = (id: string) => id === SOUL_CHARACTER_MODEL_ID || id === MARKETING_IMAGE_MODEL_ID;
+/** A trained-identity render: its binding (reference, connection, quoted price) rides in the `soul*` params. */
+export const isSoulIdentityModel = (id: string) => id === SOUL_CHARACTER_MODEL_ID || isSoulRenderModel(id);
+export const isHiggsfieldImageModel = (id: string) => isSoulIdentityModel(id) || id === MARKETING_IMAGE_MODEL_ID;
 
 export const SOUL_CHARACTER_MODEL_ID = "hf-soul-character";
+/** Every Higgsfield still model (isHiggsfieldImageModel), for the collectors' SQL model lists. */
+export const HIGGSFIELD_IMAGE_MODELS: readonly string[] = [SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, ...Object.values(SOUL_RENDER_MODELS)];
 
 /** GPT Image models: id, label, short, flexible sizes?, what it is for. */
 const OPENAI_IMAGE_MODELS: [string, string, string, boolean, string][] = [
@@ -498,6 +503,16 @@ export const MODELS: ModelDef[] = [
     use: "Generate a still from a trained identity.",
     note: "Requires a ready identity and a verified identity-rendering connection.",
   },
+  /* Soul Standard, Soul 2 and Soul Cinema on the platform's key: each renders only identities trained for its
+     family (lib/soulRenderTypes.ts), 1 or 4 stills per request, priced by the provider's live estimate. */
+  ...SOUL_VERSIONS.map((version): ModelDef => ({
+    id: SOUL_RENDER_MODELS[version], label: SOUL_VERSION_LABELS[version], short: SOUL_VERSION_LABELS[version].toUpperCase(),
+    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
+    resolutions: [...SOUL_RENDER_RESOLUTIONS], ratios: [...SOUL_RENDER_RATIOS],
+    durations: [], supportsAudio: false, supportsCameraFixed: false,
+    maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
+    use: "Stills of a Soul ID trained for this family. A live quote is required.",
+  })),
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.
     // Reached from the Studio's identity screen, never the composer: the

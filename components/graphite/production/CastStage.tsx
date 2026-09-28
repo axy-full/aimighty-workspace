@@ -5,53 +5,52 @@ import { entryAsset } from "@/lib/production/sequence";
 import { isDroppable, readDrop } from "@/lib/drop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
+import { getModel } from "@/lib/models";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, SOUL_MODELS, castFromBeats, entryCategory, entryModel, mergeAgentCast, newEntry, soulParameters, type Cast, type CastEntry, type CastKind } from "@/lib/production/cast";
-import { elementToken, type ConnectedElement } from "@/lib/higgsfield-consumer/element-parse";
-import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
-import { CONNECTED_GENERATION_ENDPOINT, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
-import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
+import { CAST_CATEGORY, CAST_LIMITS, accountSoulIdOf, castFromBeats, entryCategory, mergeAgentCast, newEntry, retiredModelOf, type Cast, type CastEntry } from "@/lib/production/cast";
+import { castRenderInput, renderOutcome, renderableIdentity, renderedStills } from "@/lib/production/cast-render";
+import { SOUL_RENDER_BATCHES, SOUL_RENDER_RESOLUTIONS, SOUL_RENDER_STRENGTHS } from "@/lib/soulRenderTypes";
+import { elementToken } from "@/lib/higgsfield-consumer/element-parse";
 import { CONFIRM } from "@/lib/shell/confirmations";
-import { CAPABILITY_UNREADABLE, castStillPrompt } from "@/lib/shell/connected-capability";
-import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
+import { castStillPrompt } from "@/lib/shell/connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useConfirm } from "@/lib/shell/use-confirm";
-import type { Asset, Project } from "@/lib/workbench/studio";
+import { generationRequestBody } from "@/lib/workbench/generation-request";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import type { SoulIdentity } from "@/lib/workbench/soul-identity";
+import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
+import { dispatchGeneration } from "@/lib/workspace/generate-submit";
+import { useIdentities } from "@/lib/workspace/identities";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
-import { useWorkspace } from "@/lib/workspace/state";
-import { useScopedFetch } from "@/lib/useScopedFetch";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
-import { SoulIdHost } from "../tools/SoulIdHost";
-import { OwnerRunCard, openGenOn } from "../OwnerRunCard";
+import { openGenOn } from "../OwnerRunCard";
 import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
+import { CastIdentities } from "./CastIdentities";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
+import { useStageQuotes } from "./use-stage-quotes";
 
 const EMPTY: Cast = { entries: [] };
-/* Elements Particl built on the account, and the builds still waiting for the account to name them. */
-type Elements = { available: boolean; elements: ConnectedElement[]; pending?: PendingSoulBuild[] };
-type Model = { id: string; name: string; aspectRatios: string[]; parameters: { name: string; options?: (string | number)[]; default?: unknown; min?: number; max?: number }[]; medias: { roles?: string[] }[] };
-/** An entry's ratio: a character sheet stands 3:4; everything else takes the film's ratio (the model's own list decides). */
-function ratioFor(kind: CastKind, project: Project): string {
-  return kind === "character" ? "3:4" : project.aspect === "4:5" ? "3:4" : project.aspect;
-}
-type Purpose = "build" | "upscale_image" | "remove_background_image";
-const FINISH: { tool: Exclude<Purpose, "build">; label: string }[] = [{ tool: "upscale_image", label: "Upscale" }, { tool: "remove_background_image", label: "Remove background" }];
+type Generation = { id: string; status: string; error?: string | null; creditsBilled?: number | null; params?: unknown };
+const DONE = new Set(["succeeded", "failed", "cancelled"]);
+const modelLabel = (id: string | null | undefined) => { try { return id ? getModel(id).label : "Soul"; } catch { return "Soul"; } };
 
 /**
- * Production › Cast & Elements (owner's brief, 23 September): Soul Cinema on
- * the connected account builds every character and element; the results are
- * saved in the library as Cast and Elements. The cast list comes from the
- * beat sheet for free, or from the chosen agent with a prompt per entry; a
- * character can render with a Soul ID built below. A member (idea 19) keeps
- * the list — names, prompts, references — and makes reference stills in Gen
- * on this workspace's credits; the builds are the owner's, on the owner's
- * account, so nothing of the account is read for them.
+ * Production › Cast & Elements (owner's brief, 23 September; on the platform's
+ * key since 28 September): the cast list comes from the beat sheet for free,
+ * or from the chosen agent with a prompt per entry. A character renders with a
+ * Soul ID trained in this workspace (Build identity, below) — Soul Standard,
+ * Soul 2 or Soul Cinema, whichever family the Soul ID was trained for — 1 or 4
+ * stills at a live estimate shown on the button, filed in the library as Cast.
+ * Any entry's still can also be made in Gen. Nothing here needs a signed-in
+ * provider account, so it works in every workspace, for every member who can
+ * render. Builds made earlier on the connected account stay in the Library.
  */
 export function CastStage({ projectId, scope, items, onBeats }: { projectId: string; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const editor = useDraftEditor(scope, projectId);
@@ -62,53 +61,18 @@ export function CastStage({ projectId, scope, items, onBeats }: { projectId: str
 function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof useDraftEditor>; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const p = editor.project!;
   const shell = useShell();
-  const { toast } = useWorkspace();
   const { confirm } = useConfirm();
-  const scoped = useScopedFetch(scope);
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   useStageFacts("cast", p);
-  /* Whether this person owns the workspace comes from the session: a member's page reads nothing from the account. */
-  const capability = useConnectedCapability(scope, { read: false });
-  const refreshConnection = capability.refresh;
-  const member = !capability.owner;
   const cast = p.production?.cast ?? EMPTY;
-  const connected = capability.status === "loading" ? null : capability.connected;
-  const [models, setModels] = useState<Record<string, Model> | null>(null);
-  const [elements, setElements] = useState<Elements | null>(null);
-  const [confirmElement, setConfirmElement] = useState<string | null>(null);
-  const [souls, setSouls] = useState<ConnectedCharacter[]>([]);
-  const [quotes, setQuotes] = useState<Record<string, ConnectedJob>>({});
+  const identities = useIdentities(scope, p.id).state.data?.identities ?? null;
+  const renderable = useMemo(() => (identities ?? []).filter(renderableIdentity), [identities]);
+  const identityOf = useCallback((entry: CastEntry): SoulIdentity | null => (entry.identityId ? renderable.find((i) => i.id === entry.identityId) ?? null : null), [renderable]);
   const [working, setWorking] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const latest = useRef(p);
   useEffect(() => { latest.current = p; }, [p]);
-
-  const call = useCallback(async <T,>(body: Record<string, unknown>): Promise<T> => {
-    const response = await scoped(CONNECTED_GENERATION_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const json = await response.json().catch(() => null) as (T & { error?: string }) | null;
-    if (!response.ok || !json) throw new Error(json?.error ?? "The connected account could not be reached.");
-    return json;
-  }, [scoped]);
-  /* The account, Soul Cinema in its catalogue, and the Soul IDs Particl built — the owner's to read; the reply's connection is shared with the shell. */
-  useEffect(() => {
-    if (member) return;
-    let alive = true;
-    const since = markConnectedCapability(scope);
-    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then(async (r) => { if (!r.ok) throw new Error("The connected account could not be read."); return r.json(); }).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) settleConnectedCapability(scope, j.connection, since); }).catch(() => { if (alive) refreshConnection(); });
-    void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
-    void call<Elements>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
-    void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
-    return () => { alive = false; };
-  }, [call, scoped, p.id, member, scope, refreshConnection]);
-
-  /* An element sent without a named id (or with its answer lost) waits to be matched to the account's list: read it again while one waits. */
-  const waiting = Boolean(elements?.pending?.some((b) => !b.stale));
-  useEffect(() => {
-    if (!waiting) return;
-    const timer = setInterval(() => void call<Elements>({ action: "elements" }).then(setElements).catch(() => undefined), 30_000);
-    return () => clearInterval(timer);
-  }, [waiting, call]);
 
   const setCast = useCallback((fn: (c: Cast) => Cast) => editor.change((old) => ({ ...old, production: { ...old.production, cast: fn(old.production?.cast ?? EMPTY) } })), [editor]);
   const setEntry = useCallback((id: string, fn: (e: CastEntry) => CastEntry) => setCast((c) => ({ ...c, entries: c.entries.map((e) => (e.id === id ? fn(e) : e)) })), [setCast]);
@@ -128,103 +92,77 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     void editor.ensureSaved().then(() => confirm(CONFIRM.castTaken(counts)));
   }, [castRuns, cast.agentJobId, setCast, editor, confirm]);
 
-  /* ── Builds in flight: followed until the account returns the original, then filed as Cast or Elements. ── */
-  const followKey = cast.entries.filter((e) => e.job?.status === "submitted").map((e) => `${e.id}:${e.job!.id}`).join(",");
+  /* ── A character's render: priced live (free), sent once at the price on its button, followed until it lands. ── */
+  const quoteInputs = Object.fromEntries(cast.entries.flatMap((entry) => {
+    const input = castRenderInput(p, entry, identityOf(entry));
+    return input ? [[entry.id, { body: generationRequestBody(input) }]] : [];
+  }));
+  const pricing = useStageQuotes(scope, quoteInputs);
+  const sending = useRef(new Set<string>());
+  const renderEntry = async (entry: CastEntry, shown: number) => {
+    const input = castRenderInput(latest.current, entry, identityOf(entry));
+    if (!input || sending.current.has(entry.id)) return;
+    sending.current.add(entry.id);
+    setWorking((w) => ({ ...w, [entry.id]: "Sending…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
+    try {
+      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering.");
+      /* A request whose reply was lost is asked about first by its own key: followed if it landed, never sent twice. */
+      const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `cast-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
+      if (outcome.state === "repriced") { pricing.reprice(entry.id, outcome.credits); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
+      if (outcome.state === "refused") { setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
+      const batch = entry.soulBatch ?? 1;
+      setEntry(entry.id, (e) => ({ ...e, pending: e.pending?.some((r) => r.jobId === outcome.jobId) ? e.pending : [...(e.pending ?? []), { jobId: outcome.jobId, at: new Date().toISOString(), batch }].slice(-10) }));
+      void editor.ensureSaved();
+    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The render could not be sent." })); }
+    finally { sending.current.delete(entry.id); setWorking((w) => ({ ...w, [entry.id]: "" })); }
+  };
+
+  /* ── Renders in flight: read until they land, then every still of the request is filed as Cast. ── */
+  const pendingKey = cast.entries.flatMap((e) => (e.pending ?? []).map((r) => `${e.id}:${r.jobId}`)).join(",");
   useEffect(() => {
-    if (!followKey) return;
-    let alive = true, timer: ReturnType<typeof setTimeout> | null = null;
+    if (!pendingKey) return;
+    let alive = true, reading = false;
+    const controller = new AbortController();
     const tick = async () => {
-      let wait = 15;
-      for (const entry of (latest.current.production?.cast ?? EMPTY).entries.filter((e) => e.job?.status === "submitted")) {
-        try {
-          const reply = await call<{ job: unknown; pollAfterSeconds?: number }>(connectedStatusRequest(latest.current.id, entry.job!.id));
-          const job = parseConnectedJob(reply.job, latest.current.id);
-          wait = Math.min(wait, Math.max(3, Number(reply.pollAfterSeconds) || 10));
-          if (!alive) return;
-          if (job.status === "failed") { setEntry(entry.id, (e) => ({ ...e, job: undefined })); setErrors((x) => ({ ...x, [entry.id]: "Soul Cinema did not finish this one. A failed render is not billed." })); void editor.ensureSaved(); continue; }
-          const original = connectedOriginal(job);
-          if (job.status !== "completed" || !original) continue;
-          editor.change((old) => {
-            const c = old.production?.cast ?? EMPTY;
-            const e = c.entries.find((x) => x.id === entry.id);
-            if (!e) return old;
-            const asset: Asset = { id: original.generationId, generationId: original.generationId, kind: "image", mime: original.mime, category: CAST_CATEGORY[e.kind], name: e.name || CAST_CATEGORY[e.kind], url: original.url, description: e.description, prompt: e.prompt, status: "Draft", locked: false, version: e.takes.length + 1, refs: [], ...(e.soulId ? { soulIdentityId: e.soulId } : {}) };
-            const next: CastEntry = { ...e, job: undefined, takes: [{ genId: original.generationId, at: new Date().toISOString() }, ...e.takes].slice(0, CAST_LIMITS.takes), selected: original.generationId };
-            return { ...old, assets: old.assets.some((a) => a.id === asset.id) || old.assets.length >= PROJECT_LIMITS.assets ? old.assets : [...old.assets, asset], production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
-          });
-          void editor.ensureSaved().then(() => { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.castBuilt(entry.name, entry.kind)); });
-        } catch { /* read again next tick */ }
+      if (reading) return;
+      reading = true;
+      for (const entry of (latest.current.production?.cast ?? EMPTY).entries) {
+        for (const render of entry.pending ?? []) {
+          try {
+            const { generation } = await studioRequest<{ generation: Generation }>(`/api/jobs/${encodeURIComponent(render.jobId)}`, { signal: controller.signal, headers: { "X-Workbench-Scope": scope } });
+            if (!alive || !DONE.has(generation.status)) continue;
+            const ok = generation.status === "succeeded";
+            const stills = ok ? renderedStills(generation) : [];
+            editor.change((old) => {
+              const c = old.production?.cast ?? EMPTY;
+              const e = c.entries.find((x) => x.id === entry.id);
+              if (!e?.pending?.some((r) => r.jobId === render.jobId)) return old;
+              const at = new Date().toISOString();
+              const fresh = stills.filter((id) => !e.takes.some((t) => t.genId === id));
+              const next: CastEntry = { ...e, pending: (e.pending ?? []).filter((r) => r.jobId !== render.jobId),
+                ...(ok && stills.length ? { takes: [...fresh.map((genId) => ({ genId, at })), ...e.takes].slice(0, CAST_LIMITS.takes), selected: stills[0] } : {}) };
+              const assets = [...old.assets];
+              fresh.forEach((genId, i) => {
+                if (assets.some((a) => a.id === genId) || assets.length >= PROJECT_LIMITS.assets) return;
+                assets.push({ id: genId, generationId: genId, kind: "image", mime: "image/png", category: CAST_CATEGORY[e.kind], name: e.name || CAST_CATEGORY[e.kind], url: `/api/media/${genId}`,
+                  description: e.description, prompt: e.prompt, status: "Draft", locked: false, version: e.takes.length + i + 1, refs: [], ...(e.identityId ? { soulIdentityId: e.identityId } : {}) } satisfies Asset);
+              });
+              return { ...old, assets, production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
+            });
+            if (!ok) setErrors((x) => ({ ...x, [entry.id]: renderOutcome(generation) }));
+            void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.castBuilt(entry.name, entry.kind)); } });
+          } catch { /* read again next tick */ }
+          if (!alive) break;
+        }
       }
-      if (alive) timer = setTimeout(() => void tick(), wait * 1000);
+      reading = false;
     };
     void tick();
-    return () => { alive = false; if (timer) clearTimeout(timer); };
+    const timer = setInterval(() => void tick(), 4000);
+    return () => { alive = false; controller.abort(); clearInterval(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [followKey]);
+  }, [pendingKey, scope]);
 
-  const toolModel = (tool: Exclude<Purpose, "build">) => findConnectedTool(tool)?.models.find((id) => models?.[id]) ?? null;
-  /** What the account is asked for: the entry's Soul model with only its declared settings, or a finishing tool on the build shown. */
-  const requestFor = (entry: CastEntry, purpose: Purpose) => {
-    if (purpose !== "build") {
-      const genId = entry.selected ?? entry.takes[0]?.genId;
-      const id = toolModel(purpose)!;
-      const role = models?.[id]?.medias[0]?.roles?.[0] ?? "image";
-      return { type: "image" as const, model: id, tool: { name: purpose, model: id }, prompt: "", parameters: {}, medias: [{ role, source: { genId: genId! } }] };
-    }
-    const id = entryModel(entry);
-    const model = models![id];
-    const reference = entry.referenceAssetId ? latest.current.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
-    return {
-      type: "image" as const, model: id, prompt: entry.prompt.trim(),
-      parameters: soulParameters(model, entry, ratioFor(entry.kind, latest.current)),
-      medias: reference?.uploadId && model.medias.length ? [{ role: model.medias[0]?.roles?.[0] ?? "image", source: { uploadId: reference.uploadId } }] : [],
-    };
-  };
-  const key = (entry: CastEntry, purpose: Purpose) => `${entry.id}:${purpose}`;
-  const price = async (entry: CastEntry, purpose: Purpose = "build") => {
-    const k = key(entry, purpose);
-    setWorking((w) => ({ ...w, [k]: "Pricing on the account…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
-    try {
-      if (!(await editor.ensureSaved())) throw new Error("Save the project before pricing.");
-      const reply = await call<{ job: unknown }>(connectedQuoteRequest(latest.current.id, requestFor(entry, purpose) as never));
-      const job = parseConnectedJob(reply.job, latest.current.id);
-      setQuotes((q) => ({ ...q, [k]: job }));
-    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The account could not price this." })); }
-    finally { setWorking((w) => ({ ...w, [k]: "" })); }
-  };
-  const build = async (entry: CastEntry, purpose: Purpose = "build") => {
-    const k = key(entry, purpose);
-    const quote = quotes[k];
-    if (!quote) return;
-    setWorking((w) => ({ ...w, [k]: "Sending to the account…" }));
-    try {
-      const reply = await call<{ job: unknown }>(connectedSubmitRequest(latest.current.id, quote));
-      const job = parseConnectedJob(reply.job, latest.current.id);
-      setQuotes((q) => { const next = { ...q }; delete next[k]; return next; });
-      setEntry(entry.id, (e) => ({ ...e, job: { id: job.id, status: "submitted" } }));
-      void editor.ensureSaved();
-    } catch (error) {
-      setQuotes((q) => { const next = { ...q }; delete next[k]; return next; });
-      setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The request could not be sent." }));
-    } finally { setWorking((w) => ({ ...w, [k]: "" })); }
-  };
-  /* Save a build as a reference element on the account — asked once more: the account names no price for it. */
-  const saveElement = async (entry: CastEntry) => {
-    const genId = entry.selected ?? entry.takes[0]?.genId;
-    if (!genId) return;
-    const k = key(entry, "build") + ":element";
-    setConfirmElement(null); setWorking((w) => ({ ...w, [k]: "Saving on the account…" }));
-    try {
-      const { build: out } = await call<{ build: { state: string; element?: ConnectedElement | null; reason?: string } }>({ action: "elements-create", name: entry.name.trim().slice(0, 32), category: entryCategory(entry), description: entry.description.slice(0, 1000), sources: [{ genId }], projectId: latest.current.id });
-      if (out.state === "refused") throw new Error(`The account refused: ${out.reason}`);
-      if (out.element) { setEntry(entry.id, (e) => ({ ...e, elementId: out.element!.elementId })); void editor.ensureSaved(); }
-      toast(out.element ? `${entry.name} is a reference element: ${elementToken(out.element.elementId)}`
-        : out.state === "uncertain" ? "Sent, but the account’s answer was lost. It is not sent again."
-        : "Accepted without an id yet. Listed once the account shows an element by this name.");
-      void call<Elements>({ action: "elements" }).then(setElements).catch(() => undefined);
-    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The element could not be saved." })); }
-    finally { setWorking((w) => ({ ...w, [k]: "" })); }
-  };
   const uploadReference = async (entry: CastEntry, file: File) => {
     setWorking((w) => ({ ...w, [entry.id]: "Uploading…" }));
     try {
@@ -254,7 +192,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     void editor.ensureSaved();
   };
 
-  /* Attached to an entry's description or prompt: the first picture becomes its reference image (the Soul models take one). */
+  /* Attached to an entry's description or prompt: the first picture becomes its reference image. */
   const attachToEntry = (entry: CastEntry) => async (attached: Attached) => {
     const { media, unreadable } = await resolveAttached(scope, attached);
     const picture = media.find((m) => m.kind === "image");
@@ -273,8 +211,6 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const agentModel = agent.model;
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeCast ? "The agent is working." : !agentModel ? "Choose an agent above." : !p.production?.beats?.scenes.length && !(p.script ?? "").trim() ? "Write the script or break it into beats first." : null;
-  const readySouls = souls.filter((s) => s.status === "ready");
-  const accountBlocked = capability.status === "error" ? capability.error ?? CAPABILITY_UNREADABLE : connected === false ? `${capability.reconnect ? "Reconnect" : "Connect"} the Higgsfield account in Workspace › Engines.` : connected === null || models === null ? "Reading the connected account…" : null;
   const characters = cast.entries.filter((e) => e.kind === "character").length;
 
   return (
@@ -287,17 +223,6 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
-      {member ? <OwnerRunCard surface="cast" scope={scope} aspect={p.aspect} /> : capability.status === "error" ? (
-        <section className="gx-gen-card pd-recover" data-testid="cast-connect" role="alert">
-          <p className="gx-gen-error">{capability.error ?? CAPABILITY_UNREADABLE}</p>
-          <button type="button" className="gx-hbtn" onClick={refreshConnection}>Try again</button>
-        </section>
-      ) : connected === false ? (
-        <section className="gx-gen-card pd-recover" data-testid="cast-connect">
-          <p className="gx-hint">{capability.reconnect ? "Reconnect the Higgsfield account to build characters and elements." : "Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built."}</p>
-          <button type="button" className="gx-primary" onClick={() => shell.goWorkspace("engines")}>Open Workspace › Engines</button>
-        </section>
-      ) : null}
 
       <section className="gx-gen-card" aria-label="Cast list" data-testid="cast-list" data-section="list">
         <div className="pd-row-head">
@@ -305,7 +230,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <span className="gx-spacer" />
           <span className="gx-hint" data-testid="cast-counts">{characters} characters · {cast.entries.length - characters} elements</span>
         </div>
-        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film with a Soul Cinema prompt for each. Every build is saved in the library as Cast or Elements.</p>
+        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. A character renders with a Soul ID trained below; any entry’s still can be made in Gen. Every render is saved in the library as Cast or Elements.</p>
         <div className="gx-gen-enhance">
           <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={() => { setCast((c) => ({ ...c, entries: [...c.entries, ...fromBeats].slice(0, CAST_LIMITS.entries) })); void editor.ensureSaved(); }} data-testid="cast-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} from the beat sheet` : "Add from the beat sheet"}
@@ -324,124 +249,138 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         {cast.entries.map((entry) => {
           const shown = entry.selected ?? entry.takes[0]?.genId;
           const reference = entry.referenceAssetId ? p.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
-          const quote = quotes[key(entry, "build")];
-          const building = entry.job?.status === "submitted";
-          const soul = entryModel(entry);
-          const model = models?.[soul];
-          const label = SOUL_MODELS.find((m) => m.id === soul)!.label;
-          const declares = (name: string) => Boolean(model?.parameters.some((x) => x.name === name));
-          const reason = accountBlocked ?? (!model ? `The connected account does not offer ${label}.` : !entry.name.trim() ? "Name it first." : !entry.prompt.trim() ? "Write its prompt first." : null);
+          const inFlight = (entry.pending ?? []).length > 0;
+          /* Built earlier with a connected-account model the key has no family for: shown, never changed. */
+          const retired = retiredModelOf(entry);
+          if (retired) return <RetiredEntry key={entry.id} entry={entry} model={retired} aspect={p.aspect} onStill={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })} />;
+          const accountSoul = accountSoulIdOf(entry);
+          const character = entry.kind === "character";
+          const identity = identityOf(entry);
+          const family = modelLabel(identity?.renderModel);
+          const quote = pricing.quotes[entry.id];
+          const batch = entry.soulBatch ?? 1;
+          const strength = (SOUL_RENDER_STRENGTHS as readonly number[]).includes(entry.soulStrength ?? 1) ? entry.soulStrength ?? 1 : 1;
+          const why = !character ? null
+            : !p.productionProjectId ? "Save the project first."
+            : !identity ? (identities == null ? "Reading this workspace’s Soul IDs…" : renderable.length ? "Choose its Soul ID to render it." : "Train a Soul ID below to render it.")
+            : !entry.prompt.trim() ? "Write its prompt first." : null;
           return (
             <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"} data-drop={dropOver === entry.id || undefined}
               onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(entry.id); } }}
               onDragLeave={() => setDropOver((v) => (v === entry.id ? null : v))} onDrop={(e) => dropOn(entry, e)}>
-              <div className="pd-frame-image" data-ratio={entry.kind === "character" ? "4:5" : p.aspect}>
-                {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{building ? "Building on the account…" : "Not built yet"}</span>}
+              <div className="pd-frame-image" data-ratio={character ? "4:5" : p.aspect}>
+                {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">{inFlight ? "Rendering…" : "Not rendered yet"}</span>}
+                {inFlight && shown ? <span className="gx-badge gx-badge--new">Rendering</span> : null}
               </div>
               <div className="pd-row-head">
-                <input className="gx-field pd-cast-name" aria-label="Name" value={entry.name} maxLength={CAST_LIMITS.name} placeholder={entry.kind === "character" ? "Character name" : "Element name"} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, name: v })); }} />
+                <input className="gx-field pd-cast-name" aria-label="Name" value={entry.name} maxLength={CAST_LIMITS.name} placeholder={character ? "Character name" : "Element name"} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, name: v })); }} />
                 <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Entry"} kind`}>
-                  {(["character", "element"] as const).map((k) => <button key={k} type="button" role="radio" className="gx-seg-btn" aria-checked={entry.kind === k} onClick={() => setEntry(entry.id, (x) => ({ ...x, kind: k, soulId: k === "character" ? x.soulId : undefined }))}><span>{k === "character" ? "Cast" : "Element"}</span></button>)}
+                  {(["character", "element"] as const).map((k) => <button key={k} type="button" role="radio" className="gx-seg-btn" aria-checked={entry.kind === k} onClick={() => setEntry(entry.id, (x) => ({ ...x, kind: k }))}><span>{k === "character" ? "Cast" : "Element"}</span></button>)}
                 </div>
               </div>
               <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-description-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} description`} value={entry.description} maxLength={CAST_LIMITS.description} placeholder="Who or what it is, where it appears" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, description: v })); }} /></PromptAttach>
-              <div className="gx-seg gx-seg--sm pd-soul-models" role="radiogroup" aria-label={`${entry.name || "Entry"} Soul model`}>
-                {SOUL_MODELS.map((m) => <button key={m.id} type="button" role="radio" className="gx-seg-btn" aria-checked={soul === m.id} disabled={models !== null && !models[m.id]} title={m.line} onClick={() => setEntry(entry.id, (x) => ({ ...x, model: m.id }))} data-testid={`cast-model-${m.id}`}><span>{m.label}</span></button>)}
-              </div>
-              {entry.kind === "element" ? (
+              {!character ? (
                 <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Element"} category`}>
                   {(["environment", "prop"] as const).map((c) => <button key={c} type="button" role="radio" className="gx-seg-btn" aria-checked={entryCategory(entry) === c} onClick={() => setEntry(entry.id, (x) => ({ ...x, category: c }))}><span>{c === "environment" ? "Environment" : "Prop"}</span></button>)}
                 </div>
               ) : null}
-              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What Soul Cinema should build" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" /></PromptAttach>
+              <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What its still should show" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" /></PromptAttach>
               <div className="pd-row-head">
-                {declares("quality") ? (
-                  <label className="pd-soul"><span className="gx-hint">Quality</span>
-                    <select aria-label={`${entry.name || "Entry"} quality`} value={entry.quality ?? "2k"} onChange={(e) => { const v = e.target.value as "1.5k" | "2k"; setEntry(entry.id, (x) => ({ ...x, quality: v })); }}><option value="2k">2k</option><option value="1.5k">1.5k</option></select>
-                  </label>
-                ) : null}
-                {declares("budget") ? (
-                  <label className="pd-soul"><span className="gx-hint">Budget</span>
-                    <input className="gx-field pd-budget" type="number" min={10} max={500} step={10} aria-label={`${entry.name || "Entry"} Soul Cast budget`} value={entry.budget ?? 50} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setEntry(entry.id, (x) => ({ ...x, budget: Math.min(500, Math.max(10, Math.round(n))) })); }} />
-                  </label>
-                ) : null}
-                {entry.kind === "character" && declares("soul_id") ? (
-                  <label className="pd-soul"><span className="gx-hint">Soul ID</span>
-                    <select aria-label={`${entry.name || "Character"} Soul ID`} value={entry.soulId ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, soulId: v || undefined })); }}>
-                      <option value="">None</option>
-                      {readySouls.map((s) => <option key={s.soulId} value={s.soulId}>{s.name}</option>)}
-                    </select>
-                  </label>
-                ) : null}
-                {model && !model.medias.length ? null : <label className="gx-hbtn pd-upload">
+                <label className="gx-hbtn pd-upload">
                   {reference ? "Replace reference" : "Reference image"}
                   <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`Upload a reference image for ${entry.name || "this entry"}`} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadReference(entry, f); }} />
-                </label>}
+                </label>
                 {reference ? <span className="pd-ref-chip" {...previewAttrs(assetPreview(reference))} data-testid="cast-reference"><span className="gx-ref-thumb"><LazyMedia url={assetPreview(reference)!.url} kind="image" alt="" name={reference.name} preview={false} className="gx-lazy" /></span><span className="gx-hint">{reference.name}</span></span> : null}
               </div>
               {entry.takes.length > 1 ? (
-                <div className="pd-takes" role="radiogroup" aria-label={`${entry.name} builds`}>
-                  {entry.takes.map((take, i) => <button key={take.genId} type="button" role="radio" aria-checked={take.genId === shown} aria-label={`Build ${entry.takes.length - i}`} onClick={() => setEntry(entry.id, (x) => ({ ...x, selected: take.genId }))}><LazyMedia url={`/api/media/${take.genId}`} kind="image" alt="" className="gx-lazy" /></button>)}
+                <div className="pd-takes" role="radiogroup" aria-label={`${entry.name} stills`}>
+                  {entry.takes.map((take, i) => <button key={take.genId} type="button" role="radio" aria-checked={take.genId === shown} aria-label={`Still ${entry.takes.length - i}`} onClick={() => setEntry(entry.id, (x) => ({ ...x, selected: take.genId }))}><LazyMedia url={`/api/media/${take.genId}`} kind="image" alt="" className="gx-lazy" /></button>)}
+                </div>
+              ) : null}
+              {character ? (
+                <div className="pd-cast-render" data-testid="cast-render">
+                  <label className="pd-soul"><span className="gx-hint">Soul ID</span>
+                    <select aria-label={`${entry.name || "Character"} Soul ID`} value={identity?.id ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, identityId: v || undefined })); }} data-testid="cast-identity">
+                      <option value="">None</option>
+                      {renderable.map((i) => <option key={i.id} value={i.id}>{i.name} · {modelLabel(i.renderModel)}</option>)}
+                    </select>
+                  </label>
+                  {identity ? (
+                    <>
+                      <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Character"} stills per render`}>
+                        {SOUL_RENDER_BATCHES.map((n) => <button key={n} type="button" role="radio" className="gx-seg-btn" aria-checked={batch === n} onClick={() => setEntry(entry.id, (x) => ({ ...x, soulBatch: n }))} data-testid={`cast-batch-${n}`}><span>{n === 1 ? "1 still" : `${n} stills`}</span></button>)}
+                      </div>
+                      <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Character"} size`}>
+                        {SOUL_RENDER_RESOLUTIONS.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={(entry.soulResolution ?? "720p") === r} onClick={() => setEntry(entry.id, (x) => ({ ...x, soulResolution: r }))} data-testid={`cast-size-${r}`}><span>{r}</span></button>)}
+                      </div>
+                      <label className="pd-soul"><span className="gx-hint">Likeness</span>
+                        <select aria-label={`${entry.name || "Character"} likeness`} value={String(strength)} onChange={(e) => { const v = Number(e.target.value); setEntry(entry.id, (x) => ({ ...x, soulStrength: v })); }} data-testid="cast-likeness">
+                          {SOUL_RENDER_STRENGTHS.map((s) => <option key={s} value={String(s)}>{Math.round(s * 100)}%</option>)}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               <div className="gx-gen-enhance">
-                {member ? (
-                  <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} aria-describedby={castStillPrompt(entry) ? undefined : `cast-still-why-${entry.id}`} data-testid="cast-still-gen"
-                    onClick={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })}>Make a still in Gen</button>
-                ) : quote ? (
+                {character ? (
                   <>
-                    <button type="button" className="gx-primary" disabled={Boolean(working[key(entry, "build")])} onClick={() => void build(entry)} data-testid="cast-build">{working[key(entry, "build")] || `Build with ${label} · ${quote.quoteCredits.toLocaleString()} Higgsfield credits`}</button>
-                    <button type="button" className="gx-hbtn" onClick={() => setQuotes((all) => { const next = { ...all }; delete next[key(entry, "build")]; return next; })}>Change</button>
+                    {/* Closed while its render is in flight: one more tap never buys a second request. */}
+                    <button type="button" className="gx-primary pd-go" disabled={Boolean(why) || Boolean(working[entry.id]) || inFlight || quote?.credits == null}
+                      onClick={() => { if (quote?.credits != null && !inFlight) void renderEntry(entry, quote.credits); }} data-testid="cast-render-run">
+                      {working[entry.id] || (inFlight ? "Rendering…" : why ? `Render with ${identity ? family : "a Soul ID"}`
+                        : quote?.credits != null ? `Render ${batch === 1 ? "1 still" : `${batch} stills`} · ${family} · about ${quote.credits.toLocaleString("en-US")} cr`
+                        : quote?.error ? "Price unavailable" : "Pricing…")}
+                    </button>
+                    {quote?.error && !why ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain(entry.id)} data-testid="cast-render-retry">Try again</button> : null}
                   </>
-                ) : (
-                  <button type="button" className="gx-primary" disabled={Boolean(working[key(entry, "build")]) || Boolean(reason) || building} onClick={() => void price(entry)} data-testid="cast-price">{working[key(entry, "build")] || (building ? "Building…" : entry.takes.length ? "Price another build" : `Price with ${label}`)}</button>
-                )}
+                ) : null}
+                <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} aria-describedby={castStillPrompt(entry) ? undefined : `cast-still-why-${entry.id}`} data-testid="cast-still-gen"
+                  onClick={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (character ? "Character" : "Element")}` })}>Make a still in Gen</button>
                 <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this entry"}`} onClick={() => setCast((c) => ({ ...c, entries: c.entries.filter((x) => x.id !== entry.id) }))}>Remove</button>
               </div>
-              {reason && !member && !quote && !building ? <span className="gx-reason" data-testid="cast-blocked">{reason}</span> : null}
-              {member && !castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
-              {shown && !building && !member ? (
-                <div className="pd-finish" data-testid="cast-finish">
-                  {FINISH.map(({ tool, label: finishLabel }) => {
-                    const k = key(entry, tool), fq = quotes[k], available = Boolean(toolModel(tool));
-                    return fq ? (
-                      <button key={tool} type="button" className="gx-primary" disabled={Boolean(working[k])} onClick={() => void build(entry, tool)} data-testid={`cast-${tool}-run`}>{working[k] || `${finishLabel} · ${fq.quoteCredits.toLocaleString()} credits`}</button>
-                    ) : (
-                      <button key={tool} type="button" className="gx-hbtn" disabled={!available || Boolean(working[k]) || Boolean(accountBlocked)} title={!available ? "The connected account does not offer this tool." : undefined} onClick={() => void price(entry, tool)} data-testid={`cast-${tool}`}>{working[k] || `Price: ${finishLabel.toLowerCase()}`}</button>
-                    );
-                  })}
-                  {entry.elementId ? <span className="gx-hint" data-testid="cast-element">Reference element {elementToken(entry.elementId)}</span>
-                    : confirmElement === entry.id ? (
-                      <>
-                        <button type="button" className="gx-primary" onClick={() => void saveElement(entry)} data-testid="cast-element-confirm">Save {entry.name.slice(0, 32)} as a {entryCategory(entry)} element</button>
-                        <button type="button" className="gx-hbtn" onClick={() => setConfirmElement(null)}>Not now</button>
-                        <span className="gx-hint">The account keeps it as a reusable reference; it names no price, so this asks once more.</span>
-                      </>
-                    ) : <button type="button" className="gx-hbtn" disabled={Boolean(accountBlocked) || !entry.name.trim() || Boolean(working[key(entry, "build") + ":element"])} onClick={() => setConfirmElement(entry.id)} data-testid="cast-element-save">{working[key(entry, "build") + ":element"] || "Save as a reference element"}</button>}
-                </div>
-              ) : null}
-              {quote ? <span className="gx-hint">Priced on {quote.workspaceName}: billed by the connected account; a failed render is not billed.</span> : null}
-              {errors[entry.id] ? <p className="gx-gen-error" role="alert">{errors[entry.id]}</p> : null}
+              {why && !inFlight ? <span className="gx-reason" data-testid="cast-render-why">{why}</span> : null}
+              {!castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
+              {quote?.error && !why ? <p className="gx-gen-error" role="alert">{quote.error}</p> : null}
+              {accountSoul ? <span className="gx-hint" data-testid="cast-soul-retrain">Its Soul ID was trained on the connected account, which can’t be used here. Train it again below (Build identity) to render it.</span> : null}
+              {entry.elementId ? <span className="gx-hint" data-testid="cast-element">Reference element made earlier: {elementToken(entry.elementId)} · read-only</span> : null}
+              {entry.job?.status === "submitted" ? <span className="gx-hint" data-testid="cast-earlier-build">A build sent earlier lands in the Library when it finishes.</span> : null}
+              {errors[entry.id] ? <p className="gx-gen-error" role="alert" data-testid="cast-error">{errors[entry.id]}</p> : null}
             </article>
           );
         })}
         {!cast.entries.length ? <p className="gx-empty">No cast yet. Add from the beat sheet, let the agent cast the film, or add one by hand.</p> : null}
       </section>
 
-      {member ? null : <section className="gx-gen-card" aria-label="Reference elements" data-testid="cast-elements" data-section="elements">
-        <span className="gx-eyebrow" data-functional-label="">Reference elements · built in Particl</span>
-        {elements == null ? <p className="gx-hint">Reading…</p>
-          : !elements.available ? <p className="gx-hint">The account does not list its elements through its tools.</p>
-          : elements.elements.length || elements.pending?.length ? (
-            <ul className="gx-soul-list">
-              {elements.elements.map((el) => <li key={el.elementId} className="gx-soul-row" data-testid={`element-row-${el.elementId}`}><span className="gx-soul-name">{el.name}</span><span className="gx-hint">{el.category ?? "element"} · {elementToken(el.elementId)}</span></li>)}
-              {(elements.pending ?? []).map((b) => <li key={b.id} className="gx-soul-row" data-testid={`element-pending-${b.id}`}><span className="gx-soul-name">{b.name}</span><span className="gx-hint">{b.stale ? "The account never named it; Particl cannot list it" : "Sent · waiting for the account to name it"}</span></li>)}
-            </ul>
-          ) : <p className="gx-hint">None yet. Save a build as a reference element; elements made on higgsfield.ai stay there.</p>}
-      </section>}
-
-      {member ? null : <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>}
+      <CastIdentities scope={scope} projectId={p.id} items={items} save={editor.ensureSaved} />
       <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
+  );
+}
+
+/**
+ * An entry built earlier on the connected account with a Soul model the
+ * platform's key has no family for (Soul Location, Soul Cast): shown, never
+ * changed. Its stills stay in the Library; a new still can be made in Gen.
+ */
+function RetiredEntry({ entry, model, aspect, onStill }: { entry: CastEntry; model: string; aspect: string; onStill: () => void }) {
+  const shown = entry.selected ?? entry.takes[0]?.genId;
+  const character = entry.kind === "character";
+  return (
+    <article className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} data-readonly="" aria-label={entry.name || "Unnamed"}>
+      <div className="pd-frame-image" data-ratio={character ? "4:5" : aspect}>
+        {shown ? <LazyMedia url={`/api/media/${shown}`} kind="image" alt={entry.name} className="gx-lazy" /> : <span className="gx-hint">Not rendered</span>}
+      </div>
+      <div className="pd-row-head">
+        <input className="gx-field pd-cast-name" aria-label="Name" value={entry.name} readOnly />
+        <span className="gx-chip gx-chip--static">{character ? "Cast" : "Element"}</span>
+      </div>
+      {entry.description ? <p className="gx-hint pd-frame-desc">{entry.description}</p> : null}
+      <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} readOnly data-testid="cast-prompt" />
+      <p className="gx-hint" data-testid="cast-retired">Built earlier with {model} on the connected account, which isn’t available here. Read-only: {entry.takes.length ? `its ${entry.takes.length === 1 ? "still stays" : `${entry.takes.length} stills stay`} in the Library.` : "nothing of it is changed."}</p>
+      <div className="gx-gen-enhance">
+        <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} onClick={onStill} data-testid="cast-still-gen">Make a still in Gen</button>
+      </div>
+    </article>
   );
 }

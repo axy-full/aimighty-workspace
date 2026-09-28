@@ -27,7 +27,7 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
   ],
   cast: [
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Cast list", "From the beat sheet or the agent", "list"]]),
-    g("SOUL CINEMA", [["Cast & elements", "Prompt · Reference · Build", "entries"], ["Soul ID", "Lock a character's identity", "soul"]]),
+    g("SOUL", [["Cast & elements", "Prompt · Soul ID · Render", "entries"], ["Build identity", "Soul Standard · Soul 2 · Soul Cinema", "soul"]]),
   ],
   takes: [
     g("TAKES", [["Takes", "By shot · Search · Filter", "takes"], ["Needs review", "Pick · Approve · Request changes", "review"]]),

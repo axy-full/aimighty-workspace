@@ -25,15 +25,52 @@ import {
   higgsfieldSubmissionRejected,
   soulReferenceOrigin,
   SOUL_MODEL_VERSION,
+  SOUL_MODEL_VERSIONS,
   SOUL_REFERENCE_ORIGIN,
+  type SoulModelVersion,
   type SoulReference,
   type SoulReferenceOrigin,
 } from "./higgsfield";
+import { SOUL_RENDER_MODELS, isSoulVersion } from "./soulRenderTypes";
 
 export const SOUL_TRAINING_MODEL = "higgsfield/soul-id";
 export const SOUL_TRAINING_USD = 2.5;
 export const SOUL_MIN_PHOTOS = 1;
 export const SOUL_MAX_PHOTOS = 40;
+/**
+ * Training keeps Particl's existing fixed price: the provider publishes no
+ * training price and has no training estimate. Each family its
+ * custom-reference API documents (v1 → Soul Standard, v2 → Soul 2,
+ * cinema → Soul Cinema) trains at that price. A family with no entry here has
+ * no price, so it is never offered and never trained.
+ */
+const SOUL_TRAINING_PRICES: Readonly<Partial<Record<SoulModelVersion, number>>> = {
+  v1: SOUL_TRAINING_USD,
+  v2: SOUL_TRAINING_USD,
+  cinema: SOUL_TRAINING_USD,
+};
+/** The fixed training price of one family, or null when it has none (unknown or unpriced). */
+export function soulTrainingUsd(
+  version: unknown,
+  prices: Readonly<Partial<Record<string, number>>> = SOUL_TRAINING_PRICES,
+): number | null {
+  if (!isSoulVersion(version)) return null;
+  const usd = prices[version];
+  return typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? usd : null;
+}
+/** What a stored identity's training was priced at: its family's price; rows saved before families were stamped are v1. */
+function trainingUsdOf(row: Row): number {
+  return soulTrainingUsd(row.model_version ?? SOUL_MODEL_VERSION) ?? SOUL_TRAINING_USD;
+}
+/**
+ * The model a ready identity renders with on the platform's key: its family's
+ * model, for identities trained on the production host. One accepted by the
+ * earlier host has none: it stays listed, read-only.
+ */
+function renderModelOf(row: Row): string | null {
+  if (row.provider_origin !== SOUL_REFERENCE_ORIGIN) return null;
+  return SOUL_RENDER_MODELS[isSoulVersion(row.model_version) ? row.model_version : SOUL_MODEL_VERSION];
+}
 export type SoulIdentityState =
   "submitting" | "training" | "ready" | "failed" | "uncertain";
 export type SoulSource =
@@ -51,6 +88,8 @@ export type SoulIdentity = {
   updatedAt: number;
   creditsBilled: number | null;
   error: string | null;
+  /** The model it renders with on the platform's key; null for an identity it cannot render (read-only). */
+  renderModel: string | null;
 };
 export class SoulIdentityError extends Error {
   constructor(
@@ -250,10 +289,16 @@ async function publicIdentity(
         ? Number(bill.billed_credits)
         : null,
     error: row.error == null ? null : String(row.error),
+    renderModel: renderModelOf(row),
   };
 }
+/** Training terms: the default family's price (as before), and every family that has one — only those are offered. */
 export function soulIdentityTerms() {
   const inCredits = creditsApply(requireTenant());
+  const priced = (usd: number) =>
+    inCredits
+      ? { trainingCredits: billCredits(usd, "identity-training") }
+      : { trainingCredits: null, trainingCostUsd: usd };
   return {
     chargePolicy: "accepted-request" as const,
     minPhotos: SOUL_MIN_PHOTOS,
@@ -262,6 +307,10 @@ export function soulIdentityTerms() {
       ? billCredits(SOUL_TRAINING_USD, "identity-training")
       : null,
     ...(inCredits ? {} : { trainingCostUsd: SOUL_TRAINING_USD }),
+    versions: SOUL_MODEL_VERSIONS.flatMap((version) => {
+      const usd = soulTrainingUsd(version);
+      return usd == null ? [] : [{ version, ...priced(usd) }];
+    }),
   };
 }
 export async function getSoulIdentity(
@@ -312,13 +361,16 @@ export type CreateSoulIdentityInput = {
   consent: true;
   maxCredits?: number;
   maxUsd?: number;
+  /** The render family to train for (v1 when absent): Soul Standard, Soul 2 or Soul Cinema. */
+  modelVersion?: SoulModelVersion;
 };
+type CleanInput = CreateSoulIdentityInput & { modelVersion: SoulModelVersion; trainingUsd: number };
 type Dependencies = {
   submit?: typeof createSoulReference;
   poll?: typeof getSoulReference;
   sign?: typeof presignedReadUrl;
 };
-function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
+function cleanInput(value: CreateSoulIdentityInput): CleanInput {
   if (
     !value ||
     typeof value.name !== "string" ||
@@ -377,11 +429,18 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
       );
     seen.add(`${key}:${id}`);
   }
-  const quote = soulIdentityTerms();
+  /* Never run unpriced work: a family with no training price is refused before anything is written. */
+  const modelVersion = value.modelVersion ?? SOUL_MODEL_VERSION;
+  const trainingUsd = soulTrainingUsd(modelVersion);
+  if (trainingUsd == null)
+    throw new SoulIdentityError(
+      "This Soul ID version has no training price, so it cannot be trained.",
+    );
+  const inCredits = creditsApply(currentTenant()?.workspace);
   if (
     value.maxCredits != null &&
     (!Number.isFinite(value.maxCredits) ||
-      value.maxCredits < (quote.trainingCredits ?? 0))
+      value.maxCredits < (inCredits ? billCredits(trainingUsd, "identity-training") : 0))
   )
     throw new SoulIdentityError(
       "The identity quote changed. Review its current credit price before training.",
@@ -391,8 +450,8 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
      platform's keys the vendor's price is not the customer's to probe, and a refusal that turned
      on it would answer, one guess at a time, what the vendor charges. */
   if (
-    value.maxUsd != null && !creditsApply(currentTenant()?.workspace) &&
-    (!Number.isFinite(value.maxUsd) || value.maxUsd < SOUL_TRAINING_USD)
+    value.maxUsd != null && !inCredits &&
+    (!Number.isFinite(value.maxUsd) || value.maxUsd < trainingUsd)
   )
     throw new SoulIdentityError(
       "The identity quote changed. Review its current price before training.",
@@ -402,6 +461,8 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
     ...value,
     name: value.name.trim(),
     description: value.description?.trim() ?? "",
+    modelVersion,
+    trainingUsd,
   };
 }
 async function verifiedPaths(
@@ -521,7 +582,7 @@ async function finishKnown(row: Row, result: SoulReference): Promise<void> {
     args: [
       result.id,
       state,
-      SOUL_TRAINING_USD,
+      trainingUsdOf(row),
       terminal ? (state === "ready" ? "succeeded" : "failed") : null,
       state === "failed"
         ? "The identity trainer could not train this identity. Its accepted training request remains charged."
@@ -606,7 +667,7 @@ export async function createSoulIdentity(
         ts,
         ts,
         SOUL_REFERENCE_ORIGIN,
-        SOUL_MODEL_VERSION,
+        value.modelVersion,
       ],
     });
     // Commit the recoverable ID with the identity, before any external paid operation.
@@ -625,6 +686,7 @@ export async function createSoulIdentity(
       updatedAt: ts,
       creditsBilled: null,
       error: null,
+      renderModel: SOUL_RENDER_MODELS[value.modelVersion],
     };
     const written = await tx.execute({
       sql: "UPDATE generation_requests SET response_json=?,response_status=202,updated_at=? WHERE user_id=? AND request_key=?",
@@ -639,7 +701,7 @@ export async function createSoulIdentity(
   });
   const row = (await rawIdentity(id))!;
   try {
-    await reserveGenerationSpend(event(row, "running", SOUL_TRAINING_USD), {
+    await reserveGenerationSpend(event(row, "running", value.trainingUsd), {
       token: currentTenant()?.token,
       projectId: row.production_project_id as string | null,
     });
@@ -673,12 +735,12 @@ export async function createSoulIdentity(
       const claimToken = randomUUID();
       const won = await db().execute({
         sql: "UPDATE soul_identities SET paid_claim=?,cost_usd=?,updated_at=? WHERE id=? AND status='submitting' AND paid_claim IS NULL",
-        args: [claimToken, SOUL_TRAINING_USD, now(), id],
+        args: [claimToken, value.trainingUsd, now(), id],
       });
       if (!won.rowsAffected) return;
       paidClaim = claimToken;
       accepted = await (deps.submit ?? createSoulReference)(value.name, urls, {
-        modelVersion: SOUL_MODEL_VERSION,
+        modelVersion: value.modelVersion,
       });
       // Independent databases provide two recovery locations for a known remote UUID.
       await saveReceipt(row, accepted).catch(() => {});
@@ -875,6 +937,8 @@ export async function requireReadySoulIdentity(
   id: string;
   providerReferenceId: string;
   credentialFingerprint: string;
+  /** The model it renders with on the platform's key (lib/soulRenderTypes.ts), or null when it has none. */
+  renderModel: string | null;
 }> {
   await soulIdentitiesReady();
   const row = await rawIdentity(id);
@@ -919,6 +983,7 @@ export async function requireReadySoulIdentity(
     id: String(row.id),
     providerReferenceId: String(row.provider_reference_id),
     credentialFingerprint: String(row.credential_fingerprint),
+    renderModel: renderModelOf(row),
   };
 }
 /** Called only by whole-workspace purge. Do not delete unfinished remote training. */

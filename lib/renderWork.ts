@@ -4,7 +4,10 @@ import { PreflightError } from "./preflight";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { getModel, imageTokens, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { getModel, imageTokens, HIGGSFIELD_IMAGE_MODELS, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { isSoulRenderModel } from "./soulRenderTypes";
+import { soulBatchId, soulBatchTakeId, soulRenderDelivered, soulRenderSettlementUsd } from "./soulRender";
+import { isBatchId } from "./variations";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
@@ -70,6 +73,8 @@ export type StillJob = {
   soulCredentialFingerprint?: string;
   soulVendorCostUsd?: number;
   soulStrength?: number;
+  /** Stills per Soul render request (1 or 4). */
+  soulBatch?: number;
   kind: "image";
   genId: string;
   modelId: string;
@@ -175,6 +180,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
     soulCredentialFingerprint: typeof params.soulCredentialFingerprint === "string" ? params.soulCredentialFingerprint : undefined,
     soulVendorCostUsd: typeof params.soulVendorCostUsd === "number" ? params.soulVendorCostUsd : undefined,
     soulStrength: typeof params.soulStrength === "number" ? params.soulStrength : undefined,
+    soulBatch: typeof params.soulBatch === "number" ? params.soulBatch : undefined,
     references: hydrated,
     startedAt,
   };
@@ -398,6 +404,8 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
     soulReferenceId: job.soulReferenceId,
     soulCredentialFingerprint: job.soulCredentialFingerprint,
     soulStrength: job.soulStrength,
+    soulBatch: job.soulBatch,
+    soulVendorCostUsd: job.soulVendorCostUsd,
     references: job.references,
   });
   if (!("produced" in out)) {
@@ -452,10 +460,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
     const until = now() + 180_000;
     const claim = await db().execute({
       sql: `UPDATE generations SET params=json_set(params,'$.higgsfieldStillPollUntil',?)
-        WHERE id=? AND kind='image' AND model IN (?,?) AND provider='higgsfield' AND deleted=0 AND status IN ('queued','running')
+        WHERE id=? AND kind='image' AND model IN (${HIGGSFIELD_IMAGE_MODELS.map(() => "?").join(",")}) AND provider='higgsfield' AND deleted=0 AND status IN ('queued','running')
         AND json_extract(params,'$.higgsfieldStillHandle') IS NOT NULL
         AND COALESCE(json_extract(params,'$.higgsfieldStillPollUntil'),0) < ? RETURNING params`,
-      args: [until, genId, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, now()],
+      args: [until, genId, ...HIGGSFIELD_IMAGE_MODELS, now()],
     });
     if (!claim.rows.length) return;
     const params = JSON.parse(String(claim.rows[0].params));
@@ -485,13 +493,22 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
           args: [state.status, now(), genId] });
         return;
       }
-      if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
+      const soulRender = isSoulRenderModel(job.modelId);
+      const stills = soulRender
+        ? soulRenderDelivered(state.imageUrls ?? (state.imageUrl ? [state.imageUrl] : []), job.soulBatch ?? 1)
+        : state.imageUrl ? [state.imageUrl] : [];
+      if (!stills.length || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
         throw new Error("The connected-account request needs its saved image and verified price before collection can finish.");
-      const bytes = await engine.fetchMaster!(state.imageUrl);
+      /* A Soul batch's other stills are filed first, each a take of its own; the request's own take seals last,
+         so a collection interrupted between them files them again, once. */
+      if (stills.length > 1) await fileSoulBatch(job, stills.slice(1), isBatchId(params.batchId) ? params.batchId : soulBatchId(job.genId));
+      const bytes = await engine.fetchMaster!(stills[0]);
       inHand = true;
       const out = await finishStill(job, {
         bytes, mime: "image/png",
-        costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
+        // A Soul render settles at its quoted live estimate unless the provider states a charge within the band.
+        costUsd: soulRender ? soulRenderSettlementUsd(vendorCostUsd!, state.costUsd) : vendorCostUsd!,
+        totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
         args: [JSON.stringify(out), now(), genId] });
@@ -518,6 +535,51 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.higgsfieldStillPollUntil') WHERE id=? AND json_extract(params,'$.higgsfieldStillPollUntil')=?",
         args: [genId, until] });
     }
+  });
+}
+
+/**
+ * The 2nd–4th stills of one Soul render request, filed as takes of their own
+ * beside the request's take (same project, prompt, model and author; the
+ * batch's strip and numbers). The request's take carries the whole request's
+ * price, so these carry none. Idempotent: a still already filed is never
+ * fetched or stored again, and the ids are fixed by the request's own take.
+ */
+async function fileSoulBatch(job: StillJob, urls: string[], batchId: string): Promise<void> {
+  const leader = (await db().execute({ sql: "SELECT params FROM generations WHERE id=? AND deleted=0", args: [job.genId] })).rows[0];
+  if (!leader) throw new Error("The Soul render's take is no longer available to file its batch.");
+  const own = JSON.parse(String(leader.params || "{}")) as Record<string, unknown>;
+  const engine = engineFor("higgsfield");
+  const sharp = (await import("sharp")).default;
+  const ids = [job.genId];
+  for (const [index, url] of urls.entries()) {
+    const variation = index + 2;
+    const id = soulBatchTakeId(job.genId, variation);
+    ids.push(id);
+    const filed = (await db().execute({ sql: "SELECT stored_url FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (filed?.stored_url) continue;
+    const png = await sharp(await engine.fetchMaster!(url)).png().toBuffer();
+    const { value: stored } = await withRetry(() => storeImageBytes(id, png), { max: 3 });
+    const params = {
+      ratio: job.ratio, resolution: job.size, via: "higgsfield",
+      ...(typeof own.soulIdentityId === "string" ? { soulIdentityId: own.soulIdentityId } : {}),
+      ...(typeof own.workbenchProjectId === "string" ? { workbenchProjectId: own.workbenchProjectId } : {}),
+      soulStrength: job.soulStrength, soulBatch: job.soulBatch, soulBatchOf: job.genId, batchId, variation,
+    };
+    await db().execute({
+      sql: `INSERT INTO generations (id, project_id, kind, model, prompt, params, status, stored_url, bytes, cost_usd,
+              created_by, created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
+            SELECT ?, project_id, 'image', model, prompt, ?, 'succeeded', ?, ?, 0,
+              created_by, created_at, ?, token_id, shot_id, version, provider, task, 'higgsfield'
+            FROM generations WHERE id=? ON CONFLICT(id) DO NOTHING`,
+      args: [id, JSON.stringify(params), stored.url, stored.bytes, now(), job.genId],
+    });
+  }
+  // The request's take names every still of its batch (its page files them all) and joins the batch's strip.
+  await db().execute({
+    sql: `UPDATE generations SET params=json_set(params,'$.soulBatchIds',json(?),'$.batchId',?,'$.variation',COALESCE(json_extract(params,'$.variation'),1)),updated_at=?
+      WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
+    args: [JSON.stringify(ids), batchId, now(), job.genId],
   });
 }
 
