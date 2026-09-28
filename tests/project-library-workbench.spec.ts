@@ -236,3 +236,24 @@ test('project library separates sources, retains original downloads and private 
   await expect(page.getByRole('heading',{name:'Choose a project',exact:true})).toBeVisible();
   await expect(page.locator('[data-library-id]')).toHaveCount(0);
 });
+
+test('a project library lookup by id answers a render past the loaded pages and nothing from another project or scope',async({page},info)=>{
+  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded project-library coverage');
+  const f=await fixture(page);
+  const get=(query:string,headers:Record<string,string>=f.headers)=>page.request.get(`/api/workbench/library?projectId=${f.project.id}&${query}`,{headers});
+  const first=await(await get('source=generations')).json();
+  const loaded=new Set(first.generations.map((item:{id:string})=>item.id));
+  expect(first.nextPageCursor).toBeTruthy();
+  const older=Array.from({length:61},(_,index)=>`${f.generation}_${String(index).padStart(3,'0')}`).find(id=>!loaded.has(id))!;
+  expect(older,'a render the first page does not hold').toBeTruthy();
+  const found=await(await get(`source=generations&id=${older}`)).json();
+  expect(found.generations.map((item:{id:string})=>item.id)).toEqual([older]);
+  expect(found.nextPageCursor).toBeNull();
+  /* The other project's render and upload are not this project's, whoever asks. */
+  expect((await(await get(`source=generations&id=${f.otherGeneration}`)).json()).generations).toEqual([]);
+  expect((await(await get(`source=uploads&id=${f.other.id}`)).json()).uploads).toEqual([]);
+  expect((await(await get(`source=uploads&id=${f.original.id}`)).json()).uploads.map((item:{id:string})=>item.id)).toEqual([f.original.id]);
+  expect((await get(`source=generations&id=${older}`,{'X-Workbench-Scope':'particl-active-another-workspace-someone'})).status()).toBe(409);
+  expect((await get('source=generations&id=..%2Fx')).status()).toBe(400);
+  expect((await get(`source=generations&id=${older}&cursor=${first.nextPageCursor}`)).status()).toBe(400);
+});
