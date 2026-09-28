@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, build step 1 (design/particl-suites/README.md): one
@@ -47,8 +48,10 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   const errors = await open(page);
 
   const suites = page.getByRole("tablist", { name: "Suites" });
+  await openSuitesMenu(page);
   await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
   await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
+  await closeSuitesMenu(page);
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
   const strip = page.getByRole("navigation", { name: "Pages" });
@@ -93,6 +96,7 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   expect([param(page, "page"), param(page, "sp")]).toEqual(["rig", "rig"]);
 
+  await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Atomik" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
@@ -100,9 +104,11 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await expect(page.getByTestId("page-title")).toHaveText("Budget");
 
   /* Studio comes back on Rig, not on Brief. */
+  await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Studio" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
 
+  await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Gen" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(strip).toHaveCount(0);
@@ -121,6 +127,7 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   /* A pasted link opens the same place. */
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
   await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  await openSuitesMenu(page);
   await expect(suites.getByRole("tab", { name: "Viral" })).toHaveAttribute("aria-selected", "true");
   expect(errors).toEqual([]);
 });
@@ -128,6 +135,7 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
 test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page);
+  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
