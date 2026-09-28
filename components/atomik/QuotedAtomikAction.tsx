@@ -14,7 +14,9 @@ export default function QuotedAtomikAction({ url, body, label, onRun, disabled, 
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { rootMargin: "120px" });
+    /* The newest entry is where the action is now. A busy page can hand over several at once, oldest first ("off
+       screen", then "scrolled into view"); read alone, the first left an action on screen unquoted, and so unrunnable. */
+    const observer = new IntersectionObserver((entries) => setVisible(entries[entries.length - 1].isIntersecting), { rootMargin: "120px" });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);

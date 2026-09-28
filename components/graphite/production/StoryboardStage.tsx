@@ -73,8 +73,15 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
   const latest = useRef(p);
   useEffect(() => { latest.current = p; }, [p]);
 
-  const setBoards = useCallback((fn: (b: Boards) => Boards) => editor.change((old) => ({ ...old, production: { ...old.production, boards: fn(old.production?.boards ?? DEFAULT_BOARDS) } })), [editor]);
-  const setFrame = useCallback((id: string, fn: (f: BoardFrame) => BoardFrame) => setBoards((b) => ({ ...b, frames: { ...b.frames, [id]: fn(b.frames[id] ?? emptyFrame()) } })), [setBoards]);
+  /* An update that hands back what it was given changes nothing: no edit, no save. */
+  const setBoards = useCallback((fn: (b: Boards) => Boards) => editor.change((old) => {
+    const was = old.production?.boards ?? DEFAULT_BOARDS, next = fn(was);
+    return next === was ? old : { ...old, production: { ...old.production, boards: next } };
+  }), [editor]);
+  const setFrame = useCallback((id: string, fn: (f: BoardFrame) => BoardFrame) => setBoards((b) => {
+    const was = b.frames[id], next = fn(was ?? emptyFrame());
+    return next === was ? b : { ...b, frames: { ...b.frames, [id]: next } };
+  }), [setBoards]);
 
   /* ── The agent's prompt run: fills every frame the director has not written, keeps the ones they did. ── */
   const allPromptRuns = runs.jobs.filter((job) => job.kind === "frames");
@@ -490,7 +497,8 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
                 </div>
               ) : null}
               <div className="gx-gen-enhance">
-                <button type="button" className="gx-hbtn" aria-expanded={open === shot.id} onClick={() => { setOpen(open === shot.id ? null : shot.id); if (!frame.prompt.trim()) setFrame(shot.id, (f) => ({ ...f, prompt: shotPrompt(shot) })); }} data-testid="frame-prompt-toggle">Prompt</button>
+                {/* An empty prompt starts from its beat — decided on the frame as it is when this lands, not as this render saw it: the agent's prompts may have landed in between, and are never written over. */}
+                <button type="button" className="gx-hbtn" aria-expanded={open === shot.id} onClick={() => { setOpen(open === shot.id ? null : shot.id); setFrame(shot.id, (f) => (f.prompt.trim() ? f : { ...f, prompt: shotPrompt(shot) })); }} data-testid="frame-prompt-toggle">Prompt</button>
                 {frame.takes.length ? <button type="button" className="gx-hbtn" aria-expanded={shot.id in revising} onClick={() => setRevising((r) => { const next = { ...r }; if (shot.id in next) delete next[shot.id]; else next[shot.id] = ""; return next; })} data-testid="frame-revise">Revise</button> : null}
                 {/* Closed while this frame renders, until its job lands or fails: one more tap never buys a second take. */}
                 <button type="button" className="gx-primary" disabled={Boolean(working[shot.id]) || batchWorking || inFlight || quote?.credits == null} onClick={() => { if (quote?.credits != null && !inFlight) void render(shot, quote.credits, candidate(shot)); }} data-testid="frame-render">
