@@ -88,7 +88,7 @@ test("Grok transcribes a take: priced by its length, words and speakers, subtitl
   await page.getByTestId("edit-take").filter({ hasText: /Mara on the ice/i }).first().click();
   const panel = page.getByTestId("transcribe");
   await expect(async () => {
-    await expect(panel.getByTestId("transcribe-run")).toContainText(/Transcribe · \d+ credits?/, { timeout: 5_000 });
+    await expect(panel.getByTestId("transcribe-run")).toContainText(/Transcribe · about \d+ credits?/, { timeout: 5_000 });
   }).toPass({ timeout: 30_000 });
   await panel.getByTestId("transcribe-run").click();
   await expect(panel.getByTestId("transcript")).toContainText("Speaker 1", { timeout: 60_000 });

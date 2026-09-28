@@ -54,7 +54,7 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
       {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path.
           Atomik › Tools & connections has its own controls, and the plan behind its old Skills page has nothing to run.
           A suite or page the owner runs on the Higgsfield account is the owner's stage to run: a member's page is the owner-run card. */}
-      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (shell.suite.id === "atomik" && shell.page.id === "skills") || (!owner && (isOwnerRunSuite(shell.suite.id) || isOwnerRunPage(shell.suite.id, shell.page.id))) ? null : (<>
+      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (shell.suite.id === "atomik" && (shell.page.id === "skills" || shell.page.id === "memory")) || (!owner && (isOwnerRunSuite(shell.suite.id) || isOwnerRunPage(shell.suite.id, shell.page.id))) ? null : (<>
       {!availability.enabled && availability.reason ? <span className="gx-reason" id="gx-action-reason" data-testid="primary-reason">{availability.reason}</span> : null}
       <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run}>
         {label}
