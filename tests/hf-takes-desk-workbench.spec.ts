@@ -311,9 +311,13 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
   const bodies: Record<string, unknown>[] = [];
-  await page.route("**/api/audio/transcribe", (route) => {
+  /* The price read is held until the unpriced action has been seen: nothing can be pressed before its price is on it. */
+  let releaseQuote: () => void = () => undefined;
+  const quoteHeld = new Promise<void>((resolve) => { releaseQuote = resolve; });
+  await page.route("**/api/audio/transcribe", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     bodies.push(body);
+    if (body.quoteOnly) await quoteHeld;
     return route.fulfill({ json: body.quoteOnly ? { estimatedCredits: 3 } : { text: "The storm is coming.", language: "en", seconds: 4, words: [{ text: "The", start: 0, end: 0.3, speaker: 0 }, { text: "storm", start: 0.3, end: 0.8, speaker: 0 }], srt: "1\n", credits: 3 } });
   });
   await kindChip(page, "Audio").click();
@@ -324,9 +328,11 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
   await expect(page.getByTestId("edit-to-timeline")).toHaveCount(0);
   await expect(page.getByTestId("edit-image")).toHaveCount(0);
   const panel = page.getByTestId("transcribe");
-  await expect(panel.getByTestId("transcribe-run")).toHaveCount(0);
-  expect(bodies).toEqual([]);
-  await panel.getByTestId("transcribe-price").click();
+  /* Opening the sound reads its price on its own — a quote only — and the priced action waits for it. */
+  await expect.poll(() => bodies.length).toBe(1);
+  await expect(panel.getByTestId("transcribe-run")).toHaveText("Pricing transcript…");
+  await expect(panel.getByTestId("transcribe-run")).toBeDisabled();
+  releaseQuote();
   await expect(panel.getByTestId("transcribe-run")).toHaveText("Transcribe · 3 credits");
   expect(bodies).toEqual([{ sourceGenId: "gen_voice", projectId: "prod-desk", diarize: true, quoteOnly: true }]);
   await panel.getByTestId("transcribe-run").click();
