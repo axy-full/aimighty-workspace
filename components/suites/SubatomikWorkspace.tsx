@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
+import { websiteToolsAnswer } from "@/lib/higgsfield-consumer/website-charge";
 import { useDraft } from "@/lib/useDraft";
 import { usePaidAction } from "@/lib/usePaidAction";
 import { useUploadFile } from "@/lib/useUploadFile";
@@ -171,6 +172,9 @@ export default function SubatomikWorkspace({
   const projectId = query.get("project") || captured.projectId;
   // Shorts runs only on the connected account; the other pages are Genjutsu variants.
   const shorts = query.get("page") === "shorts";
+  /* A managed workspace may run Shorts on the platform's website tools (any member, priced in its own
+     credits); its Shorts route says whether it does, below. */
+  const managed = session.workspace?.platformKeys === true;
   const variant: GenjutsuVariant =
     requestedVariant ??
     (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");
@@ -215,6 +219,15 @@ export default function SubatomikWorkspace({
     projectId && drafts.data?.project?.id === projectId
       ? drafts.data.project
       : null;
+  /* The route's own answer: on the website tools any member runs Shorts here, and the owner's own
+     connection is not what decides. Without that answer, the owner's connection decides, as before. */
+  const website = useApi<{ websiteTools?: unknown }>(
+    shorts && managed && project && session.requestScope ? `/api/higgsfield/consumer/shorts?${new URLSearchParams({ draftId: project.id })}` : null,
+    0,
+    session.requestScope,
+  );
+  const onWebsiteTools = websiteToolsAnswer(website.data?.websiteTools) !== null;
+  const websitePending = shorts && managed && !!project && !website.data && !website.error;
   return (
     <ToastHost>
       <div className={`suite-workspace ${styles.workspace}`}>
@@ -230,7 +243,7 @@ export default function SubatomikWorkspace({
               new.
             </p>
           </div>
-          <span className="suite-badge">{shorts || account === "higgsfield" ? "Connected account" : "Transform"}</span>
+          <span className="suite-badge">{shorts && onWebsiteTools ? "Website tools" : shorts || account === "higgsfield" ? "Connected account" : "Transform"}</span>
         </header>}
         {!session.signedIn ? (
           <section className="suite-panel">
@@ -280,7 +293,16 @@ export default function SubatomikWorkspace({
         ) : (
           <>
             {shorts ? (
-              account === null ? (
+              websitePending ? (
+                <p role="status">Opening Shorts…</p>
+              ) : onWebsiteTools ? (
+                <ConsumerShorts
+                  key={`${session.requestScope}:${project.id}:shorts`}
+                  project={project}
+                  scope={session.requestScope}
+                  refreshProject={drafts.refresh}
+                />
+              ) : account === null ? (
                 <p role="status">Checking the connected account…</p>
               ) : account === "higgsfield" ? (
                 <ConsumerShorts

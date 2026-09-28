@@ -50,6 +50,9 @@ export function workspaceJobView<V extends Narrowable>(job: Pick<ConsumerJob, "f
     creditUnit: "particl_credits",
     providerJobId: null,
     providerReceipt: null,
+    /* Whether a reply from the account was saved for a job left unconfirmed, so
+       a status check can still recover it on the server (its contents stay there). */
+    receiptSaved: view.providerReceipt != null,
     /* Said before approval: the approved price is charged whether the job
        succeeds or fails on the account (owner decision, 27 September). */
     chargeTerms: { credits: job.particlCredits, onFailure: "charged" },

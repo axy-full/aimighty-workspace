@@ -23,7 +23,8 @@ import { signInHrefFor } from "./signIn";
  * than an error.
  */
 
-export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean };
+/** `platformKeys`: a managed workspace — it pays in credits, and runs website tools on the platform's account. */
+export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean; platformKeys?: boolean };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
 /* No `margins`. It used to be here, beside `creditUsd`, where any customer
    could read it — §2 says margin is never shown, and shipping it counts. What

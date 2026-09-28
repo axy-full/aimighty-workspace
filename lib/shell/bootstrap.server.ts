@@ -33,7 +33,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     requestScope: scope,
     name: ctx.user.name ?? null,
     email: ctx.user.email ?? null,
-    workspace: { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest) },
+    workspace: { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest), platformKeys: Boolean(ctx.workspace.usesPlatformKeys) },
     role: ctx.role ?? null,
     owner: ctx.role === "owner",
     superAdmin: await isPlatformOwner(ctx.user),

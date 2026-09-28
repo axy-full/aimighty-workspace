@@ -244,7 +244,7 @@ test("a call that never left is released to zero; a lost reply keeps its reserva
       const price = await priceOf(f.state.websiteCredits);
       f.state.mode = "not-sent";
       const unsent = await f.service.quoteConsumerMarketingVideo("member", "draft", input, randomUUID());
-      expect(await f.service.submitConsumerMarketingVideo(scopeOf(unsent.id), { credits: price })).toMatchObject({ status: "failed", failureCode: "submission_rejected" });
+      expect(await f.service.submitConsumerMarketingVideo(scopeOf(unsent.id), { credits: price })).toMatchObject({ status: "failed", failureCode: "submission_rejected", receiptSaved: false });
       const unsentJob = (await jobs.getConsumerJob(scopeOf(unsent.id)))!;
       expect(await meterRow(unsentJob.meterId!)).toMatchObject({ status: "failed", billed_credits: 0 });
       expect(await registry.websiteJobPin(ws.id, unsent.id)).toMatchObject({ state: "released" });
@@ -256,7 +256,8 @@ test("a call that never left is released to zero; a lost reply keeps its reserva
 
       f.state.mode = "uncertain";
       const lost = await f.service.quoteConsumerMarketingVideo("member", "draft", input, randomUUID());
-      expect(await f.service.submitConsumerMarketingVideo(scopeOf(lost.id), { credits: price })).toMatchObject({ status: "uncertain", providerReceipt: null });
+      // The reply the account sent is kept on the server; the client learns only that it was saved.
+      expect(await f.service.submitConsumerMarketingVideo(scopeOf(lost.id), { credits: price })).toMatchObject({ status: "uncertain", providerReceipt: null, receiptSaved: true });
       const lostJob = (await jobs.getConsumerJob(scopeOf(lost.id)))!;
       expect(await meterRow(lostJob.meterId!)).toMatchObject({ status: "running", billed_credits: price });
       expect(await registry.websiteJobPin(ws.id, lost.id)).toMatchObject({ state: "uncertain" });

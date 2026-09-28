@@ -178,7 +178,8 @@ test("a client's job view and approval never name the account's wallet, credits,
   });
   const text = JSON.stringify(shown);
   for (const secret of [wallet, provider, "Owner's wallet", "higgsfield_credits", '"raw"', '"cost"']) expect(text).not.toContain(secret);
-  expect(shown).toMatchObject({ quoteCredits: 25, creditUnit: "particl_credits", workspaceId: null, providerReceipt: null,
+  // A saved reply is said to exist (a status check can still recover the job on the server), never shown.
+  expect(shown).toMatchObject({ quoteCredits: 25, creditUnit: "particl_credits", workspaceId: null, providerReceipt: null, receiptSaved: true,
     result: { original: { asset: { url: "/api/media/gen_hfc_x" } }, providerResult: { enhancedPrompt: "a brighter bottle" } }, settlement: { collected: 2, credits: 25, creditUnit: "particl_credits" } });
   // An own-account job is shown exactly as before.
   const mine = { workspaceId: wallet, quoteCredits: 12, creditUnit: "higgsfield_credits", providerJobId: provider };

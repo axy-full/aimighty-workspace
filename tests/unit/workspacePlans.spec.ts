@@ -20,7 +20,7 @@ type Call = { method: string; path: string; body: Record<string, unknown> | null
  * A fetch that answers the existing routes' documented shapes. `price` is
  * read at call time so a test can move it between quote and approve.
  */
-function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null; approved?: number } = {}) {
+function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null; approved?: number; platform?: boolean } = {}) {
   const calls: Call[] = [];
   const price = options.price ?? (() => 18);
   let job = 0;
@@ -53,6 +53,10 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
             { id: "open-1", status: "uncertain", quoteCredits: 10, quoteExpiresAt: null, workspaceId: "w" },
           ],
         });
+      /* A managed workspace's job on the platform's website tools: its own credits, no wallet, charged even if it fails. */
+      if (body?.action === "quote" && options.platform)
+        return json({ job: { id: `q-${(job += 1)}`, status: "quoted", quoteCredits: price(), creditUnit: "particl_credits", quoteExpiresAt: Date.now() + 5 * 60_000,
+          workspaceId: null, workspaceName: null, providerJobId: null, chargeTerms: { credits: price(), onFailure: "charged" } } });
       if (body?.action === "quote")
         return json({ job: { id: `q-${(job += 1)}`, status: "quoted", quoteCredits: price(), quoteExpiresAt: Date.now() + 5 * 60_000, workspaceId: "wallet-1", workspaceName: "Main wallet" } });
       if (body?.action === "submit") return json({ job: { id: body.id, status: "accepted", quoteCredits: body.credits, workspaceId: body.workspaceId } });
@@ -591,6 +595,21 @@ test("shorts: without Shorts data it refuses with a reason; with it, it quotes o
   expect(await engine.approve()).toEqual({ ok: true });
   await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
   expect(dispatches().map((call) => [call.path, call.body])).toEqual([["/api/higgsfield/consumer/shorts", { action: "submit", draftId: "draft-1", id: quote.body ? "q-1" : "", workspaceId: "wallet-1", credits: 18 }]]);
+});
+
+test("shorts on a managed workspace: priced in its own credits, the failure charge said before approval, approved by the credits alone", async () => {
+  const { fetcher, calls, dispatches } = backend({ platform: true });
+  const engine = engineFor(context(fetcher));
+  expect(engine.start("shorts")).toEqual({ ok: true, action: "started" });
+  await until(() => engine.getState().run?.status === "waiting", "waiting");
+  const gate = engine.getState().run!.quote!;
+  expect(gate).toMatchObject({ unit: "cr", credits: 18 });
+  expect(gate.line).toBe("9:16, one price for the whole set of clips. The source is copied to Particl’s website tools at quote time. 18 credits are charged even if the session fails.");
+  expect(gate.line).not.toMatch(/wallet|connected/);
+  expect(calls.find((call) => call.body?.action === "quote")?.path).toBe("/api/higgsfield/consumer/shorts");
+  expect(await engine.approve()).toEqual({ ok: true });
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
+  expect(dispatches().map((call) => call.body)).toEqual([{ action: "submit", draftId: "draft-1", id: "q-1", credits: 18 }]);
 });
 
 /* ------------------------------------------------------------ Deliver, Agent */

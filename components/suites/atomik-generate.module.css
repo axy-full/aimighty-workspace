@@ -34,6 +34,8 @@
 .quote strong { font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
 .quote p, .quote small { margin: 0; font-size: 12px; line-height: 1.65; color: var(--graphite-body); overflow-wrap: anywhere; }
 .quote button { justify-self: start; }
+/* Said before approval on the platform's website tools: the approved price stands if the run fails. */
+.quote .charge { color: #f0c36b; font-size: 13px; font-weight: 500; line-height: 1.6; }
 .jobs { display: grid; gap: 14px; margin-top: 22px; }
 .job { padding: 16px; border: 1px solid var(--graphite-edge); border-radius: 12px; display: grid; gap: 10px; min-width: 0; }
 .job > div:first-child { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; }
@@ -63,3 +65,6 @@
   .model dl { grid-template-columns: minmax(0, 1fr); }
   .reference select { max-width: 40%; }
 }
+
+/* A phone's thumb target: the quote, approve and saved-job buttons are at least 44px tall. */
+@media (max-width: 767px), (pointer: coarse) { .quote button, .actions > button, .job > button { min-height: 44px; } }

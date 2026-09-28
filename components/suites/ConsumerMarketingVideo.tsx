@@ -7,24 +7,28 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { CONSUMER_VIDEO_MODES, CONSUMER_VIDEO_RATIOS, CONSUMER_VIDEO_RESOLUTIONS, consumerVideoInputSchema, type ConsumerVideoInput } from "@/lib/higgsfield-consumer/video-contract";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
+import { WEBSITE_PREFLIGHT_CODES, chargedEvenIfFails, chargedFailure, creditsText, jobPriceText, recoverableJob, websiteCharge, websiteToolsAnswer, type WebsiteCharge } from "@/lib/higgsfield-consumer/website-charge";
 import styles from "./consumer-marketing-video.module.css";
 
 type Job = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
-  input: ConsumerVideoInput; workspaceId: string; workspaceName: string; quoteCredits: number;
-  creditUnit: "higgsfield_credits"; quoteExpiresAt: number; providerJobId: string | null;
-  result?: unknown; providerReceipt?: unknown; createdAt: number;
+  input: ConsumerVideoInput; workspaceId: string | null; workspaceName: string | null; quoteCredits: number;
+  creditUnit: "higgsfield_credits" | "particl_credits"; quoteExpiresAt: number; providerJobId: string | null;
+  /** On the platform's website tools: the workspace's own credits, charged even if the run fails. */
+  charge: WebsiteCharge | null; failureCode?: string | null;
+  result?: unknown; providerReceipt?: unknown; receiptSaved?: boolean; createdAt: number;
   quoteExpired?: boolean;
   originalAvailable?: boolean; originalAvailability?: "available" | "deleted" | "unavailable" | "not_collected";
 };
-type Capability = { owner: boolean; connected: boolean; suspended: boolean };
+/** `allowed`: this person may run it (the owner; any member on a managed workspace). `connected`: it can take work now. */
+type Capability = { allowed: boolean; connected: boolean; suspended: boolean; managed: boolean };
 const endpoint = "/api/higgsfield/consumer/video";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 class VideoRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
-const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy"]);
+const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy", ...WEBSITE_PREFLIGHT_CODES]);
 const sameInput = (a: ConsumerVideoInput, b: ConsumerVideoInput) => JSON.stringify(a) === JSON.stringify(b);
 const recoverable = (job: Job) => ["dispatching", "accepted", "uncertain"].includes(job.status);
 function retainedJobs(jobs: Job[], attempted: string[] = []) {
@@ -44,24 +48,31 @@ const modeLabels: Record<NonNullable<ConsumerVideoInput["mode"]>, string> = {
 };
 const modeLabel = (mode: ConsumerVideoInput["mode"]) => mode === undefined ? "UGC (provider default)" : modeLabels[mode];
 function parseJob(value: unknown, draftId: string): Job {
+  // A job on the platform's website tools names no wallet: its price is the workspace's own credits.
+  const charge = websiteCharge(value);
   if (!record(value) || typeof value.id !== "string" || !uuid.test(value.id) || value.draftId !== draftId ||
     !["quoted", "dispatching", "accepted", "uncertain", "failed", "completed"].includes(String(value.status)) ||
-    typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" || value.workspaceName.length > 200 ||
-    value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !Number.isFinite(value.quoteCredits) || value.quoteCredits <= 0 || value.quoteCredits > 100000 ||
+    !charge && (typeof value.workspaceId !== "string" || !uuid.test(value.workspaceId) || typeof value.workspaceName !== "string" || value.workspaceName.length > 200 ||
+      value.creditUnit !== "higgsfield_credits" || typeof value.quoteCredits !== "number" || !Number.isFinite(value.quoteCredits) || value.quoteCredits <= 0 || value.quoteCredits > 100000) ||
     !(value.providerJobId === null || typeof value.providerJobId === "string" && uuid.test(value.providerJobId)) ||
     typeof value.quoteExpiresAt !== "number" || !Number.isFinite(value.quoteExpiresAt) || typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt))
     throw new Error("The saved marketing job could not be verified. Refresh before continuing.");
-  return { ...value, input: consumerVideoInputSchema.parse(value.input) } as Job;
+  return { ...value, charge, input: consumerVideoInputSchema.parse(value.input) } as Job;
 }
+/** What a failed job says: a platform run never sent was not charged; one that failed after it was sent is charged as quoted. */
+const failedNotice = (job: Job, fallback: string) => !job.charge ? fallback
+  : job.failureCode === "submission_rejected" ? "The video was never sent. Nothing was charged." : chargedFailure(job.charge.credits, "video");
 
 /** Only the service's collected local original can become a project asset. */
 function originalAsset(job: Job): Asset | null {
   if (job.status !== "completed" || job.originalAvailable !== true || job.originalAvailability !== "available" || !record(job.result) || !record(job.result.original)) return null;
   const original = job.result.original, asset = original.asset;
+  // A platform job's original carries no provider id or account price (lib/higgsfield-consumer/client-view.ts).
+  const own = !job.charge;
   if (!record(asset) || typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) ||
-    !job.providerJobId || typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) ||
+    own && !job.providerJobId || typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) ||
     ![original.bytes, original.width, original.height, original.seconds].every(value => typeof value === "number" && Number.isFinite(value) && value > 0) ||
-    original.providerJobId !== job.providerJobId || original.creditUnit !== "higgsfield_credits" || original.credits !== job.quoteCredits ||
+    own && (original.providerJobId !== job.providerJobId || original.creditUnit !== "higgsfield_credits" || original.credits !== job.quoteCredits) ||
     asset.generationId !== original.generationId || asset.kind !== "video" || asset.mime !== "video/mp4" || asset.url !== `/api/media/${original.generationId}`) return null;
   return { id: original.generationId, generationId: original.generationId, url: asset.url,
     name: `Marketing video · ${job.input.prompt.slice(0, 100)}`, kind: "video", mime: "video/mp4", category: "Campaign video",
@@ -112,7 +123,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
   const matches = !!selected && sameInput(selected.input, input);
   const missingAttempts = attempts.filter(id => !jobs.some(job => job.id === id));
   const unresolved = missingAttempts.length > 0 || jobs.some(job => awaitingReconciliation(job) || (job.status === "quoted" && attempts.includes(job.id)));
-  const canQuote = enabled && capability?.owner && capability.connected && !capability.suspended && !busy && valid && !unresolved;
+  const canQuote = enabled && capability?.allowed && capability.connected && !capability.suspended && !busy && valid && !unresolved;
   const canSubmit = canQuote && selected?.status === "quoted" && matches && walletReviewed && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const update = (next: ConsumerVideoInput) => {
     setEdit(next); setWalletReviewed(false); setNotice("");
@@ -143,13 +154,20 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
       if (!live.current || lifecycle.current !== token) return;
       if (typeof me.id !== "string" || !record(me.workspace) || typeof me.workspace.id !== "string" || workbenchScopeFor(me.workspace.id, me.id) !== scope)
         throw new Error("Your account or workspace changed. Reload this project before continuing.");
-      if (me.owner !== true) { setCapability({ owner: false, connected: false, suspended: false }); setJobs([]); return; }
-      const [connection, result] = await Promise.all([json("/api/higgsfield/consumer/connection"), json(`${endpoint}?${new URLSearchParams({ draftId })}`)]);
+      // A managed workspace runs this on the platform's website tools, and any member may: the route says so
+      // itself (its `websiteTools` answer), and no member's own connection is read. Elsewhere, the owner only.
+      if (me.owner !== true && me.workspace.platformKeys !== true) { setCapability({ allowed: false, connected: false, suspended: false, managed: false }); setJobs([]); return; }
+      let result: Record<string, unknown>;
+      try { result = await json(`${endpoint}?${new URLSearchParams({ draftId })}`); }
+      catch (reason) { if (reason instanceof VideoRequestError && reason.status === 403) { setCapability({ allowed: false, connected: false, suspended: false, managed: false }); setJobs([]); return; } throw reason; }
+      const website = websiteToolsAnswer(result.websiteTools);
+      const connection = website ? null : await json("/api/higgsfield/consumer/connection");
       if (!live.current || lifecycle.current !== token) return;
       if (!Array.isArray(result.jobs) || result.jobs.length > 25) throw new Error("Saved marketing jobs could not be loaded.");
       const saved = result.jobs.map(job => parseJob(job, draftId));
       confirmAttempts(saved);
-      setJobs(retainedJobs(saved, attemptIds.current)); setCapability({ owner: true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace.suspended === true });
+      const available = website ? website.available : connection?.connected === true && connection.requiresReconnect !== true;
+      setJobs(retainedJobs(saved, attemptIds.current)); setCapability({ allowed: true, connected: available, suspended: me.workspace.suspended === true, managed: !!website });
       setClock(Date.now());
     } catch (reason) { if (live.current && lifecycle.current === token) { setCapability(null); setError(reason instanceof Error ? reason.message : "Saved marketing jobs could not be loaded."); } }
     finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
@@ -168,11 +186,11 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     return () => clearInterval(timer);
   }, [jobs.length]);
   async function act(action: "quote" | "submit" | "status", job: Job | null | undefined = selected, missingId?: string) {
-    if (!enabled || pending.current || !capability?.owner) return;
+    if (!enabled || pending.current || !capability?.allowed) return;
     if (action === "quote" && !canQuote) return;
     if (action === "submit" && (!canSubmit || !job || job.id !== selectedId)) return;
     const recoveringEarlier = action === "status" && job === null && !!missingId && missingAttempts.includes(missingId);
-    if (action === "status" && !recoveringEarlier && (!job || !(job.status === "accepted" || job.status === "uncertain" && job.providerReceipt) || Date.now() < (nextPoll[job.id] ?? 0))) return;
+    if (action === "status" && !recoveringEarlier && (!job || !(job.status === "accepted" || recoverableJob(job)) || Date.now() < (nextPoll[job.id] ?? 0))) return;
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
@@ -185,16 +203,16 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
         attemptIds.current = next; setAttempts(next); setWalletReviewed(false);
       }
       const body = action === "quote" ? { action, draftId, input: consumerVideoInputSchema.parse(input), idempotencyKey: crypto.randomUUID() }
-        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
+        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? job!.charge ? { credits: job!.charge.credits } : { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
       const result = await json(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") { update(saved.input); setNotice("Review the complete prompt, settings, wallet and price below."); }
-      if (action === "submit") setNotice("Request recorded. Use Check video result to recover its progress.");
+      if (action === "quote") { update(saved.input); setNotice(saved.charge ? "Review the complete prompt, settings and price below." : "Review the complete prompt, settings, wallet and price below."); }
+      if (action === "submit") setNotice(saved.status === "failed" ? failedNotice(saved, "The connected account refused this video before it was sent.") : "Request recorded. Use Check video result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll(before => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? originalAsset(saved) ? "The original video is ready to add to this project." : saved.originalAvailability === "deleted" ? "The original video was deleted. Its job receipt remains available." : "The video completed, but its original is unavailable. Refresh saved jobs before adding it." : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : "The connected account did not deliver this video as approved. Its receipt is kept.") : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? originalAsset(saved) ? "The original video is ready to add to this project." : saved.originalAvailability === "deleted" ? "The original video was deleted. Its job receipt remains available." : "The video completed, but its original is unavailable. Refresh saved jobs before adding it." : saved.status === "failed" ? (record(result.collection) && typeof result.collection.message === "string" ? result.collection.message.slice(0, 200) : failedNotice(saved, "The connected account did not deliver this video as approved. Its receipt is kept.")) : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -219,12 +237,14 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
   }
   return <section className={`suite-panel ${styles.panel}`} aria-label="Marketing Video">
-    <div className="suite-section-heading"><div><h2>Marketing Video</h2><p>Create a campaign video from an editable prompt using the workspace owner’s connected account.</p></div><span className="suite-badge">Connected · Video</span></div>
-    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.owner === false ? <p className="suite-footnote">The workspace owner can use this connected account. Your Particl generation tools remain available above.</p> : <>
+    <div className="suite-section-heading"><div><h2>Marketing Video</h2><p>{capability?.managed ? "Create a campaign video from an editable prompt with Particl’s website tools, priced in this workspace’s credits." : "Create a campaign video from an editable prompt using the workspace owner’s connected account."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools · Video" : "Connected · Video"}</span></div>
+    {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.allowed === false ? <p className="suite-footnote">The workspace owner can use this connected account. Your Particl generation tools remain available above.</p> : <>
       <p className="suite-footnote">This prompt flow sends the text and settings below. Product photos, cast images and the reference ad above use the separate Particl engine workflow.</p>
-      {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s connected marketing account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12}/></a>.</p>}
+      {capability && !capability.connected && (capability.managed
+        ? <p className="suite-footnote">Website tools are not available for this workspace right now. Saved jobs can still be reviewed.</p>
+        : <p className="suite-footnote">Connect or reconnect the owner’s connected marketing account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12}/></a>.</p>)}
       {capability?.suspended && <p role="status">Rendering is paused for this workspace. Saved jobs can still be reviewed.</p>}
-      <fieldset disabled={!enabled || !capability?.owner || !!busy} className="suite-fields">
+      <fieldset disabled={!enabled || !capability?.allowed || !!busy} className="suite-fields">
         <label>Creative format<select aria-label="Video creative format" value={input.mode ?? ""} onChange={event => update({ ...input, mode: event.target.value as NonNullable<ConsumerVideoInput["mode"]> })}>
           {input.mode === undefined && <option value="">UGC (provider default)</option>}
           {CONSUMER_VIDEO_MODES.map(mode => <option key={mode} value={mode}>{modeLabels[mode]}</option>)}
@@ -239,23 +259,32 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
         <label className={styles.checkbox}><input type="checkbox" checked={input.generateAudio} onChange={event => update({ ...input, generateAudio: event.target.checked })}/>Generate audio</label>
       </fieldset>
       <div className={styles.actions}><button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get video quote"}</button><button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14}/>Refresh saved video jobs</button></div>
-      {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
+      {unresolved && <p role="status" className="suite-footnote">{capability?.managed ? "A submission needs reconciliation. It is never sent again: check it below." : "A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines."}</p>}
       {!!missingAttempts.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another video.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missingAttempts[0])}>Recover earlier submission</button></div>}
-      {selected?.status === "quoted" && <div className={styles.quote} aria-label="Video quote">
+      {selected?.status === "quoted" && (selected.charge ? <div className={styles.quote} aria-label="Video quote">
+        <strong>{creditsText(selected.charge.credits)}</strong>
+        <small>Creative format · {modeLabel(selected.input.mode)}</small>
+        <p>{matches ? `${selected.input.duration} seconds · ${selected.input.resolution} · ${selected.input.aspectRatio} · ${selected.input.generateAudio ? "with audio" : "without audio"}` : "The prompt or settings changed. Request a new quote before generating."}</p>
+        {/* Said before approval (owner decision): the approved price stands whether the video succeeds or fails. */}
+        <p role="note" className={styles.charge}>{chargedEvenIfFails(selected.charge.credits, "video")}</p>
+        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The exact price is checked again before submission.</p>
+        <label className={styles.checkbox}><input type="checkbox" checked={walletReviewed} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={event => setWalletReviewed(event.target.checked)}/>Charge {creditsText(selected.charge.credits)} for this video, even if it fails.</label>
+        <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Generate video · ${creditsText(selected.charge.credits)}`}</button>
+      </div> : <div className={styles.quote} aria-label="Video quote">
         <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
         <small>Creative format · {modeLabel(selected.input.mode)}</small>
         <p>{matches ? `${selected.input.duration} seconds · ${selected.input.resolution} · ${selected.input.aspectRatio} · ${selected.input.generateAudio ? "with audio" : "without audio"}` : "The prompt or settings changed. Request a new quote before generating."}</p>
         <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its connected clients. Particl checks the wallet and exact price again before submission.</p>
         <label className={styles.checkbox}><input type="checkbox" checked={walletReviewed} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={event => setWalletReviewed(event.target.checked)}/>Charge {selected.quoteCredits} connected credits to {selected.workspaceName} for this video.</label>
         <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Generate video · ${selected.quoteCredits} connected credits`}</button>
-      </div>}
+      </div>)}
       {!!jobs.length && <div className={styles.jobs} aria-label="Saved video jobs">{jobs.map(job => {
         const original = originalAsset(job), attached = original && project.assets.some(asset => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
-        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
-          <p>{job.input.prompt}</p><small>{modeLabel(job.input.mode)} · {job.input.duration}s · {job.input.resolution} · {job.input.aspectRatio} · {job.workspaceName}</small>
+        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : setAsideUnconfirmed(job) ? SET_ASIDE_LABEL : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{jobPriceText(job)}</span></div>
+          <p>{job.input.prompt}</p><small>{modeLabel(job.input.mode)} · {job.input.duration}s · {job.input.resolution} · {job.input.aspectRatio}{job.charge ? "" : ` · ${job.workspaceName}`}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { update(job.input); setSelectedId(job.id); setWalletReviewed(false); }}>Review this saved quote</button>}
-          {(job.status === "accepted" || job.status === "uncertain" && !!job.providerReceipt) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved video request" : "Check video result"}</button>}
+          {(job.status === "accepted" || recoverableJob(job)) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved video request" : "Check video result"}</button>}
           {original && <div className={styles.actions}><a className="suite-text-button" href={`${original.url}?download=1`} download>Download original</a>{onAsset && <button type="button" className="suite-button" disabled={!!busy || !!attached} onClick={() => void attach(job, original)}>{attached ? "In project library" : "Add original to project"}</button>}</div>}
           {job.status === "completed" && !original && <p className="suite-footnote">{job.originalAvailability === "deleted" ? "The original video was deleted from the library. The job receipt is retained; downloading and adding it are unavailable." : "The original video is unavailable. Refresh saved jobs before adding this video."}</p>}
         </article>;
