@@ -45,6 +45,9 @@ export type VideoParams = {
   fps60?: boolean;
   /** The source clip's resolution, for tasks that follow it. */
   sourceResolution?: string;
+  /** Saved by admission: whether a clip is sent in, and its measured seconds, as quoted. */
+  hasVideoInput?: boolean;
+  inputSeconds?: number;
 };
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
