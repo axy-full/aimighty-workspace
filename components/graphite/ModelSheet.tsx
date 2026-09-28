@@ -107,6 +107,9 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
           <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
             {groups.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={billing === g.id} onClick={() => { setQuery(""); onBilling(g.id); }}><span>{g.label}</span></button>)}
           </div>
+        ) : groups.length === 1 ? (
+          /* One catalogue (a member's Gen: Studio engines only) is named, not offered as a switch. */
+          <span className="gx-hint gx-sheet-catalogue" data-testid="gen-sheet-catalogue">{groups[0].label}</span>
         ) : <span className="gx-spacer" />}
         <button type="button" className="gx-hbtn" onClick={onClose}>Close</button>
         {listed ? (

@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
 import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
+import { isOwnerRunSuite, ownerRunBy } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
+import { useJobsTray } from "@/lib/shell/use-jobs-tray";
 import { assetsRowLabel, stageCards, suiteTiles } from "@/lib/shell/studio-home";
 import { INITIAL_VIRAL } from "@/lib/shell/viral";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -17,7 +20,8 @@ import { Glyph, SUITE_LOOK } from "../icons";
  * The phone's Home (GLASS_SPEC §3 › "Where to?"): the project's name as the
  * eyebrow, the display title, six suite tiles with a live fact each, and one
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
- * the takes behind Assets. Every figure is the project's own.
+ * the takes behind Assets. Every figure is the project's own; for a member,
+ * a suite the owner runs on the Higgsfield account says who runs it instead.
  */
 export function SuiteHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
@@ -25,7 +29,9 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const project = useFreshProject(loaded);
   const { state, dispatch } = useWorkspace();
   const session = useSession();
+  const jobs = useJobsTray();
   const scoped = useScopedFetch();
+  const capability = useConnectedCapability(undefined, { read: false });
   /* The roster is one free read per project; the count is keyed to the project it answered for. */
   const [roster, setRoster] = useState<{ projectId: string; seats: number } | null>(null);
   const projectId = project?.id ?? null;
@@ -41,7 +47,8 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const seats = roster && roster.projectId === projectId ? roster.seats : null;
   const awaiting = state.run && state.run.status === "waiting" && !state.run.approved ? 1 : 0;
   const tiles = suiteTiles(stageCards(project, items), {
-    rendering: state.gen ? 1 : 0,
+    /* Every take in flight, from any page (the jobs tray's count); the composer's own before the tray's first read, or once it stopped reading. */
+    rendering: jobs && jobs.status === "ready" && !jobs.stopped ? jobs.summary?.rendering ?? 0 : state.gen ? 1 : 0,
     videoEngine: displayModelName(session.models?.video ?? DEFAULT_MODEL_ID),
     adMode: AD_MODES.find(([id]) => id === INITIAL_ADS.mode)?.[1] ?? "UGC",
     adSeconds: INITIAL_ADS.duration,
@@ -62,15 +69,20 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
       <span className="gx-home-eyebrow" data-testid="home-project">{project?.name ?? "No project"}</span>
       <h1 className="gx-h1 gx-where-title" data-testid="page-title">Where to?</h1>
       <div className="gx-where-grid" role="list" aria-label="Suites">
-        {tiles.map((t) => (
-          <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`}>
-            <span className="gx-where-glow" aria-hidden="true" />
-            <span className="gx-where-ic" aria-hidden="true"><Glyph name={SUITE_LOOK[t.id]?.glyph ?? "spark"} size={22} /></span>
-            <span className="gx-where-name">{t.label}</span>
-            <span className="gx-where-line">{t.line}</span>
-            <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>{t.fact}</span>
-          </button>
-        ))}
+        {tiles.map((t) => {
+          const ownerRun = !capability.owner && isOwnerRunSuite(t.id);
+          return (
+            <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`} data-owner-run={ownerRun || undefined}>
+              <span className="gx-where-glow" aria-hidden="true" />
+              <span className="gx-where-ic" aria-hidden="true"><Glyph name={SUITE_LOOK[t.id]?.glyph ?? "spark"} size={22} /></span>
+              <span className="gx-where-name">{t.label}</span>
+              <span className="gx-where-line">{t.line}</span>
+              <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>
+                {ownerRun ? <><Glyph name="key" size={12} className="gx-owner-badge-key" />Run by {ownerRunBy(capability.ownerName)}</> : t.fact}
+              </span>
+            </button>
+          );
+        })}
       </div>
       <button type="button" className="gx-where-assets" onClick={() => shell.openLibrary("assets")} data-testid="home-assets">
         <Glyph name="stack" size={18} className="gx-glyph" />
