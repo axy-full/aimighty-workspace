@@ -8,6 +8,9 @@ import {
   type AtomikVideoFrame,
 } from "./atomik-reference-types";
 
+const UNDECODABLE =
+  "This browser cannot decode the selected video. Upload a compatible MP4 review copy or select individual stills.";
+
 function mediaEvent(
   video: HTMLVideoElement,
   event: string,
@@ -29,9 +32,7 @@ function mediaEvent(
       cleanup();
       reject(
         new Error(
-          signal.aborted
-            ? "Video preparation was cancelled."
-            : "This browser cannot decode the selected video. Upload a compatible MP4 review copy or select individual stills.",
+          signal.aborted ? "Video preparation was cancelled." : UNDECODABLE,
         ),
       );
     };
@@ -42,6 +43,38 @@ function mediaEvent(
     if (signal.aborted) failed();
     else start();
   });
+}
+
+/* Chromium can fire `seeked` before the decoded picture has reached the video
+   element (it is handed over on another thread), and a draw then paints
+   nothing: the still would go out black, or as the picture drawn before it. So
+   the canvas is cleared before each draw, and a draw that left it empty is made
+   again a moment later. A picture that never comes is refused, never sent. */
+const STILL_DRAWS = 20;
+const STILL_RETRY_MS = 50;
+
+function painted(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  const { data } = ctx.getImageData(0, 0, width, height);
+  for (let alpha = 3; alpha < data.length; alpha += 4)
+    if (data[alpha] !== 0) return true;
+  return false;
+}
+
+async function drawStill(
+  video: HTMLVideoElement,
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  signal: AbortSignal,
+) {
+  for (let draws = 1; ; draws++) {
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(video, 0, 0, width, height);
+    if (painted(ctx, width, height)) return;
+    if (draws === STILL_DRAWS) throw new Error(UNDECODABLE);
+    await new Promise((resolve) => setTimeout(resolve, STILL_RETRY_MS));
+    if (signal.aborted) throw new Error("Video preparation was cancelled.");
+  }
 }
 
 /** Browser decoding avoids a second paid call and keeps full video bytes out of
@@ -100,7 +133,7 @@ export async function sampleAtomikVideo(
         },
         signal,
       );
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      await drawStill(video, ctx, canvas.width, canvas.height, signal);
       const blob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
           (value) =>

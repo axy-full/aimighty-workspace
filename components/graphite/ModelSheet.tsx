@@ -89,7 +89,7 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
         </span>
         <span className="gx-sheet-price" data-testid="gen-sheet-price" data-kind={price.kind} title={price.title}>
           {price.kind === "loading" ? <i className="gx-sheet-price-skel" aria-hidden="true" /> : null}
-          {price.credits != null ? <b>{price.credits.toLocaleString("en-US")} {price.unit}</b> : null}
+          {price.credits != null ? <b>{price.approximate ? "about " : ""}{price.credits.toLocaleString("en-US")} {price.unit}</b> : null}
           {price.detail ? <span>{price.detail}</span> : null}
           {price.perTake ? <span>per take</span> : null}
         </span>

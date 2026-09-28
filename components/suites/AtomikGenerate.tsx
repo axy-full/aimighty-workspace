@@ -324,7 +324,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
       const result = await post(body);
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice("Review the model, settings, wallet and exact price below before generating.");
+      if (action === "quote") setNotice("Review the model, settings, wallet and estimate below before generating.");
       if (action === "submit") setNotice("Request recorded. Use Check result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
@@ -485,7 +485,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
           {voiceTool && capability && <AtomikVoiceTools ref={voiceRef} project={project} scope={scope} tool={voiceTool.name} capability={capability} capabilities={voiceCapabilities} jobs={voiceJobs} revision={voiceRevision} refreshProject={refreshProject} />}
           {!voiceTool && validation && model && <p className={styles.hint} role="status">{validation}</p>}
           {!voiceTool && <div className={styles.actions}>
-            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
+            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Getting the quote…" : "Get connected-credit quote"}</button>
             <button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh(true)}><RefreshCw size={14} />Refresh saved jobs</button>
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void refresh(true, true)}>Reload catalogue</button>
           </div>}
@@ -496,7 +496,7 @@ export function AtomikGenerate({ project, scope, refreshProject, onInput }: {
             <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
             <small>{jobLabel(selected)} · {selected.model.name}{settingsSummary(selected) ? ` · ${settingsSummary(selected)}` : ""}{selected.input.medias.length ? ` · ${selected.input.medias.length} reference file${selected.input.medias.length === 1 ? "" : "s"}` : ""}</small>
             <p>{matches ? selected.input.prompt || (selected.tool ? selected.sources.map((source) => source.name).join(" + ") || "No prompt." : "No prompt.") : "The prompt, settings or references changed. Request a new quote before generating."}</p>
-            <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its clients; the wallet and exact price are checked again before submission. Output belongs to the connected account and is billed in its credits.</p>
+            <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its clients; the wallet and price are checked again before submission. Output belongs to the connected account and is billed in its credits.</p>
             <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {selected.quoteCredits} connected credits to {selected.workspaceName} for this generation.</label>
             <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Generate · ${selected.quoteCredits} connected credits`}</button>
           </div>}
