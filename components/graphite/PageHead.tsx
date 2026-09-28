@@ -22,7 +22,8 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
   const { state, dispatch, setLibFilter } = useWorkspace();
   const atomik = useAtomik();
   const { owner } = useConnectedCapability(undefined, { read: false });
-  const views = pageViews(state.page);
+  /* Studio › Takes filters on its own desk (status, kind, search); the workspace's view segment would do nothing there. */
+  const views = shell.suite.id === "studio" && shell.page.id === "takes" ? [] : pageViews(state.page);
   const action = primaryAction(state.page);
   const availability = primaryAvailability(state, onGenerate, generate);
   const label = action.kind === "generate" && availability.enabled && generate?.quote ? `${action.label} · ${generate.quote}` : action.label;
