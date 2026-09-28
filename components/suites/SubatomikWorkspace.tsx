@@ -677,7 +677,7 @@ function Studio({
     );
   }
   async function review() {
-    if (blocked || lock.current || !input.source) return;
+    if (blocked || lock.current || !input.source || input.references.length < GENJUTSU_LIMITS.minImages) return;
     lock.current = true;
     const token = epoch.current;
     setBusy(true);
@@ -1153,7 +1153,7 @@ function Studio({
                   {saved && Array.isArray(saved.references)
                     ? saved.references.length
                     : input.references.length}{" "}
-                  / 8 · optional
+                  / 8 · at least 1
                 </span>
               </div>
               {!saved && (
@@ -1357,7 +1357,7 @@ function Studio({
             <button
               type="button"
               className="suite-primary"
-              disabled={blocked || !input.source}
+              disabled={blocked || !input.source || input.references.length < GENJUTSU_LIMITS.minImages}
               onClick={() => void review()}
             >
               {busy ? "Checking source and price…" : "Review transform cost"}
