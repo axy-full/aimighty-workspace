@@ -103,7 +103,8 @@ test("an older plan made on the connected account is shown read-only: no Continu
   await expect(surface.getByRole("button", { name: "Change engine", exact: true })).toHaveCount(0);
   /* Expanded, each step is listed with what it was, read-only. */
   await surface.getByRole("button", { name: /^Expand/ }).click();
-  const rows = page.locator("[data-read-only]");
+  /* The desktop rail and the phone sheet are both mounted, one hidden by the layout: count the one on screen. */
+  const rows = page.locator("[data-read-only]").filter({ visible: true });
   await expect(rows).toHaveCount(2);
   for (const row of await rows.all()) {
     await expect(row).toContainText("Read-only");
