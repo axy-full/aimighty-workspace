@@ -1,4 +1,4 @@
-import { EMPTY_MOLECULR, marketingReferenceIds, moleculrNode, moleculrPrompt, moleculrReferences, moleculrVideoPrompt, moleculrVideoReferences, type MoleculrGenerationOptions } from './moleculr';
+import { EMPTY_MOLECULR, marketingQualityFor, marketingReferenceIds, moleculrNode, moleculrPrompt, moleculrReferences, moleculrVideoPrompt, moleculrVideoReferences, type MoleculrGenerationOptions } from './moleculr';
 import { referenceAdBinding } from './reference-ad';
 import { generationReferenceIds } from './node-graph';
 import { creativeTemplate } from './moleculr-creative';
@@ -48,7 +48,7 @@ export function prepareMoleculrVariants(project: Project, kind: 'image' | 'video
   const template = creativeTemplate(brief);
   const referenceVideo = kind === 'video' ? referenceAdBinding(project, brief.referenceAd) : undefined;
   const generation: Omit<MoleculrGenerationOptions, 'referenceAssetIds'> = { ...(brief.creative ? { ratio: brief.creative.aspect, ...(kind === 'video' ? { duration: brief.creative.seconds } : {}) } : {}),
-    ...(kind === 'image' ? { modelId: 'higgsfield/marketing-studio-image', marketing: { quality: brief.marketing?.enhancePrompt ? 'high' : brief.marketing?.quality ?? 'high', enhancePrompt: brief.marketing?.enhancePrompt ?? false, ...(brief.marketing?.enhancePrompt && brief.marketing.presetId ? { presetId: brief.marketing.presetId } : {}) } } : {}) };
+    ...(kind === 'image' ? { modelId: 'higgsfield/marketing-studio-image', marketing: { ...(brief.marketing?.variant && brief.marketing.variant !== 'alpha' ? { variant: brief.marketing.variant } : {}), quality: marketingQualityFor({ variant: brief.marketing?.variant, quality: brief.marketing?.quality ?? 'high', enhancePrompt: brief.marketing?.enhancePrompt ?? false }), enhancePrompt: brief.marketing?.enhancePrompt ?? false, ...(brief.marketing?.enhancePrompt && brief.marketing.presetId ? { presetId: brief.marketing.presetId } : {}) } } : {}) };
   if (generation.marketing?.enhancePrompt && (!generation.marketing.presetId || !brief.productAssetIds[0])) throw new Error('Select an available image preset and product reference before preparing preset variations.');
   let next: Project = { ...project, nodes: [...project.nodes], moleculr: { ...brief, variants: [...brief.variants] } };
   const used = new Set([...project.nodes.map(node => node.id), ...brief.variants.map(variant => variant.id)]);
