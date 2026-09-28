@@ -8,8 +8,9 @@ import { dimLabels, smallTargets } from "./phoneFloors";
  * Idea 12, first slice: a Next row on every take — in the Inspector and on
  * the selected take in Takes — that opens the existing tool on it: Re-edit
  * for a still, Seedance Edit for a clip, Edit & Sound for a sound. Navigation
- * only: no price on the row, and nothing is quoted or sent until the tool's own
- * priced button is pressed. Every reply is route-mocked.
+ * only: no price on the row, and nothing that could spend is sent until the
+ * tool's own priced button is pressed (the desk's own automatic quotes are
+ * read-only, and charge nothing). Every reply is route-mocked.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
@@ -31,17 +32,21 @@ async function open(page: Page, url: string, saved = true) {
   await mockMedia(page);
   await mockProjects(page, { current: fixture(saved) });
   await mockLibrary(page, store());
-  /* Anything that could quote or spend is counted: navigating to a tool must send none of it. */
-  const sent: string[] = [];
+  /* Anything that could spend is counted: navigating to a tool must send none of it. A read-only quote (the quote route, or a
+     `quoteOnly` body — the desk prices its own tools on sight) charges nothing, and is kept apart to prove it is only that. */
+  const sent: string[] = [], quotes: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (request.method() !== "GET" && /^\/api\/(generate|audio|jobs\/[^/]+\/retry|higgsfield)/.test(path)) sent.push(`${request.method()} ${path}`);
+    if (request.method() === "GET" || !/^\/api\/(generate|audio|jobs\/[^/]+\/retry|higgsfield)/.test(path)) return;
+    let body: { quoteOnly?: unknown } | null = null;
+    try { body = request.postDataJSON() as { quoteOnly?: unknown } | null; } catch { body = null; }
+    if (path === "/api/generate/quote" || body?.quoteOnly === true) quotes.push(path); else sent.push(`${request.method()} ${path}`);
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
   await expect(page.getByTestId("project-name")).toHaveText("Next steps");
-  return { sent, errors };
+  return { sent, quotes, errors };
 }
 const assets = async (page: Page, info: TestInfo) => {
   if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
@@ -69,9 +74,9 @@ async function rowFloors(page: Page, info: TestInfo, row: ReturnType<Page["getBy
   if (process.env.NEXT_SHOTS_DIR) await page.screenshot({ path: `${process.env.NEXT_SHOTS_DIR}/next-${where.includes("inspector") ? "inspector" : "desk"}-${info.project.name.replace("workbench-", "")}.png` });
 }
 
-test("the Inspector's Next opens each take's own tool on it — Re-edit for a still, Edit for a clip, Edit & Sound for a sound — and nothing is quoted or sent", async ({ page }, info) => {
+test("the Inspector's Next opens each take's own tool on it — Re-edit for a still, Edit for a clip, Edit & Sound for a sound — and nothing that could spend is sent", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { sent, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { sent, quotes, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
   await assets(page, info);
   await tile(page, "generation:gen_still").click();
   const inspector = page.getByTestId("inspector");
@@ -106,13 +111,14 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit & Sound ›"]);
   await page.getByTestId("inspector").getByTestId("next-edit-sound").click();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-  expect(sent, "no quote and no paid request on the way to a tool").toEqual([]);
+  expect(sent, "nothing that could spend on the way to a tool").toEqual([]);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
 test("the selected take in Takes carries the same row; a sound's opens Edit & Sound in place of the old link", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { sent, errors } = await open(page, "/suites?suite=studio&page=takes");
+  const { sent, quotes, errors } = await open(page, "/suites?suite=studio&page=takes");
   await deskTile(page, "Pier at dusk").getByTestId("edit-take").click();
   const selected = page.getByTestId("takes-selected");
   const next = selected.getByTestId("next-actions");
@@ -128,7 +134,8 @@ test("the selected take in Takes carries the same row; a sound's opens Edit & So
   await expect(selected.getByRole("button", { name: "Open Edit & Sound ›" })).toHaveCount(0);
   await selected.getByTestId("next-edit-sound").click();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-  expect(sent).toEqual([]);
+  expect(sent, "nothing that could spend").toEqual([]);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
