@@ -3,7 +3,7 @@ import {
   DEFAULT_ENHANCER, ENHANCER_MODELS, ENHANCER_PROVIDERS, citationsIn, enhancerMessages, enhancerSystem, isEnhancerProvider, isRawPrompt,
   parseEnhanced, pickEnhancerModel, stripRaw,
 } from "../../lib/shell/enhancer";
-import { isAtomikModel } from "../../lib/atomikModelPolicy";
+import { isVerifiedTextModel } from "../../lib/atomikModelPolicy";
 import { DEFAULTS } from "../../lib/settings";
 
 test("Higgsfield is the default enhancer, in the request and in the workspace setting", () => {
@@ -53,7 +53,8 @@ test("a rewrite that drops a citation is refused, not repaired", () => {
 });
 
 test("each provider writes on its own family, lightest first; Higgsfield rides the routed writer", () => {
-  for (const ids of Object.values(ENHANCER_MODELS)) for (const id of ids) expect(isAtomikModel(id), id).toBe(true);
+  /* The enhancer writes on the verified text catalogue, which is wider than Atomik's planner families. */
+  for (const ids of Object.values(ENHANCER_MODELS)) for (const id of ids) expect(isVerifiedTextModel(id), id).toBe(true);
   expect(ENHANCER_MODELS.claude.every((id) => id.startsWith("anthropic/"))).toBe(true);
   expect(ENHANCER_MODELS.openai.every((id) => id.startsWith("openai/"))).toBe(true);
   const served = ["anthropic/claude-sonnet-5", "openai/gpt-5-mini", "google/gemini-3.5-flash"];

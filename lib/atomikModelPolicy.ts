@@ -2,8 +2,11 @@
  * Gateway on 2026-09-15 (Grok's reasoning models on 2026-09-23, listed there
  * under `spacexai/`, priced by the live catalogue like every other). Availability and prices still come from the live catalogue.
  * Image, speech, embeddings, Gemma and safeguard classifiers are separate tools.
+ *
+ * This is the verified text catalogue. Atomik plans on part of it
+ * (ATOMIK_MODEL_IDS below); the prompt enhancer reads the whole of it.
  */
-export const ATOMIK_MODEL_IDS = [
+export const VERIFIED_TEXT_MODEL_IDS = [
   "anthropic/claude-sonnet-4.6",
   "google/gemini-3.1-pro-preview",
   "anthropic/claude-opus-4.7",
@@ -95,24 +98,72 @@ export const ATOMIK_MODEL_IDS = [
   "openai/o4-mini-fast"
 ] as const;
 
+/**
+ * The model families Atomik's agentic workflow runs on (owner, 28 Sep 2026):
+ * Claude, OpenAI and Grok, through the same Gateway routing and live
+ * catalogue pricing as before. Gateway lists xAI's Grok under `spacexai/`.
+ */
+export const ATOMIK_FAMILIES = ["anthropic", "openai", "spacexai"] as const;
+export type AtomikFamily = (typeof ATOMIK_FAMILIES)[number];
+export const ATOMIK_FAMILY_LABEL: Record<AtomikFamily, string> = { anthropic: "Claude", openai: "OpenAI", spacexai: "Grok" };
+
+const familyOf = (id: string) => id.slice(0, Math.max(0, id.indexOf("/")));
+const inAtomikFamily = (id: string) => (ATOMIK_FAMILIES as readonly string[]).includes(familyOf(id));
+
+/** Atomik's planner and agent models: the verified catalogue, Claude, OpenAI and Grok only. The first is the default. */
+export const ATOMIK_MODEL_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter(inAtomikFamily);
+
 /** Keep Auto's established production choices stable as the full picker expands. */
 export const ATOMIK_AUTO_MODEL_IDS = [
   "anthropic/claude-sonnet-4.6",
-  "google/gemini-3.1-pro-preview",
   "anthropic/claude-opus-4.7",
   "anthropic/claude-opus-4.6",
   "openai/gpt-5.5-pro"
 ] as const;
 
+/** What Auto plans with when nothing else routes it: the first Atomik model. */
+export const ATOMIK_DEFAULT_MODEL = ATOMIK_MODEL_IDS[0];
+
+const verified = new Set<string>(VERIFIED_TEXT_MODEL_IDS);
 const allowed = new Set<string>(ATOMIK_MODEL_IDS);
+/** Any verified text model: the prompt enhancer's catalogue, which is not Atomik's. */
+export function isVerifiedTextModel(id: string): boolean {
+  return verified.has(id);
+}
 export function isAtomikModel(id: string): boolean {
   return allowed.has(id);
 }
 
-/** Explicit choices never fall back; Auto can only route within this policy. */
+/**
+ * A choice Atomik used to offer and no longer does: a verified text model
+ * outside the three families (the Gemini models).
+ */
+export function isRetiredAtomikModel(id: string): boolean {
+  return verified.has(id) && !allowed.has(id);
+}
+
+const retiredLead = (id: string) =>
+  `${familyOf(id) === "google" ? "Gemini" : "That model"} is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok.`;
+
+/**
+ * A saved choice as Atomik reads it now. One it no longer offers (a chat
+ * saved on Gemini) plans with Auto, the default, and carries the note that
+ * says so; anything else is kept as it was.
+ */
+export function savedAtomikChoice(saved: string | null | undefined): { model: string; note: string | null } {
+  if (saved && isRetiredAtomikModel(saved)) return { model: "auto", note: `${retiredLead(saved)} This chat now uses Auto.` };
+  return { model: saved || "auto", note: null };
+}
+
+/**
+ * Explicit choices never fall back to a different paid model: a request
+ * naming a retired one is refused with the reason, and the person picks again
+ * against a fresh estimate. Auto can only route within this policy.
+ */
 export function selectAtomikModel(want: string, availableIds: readonly string[], routed?: string): string {
   const available = new Set(availableIds.filter(isAtomikModel));
   if (want && want !== "auto") {
+    if (isRetiredAtomikModel(want)) throw new Error(`${retiredLead(want)} Choose one of those, or Auto.`);
     if (!isAtomikModel(want)) throw new Error("That thinking model is not offered in Atomik. Choose a supported model.");
     if (!available.has(want)) throw new Error("That Atomik model is currently unavailable. Choose another model or Auto.");
     return want;

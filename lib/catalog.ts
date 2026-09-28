@@ -9,7 +9,7 @@ import { engineMock } from './mock';
  *
  * Provider-specific media contracts live in lib/models.ts. This catalogue
  * supplies live availability and prices; Atomik applies a separate verified
- * catalogue of Claude, OpenAI and Gemini planning models.
+ * catalogue of Claude, OpenAI and Grok planning models.
  * Retired or disconnected models disappear from the menu.
 
  */
@@ -160,7 +160,7 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * serves that is NOT here is still reachable under "everything else".
  */
 export const FEATURED = {
-  /** The current verified Claude, OpenAI and Gemini planning catalogue. */
+  /** Atomik's planning catalogue: the verified Claude, OpenAI and Grok models (lib/atomikModelPolicy). */
   planner: ATOMIK_MODEL_IDS,
   video: [
     "bytedance/seedance-2.5",

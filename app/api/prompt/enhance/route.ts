@@ -4,7 +4,7 @@ import { catalog } from "@/lib/catalog";
 import { gatewayReachable } from "@/lib/gateway";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { displayModelName } from "@/lib/models";
-import { isAtomikModel } from "@/lib/atomikModelPolicy";
+import { isVerifiedTextModel } from "@/lib/atomikModelPolicy";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, quotePaidText, requestMaxCredits, runPaidText } from "@/lib/paidText";
 import { getPlatformLayer } from "@/lib/platform";
 import { textModelFor } from "@/lib/platformLayer";
@@ -50,7 +50,7 @@ export const POST = withTenant(async function POST(req: Request) {
 
       const saved = await getSetting("promptEnhancer");
       const provider: EnhancerProvider = isEnhancerProvider(body.provider) ? body.provider : isEnhancerProvider(saved) ? saved : DEFAULT_ENHANCER;
-      const available = (await catalog()).filter((m) => m.type === "language" && isAtomikModel(m.id)).map((m) => m.id);
+      const available = (await catalog()).filter((m) => m.type === "language" && isVerifiedTextModel(m.id)).map((m) => m.id);
       const routed = provider === "higgsfield" ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "idea") : null;
       const writer = pickEnhancerModel(provider, available, routed);
       if (!writer) return NextResponse.json({ error: `${ENHANCER_LABEL[provider]} isn't available to write prompts right now. Choose another enhancer in Workspace › General.` }, { status: 503 });
