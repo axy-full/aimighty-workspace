@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useStageQuotes } from "./use-stage-quotes";
 import { readPendingGeneration, type PendingGeneration } from "@/lib/workbench/pending-generation";
 import {
@@ -82,7 +82,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
   }, [claimRaw, slot]);
   const claimed = claim.pending;
 
-  function take(outcome: TranscriptionOutcome | { state: "none" }) {
+  const take = useCallback((outcome: TranscriptionOutcome | { state: "none" }) => {
     notifyClaims();
     if (outcome.state === "done") {
       setResult(outcome.result);
@@ -99,34 +99,56 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
       setError(outcome.waiting ? "" : outcome.reason);
       setCheckFailed(!outcome.waiting);
     }
-  }
+  }, []);
+
+  /* One question at a time per claim: a second trigger while one is on its way (the claim
+     appearing and a Try again, a remount) waits for that answer rather than asking again. */
+  const asking = useRef<{ key: string; inFlight: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
+  const mounted = useRef(true);
+  /* The request the server said is still running, asked about again later even if another window lets its claim go. */
+  const [waitingOn, setWaitingOn] = useState<PendingGeneration | null>(null);
+  const waited = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (asking.current?.timer) clearTimeout(asking.current.timer);
+    };
+  }, []);
+  const ask = useCallback(async (attempt: PendingGeneration) => {
+    if (sending.current) return;
+    if (asking.current?.key === attempt.key && asking.current.inFlight) return;
+    if (asking.current?.timer) clearTimeout(asking.current.timer);
+    const current: { key: string; inFlight: boolean; timer?: ReturnType<typeof setTimeout> } = { key: attempt.key, inFlight: true };
+    asking.current = current;
+    /* The button says "Checking last transcription…" for as long as a request is unconfirmed. */
+    const outcome = await settlePendingTranscription({ scope, slot, attempt });
+    current.inFlight = false;
+    if (!mounted.current || asking.current !== current) return;
+    take(outcome);
+    if (outcome.state === "unknown" && outcome.waiting) {
+      setWaitingOn(attempt);
+      current.timer = setTimeout(() => setCheckRound((n) => n + 1), RECHECK_MS[Math.min(waited.current++, RECHECK_MS.length - 1)]);
+    } else {
+      setWaitingOn(null);
+      waited.current = 0;
+    }
+  }, [scope, slot, take]);
 
   /* A claim in the slot that is not this panel's own request in flight is asked about at once,
      then again while the server is still working on it. Asking never sends it. */
   useEffect(() => {
-    if (!claimed || result) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const ask = async (round: number) => {
-      if (stopped || sending.current) return;
-      setBusy("Checking last transcription…");
-      const outcome = await settlePendingTranscription({ scope, slot, attempt: claimed });
-      if (stopped) return;
-      setBusy("");
-      take(outcome);
-      if (outcome.state === "unknown" && outcome.waiting) timer = setTimeout(() => void ask(round + 1), RECHECK_MS[Math.min(round, RECHECK_MS.length - 1)]);
-    };
-    void ask(0);
-    return () => {
-      stopped = true;
-      if (timer) clearTimeout(timer);
-    };
-    // The claim's key, the slot and Try again decide when to ask; the claim object is the one read with that key.
+    const attempt = claimed ?? waitingOn;
+    if (!attempt || result) return;
+    /* Next tick: triggers that land together (the claim appearing, a Try again, a remount) ask once. */
+    const timer = setTimeout(() => void ask(attempt), 0);
+    return () => clearTimeout(timer);
+    // The claim's key, a recheck and Try again decide when to ask; the claim object is the one read with that key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claimed?.key, slot, scope, checkRound, result]);
+  }, [claimed?.key, checkRound, result, ask]);
 
   async function run() {
-    if (quote?.credits == null || sending.current || busy || result || claimed || claim.problem) return;
+    if (quote?.credits == null || sending.current || busy || result || claimed || waitingOn || claim.problem) return;
     sending.current = true;
     setBusy("Transcribing…"); setError(""); setNote(""); setCheckFailed(false);
     let outcome: TranscriptionOutcome;
@@ -150,14 +172,15 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
     a.href = url; a.download = `${name.replace(/[^\w.-]+/g, "_") || "take"}.srt`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  const pending = Boolean(claimed) && !result;
+  const unconfirmed = claimed ?? waitingOn;
+  const pending = Boolean(unconfirmed) && !result;
   const label = busy
     || (result ? "Transcribed"
       : pending ? "Checking last transcription…"
       : quote?.credits != null ? `Transcribe · ${credits(quote.credits)}`
       : quote?.error ? "Price unavailable" : "Pricing transcript…");
   const alert = claim.problem || error || (!pending && !result ? quote?.error ?? "" : "");
-  const status = note || (pending && !alert ? `Your last transcription${claimed!.credits > 0 ? ` (${credits(claimed!.credits)})` : ""} is unconfirmed. Asking the server what became of it; nothing is sent again.` : "");
+  const status = note || (pending && !alert ? `Your last transcription${unconfirmed!.credits > 0 ? ` (${credits(unconfirmed!.credits)})` : ""} is unconfirmed. Asking the server what became of it; nothing is sent again.` : "");
   return (
     <section className="gx-gen-card gx-workflow" aria-label="Transcribe" data-testid="transcribe" data-section="transcribe">
       <div className="gx-gen-row">
