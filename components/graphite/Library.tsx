@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { PRODUCTION_TOOLS, focusSection, libraryHasTools, openSpecCard } from "@/lib/shell/production-tools";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
-import { entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
+import { entryKind, libraryView, pairOrder, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { LibraryMore } from "./LibraryMore";
 import type { Project } from "@/lib/workbench/studio";
@@ -70,7 +70,8 @@ export function Library({ project = null, items, library, projects = "ready", ov
   const live = usePublishedProject();
   const source = live && project && live.id === project.id ? live : project;
   const filed = useMemo(() => castCategories(source), [source]);
-  const shown = useMemo(() => filterAssets(items, filter, query, filed), [items, filter, query, filed]);
+  /* A draft sits beside the 1080p final made from it (lib/draftFinal.ts): a linked pair in the flat grid. */
+  const shown = useMemo(() => pairOrder(filterAssets(items, filter, query, filed)), [items, filter, query, filed]);
   const view = libraryView(project ? library.state : null, items.length, projects);
   /* A count only once the read has answered: never "0 assets" while reading or after a failed read. */
   const counted = project ? !view.skeletons && view.banner?.tone !== "error" : projects === "ready";

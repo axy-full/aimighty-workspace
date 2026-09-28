@@ -2,11 +2,13 @@ import {
   higgsfieldConfigured,
   higgsfieldCredentials,
   higgsfieldHeaders,
+  SOUL_REFERENCE_ORIGIN,
+  SOUL_REFERENCE_ORIGINS,
 } from "./higgsfield";
 import { withRecoveryActivity } from "./recovery";
 
-const LIST =
-  "https://dev-api.higgsfield.com/v1/custom-references/list?page=1&page_size=1";
+// The production custom-reference API, where new identities are trained.
+const LIST = `${SOUL_REFERENCE_ORIGINS[SOUL_REFERENCE_ORIGIN]}/list?page=1&page_size=1`;
 const ESTIMATE =
   "https://api.higgsfield.ai/estimate/higgsfield-ai/soul/character";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -181,7 +183,7 @@ export async function verifyHiggsfieldConnection(): Promise<HiggsfieldVerificati
   try {
     const response = await readOnlyCall(LIST, {
       method: "GET",
-      headers: higgsfieldHeaders(),
+      headers: higgsfieldHeaders(SOUL_REFERENCE_ORIGIN),
     });
     if (
       !object(response) ||
