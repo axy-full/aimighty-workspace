@@ -176,13 +176,16 @@
   .gx .gx-gate[role="group"]:has(.gx-gate-line[role="status"]) > .gx-hbtn { margin-left: auto; }
 }
 
-/* ── The floors on any phone, either way up: a segmented option is 44px wide as well as tall, and an eyebrow label
-   reads at --gx-text-2. Its .45 tertiary ink composites to about #6A6A6E on the dark ground, under the #7C7C84 floor
-   tests/phoneFloors.ts now measures with the alpha. ── */
+/* ── The label floor, at every width: an eyebrow label reads at --gx-text-2. Its .45 tertiary ink composites to about
+   #6A6A6E on the dark ground, under the #7C7C84 floor tests/phoneFloors.ts now measures with the alpha, on a desktop
+   as on a phone. :where() keeps it at the base rule's weight, so an eyebrow tinted on purpose (Recreate's blue) keeps
+   its tint. ── */
+:where(.gx) .gx-eyebrow { color: var(--gx-text-2); }
+
+/* ── The target floor on any phone, either way up: a segmented option is 44px wide as well as tall. ── */
 @media (max-width: 767px), (pointer: coarse) {
-  /* :where() keeps these at the base rules' weight, so an eyebrow tinted on purpose (Recreate's blue) keeps its tint.
-     A floor of its own takes away a flex item's floor of its words: the option also never shrinks below them, so a
-     row of options too wide for its track scrolls (Workspace's sections) instead of laying words over each other. */
+  /* :where() keeps this at the base rule's weight. A floor of its own takes away a flex item's floor of its words: the
+     option also never shrinks below them, so a row of options too wide for its track scrolls (Workspace's sections)
+     instead of laying words over each other. */
   :where(.gx) .gx-seg-btn { min-width: 44px; flex-shrink: 0; }
-  :where(.gx) .gx-eyebrow { color: var(--gx-text-2); }
 }
