@@ -140,7 +140,7 @@ async function runTool(page: Page, state: Awaited<ReturnType<typeof fixture>>, l
   await quoteButton.click();
   const quote = panel.getByLabel("Connected-credit quote", { exact: true });
   await expect(quote.getByText("9 connected credits · Studio wallet", { exact: true })).toBeVisible();
-  await expect(quote).toContainText("Priced by the connected account’s own quote for exactly these settings.");
+  await expect(quote).toContainText("Priced by the connected account’s own quote for these settings.");
   await checkQuote(quote);
   await noOverflow(page);
   const run = quote.getByRole("button", { name: `${label} · 9 connected credits`, exact: true });

@@ -11,7 +11,7 @@ import s from "./pricing.module.css";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Plans, credit packs and the rate card, every figure computed from the rates the app bills from.",
+  description: "Plans, credit packs and the rate card.",
 };
 
 export default async function Pricing() {
@@ -28,13 +28,12 @@ export default async function Pricing() {
         <PlanCards plans={cards} discountPercent={annualDiscountPercent}>
           <div className="mk-eyebrow">Pricing · 1 credit = US{unit}</div>
           <h1 className={`mk-h1 ${s.title}`}>Credits, not seats.</h1>
-          <p className={`mk-lead ${s.lead}`}>Paid plans differ on credits and features, never headcount. Renders bill the workspace&rsquo;s own balance; every take carries who made it and what it cost.</p>
+          <p className={`mk-lead ${s.lead}`}>Paid plans differ on credits and features, never headcount.</p>
         </PlanCards>
-        <Grid className={`${s.notes} ${s.four}`}>
+        <Grid className={s.notes}>
           <Note lead="Included credits expire at cycle end.">No rollover.</Note>
           <Note lead="No seat fees">on any paid plan.</Note>
           <Note lead="Pack credits sit still on a paid plan.">Off a plan, they last 12 months.</Note>
-          <Note lead="Failed renders">are never billed.</Note>
         </Grid>
       </Section>
 
@@ -60,13 +59,12 @@ export default async function Pricing() {
           <div className={`mk-head ${s.copy}`}>
             <div className="mk-eyebrow">Rate card</div>
             <h2 className="mk-h2">What a render costs.</h2>
-            <p className="mk-lead">Every figure is computed from the live engine rate, never hand-edited, and rounded up to the next whole credit. Batches multiply before rounding. The quote on the button is the one you pay.</p>
             <Link href="/#gen-engines" className={`mk-btn mk-btn--secondary ${s.more}`}>The engines &rarr;</Link>
           </div>
           <div className={`mk-card ${s.table}`}>
             <table>
               <thead>
-                <tr><th scope="col">Action</th><th scope="col">Sells at</th></tr>
+                <tr><th scope="col">Action</th><th scope="col">Credits</th></tr>
               </thead>
               <tbody>
                 {rateCard.map((row) => (
@@ -77,7 +75,6 @@ export default async function Pricing() {
                 ))}
               </tbody>
             </table>
-            <p className={s.foot}>Voice lines are priced per character and have no single row. Motion transfer and Marketing Studio jobs take a live quote first.</p>
           </div>
         </Cols>
       </Section>
