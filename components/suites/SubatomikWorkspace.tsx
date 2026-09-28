@@ -133,7 +133,9 @@ function creativeDraft(value: unknown): CreativeDraft {
       typeof value.prompt === "string"
         ? value.prompt.slice(0, GENJUTSU_LIMITS.maxPromptChars)
         : "",
-    resolution: value.resolution === "480p" ? "480p" : "720p",
+    resolution: (GENJUTSU_RESOLUTIONS as readonly string[]).includes(String(value.resolution))
+      ? (value.resolution as GenjutsuResolution)
+      : "720p",
   };
 }
 function sourceUrl(value: Record<string, unknown>) {
@@ -430,7 +432,9 @@ function Studio({
           (asset.seconds < GENJUTSU_LIMITS.minSeconds ||
             asset.seconds > GENJUTSU_LIMITS.maxSeconds)
         )
-          throw Error("Choose a source clip between 1 and 30 seconds.");
+          throw Error(
+            `Choose a source clip between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds.`,
+          );
         draft.set((previous) => ({
           ...creativeDraft(previous),
           source: asset,
@@ -534,7 +538,7 @@ function Studio({
           source.seconds > GENJUTSU_LIMITS.maxSeconds)
       )
         throw Error(
-          "The saved source is outside the supported 1–30 second range.",
+          `The saved source is outside the supported ${GENJUTSU_LIMITS.minSeconds}–${GENJUTSU_LIMITS.maxSeconds} second range.`,
         );
       intake.current = references;
       draft.set({
@@ -900,8 +904,9 @@ function Studio({
                 within the shot.
               </li>
               <li>
-                <strong>Select the original.</strong> Use one 1–30 second source
-                video from this workspace, or upload your own.
+                <strong>Select the original.</strong> Use one{" "}
+                {GENJUTSU_LIMITS.minSeconds}–{GENJUTSU_LIMITS.maxSeconds} second
+                source video from this workspace, or upload your own.
               </li>
               <li>
                 <strong>Set the visual direction.</strong> Add up to eight
@@ -929,7 +934,10 @@ function Studio({
             >
               <div className={styles.row}>
                 <strong>Source video</strong>
-                <span>1–30 seconds</span>
+                <span>
+                  {GENJUTSU_LIMITS.minSeconds}–{GENJUTSU_LIMITS.maxSeconds}{" "}
+                  seconds
+                </span>
               </div>
               {previewSource ? (
                 <>
