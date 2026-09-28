@@ -5,6 +5,8 @@ import { imagePath, videoPath, uploadPath, usingBlob, presignedReadUrl } from ".
 import { estimateCostUsd, listRate } from "./vendorPricing";
 import { costUsd } from "./models";
 import type { PricingWatch } from "./higgsfieldPricingWatch";
+/** The deploy-time switch, beside the engine it switches (defined with the rates in lib/vendorRates.ts). */
+export { cinemaStudioEnabled } from "./vendorRates";
 import {
   CINEMA_STUDIO_LIMITS,
   CINEMA_STUDIO_MODEL_ID,

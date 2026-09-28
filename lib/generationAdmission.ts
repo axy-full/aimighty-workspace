@@ -1,13 +1,13 @@
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem } from "@/lib/genjutsu";
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
-import { cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
-import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
+import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
@@ -15,7 +15,7 @@ import {
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
-import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from "@/lib/vendorRates";
+import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 import { allowanceCheck, renderKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
