@@ -94,7 +94,7 @@ async function press(page: Page) {
 /** The exact live quote on the shot's Generate button, once it is ready to press. */
 async function priceOn(body: Locator): Promise<number> {
   const button = body.locator(".pxw-insp-generate");
-  await expect(button).toHaveText(/^Generate take · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(button).toHaveText(/^Generate take · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   await expect(button).toBeEnabled();
   return Number((await button.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
 }
