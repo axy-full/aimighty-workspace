@@ -27,13 +27,24 @@ const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
 const PHONES = [...PORTRAIT, "workbench-844x390"];
 const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
 
-/* CI and Android fallback faces can be wider than the local macOS font. */
+/* CI and Android fallback faces can be wider than the local macOS font: PHONE_CHROME_WIDE_FONT sets a wide sans on
+   everything. An init script can run before the document has its root element, so the face goes in as soon as there
+   is one. */
+const WIDE_FONT = Boolean(process.env.PHONE_CHROME_WIDE_FONT);
 test.beforeEach(async ({ page }) => {
-  if (!process.env.PHONE_CHROME_WIDE_FONT) return;
+  if (!WIDE_FONT) return;
   await page.addInitScript(() => {
-    const style = document.createElement("style");
-    style.textContent = "*, *::before, *::after { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }";
-    document.documentElement.appendChild(style);
+    const add = () => {
+      if (!document.documentElement || document.getElementById("phone-chrome-wide-font")) return false;
+      const style = document.createElement("style");
+      style.id = "phone-chrome-wide-font";
+      style.textContent = "*, *::before, *::after { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }";
+      document.documentElement.appendChild(style);
+      return true;
+    };
+    if (add()) return;
+    const watch = new MutationObserver(() => { if (add()) watch.disconnect(); });
+    watch.observe(document, { childList: true, subtree: true });
   });
 });
 
@@ -70,6 +81,8 @@ async function open(page: Page, path: string, named = true, atomik: boolean | ((
   await page.goto(path);
   /* The Workspace view has no project head. */
   if (named) await expect(page.getByTestId("project-name")).toHaveText("Harbour at dusk");
+  /* A wide-font run measures the wide face, or it measures nothing. */
+  if (WIDE_FONT) expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^Verdana/);
 }
 
 /** The alpha of an element's own fill: what of the page under it can read through. */
@@ -372,6 +385,10 @@ test("phone: the chrome keeps the floors on every page — 44px targets, no labe
     await settle(page);
     expect.soft(await smallTargets(page, ".gx-header, .gx-strip, .gx-project, .gx-main > .gx-pagehead, .gx-tabbar"), `${screen.id}: chrome targets under 44×44`).toEqual([]);
     expect.soft(await dimLabels(page, ".gx"), `${screen.id}: labels under #7C7C84`).toEqual([]);
+    /* A segmented option keeps its words inside it: a row too wide for its track scrolls, never overlaps. */
+    expect.soft(await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".gx .gx-seg-btn"))
+      .filter((option) => option.getClientRects().length && option.scrollWidth > option.clientWidth + 1)
+      .map((option) => `${option.textContent?.trim()}: ${option.scrollWidth}px of words in ${option.clientWidth}px`)), `${screen.id}: segmented options whole`).toEqual([]);
     expect.soft(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${screen.id}: sideways`).toBeLessThanOrEqual(0);
   }
 });
