@@ -738,3 +738,8 @@ Owners can require authenticator enrollment for workspace members through People
 ## Editorial continuity — 15 September 2026
 
 Private productions now retain named asset bins and immutable named cuts. The editor captures acknowledged saved revisions, retains original media and source lineage, and saves a safety cut before restoring a non-empty edit. The existing draft, request-scope, tenant, MFA and recovery protections apply throughout. See [editorial history](editorial-history.md) for verification, retention limits, restore conflicts and current export boundaries. Stripe and the approved credit model are unchanged.
+
+
+### September 27 — separately approved draft and final takes
+
+Gen gains a watermarked draft and separately quoted final through the existing video admission, worker and ledger. The final inherits its original draft context; a transactional claim, expiry check and settle-first recovery prevent duplicate or stale submissions. Gen, Takes, Library and the inspector retain the pair. No pricing rule changes. See [draft-to-final behavior](seedance-draft-final.md) for boundaries and validation.

@@ -112,6 +112,9 @@ export type ModelDef = {
    *  SENT to the vendor, so a synthetic "…:edit" id would be sent verbatim
    *  and rejected. */
   supportsTasks?: TaskId[];
+  /** Draft mode (lib/draftFinal.ts): a 480p watermarked draft first, then a 1080p final
+   *  rendered from the draft's task. Seedance 2.5 on its own route only. */
+  supportsDraft?: boolean;
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
   /** Served only on the vendor's own key (no gateway door): offered only when that key is set. */
@@ -183,6 +186,8 @@ export const MODELS: ModelDef[] = [
     use: "Standard video. Highest fidelity, native audio.",
     label: "Seedance 2.5",
     supportsTasks: ["generate", "edit", "extend"],
+    /* "Dreamina Seedance 2.5: Draft mode ✓"; the 2.0 series has none (ModelArk, 2607688). */
+    supportsDraft: true,
     short: "SD 2.5",
     family: "seedance-2",
     provider: "byteplus",
