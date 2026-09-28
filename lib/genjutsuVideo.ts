@@ -3,7 +3,8 @@ import { db, now, ready } from "./db";
 import { engineFor } from "./engines";
 import type { RenderHandle } from "./engines/types";
 import { isGenjutsuModel } from "./genjutsuTypes";
-import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
+import { isCinemaStudioModel, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
+import { cinemaStudioDeliveredUsd, cinemaStudioSettlementUsd } from "./cinemaStudio";
 import { restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { HiggsfieldHttpError } from "./higgsfield";
@@ -47,6 +48,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         throw new Error("Invalid admission");
       let original = params.genjutsuOriginal as Original | undefined;
       let stored: Awaited<ReturnType<typeof storeVideoBytes>> | undefined;
+      let reportedUsd: number | null = null;
       if (original) {
         if (original.requestId !== handle.ref || !/^[a-f0-9]{64}$/.test(original.sha256) || !Number.isSafeInteger(original.bytes) || original.bytes <= 0 || original.bytes > 100 * 1024 * 1024)
           throw new Error("Invalid original receipt");
@@ -72,6 +74,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
           return;
         }
         if (!state.videoUrl) throw new Error("No original");
+        reportedUsd = typeof state.costUsd === "number" ? state.costUsd : null;
         const bytes = engineMock() && state.videoUrl === fixtureUrl("clip.mp4") ? await fixtureBytes("clip.mp4") : (await fetchPublicConsumerVideoBytes(state.videoUrl)).bytes;
         const metadata = await inspectConsumerVideoOriginal(bytes);
         const candidate: Original = { ...metadata, bytes: bytes.length, sha256: hash(bytes), requestId: handle.ref };
@@ -102,11 +105,21 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
       const transform = isGenjutsuModel(String(row.model));
       const keptDuration = transform ? original.seconds : Number(params.duration);
       const keptRatio = transform ? `${original.width}:${original.height}` : String(params.ratio);
+      // A transform settles at its live estimate. Cinema Studio was quoted
+      // approximately and settles on what was delivered: the provider's own
+      // charge if it states one, else its published formula on the measured
+      // output, kept within a sane band of the quote.
+      const settledUsd = isCinemaStudioModel(String(row.model))
+        ? cinemaStudioSettlementUsd(usd, cinemaStudioDeliveredUsd({
+            resolution: String(params.resolution), width: original.width, height: original.height, seconds: original.seconds,
+            hasVideoInput: Boolean(params.hasVideoInput), inputSeconds: Number(params.inputSeconds),
+          }), reportedUsd)
+        : usd;
       await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,duration_s=?,
         params=json_set(params,'$.duration',?,'$.width',?,'$.height',?,'$.ratio',?),updated_at=?
         WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=? AND json_extract(params,'$.higgsfieldVideoPollUntil')>?`,
-        args: [stored.url,stored.bytes,usd,Math.round(original.seconds * 1000) / 1000,keptDuration,original.width,original.height,keptRatio,now(),id,token,now()] },
-        { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "succeeded", engineCostUsd: usd,
+        args: [stored.url,stored.bytes,settledUsd,Math.round(original.seconds * 1000) / 1000,keptDuration,original.width,original.height,keptRatio,now(),id,token,now()] },
+        { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "succeeded", engineCostUsd: settledUsd,
           projectId: row.project_id == null ? null : String(row.project_id), shotId: row.shot_id == null ? null : String(row.shot_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
       await deliverGenerationSettlement(id);
       await settleHiggsfieldGenerationReceipt(id);

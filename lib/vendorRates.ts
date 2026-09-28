@@ -16,21 +16,11 @@ export function soulCharacterGenerationEnabled(): boolean {
   return process.env.HF_SOUL_CHARACTER_ENABLED === "1" && soulCharacterRates() !== null;
 }
 
-/** Cinema Studio 4.0 is token-metered, and its estimate endpoint returns no
- * figure. Its two rates (USD per 1,000 video tokens, without and with video
- * input) are private runtime configuration, set by the operator from the
- * provider's published pricing for the account. With either missing the
- * engine has no price and is not offered. */
-export function cinemaStudioRates(): { standard: number; withVideo: number } | null {
-  const standard = Number(process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS);
-  const withVideo = Number(process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS_WITH_VIDEO);
-  return Number.isFinite(standard) && standard > 0 && Number.isFinite(withVideo) && withVideo > 0
-    ? { standard, withVideo } : null;
-}
-
-/** Off unless the operator both enables it and prices it. */
+/** Cinema Studio 4.0 is on for every workspace. `HF_CINEMA_STUDIO_ENABLED=0`
+ * is the deploy-time kill switch: it stops new quotes and dispatches, while
+ * accepted takes are still collected. */
 export function cinemaStudioEnabled(): boolean {
-  return process.env.HF_CINEMA_STUDIO_ENABLED === "1" && cinemaStudioRates() !== null;
+  return process.env.HF_CINEMA_STUDIO_ENABLED !== "0";
 }
 
 /**
@@ -76,10 +66,17 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
   get [SOUL_CHARACTER_MODEL_ID]() {
     return { imagePricing: soulCharacterGenerationEnabled() ? soulCharacterRates()! : {}, imageRefInUsd: 0 };
   },
-  /* Per million tokens, like the other token tiers; empty (unpriced) while disabled. */
-  get [CINEMA_STUDIO_MODEL_ID]() {
-    const rates = cinemaStudioEnabled() ? cinemaStudioRates() : null;
-    return { tiers: rates ? [{ resolutions: ["480p", "720p"], withoutVideo: rates.standard * 1000, withVideo: rates.withVideo * 1000 }] : [] };
+  /* Cinema Studio 4.0 on the commercial API bills video tokens (lib/cinemaStudio.ts
+     has the published formula). Per million tokens, from the provider's model page
+     (read 28 September 2026); the lower rate applies once a reference clip is sent.
+     The estimate endpoint states the formula but returns no figure, so quotes are
+     approximate; lib/higgsfieldPricingWatch.ts flags a change to the published text. */
+  [CINEMA_STUDIO_MODEL_ID]: {
+    tiers: [{
+      resolutions: ["480p", "720p"],
+      withoutVideo: 21.4,
+      withVideo: 12.84
+    }]
   },
   "dreamina-seedance-2-5-260628": {
     tiers: [{

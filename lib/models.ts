@@ -105,7 +105,7 @@ export type ModelDef = {
   /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
   marketing?: boolean;
   genjutsu?: boolean;
-  /** Cinema Studio 4.0 on the commercial key: off until the operator enables it and sets its private rates. */
+  /** Cinema Studio 4.0 on the commercial key: approximately quoted, settled on its delivered output. */
   cinemaStudio?: boolean;
   /** Which tasks this engine can be asked for. Absent means generate only.
    *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
@@ -481,11 +481,12 @@ export const MODELS: ModelDef[] = [
   })),
   /* Cinema Studio 4.0 (commercial API key): text-to-video, or reference-to-video
      from saved stills and clips. Token-metered on the output frame and the
-     seconds billed (lib/cinemaStudio.ts). Hidden, and absent from the engine
-     catalogue, until the operator enables it with private rates. */
+     seconds billed (lib/cinemaStudio.ts): quoted approximately, settled on the
+     delivered output. Offered to every workspace; HF_CINEMA_STUDIO_ENABLED=0
+     switches it off. */
   {
     id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", short: "CINEMA 4", family: "cinema-studio",
-    provider: "higgsfield", kind: "video", billing: "token", cinemaStudio: true, hidden: true, paramStyle: "fields",
+    provider: "higgsfield", kind: "video", billing: "token", cinemaStudio: true, paramStyle: "fields",
     resolutions: [...CINEMA_STUDIO_RESOLUTIONS], ratios: [...CINEMA_STUDIO_RATIOS],
     durations: seconds(CINEMA_STUDIO_LIMITS.minSeconds, CINEMA_STUDIO_LIMITS.maxSeconds),
     supportsAudio: true, supportsCameraFixed: false,

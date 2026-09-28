@@ -2,10 +2,13 @@ import type { Reference, VideoParams } from "./ark";
 import { HiggsfieldHttpError } from "./higgsfield";
 import { engineMock } from "./mock";
 import { imagePath, videoPath, uploadPath, usingBlob, presignedReadUrl } from "./storage";
-import { estimateCostUsd } from "./vendorPricing";
+import { estimateCostUsd, listRate } from "./vendorPricing";
+import { costUsd } from "./models";
+import type { PricingWatch } from "./higgsfieldPricingWatch";
 import {
   CINEMA_STUDIO_LIMITS,
   CINEMA_STUDIO_MODEL_ID,
+  CINEMA_STUDIO_PATH,
   CINEMA_STUDIO_RATIOS,
   CINEMA_STUDIO_RESOLUTIONS,
 } from "./cinemaStudioTypes";
@@ -24,12 +27,14 @@ function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "dur
  * at the with-video rate once any reference clip is sent (stills and sound do
  * not count as video input). That is the Seedance token formula
  * (lib/models.ts › estimateTokens) on the frame the meter counts
- * (billedFrame), so it is priced through the same estimateCostUsd, from the
- * operator's private rates. The provider's estimate endpoint states the
- * formula but returns no figure, so this is the quote; admission freezes it
- * on the take and the dispatch refuses to send if it no longer holds.
- * Null means no price: the engine is disabled, or the settings or reference
- * seconds are outside its contract.
+ * (billedFrame), so it is priced through the same estimateCostUsd and the
+ * existing credit terms. The provider does not publish the exact frame for
+ * each aspect, and its estimate endpoint states the formula but returns no
+ * figure, so this is an APPROXIMATE quote: the take settles on its delivered
+ * output (cinemaStudioSettlementUsd). Admission keeps the quote on the take
+ * and dispatch refuses to send if the settings no longer price the same.
+ * Null means no price: the settings or reference seconds are outside the
+ * engine's contract.
  */
 export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
   if (settingsProblem(params)) return null;
@@ -41,6 +46,47 @@ export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
     inputSeconds, Boolean(params.hasVideoInput));
   return estimate && Number.isFinite(estimate.net) && estimate.net > 0 ? estimate.net : null;
 }
+
+/**
+ * What the provider bills for a delivered take: the same published formula on
+ * the output's measured frame and length, plus the quoted reference seconds,
+ * at the rate the clip input set. Null when the output cannot be measured.
+ */
+export function cinemaStudioDeliveredUsd(delivered: {
+  resolution: string; width: number; height: number; seconds: number;
+  hasVideoInput?: boolean; inputSeconds?: number;
+}): number | null {
+  if (![delivered.width, delivered.height, delivered.seconds].every(n => Number.isFinite(n) && n > 0)) return null;
+  const inputSeconds = delivered.hasVideoInput ? Number(delivered.inputSeconds) : 0;
+  if (!Number.isFinite(inputSeconds) || inputSeconds < 0) return null;
+  const rate = listRate(CINEMA_STUDIO_MODEL_ID, delivered.resolution, Boolean(delivered.hasVideoInput));
+  if (rate == null) return null;
+  const tokens = Math.ceil(((inputSeconds + delivered.seconds) * delivered.width * delivered.height * 24) / 1024);
+  return costUsd(tokens, rate);
+}
+
+/**
+ * The settled cost: the provider's own charge for the job when it states one,
+ * else the delivered-output figure. Either is used only within half to three
+ * times the quote; outside that band a unit or measurement mistake is assumed
+ * and the quote stands, so a take can never bill far past what was shown.
+ */
+export function cinemaStudioSettlementUsd(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): number {
+  const sane = (value: number | null | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5 && value <= quoteUsd * 3;
+  if (sane(reportedUsd)) return reportedUsd;
+  if (sane(deliveredUsd)) return deliveredUsd;
+  return quoteUsd;
+}
+
+/** The published pricing this engine is priced from, watched for change (lib/higgsfieldPricingWatch.ts). */
+export const CINEMA_STUDIO_PRICING_WATCH: PricingWatch = {
+  model: CINEMA_STUDIO_MODEL_ID,
+  path: CINEMA_STUDIO_PATH,
+  body: { prompt: "A quiet harbour at dawn", duration: 5, resolution: "720p" },
+  expectedSha256: "5ed5f27b50e0d72e5e721a3db6ba994c57dbed6e80f285519ba56cee26f76f78",
+  formulaUsd: () => cinemaStudioQuoteUsd({ resolution: "720p", ratio: "16:9", duration: 5 }),
+};
 
 /**
  * Particl cites attached media as @Image1 / @Video1; the provider reads

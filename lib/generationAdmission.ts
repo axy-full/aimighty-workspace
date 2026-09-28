@@ -1,7 +1,8 @@
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem } from "@/lib/genjutsu";
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
-import { cinemaStudioQuoteUsd } from "@/lib/cinemaStudio";
+import { cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
@@ -311,7 +312,7 @@ export async function executeGenerationAdmission(
     const cinema = isCinemaStudioModel(modelId);
     // Off until the operator enables it with private rates: no price, no take.
     if (cinema && !cinemaStudioEnabled())
-      return admissionReply({ error: "Cinema Studio is not enabled on this platform." }, { status: 503 });
+      return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
     if (model.marketing && !options.checkpoint)
       return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
@@ -1694,8 +1695,10 @@ export async function executeGenerationAdmission(
         await genjutsuInput(modelId, finalPrompt, params.resolution, sourceRef, references.filter(r => r.kind === "image")));
     }
     if (cinema) {
-      // The published token formula on the operator's private rates, frozen on
-      // the take: dispatch sends it only while this exact price still holds.
+      // An approximate quote from the published token formula, kept on the take:
+      // dispatch sends only while the same settings price the same, and the take
+      // settles on its delivered output. Now and then, check the published text.
+      scheduleHiggsfieldPricingCheck(CINEMA_STUDIO_PRICING_WATCH);
       const clips = references.some((r) => r.kind === "video");
       const usd = cinemaStudioQuoteUsd({
         resolution: params.resolution,
@@ -1847,6 +1850,7 @@ export async function executeGenerationAdmission(
           source: sourceRef,
           rules: rules.map((r) => r.id),
         },
+        { approximate: cinema },
       );
       if (stopped) return stopped;
     }
@@ -1854,7 +1858,7 @@ export async function executeGenerationAdmission(
     if (genjutsu && body.maxCredits == null)
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
     if (cinema && body.maxCredits == null)
-      return admissionReply({ error: "Confirm the quoted credit price before generating with Cinema Studio." }, { status: 400 });
+      return admissionReply({ error: "Review the approximate credit price before generating with Cinema Studio." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     // The claim is bound in the same write: a claim naming no job proves there is none.
