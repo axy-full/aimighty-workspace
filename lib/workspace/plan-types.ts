@@ -153,13 +153,11 @@ export type PlanRequest = {
   stems?: (NamedBody & { route?: "/api/audio" | "/api/audio/dub" })[];
   /** Marketing: /api/generate bodies carrying `marketing`, one per variant. */
   variants?: NamedBody[];
-  /** Subatomik: the connected-account form input (source, references, resolution, prompt). */
-  motion?: Record<string, unknown>;
-  swap?: Record<string, unknown>;
+  /** Motion Transfer / Object Swap: /api/generate bodies for the API-key transform engines (task `genjutsu`), one per take. */
+  motion?: NamedBody[];
+  swap?: NamedBody[];
   /** Subatomik Shorts: the Shorts input (source, preset, aspectRatio) as /api/higgsfield/consumer/shorts takes it. */
   shorts?: Record<string, unknown>;
-  /** Atomik Generate: the connected-account generation input. */
-  generation?: Record<string, unknown>;
   /** Astra: the saved scene's digest (astraSceneDigest) and source. */
   astra?: { sourceDigest: string; source?: "scene" | "native" };
   /** Brief & Script: development options. */
@@ -170,7 +168,7 @@ export type PlanRequest = {
   };
   /** Atomik agent: what to ask for (defaults to planning the rest of the project). */
   agent?: { request?: string; role?: string };
-  /** Compare: the connected-account job to compare against its source. */
+  /** Compare: a kept job to compare against its source. */
   compare?: { jobId?: string };
 };
 
