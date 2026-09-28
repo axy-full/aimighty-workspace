@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -139,7 +140,8 @@ test("the request cites attached media in the provider's token form and sends on
 async function job(id: string, usd?: number): Promise<VideoJob> {
   const { db, ready, now } = await import("../../lib/db"), { getModel } = await import("../../lib/models"), { getTask } = await import("../../lib/tasks");
   const { meter } = await import("../../lib/meter"), { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
-  await ready();
+  /* Every workspace pays in credits: the take is reserved from this fixture's own funds. */
+  await ready(); await fundFixtureWorkspace();
   const model = getModel(CINEMA_STUDIO_MODEL_ID);
   usd ??= (await import("../../lib/cinemaStudio")).cinemaStudioQuoteUsd(settings())!;
   const params = { ...settings(), higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint(), higgsfieldVendorCostUsd: usd };
@@ -237,13 +239,19 @@ test("an accepted request recovers a lost tenant handle from its receipt, collec
       const delivered = cinemaStudioDeliveredUsd({ resolution: "720p", width: 640, height: 360, seconds: 10 })!;
       expect(delivered).toBeCloseTo(await tokenUsd(Math.ceil((10 * 640 * 360 * 24) / 1024)), 10);
       expect(delivered).not.toBe(cinemaStudioQuoteUsd(settings()));
-      expect(gen.costUsd).toBe(delivered);
       expect(gen.params).toMatchObject({ ratio: "16:9", duration: 5 });
       expect(gen.params).not.toHaveProperty("higgsfieldVideoHandle");
       expect(JSON.stringify(gen)).not.toContain("credentialFingerprint");
       expect(await readVideoBytes(id)).toEqual(readFileSync("public/fixtures/clip.mp4"));
-      const meter = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd FROM meter_events WHERE id=?", args: [id] })).rows[0];
+      const meter = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits,credit_usd,credit_margin FROM meter_events WHERE id=?", args: [id] })).rows[0];
       expect(meter).toMatchObject({ status: "succeeded", engine_cost_usd: delivered });
+      // The workspace pays in credits: its take carries the credits billed on that figure at the
+      // terms recorded when it was admitted, never the vendor's dollars.
+      const { creditsAtTerms } = await import("../../lib/billingTerms");
+      const billed = creditsAtTerms(delivered, { creditUsd: Number(meter.credit_usd), margin: Number(meter.credit_margin) });
+      expect(Number(meter.billed_credits)).toBe(billed);
+      expect(gen.costUsd).toBeNull();
+      expect(gen.creditsBilled).toBe(billed);
       expect(Number((await platformDb().execute({ sql: "SELECT settled_at FROM higgsfield_generation_receipts WHERE id=?", args: [id] })).rows[0].settled_at)).toBeGreaterThan(0);
     }, actor);
   } finally { engine.render = render; engine.poll = poll; await unlink(path.resolve(".data/generations", `${id}.mp4`)).catch(() => {}); }
