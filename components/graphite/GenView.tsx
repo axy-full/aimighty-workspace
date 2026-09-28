@@ -31,7 +31,7 @@ import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfie
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer, type BatchView } from "@/lib/workspace/use-composer";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
-import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { VirtualItems, smoothScrollIntoView } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { dismissable, useClock } from "./ResumedJobs";
@@ -416,8 +416,10 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const rendering = pickedUp.filter((item) => item.following).length;
   const clock = useClock(rendering ? 30_000 : 0);
   const resultsRef = useRef<HTMLElement | null>(null);
-  /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. */
-  const jumpToPickedUp = () => resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]')?.scrollIntoView({ block: "center", behavior: "smooth" });
+  /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. The jump goes
+     through smoothScrollIntoView like every smooth move in a scroller that holds a windowed list: today it runs down to
+     cards above the grid's rows, and a layout that put rows on its way would otherwise stop it short. */
+  const jumpToPickedUp = () => smoothScrollIntoView(resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]'), "center");
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
   /* The well names each reference the way the engine counts it: @Image1, @Video1, within its own kind. */
   const wellTags = referenceTags(state.references.map((r) => r.kind));

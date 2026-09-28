@@ -4,6 +4,8 @@
  * stage on screen; pressing it brings that section into view (and switches to
  * its tab), never a dead end.
  */
+import { smoothScrollIntoView } from "@/components/workspace/VirtualItems";
+
 export type ProductionTool = { name: string; sub: string; section: string };
 export type ProductionToolGroup = { title: string; items: ProductionTool[] };
 const g = (title: string, items: [string, string, string][]): ProductionToolGroup => ({ title, items: items.map(([name, sub, section]) => ({ name, sub, section })) });
@@ -53,7 +55,9 @@ export const SECTION_EVENT = "particl:production-section";
 /** Brings a stage's section into view; the stage listens for the event to switch tabs first. */
 export function focusSection(section: string) {
   window.dispatchEvent(new CustomEvent(SECTION_EVENT, { detail: section }));
-  requestAnimationFrame(() => document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  /* A long windowed list on the way (the Takes desk, the Rig's shots) holds its scroll corrections until the move is
+     over; one made on the way would stop the move short of the section (outside iOS). */
+  requestAnimationFrame(() => smoothScrollIntoView(document.querySelector(`[data-section="${section}"]`)));
 }
 
 /**
