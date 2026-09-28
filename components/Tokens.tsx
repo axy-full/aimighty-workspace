@@ -6,13 +6,19 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { usd, timeAgo } from "@/lib/format";
 import { fmtCredits } from "@/lib/price";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
-import { parseCeiling } from "@/lib/tokenCeiling";
+import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
 
+/** GET /api/tokens answers in the workspace's unit: a credit workspace ("cr")
+ *  gets its month and ceiling in credits and no dollar field at all; one on
+ *  its own keys ("usd") gets dollars. `spendThisMonth` is in `unit`. */
 export type Token = {
   id: string; name: string; scope: "read" | "render";
-  capUsd: number | null; spendThisMonth: number;
+  spendThisMonth: number;
+  capUsd?: number | null;
+  capCredits?: number | null; legacyCeiling?: boolean;
   lastUsed: number | null; createdAt: number;
 };
+type Unit = "cr" | "usd";
 
 /**
  * Making and revoking the keys that let something outside a browser in.
@@ -20,7 +26,7 @@ export type Token = {
  */
 export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => void }) {
   const scopedFetch = useScopedFetch();
-  const { data, refresh } = useApi<{ tokens: Token[]; unit?: "usd" | "cr" }>("/api/tokens");
+  const { data, refresh } = useApi<{ tokens: Token[]; unit?: Unit }>("/api/tokens");
   const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -31,23 +37,28 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
       "", "What is it for? e.g. your assistant"
     );
     if (!name?.trim()) return;
-    /* A token that can generate is made only once its ceiling is settled:
-       Cancel makes nothing, and anything that is not dollars asks again. */
-    let capUsd: number | null = null;
+    /* A token that can generate is made only once its ceiling is settled, in
+       the workspace's unit: Cancel makes nothing, and anything that does not
+       read as credits (or dollars, on a workspace's own keys) asks again. A
+       read-only token cannot spend, so it carries no ceiling and waits on nothing. */
+    let ceiling: { capUsd: number | null } | { capCredits: number | null } | Record<string, never> = {};
     if (scope === "render") {
-      let typed = "20", problem: string | undefined;
+      const unit: Unit | null = data?.unit
+        ?? (await scopedFetch("/api/tokens", { cache: "no-store" }).then((r) => r.json()).then((j: { unit?: Unit }) => j.unit ?? "usd").catch(() => null));
+      if (!unit) { await appAlert("Couldn't create the token", "Your tokens could not be read. Reload the page and try again."); return; }
+      let typed = unit === "cr" ? "500" : "20", problem: string | undefined;
       for (;;) {
-        const answer = await appPrompt("Monthly ceiling", typed, "USD — blank for no limit", problem);
+        const answer = await appPrompt("Monthly ceiling", typed, unit === "cr" ? "Credits — blank for no limit" : "USD — blank for no limit", problem);
         if (answer === null) return;
-        const ceiling = parseCeiling(answer);
-        if ("error" in ceiling) { typed = answer; problem = ceiling.error; continue; }
-        capUsd = ceiling.capUsd;
+        const read = unit === "cr" ? parseCreditCeiling(answer) : parseCeiling(answer);
+        if ("error" in read) { typed = answer; problem = read.error; continue; }
+        ceiling = read;
         break;
       }
     }
     const res = await scopedFetch("/api/tokens", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, scope, capUsd }),
+      body: JSON.stringify({ name, scope, ...ceiling }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) { appAlert("Couldn't create the token", json.error); return; }
@@ -73,7 +84,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
   }
 
   const tokens = data?.tokens ?? [];
-  /* A credit workspace's month arrives in credits; the ceiling is still set in dollars. */
+  /* A credit workspace's month and ceiling arrive in credits, and it is shown no dollar figure. */
   const inCredits = data?.unit === "cr";
   const spent = (t: Token) => (inCredits ? fmtCredits(t.spendThisMonth) : usd(t.spendThisMonth, 2));
 
@@ -108,10 +119,18 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
                 {t.scope === "read" ? "Read-only" : "Can generate"}
-                {t.capUsd != null && (inCredits
-                  ? ` · ${spent(t)} this month · ${usd(t.capUsd, 2)} ceiling`
-                  : ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month`)}
-                {t.capUsd == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
+                {inCredits ? (
+                  <>
+                    {t.capCredits != null && ` · ${spent(t)} of ${fmtCredits(t.capCredits)} this month`}
+                    {t.capCredits == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
+                    {t.capCredits == null && t.legacyCeiling && " · ceiling set before credits"}
+                  </>
+                ) : (
+                  <>
+                    {t.capUsd != null && ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month`}
+                    {t.capUsd == null && t.spendThisMonth > 0 && ` · ${spent(t)} this month`}
+                  </>
+                )}
                 {" · "}{t.lastUsed ? `used ${timeAgo(t.lastUsed)}` : "never used"}
               </span>
             </span>

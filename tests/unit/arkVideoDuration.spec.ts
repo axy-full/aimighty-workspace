@@ -158,7 +158,8 @@ test("a length that cannot be measured still seals and still bills, leaving dura
   // Bytes that store fine and carry no readable video track.
   engine.poll = delivering(fixtureUrl("still.png"));
   try {
-    await runInTenant(await setup(`ark_unreadable_${randomUUID().slice(0, 8)}`), async () => {
+    const ws = await setup(`ark_unreadable_${randomUUID().slice(0, 8)}`);
+    await runInTenant(ws, async () => {
       const id = `gen_ark_unreadable`;
       await queued(id);
       // strict: a measurement failure must not surface as a render failure.
@@ -170,7 +171,7 @@ test("a length that cannot be measured still seals and still bills, leaving dura
       expect(persisted.duration_s).toBeNull();
       // The vendor's usage snapshot is untouched by the missing length.
       expect(Number(persisted.total_tokens)).toBe(244_800);
-      expect(persisted.stored_url).toBe(`/api/media/${id}`);
+      expect(persisted.stored_url).toBe(`ws/${ws.id}/generations/${id}.mp4`);
     });
   } finally {
     engine.poll = poll;
