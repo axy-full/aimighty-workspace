@@ -12,6 +12,7 @@ import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
 import { movedOn, poll } from "@/lib/poll";
+import { failureKind } from "@/lib/jobState";
 import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { isVariation, takeLabel } from "@/lib/variations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
@@ -60,8 +61,17 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
 export function notOpenWords(entry: LibraryEntry): string {
   const { take } = entry;
   const face = entryFace(entry);
+  /* What starts a held take depends on what holds it. Credits start a shortfall; a block of its own (a cap, a moved or
+     incomplete price, a token's ceiling: lib/held.ts writes it on the row) is lifted otherwise, in the row's own next
+     words when it has them. */
+  const said = take.detail ?? take.reason ?? "";
+  const kind = failureKind(said);
+  const next = !said || kind === "balance" ? " It starts on its own when credits arrive."
+    : kind === "cap" ? " It starts on its own when the cap allows it or an admin raises the cap."
+    : /token's .*ceiling/.test(said) ? " It starts on its own when the token's monthly ceiling resets."
+    : take.detail && take.reason && take.detail.startsWith(take.reason) ? ` ${take.detail.slice(take.reason.length).trim()}`.trimEnd() : "";
   return face === "failed" || face === "stopped" ? `${take.name} did not render${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.`
-    : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}. It starts on its own when credits arrive.`
+    : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.${next}`
     : face === "live" ? `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`
     : face === "unavailable" ? `${take.name} rendered, but its stored copy is not here yet. Refresh on its card reads it again.`
     : "This file has no picture or sound to edit.";
