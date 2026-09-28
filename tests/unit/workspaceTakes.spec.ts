@@ -39,7 +39,7 @@ test("library assets map to Takes cards with billed credits, statuses and integr
     status: "approved", sha256: null, createdAt: 10 });
   expect(takes[1]).toMatchObject({ name: "The encounter", meta: "2.5 · 6s", credits: 21, status: "review" });
   /* "not billed" only because the ledger holds nothing for it; the line says why and what to do. */
-  expect(takes[2]).toMatchObject({ status: "failed", credits: 0, failedUnbilled: true, failureLine: "Blocked by the content filter · Not billed · Change the prompt or reference" });
+  expect(takes[2]).toMatchObject({ status: "failed", credits: 0, failedUnbilled: true, failureLine: "Refused by the content filter · Not billed · Change the prompt or reference" });
   expect(takes[3]).toMatchObject({ status: "rendering", credits: null });
   expect(takes[4]).toMatchObject({ meta: "2.0 · 5s", status: "changes", credits: 12, sha256: "b".repeat(64) });
   expect(takes[5]).toMatchObject({ meta: "NB 2 · 1K", status: "picked", credits: 1 });

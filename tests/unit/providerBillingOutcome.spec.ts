@@ -183,11 +183,11 @@ test("who may see the provider's charge: never on the platform's key for a credi
 test("one line per failure: what happened · what the provider did with the charge · the next step", () => {
   const account = (state: "refunded" | "billed" | "unknown", amount?: number): TakeFailure => accountFailure(
     higgsfieldAccountOutcome("nsfw", { ledger: state === "unknown" ? null : { refund: state === "refunded", spend: true, refunded: amount ?? null, spent: amount ?? null } }), "provider_failed");
-  expect(failureLine(account("refunded", 12)).text).toBe("Blocked by the content filter · Higgsfield refunded 12 credits · Change the prompt or reference");
-  expect(failureLine(account("unknown")).text).toBe("Blocked by the content filter · Higgsfield didn't say if it charged · Change the prompt or reference");
-  expect(failureLine(account("billed", 30)).text).toBe("Blocked by the content filter · Higgsfield charged 30 credits · Change the prompt or reference");
+  expect(failureLine(account("refunded", 12)).text).toBe("Refused by the content filter · Higgsfield refunded 12 credits · Change the prompt or reference");
+  expect(failureLine(account("unknown")).text).toBe("Refused by the content filter · Higgsfield didn't say if it charged · Change the prompt or reference");
+  expect(failureLine(account("billed", 30)).text).toBe("Refused by the content filter · Higgsfield charged 30 credits · Change the prompt or reference");
   const ark = takeFailure({ ...arkTaskOutcome({ status: "failed", error: { code: "OutputVideoSensitiveContentDetected" } })!, funding: "own" }, { credits: false });
-  expect(failureLine(ark).text).toBe("Blocked by the content filter · BytePlus didn't charge · Change the prompt or reference");
+  expect(failureLine(ark).text).toBe("Refused by the content filter · BytePlus didn't charge · Change the prompt or reference");
   /* Particl's own ledger, for a credit workspace: "Not billed" only at zero, settled. */
   const platform = { ...takeFailure({ ...arkTaskOutcome({ status: "failed", error: { code: "X" } })!, funding: "platform" }, { credits: true }) };
   expect(failureLine({ ...platform, charge: { credits: 0, settled: true } }).charge).toBe("Not billed");
