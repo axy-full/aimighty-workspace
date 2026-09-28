@@ -181,8 +181,8 @@ export async function sendTranscription(options: {
     /* A completed answer is final: the server keeps it under this key, and the slot is let go. */
     if (error.resolved) {
       clearPendingGeneration(storage, slot, attempt.key);
-      const repriced = error.status === 409 ? Number(error.data.estimatedCredits) : NaN;
-      return { state: "released", reason: `${before}${error.message}`, failed: true, ...(Number.isFinite(repriced) && repriced >= 0 ? { repriced } : {}) };
+      const repriced = error.status === 409 ? error.data.estimatedCredits : undefined;
+      return { state: "released", reason: `${before}${error.message}`, failed: true, ...(typeof repriced === "number" && Number.isFinite(repriced) && repriced >= 0 ? { repriced } : {}) };
     }
     if (error.data.pending === true) return { state: "unknown", reason: `${before}${CHECKING}`, waiting: true };
     return { state: "unknown", reason: `${before}${error.status >= 500 ? LOST_REPLY : error.message}`, waiting: false };

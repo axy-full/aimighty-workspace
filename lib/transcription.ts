@@ -144,12 +144,13 @@ async function saveTranscript(claim: GenerationRequest, saved: SavedTranscript, 
 /**
  * The queued bill written to the meter, once: it is keyed by the event, so a
  * second delivery changes nothing. Delivered as every finished job's is
- * (deliverGenerationSettlement), which also starts takes that waited for the
- * slot it frees. A failure waits for the next check or sync.
+ * (deliverGenerationSettlement), without starting held takes here — the
+ * request may be near its time limit; the sync starts them, as it always has
+ * after a transcription. A failure waits for the next check or sync.
  */
 async function deliverTranscriptCharge(eventId: string): Promise<void> {
   try {
-    await deliverGenerationSettlement(eventId);
+    await deliverGenerationSettlement(eventId, { releaseHeld: false });
   } catch (error) {
     console.error(`Transcription ${eventId} charge not recorded yet:`, error instanceof Error ? error.message : error);
   }

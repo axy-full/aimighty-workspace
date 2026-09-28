@@ -514,27 +514,30 @@ test("the sync delivers a saved transcript's charge on its own, and the check th
   });
 });
 
-test("a transcript whose charge the meter refuses for now is kept: its request says it was interrupted, the check says pending — even past the window — then returns it charged once", async () => {
-  const ws = await setup("meter-refused", SOURCE_S);
+test("a transcript whose charge the meter cannot take yet is kept: its request says it was interrupted, the check says pending — even past the window — then returns it charged once", async () => {
+  const ws = await setup("meter-outage", SOURCE_S);
   const { runInTenant } = await import("../../lib/tenant");
   const { platformDb } = await import("../../lib/platform");
   const { transcriptionEventId } = await import("../../lib/transcription");
   await runInTenant(ws, async () => {
     const reserved = await estimate(SOURCE_S), charged = await estimate(SPOKEN_S);
     const body = { sourceUploadId: "up_line", diarize: true, maxCredits: reserved };
-    const key = "stt-meter-refused";
-    /* The meter refuses the bill while its event reads as another workspace's: it writes nothing. */
-    const owner = (workspaceId: string) => platformDb().execute({ sql: "UPDATE meter_events SET workspace_id=? WHERE id=?", args: [workspaceId, transcriptionEventId(ws.id, { userId: USER, key })] });
+    const key = "stt-meter-outage";
+    /* A ledger outage for this bill: the meter refuses to record it as charged until the trigger is dropped. */
+    await platformDb().execute(`CREATE TRIGGER reject_stt_charge BEFORE UPDATE OF status ON meter_events
+      WHEN NEW.id='${transcriptionEventId(ws.id, { userId: USER, key })}' AND NEW.status='succeeded' BEGIN SELECT RAISE(ABORT,'simulated ledger outage'); END`);
     const { deps, calls } = await provider(SPOKEN_S);
-    deps.step = async (step) => { if (step === "saved") await owner("ws_elsewhere"); };
-    const lost = await send(body, key, deps);
-    expect(lost.status).toBe(503);
-    expect(lost.headers.get("Idempotency-Status")).toBeNull();
-    expect(await check(key, body)).toEqual({ state: "pending" });
-    await age(key);
-    expect(await check(key, body)).toEqual({ state: "pending" });
-    await owner(ws.id);
-    expect(await left(ws.id, key)).toEqual({ saved: true, answered: null, bill: "queued", meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+    try {
+      const lost = await send(body, key, deps);
+      expect(lost.status).toBe(503);
+      expect(lost.headers.get("Idempotency-Status")).toBeNull();
+      expect(await check(key, body)).toEqual({ state: "pending" });
+      await age(key);
+      expect(await check(key, body)).toEqual({ state: "pending" });
+      expect(await left(ws.id, key)).toEqual({ saved: true, answered: null, bill: "queued", meter: { status: "running", credits: reserved }, debited: reserved, drawn: reserved });
+    } finally {
+      await platformDb().execute("DROP TRIGGER IF EXISTS reject_stt_charge");
+    }
     expect(await check(key, body)).toMatchObject({ state: "answered", reply: { text: "Not tonight.", credits: charged } });
     expect(calls.n).toBe(1);
     expect(await left(ws.id, key)).toEqual({ saved: true, answered: 200, bill: "delivered", meter: { status: "succeeded", credits: charged }, debited: charged, drawn: charged });

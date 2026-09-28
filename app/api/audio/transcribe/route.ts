@@ -4,7 +4,7 @@ import { withGenerationRequest, type GenerationRequest } from "@/lib/generationR
 import { transcribe } from "@/lib/transcription";
 
 export const dynamic = "force-dynamic";
-/* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/transcription.ts): raise both together. */
+/* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/generationRequests.ts): raise both together. */
 export const maxDuration = 300;
 
 /**
