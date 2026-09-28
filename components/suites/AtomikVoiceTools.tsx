@@ -221,7 +221,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       const result = await post(body);
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseVoiceJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice("Review the source, settings, wallet and exact price below before running this tool.");
+      if (action === "quote") setNotice("Review the source, settings, wallet and estimate below before running this tool.");
       if (action === "submit") setNotice("Request recorded. Use Check result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
@@ -289,7 +289,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     </fieldset>
     {validation && <p className={styles.hint} role="status">{validation}</p>}
     <div className={styles.actions}>
-      <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
+      <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Getting the quote…" : "Get connected-credit quote"}</button>
       {tool === "voice_change" && <button type="button" className="suite-button" disabled={!!busy || !capability.connected} onClick={() => void loadVoices(true)}><RefreshCw size={14} />Reload voices</button>}
     </div>
     {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines.</p>}
@@ -297,7 +297,7 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
       <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
       <small>{selected.tool.label} · {selected.source.name} · {settingsSummary(selected)}</small>
       <p>{matches ? `Result: ${selected.tool.output === "report" ? "a scene-by-scene report filed as a project note" : `“${voiceToolResultName(definition, selected.source.name, selected.input)}”`}.` : "The source or settings changed. Request a new quote before running this tool."}</p>
-      <p className="suite-footnote">Priced by the connected account’s own quote for exactly these settings. {selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its clients; the wallet and exact price are checked again before submission. Output belongs to the connected account and is billed in its credits.</p>
+      <p className="suite-footnote">Priced by the connected account’s own quote for these settings. {selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its clients; the wallet and price are checked again before submission. Output belongs to the connected account and is billed in its credits.</p>
       <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {selected.quoteCredits} connected credits to {selected.workspaceName} for this {selected.tool.label.toLowerCase()} run.</label>
       <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `${selected.tool.label} · ${selected.quoteCredits} connected credits`}</button>
     </div>}
