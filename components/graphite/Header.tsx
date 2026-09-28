@@ -6,8 +6,9 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
 import { lowBalance, useLastQuote } from "@/lib/workspace/last-quote";
-import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import Boundary from "@/components/Boundary";
+import { JobsFault, JobsPill } from "./JobsTray";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -15,12 +16,12 @@ function initialsOf(name: string) {
 
 /**
  * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
- * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
- * job runs); the credits pill; the avatar, which opens Workspace.
+ * Atomik; the search field that opens ⌘K; the jobs pill (while something
+ * renders, is held, or finished unseen), which opens the jobs tray; the
+ * credits pill; the avatar, which opens Workspace.
  */
 export function Header({ account }: { account: WorkspaceAccount | null }) {
   const shell = useShell();
-  const { state } = useWorkspace();
   const { rates, name, requestScope } = useSession();
   const balance = account?.credits?.balance ?? null;
   const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
@@ -65,13 +66,8 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
         <span className="gx-key">⌘K</span>
       </button>
       <span className="gx-spacer" />
-      {state.gen ? (
-        <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
-          <span className="gx-jobs-dot" aria-hidden="true" />
-          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
-          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
-        </button>
-      ) : null}
+      {/* The tray draws rows the server sent: one that cannot be drawn costs the pill, never the header. */}
+      <Boundary what="Jobs" probe="jobs" fallback={(fault) => <JobsFault fault={fault} />}><JobsPill /></Boundary>
       <button type="button" className="gx-hbtn gx-credits" data-low={low || undefined} onClick={() => shell.goWorkspace("credits")} data-testid="workspace-credits"
         title={low ? `${credits.title} · below the last price quoted (${lastQuote!.credits.toLocaleString("en-US")} cr) · Plans & credits` : credits.title}
         aria-label={low ? `Credits: ${credits.text}, below the last price quoted, ${lastQuote!.credits.toLocaleString("en-US")} cr. Open Plans & credits` : `Credits: ${credits.text}`}>
