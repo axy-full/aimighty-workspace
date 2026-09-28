@@ -484,9 +484,9 @@ test("admission takes WAV sound references for Cinema Studio only, within the do
 
 test("the prompt compiler writes no camera, light or look module where Cinema Studio's own control directs it", async () => fixture("cinema_controls_compiler", async (f) => {
   const { CATEGORIES, hasCameraModule } = await import("../../lib/studio");
-  const module = (row: string, value: string) => CATEGORIES.find((c) => c.key === row)!.options.find((o) => o.value === value)!.module!;
+  const bankModule = (row: string, value: string) => CATEGORIES.find((c) => c.key === row)!.options.find((o) => o.value === value)!.module!;
   const words = "A lighthouse keeper waits under neon on a desaturated pier";
-  const neon = module("light", "neon"), muted = module("look", "muted");
+  const neon = bankModule("light", "neon"), muted = bankModule("look", "muted");
   /* Auto everywhere: the words get the camera, light and look sentences every engine gets. */
   const auto = String(prepared(await f.admission.prepareGeneration(f.body({ prompt: words }), actor)).compiled.prompt);
   expect(hasCameraModule(auto)).toBe(true);
