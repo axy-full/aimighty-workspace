@@ -173,9 +173,11 @@ test("the owner meets one calm card where the Higgsfield account ran — Busines
   await expect(page.getByTestId("viral-view")).toHaveCount(0);
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
   if (WIDE.includes(project)) {
-    /* The stage's Atomik plan ran on the connected account: the Inspector says why it cannot run instead of offering the button. */
-    await expect(page.getByTestId("spec-plan-owner")).toHaveText(`${TITLE}.`);
-    await expect(page.getByTestId("spec-plan").getByRole("button")).toHaveCount(0);
+    /* The stage's Atomik plan runs on the API-key engine now (#470), never the account: the Inspector offers it,
+       held until a page supplies the transform (this one is the card, so it stays held). */
+    await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
+    await expect(page.getByTestId("spec-plan")).toContainText("Recast the motion");
+    await expect(page.getByTestId("spec-plan").getByRole("button")).toBeDisabled();
   }
   await noSideScroll(page);
   await fingerSized(viral, project);
