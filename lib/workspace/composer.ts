@@ -283,7 +283,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 /* ── Model lists ──────────────────────────────────────────────────────── */
 
 /** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
-export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null; /** An approximate figure: shown as "about". */ approximate?: true };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
@@ -464,6 +464,8 @@ export type ComposerQuote = {
   reason: string | null;
   /** A batch's own fresh per-take figures (a Generate of takes 2–4 re-quoted them and they moved): their sum is the button's total. */
   takes?: number[];
+  /** The figure is approximate (the engine settles on what it delivers): the button says "about". */
+  approximate?: boolean;
 };
 
 /**
@@ -580,7 +582,8 @@ type ButtonInput = {
 
 /**
  * The button's label in its two parts: what it does ("Generate 4 takes") and
- * what it costs ("72 connected cr" — the exact live figure, whole, or none).
+ * what it costs ("72 connected cr" — the live figure, whole, "about" where it
+ * is approximate, or none).
  * Gen draws them apart so the price can take its own line on a narrow button
  * rather than ever being cut.
  */
@@ -590,10 +593,11 @@ export function composerButtonParts(input: ButtonInput): { action: string; price
   const total = shownTotal(input.quote, input.quoteKey, count);
   const action = count > 1 ? `Generate ${count} takes` : "Generate";
   if (total === null) return { action, price: null };
-  return { action, price: `${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+  const about = input.quote?.approximate ? "about " : "";
+  return { action, price: `${about}${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
 }
 
-/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" — the exact live figure, or no figure at all. */
+/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" / "Generate · about 18 cr" — the live figure, or no figure at all. */
 export function composerButtonLabel(input: ButtonInput): string {
   const { action, price } = composerButtonParts(input);
   return price ? `${action} · ${price}` : action;

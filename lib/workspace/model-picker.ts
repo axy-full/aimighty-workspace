@@ -109,6 +109,8 @@ export type RowPrice = {
   perTake: boolean;
   title: string;
   kind: "rate" | "last" | "loading" | "none";
+  /** An approximate figure (the engine settles on what it delivers): shown as "about". */
+  approximate?: boolean;
 };
 
 /** Where Gen's composer stands: every Studio row is priced here, one take at a time. */
@@ -198,8 +200,9 @@ export function rowPrice(m: ComposerModel, quoted: Readonly<Record<string, Quote
   if (rate) {
     const detail = settingsDetail(rate);
     const refs = at.references.length ? `with the ${at.references.length === 1 ? "reference" : `${at.references.length} references`} attached` : "no references";
-    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake,
-      title: `${rate.credits.toLocaleString("en-US")} cr per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
+    const about = rate.approximate ? "About " : "";
+    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, ...(rate.approximate ? { approximate: true } : {}),
+      title: `${about}${rate.credits.toLocaleString("en-US")} cr per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
   }
   if (reading && fromSheet === undefined) return { ...LOADING, perTake: false };
   return { ...NONE, perTake: false };

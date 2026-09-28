@@ -67,7 +67,9 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
   if (refs.inputSeconds > model.maxVideoSecondsTotal) throw new MediaQuoteError(`Reference videos total ${refs.inputSeconds.toFixed(1)}s; ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`);
   const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
-  return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput };
+  return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
+    /* Cinema Studio is quoted from published pricing and settles on its delivered output. */
+    ...(model.cinemaStudio ? { approximate: true as const } : {}) };
 }
 
 /**
@@ -96,7 +98,7 @@ export function workbenchUse(model: ModelDef): string | undefined {
 }
 
 /** What an engine is priced at, and what it costs, in credits only. */
-export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true };
 /** Where the model sheet prices the list: the composer's picks, the project's aspect, its references. */
 export type RateAt = { picks?: ComposerPicks; aspect?: string };
 export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
@@ -117,7 +119,7 @@ export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferenceP
   const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations }, at.aspect, at.picks);
   try {
     const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration }, refs);
-    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null };
+    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}) };
   } catch (error) {
     if (error instanceof MediaQuoteError) return null;
     throw error;
