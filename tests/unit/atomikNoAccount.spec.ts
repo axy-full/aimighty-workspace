@@ -7,7 +7,7 @@ import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
  * Atomik without a signed-in account (owner, 28 September 2026: API-key and
- * loginless offerings only; Supercomputer is not sold as an API, so Atomik's
+ * loginless offerings only; the provider's own agent is not sold as an API, so Atomik's
  * agentic workflow runs on Claude, OpenAI and Grok):
  *  - the planner never proposes an account tool (a connected model, its
  *    settings, a motion preset, a batch, a 3D step) and offers only
