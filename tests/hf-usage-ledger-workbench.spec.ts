@@ -346,7 +346,8 @@ test("a workspace that pays its vendors reads its takes in dollars, and the conn
   await expect(rows.first()).toContainText("$1.30");
   await expect(rows.first()).toContainText("Charged");
   await expect(rows.nth(1)).toContainText("Failed · charge unknown");
-  await expect(page.getByTestId("ws-ledger-summary")).toHaveText("All months · $1.30 charged · 0 not billed");
+  /* The failed take recorded no cost: its charge is unknown, so the summary counts nothing as not billed. */
+  await expect(page.getByTestId("ws-ledger-summary")).toHaveText("All months · $1.30 charged");
   const body = await (await page.request.get("/api/usage?rows=1")).json();
   expect(body.unit).toBe("usd");
   expect(JSON.stringify(body)).not.toContain("credits");
