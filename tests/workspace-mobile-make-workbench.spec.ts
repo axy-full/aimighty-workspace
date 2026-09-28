@@ -259,8 +259,9 @@ test("the docked composer runs the desktop machinery: one live quote, re-quoted,
   expect(sent[1].body.maxCredits).toBe(credits);
   expect(sent[1].body).toHaveProperty("quoteFingerprint");
 
-  /* The render runs on the real job, and the shell's strip carries its phase. */
+  /* The render runs on the real job, and the shell's strip carries its phase — never a percentage no engine reported. */
   await expect(page.getByTestId("mobile-gen")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("mobile-gen")).not.toContainText("%");
   /* Completion files a take for review — the repo's lifecycle, not an auto-approve. */
   await expect(page.locator(".pxw-toast")).toContainText("Filed in Takes for review", { timeout: 150_000 });
 

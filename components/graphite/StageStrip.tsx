@@ -1,13 +1,19 @@
 "use client";
 import { Fragment } from "react";
+import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 
-/** 46px. The active suite's pages as `01 Label`, a hairline before each group. Hidden in Gen and Workspace. */
+/** 46px. The active suite's pages as `01 Label`, a hairline before each group. Hidden in Gen and Workspace, and in an owner-run suite for a member. */
 export function StageStrip() {
   const shell = useShell();
+  const { owner } = useConnectedCapability(undefined, { read: false });
   /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
-     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away. */
+     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away.
+     Every page of a suite the owner runs on the connected account is the same owner-run card for a member
+     (idea 19), so a member is shown no tabs there. */
   if (shell.view !== "suite" || (shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages"))) return null;
+  if (!owner && isOwnerRunSuite(shell.suite.id)) return null;
   return (
     <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip">
       {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (

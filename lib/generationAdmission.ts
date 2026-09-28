@@ -14,7 +14,7 @@ import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
-import { allowanceCheck, renderKeyNameFor } from "@/lib/allowance";
+import { allowanceCheck, paidByPlatform, renderKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import {
@@ -182,6 +182,24 @@ function validateReferences(
     return `Reference videos total ${totalVideoS.toFixed(1)}s — ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`;
   }
   return null;
+}
+
+/**
+ * Must this job have a confirmed price before it is admitted?
+ *
+ * A quote (the checkpoint) never states a price nobody can compute. Neither
+ * may a job the platform's key pays for, quote or no quote: its credits are
+ * billed when it settles (lib/meter.ts), so an unpriced one used to be
+ * admitted at an estimate of nothing and charged what the vendor reported,
+ * a price nobody approved. A job on the workspace's own key is billed by its
+ * vendor directly and metered at no credits, so it may still go unpriced,
+ * exactly as before. Checked before any row, reservation or dispatch.
+ */
+function needsConfirmedPrice(
+  options: AdmissionExecution,
+  provider: string,
+): boolean {
+  return Boolean(options.checkpoint) || paidByPlatform(renderKeyNameFor(provider));
 }
 
 /** Shared admission preserves the composer's validation, compilation and spending checks.
@@ -1143,21 +1161,25 @@ export async function executeGenerationAdmission(
       const quotaStill = await checkQuota(0);
       if (!quotaStill.allow)
         return admissionReply({ error: quotaStill.error }, { status: 507 });
-      if (options.checkpoint) {
-        if (trained)
-          return admissionReply(
-            {
-              error:
-                "Trained-identity stages need their dedicated durable renderer before they can run in a pipeline.",
-            },
-            { status: 400 },
-          );
-        if (!model.marketing && !estimateImageCostUsd(modelId, size, stillRefs.length))
-          return admissionReply(
-            { error: "This model has no confirmed price." },
-            { status: 400 },
-          );
-      }
+      if (options.checkpoint && trained)
+        return admissionReply(
+          {
+            error:
+              "Trained-identity stages need their dedicated durable renderer before they can run in a pipeline.",
+          },
+          { status: 400 },
+        );
+      /* A trained likeness is priced as its own render; Marketing Studio by its live estimate. */
+      if (
+        !trained &&
+        !model.marketing &&
+        !estimateImageCostUsd(modelId, size, stillRefs.length) &&
+        needsConfirmedPrice(options, model.provider)
+      )
+        return admissionReply(
+          { error: "This model has no confirmed price." },
+          { status: 400 },
+        );
       if (trained) {
         if (holdStill)
           return admissionReply(
@@ -1791,22 +1813,25 @@ export async function executeGenerationAdmission(
         : undefined,
     };
 
+    /* A transform is priced by its live estimate, which throws rather than answer without one. */
+    if (
+      !genjutsu &&
+      !estimateCostUsd(
+        modelId,
+        params.resolution,
+        params.ratio,
+        params.duration,
+        inputSeconds,
+        hasVideoInput,
+        { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
+      ) &&
+      needsConfirmedPrice(options, model.provider)
+    )
+      return admissionReply(
+        { error: "This model has no confirmed price." },
+        { status: 400 },
+      );
     if (options.checkpoint) {
-      if (
-        !genjutsu && !estimateCostUsd(
-          modelId,
-          params.resolution,
-          params.ratio,
-          params.duration,
-          inputSeconds,
-          hasVideoInput,
-          { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
-        )
-      )
-        return admissionReply(
-          { error: "This model has no confirmed price." },
-          { status: 400 },
-        );
       const stopped = admissionCheckpoint(
         options,
         body,
