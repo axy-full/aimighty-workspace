@@ -392,51 +392,10 @@ test("settlement uses the provider's own charge or the delivered-output figure o
     .toBeCloseTo(await tokenUsd(Math.ceil((8.5 * 1280 * 720 * 24) / 1024), true), 10);
 });
 
-test("the pricing watch reads only the free estimate, at most once per interval, and flags a changed published text to the platform log", async () => {
-  const { checkHiggsfieldPricing, pricingDescriptionSha256 } = await import("../../lib/higgsfieldPricingWatch");
-  const { CINEMA_STUDIO_PRICING_WATCH } = await import("../../lib/cinemaStudio");
-  const { platformDb } = await import("../../lib/platform");
-  expect(CINEMA_STUDIO_PRICING_WATCH).toMatchObject({ model: CINEMA_STUDIO_MODEL_ID, path: "higgsfield/cinema-studio/4.0" });
+test("the pricing watch checks Cinema Studio's published text on its own route, beside the quote's own figure", async () => {
+  // The watch itself is covered in higgsfieldPricingWatch.spec.ts.
+  const { CINEMA_STUDIO_PRICING_WATCH, cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
+  expect(CINEMA_STUDIO_PRICING_WATCH).toMatchObject({ model: CINEMA_STUDIO_MODEL_ID, path: "higgsfield/cinema-studio/4.0", body: { duration: 5, resolution: "720p" } });
   expect(CINEMA_STUDIO_PRICING_WATCH.expectedSha256).toMatch(/^[a-f0-9]{64}$/);
-  const published = "Token-metered pricing. A fixture of the published text.";
-  const watch = { model: "cinema-watch-fixture", path: "higgsfield/cinema-studio/4.0", body: { prompt: "p" }, expectedSha256: pricingDescriptionSha256(published), formulaUsd: () => 0.5 };
-  const calls: { url: string; method?: string; body: unknown }[] = [];
-  let reply: () => Response = () => Response.json({ type: "description", pricing_description: `  ${published.replace(" A ", "   A ")}\n` });
-  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(url), method: init?.method, body: JSON.parse(String(init?.body)) });
-    return reply();
-  }) as typeof fetch;
-  const row = async () => (await platformDb().execute({ sql: "SELECT * FROM higgsfield_pricing_watch WHERE model=?", args: [watch.model] })).rows[0];
-  // Development and mock mode never call it.
-  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher })).toBe("skipped");
-  expect(calls).toEqual([]);
-  // Whitespace does not count as a change.
-  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("unchanged");
-  expect(calls).toEqual([{ url: "https://api.higgsfield.ai/estimate/higgsfield/cinema-studio/4.0", method: "POST", body: { prompt: "p" } }]);
-  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("busy");
-  expect(calls).toHaveLength(1);
-  const warnings: string[] = [], warn = console.warn;
-  console.warn = (message: string) => { warnings.push(message); };
-  try {
-    await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
-    reply = () => Response.json({ type: "description", pricing_description: "Token-metered pricing. A changed text." });
-    expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("changed");
-    expect(await row()).toMatchObject({ status: "changed", detail: "Token-metered pricing. A changed text." });
-    await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
-    reply = () => Response.json({ type: "estimate", credits: "9", usd: "0.61" });
-    expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("priced");
-    expect(JSON.parse(String((await row()).detail))).toEqual({ usd: 0.61, formulaUsd: 0.5 });
-  } finally { console.warn = warn; }
-  expect(warnings.map(w => JSON.parse(w))).toEqual([
-    expect.objectContaining({ event: "higgsfield.pricing_watch", model: watch.model, result: "changed" }),
-    expect.objectContaining({ event: "higgsfield.pricing_watch", model: watch.model, result: "priced" }),
-  ]);
-  // A failed read is retried sooner and never throws into the quote.
-  await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
-  reply = () => new Response("provider detail", { status: 503 });
-  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("unavailable");
-  const retry = Number((await row()).next_at) - Date.now();
-  expect(retry).toBeGreaterThan(30 * 60_000);
-  expect(retry).toBeLessThan(2 * 60 * 60_000);
-  expect(calls.every(call => call.url.startsWith("https://api.higgsfield.ai/estimate/") && call.method === "POST")).toBe(true);
+  expect(CINEMA_STUDIO_PRICING_WATCH.formulaUsd!()).toBe(cinemaStudioQuoteUsd({ resolution: "720p", ratio: "16:9", duration: 5 }));
 });
