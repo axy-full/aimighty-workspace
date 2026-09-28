@@ -4,142 +4,71 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Viral = Genjutsu (FINAL_SPEC §1 step 3) in the browser: the well's rule
- * (one 4–30 s video, ≥1 image), the live estimate on the button, submit at
- * that exact price, and History with Recreate · Compare · Send to Edit (to Takes).
+ * Viral = Genjutsu (FINAL_SPEC §1 step 3). Its pages ran on the connected
+ * Higgsfield account, whose sign-in is retired
+ * (lib/higgsfield-consumer/retired.ts): for everyone, the workspace owner
+ * included, Motion Transfer, Object Swap and History are one card, with Gen on
+ * Video as the way on. A run's result is still a take in the Library. Nothing
+ * asks the account.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
+const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-viral", productionProjectId: "prod-ws", shotMappings: {} });
-const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
+/** A finished account run's original, filed to the project like any take. */
 const GEN = "gen_hfc_" + "a".repeat(40);
 
-async function open(page: Page, sp: "motion" | "swap" | "history", options: { jobs?: Record<string, unknown>[] } = {}) {
+async function open(page: Page) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, {
-    uploads: [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_long", filename: "long.mp4", mime: "video/mp4", kind: "video", durationS: 45 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" })],
-    /* A finished run's original is filed to the project by the account, so Send to Edit finds it there. */
-    generations: [generation({ id: "gen_still", title: "Dunes still", prompt: "dunes" }), generation({ id: GEN, title: "Swapped bottle", kind: "video", model: "genjutsu" })],
+    uploads: [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" })],
+    generations: [generation({ id: GEN, title: "Swapped bottle", kind: "video", model: "genjutsu", provider: "higgsfield", params: { task: "connected-generation", workflow: "genjutsu", consumerCreditUnit: "higgsfield_credits" } })],
   });
-  const me = await page.request.get("/api/me").then((r) => r.json());
-  await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-  const posts: Record<string, unknown>[] = [];
-  const jobs: Record<string, unknown>[] = [...(options.jobs ?? [])];
-  /* Every quote is its own job, priced by the order of its references (two or more with an upload first: 21; otherwise 22),
-     so the price on the button and the job submitted both prove which order was quoted. */
-  const quoted = new Map<string, { input: { references?: { genId?: string; uploadId?: string }[] }; credits: number }>();
-  const quoteIds: string[] = [];
-  await page.route("**/api/higgsfield/consumer/genjutsu**", async (route) => {
-    const req = route.request();
-    if (req.method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800 }, jobs } });
-    const body = req.postDataJSON() as Record<string, unknown>;
-    posts.push(body);
-    const base = { draftId: "ws-viral", workspaceId: WALLET, workspaceName: "Fixture wallet", creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: null };
-    if (body.action === "quote") {
-      const input = body.input as { references?: { genId?: string; uploadId?: string }[] };
-      const credits = (input.references?.length ?? 0) > 1 && input.references![0].uploadId ? 21 : 22;
-      const id = `11111111-1111-4111-8111-${String(quoteIds.length + 1).padStart(12, "0")}`;
-      quoted.set(id, { input, credits });
-      quoteIds.push(id);
-      return route.fulfill({ json: { job: { ...base, id, status: "quoted", input, quoteCredits: credits } } });
-    }
-    if (body.action === "submit") {
-      const q = quoted.get(String(body.id));
-      if (!q || body.credits !== q.credits || body.workspaceId !== WALLET) return route.fulfill({ status: 409, json: { code: "approval_changed", error: "Review this job’s wallet and exact credit quote again." } });
-      const job = { ...base, id: body.id, status: "accepted", input: q.input, quoteCredits: q.credits, providerJobId: "22222222-2222-4222-8222-000000000002" };
-      jobs.unshift(job);
-      return route.fulfill({ json: { job } });
-    }
-    if (body.action === "status") { const job = { ...jobs[0], status: "completed", originalAvailable: true, originalAvailability: "available", result: { original: { generationId: GEN, asset: { generationId: GEN, url: `/api/media/${GEN}`, kind: "video", mime: "video/mp4" } } } }; jobs[0] = job; return route.fulfill({ json: { job } }); }
-    return route.fulfill({ status: 400, json: { error: "unexpected" } });
+  /* Every account request the page makes, bar the shell collector's list of saved jobs (a ledger read). */
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/higgsfield/consumer/")) return;
+    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation") return;
+    asked.push(`${request.method()} ${url.pathname}`);
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  return { errors, posts, jobs, quoted, quoteIds };
+  return { errors, asked };
+}
+async function noSideScroll(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 
-const dropInto = async (page: Page, id: string) => page.getByTestId("viral-well").evaluate((well, payload) => {
-  const data = new DataTransfer(); data.setData("text/plain", payload);
-  well.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
-}, id);
-
-test("Motion Transfer needs one 4–30 s video and a reference; the button wears the live estimate; submit carries exactly that price", async ({ page }, info) => {
+test("Motion Transfer, Object Swap and History are the retired card for the owner; the run's result is still in the Library; nothing asks the account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, posts, quoted, quoteIds } = await open(page, "motion");
-  await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
-  await dropInto(page, "upload:up_long");
-  await expect(page.getByTestId("viral-note")).toHaveText("The source video must be 4–30 s; this one is 45 s.");
-  await dropInto(page, "upload:up_src");
-  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 12 s");
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add at least one reference image.");
-  await dropInto(page, "upload:up_ref");
-  await dropInto(page, "generation:gen_still");
-  await expect(page.getByTestId("viral-reference")).toHaveCount(2);
-  await page.getByRole("button", { name: "Move Dunes still earlier" }).click();
-  await expect(page.getByTestId("viral-reference").first()).toContainText("Dunes still");
-  /* The order is the director's, not the order the quotes happened to go out in (the composer re-quotes 600 ms after each change,
-     so an earlier quote may carry the order before the move). 22 cr is only the reordered input's price: the button wears its estimate. */
-  await expect(page.getByTestId("viral-generate")).toHaveText("Transfer motion · 22 cr");
-  const live = quoteIds.at(-1)!;
-  expect(quoted.get(live)!.input).toEqual({ variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ genId: "gen_still" }, { uploadId: "up_ref" }] });
-  await page.getByTestId("viral-generate").click();
-  await expect(page.getByTestId("viral-done")).toContainText("Rendered.", { timeout: 15_000 });
-  /* Submitted: exactly that quote, at exactly its price. */
-  expect(posts.find((p) => p.action === "submit")).toMatchObject({ action: "submit", credits: 22, workspaceId: WALLET, id: live });
+  const { errors, asked } = await open(page);
+  for (const sp of ["motion", "swap", "history"] as const) {
+    await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
+    await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+    const card = page.getByTestId("owner-run-viral");
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId("owner-run-viral-title")).toHaveText("Particl no longer signs in to Higgsfield");
+    await expect(card).toContainText("Past results stay in your Library.");
+    for (const gone of ["viral-view", "viral-well", "viral-generate", "viral-history"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+    await expect(page.getByTestId("primary-action")).toHaveCount(0);
+    await noSideScroll(page);
+    if (PHONES.includes(info.project.name))
+      for (const button of await card.getByRole("button").all()) expect(Math.round((await button.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
+  }
+
+  /* History reads: the run's result is a take in the Library like any other. */
+  const library = page.getByTestId("library");
+  const opened = !(await library.isVisible());
+  if (opened) await page.getByTestId("toggle-library").click();
+  await expect(library.locator(`.gx-asset-thumb[data-ctx='asset:generation:${GEN}']`)).toBeVisible();
+  if (opened) await page.getByTestId("close-library").click();
+
+  /* The way on: Gen, on Video, on this workspace's credits. */
+  await page.getByTestId("owner-run-viral-gen").click();
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Video" })).toHaveAttribute("aria-selected", "true");
+  expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);
-});
-
-test("Object Swap has its own words; History offers Recreate, Compare and Send to Edit", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const wide = WIDE.includes(info.project.name);
-  const done = { id: "33333333-3333-4333-8333-000000000003", draftId: "ws-viral", status: "completed", input: { variant: "object-swap", resolution: "1080p", prompt: "swap the bottle", source: { uploadId: "up_src" }, references: [{ uploadId: "up_ref" }] }, workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 34, creditUnit: "higgsfield_credits", quoteExpiresAt: 0, createdAt: Date.now() - 60_000, providerJobId: "22222222-2222-4222-8222-000000000002", originalAvailable: true, originalAvailability: "available", result: { original: { generationId: GEN, asset: { generationId: GEN, url: `/api/media/${GEN}`, kind: "video", mime: "video/mp4" } } } };
-  await open(page, "swap", { jobs: [done] });
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
-  await expect(page.getByTestId("viral-view")).toContainText("Swap one element");
-  await expect(page.getByTestId("viral-prompt")).toHaveAttribute("placeholder", "Replace the bottle with the Glow serum; keep the hands as filmed.");
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
-  await expect(page.getByTestId("history-view")).toBeVisible();
-  const result = page.getByTestId("history-result");
-  await expect(result).toHaveCount(1);
-  await expect(result).toContainText("Object Swap · 1080p");
-  await expect(result).toContainText("34 cr settled");
-  await result.getByRole("button", { name: "Compare" }).click();
-  const compare = page.getByRole("dialog", { name: "Compare" });
-  await expect(compare).toBeVisible();
-  await expect(compare.locator("video")).toHaveCount(2);
-  await compare.getByRole("button", { name: "Close" }).click();
-  await result.getByRole("button", { name: "Recreate" }).click();
-  await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
-  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");
-  await expect(page.getByTestId("viral-prompt")).toHaveValue("swap the bottle");
-  await expect(page.getByTestId("viral-generate")).toHaveText("Swap object · 22 cr");
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /History/ }).click();
-  await page.getByTestId("history-result").getByRole("button", { name: "Send to Edit" }).click();
-  /* Takes is where a take opens in Seedance Edit; Edit & Sound is the cut. */
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
-  if (wide) await expect(page.getByTestId("inspector")).toBeVisible();
-});
-
-test("History lists what ran, not estimates, and keeps polling a job the account still holds until it settles", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const base = { draftId: "ws-viral", input: { variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ uploadId: "up_ref" }] }, workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 21, creditUnit: "higgsfield_credits", quoteExpiresAt: 0, createdAt: Date.now() - 60_000 };
-  /* Submitted on another page (or before a reload): nothing here started it, and it still settles. */
-  const running = { ...base, id: "44444444-4444-4444-8444-000000000004", status: "accepted", providerJobId: "22222222-2222-4222-8222-000000000004" };
-  const estimate = { ...base, id: "55555555-5555-4555-8555-000000000005", status: "quoted", providerJobId: null };
-  const { posts } = await open(page, "history", { jobs: [running, estimate] });
-  await expect(page.getByTestId("history-view")).toBeVisible();
-  await expect(page.getByTestId("history-result")).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.getByTestId("history-result")).toContainText("Motion Transfer · 720p");
-  expect(posts.find((p) => p.action === "status")).toEqual({ action: "status", draftId: "ws-viral", id: running.id });
-  await expect(page.getByTestId("history-view")).not.toContainText("quoted");
-  /* The list asks for runs (view=runs, every variant on History), so estimates never push results off its page. */
-  expect(await page.evaluate(() => performance.getEntriesByType("resource").some((e) => /consumer\/genjutsu\?draftId=ws-viral&view=runs$/.test(e.name)))).toBe(true);
 });

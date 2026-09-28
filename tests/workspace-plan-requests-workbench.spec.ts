@@ -6,9 +6,10 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../lib/wo
 
 /**
  * The remaining page-supplied plan requests (workspace redesign follow-up):
- * Marketing Studio and Shorts now publish the bodies their existing paid flow
- * sends, so their Atomik plan reaches its gate with a live quote; Boards has
- * no such body and stays refused.
+ * Marketing Studio publishes the body its existing paid flow sends, so its
+ * Atomik plan reaches its gate with a live quote; Boards has no such body and
+ * stays refused; Shorts ran on the Higgsfield account, whose sign-in is
+ * retired, so its page and its plan say so.
  *
  * Every test here proves the same two things: the plan becomes runnable only
  * from real page state, and NOTHING is dispatched before the approval. The
@@ -281,43 +282,20 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   expect(state.errors).toEqual([]);
 });
 
-test("Shorts' own form is the request its plan prices; nothing is submitted before approval", async ({ page }, info) => {
+test("Shorts ran on the Higgsfield account: its page says the sign-in is retired, and its plan refuses without asking anything", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   const state = await fixture(page, project);
   await page.goto(url(project.id, "subatomik", "shorts"));
   await expect(page.getByTestId("page-title")).toHaveText("Shorts");
-  const panel = page.getByRole("region", { name: "Shorts on the connected account", exact: true });
-  await expect(panel.getByRole("heading", { name: "Shorts", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-page-body="shorts"]')).toContainText("Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  await expect(page.getByRole("region", { name: "Shorts on the connected account", exact: true })).toHaveCount(0);
 
-  /* Before the form holds a source and a style the plan refuses, in its own words. */
   await openAtomik(page);
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Make a set of shorts");
-  await expect(page.getByTestId("atomik-reason")).toContainText("choose a source video and a style on Shorts first");
-  await page.keyboard.press("Escape");
-
-  await panel.getByRole("button", { name: "Load styles", exact: true }).click();
-  await page.locator('[data-library-id="upload:launch-original"]').getByRole("button", { name: "Use as reference", exact: true }).click();
-  await expect(panel.getByRole("group", { name: "Source video", exact: true })).toContainText("Launch cut.mp4 · 31 s");
-  await panel.getByRole("combobox", { name: "Style", exact: true }).selectOption(`cms:${presetId}`);
-  await panel.getByRole("checkbox", { name: /copied to the connected account/ }).check();
-
-  await openAtomik(page);
-  await expect(page.getByTestId("atomik-reason")).toHaveCount(0);
-  const run = page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ });
-  await expect(run).toBeEnabled();
+  await expect(page.getByTestId("atomik-owner-run")).toHaveText("Particl no longer signs in to Higgsfield.");
+  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toHaveCount(0);
   expect(state.quotes).toEqual([]);
-
-  await run.click();
-  await expect(page.getByTestId("atomik-gate")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("atomik-gate-price")).toHaveText("40 credits");
-  /* One quote, on exactly the form's own input; no submission. */
-  expect(state.quotes).toHaveLength(1);
-  expect(state.quotes[0].input).toEqual({
-    source: { uploadId: "launch-original" },
-    preset: { id: presetId, source: "cms", name: "Bold Urban" },
-    aspectRatio: "9:16",
-  });
   expect(state.dispatches).toEqual([]);
   expect(state.external).toEqual([]);
   expect(state.errors).toEqual([]);

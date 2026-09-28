@@ -1,8 +1,7 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
-import { parseConnectedCatalogue } from "../lib/higgsfield-consumer/catalogue";
 import { SPEC_PAGES } from "../lib/workspace/spec-cards";
 import { pageDef, suiteOfPage } from "../lib/workspace/pages";
 import type { PageId } from "../lib/workspace/types";
@@ -224,33 +223,24 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
   expect(errors).toEqual([]);
 });
 
-test("Generate's own form is the request its Atomik plan prices; nothing is quoted before Run", async ({ page }, info) => {
+test("Generate ran on the Higgsfield account: the page says the sign-in is retired, its plan refuses, and nothing asks the account", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const catalogue = parseConnectedCatalogue(JSON.parse(readFileSync("tests/fixtures/connected-models.json", "utf8")), 1_758_000_000_000);
   await signInLocally(page.request);
-  const me = await page.request.get("/api/me").then((response) => response.json());
-  me.owner = true;
   const project = { ...primary, id: "ws-spec-generate" };
-  const posts: Record<string, unknown>[] = [];
+  const asked: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  /* A published request that re-publishes itself on every render never settles (audit, 25 September). */
   page.on("console", (message) => { if (message.type() === "error" && /Maximum update depth/.test(message.text())) errors.push(message.text()); });
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
-    if (path === "/api/me") return json(me);
     if (path === "/api/workbench/projects")
       return json({ project, projects: [{ id: project.id, name: project.name, revision: 1 }], revision: 1, productions: [], shared: null });
-    if (path === "/api/higgsfield/consumer/connection") return json({ connected: true, requiresReconnect: false });
-    if (path === "/api/higgsfield/consumer/generation") {
-      if (request.method() === "GET")
-        return json({ connection: { connected: true, requiresReconnect: false }, capabilities: { types: ["image", "video", "audio", "3d"], promptLimit: 5000, maxMedias: 30, maxMediaBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false }, jobs: [] });
-      const body = request.postDataJSON();
-      posts.push(body);
-      if (body.action === "catalogue")
-        return json({ catalogue: { models: catalogue.models, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: catalogue.fetchedAt } });
-      return json({ error: "No quote may be requested in this test." }, 409);
+    if (path.startsWith("/api/higgsfield/consumer/")) {
+      /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
+      if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
+      asked.push(`${request.method()} ${path}`);
+      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
     }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);
@@ -258,30 +248,14 @@ test("Generate's own form is the request its Atomik plan prices; nothing is quot
   });
   await page.goto(`/workspace?project=${project.id}&suite=atomik&page=generate`);
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
-  const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
-  await expect(panel.getByRole("combobox", { name: "Generate model", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("atomik-generate-retired")).toContainText("Particl no longer signs in to Higgsfield. Past results stay in your Library. Make images, video and sound in Gen, on Studio engines.", { timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Generate on the connected account", exact: true })).toHaveCount(0);
 
   const nav = page.getByRole("navigation", { name: "Pages" });
   await nav.getByRole("button", { name: /Atomik/ }).click();
-  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Generate on the connected account");
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Generate data");
+  await expect(page.getByTestId("atomik-owner-run")).toHaveText("Particl no longer signs in to Higgsfield.");
+  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
-
-  await panel.getByRole("combobox", { name: "Generate model", exact: true }).selectOption("nano_banana_2");
-  const settings = panel.getByRole("group", { name: "Model settings", exact: true });
-  await settings.getByRole("combobox", { name: "resolution", exact: true }).selectOption("2k");
-  await settings.getByRole("combobox", { name: "aspect ratio", exact: true }).selectOption("1:1");
-  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("A plain bottle on a clean studio background.");
-
-  await nav.getByRole("button", { name: /Atomik/ }).click();
-  await expect(page.getByTestId("atomik-reason")).toHaveCount(0);
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeEnabled();
-  /* A complete form holds still: typing keeps up, and nothing re-renders on its own. */
-  await page.keyboard.press("Escape");
-  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).pressSequentially(" Soft light.");
-  await expect(panel.getByRole("textbox", { name: "Generate prompt", exact: true })).toHaveValue("A plain bottle on a clean studio background. Soft light.");
-  await page.waitForTimeout(1000);
-  /* Publishing the request sends nothing: only the catalogue read left the page. */
-  expect(posts).toEqual([{ action: "catalogue" }]);
+  expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);
 });

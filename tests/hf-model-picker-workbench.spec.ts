@@ -10,9 +10,10 @@ import { moreTakes } from "./helpers/genTakes";
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
  * every row before anything is spent. Studio engines are priced by the engines
  * route where the composer stands — its picks, the project's aspect, its
- * references, one take — so the ticked row is the figure Generate shows;
- * connected models are never quoted from the sheet and show only the last
- * quote this browser was given; members never see the connected switch.
+ * references, one take — so the ticked row is the figure Generate shows.
+ * The connected Higgsfield catalogue went with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts): nobody, the workspace owner included,
+ * sees a connected switch, and the account is never read.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -22,12 +23,7 @@ const SHOTS = process.env.PICKER_SHOTS === "all" ? SIZES : ["workbench-390x844",
 
 /* Test fixtures only. */
 const fixture = (): Project => ({ ...newProject("Harbour picker study"), id: "ws-picker", productionProjectId: "prod-ws", shotMappings: {} });
-const CATALOGUE = [
-  { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", description: "Text-to-video and omni-reference", aspectRatios: ["16:9", "9:16"], durationRange: { min: 4, max: 30 }, medias: [{ name: "medias", roles: ["start_image", "end_image", "image_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }, { name: "generate_audio", type: "bool", default: false }] },
-  { id: "veo_3_1", name: "Veo 3.1", outputType: "video", aspectRatios: ["16:9", "9:16"], durations: [4, 6, 8], medias: [{ name: "start_image", roles: ["start_image"], max: 1 }], parameters: [{ name: "enhance_prompt", type: "bool" }, { name: "generate_audio", type: "bool", default: true }] },
-];
-
-type Options = { owner?: boolean; member?: boolean; unconnected?: boolean; aspect?: string; engines?: (page: Page) => Promise<unknown> };
+type Options = { member?: boolean; aspect?: string; engines?: (page: Page) => Promise<unknown> };
 
 async function open(page: Page, options: Options = {}) {
   const { workspace } = await signInLocally(page.request);
@@ -44,26 +40,14 @@ async function open(page: Page, options: Options = {}) {
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   const consumer: Record<string, unknown>[] = [];
   const quotes: Record<string, unknown>[] = [];
-  if (options.owner) {
-    const me = await page.request.get("/api/me").then((r) => r.json());
-    await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-  }
   await page.route("**/api/higgsfield/consumer/**", async (route) => {
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
     /* The shell lists the open project's saved connected jobs (GET ?draftId=, lib/shell/connected-collector) whenever
        a project opens, on any page, so a render left mid-way still reaches Takes: not the composer reading the account. */
     const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
-    if (!listing) consumer.push({ url: route.request().url(), ...body });
-    if (!options.owner) return route.fulfill({ status: 403, json: { error: "The workspace owner only." } });
     if (listing) return route.fulfill({ json: { jobs: [] } });
-    if (new URL(route.request().url()).pathname.endsWith("/connection")) return route.fulfill({ json: { connected: !options.unconnected, requiresReconnect: false } });
-    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: CATALOGUE, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-    if (body.action === "quote") {
-      quotes.push(body);
-      const input = body.input as { model: string };
-      return route.fulfill({ json: { job: { id: "9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d", draftId: "ws-picker", status: "quoted", model: CATALOGUE.find((m) => m.id === input.model), input: body.input, workspaceId: "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b", workspaceName: "Test wallet", quoteCredits: 43, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: Date.now(), providerJobId: null, tool: null, sources: [] } } });
-    }
-    return route.fulfill({ status: 400, json: { error: "unexpected" } });
+    consumer.push({ url: route.request().url(), ...body });
+    return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
   });
   await options.engines?.(page);
   /* The sheet's own reads of the engine list, priced where the composer stands (never a quote: no `model`). */
@@ -352,55 +336,10 @@ test("Recent leads with the last three models used for this output, never repeat
   expect(errors).toEqual([]);
 });
 
-test("the connected catalogue is never quoted from the sheet; a quote the composer was given becomes that row's last quote", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, quotes } = await open(page, { owner: true });
-  let sheet = await openSheet(page);
-  await expect(sheet.getByRole("tab")).toHaveText(["Studio engines", "Higgsfield catalogue"]);
-  await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
-  await expect(sheet.getByRole("option")).toHaveCount(2);
-  for (const row of await sheet.getByRole("option").all()) {
-    await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "none");
-    await expect(row.getByTestId("gen-sheet-price")).toHaveText("priced on Generate");
-  }
-  const veo = sheet.getByRole("option", { name: /^Veo 3\.1/ });
-  /* Audio only where the account's default for the switch is on: the composer never sends it. */
-  await expect(veo.locator(".gx-spec")).toHaveText(["4/6/8 s", "1 image ref", "Audio", "Enhance"]);
-  await expect(sheet.getByRole("option", { name: /^Seedance 2\.5/ }).locator('[data-spec="audio"]')).toHaveCount(0);
-  expect(quotes).toEqual([]);
-  await veo.click();
-  await expect(sheetOf(page)).toHaveCount(0);
-  expect(quotes).toEqual([]);
-
-  await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 43 connected cr");
-  const asked = quotes.length;
-  expect(asked).toBeGreaterThan(0);
-  sheet = await openSheet(page);
-  const price = sheet.getByRole("option", { name: /^Veo 3\.1/ }).getByTestId("gen-sheet-price");
-  await expect(price).toHaveAttribute("data-kind", "last");
-  await expect(price.locator("b")).toHaveText("43 connected cr");
-  await expect(price.locator("span")).toHaveText("last quote");
-  await expect(price).toHaveAttribute("title", "Last quoted in this browser: 43 connected cr at 4 s");
-  await expect(sheet.getByRole("option", { name: /^Seedance 2\.5/ }).getByTestId("gen-sheet-price")).toHaveText("priced on Generate");
-  await shot(page, info, "connected-last-quote");
-  /* Opening the sheet and browsing asked for nothing: away to Studio engines until the composer has
-     priced a Studio take there, then back, lands on the figure already given for this exact body. */
-  await sheet.getByRole("tab", { name: "Studio engines" }).click();
-  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · \d+ cr$/, { timeout: 30_000 });
-  await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 43 connected cr");
-  await closeSheet(page);
-  /* A re-quote would go out one debounce (260 ms) after the switch back: count well after it. */
-  await page.waitForTimeout(1_000);
-  expect(quotes.length).toBe(asked);
-  expect(await noOverflow(page)).toBe(true);
-  expect(errors).toEqual([]);
-});
-
-test("a member sees only this workspace's engines: no connected switch, and the account is never read", async ({ page }, info) => {
+for (const member of [false, true])
+test(`${member ? "a member" : "the owner"} sees only this workspace's engines: no connected switch, and the account is never read`, async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const { errors, consumer } = await open(page, { member: true });
+  const { errors, consumer } = await open(page, { member });
   const sheet = await openSheet(page);
   await expect(sheet.getByRole("option").first()).toBeVisible();
   await expect(sheet.getByRole("tablist", { name: "Catalogue" })).toHaveCount(0);
@@ -408,7 +347,7 @@ test("a member sees only this workspace's engines: no connected switch, and the 
   await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeVisible();
   await expect(sheet.getByTestId("gen-sheet-price").first()).toHaveAttribute("data-kind", "rate");
   await expect(page.getByTestId("gen-model").locator(".gx-model-sub")).toHaveText("Studio engine");
-  await shot(page, info, "member-sheet");
+  await shot(page, info, member ? "member-sheet" : "owner-sheet");
   await closeSheet(page);
   expect(consumer).toEqual([]);
   expect(errors).toEqual([]);
@@ -455,32 +394,6 @@ test("the sheet shows it is reading, then the list; a failed read says why inste
   await expect(sheet.getByTestId("gen-model-search")).toBeVisible();
   await closeSheet(page);
   await expect(page.getByTestId("gen-blocked")).not.toHaveText("The engine list is unavailable right now.");
-  expect(errors).toEqual([]);
-});
-
-test("an owner with no connected account can get straight back to Studio engines, or to Workspace › Engines", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const { errors, quotes } = await open(page, { owner: true, unconnected: true });
-  let sheet = await openSheet(page);
-  await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
-  const empty = sheet.getByTestId("gen-model-empty");
-  await expect(empty.locator(".gx-empty")).toHaveText(/^No account is connected\./);
-  await expect(sheet.getByTestId("gen-model-search")).toHaveCount(0);
-  await shot(page, info, "connected-empty");
-  await empty.getByTestId("gen-model-use-studio").click();
-  await expect(sheet.getByRole("tab", { name: "Studio engines" })).toHaveAttribute("aria-selected", "true");
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  await closeSheet(page);
-  await expect(page.getByTestId("gen-model").locator(".gx-model-sub")).toHaveText("Studio engine");
-  await expect(page.getByTestId("gen-model").locator(".gx-model-name")).not.toHaveText("Choose a model");
-  /* The other way out opens the connection settings. */
-  sheet = await openSheet(page);
-  await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
-  await sheet.getByTestId("gen-model-open-engines").click();
-  await expect(sheetOf(page)).toHaveCount(0);
-  await expect(page).toHaveURL(/view=workspace/);
-  await expect(page).toHaveURL(/tab=engines/);
-  expect(quotes).toEqual([]);
   expect(errors).toEqual([]);
 });
 
