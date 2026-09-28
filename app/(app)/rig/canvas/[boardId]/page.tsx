@@ -8,7 +8,8 @@ import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { charged as whole, estimateVideo, estimateImage } from "@/lib/rateTable";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
-import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
+import { NO_CONFIRMED_PRICE, sendClaimedGeneration } from "@/lib/workspace/generate-submit";
+import { useQuoteChecks } from "@/lib/workspace/use-quote-checks";
 import { estimateTokens, costUsd } from "@/lib/models";
 import type { Board, BoardNode, BoardWire, NodeKind } from "@/lib/boards";
 import { markStale } from "@/lib/boardGraph";
@@ -210,17 +211,18 @@ function Canvas() {
 
   /* ── prices (§8: a node prices itself before it runs, from the engine's table) ── */
   const engineOf = useCallback((n: BoardNode): string => String(n.ref?.engine ?? (n.kind === "image" ? models?.image : models?.video) ?? ""), [models]);
-  const priceOf = useCallback((n: BoardNode): number => {
+  /* A setting the table cannot price (Seedance's adaptive frame, say) has no price: null, never 0 and never a guess.
+     The quote route has none for a zero either (lib/generationAdmission.ts). */
+  const priceOf = useCallback((n: BoardNode): number | null => {
+    let est: number | null;
     if (n.kind === "image") {
-      const est = estimateImage(rates, engineOf(n), String(n.settings.resolution ?? "1K"), Number(n.settings.refs ?? 0));
-      return (est ?? 0) * Number(n.settings.count ?? 1);
-    }
-    if (n.kind === "video") {
+      const one = estimateImage(rates, engineOf(n), String(n.settings.resolution ?? "1K"), Number(n.settings.refs ?? 0));
+      est = one == null ? null : one * Number(n.settings.count ?? 1);
+    } else if (n.kind === "video") {
       const secs = Number(n.settings.seconds ?? 5); const res = String(n.settings.resolution ?? "1080p");
-      const est = estimateVideo(rates, engineOf(n), res, secs, estimateTokens(res, String(n.settings.ratio ?? "16:9"), secs), costUsd, { audio: Boolean(n.settings.audio) });
-      return est ?? 0;
-    }
-    return n.credits;
+      est = estimateVideo(rates, engineOf(n), res, secs, estimateTokens(res, String(n.settings.ratio ?? "16:9"), secs), costUsd, { audio: Boolean(n.settings.audio) });
+    } else return n.credits;
+    return est != null && Number.isFinite(est) && est > 0 ? est : null;
   }, [rates, engineOf]);
   const fmt = useCallback((n: number) => money.price(n), [money]);
 
@@ -345,11 +347,8 @@ function Canvas() {
   }, [shownBoard, refFromUrl, addNode, toast]);
 
   /* ── running a node: through the ordinary generate route; the output lives in the node ── */
-  const runNode = async (n: BoardNode) => {
-    const b = latest.current;
-    if (!b || running.has(n.id) || !isGen(n.kind)) return;
-    if (n.kind !== "image" && n.kind !== "video") { toast(`${KIND_WORD[n.kind]} nodes run from Make for now.`); return; }
-    const price = priceOf(n);
+  /** What a node's Run posts, less its ceiling, from the board as it stands: the body runNode sends, and the one the quote route is asked about. */
+  const runRequest = (b: Board, n: BoardNode) => {
     const upstream = (slotId: string) => { const w = b.wires.find((x) => x.to.nodeId === n.id && x.to.slotId === slotId); return w ? b.nodes.find((x) => x.id === w.from.nodeId) ?? null : null; };
     const specNode = upstream("spec") ?? upstream("image");
     const shotNode = [specNode, ...b.nodes.filter((x) => x.kind === "shot" && b.wires.some((w) => w.from.nodeId === x.id && w.to.nodeId === n.id))].find((x) => x?.kind === "shot") ?? null;
@@ -357,18 +356,49 @@ function Canvas() {
     const promptNode = b.nodes.find((x) => x.kind === "prompt" && b.wires.some((w) => w.from.nodeId === x.id && w.to.nodeId === n.id));
     const imageNode = upstream("image");
     const prompt = [String(n.settings.prompt ?? ""), promptNode?.text ?? "", shot?.description ?? shot?.title ?? "", n.kind === "video" ? String(n.settings.motion ?? "") : ""].filter(Boolean).join(". ").trim();
+    const engine = engineOf(n);
+    const body: Record<string, unknown> = n.kind === "image"
+      ? { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1K", ratio: n.settings.ratio ?? "16:9" }
+      : { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1080p", ratio: n.settings.ratio ?? "16:9", duration: Number(n.settings.seconds ?? 5),
+          references: imageNode?.output?.genId ? [{ genId: imageNode.output.genId, role: "first_frame" }] : undefined };
+    return { prompt, shotNode, body };
+  };
+  /* The quote route (free, nothing reserved) is asked once about each priced node's run, so a setting the server has no
+     confirmed price for never keeps the table's figure on its button. */
+  const checks = useQuoteChecks(requestScope, (shownBoard?.nodes ?? []).flatMap((n) => {
+    if (!shownBoard || !isRunnable(n.kind) || priceOf(n) == null) return [];
+    const run = runRequest(shownBoard, n);
+    return run.prompt ? [run.body] : [];
+  }));
+  /** What a node's Run shows and may send: the table's price, or null when there is no confirmed one. */
+  const costOf = (b: Board, n: BoardNode): number | null => {
+    const price = priceOf(n);
+    if (price == null || !isRunnable(n.kind)) return price;
+    return checks.verdict(runRequest(b, n).body) === "unpriced" ? null : price;
+  };
+  const runNode = async (n: BoardNode) => {
+    const b = latest.current;
+    if (!b || running.has(n.id) || !isGen(n.kind)) return;
+    if (n.kind !== "image" && n.kind !== "video") { toast(`${KIND_WORD[n.kind]} nodes run from Make for now.`); return; }
+    const price = priceOf(n);
+    /* No price is not a free run: nothing goes at "0 cr", or at a figure nobody confirmed. */
+    if (price == null) { toast(NO_CONFIRMED_PRICE); return; }
+    const { prompt, shotNode, body } = runRequest(b, n);
     if (!prompt) { toast("Wire a prompt or a shot in first."); return; }
     if (!requestScope) { toast("Reload this page in the intended account and workspace before running a node."); return; }
     setRunning((r) => new Set(r).add(n.id));
     patchNode(n.id, { state: "running" });
     try {
-      const engine = engineOf(n);
+      /* The quote route's word on this exact body first (a press before its answer waits for it): with no confirmed
+         price, or no answer at all, nothing is sent. Any other refusal is the paid route's to give, as before. */
+      const check = await checks.ask(body);
+      if (check === "unpriced" || check === "failed") {
+        patchNode(n.id, { state: n.state });
+        toast(check === "unpriced" ? NO_CONFIRMED_PRICE : "The price could not be checked. Nothing was sent. Try again.");
+        return;
+      }
       /* The price on the button is the ceiling: a run that would now cost more is refused, not charged. */
       const credits = rates.unit === "cr" ? whole(rates, price) : null;
-      const body = n.kind === "image"
-        ? { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1K", ratio: n.settings.ratio ?? "16:9" }
-        : { prompt, model: engine, projectId, shotId: shot?.id, resolution: n.settings.resolution ?? "1080p", ratio: n.settings.ratio ?? "16:9", duration: Number(n.settings.seconds ?? 5),
-            references: imageNode?.output?.genId ? [{ genId: imageNode.output.genId, role: "first_frame" }] : undefined };
       /* Under a stored Idempotency-Key, one slot per node: after a lost reply the next Run asks what became of
          it first, so a run that landed is followed, and never sent twice (sendClaimedGeneration). */
       const sent = await sendClaimedGeneration({
@@ -420,12 +450,16 @@ function Canvas() {
     if (!projectId || !b) return;
     /* Only what the board can run and price; an unrunnable node would enter the recipe at 0 cr. */
     const gens = b.nodes.filter((n) => isRunnable(n.kind)).sort((p, q) => p.x - q.x || p.y - q.y);
+    /* Nor may a node with no confirmed price: its stage would read 0 cr. */
+    const prices = gens.map((n) => costOf(b, n));
+    const unpriced = gens.find((_, i) => prices[i] == null);
+    if (unpriced) { toast(`${unpriced.label} · ${NO_CONFIRMED_PRICE}`); return; }
     const numOf = new Map(gens.map((n, i) => [n.id, i + 1]));
     const seen = new Map<string, number>();
     const stages = gens.map((n, i) => ({
       /* A stage is named for what it makes — `Image`, `Video 2` — and carries its engine beside it, the way the run track reads. */
       num: i + 1, name: (() => { const k = (seen.get(n.kind) ?? 0) + 1; seen.set(n.kind, k); return k > 1 ? `${KIND_WORD[n.kind]} ${k}` : KIND_WORD[n.kind]; })(), kind: "render",
-      engine: engineOf(n), units: Number(n.settings.count ?? 1), credits: priceOf(n),
+      engine: engineOf(n), units: Number(n.settings.count ?? 1), credits: prices[i],
       inputs: b.wires.filter((w) => w.to.nodeId === n.id && numOf.has(w.from.nodeId)).map((w) => numOf.get(w.from.nodeId)!),
     }));
     const r = await fetch(`/api/rig/recipe/${encodeURIComponent(projectId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: b.name, stages }) });
@@ -460,7 +494,8 @@ function Canvas() {
   const ran = b.nodes.filter((n) => n.output?.genId).length;
   const spent = b.nodes.reduce((a, n) => a + (n.output?.genId ? n.credits : 0), 0);
   const unrun = b.nodes.filter((n) => (n.kind === "image" || n.kind === "video") && !n.output?.genId);
-  const unrunCost = unrun.reduce((a, n) => a + priceOf(n), 0);
+  /* One node with no confirmed price leaves the lot unpriced: no price, no Run unrun (never "0 cr"). */
+  const unrunCost = unrun.reduce<number | null>((a, n) => { const c = costOf(b, n); return a == null || c == null ? null : a + c; }, 0);
   const hrefs = rigHrefs(projectId ?? "", b.id);
   const addItems: MenuItem[] = [
     { kind: "item", label: "New asset", keys: fmt(0), onSelect: () => setAssetSheet(true) },
@@ -475,6 +510,10 @@ function Canvas() {
   if (phone) {
     const gens = b.nodes.filter((n) => n.kind === "image" || n.kind === "video");
     const target = gens.find((n) => n.id === selected) ?? gens[gens.length - 1] ?? null;
+    const targetCost = target ? costOf(b, target) : null;
+    /* No confirmed price: the pinned Run shows none, stays shut and says why. */
+    const unpriced = target !== null && targetCost === null;
+    const quiet = !target || rail.open || Boolean(slotSel) || unpriced;
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
         <RigBar tab="canvas" hrefs={hrefs}
@@ -482,7 +521,7 @@ function Canvas() {
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
         <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
-        <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
+        <PhoneBoard board={b} fmt={fmt} priceOf={(n) => costOf(b, n)} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
             const cur = latest.current; if (!cur) return;
@@ -493,11 +532,11 @@ function Canvas() {
           }}
           toast={toast} />
         <div className="flex flex-none flex-col gap-[8px] border-t border-border bg-ground px-[16px] pb-[6px] pt-[10px]" data-pinned="">
-          <Mono className="text-center">Built on desktop · run and file from here</Mono>
-          <button type="button" disabled={!target || running.has(target.id)} onClick={() => target && runNode(target)} data-render=""
-            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${!target || rail.open || slotSel ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
+          <Mono tone={unpriced ? "body" : "muted"} className="text-center">{unpriced ? NO_CONFIRMED_PRICE : "Built on desktop · run and file from here"}</Mono>
+          <button type="button" disabled={!target || running.has(target.id) || unpriced} onClick={() => target && runNode(target)} data-render=""
+            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${quiet ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
             <span className="truncate">{target && running.has(target.id) ? "Running…" : target?.output?.genId ? "Run node again" : "Run node"}</span>
-            <span className={`ui-mono ui-mono-cost !text-[12px] ${!target || rail.open || slotSel ? "text-ink-muted" : "text-on-primary-cost"}`}>{fmt(target ? priceOf(target) : 0)}</span>
+            <span className={`ui-mono ui-mono-cost !text-[12px] ${quiet ? "text-ink-muted" : "text-on-primary-cost"}`}>{unpriced ? "No price" : targetCost === null ? "" : fmt(targetCost)}</span>
           </button>
         </div>
         <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
@@ -525,7 +564,7 @@ function Canvas() {
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
             <Wires board={b} selected={selectedWire} onSelect={setSelectedWire} wiring={wiring} />
             {b.nodes.map((n) => (
-              <Node key={n.id} n={n} board={b} selected={selected === n.id} running={running.has(n.id)} price={priceOf(n)} fmt={fmt}
+              <Node key={n.id} n={n} board={b} selected={selected === n.id} running={running.has(n.id)} price={costOf(b, n)} fmt={fmt}
                 onDown={onNodeDown(n)} onStartWire={startWire} onLand={landWire} onRun={() => runNode(n)}
                 onText={(t) => patchNode(n.id, { text: t }, true)} onSetting={(k, v) => patchNode(n.id, { settings: { ...n.settings, [k]: v } }, true)} />
             ))}
@@ -547,14 +586,14 @@ function Canvas() {
             <button type="button" onClick={() => setZoom((z) => (z >= 1 ? 0.75 : z >= 0.75 ? 0.5 : 1))} className="ui-mono ui-mono-cost px-[10px] py-[8px] text-ink-body">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
-            <button type="button" onClick={runUnrun} disabled={!unrun.length} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {fmt(unrunCost)}</button>
+            <button type="button" onClick={runUnrun} disabled={!unrun.length || unrunCost == null} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {unrunCost == null ? "No price" : fmt(unrunCost)}</button>
           </div>
           {/* The menu sits on the surface, whose pointerdown clears it: without this a
               press on an item closed the menu before its click, and nothing was added. */}
           {addMenu && <div className="contents" onPointerDown={(e) => e.stopPropagation()}><Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} /></div>}
           <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
         </section>
-        <Inspector node={sel} board={b} price={sel ? priceOf(sel) : 0} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
+        <Inspector node={sel} board={b} price={sel ? costOf(b, sel) : null} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
           onRun={() => sel && runNode(sel)} onSetting={(k, v) => sel && patchNode(sel.id, { settings: { ...sel.settings, [k]: v } }, true)}
           onEngine={(id) => sel && patchNode(sel.id, { ref: { ...(sel.ref ?? {}), engine: id }, label: engineLabel(id) }, true)}
           onRemove={() => sel && removeNode(sel.id)} running={sel ? running.has(sel.id) : false} />
@@ -608,7 +647,8 @@ function Dot({ style, dashed, onDown, onUp, title }: { style: React.CSSPropertie
 }
 
 function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, onLand, onRun, onText, onSetting }: {
-  n: BoardNode; board: Board; selected: boolean; running: boolean; price: number; fmt: (v: number) => string;
+  /** The price on the node's Run, or null when there is no confirmed one. */
+  n: BoardNode; board: Board; selected: boolean; running: boolean; price: number | null; fmt: (v: number) => string;
   onDown: (e: RPointerEvent) => void; onStartWire: (nodeId: string, portId: string) => (e: RPointerEvent) => void;
   onLand: (to: BoardNode, slotId: string) => (e: RPointerEvent) => void; onRun: () => void; onText: (t: string) => void; onSetting: (k: string, v: unknown) => void;
 }) {
@@ -686,6 +726,8 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
   /* image · video · edit · upscale · audio · voice · compare */
   const done = Boolean(n.output?.genId);
   const runnable = isRunnable(n.kind);
+  const unpriced = runnable && price === null;
+  const shown = done ? n.credits : price;
   const dotTop = outputDotTop(n);
   const secs = Number(n.settings.seconds ?? 5);
   return (
@@ -748,11 +790,12 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
           ) : <span className="ui-mono !text-[10px] !leading-[1.5] !tracking-[.1em] text-ink-muted">{stale ? "Stale · upstream changed" : n.kind === "video" && inputOf("image") ? "Not run · same frame other model" : "Not run"}</span>}
         </div>
       )}
-      <button type="button" onClick={(e) => { e.stopPropagation(); onRun(); }} onPointerDown={stop} disabled={running || !runnable}
-        className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[40px] w-[calc(100%-20px)] items-center justify-between rounded-[9px] border border-[rgba(245,246,248,.16)] ${n.kind === "image" ? "px-[12px] text-[13px]" : "px-[10px] text-[12.5px]"} font-medium leading-none text-ink`}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onRun(); }} onPointerDown={stop} disabled={running || !runnable || unpriced}
+        className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[40px] w-[calc(100%-20px)] items-center justify-between rounded-[9px] border border-[rgba(245,246,248,.16)] ${n.kind === "image" ? "px-[12px] text-[13px]" : "px-[10px] text-[12.5px]"} font-medium leading-none ${unpriced ? "text-ink-body" : "text-ink"}`}>
         <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (n.output?.filedTo ? `Filed · ${board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot"} v${n.output.filedTo.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
-        {runnable && <Mono cost className="whitespace-nowrap">{fmt(done ? n.credits : price)}</Mono>}
+        {runnable && <Mono cost tone={unpriced ? "body" : "muted"} className="whitespace-nowrap">{unpriced || shown === null ? "No price" : fmt(shown)}</Mono>}
       </button>
+      {unpriced && <span className="mx-[10px] -mt-[4px] mb-[10px] block text-[12px] leading-[1.35] text-ink-body">{NO_CONFIRMED_PRICE}</span>}
       <Dot style={{ right: -5, top: dotTop }} dashed={!done} onDown={onStartWire(n.id, "out")} title="Output" />
     </article>
   );
@@ -764,7 +807,7 @@ function LockGlyph() {
 
 /* ── the inspector (300px) ─────────────────────────────────────────── */
 function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, production, projectId, onRun, onSetting, onEngine, onRemove, running }: {
-  node: BoardNode | null; board: Board; price: number; fmt: (v: number) => string; engines: Engine[]; engineOf: (n: BoardNode) => string;
+  node: BoardNode | null; board: Board; price: number | null; fmt: (v: number) => string; engines: Engine[]; engineOf: (n: BoardNode) => string;
   shots: ShotRow[]; production: ProductionRow | null; projectId: string | null;
   onRun: () => void; onSetting: (k: string, v: unknown) => void; onEngine: (id: string) => void; onRemove: () => void; running: boolean;
 }) {
@@ -846,7 +889,9 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
       </div>
       {gen && (
         <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-          <Button variant="primary" placement="rail" cost={price} busy={running} busyLabel="Running…" onClick={onRun}>{n.output?.genId ? "Run node again" : "Run node"}</Button>
+          {/* No confirmed price: no figure on the button (never "0 cr"), no Run, and why. */}
+          <Button variant="primary" placement="rail" outlined={price === null} disabled={price === null} cost={price ?? undefined} busy={running} busyLabel="Running…" onClick={onRun}>{n.output?.genId ? "Run node again" : "Run node"}</Button>
+          {price === null && <span className="text-center text-[13px] leading-[1.45] text-ink-body">{NO_CONFIRMED_PRICE}</span>}
           {shot && <Mono cost className="text-center !leading-[1.4]">Files as {shot.code} v{(n.output?.filedTo?.version ?? 0) + 1} · v{n.output?.filedTo?.version} stays</Mono>}
         </div>
       )}

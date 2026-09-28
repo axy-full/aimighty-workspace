@@ -219,6 +219,38 @@ export async function dispatchGeneration(options: {
   }
 }
 
+/**
+ * What the quote route answers for `body`, asked without sending it: POST
+ * /api/generate/quote, admission's own validation and pricing stopped before
+ * anything is reserved, so asking is free. For a caller that prices its own
+ * request (the rate-table Rig's Run node) this is not the price, which stays
+ * the one on its button: it is whether the server has a price at all.
+ *
+ * `unpriced`: the route's own "no confirmed price" answer; nothing may be sent.
+ * `refused`: any other refusal, which the paid POST would give the same way.
+ * `failed`: no answer to go on (the connection, the server, an unreadable reply).
+ */
+export type QuoteCheck = "priced" | "unpriced" | "refused" | "failed";
+
+/** What a Run with no confirmed price says, in place of a price (never "0 cr", never a guess). */
+export const NO_CONFIRMED_PRICE = "No confirmed price for this setting yet.";
+
+export async function checkQuote(scope: string, body: Record<string, unknown>): Promise<QuoteCheck> {
+  try {
+    const quote = await studioRequest<{ estimatedCredits?: unknown }>("/api/generate/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+      body: JSON.stringify(body),
+    });
+    const credits = quote.estimatedCredits;
+    return typeof credits === "number" && Number.isFinite(credits) && credits >= 0 ? "priced" : "failed";
+  } catch (error) {
+    if (!(error instanceof StudioRequestError)) return "failed";
+    if (/no confirmed price/i.test(error.message)) return "unpriced";
+    return error.status >= 500 ? "failed" : "refused";
+  }
+}
+
 /** What a claimed send became (sendClaimedGeneration). */
 export type ClaimedSend =
   /** Accepted: a job to follow. `followed`: an earlier press's request had landed, and nothing new was sent. `status` is the job's own (a refused charge fails it, unbilled). */
