@@ -371,9 +371,12 @@ test("a long project is windowed and reads on as its end comes into view; the la
   await toEnd(page);
   await expect(last).toBeVisible();
   await clearsTabBar(page, last, "the last row");
-  /* Opened from the end of a windowed grid, then Back: its card, not mounted meanwhile, is brought back into view. */
+  /* Opened from the end of a windowed grid, the editor above comes into view: the grid holds its scroll corrections
+     until the smooth move is over (outside iOS, one made on the way stops it at the grid's end). Then Back: its card,
+     not mounted meanwhile, is brought back into view. */
   await last.getByTestId("edit-take").click();
   await expect(page.getByTestId("takes-selected")).toContainText("Selected · Take 300");
+  await expect(page.getByTestId("takes-selected")).toBeInViewport();
   await expect(last).toHaveCount(0);
   await page.getByTestId("takes-back").click();
   await expect(page.getByTestId("takes-selected")).toHaveCount(0);
