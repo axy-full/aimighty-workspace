@@ -116,7 +116,7 @@ const messages: Record<ConsumerVideoErrorCode, string> = {
     "The connected account did not return one selected billing workspace.",
   workspace_changed:
     "The selected connected-account billing workspace changed. Request a new quote.",
-  invalid_quote: "The connected account did not return a usable exact credit quote.",
+  invalid_quote: "The connected account did not return a usable credit quote.",
   quote_changed: "The connected-account price changed. Request a new quote.",
   unapproved_adjustment:
     "The connected account changed a requested setting. Review a new quote before continuing.",

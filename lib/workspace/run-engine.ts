@@ -373,8 +373,8 @@ export class AtomikRunEngine {
         before === null
           ? null
           : before === after
-            ? `Quote refreshed — price unchanged at ${after}. Approve again to continue.`
-            : `Quote refreshed — price changed from ${before} to ${after}.`;
+            ? `Quote refreshed — estimate unchanged at about ${after}. Approve again to continue.`
+            : `Quote refreshed — estimate changed from about ${before} to about ${after}.`;
       this.patchRun(runId, { quote, quoting: false, status: "waiting", notice, error: null });
       return true;
     } catch (error) {

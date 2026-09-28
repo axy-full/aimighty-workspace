@@ -292,7 +292,7 @@ export function MarketingPresets({
             </strong>
             <p>
               One product image leads the composition. Add one cast image to
-              include a person. Presets use high quality; review the exact price
+              include a person. Presets use high quality; review the estimate
               before generating.
             </p>
             {settings.presetId && !preset && (

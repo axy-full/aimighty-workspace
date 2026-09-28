@@ -138,7 +138,7 @@ export function EditSoundPage({ project: shellProject, scope }: MobilePageProps)
         </div>
       ))}
       <p className="pxm-form-note">
-        Every door is quoted before anything is sent. This page’s plan runs them at its own approval gate, with the exact price on the button.
+        Every door is quoted before anything is sent. This page’s plan runs them at its own approval gate, with the estimate on the button.
       </p>
 
       <div className="pxm-group-head pxm-form-head">
