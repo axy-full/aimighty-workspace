@@ -1,5 +1,5 @@
-/** "43 cr", or the honest alternative when a figure cannot be computed. */
-export const cr = (n: number | null | undefined) => (n == null ? "Live quote" : `${n.toLocaleString("en-US")} cr`);
+/** "43 cr", or a dash when a figure cannot be computed. */
+export const cr = (n: number | null | undefined) => (n == null ? "—" : `${n.toLocaleString("en-US")} cr`);
 
 /** "$49", "$39.20": whole dollars stay whole. */
 export const usd = (n: number) =>

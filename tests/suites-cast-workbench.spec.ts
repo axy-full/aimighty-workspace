@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -16,8 +16,10 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n";
 const WALLET = "22222222-2222-4222-8222-222222222222";
+const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
 
-async function setup(page: Page) {
+/** `scene`: the beat sheet's names in place of the fox and the lantern. */
+async function setup(page: Page, scene: { characters?: string[]; props?: string[] } = {}) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -39,7 +41,7 @@ async function setup(page: Page) {
   project.script = SCRIPT;
   const sha256 = createHash("sha256").update(SCRIPT).digest("hex");
   project.production = { beats: { scriptSha256: sha256, updatedAt: new Date().toISOString(), scenes: [
-    { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [{ id: "shot-a", description: "The fox", framing: "", movement: "", lighting: "", sound: "" }], characters: ["Fox"], locations: ["Frozen harbour"], props: ["Lantern"] },
+    { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [{ id: "shot-a", description: "The fox", framing: "", movement: "", lighting: "", sound: "" }], characters: ["Fox"], locations: ["Frozen harbour"], props: ["Lantern"], ...scene },
   ] } };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
@@ -158,6 +160,58 @@ test("Cast & Elements: from the beat sheet and the agent, built with Soul Cinema
   }
   await expect(page.getByTestId("soul-card")).toBeVisible();
   await page.screenshot({ path: info.outputPath("cast.png") });
+  expect(errors).toEqual([]);
+});
+
+/**
+ * "Add N from the beat sheet" appended the list its render counted. When the
+ * agent's cast landed between that render and the click, React ran the
+ * handler from the render before, and a name both listed was added twice. The
+ * click now decides on the list as it is when its update applies. This test
+ * keeps the button's click handler from the render before the agent's names
+ * landed and runs it after them: that order, every time.
+ */
+test("Add from the beat sheet clicked from a render before the agent's cast landed lists each name once", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
+  test.setTimeout(150_000);
+  /* The beat sheet names the agent's two (Mara, the mooring rope) and two it does not. */
+  const { errors, read } = await setup(page, { characters: ["Fox", "Mara"], props: ["Lantern", "Mooring rope"] });
+  const add = page.getByTestId("cast-from-beats");
+  const status = page.getByTestId("cast-stage").locator(".pd-save");
+  const names = async () => ((await read()).production?.cast?.entries ?? []).map((e: { name: string }) => e.name);
+  await expect(add).toHaveText("Add 4 from the beat sheet");
+  await hydrated(add);
+  /* The button's click handler as rendered now, while the list is empty. */
+  await add.evaluate((el) => {
+    const props = (el as unknown as Record<string, { onClick: () => void }>)[Object.keys(el).find((k) => k.startsWith("__reactProps"))!];
+    (window as unknown as { staleAdd: () => void }).staleAdd = props.onClick;
+  });
+
+  await page.getByTestId("cast-agent-estimate").click();
+  await expect(page.getByTestId("cast-agent-quote")).toContainText("3 agent steps");
+  await page.getByTestId("cast-agent-start").click();
+  await expect.poll(names, { timeout: 60_000 }).toEqual(["Mara", "Mooring rope"]);
+  /* The button counts only what is still missing. */
+  await expect(add).toHaveText("Add 2 from the beat sheet");
+  await expect(status).toHaveText(/^Saved/);
+
+  /* The click lands now, with that earlier render's list of four: only the two still missing are added. */
+  await page.evaluate(() => (window as unknown as { staleAdd: () => void }).staleAdd());
+  await expect(page.getByTestId("cast-entry")).toHaveCount(4);
+  await expect.poll(names).toEqual(["Mara", "Mooring rope", "Fox", "Lantern"]);
+  await expect(add).toHaveText("Add 0 from the beat sheet");
+  await expect(add).toBeDisabled();
+  await expect(status).toHaveText(/^Saved/);
+
+  /* Once more from that render: nothing is missing, so nothing changes — no edit, and the page still says Saved. */
+  const after = await page.evaluate(async () => {
+    (window as unknown as { staleAdd: () => void }).staleAdd();
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    return document.querySelector("[data-testid='cast-stage'] .pd-save")?.textContent ?? "";
+  });
+  expect(after).toMatch(/^Saved/);
+  await expect(page.getByTestId("cast-entry")).toHaveCount(4);
+  expect(await names()).toEqual(["Mara", "Mooring rope", "Fox", "Lantern"]);
   expect(errors).toEqual([]);
 });
 

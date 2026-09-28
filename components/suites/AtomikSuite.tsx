@@ -1097,7 +1097,7 @@ function Models({ catalog }: { catalog: AtomikCatalog }) {
         <h2>Production models</h2>
         <p>
           Connection status and capabilities from the pipeline catalogue. Each
-          ready stage gets an exact quote before approval.
+          ready stage is quoted before approval.
         </p>
         <div className={styles.tableScroll}>
           <table

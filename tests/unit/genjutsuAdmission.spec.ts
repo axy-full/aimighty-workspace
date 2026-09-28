@@ -101,8 +101,8 @@ async function setup(name: string) {
     "next/server": { after: forbidDispatch },
   });
   const localFiles: string[] = [];
-  async function video(origin: "upload" | "generation" = "upload", bytes = readFileSync("tests/fixtures/astra-source.mp4")): Promise<VideoSource> {
-    const id = `${name}_${origin}`;
+  async function video(origin: "upload" | "generation" = "upload", bytes = readFileSync("public/fixtures/clip.mp4"), suffix = ""): Promise<VideoSource> {
+    const id = `${name}_${origin}${suffix}`;
     if (origin === "upload") {
       const stored = await storage.storeUpload(id, "mp4", bytes, "video/mp4");
       localFiles.push(path.resolve(".data/uploads", `${id}.mp4`));
@@ -149,7 +149,7 @@ test("Genjutsu quote measures retained upload and generated originals instead of
     const source = await f.video(origin);
     const body = f.body(source, { duration: 0.01, ratio: "1:1", sourceSeconds: 0.01, genjutsuSource: { width: 1, height: 1, seconds: 0.01 }, higgsfieldVendorCostUsd: 0, higgsfieldCredentialFingerprint: "client-spoof" });
     const quote = prepared(await f.admission.prepareGeneration(body, actor));
-    expect(quote.compiled.params).toMatchObject({ ...source, sourceSeconds: 1.5, duration: 1.5, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential });
+    expect(quote.compiled.params).toMatchObject({ ...source, sourceSeconds: 10, duration: 10, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential });
     expect(quote.compiled.source).toMatchObject({ id: Object.values(source)[0], kind: "video", fromGeneration: origin === "generation" });
     expect(quote.compiled.projectId).toBe("project");
     expect(quote.request.workbenchProjectId).toBe("draft");
@@ -164,19 +164,24 @@ test("Genjutsu quote measures retained upload and generated originals instead of
   expect(f.state.dispatches).toEqual([]);
 }));
 
-test("Genjutsu uses inspected 1–30 second boundaries and refuses an unreadable original before pricing", async () => fixture("genjutsu_duration", async f => {
+test("Genjutsu uses inspected 4–30 second boundaries and refuses a short or unreadable original before pricing", async () => fixture("genjutsu_duration", async f => {
   const source = await f.video(), body = f.body(source);
-  for (const seconds of [1, 30]) {
+  for (const seconds of [4, 30]) {
     f.state.metadata = { width: 640, height: 360, seconds, firstTimestamp: 0 };
     const quote = prepared(await f.admission.prepareGeneration(body, actor));
     expect(quote.compiled.params).toMatchObject({ sourceSeconds: seconds, duration: seconds });
   }
-  for (const seconds of [0, 0.999, 30.001, Infinity, NaN]) {
+  for (const seconds of [0, 1, 3.999, 30.001, Infinity, NaN]) {
     f.state.metadata = { width: 640, height: 360, seconds, firstTimestamp: 0 };
-    expect(await f.admission.prepareGeneration(body, actor)).toMatchObject({ ok: false, status: 400 });
+    expect(await f.admission.prepareGeneration(body, actor), String(seconds)).toMatchObject({ ok: false, status: 400 });
   }
+  f.state.metadata = { width: 640, height: 360, seconds: 3, firstTimestamp: 0 };
+  expect(await f.admission.prepareGeneration(body, actor)).toMatchObject({ body: { error: "Transform needs an original video between 4 and 30 seconds." } });
   f.state.metadata = null;
-  const broken = await f.video("generation", Buffer.alloc(128));
+  // A real 1.5 s original is measured and refused, whatever the saved row claims.
+  const short = await f.video("generation", readFileSync("tests/fixtures/astra-source.mp4"));
+  expect(await f.admission.prepareGeneration(f.body(short), actor)).toMatchObject({ ok: false, status: 400 });
+  const broken = await f.video("upload", Buffer.alloc(128), "_broken");
   expect(await f.admission.prepareGeneration(f.body(broken), actor)).toMatchObject({ ok: false, status: 400 });
   expect(f.state.estimates).toHaveLength(2);
   expect(await f.outputs()).toEqual([]);
@@ -186,6 +191,7 @@ test("Genjutsu uses inspected 1–30 second boundaries and refuses an unreadable
 
 test("Genjutsu admits one to eight ordered still references and refuses unsupported inputs before estimation", async () => fixture("genjutsu_references", async f => {
   const source = await f.video();
+  f.state.metadata = { width: 1280, height: 720, seconds: 6, firstTimestamp: 0 };
   const refs = await Promise.all(Array.from({ length: 9 }, (_, index) => f.image(index, index % 2 ? "generation" : "upload")));
   for (const count of [1, 8]) {
     const selected = refs.slice(0, count);
@@ -201,7 +207,7 @@ test("Genjutsu admits one to eight ordered still references and refuses unsuppor
     { references: refs }, { references: [videoReference] }, { references: [{ ...refs[0], role: "first_frame" }] },
     { references: [{ image_url: "https://attacker.invalid/private.png" }] },
     { references: [{ uploadId: refs[0].uploadId, genId: refs[1].genId, role: "reference_image" }] },
-    { sourceGenId: "ambiguous-second-source" }, { sourceUploadId: undefined }, { resolution: "1080p" },
+    { sourceGenId: "ambiguous-second-source" }, { sourceUploadId: undefined }, { resolution: "2160p" }, { resolution: "4k" },
     { task: "generate" }, { prompt: "x".repeat(5001) },
   ]) expect(await f.admission.prepareGeneration(f.body(source, patch), actor), JSON.stringify(patch)).toMatchObject({ ok: false });
   expect(f.state.estimates).toHaveLength(2);
@@ -229,6 +235,7 @@ test("Genjutsu source IDs, saved draft ownership and production mapping are chec
 
 test("Genjutsu requires an immutable quote and credit ceiling, then reserves and dispatches once with original source bindings", async () => fixture("genjutsu_admission", async f => {
   const source = await f.video(), refs = [await f.image(1, "generation"), await f.image(2)];
+  f.state.metadata = { width: 1280, height: 720, seconds: 6, firstTimestamp: 0 };
   const body = f.body(source, { prompt: "Replace only the bottle", references: refs });
   const quote = prepared(await f.admission.prepareGeneration(body, actor));
   for (const [patch, status] of [[{}, 400], [{ quoteFingerprint: quote.quote.fingerprint }, 400], [{ maxCredits: quote.quote.estimatedCredits }, 400], [{ quoteFingerprint: quote.quote.fingerprint, maxCredits: 0 }, 409]] as const) {
@@ -250,7 +257,7 @@ test("Genjutsu requires an immutable quote and credit ceiling, then reserves and
   const rows = await f.outputs();
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ project_id: "project", model: body.model, task: "genjutsu", provider: "higgsfield", prompt: body.prompt });
-  expect(JSON.parse(String(rows[0].params))).toMatchObject({ ...source, workbenchProjectId: "draft", sourceSeconds: 1.5, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential, references: [{ uploadId: source.sourceUploadId, kind: "video", role: "reference_video" }, ...refs.map(ref => ({ ...ref, kind: "image" }))] });
+  expect(JSON.parse(String(rows[0].params))).toMatchObject({ ...source, workbenchProjectId: "draft", sourceSeconds: 6, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential, references: [{ uploadId: source.sourceUploadId, kind: "video", role: "reference_video" }, ...refs.map(ref => ({ ...ref, kind: "image" }))] });
   const meters = await f.meters();
   expect(meters).toHaveLength(1);
   expect(Number(meters[0].engine_cost_usd)).toBe(0.75);
@@ -270,5 +277,35 @@ test("Genjutsu refuses failed estimates and revalidates live price and credentia
   expect((await f.post(approved(body, quote), "genjutsu-new-credential")).status).toBe(409);
   expect(await f.outputs()).toEqual([]);
   expect(await f.meters()).toEqual([]);
+  expect(f.state.dispatches).toEqual([]);
+}));
+
+test("Object Swap refuses a source frame under 409,600 pixels before pricing; Motion Transfer has no pixel floor", async () => fixture("genjutsu_pixels", async f => {
+  const source = await f.video(), refs = [await f.image(1)];
+  const swap = (patch: Record<string, unknown> = {}) => f.body(source, { model: GENJUTSU_MODELS["object-swap"], references: refs, ...patch });
+  // The real 640 × 360 original is measured: too small to swap, fine to transfer.
+  const refused = await f.admission.prepareGeneration(swap(), actor);
+  expect(refused).toMatchObject({ ok: false, status: 400, body: { error: expect.stringMatching(/409,600 pixels per frame/) } });
+  prepared(await f.admission.prepareGeneration(f.body(source, { references: refs }), actor));
+  for (const [width, height, ok] of [[640, 640, true], [854, 480, true], [1280, 720, true], [848, 480, false], [639, 640, false], [0, 0, false]] as const) {
+    f.state.metadata = { width, height, seconds: 6, firstTimestamp: 0 };
+    const result = await f.admission.prepareGeneration(swap(), actor);
+    expect(result, `${width}x${height}`).toMatchObject(ok ? { ok: true } : { ok: false, status: 400 });
+  }
+  expect(f.state.estimates.map(estimate => estimate.model)).toEqual([GENJUTSU_MODELS["motion-transfer"], ...Array(3).fill(GENJUTSU_MODELS["object-swap"])]);
+  expect(await f.outputs()).toEqual([]);
+  expect(f.state.dispatches).toEqual([]);
+}));
+
+test("1080p output is offered and priced only by the live provider estimate for the actual source", async () => fixture("genjutsu_1080p", async f => {
+  const source = await f.video(), refs = [await f.image(1)];
+  f.state.price = 2.5;
+  const quote = prepared(await f.admission.prepareGeneration(f.body(source, { references: refs, resolution: "1080p" }), actor));
+  expect(quote.compiled.params).toMatchObject({ resolution: "1080p", higgsfieldVendorCostUsd: 2.5 });
+  expect(f.state.estimates.at(-1)!.input).toMatchObject({ resolution: "1080p" });
+  const { MarketingError } = await import("../../lib/higgsfieldMarketing");
+  f.state.estimateError = new MarketingError("Price unavailable", 503, "price_unavailable");
+  expect(await f.admission.prepareGeneration(f.body(source, { references: refs, resolution: "1080p" }), actor)).toMatchObject({ ok: false, status: 503 });
+  expect(await f.outputs()).toEqual([]);
   expect(f.state.dispatches).toEqual([]);
 }));

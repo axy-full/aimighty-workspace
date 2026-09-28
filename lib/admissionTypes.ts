@@ -13,6 +13,8 @@ export type AdmissionQuote = {
   estimatedCredits: number;
   price: number;
   unit: "cr" | "usd";
+  /** Present when the figure is an approximation and the take settles on its delivered output. */
+  approximate?: true;
 };
 export type PreparedAdmission = {
   version: 1;
