@@ -15,6 +15,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { JobsTrayProvider } from "@/lib/shell/use-jobs-tray";
 import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
@@ -35,7 +36,7 @@ import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
-import { WorkflowHost } from "./tools/WorkflowHost";
+import { WorkflowHosts } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
@@ -271,6 +272,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
+      <JobsTrayProvider>
       <div className="gx" data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
@@ -316,7 +318,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <button type="button" className="gx-hbtn" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
                     </>) : null}
                   </div>
-                  <div className="gx-stage gx-scroll" data-testid="content">
+                  {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
+                  <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
                     <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
                       <GenView scope={scope} project={project} items={items} library={library} projects={data.status} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
                     </Boundary>
@@ -351,7 +354,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.page.id === "astra" ? <AstraOutputs /> : null}
@@ -366,7 +369,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
@@ -457,6 +460,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           );
         })() : null}
       </div>
+      </JobsTrayProvider>
     </AtomikHost>
   );
 }
