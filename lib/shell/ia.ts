@@ -108,7 +108,9 @@ export const SHELL_SUITES: ShellSuite[] = [
   ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
      under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
-     server and tokens. The page id stays `skills`, so every old link still lands here. */
+     server and tokens. The page id stays `skills`, so every old link still lands here.
+     Memory is the shell's own view too (Supercomputer's memory): what Atomik keeps in mind. It shares
+     Agent's backing page, as Beats shares Brief's, so `sp=memory` tells the two apart. */
   own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
@@ -116,7 +118,8 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
     ["skills", "Tools", "Tools & connections", "What Atomik reaches, and what reaches Particl", "skills"],
-  ]), ["skills"]),
+    ["memory", "Memory", "Memory", "Brand, audience and references Atomik keeps in mind", "agent"],
+  ]), ["skills", "memory"]),
 ];
 
 /** Header segment order: Studio | Gen | Business | Viral | Atomik | Crew. Gen and Crew are views, not suites. */

@@ -1,6 +1,7 @@
 import type { TaskId } from "./tasks";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
 import { SOUL_RENDER_MODELS } from "./soulRenderTypes";
+import { CINEMA_STUDIO_MODEL_ID } from "./cinemaStudioTypes";
 
 /** No published/current Soul Character price was verified. Operators must first
  * verify access and both rates using the authenticated estimate endpoint.
@@ -14,6 +15,13 @@ export function soulCharacterRates(): Record<string, number> | null {
 
 export function soulCharacterGenerationEnabled(): boolean {
   return process.env.HF_SOUL_CHARACTER_ENABLED === "1" && soulCharacterRates() !== null;
+}
+
+/** Cinema Studio 4.0 is on for every workspace. `HF_CINEMA_STUDIO_ENABLED=0`
+ * is the deploy-time kill switch: it stops new quotes and dispatches, while
+ * accepted takes are still collected. */
+export function cinemaStudioEnabled(): boolean {
+  return process.env.HF_CINEMA_STUDIO_ENABLED !== "0";
 }
 
 /**
@@ -60,6 +68,18 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
   ...Object.fromEntries(Object.values(SOUL_RENDER_MODELS).map((id) => [id, { imagePricing: {}, imageRefInUsd: 0 }])),
   get [SOUL_CHARACTER_MODEL_ID]() {
     return { imagePricing: soulCharacterGenerationEnabled() ? soulCharacterRates()! : {}, imageRefInUsd: 0 };
+  },
+  /* Cinema Studio 4.0 on the commercial API bills video tokens (lib/cinemaStudio.ts
+     has the published formula). Per million tokens, from the provider's model page
+     (read 28 September 2026); the lower rate applies once a reference clip is sent.
+     The estimate endpoint states the formula but returns no figure, so quotes are
+     approximate; lib/higgsfieldPricingWatch.ts flags a change to the published text. */
+  [CINEMA_STUDIO_MODEL_ID]: {
+    tiers: [{
+      resolutions: ["480p", "720p"],
+      withoutVideo: 21.4,
+      withVideo: 12.84
+    }]
   },
   "dreamina-seedance-2-5-260628": {
     tiers: [{

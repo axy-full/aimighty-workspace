@@ -1,4 +1,5 @@
-import { GENJUTSU_MODELS, isGenjutsuModel } from "./genjutsuTypes";
+import { GENJUTSU_MODELS } from "./genjutsuTypes";
+import { CINEMA_STUDIO_MODEL_ID, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { platformDb, platformReady } from "./platform";
 import { db, now } from "./db";
 import { requireTenant } from "./tenant";
@@ -6,9 +7,10 @@ import { HIGGSFIELD_IMAGE_MODELS, isHiggsfieldImageModel, isSoulIdentityModel } 
 import type { RenderHandle } from "./engines/types";
 import { generationSettlementReady } from "./generationSettlement";
 
-const receiptModels = [...HIGGSFIELD_IMAGE_MODELS, ...Object.values(GENJUTSU_MODELS)];
+/* Every Higgsfield still (Soul Character, Marketing Studio, Soul Standard / 2 / Cinema) and video (Genjutsu, Cinema Studio). */
+const receiptModels = [...HIGGSFIELD_IMAGE_MODELS, ...Object.values(GENJUTSU_MODELS), CINEMA_STUDIO_MODEL_ID];
 const receiptModelSlots = receiptModels.map(() => "?").join(",");
-const supported = (model: string) => isHiggsfieldImageModel(model) || isGenjutsuModel(model);
+const supported = (model: string) => isHiggsfieldImageModel(model) || isHiggsfieldVideoModel(model);
 let boot: Promise<void> | undefined;
 async function receiptsReady() {
   await platformReady();
@@ -64,7 +66,7 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
   if (!row) throw new Error("An accepted connected-account request has no recoverable generation record.");
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
-  const key = isGenjutsuModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
+  const key = isHiggsfieldVideoModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
   if (!params.paidClaim || (isSoulIdentityModel(String(row.model)) ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
       !supported(handle.model) || handle.model !== row.model || !handle.ref ||

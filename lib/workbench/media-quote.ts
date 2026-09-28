@@ -3,7 +3,7 @@ import { MODELS, type ModelDef } from '../models';
 import { estimateCostUsd, estimateImageCostUsd } from '../vendorPricing';
 import { generatedReferenceSeconds, videoReferenceSeconds } from '../referenceDuration';
 import { billCredits } from '../creditTerms';
-import { soulCharacterGenerationEnabled } from '../vendorRates';
+import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from '../vendorRates';
 import { isSoulRenderModel } from '../soulRenderTypes';
 import { elevenConfigured, musicCredits, sfxCredits, usdForCredits } from '../elevenlabs';
 import { composerSettings, type ComposerPicks } from '../workspace/composer';
@@ -22,7 +22,7 @@ function baselineCost(model: ModelDef) {
 }
 export function workbenchGenerationModels(models: ModelDef[] = MODELS) {
   /* Soul Standard / Soul 2 / Soul Cinema are live-quoted and rendered from Studio › Cast; the workbench lists only the gated Soul Character engine. */
-  return models.filter(model => (model.soulIdentity ? !isSoulRenderModel(model.id) && soulCharacterGenerationEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
+  return models.filter(model => (model.soulIdentity ? !isSoulRenderModel(model.id) && soulCharacterGenerationEnabled() : model.cinemaStudio ? cinemaStudioEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
     .sort((a, b) => baselineCost(a) - baselineCost(b));
 }
 
@@ -69,7 +69,9 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
   if (refs.inputSeconds > model.maxVideoSecondsTotal) throw new MediaQuoteError(`Reference videos total ${refs.inputSeconds.toFixed(1)}s; ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`);
   const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
-  return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput };
+  return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
+    /* Cinema Studio is quoted from published pricing and settles on its delivered output. */
+    ...(model.cinemaStudio ? { approximate: true as const } : {}) };
 }
 
 /**
@@ -98,7 +100,7 @@ export function workbenchUse(model: ModelDef): string | undefined {
 }
 
 /** What an engine is priced at, and what it costs, in credits only. */
-export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true };
 /** Where the model sheet prices the list: the composer's picks, the project's aspect, its references. */
 export type RateAt = { picks?: ComposerPicks; aspect?: string };
 export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
@@ -120,7 +122,7 @@ export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferenceP
   const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations, ...(model.supportsDraft ? { draft: true as const } : {}) }, at.aspect, at.picks);
   try {
     const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration }, refs);
-    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null };
+    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}) };
   } catch (error) {
     if (error instanceof MediaQuoteError) return null;
     throw error;

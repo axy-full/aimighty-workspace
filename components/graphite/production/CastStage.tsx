@@ -74,7 +74,11 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const latest = useRef(p);
   useEffect(() => { latest.current = p; }, [p]);
 
-  const setCast = useCallback((fn: (c: Cast) => Cast) => editor.change((old) => ({ ...old, production: { ...old.production, cast: fn(old.production?.cast ?? EMPTY) } })), [editor]);
+  /* An update that hands back what it was given changes nothing: no edit, no save. */
+  const setCast = useCallback((fn: (c: Cast) => Cast) => editor.change((old) => {
+    const was = old.production?.cast ?? EMPTY, next = fn(was);
+    return next === was ? old : { ...old, production: { ...old.production, cast: next } };
+  }), [editor]);
   const setEntry = useCallback((id: string, fn: (e: CastEntry) => CastEntry) => setCast((c) => ({ ...c, entries: c.entries.map((e) => (e.id === id ? fn(e) : e)) })), [setCast]);
 
   /* ── The agent's cast list, taken once: new names are added, names already here are kept as they are. ── */
@@ -208,6 +212,16 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   };
 
   const fromBeats = useMemo(() => castFromBeats(p.production?.beats, cast.entries), [p.production?.beats, cast.entries]);
+  /* What the button counted, less what is listed by the time the click lands — decided on the list as it is then, not as
+     this render saw it: the agent's cast may have landed in between, and a name is never listed twice. None left: no edit. */
+  const addFromBeats = () => {
+    const sheet = p.production?.beats, counted = new Set(fromBeats.map((e) => e.id));
+    setCast((c) => {
+      const missing = castFromBeats(sheet, c.entries).filter((e) => counted.has(e.id));
+      return missing.length ? { ...c, entries: [...c.entries, ...missing].slice(0, CAST_LIMITS.entries) } : c;
+    });
+    void editor.ensureSaved();
+  };
   const agentModel = agent.model;
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeCast ? "The agent is working." : !agentModel ? "Choose an agent above." : !p.production?.beats?.scenes.length && !(p.script ?? "").trim() ? "Write the script or break it into beats first." : null;
@@ -232,7 +246,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         </div>
         <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. A character renders with a Soul ID trained below; any entry’s still can be made in Gen. Every render is saved in the library as Cast or Elements.</p>
         <div className="gx-gen-enhance">
-          <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={() => { setCast((c) => ({ ...c, entries: [...c.entries, ...fromBeats].slice(0, CAST_LIMITS.entries) })); void editor.ensureSaved(); }} data-testid="cast-from-beats">
+          <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={addFromBeats} data-testid="cast-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} from the beat sheet` : "Add from the beat sheet"}
           </button>
           {!p.production?.beats ? <button type="button" className="gx-hbtn" onClick={onBeats}>Open Beats</button> : null}
