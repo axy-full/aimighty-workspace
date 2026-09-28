@@ -2,7 +2,7 @@ import { test, expect, type Locator, type Page, type TestInfo } from "@playwrigh
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
-import { forbidPaidWork, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { legacyShell } from "./helpers/legacyShell";
 
@@ -28,6 +28,12 @@ const LABELS = ["Camera", "Lens", "Aperture", "Movement", "Era", "Genre", "Light
 /* Test fixtures only. */
 const ROOM = upload({ id: "room-tone", filename: "Room tone.wav", mime: "audio/wav", kind: "audio", durationS: 6, width: null, height: null });
 const VOICE = upload({ id: "voice-line", filename: "Voice line.mp3", mime: "audio/mpeg", kind: "audio", durationS: 3, width: null, height: null });
+/** A Cinema Studio take made with two controls picked and the room tone as its sound reference. */
+const TAKE = () => generation({
+  id: "gen_cinema_take", kind: "video", model: CINEMA, provider: "higgsfield", title: "Lighthouse take", prompt: "@Audio1 hums while a lighthouse keeper climbs",
+  params: { rawPrompt: "@Audio1 hums while a lighthouse keeper climbs", ratio: "16:9", resolution: "720p", duration: 5,
+    cinema: { camera_movement: "crane-up", genre: "noir" }, references: [{ uploadId: "room-tone", role: "reference_audio", kind: "audio" }] },
+});
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
@@ -77,12 +83,12 @@ async function dropId(page: Page, target: Locator, id: string) {
 
 /* ── Gen ─────────────────────────────────────────────────────────────── */
 
-async function openGen(page: Page) {
+async function openGen(page: Page, generations: ReturnType<typeof generation>[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: { ...newProject("Lighthouse study"), id: "ws-cinema", productionProjectId: "prod-ws", shotMappings: {} } });
-  await mockLibrary(page, { uploads: [ROOM, VOICE], generations: [] });
+  await mockLibrary(page, { uploads: [ROOM, VOICE], generations });
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   /* Each upload's own record, read when it is dropped on the well. */
   await page.route(/\/api\/uploads\/(room-tone|voice-line)\/metadata$/, (route) => {
@@ -276,6 +282,36 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   await expect(page.getByTestId("gen-blocked")).toHaveCount(0);
   await expect(go).toHaveText("Generate · 12 cr");
   expect(priced).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test("Recreate brings a Cinema Studio take's controls back onto its chips and its WAV sound back into References; the card says when the chips no longer hold them", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors, priced } = await openGen(page, [TAKE()]);
+  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_take']").click();
+  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(chip(page, "camera_movement")).toHaveAttribute("aria-label", "Movement: Crane up");
+  await expect(chip(page, "genre")).toHaveAttribute("aria-label", "Genre: Noir");
+  await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Auto");
+  const row = page.getByTestId("gen-recipe-cinema");
+  await expect(row).toHaveText("Crane up · Noir");
+  await expect(row).toHaveAttribute("data-state", "kept");
+  await expect(page.getByTestId("gen-well")).toContainText("@Audio1 · Room tone.wav");
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("@Audio1 hums while a lighthouse keeper climbs");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · about 31 cr");
+  await shot(page, info, "cinema-recreate");
+  /* A change made here: the card says so. */
+  await chip(page, "genre").click();
+  await page.getByTestId("gen-film-sheet").locator("[data-option='genre:drama']").click();
+  await expect(row).toHaveAttribute("data-state", "changed");
+  await expect(page.getByTestId("gen-recipe-why").locator("[data-note='cinema']")).toHaveText("Controls Changed here");
+  /* Generate sends the take's controls as they stand now, and its sound. */
+  await page.getByTestId("gen-generate").click();
+  await expect.poll(() => priced.length).toBe(1);
+  expect(priced[0].cinema).toEqual({ camera_movement: "crane-up", genre: "drama" });
+  expect(priced[0].references).toEqual([{ uploadId: "room-tone", role: "reference_audio" }]);
+  expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
 });
 
