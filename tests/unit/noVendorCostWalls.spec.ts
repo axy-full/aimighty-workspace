@@ -38,7 +38,7 @@ test("a token credit ceiling includes reserved work and does not expose provider
   const { db, ready } = await import("../../lib/db");
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   const { tokenSpendThisMonth } = await import("../../lib/auth");
-  const { billCredits } = await import("../../lib/creditTerms");
+  const { billCredits, creditUsd } = await import("../../lib/creditTerms");
   const ws = workspace("token", true);
   /* The next job must include the existing reservation in the credit ceiling. */
   const perJob = billCredits(1, SEEDANCE);
@@ -58,10 +58,11 @@ test("a token credit ceiling includes reserved work and does not expose provider
     const refused = await reserveGenerationSpend(job("gen_walls_2"), { token }).then(() => null, (e: unknown) => e);
     expect(refused).toBeInstanceOf(SpendReservationError);
     expect((refused as InstanceType<typeof SpendReservationError>).status).toBe(429);
-    expect((refused as Error).message).toContain("token's monthly credit ceiling");
-    /* Legacy accounting remains private and unchanged; no amount enters the refusal. */
-    expect(await tokenSpendThisMonth("tok_walls")).toBe(1);
-    expect((refused as Error).message).not.toMatch(/\$|\d/);
+    /* The refusal names the ceiling the customer set, in credits; never a vendor figure or a dollar. */
+    expect((refused as Error).message).toContain(`token's ${cap.toLocaleString("en-US")} cr monthly ceiling`);
+    expect((refused as Error).message).not.toMatch(/\$/);
+    /* What the admission check reads: credits billed, and their price; never the vendors' dollars. */
+    expect(await tokenSpendThisMonth("tok_walls")).toEqual({ usd: perJob * creditUsd(), credits: perJob });
   });
 });
 
