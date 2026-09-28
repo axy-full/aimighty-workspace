@@ -22,6 +22,9 @@ test("Recreate rejects incomplete, ambiguous or conflicting retained settings in
 test("Recreate rejects duplicated references and provider controls unsupported by the active API", () => {
   const ref = { uploadId: "same", role: "reference_image", kind: "image" };
   expect(recreationProblem(take({ references: [ref, ref] }))).toBeTruthy();
-  expect(recreationProblem(take({ resolution: "1080p" }))).toBeTruthy();
+  expect(recreationProblem(take({ resolution: "4k" }))).toBeTruthy();
+  expect(recreationProblem(take({ resolution: "2160p" }))).toBeTruthy();
+  // 1080p is an offered size: its take recreates at 1080p.
+  expect(recreationSettings(take({ resolution: "1080p" })).resolution).toBe("1080p");
   expect(recreationProblem(take({ rawPrompt: "x".repeat(5001) }))).toBeTruthy();
 });

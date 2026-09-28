@@ -16,10 +16,10 @@ The official model catalogue exposes two operations:
 
 | Operation | Developer endpoint |
 | --- | --- |
-| Motion Transfer | `higgsfiled/genjutsu/motion-transfer/v1.0` |
-| Object Swap | `higgsfiled/genjutsu/object-swap/v1.0` |
+| Motion Transfer | `higgsfield/genjutsu/motion-transfer/v1.0` |
+| Object Swap | `higgsfield/genjutsu/object-swap/v1.0` |
 
-The provider spells these identifiers `higgsfiled`. Requests contain one `video_url`, up to eight ordered `image_urls`, an optional `prompt`, and `resolution` of `480p` or `720p`. The catalogue specifies an input duration of 1–30 seconds. Particl's creative text limit is 5,000 characters; this is a local bound, not a claimed Higgsfield limit.
+New quotes and submissions use these canonical routes; requests accepted under the older `higgsfiled` spelling keep polling their saved status URLs. Requests contain one `video_url`, one to eight ordered `image_urls`, an optional `prompt`, and `resolution` of `480p`, `720p` or `1080p`. The model documentation requires a source of at least 4 seconds and trims anything longer than 30; Particl accepts 4–30 seconds and refuses longer sources rather than let them be trimmed. Object Swap also requires at least 409,600 pixels per source frame (width × height). Both limits are checked on the measured original before a quote and again at dispatch. The documentation lists 480p and 720p; 1080p is offered because the provider's estimate prices it, and like the other sizes its quote is always that live estimate for the actual source. Particl's creative text limit is 5,000 characters; this is a local bound, not a claimed Higgsfield limit.
 
 Use the existing private `HF_CREDENTIALS` connection. Each quote uses the authenticated `/estimate/<model path>` endpoint; a missing or invalid live estimate blocks submission. No public-list discount is assumed. Server validation resolves tenant-owned originals, inspects source duration and preserves reference order. Browser-supplied URLs and claimed duration cannot substitute for retained media.
 

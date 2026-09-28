@@ -34,6 +34,7 @@ import { stillCurrent } from "@/lib/shell/asset-link";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
+import { MemoryView } from "./atomik/MemoryView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -425,7 +426,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView /> : (<>
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
                       {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
