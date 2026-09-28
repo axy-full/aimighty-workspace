@@ -18,9 +18,11 @@ import type { TenantWorkspace } from "../../lib/tenant";
  * an estimate of nothing, and its completion billed credits for whatever the
  * vendor reported.
  *
- * Everything legitimately unpriced keeps its old behaviour: a workspace on
- * its own key, a workspace on its own keys only, the studio's own workspace,
- * connected-account work, and a job already admitted, replayed or settling.
+ * With shared studio credits every workspace's work is the platform's to pay:
+ * a key a workspace kept from the old billing mode never funds new work
+ * (lib/vendorKeys.ts), so the refusal reaches every workspace. What stays
+ * legitimately unpriced keeps its old behaviour: connected-account work, and
+ * a job already admitted, replayed or settling.
  *
  * No paid call: ENGINE_MOCK, a queue that only records, a stubbed poll, and
  * the network refused.
@@ -77,7 +79,7 @@ type Handler = { POST(req: Request): Promise<Response> };
 type Service = typeof import("../../lib/generationAdmission");
 type Scope = { gen: Service; generate: Handler; quote: Handler; ws: TenantWorkspace };
 
-/** Who pays the vendor: the platform's key (the default), the workspace's own, or the studio's own workspace. */
+/** How a workspace was set up: its credits, keys kept from the old billing mode, a stored own-keys mode, or the studio's own workspace. */
 type Funding = { name: string; keys?: Record<string, string>; platformKeys?: boolean; legacy?: boolean; credits?: number };
 
 async function scope(funding: Funding, who: AdmissionActor, fn: (s: Scope) => Promise<void>) {
@@ -253,7 +255,7 @@ test("the MCP render tool is refused by its own quote and never sends an unprice
     expect(dispatched).toHaveLength(1);
   }));
 
-test("a still engine with no confirmed price is refused on the platform's key and admitted, unchanged, on the workspace's own", async () => {
+test("a still engine with no confirmed price is refused on the platform's key, and a workspace key kept from before does not unlock it", async () => {
   const { VENDOR_RATES } = await import("../../lib/vendorRates");
   const still = { model: "gemini-3.1-flash-image", prompt: "raw: A tree", ratio: "16:9", resolution: "1K", projectId: "project" };
   const rates = VENDOR_RATES[still.model];
@@ -261,47 +263,40 @@ test("a still engine with no confirmed price is refused on the platform's key an
   /* As an engine added before its price is confirmed: no still size has a price. */
   rates.imagePricing = {};
   try {
-    await scope({ name: "still-platform" }, owner, async (s) => {
-      await refused(await s.generate.POST(post(still, "still-unpriced")), "still");
-      expect(await rows()).toHaveLength(0);
-      expect(await meters()).toHaveLength(0);
-      expect(dispatched).toHaveLength(0);
-    });
-    await scope({ name: "still-own-key", keys: { gemini: "workspace-own-image-key" } }, owner, async (s) => {
-      const accepted = await s.generate.POST(post(still, "still-own-key"));
-      const body = await accepted.json();
-      expect(accepted.status, JSON.stringify(body)).toBe(200);
-      expect(body.status).toBe("running");
-      expect(await meters()).toEqual([expect.objectContaining({ id: body.id, paid_by_platform: 0, billed_credits: 0 })]);
-      expect(dispatched).toEqual([{ genId: body.id, kind: "image" }]);
-    });
+    const cases: Funding[] = [
+      { name: "still-platform" },
+      /* An image key kept from the old billing mode: it never funds new work, so the platform would pay. */
+      { name: "still-own-key", keys: { gemini: "workspace-own-image-key" } },
+    ];
+    for (const funding of cases)
+      await scope(funding, owner, async (s) => {
+        await refused(await s.generate.POST(post(still, `${funding.name}-unpriced`)), funding.name);
+        expect(await rows()).toHaveLength(0);
+        expect(await meters()).toHaveLength(0);
+        expect(dispatched).toHaveLength(0);
+      });
   } finally {
     rates.imagePricing = confirmed;
   }
 });
 
-test("unpriced work that is not the platform's to pay is admitted exactly as before: the workspace's own key, its own keys only, the studio's own workspace", async () => {
+test("with shared studio credits no workspace escapes the refusal: not a kept key, a stored own-keys mode or the studio's own workspace", async () => {
   const cases: Funding[] = [
-    /* A credits workspace that brought its own key for this vendor: the vendor bills it directly. */
+    /* A workspace that brought its own video key before shared credits. */
     { name: "own-video-key", keys: { ark: "workspace-own-video-key" } },
-    /* A workspace that runs on its own keys only. */
+    /* A workspace stored as own-keys-only before shared credits; it is read as managed now. */
     { name: "own-keys-only", keys: { ark: "workspace-own-video-key" }, platformKeys: false },
-    /* The studio's own workspace, on the deployment's keys and billed in dollars. */
+    /* The studio's own workspace, which pays in credits like every other. */
     { name: "studio", legacy: true },
   ];
   for (const funding of cases)
     await scope(funding, owner, async (s) => {
       const before = await balance();
-      const accepted = await s.generate.POST(post(unpriced, `${funding.name}-unpriced`));
-      const body = await accepted.json();
-      expect(accepted.status, `${funding.name}: ${JSON.stringify(body)}`).toBe(202);
-      expect(body.status).toBe("queued");
-      const [row] = await rows();
-      expect(row).toMatchObject({ id: body.id, status: "queued" });
-      expect(JSON.parse(String(row.params))).toMatchObject({ ratio: "adaptive" });
-      expect(await meters()).toEqual([expect.objectContaining({ id: body.id, status: "running", paid_by_platform: 0, billed_credits: 0 })]);
-      expect(dispatched).toEqual([{ genId: body.id, kind: "video" }]);
-      expect(await balance()).toBe(before);
+      await refused(await s.generate.POST(post(unpriced, `${funding.name}-unpriced`)), funding.name);
+      expect(await rows(), funding.name).toHaveLength(0);
+      expect(await meters(), funding.name).toHaveLength(0);
+      expect(dispatched, funding.name).toHaveLength(0);
+      expect(await balance(), funding.name).toBe(before);
       /* The quote never stated a price nobody can compute, for any workspace; that is unchanged too. */
       expect(await s.gen.prepareGeneration(unpriced, owner)).toMatchObject({ ok: false, status: 400, body: { error: NO_PRICE } });
     });
