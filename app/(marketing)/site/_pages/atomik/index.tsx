@@ -33,7 +33,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
   { tag: "01 Agent", name: "Agent",
     body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Every request is quoted before it runs; its actions land on Rig as editable nodes." },
   { tag: "Crew · 7 departments", name: "Crew",
-    body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions; Run round shows the most it can cost." },
+    body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions; Run round shows its estimate before it runs." },
   { tag: "02 Runs", name: "Runs",
     body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place, its approved attempts and its accounting, and recovery never re-dispatches. Failed generations are not billed." },
   { tag: "03 Generate", name: "Generate", gated: "Analyse video gated",
@@ -47,7 +47,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
   { tag: "07 Models", name: "Models",
     body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer, under per-request and per-production ceilings. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
   { tag: "08 Approvals", name: "Approvals",
-    body: "Nothing paid runs without an approval. A gate binds the inputs, the price and an expiry; a stale quote is re-quoted, never approved, and Decline holds the run with nothing charged." },
+    body: "Nothing paid runs without an approval. A gate binds the inputs, the estimate and an expiry; a stale quote is re-quoted, never approved, and Decline holds the run with nothing charged." },
   { tag: "09 Budget", name: "Budget",
     body: "Settled accounting, not estimates. Each generation keeps the rate it was charged at, so a rate change never rewrites history. Project caps are checked before dispatch; Usage splits spend by project, person and month." },
 ];

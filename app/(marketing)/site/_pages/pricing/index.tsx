@@ -60,13 +60,13 @@ export default async function Pricing() {
           <div className={`mk-head ${s.copy}`}>
             <div className="mk-eyebrow">Rate card</div>
             <h2 className="mk-h2">What a render costs.</h2>
-            <p className="mk-lead">Every figure is computed from the live engine rate, never hand-edited, and rounded up to the next whole credit. Batches multiply before rounding. The quote on the button is the one you pay.</p>
+            <p className="mk-lead">Every figure is computed from the live engine rate, never hand-edited, and rounded up to the next whole credit. Batches multiply before rounding. The quote on the button is an estimate; the charge follows the work actually done.</p>
             <Link href="/#gen-engines" className={`mk-btn mk-btn--secondary ${s.more}`}>The engines &rarr;</Link>
           </div>
           <div className={`mk-card ${s.table}`}>
             <table>
               <thead>
-                <tr><th scope="col">Action</th><th scope="col">Sells at</th></tr>
+                <tr><th scope="col">Action</th><th scope="col">Typical price</th></tr>
               </thead>
               <tbody>
                 {rateCard.map((row) => (

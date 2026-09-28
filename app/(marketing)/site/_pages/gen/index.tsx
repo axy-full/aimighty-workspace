@@ -43,13 +43,13 @@ export default async function GenHome() {
         <div className="mk-hero-in">
           <div className="mk-eyebrow">Gen · Video · Images · Audio</div>
           <h1 className="mk-h1 mk-hero-title">The studio&rsquo;s own room for making shots.</h1>
-          <p className="mk-hero-lead">Five suites in one shell: Gen, the Production Studio, the Business Suite, the Viral Studio and the Atomik agent. Seedance, Kling and Nano Banana behind them, with the cost on every button.</p>
+          <p className="mk-hero-lead">Five suites in one shell: Gen, the Production Studio, the Business Suite, the Viral Studio and the Atomik agent. Seedance, Kling and Nano Banana behind them, with an estimate on every button.</p>
           <HeroPrompt model={hero.id} label={hero.name} short={hero.short} credits={hero.credits} />
         </div>
       </section>
 
       <Section id="gen-composer" label="Gen composer">
-        <Head eyebrow="Gen · one composer" title="The cost is on the button."
+        <Head eyebrow="Gen · one composer" title="The estimate is on the button."
           lead="One composer for video, images and audio. Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
         <Cols col={420}>
           <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Gen composer" width={924} height={540} />

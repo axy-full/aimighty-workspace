@@ -19,7 +19,7 @@ export function siteOrigin(env: Record<string, string | undefined> = process.env
 
 export const SITE_NAME = "Particl";
 export const SITE_TITLE = "Particl Production Studio";
-export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery, with the cost on every button.";
+export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery, with an estimate on every button.";
 
 /** The pages anyone may open without an account, for the sitemap. */
 export const PUBLIC_PATHS = ["/", "/welcome", "/login", "/signup", "/pricing", "/terms", "/privacy", "/policy", "/report"] as const;

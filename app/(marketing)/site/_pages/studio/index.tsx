@@ -87,7 +87,7 @@ export default function StudioPage() {
       <SuiteHeader
         eyebrow="02 · Particl Production Studio"
         title="Ten stages from brief to delivery."
-        lead="The production studio. Every stage reads and writes the same project, from the brief to the final cut, and every paid step shows its cost on the button before it runs."
+        lead="The production studio. Every stage reads and writes the same project, from the brief to the final cut, and every paid step shows its estimate on the button before it runs."
         pages={STAGES.map((stage) => stage.title)}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>

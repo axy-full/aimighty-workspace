@@ -8,6 +8,8 @@ import { cr } from "@/lib/marketing/format";
 
 const SAMPLE = "A woman in an ivory suit crosses a dune at golden hour; a chrome sphere reflects the sky. Slow dolly in, 35mm.";
 const GEN_HREF = `${APP_HREF}?view=gen`;
+/** A figure shown before anything runs is an estimate; with none, the bar says it is quoted live. */
+const about = (credits: number | null) => (credits == null ? cr(credits) : `about ${cr(credits)}`);
 
 /**
  * The hero's prompt bar. Nothing renders here and nothing is charged: the
@@ -52,7 +54,7 @@ export default function HeroPrompt({ model, label, short, credits }: {
           <span style={{ flex: 1 }} />
           <span className="mk-prompt-meta mk-hide-phone">Opens in Gen · quoted before it runs</span>
           <button type="submit" className="mk-btn gx-primary mk-go">
-            Generate · {cr(credits)}
+            Generate · {about(credits)}
           </button>
         </div>
       </form>
@@ -62,7 +64,7 @@ export default function HeroPrompt({ model, label, short, credits }: {
             <div className="mk-take-copy">
               <span className="mk-tag">Prompt kept · {label} · 16:9 · 5 s · 1080p</span>
               <span className="mk-take-prompt mk-wrap-text">{prompt.trim() || SAMPLE}</span>
-              <span className="mk-take-meta">Sign in and it opens in Gen, quoted at {cr(credits)}. Nothing is charged until you press Generate there.</span>
+              <span className="mk-take-meta">Sign in and it opens in Gen, quoted at {about(credits)}. Nothing is charged until you press Generate there.</span>
             </div>
             <div className="mk-take-actions">
               <a className="mk-btn mk-btn--sm gx-primary" href={`${SIGN_IN_HREF}?next=${encodeURIComponent(GEN_HREF)}`}>Sign in</a>

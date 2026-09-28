@@ -753,7 +753,7 @@ function ScopedComposer({
             /* Never arrived, and priced differently now: the request is the person's again, at its new price. */
             keepAudioRequest(recoveredBody);
             throw new Error(
-              `Your last audio request never reached the server, and its price is now ${audioCostLabel(outcome)}. Nothing was sent; generate it again to approve that price.`,
+              `Your last audio request never reached the server, and its estimate is now about ${audioCostLabel(outcome)}. Nothing was sent; generate it again to approve the new estimate.`,
             );
           }
           submitted = settled.again;

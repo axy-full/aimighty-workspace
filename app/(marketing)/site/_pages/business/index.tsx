@@ -44,7 +44,7 @@ const GROUPS: { tag: string; note?: string; rows: Row[] }[] = [
   ] },
   { tag: "Variants & output", rows: [
     { name: "Variants", chip: "100 max", desc: "Up to a hundred bindings; each one is a generation node." },
-    { name: "Create with template", chip: "quote → approve", desc: "Quoted from the catalogue, approved at the exact connected-credit price, filed with the campaign takes." },
+    { name: "Create with template", chip: "quote → approve", desc: "Quoted from the catalogue, approved before it runs, filed with the campaign takes." },
     { name: "Reference ad", chip: "reference", desc: "Start from a video ad you own and adapt its direction to the variant." },
     { name: "Design", chip: "layers", desc: "Editable text, image and shape layers, exported as a full-size PNG original." },
     { name: "Video ads", chip: "engine-backed", desc: "Campaign video through the project’s configured engines." },

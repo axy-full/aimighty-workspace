@@ -77,7 +77,7 @@ export default function ViralPage() {
                 </Grid>
               ))}
             </Grid>
-            <Note lead="Live quote required.">A missing or stale estimate blocks submission; the exact price and wallet are approved before anything is sent.</Note>
+            <Note lead="Live quote required.">A missing or stale estimate blocks submission; the estimate and wallet are approved before anything is sent.</Note>
           </div>
         </Cols>
       </Section>
