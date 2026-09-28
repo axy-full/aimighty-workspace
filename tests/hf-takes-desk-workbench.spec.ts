@@ -192,7 +192,8 @@ test("every take once, grouped by shot and batch; status and kind chips and a se
   await expect(page.getByTestId("takes-count")).toHaveText("4 of 10 · 0 in the cut");
   await filterChip(page, "Held").click();
   expect(await names(takes)).toEqual(["Storm front"]);
-  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held");
+  /* A take held for credits says what it waits for, in the unit it is charged in (#413's chip). */
+  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held · needs 12 cr");
   await filterChip(page, "Failed").click();
   await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   expect(await names(takes)).toEqual(["Night swim"]);

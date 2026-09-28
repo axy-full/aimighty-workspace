@@ -230,7 +230,8 @@ export type DeskFilter = (typeof DESK_FILTERS)[number]["id"];
 export function inDeskFilter(take: Pick<Take, "status" | "stage">, filter: DeskFilter): boolean {
   switch (filter) {
     case "all": return true;
-    case "held": return take.status === "rendering" && take.stage === "held";
+    /* Held for credits is its own status (the chip that says Held); an older in-flight row may still carry the held stage. */
+    case "held": return take.status === "held" || (take.status === "rendering" && take.stage === "held");
     default: return take.status === filter;
   }
 }
