@@ -75,7 +75,7 @@ test("tokens use the server's own formula (billedFrame), and credits equal the s
     { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false });
   const estimate = await fetchShotEstimate(settings, { fetch: fetcher });
   expect(estimate).toEqual({ credits: server.credits, tokens, state: "ready", reason: null });
-  expect(estimate.credits).toBe(18); // CLAUDE.md rate card: 2.5, 5s 720p sells at 18 cr
+  expect(estimate.credits).toBe(3); // CLAUDE.md rate card: 2.5, 5s 720p sells at 3 cr (US$0.80 a credit)
   expect(calls[0]).toBe(`/api/workbench/engines?model=${encodeURIComponent(SD25)}&resolution=720p&ratio=16%3A9&duration=5`);
 
   // Through the estimator the hook subscribes to: same figure.

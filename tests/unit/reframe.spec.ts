@@ -4,6 +4,10 @@ import { estimateCostUsd, perSecondRate } from "../../lib/vendorPricing";
 import { getTask, sourceProblem } from "../../lib/tasks";
 import { falEndpointFor } from "../../lib/falVideo";
 import { billCredits } from "../../lib/creditTerms";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 const ID = "fal-ai/luma-dream-machine/ray-2-flash/reframe";
 

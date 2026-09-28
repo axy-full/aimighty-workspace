@@ -72,7 +72,7 @@ export type CreditsCard = {
   /** "612 CR this month", only when the usage feed actually carries this month. */
   month: string | null;
   /**
-   * "1 credit = $0.10" — one short line (ground rule 9), from the same unit the
+   * "1 credit = $0.80" — one short line (ground rule 9), from the same unit the
    * dollar figure uses, so a deployment on another CREDIT_USD says so here.
    *
    * This is where a person meets the unit on the phone: the card is one tap

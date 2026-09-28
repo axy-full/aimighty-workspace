@@ -1,7 +1,7 @@
 /**
  * The credit: the platform's own unit of spend.
  *
- * One credit is US$0.10 by default (CREDIT_USD). A workspace on the
+ * One credit is US$0.80 by default (CREDIT_USD). A workspace on the
  * platform's keys buys and burns credits, never dollars: a job is charged in
  * whole credits, rounded up, and nothing that costs the platform money costs
  * a workspace less than one credit. Batches multiply before they round.
@@ -30,14 +30,23 @@
  * browser, for the price on a button — can read the terms without pulling
  * anything else in.
  */
+/**
+ * What one credit sells for, in US dollars, when CREDIT_USD is not set: the
+ * public price (SOW §7A). One place, so changing the price is one line.
+ */
+export const DEFAULT_CREDIT_USD = 0.80;
+
+/** What a new workspace opens with when SIGNUP_CREDITS is not set (SOW §7A, Invite). */
+export const DEFAULT_SIGNUP_CREDITS = 31;
+
 export function creditUsd(): number {
-  const n = Number(process.env.CREDIT_USD ?? 0.10);
-  return Number.isFinite(n) && n > 0 ? n : 0.10;
+  const n = Number(process.env.CREDIT_USD ?? DEFAULT_CREDIT_USD);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CREDIT_USD;
 }
 
 export function signupCredits(): number {
-  const n = Number(process.env.SIGNUP_CREDITS ?? 250);
-  return Number.isFinite(n) && n >= 0 ? n : 250;
+  const n = Number(process.env.SIGNUP_CREDITS ?? DEFAULT_SIGNUP_CREDITS);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_SIGNUP_CREDITS;
 }
 
 /**
@@ -102,7 +111,7 @@ export const usdToCredits = (usd: number, engine?: string | null): number => (us
 export const creditsToUsd = (credits: number): number => credits * creditUsd();
 
 /**
- * The rate, written out: `1 credit = $0.10`.
+ * The rate, written out: `1 credit = $0.80`.
  *
  * One sentence, one place. Every surface that tells a person what a credit is
  * worth — the top-up screen, the Settings credits card, the tooltip on the
@@ -110,11 +119,11 @@ export const creditsToUsd = (credits: number): number => credits * creditUsd();
  * than one it typed. On the server that rate is `creditUsd()`; in the browser
  * it is the `creditUsd` field of the rate table the server built (lib/
  * rateTable.ts), because `process.env.CREDIT_USD` does not exist there and a
- * browser falling back to 0.10 would be a second place the launch rate is
- * baked in — exactly what CREDIT_USD is meant to make impossible.
+ * browser falling back to DEFAULT_CREDIT_USD would be a second place the price
+ * is baked in — exactly what CREDIT_USD is meant to make impossible.
  *
  * A rate that is missing, zero or not a number returns null, and the surface
- * leaves the line out. Nothing invents ten cents to fill a gap.
+ * leaves the line out. Nothing invents a price to fill a gap.
  *
  * Two decimals normally, up to four when the rate needs them: at $0.125 a
  * credit, "$0.13" would misstate the unit by 4% on a screen whose whole job is

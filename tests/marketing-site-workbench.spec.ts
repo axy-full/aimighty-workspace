@@ -44,6 +44,21 @@ for (const [path, tab] of PAGES) {
   });
 }
 
+test("every price on /pricing reads whole: nothing clipped, cents always two digits", async ({ page }) => {
+  await page.goto("/pricing");
+  const prices = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(
+    '[class*="price"], [class*="packPrice"], [class*="packCredits"], [class*="perCredit"], td[class*="cr"]',
+  )).filter((el) => el.getClientRects().length).map((el) => ({
+    text: (el.textContent ?? "").trim(),
+    cut: el.scrollWidth > el.clientWidth + 1,
+    money: /packPrice/.test(el.className),
+  })));
+  expect(prices.filter((p) => p.money).length, "the four packs are priced").toBe(4);
+  expect(prices.filter((p) => p.cut).map((p) => p.text), "no price is clipped or ellipsized").toEqual([]);
+  /* $49.60, never $49.6: whole dollars stay whole, cents are two digits. */
+  for (const p of prices.filter((p) => p.money)) expect(p.text).toMatch(/^\$\d{1,3}(,\d{3})*(\.\d{2})?$/);
+});
+
 test("the internal /site path redirects to the public one", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "routing, once");
   const res = await page.request.get("/site/studio", { maxRedirects: 0 });

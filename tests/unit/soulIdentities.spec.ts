@@ -7,6 +7,10 @@ import type {
   CreateSoulIdentityInput,
   SoulIdentity,
 } from "../../lib/soulIdentities";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-soul-identities-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;

@@ -11,6 +11,10 @@ import { byQuality, eachLine, isTakeCell, leftFrom, optionLabel, reachFor, sortO
 import { paidFromBalance, plansWithReach, rateCard, referenceTakes, reachEngines, usualTakes, workspaceReach, RATE_CARD_SECONDS, USUAL_WINDOW } from '../../lib/workbench/media-reach';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 /**
  * Credits said as takes (idea 24: plans and credits as media). Every figure

@@ -2,28 +2,31 @@ import { test, expect } from "@playwright/test";
 import { packs, packById, pricePack, capBonus, BONUS_CAP } from "../../lib/packs";
 import { creditUsd, billCredits } from "../../lib/creditTerms";
 import { nextStatus } from "../../lib/topups";
+import { pinCreditUsd, setCreditUsd } from "../helpers/creditRate";
 
-/** SOW §7A: unit stays $0.10, the discount is bonus credits, capped at 20%. */
+/* The packs are priced at the public price: this file runs at the default. */
+pinCreditUsd(undefined);
+
+/** SOW §7A: unit stays $0.80, the discount is bonus credits, capped at 20%. */
 test("the four packs are §7A's four packs", () => {
-  process.env.CREDIT_USD = "0.10";
   const all = packs();
   expect(all.map((p) => p.id)).toEqual(["starter", "team", "studio", "agency"]);
-  expect(all.map((p) => p.credits)).toEqual([500, 2000, 5000, 20000]);
-  expect(all.map((p) => p.bonus)).toEqual([0, 200, 750, 4000]);
-  expect(all.map((p) => p.total)).toEqual([500, 2200, 5750, 24000]);
+  expect(all.map((p) => p.credits)).toEqual([62, 250, 625, 2500]);
+  expect(all.map((p) => p.bonus)).toEqual([0, 25, 94, 500]);
+  expect(all.map((p) => p.total)).toEqual([62, 275, 719, 3000]);
   // The price is the BOUGHT credits at the unit rate, and nothing else.
-  expect(all.map((p) => p.usd)).toEqual([50, 200, 500, 2000]);
-  expect(packById("agency")?.bonus).toBe(4000);
+  expect(all.map((p) => p.usd)).toEqual([49.6, 200, 500, 2000]);
+  expect(packById("agency")?.bonus).toBe(500);
   // The old three are gone; a stale id is null rather than a silent fallback.
   expect(packById("house")).toBeNull();
 });
 
 test("the effective rate is §7A's Effective column", () => {
   const [starter, team, studio, agency] = packs();
-  expect(starter.perCredit).toBeCloseTo(0.100, 3);
-  expect(team.perCredit).toBeCloseTo(0.091, 3);
-  expect(studio.perCredit).toBeCloseTo(0.087, 3);
-  expect(agency.perCredit).toBeCloseTo(0.083, 3);
+  expect(starter.perCredit).toBeCloseTo(0.800, 3);
+  expect(team.perCredit).toBeCloseTo(0.727, 3);
+  expect(studio.perCredit).toBeCloseTo(0.695, 3);
+  expect(agency.perCredit).toBeCloseTo(0.667, 3);
 });
 
 test("the ladder only ever goes down, and never below the cap", () => {
@@ -32,7 +35,7 @@ test("the ladder only ever goes down, and never below the cap", () => {
     expect(all[i].credits, `${all[i].id} is bigger`).toBeGreaterThan(all[i - 1].credits);
     expect(all[i].perCredit, `${all[i].id} costs no more per credit`).toBeLessThanOrEqual(all[i - 1].perCredit);
   }
-  // §7A guardrail 2, on the shipped table: 4,000/20,000 sits exactly on 20%.
+  // §7A guardrail 2, on the shipped table: 500/2,500 sits exactly on 20%.
   for (const p of all) expect(p.bonus, p.id).toBeLessThanOrEqual(p.credits * BONUS_CAP);
   for (const p of all) expect(p.perCredit).toBeLessThanOrEqual(creditUsd());
 });
@@ -43,10 +46,13 @@ test("the discount is credits given, never a cheaper unit", () => {
      set against it. If the pack leaked into that, the same shot would cost
      different credits for different customers. Priced while the deepest rung
      is 20% off: the bill does not move. */
-  process.env.CREDIT_USD = "0.10";
   expect(packById("agency")!.perCredit).toBeLessThan(creditUsd());
-  expect(billCredits(2.864, "dreamina-seedance-2-5-260628")).toBe(43);
-  expect(billCredits(0.63, "fal-ai/kling-video/v3/standard")).toBe(10);
+  try {
+    setCreditUsd("0.10");
+    expect(packById("agency")!.perCredit).toBeLessThan(creditUsd());
+    expect(billCredits(2.864, "dreamina-seedance-2-5-260628")).toBe(43);
+    expect(billCredits(0.63, "fal-ai/kling-video/v3/standard")).toBe(10);
+  } finally { setCreditUsd(undefined); }
 });
 
 test("guardrail 2 clamps, and fails to zero rather than through", () => {

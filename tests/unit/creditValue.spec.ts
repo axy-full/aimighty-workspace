@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  creditUsd, creditRateLine, creditRateUsd, creditsToUsd, usdToCredits, billCredits, billCreditsWith,
+  creditUsd, creditRateLine, creditRateUsd, creditsToUsd, usdToCredits, billCredits, billCreditsWith, DEFAULT_CREDIT_USD,
 } from "../../lib/creditTerms";
 import { buildRateTable } from "../../lib/rateTable.server";
 import { EMPTY_TABLE } from "../../lib/rateTable";
@@ -15,8 +15,8 @@ import {
 import { FALLBACK_USD_PER_CREDIT } from "../../lib/elevenlabs";
 
 /**
- * One credit is ten cents — stated once, derived everywhere, and never applied
- * to somebody else's credits.
+ * One credit is eighty cents (DEFAULT_CREDIT_USD) — stated once, derived
+ * everywhere, and never applied to somebody else's credits.
  *
  * The rule already held in the pricing core before this file existed: packs are
  * priced at `creditUsd()`, the ledger bills `usd × margin ÷ creditUsd()`. What
@@ -56,7 +56,7 @@ test("no surface types the rate as copy", () => {
      built by creditRateLine from a number, so the words must not appear in any
      component or route. lib/creditTerms.ts is the one place the rate is named,
      and the SOW and CLAUDE.md are the policy that sets it. */
-  const banned = /US\$0\.10|\$0\.10|10¢|ten cents|10 cents/;
+  const banned = /US\$0\.10|\$0\.10|10¢|ten cents|10 cents|US\$0\.80|\$0\.80|80¢|eighty cents|80 cents/;
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -219,13 +219,19 @@ test("changing CREDIT_USD moves every derived figure, the browser's rate table i
 });
 
 test("an unusable CREDIT_USD falls back to the one default, and only there", () => {
+  /* The public price (SOW §7A), decided 28 September 2026. */
+  expect(DEFAULT_CREDIT_USD).toBe(0.80);
   const before = process.env.CREDIT_USD;
   try {
     for (const bad of ["", "nope", "0", "-1"]) {
       process.env.CREDIT_USD = bad;
-      expect(creditUsd(), bad).toBe(0.10);
-      expect(buildRateTable("cr").creditUsd, bad).toBe(0.10);
+      expect(creditUsd(), bad).toBe(0.80);
+      expect(buildRateTable("cr").creditUsd, bad).toBe(0.80);
     }
+    /* Unset is the default too, and the sentence every surface prints from it. */
+    delete process.env.CREDIT_USD;
+    expect(creditUsd()).toBe(0.80);
+    expect(creditRateLine(buildRateTable("cr").creditUsd)).toBe("1 credit = $0.80");
   } finally { if (before === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = before; }
 });
 
@@ -236,13 +242,16 @@ test("a displayed value of credits is vendor cost at no margin, not a refund rat
      platform pay for this", which is what the admin desk and the top-up ladder
      need. What a customer is BILLED is usd × margin ÷ creditUsd, a different
      number, and the two must not be mistaken for each other. */
-  process.env.CREDIT_USD = "0.10";
-  expect(creditsToUsd(100)).toBeCloseTo(10, 9);
-  expect(billCredits(10, "*")).toBe(150);
-  expect(usdToCredits(10, "*")).toBeGreaterThan(creditsToUsd(1) === 0 ? 0 : 100);
-  /* The card's dollar figure is balance × unit — the same margin-free rate the
-     packs were sold at, which is why it cannot imply a better one. */
-  const card = creditsCard({ credits: { creditUsd: 0.10, granted: 0, used: 0, balance: 1000 } }, null, 0)!;
-  expect(card.usd).toBe("$100.00");
-  expect(pricePack({ id: "x", label: "X", credits: 1000 }, 0.10).usd).toBe(100);
+  const before = process.env.CREDIT_USD;
+  try {
+    process.env.CREDIT_USD = "0.10";
+    expect(creditsToUsd(100)).toBeCloseTo(10, 9);
+    expect(billCredits(10, "*")).toBe(150);
+    expect(usdToCredits(10, "*")).toBeGreaterThan(creditsToUsd(1) === 0 ? 0 : 100);
+    /* The card's dollar figure is balance × unit — the same margin-free rate the
+       packs were sold at, which is why it cannot imply a better one. */
+    const card = creditsCard({ credits: { creditUsd: 0.10, granted: 0, used: 0, balance: 1000 } }, null, 0)!;
+    expect(card.usd).toBe("$100.00");
+    expect(pricePack({ id: "x", label: "X", credits: 1000 }, 0.10).usd).toBe(100);
+  } finally { if (before === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = before; }
 });

@@ -7,6 +7,10 @@ import {
 import { MODELS, type ModelDef } from "../../lib/models";
 import { NO_REFERENCES, quoteWorkbenchMedia, rendersSound, workbenchAudioRates, workbenchGenerationModels, workbenchRate, workbenchUse } from "../../lib/workbench/media-quote";
 import { composerSettings, type ComposerReference } from "../../lib/workspace/composer";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 /**
  * Gen's model sheet (lib/workspace/model-picker.ts) and the rate the engines

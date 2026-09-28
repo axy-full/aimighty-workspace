@@ -42,9 +42,10 @@ export type TopupPack = { id: string; label: string; credits: number; bonus: num
 export type TopupRequestRow = { id: string; label: string; credits: number; bonus: number; usd: number; status: string; createdAt?: number; decidedAt?: number | null };
 export type TopupGrant = { id: string; credits: number; note: string; createdAt: number };
 export type Topups = { applies: boolean; provider: string; canRequest: boolean; openLimit?: number; packs: TopupPack[]; requests: TopupRequestRow[]; history?: TopupGrant[] };
-/** A pack as the SOW writes it on the top-up screen: `2,200 cr · $200 · 200 free`. The price is the one dollar figure on the page. */
+/** A pack as the SOW writes it on the top-up screen: `275 cr · $200 · 25 free`. The price is the one dollar figure on the page: whole dollars stay whole, cents are always two digits ($49.60, never $49.6). */
 export function packLine(pack: TopupPack): string {
-  return [`${pack.total.toLocaleString("en-US")} cr`, `$${pack.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`, pack.bonus > 0 ? `${pack.bonus.toLocaleString("en-US")} free` : null].filter(Boolean).join(" · ");
+  const cents = Number.isInteger(pack.usd) ? 0 : 2;
+  return [`${pack.total.toLocaleString("en-US")} cr`, `$${pack.usd.toLocaleString("en-US", { minimumFractionDigits: cents, maximumFractionDigits: 2 })}`, pack.bonus > 0 ? `${pack.bonus.toLocaleString("en-US")} free` : null].filter(Boolean).join(" · ");
 }
 /** The button that asks for a pack says what lands in the balance: bought and free together. */
 export const packRequestLabel = (pack: Pick<TopupPack, "total">) => `Request ${pack.total.toLocaleString("en-US")} credits`;

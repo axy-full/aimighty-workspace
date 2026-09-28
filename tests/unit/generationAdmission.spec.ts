@@ -9,6 +9,10 @@ import type {
   PreparedAdmission,
 } from "../../lib/admissionTypes";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-admission-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;

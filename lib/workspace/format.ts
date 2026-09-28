@@ -27,7 +27,7 @@ export function formatCredits(balance: number) {
  *    somebody HAS and is never what they pay in, so nothing is invented here:
  *    the slot holds a neutral dash and its label explains why.
  *
- * The title carries the rate — "Workspace credits · 1 credit = $0.10" — because
+ * The title carries the rate — "Workspace credits · 1 credit = $0.80" — because
  * the balance is where most people meet the unit, and a figure in a unit nobody
  * has defined is not information. `perCredit` is the rate the rate table
  * carried over the wire (lib/rateTable.ts `creditUsd`), never a number typed

@@ -29,6 +29,6 @@ test("a proposed take in credits is what that take bills, rounded up on its own"
       expect(takeCost(usd, planned, engine)).toBeCloseTo(vendor, 4);
     }
   }
-  // The rate card's Seedance 2.5, 5s 1080p line, not the vendor's dollars.
-  expect(whole(takeCost(cr, 5, "seedance"))).toBe(43);
+  // The rate card's Seedance 2.5, 5s 1080p line (SOW §7A, at US$0.80 a credit), not the vendor's dollars.
+  expect(whole(takeCost(cr, 5, "seedance"))).toBe(6);
 });

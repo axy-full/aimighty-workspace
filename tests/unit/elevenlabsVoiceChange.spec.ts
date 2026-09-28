@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 import { wav } from "./audioFixtures";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 /**
  * Voice change (PR C2, part 2): audio task `voiceChange` on the existing

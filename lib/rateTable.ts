@@ -56,7 +56,7 @@ export type RateTable = {
    * This is the browser's ONLY source for the rate. `creditUsd()` reads
    * `CREDIT_USD` from the environment, which does not reach the client, so a
    * browser that called it would silently fall back to the launch rate and
-   * bake 0.10 into a second place. Everything client-side reads this field and
+   * bake the default into a second place. Everything client-side reads this field and
    * passes it to `creditRateLine`.
    */
   creditUsd: number;

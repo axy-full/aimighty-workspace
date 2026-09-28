@@ -6,7 +6,8 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
-import { billCredits, marginKeyOf } from "../lib/creditTerms";
+import { billCredits, marginKeyOf, usdToCredits } from "../lib/creditTerms";
+import { packLine, packRequestLabel, type TopupPack } from "../lib/shell/workspace-view";
 
 /**
  * Idea 4 — a way out when credits run out. A take held at zero says what it
@@ -63,9 +64,10 @@ async function seed(page: Page): Promise<Seeded> {
 }
 const balanceOf = async (page: Page) => Number((await (await page.request.get("/api/me")).json()).credits.balance);
 
-/** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits). */
+/** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits),
+ *  at the credit's price: this runner and the server both read CREDIT_USD, unset on the local mock server. */
 function dollarsFor(needs: number): number {
-  const est = (needs - 0.5) / 15;
+  const est = (needs - 0.5) / usdToCredits(1, marginKeyOf("video", SEEDANCE));
   expect(billCredits(est, marginKeyOf("video", SEEDANCE))).toBe(needs);
   return est;
 }
@@ -405,8 +407,12 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await expect(packs).toHaveCount(4);
   await expect(page.getByTestId("ws-topups-error")).toHaveCount(0);
   /* Priced by the platform's own packs(): credits, bonus and the pack's dollar price, the one dollar figure here. */
-  await expect(packs).toHaveText([/Starter\s*500 cr · \$50/, /Team\s*2,200 cr · \$200 · 200 free/, /Studio\s*5,750 cr · \$500 · 750 free/, /Agency\s*24,000 cr · \$2,000 · 4,000 free/]);
-  await expect(packs.nth(1).getByTestId("ws-pack-request")).toHaveText("Request 2,200 credits");
+  const served = (await (await page.request.get("/api/workspaces/topups")).json()).packs as TopupPack[];
+  expect(served.map((p) => p.id)).toEqual(["starter", "team", "studio", "agency"]);
+  const [starterPack, teamPack] = served;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(packs).toHaveText(served.map((p) => new RegExp(`${p.label}\\s*${escape(packLine(p))}`)));
+  await expect(packs.nth(1).getByTestId("ws-pack-request")).toHaveText(packRequestLabel(teamPack));
   await expect(page.getByTestId("ws-grant").filter({ hasText: "Credits out fixture" })).toContainText("+120 cr");
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="ws-packs"]'), "pack buttons under 44×44").toEqual([]);
   await floors(page, '[data-testid="ws-pack"], [data-testid="ws-grant"], [data-testid="workspace-credits"]');
@@ -424,10 +430,10 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   const reply = page.waitForResponse((r) => r.url().endsWith("/api/workspaces/topups") && r.request().method() === "POST");
   await packs.nth(1).getByTestId("ws-pack-request").click();
   const posted = await (await reply).json();
-  expect(posted).toMatchObject({ emailed: false, checkout: { kind: "queued" }, request: { label: "Team", credits: 2000, bonus: 200, usd: 200, status: "requested" } });
+  expect(posted).toMatchObject({ emailed: false, checkout: { kind: "queued" }, request: { label: "Team", credits: teamPack.credits, bonus: teamPack.bonus, usd: teamPack.usd, status: "requested" } });
   await expect(page.getByTestId("ws-plans-note")).toHaveText("Requested. It waits on the platform desk; nothing is charged here, and the credits land once payment is confirmed.");
   const request = page.getByTestId("ws-topup-request").filter({ hasText: "Team" });
-  await expect(request).toContainText("Team · 2,200 cr · waiting on the platform since");
+  await expect(request).toContainText(`Team · ${teamPack.total.toLocaleString("en-US")} cr · waiting on the platform since`);
   expect(await balanceOf(page)).toBe(before);
   const stored = () => platform(async (db) => (await db.execute({ sql: "SELECT status FROM topup_requests WHERE id=?", args: [posted.request.id] })).rows.map((r) => String(r.status)));
   expect(await stored()).toEqual(["requested"]);
@@ -447,7 +453,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await packs.nth(0).getByTestId("ws-pack-request").click();
   await expect(page.getByTestId("ws-plans-note")).toHaveText("The request was not confirmed. Check Requests below before asking again; nothing is charged either way.");
   const starter = page.getByTestId("ws-topup-request").filter({ hasText: "Starter" });
-  await expect(starter).toContainText("Starter · 500 cr · waiting on the platform since");
+  await expect(starter).toContainText(`Starter · ${starterPack.total.toLocaleString("en-US")} cr · waiting on the platform since`);
   await page.unroute(/\/api\/workspaces\/topups$/);
   await starter.getByTestId("ws-topup-withdraw").click();
   await expect(starter).toHaveAttribute("data-status", "cancelled");
@@ -457,7 +463,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await request.getByTestId("ws-topup-withdraw").click();
   await expect(page.getByTestId("ws-plans-note")).toHaveText("Request withdrawn.");
   await expect(request).toHaveAttribute("data-status", "cancelled");
-  await expect(request).toContainText("Team · 2,200 cr · withdrawn");
+  await expect(request).toContainText(`Team · ${teamPack.total.toLocaleString("en-US")} cr · withdrawn`);
   await expect(request.getByTestId("ws-topup-withdraw")).toHaveCount(0);
   expect(await stored()).toEqual(["cancelled"]);
   /* A wheel (a finger) reaches the page's last element, and on a phone it ends above the tab bar. */
