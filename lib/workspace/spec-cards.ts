@@ -396,19 +396,19 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
   },
 
   approvals: {
-    intro: "Nothing paid happens without an approval. Each gate binds the exact inputs, the engine, the price and an expiry, so approving a stale quote is impossible.",
+    intro: "Nothing paid happens without an approval. Each gate binds the inputs, the engine, the estimate and an expiry, so approving a stale quote is impossible.",
     tools: [{ id: "approvals", label: "Approvals" }],
     facts: (f) => [
       ["Waiting", f.runs ? n(approvalRuns(f).length) : "—"],
-      ["Binds", "Inputs · price"],
+      ["Binds", "Inputs · estimate"],
       ["Expiry", "Timed quote"],
       ["Decline", "Holds the run"],
       ["Double spend", "Prevented"],
     ],
     groups: [
       { title: "GATES", note: "", cards: [
-        { name: "Priced gate", desc: "The exact price is shown before dispatch, from a live estimate.", chips: ["live"], live: (f) => (f.runs ? [`${n(approvalRuns(f).length)} waiting`] : []), owner: "You", plan: true, state: (f) => when(approvalRuns(f).length > 0, "WAITING"), tool: "approvals" },
-        { name: "Immutable binding", desc: "Inputs, wallet and amount are frozen at approval.", chips: ["frozen"], owner: "Atomik", tool: "approvals" },
+        { name: "Priced gate", desc: "The estimate is shown before dispatch, from a live quote.", chips: ["live"], live: (f) => (f.runs ? [`${n(approvalRuns(f).length)} waiting`] : []), owner: "You", plan: true, state: (f) => when(approvalRuns(f).length > 0, "WAITING"), tool: "approvals" },
+        { name: "Immutable binding", desc: "Inputs, wallet and estimate are frozen at approval.", chips: ["frozen"], owner: "Atomik", tool: "approvals" },
         { name: "Expiry", desc: "A quote that ages out must be re-estimated.", chips: ["timed"], owner: "Atomik", tool: "approvals" },
         { name: "Decline", desc: "Holds the run. Nothing is dispatched and nothing is charged.", chips: ["safe"], owner: "You", tool: "approvals" },
       ] },
@@ -491,7 +491,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
       ] },
       { title: "RUN", note: "quoted before submission", cards: [
         { name: "Live quote", desc: "A missing or stale estimate blocks submission. No assumed price.", chips: ["live only"], owner: "Atomik", tool: "studio" },
-        { name: "Reviewed generation", desc: "Exact price and wallet approved before anything is sent.", chips: ["approved"], owner: "You", plan: true, tool: "studio" },
+        { name: "Reviewed generation", desc: "Estimate and wallet approved before anything is sent.", chips: ["approved"], owner: "You", plan: true, tool: "studio" },
         { name: "Cancellation", desc: "Requested, then confirmed. No promised refund while uncertain.", chips: ["confirmed"], owner: "Atomik", tool: "studio" },
       ] },
     ],

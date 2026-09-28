@@ -20,7 +20,16 @@ export type ProjectsState = {
   projects: ProjectSummary[];
   project: Project | null;
   error: string | null;
+  /** Held to one id (a link, `hold: "exact"`) and this person has no such draft: nothing else was opened in its place. */
+  missing?: string | null;
 };
+
+/**
+ * How a link holds project resolution (lib/shell/use-asset-link.ts): "wait" reads nothing yet (the link's
+ * workspace or production is still being checked); "exact" opens exactly the id asked for, and when this
+ * person has no such draft says so (`missing`) instead of opening the remembered or the newest project.
+ */
+export type ProjectHold = "wait" | "exact" | null;
 
 /** Something changed the saved project (a job filed a take, a plan wrote the draft): the shell re-reads its copy. */
 export const PROJECT_CHANGED_EVENT = "particl:project-changed";
@@ -48,7 +57,7 @@ const serverCopies = new WeakSet<Project>();
  * `projectChanged` is announced, the saved draft is read again. So the phone
  * Studio grid, Up next and the Atomik plans count what the project holds now.
  */
-export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void): ProjectsState & { refresh: () => void; retry: () => void } {
+export function useProjects(scope: string, projectId: string | null, onResolved: (id: string) => void, hold: ProjectHold = null): ProjectsState & { refresh: () => void; retry: () => void } {
   const [data, setData] = useState<ProjectsState>({ status: "loading", projects: [], project: null, error: null });
   const loaded = useRef<{ scope: string; id: string } | null>(null);
   /* A retry, or a full re-resolve (after a failed first read), re-runs the effect below — even for the id already in the URL. */
@@ -63,6 +72,9 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     answered.current = attempt;
     /* The id this hook just resolved coming back through the URL is not a new request. */
     if (!retrying && projectId && loaded.current?.scope === scope && loaded.current.id === projectId) return;
+    /* A link still being checked opens nothing; one held to an id opens that id or nothing. */
+    if (hold === "wait" || (hold === "exact" && !projectId)) return;
+    const exact = hold === "exact";
     const controller = new AbortController();
     resolving.current = true;
     const request = async (id: string | null) => {
@@ -77,12 +89,12 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     };
     (async () => {
       let remembered: string | null = null;
-      try { remembered = localStorage.getItem(scope); } catch { /* Storage may be disabled; fall back to the list. */ }
+      if (!exact) try { remembered = localStorage.getItem(scope); } catch { /* Storage may be disabled; fall back to the list. */ }
       const wanted = projectId ?? remembered;
       let body = await request(wanted);
       const projects = body.projects ?? [];
       let project = body.project ?? null;
-      if (!project && projects.length && (!wanted || !projects.some((p) => p.id === wanted))) {
+      if (!exact && !project && projects.length && (!wanted || !projects.some((p) => p.id === wanted))) {
         body = await request(projects[0].id);
         project = body.project ?? null;
       }
@@ -90,7 +102,7 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
       loaded.current = project ? { scope, id: project.id } : null;
       revision.current = project && typeof body.revision === "number" ? body.revision : null;
       if (project) serverCopies.add(project);
-      setData({ status: "ready", projects, project, error: null });
+      setData({ status: "ready", projects, project, error: null, missing: exact && !project ? projectId : null });
       if (project) onResolved(project.id);
     })().catch((error: unknown) => {
       if (controller.signal.aborted) return;
@@ -99,7 +111,7 @@ export function useProjects(scope: string, projectId: string | null, onResolved:
     return () => controller.abort();
     // onResolved is a navigation callback; re-fetching when its identity changes would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, projectId, attempt]);
+  }, [scope, projectId, attempt, hold]);
 
   /* A quiet re-read of the open project: the screen keeps what it has until the newer copy lands. */
   const reading = useRef(false);

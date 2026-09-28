@@ -38,13 +38,13 @@ const GROUPS: { tag: string; note?: string; rows: Row[] }[] = [
   { tag: "Message & format", note: "templates from the connected catalogue", rows: [
     { name: "Hooks", chip: "12", desc: "Twelve opening lines per campaign, written against the brief." },
     { name: "Formats", chip: "9", desc: "Nine formats, from UGC review, tutorial and unboxing to CGI product, poster and motion graphic." },
-    { name: "Presets", chip: "live quote", desc: "Ads presets for image variants, read live and quoted on the workspace’s own credits." },
-    { name: "Templates", chip: "priced", desc: "The connected account’s template catalogue and cost table, cached for an hour per connection." },
+    { name: "Presets", desc: "Ads presets for image variants, read live." },
+    { name: "Templates", desc: "The connected account’s template catalogue, cached for an hour per connection." },
     { name: "Aspect & quality", chip: "4k", desc: "1k, 2k or 4k across the documented ratios." },
   ] },
   { tag: "Variants & output", rows: [
     { name: "Variants", chip: "100 max", desc: "Up to a hundred bindings; each one is a generation node." },
-    { name: "Create with template", chip: "quote → approve", desc: "Quoted from the catalogue, approved at the exact connected-credit price, filed with the campaign takes." },
+    { name: "Create with template", desc: "Approved before it runs, filed with the campaign takes." },
     { name: "Reference ad", chip: "reference", desc: "Start from a video ad you own and adapt its direction to the variant." },
     { name: "Design", chip: "layers", desc: "Editable text, image and shape layers, exported as a full-size PNG original." },
     { name: "Video ads", chip: "engine-backed", desc: "Campaign video through the project’s configured engines." },
