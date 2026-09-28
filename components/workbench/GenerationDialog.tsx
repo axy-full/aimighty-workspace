@@ -279,12 +279,12 @@ function TakeDialog({
           if (!Number.isFinite(value.estimatedCredits) || value.estimatedCredits < 0 || !value.fingerprint) throw new Error("The connected account did not return a valid price. Please refresh the quote.");
           if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.estimatedCredits, fingerprint: value.fingerprint, approximate: value.approximate === true }); }
         }).catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
-      } else void studioRequest<{ credits: number | null }>(
+      } else void studioRequest<{ credits: number | null; approximate?: boolean }>(
         "/api/workbench/engines?" + new URLSearchParams({ model: modelId, resolution, ratio, duration: String(duration),
           ...(model.soulIdentity ? { soulIdentityId: selectedSoulId, projectId: project.id } : {}),
         }).toString() + '&' + referenceQuery,
         { signal: abort.signal, headers: { "X-Workbench-Scope": scope } },
-      ).then(value => { if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.credits }); } })
+      ).then(value => { if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.credits, approximate: value.approximate === true }); } })
         .catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
     }, model.marketing ? 450 : 0);
     return () => { clearTimeout(timer); abort.abort(); };
