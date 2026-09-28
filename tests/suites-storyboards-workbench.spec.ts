@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
@@ -16,6 +16,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n";
 const shot = (id: string, description: string) => ({ id, description, framing: "Wide", movement: "Static", lighting: "Dusk", sound: "Wind" });
+const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
 
 async function setup(page: Page) {
   const account = await signInLocally(page.request);
@@ -99,6 +100,47 @@ test("Storyboards: agent prompts, the look, a priced frame filed as an asset, a 
   expect(withDrawing.references).toEqual([{ uploadId: sketchQuote.sketchAssetId, role: "reference_image" }]);
   expect(String(withDrawing.prompt)).toContain("keep its composition, camera angle and the position, pose and direction of every figure");
   await page.screenshot({ path: info.outputPath("boards.png") });
+  expect(errors).toEqual([]);
+});
+
+/**
+ * CI, 28 September: "Write every prompt" finished while a click on a frame's
+ * Prompt toggle was on its way. React ran the toggle's handler from the render
+ * before the agent's prompts landed, so it saw an empty prompt and put the
+ * frame's composed prompt over the agent's — and nothing wrote it back. The
+ * toggle now decides on the frame as it is when its update applies. This test
+ * keeps the handler from the render before the prompts and runs it after them:
+ * the order CI hit by chance, every time.
+ */
+test("a Prompt click from a render before the agent's prompts landed keeps the prompt the agent wrote", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
+  test.setTimeout(120_000);
+  const { errors, read } = await setup(page);
+  const frame = page.getByTestId("board-frame").nth(0);
+  const toggle = frame.getByTestId("frame-prompt-toggle");
+  await hydrated(toggle);
+  await expect(frame.getByText("Write this frame’s prompt first.")).toBeVisible();
+  /* The toggle's click handler as rendered now, while shot 1.1 has no prompt. */
+  await toggle.evaluate((el) => {
+    const props = (el as unknown as Record<string, { onClick: () => void }>)[Object.keys(el).find((k) => k.startsWith("__reactProps"))!];
+    (window as unknown as { staleToggle: () => void }).staleToggle = props.onClick;
+  });
+
+  await page.getByTestId("boards-prompts-estimate").click();
+  await expect(page.getByTestId("boards-prompts-quote")).toContainText("2 shots · 3 agent steps");
+  await page.getByTestId("boards-prompts-start").click();
+  const written = "Frame 1.1: The fox on the ice — mock storyboard prompt.";
+  await expect.poll(async () => (await read()).production?.boards?.frames?.["shot-a1"]?.prompt, { timeout: 60_000 }).toBe(written);
+
+  /* The click lands now, with that earlier render's view of the frame. */
+  await page.evaluate(() => (window as unknown as { staleToggle: () => void }).staleToggle());
+  await expect(frame.getByTestId("frame-prompt")).toHaveValue(written);
+  /* Nothing changed, so nothing is saved: the page still says Saved. */
+  await expect(page.locator(".pd-save")).toHaveText(/^Saved/);
+  /* Saved as the agent wrote it: a later edit's save carries the frame as it stands. */
+  await page.getByTestId("boards-style-bw-sketch").click();
+  await expect.poll(async () => (await read()).production.boards.style).toBe("bw-sketch");
+  expect((await read()).production.boards.frames["shot-a1"].prompt).toBe(written);
   expect(errors).toEqual([]);
 });
 
