@@ -1,4 +1,4 @@
-import { isGenjutsuModel } from "./genjutsuTypes";
+import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { higgsfieldSubmissionRejected } from "./higgsfield";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import type { RenderHandle } from "./engines/types";
@@ -93,8 +93,8 @@ async function rememberSubmission(
   out: SubmittedVideo,
 ): Promise<void> {
   await writeSubmission(async () => {
-    if (isGenjutsuModel(job.model.id)) {
-      if (!out.higgsfieldHandle || out.higgsfieldHandle.model !== job.model.id || out.higgsfieldHandle.ref !== out.taskId) throw new Error("The transform receipt is incomplete.");
+    if (isHiggsfieldVideoModel(job.model.id)) {
+      if (!out.higgsfieldHandle || out.higgsfieldHandle.model !== job.model.id || out.higgsfieldHandle.ref !== out.taskId) throw new Error("The accepted request receipt is incomplete.");
       const saved = await db().execute({ sql: `UPDATE generations SET status=CASE WHEN status IN ('succeeded','cancelled') THEN status ELSE 'running' END,
         attempts=1,queue_ms=?,submit_ms=?,error=NULL,params=json_set(params,'$.higgsfieldVideoHandle',json(?),'$.producedOutcome',json(?)),updated_at=?
         WHERE id=? AND deleted=0 AND (json_extract(params,'$.higgsfieldVideoHandle.ref') IS NULL OR json_extract(params,'$.higgsfieldVideoHandle.ref')=?)`,
@@ -212,7 +212,7 @@ async function submissionFailed(
 export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
   return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     await ready();
-    if (isGenjutsuModel(job.model.id)) await restoreHiggsfieldGenerationReceipt(job.genId);
+    if (isHiggsfieldVideoModel(job.model.id)) await restoreHiggsfieldGenerationReceipt(job.genId);
     let row = await submissionRow(job.genId);
     if (!row) return { ok: false, error: "No such take.", cls: "fatal" };
     const existing = knownTask(row);
@@ -311,7 +311,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         taskId: out.handle.ref,
         queueMs: started - job.ts,
         submitMs: now() - started,
-        ...(isGenjutsuModel(job.model.id) ? { higgsfieldHandle: out.handle } : {}),
+        ...(isHiggsfieldVideoModel(job.model.id) ? { higgsfieldHandle: out.handle } : {}),
         ...(job.model.provider === "fal"
           ? {
               endpoint:

@@ -1,6 +1,6 @@
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
-import { isGenjutsuModel } from "./genjutsuTypes";
+import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { isConsumerVideoModel, isConsumerOriginalParams } from "./higgsfield-consumer/original-identity";
 import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
@@ -370,7 +370,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     try { await reconcileHiggsfieldImage(gen.id); } catch (error) { if (options.strict) throw error; }
     return (await getGeneration(gen.id)) ?? gen;
   }
-  if (gen.kind === "video" && gen.provider === "higgsfield" && isGenjutsuModel(gen.model)) {
+  if (gen.kind === "video" && gen.provider === "higgsfield" && isHiggsfieldVideoModel(gen.model)) {
     try { await reconcileGenjutsuVideo(gen.id); } catch (error) { if (options.strict) throw error; }
     return (await getGeneration(gen.id)) ?? gen;
   }

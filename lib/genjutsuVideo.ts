@@ -3,6 +3,7 @@ import { db, now, ready } from "./db";
 import { engineFor } from "./engines";
 import type { RenderHandle } from "./engines/types";
 import { isGenjutsuModel } from "./genjutsuTypes";
+import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { HiggsfieldHttpError } from "./higgsfield";
@@ -20,11 +21,13 @@ import { invalidate, PROJECTS_KEY } from "./cache";
 
 type Original = { bytes: number; sha256: string; width: number; height: number; seconds: number; requestId: string };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-const safeFailure = "The accepted transform original could not be collected yet. Its request and reserved cost are retained; check again after storage and the original connection are available.";
+const safeFailure = (model: string) => `The accepted ${isGenjutsuModel(model) ? "transform " : ""}original could not be collected yet. Its request and reserved cost are retained; check again after storage and the original connection are available.`;
 
 /** A separate lease protects collection, never paid dispatch. Bytes are reserved
  * on the existing generation before storage I/O, so crash uncertainty remains
- * included in all existing quota and workspace storage inventories. */
+ * included in all existing quota and workspace storage inventories. Collects
+ * every Higgsfield video on the commercial key (Genjutsu transforms and
+ * Cinema Studio); the original's receipt keeps its `genjutsuOriginal` name. */
 export async function reconcileGenjutsuVideo(id: string): Promise<void> {
   return withRecoveryJob(requireTenant().id, id, async () => {
     await ready();
@@ -39,7 +42,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
     const row = claim.rows[0], params = JSON.parse(String(row.params));
     try {
       const handle = params.higgsfieldVideoHandle as RenderHandle, usd = params.higgsfieldVendorCostUsd;
-      if (!isGenjutsuModel(String(row.model)) || !params.paidClaim || handle.provider !== "higgsfield" || handle.model !== row.model ||
+      if (!isHiggsfieldVideoModel(String(row.model)) || !params.paidClaim || handle.provider !== "higgsfield" || handle.model !== row.model ||
           !handle.credentialFingerprint || handle.credentialFingerprint !== params.higgsfieldCredentialFingerprint || !Number.isFinite(usd) || usd <= 0)
         throw new Error("Invalid admission");
       let original = params.genjutsuOriginal as Original | undefined;
@@ -58,7 +61,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         if (state.status === "failed" || state.status === "cancelled") {
           if (original) throw new Error("Contradictory provider outcome");
           await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=0,error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
-            args: [state.status, state.error || "The connected account canceled this transform request.", now(), id, token] },
+            args: [state.status, state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), now(), id, token] },
             { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
           await deliverGenerationSettlement(id);
           await settleHiggsfieldGenerationReceipt(id);
@@ -92,19 +95,24 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         stored = await storeVideoBytes(id, bytes);
       }
       if (!original) throw new Error("Missing original receipt");
-      // duration_s is the column the per-second tools price from; the receipt's
-      // measured length is the same number params.duration carries.
+      // duration_s is the column the per-second tools price from. A transform
+      // follows its source's shape, so its params carry the measured length and
+      // ratio; Cinema Studio keeps the duration and aspect it was asked for (and
+      // priced at), like every other generated take.
+      const transform = isGenjutsuModel(String(row.model));
+      const keptDuration = transform ? original.seconds : Number(params.duration);
+      const keptRatio = transform ? `${original.width}:${original.height}` : String(params.ratio);
       await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,duration_s=?,
         params=json_set(params,'$.duration',?,'$.width',?,'$.height',?,'$.ratio',?),updated_at=?
         WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=? AND json_extract(params,'$.higgsfieldVideoPollUntil')>?`,
-        args: [stored.url,stored.bytes,usd,Math.round(original.seconds * 1000) / 1000,original.seconds,original.width,original.height,`${original.width}:${original.height}`,now(),id,token,now()] },
+        args: [stored.url,stored.bytes,usd,Math.round(original.seconds * 1000) / 1000,keptDuration,original.width,original.height,keptRatio,now(),id,token,now()] },
         { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "succeeded", engineCostUsd: usd,
           projectId: row.project_id == null ? null : String(row.project_id), shotId: row.shot_id == null ? null : String(row.shot_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
       await deliverGenerationSettlement(id);
       await settleHiggsfieldGenerationReceipt(id);
       invalidate(PROJECTS_KEY);
     } catch (error) {
-      const message = error instanceof HiggsfieldHttpError && error.status === 507 ? error.message : safeFailure;
+      const message = error instanceof HiggsfieldHttpError && error.status === 507 ? error.message : safeFailure(String(row.model));
       await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?", args: [message, now(), id, token] });
       throw new Error(message);
     } finally {
@@ -119,7 +127,7 @@ export async function cancelGenjutsuVideo(id: string): Promise<{status: "request
   return withRecoveryJob(requireTenant().id, id, async () => {
     await ready();
     const row = (await db().execute({sql: "SELECT model,provider,kind,status,created_by,params FROM generations WHERE id=? AND deleted=0",args:[id]})).rows[0];
-    if (!row || !isGenjutsuModel(String(row.model)) || row.provider !== "higgsfield" || row.kind !== "video") throw new HiggsfieldHttpError(404,"No such transform request.");
+    if (!row || !isHiggsfieldVideoModel(String(row.model)) || row.provider !== "higgsfield" || row.kind !== "video") throw new HiggsfieldHttpError(404,"No such transform request.");
     const user = currentTenant()?.user;
     if (!user || (user.role !== "admin" && row.created_by !== user.id)) throw new HiggsfieldHttpError(403,"Only the creator or a workspace administrator can cancel this request.");
     if (["succeeded","failed","cancelled"].includes(String(row.status))) return {status: row.status as "succeeded" | "failed" | "cancelled"};
