@@ -15,6 +15,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { JobsTrayProvider } from "@/lib/shell/use-jobs-tray";
 import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
@@ -271,6 +272,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
+      <JobsTrayProvider>
       <div className="gx" data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
@@ -458,6 +460,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           );
         })() : null}
       </div>
+      </JobsTrayProvider>
     </AtomikHost>
   );
 }

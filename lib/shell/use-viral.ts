@@ -7,6 +7,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "./use-connected-capability";
 import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, viralFailure, type ViralRun } from "./viral";
+import { announceJob } from "./jobs-bus";
 
 /**
  * The Genjutsu pages' one line to the connected account
@@ -160,12 +161,18 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
 
   /* A run the account answered for: into the list in place, onto the primary if it is the one just sent (or one whose submit reply was lost, which the account took after all), and — once it lands — into the Library. */
   const landed = useRef(new Set<string>());
+  const announced = useRef(new Set<string>());
   const land = useCallback((job: GenjutsuJob) => {
     setRuns((prev) => (prev?.draftId === job.draftId ? { ...prev, jobs: mergeRuns([job], prev.jobs) } : prev));
     setRun((prev) => (prev.phase === "submitting" && prev.job.id === job.id ? phaseFor(job) : runAfterStatus(prev, job)));
     if (job.status === "completed" && !landed.current.has(job.id)) {
       landed.current.add(job.id);
       if (scope) void refreshProjectLibrary(scope, job.draftId);
+    }
+    /* Settled: the header's jobs tray reads it now, not on its next turn. */
+    if ((job.status === "completed" || job.status === "failed") && !announced.current.has(`${job.id}:${job.status}`)) {
+      announced.current.add(`${job.id}:${job.status}`);
+      announceJob(job.id);
     }
   }, [scope]);
 
@@ -178,6 +185,7 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
     setRun({ phase: "submitting", job: current.job });
     try {
       const job = await call({ action: "submit", draftId, id: current.job.id, workspaceId: current.job.workspaceId, credits: current.credits });
+      announceJob(job.id);
       setEstimate(null);
       land(job);
     } catch (error) {

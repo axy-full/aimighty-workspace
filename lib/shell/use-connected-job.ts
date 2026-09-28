@@ -10,6 +10,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { autoRetryMs, quoteUsableUntil } from "./business";
 import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConnectedJob, type LastRead } from "./connected-collector";
+import { announceJob } from "./jobs-bus";
 
 /**
  * One connected-account job from a Business composer (FINAL_SPEC §2), on the
@@ -282,7 +283,7 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
       done: (reply) => !connectedRecoverable(reply.job),
       onValue: ({ job, pollAfterSeconds }) => {
         lastRead.current = { id, at: Date.now(), hintSeconds: pollAfterSeconds };
-        if (!connectedRecoverable(job)) forgetJob(store(), key, id);
+        if (!connectedRecoverable(job)) { forgetJob(store(), key, id); announceJob(id); }
         setState((now) => (mine(now) ? settledState(job) : now));
       },
       onError: (error) => {
@@ -338,6 +339,7 @@ export function useConnectedJob(draftId: string | null, slot = "business", scope
     const mine = (s: ConnectedJobState) => s.phase === "submitting" && s.job.id === id;
     try {
       const job = await call(connectedSubmitRequest(draftId, now.job));
+      announceJob(job.id);
       if (!connectedRecoverable(job)) forgetJob(store(), key, id);
       setState((s) => (mine(s) ? settledState(job) : s));
     } catch (error) {
