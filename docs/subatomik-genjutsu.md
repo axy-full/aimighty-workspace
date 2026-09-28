@@ -29,6 +29,8 @@ Queued Cloud jobs can request cancellation. An HTTP 202 only means requested; Su
 
 ## Billing default and override
 
+> **Retired 28 September 2026.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Genjutsu runs on the Cloud developer connection above, with one to eight references. The connected-account default and the account path below are kept as the record of what was built.
+
 The connected account is the silent default. When the workspace owner has a connected account, `/subatomik` generates with connected credits and shows no billing toggle; the page reads the owner's connection status from `/api/higgsfield/consumer/connection` on open. Members always use Particl workspace (Cloud) billing, as only the owner can spend the connected account's credits. Without a connection the page keeps the Cloud path and shows the connection prompt (Workspace settings → Engines); it does not offer a choice in the main flow.
 
 `?account=particl` is the explicit, unadvertised override to Particl workspace billing. It is linked from the small **Advanced** disclosure at the bottom of the page and is carried across the Motion Transfer / Object Swap pages by the dock. `?account=higgsfield` remains valid for older links and recreation URLs, but is not required for the default. Every approval-step disclosure is unchanged: originals are copied to the connected account at quote time (approved before the quote), the exact connected-credit price and wallet are approved before submission, and the account-wide shared-wallet caveat is shown on the quote. User-facing copy says "connected account" / "connected credits"; the provider is not named.

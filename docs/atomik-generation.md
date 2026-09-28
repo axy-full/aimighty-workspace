@@ -1,5 +1,7 @@
 # Atomik Generate — catalogue-driven workflows on the connected account
 
+> **Retired 28 September 2026.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). The Generate page, its Tools and Voice groups and the connected account's catalogue described here are retired; Gen covers generation on Particl's own engines, and results already collected stay in the Library. The rest is kept as the record of what was built. The pace of status reads (item 7) and the header's jobs (item 8) still describe Particl's own jobs.
+
 PR I, slice I1 (19 September 2026). Atomik Super Agent gains a **Generate** page with four workflows — Image, Video, Sound and 3D — that run on the workspace owner's connected account. The page never names the provider: it speaks of the connected account, its wallet and its credits. Slice I2 (same day) adds a second group, **Tools**, on the same page; see "Tools" below. Slice I3 (same day) adds a third group, **Voice** — Change voice, Dub and (gated off) Analyse video; see "Voice tools" below.
 
 ## What it does
