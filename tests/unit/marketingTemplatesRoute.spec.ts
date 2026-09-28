@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { websiteRouteModules } from "../helpers/websiteRouteAccess";
 import * as zod from "zod";
 import * as tenant from "../../lib/tenant";
 import { MediaSourceError } from "../../lib/mediaBindings";
@@ -28,6 +29,8 @@ const scope = workbenchScopeFor("workspace", "owner");
 
 /** Exercise the real tenant wrapper, owner/render guards, body reader and route
  * schema. Isolate session resolution, rate storage and the provider service. */
+/** Whether the platform's website tools can take this work now (a managed workspace). */
+let platformAvailable = true;
 async function fixture() {
   const auth = await import("../../lib/auth");
   let store = { workspace: { id: "workspace", deletedAt: null, suspendedAt: null }, user: { id: "owner", role: "admin", owner: true } } as tenant.TenantStore;
@@ -73,6 +76,8 @@ async function fixture() {
     },
   };
   const output = { exports: {} as Record<"GET" | "POST", (request: Request) => Promise<Response>> };
+  // The real route guard, read budget and neutral refusals, over this fixture's session, tenant and rate recorder.
+  Object.assign(deps, await websiteRouteModules({ auth: deps["@/lib/auth"], tenant, accountDb: deps["@/lib/accountDb"], available: () => platformAvailable }));
   new Function("require", "module", "exports", compile(readFileSync("app/api/higgsfield/consumer/marketing-templates/route.ts", "utf8")))((name: string) => {
     if (!(name in deps)) throw new Error(`Unexpected route dependency ${name}`);
     return deps[name];
@@ -148,11 +153,12 @@ test("owner catalogue, costs, quote, exact approval and status receive server-de
   expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { categories: ["all", "ugc", "product-shot", "motion", "ads", "posters", "marketplace"], promptLimit: 2000, maxProductBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false } });
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
-    { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "catalogue", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: false }], workspace: "workspace" },
+    // Read with the grant a quote would use: the owner's own connection here.
+    { name: "catalogue", args: ["owner", { refresh: false, funding: { kind: "own_account" } }], workspace: "workspace" },
+    { name: "costs", args: ["owner", { refresh: false, funding: { kind: "own_account" } }], workspace: "workspace" },
+    { name: "catalogue", args: ["owner", { refresh: true, funding: { kind: "own_account" } }], workspace: "workspace" },
+    { name: "costs", args: ["owner", { refresh: true, funding: { kind: "own_account" } }], workspace: "workspace" },
+    { name: "costs", args: ["owner", { refresh: false, funding: { kind: "own_account" } }], workspace: "workspace" },
     { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
     { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
@@ -224,4 +230,28 @@ test("template errors preserve bounded categories and never expose provider or s
     expect(text).not.toContain("PRIVATE_PROVIDER_TOKEN_AND_URL");
     expect(text.toLowerCase()).not.toContain("higgsfield");
   }
+});
+
+test("a managed workspace: a member browses video templates and runs them on the platform website tools, approved by credits alone", async () => {
+  const f = await fixture(), original = f.store();
+  const member = { ...original, workspace: { ...original.workspace!, usesPlatformKeys: true }, user: { ...original.user!, id: "member", role: "member", owner: false } } as tenant.TenantStore;
+  const memberScope = workbenchScopeFor("workspace", "member");
+  f.setStore(member);
+  platformAvailable = true;
+  const listing = await f.request("GET", undefined, { scope: memberScope, query: "?draftId=draft-1" });
+  expect(listing.status).toBe(200);
+  const body = await listing.json();
+  expect(body).toMatchObject({ websiteTools: { managed: true, available: true } });
+  expect(body).not.toHaveProperty("connection");
+  const approve = { action: "submit", draftId: "draft-1", id: key, credits: 21 };
+  for (const request of [{ action: "catalogue", limit: 400 }, quote, approve, status])
+    expect((await f.request("POST", request, { scope: memberScope })).status, request.action).toBe(200);
+  // Browsing reads with the platform's grant and lists video templates only.
+  const browse = await f.request("POST", { action: "catalogue", limit: 400 }, { scope: memberScope });
+  expect((await browse.json()).catalogue.options).toMatchObject({ outputKind: "video", limit: 400 });
+  expect(f.calls.filter((call) => call.name === "catalogue").map((call) => call.args[1])).toEqual(Array(2).fill({ refresh: false, funding: { kind: "platform_account", tool: null } }));
+  expect(f.calls.find((call) => call.name === "submit")!.args).toEqual([{ userId: "member", draftId: "draft-1", id: key }, approve]);
+  expect(f.limits.filter((limit) => limit[0] === "hf-website-account:reads")).toHaveLength(5);
+  f.setStore({ ...member, token: { id: "api-token", name: "Fixture", scope: "render", capUsd: null } });
+  expect((await f.request("POST", quote, { scope: null })).status).toBe(403);
 });

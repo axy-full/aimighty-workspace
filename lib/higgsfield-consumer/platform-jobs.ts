@@ -79,6 +79,16 @@ export function websiteAccountCapacity(): { maxActive: number; workspaceShare: n
   return { maxActive, workspaceShare: Math.min(maxActive, whole(process.env.HF_ACCOUNT_WORKSPACE_SHARE, Math.min(4, Math.max(1, Math.floor(maxActive / 2))))) };
 }
 
+/**
+ * The shared account's read budget per minute across every workspace
+ * (private runtime configuration, `HF_ACCOUNT_READS_PER_MINUTE`; default
+ * 120): quotes, status reads and catalogue or preset refreshes.
+ */
+export function websiteAccountReadsPerMinute(): number {
+  const n = Number(process.env.HF_ACCOUNT_READS_PER_MINUTE);
+  return Number.isSafeInteger(n) && n >= 1 && n <= 100_000 ? n : 120;
+}
+
 export type WebsiteJobState = "reserved" | "claimed" | "accepted" | "uncertain" | "settled" | "released";
 /** Admitted and not yet settled or released: it holds the account's capacity and can still cost money. */
 export const WEBSITE_IN_FLIGHT: readonly WebsiteJobState[] = Object.freeze(["reserved", "claimed", "accepted", "uncertain"]);

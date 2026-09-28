@@ -149,9 +149,11 @@ export async function connectedMarketingTemplateCosts(userId: string, options: {
 export function presentMarketingTemplates(
   catalogue: MarketingTemplateCatalogue,
   costs: MarketingTemplateCosts | null,
-  options: { category?: string; search?: string; limit?: number } = {},
+  options: { category?: string; search?: string; limit?: number; outputKind?: MarketingTemplateOutputKind } = {},
 ) {
-  const templates = listMarketingTemplates(catalogue, options);
+  // Only one kind when asked (the platform's website account runs video templates only).
+  const kept = (template: MarketingTemplate) => !options.outputKind || templateOutputKind(template) === options.outputKind;
+  const templates = listMarketingTemplates(catalogue, options).filter(kept);
   const limit = Math.min(Math.max(1, options.limit ?? 120), 400);
   return {
     templates: templates.slice(0, limit).map((template) => {
@@ -172,7 +174,7 @@ export function presentMarketingTemplates(
     loaded: catalogue.templates.length,
     complete: catalogue.complete,
     fetchedAt: catalogue.fetchedAt,
-    categories: [...new Set(catalogue.templates.map((template) => template.category).filter(Boolean))].sort(),
+    categories: [...new Set(catalogue.templates.filter(kept).map((template) => template.category).filter(Boolean))].sort(),
     costsVersion: costs?.version ?? null,
   };
 }

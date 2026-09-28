@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { websiteRouteModules } from "../helpers/websiteRouteAccess";
 import * as zod from "zod";
 import * as tenant from "../../lib/tenant";
 import { MediaSourceError } from "../../lib/mediaBindings";
@@ -27,6 +28,8 @@ const scope = workbenchScopeFor("workspace", "owner");
 
 /** The real tenant wrapper, owner/render guards, body reader and route schema;
  * session resolution, rate storage and the Shorts service are isolated. */
+/** Whether the platform's website tools can take this work now (a managed workspace). */
+let platformAvailable = true;
 async function fixture() {
   const auth = await import("../../lib/auth");
   let store = { workspace: { id: "workspace", deletedAt: null, suspendedAt: null }, user: { id: "owner", role: "admin", owner: true } } as tenant.TenantStore;
@@ -63,6 +66,8 @@ async function fixture() {
     },
   };
   const output = { exports: {} as Record<"GET" | "POST", (request: Request) => Promise<Response>> };
+  // The real route guard, read budget and neutral refusals, over this fixture's session, tenant and rate recorder.
+  Object.assign(deps, await websiteRouteModules({ auth: deps["@/lib/auth"], tenant, accountDb: deps["@/lib/accountDb"], available: () => platformAvailable }));
   new Function("require", "module", "exports", compile(readFileSync("app/api/higgsfield/consumer/shorts/route.ts", "utf8")))((name: string) => {
     if (!(name in deps)) throw new Error(`Unexpected route dependency ${name}`);
     return deps[name];
@@ -114,4 +119,28 @@ test("owner presets, quote, exact approval and status reach the service with ser
   const refused = await f.request("POST", quote);
   expect(refused.status).toBe(502);
   expect(await refused.json()).toEqual({ code: "contract_unverified", error: "The connected account's Shorts Studio tools do not advertise the arguments this workflow sends. Nothing was submitted." });
+});
+
+test("a managed workspace: a member makes shorts on the platform website tools, approved by credits alone, reading with its grant", async () => {
+  const f = await fixture(), original = f.store();
+  const member = { ...original, workspace: { ...original.workspace!, usesPlatformKeys: true }, user: { ...original.user!, id: "member", role: "member", owner: false } } as tenant.TenantStore;
+  const memberScope = workbenchScopeFor("workspace", "member");
+  f.setStore(member);
+  platformAvailable = true;
+  const listing = await f.request("GET", undefined, { scope: memberScope, query: "?draftId=draft-1" });
+  expect(listing.status).toBe(200);
+  const body = await listing.json();
+  // Never the member's own connection: only whether the website tools can take this work now.
+  expect(body).toMatchObject({ websiteTools: { managed: true, available: true } });
+  expect(body).not.toHaveProperty("connection");
+  const approve = { action: "submit", draftId: "draft-1", id: key, credits: 15 };
+  for (const request of [presets, quote, approve, status]) expect((await f.request("POST", request, { scope: memberScope })).status, request.action).toBe(200);
+  expect(f.calls.map((call) => call.name)).toEqual(["list", "presets", "quote", "submit", "status"]);
+  expect(f.calls[1].args).toEqual(["member", { refresh: false, funding: { kind: "platform_account", tool: null } }]);
+  expect(f.calls[3].args).toEqual([{ userId: "member", draftId: "draft-1", id: key }, approve]);
+  expect(f.limits.filter((limit) => limit[0] === "hf-website-account:reads")).toHaveLength(4);
+  for (const tokenScope of ["read", "render"] as const) {
+    f.setStore({ ...member, token: { id: "api-token", name: "Fixture", scope: tokenScope, capUsd: null } });
+    expect((await f.request("POST", quote, { scope: null })).status).toBe(403);
+  }
 });

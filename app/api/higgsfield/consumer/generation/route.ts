@@ -16,6 +16,8 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
+import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
+import { consumerCapacityMessage } from "@/lib/higgsfield-consumer/route-access";
 import { CONNECTED_TOOLS } from "@/lib/higgsfield-consumer/tools";
 import {
   connectedGenerationCatalogue,
@@ -92,6 +94,8 @@ const neutral = (message: string) =>
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
+  const website = websiteProblem(error);
+  if (website) return Response.json(website.body, { status: website.status, headers });
   // A Soul ID or element build already sent (build-records): never sent twice.
   if (error instanceof Error && error.name === "BuildInFlightError")
     return Response.json({ code: "build_in_flight", error: error.message }, { status: 409, headers });
@@ -108,7 +112,7 @@ function problem(error: unknown) {
     return Response.json({
       code: error.code,
       error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating."
-        : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours."
+        : error.code === "capacity" ? consumerCapacityMessage()
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)

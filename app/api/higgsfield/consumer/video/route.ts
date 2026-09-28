@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireOwner, requireRender, withTenant } from "@/lib/auth";
+import { withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
@@ -12,6 +12,8 @@ import { SETUP_TYPE_IDS, connectedMarketingSetup } from "@/lib/higgsfield-consum
 /* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
 import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
 import { websiteProblem } from "@/lib/higgsfield-consumer/website-problems";
+import { consumerCapacityMessage, takeWebsiteAccountRead, websiteToolCaller, websiteToolSpend, websiteToolsAvailability } from "@/lib/higgsfield-consumer/route-access";
+import { readFunding } from "@/lib/higgsfield-consumer/funding";
 import {
   MARKETING_VIDEO_REHEARSAL, ConsumerVideoServiceError, ensureConsumerRehearsal,
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
@@ -44,7 +46,7 @@ function problem(error: unknown) {
   if (error instanceof ConsumerOAuthError || error instanceof ConsumerDiscoveryError || error instanceof ConsumerVideoServiceError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)
-    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "All four connected-account slots are in use. Workspace › Engines lists yours." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? consumerCapacityMessage() : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError || error instanceof ConsumerSetupError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
@@ -56,29 +58,40 @@ function problem(error: unknown) {
   return Response.json({ error: "The connected account could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
 }
 export const GET = withTenant(async (req: Request) => {
-  const owner = await requireOwner(); if (owner.response) return owner.response;
+  const caller = await websiteToolCaller(); if (caller.response) return caller.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? undefined;
   if (draftId !== undefined && !id.safeParse(draftId).success)
     return Response.json({ error: "Choose a valid project." }, { status: 400, headers });
-  try { return Response.json({ jobs: await consumerMarketingJobs(owner.user.id, draftId) }, { headers }); }
+  try {
+    return Response.json({
+      jobs: await consumerMarketingJobs(caller.user.id, draftId),
+      // A managed workspace: whether the platform's website tools can take this work now.
+      ...(caller.managed ? { websiteTools: await websiteToolsAvailability({ workflow: "marketing-video" }) } : {}),
+    }, { headers });
+  }
   catch (error) { return problem(error); }
 }, { requireRequestScope: true });
 export const POST = withTenant(async (req: Request) => {
-  const owner = await requireOwner(); if (owner.response) return owner.response;
+  const caller = await websiteToolCaller(); if (caller.response) return caller.response;
+  const userId = caller.user.id;
   try {
     const raw = JSON.parse(await readBoundedText(req, 24000));
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success) return Response.json({ error: "Review the marketing video request." }, { status: 400, headers });
     const body = parsed.data;
-    await takeAccountLimit(`hf-consumer-video:${requireTenant().id}:${owner.user.id}:${body.action}`, body.action === "status" ? 30 : 6, 60_000);
+    // The owner's own connection check stays the owner's.
+    if (body.action === "quote-rehearsal" && !caller.user.owner) return Response.json({ error: "The workspace owner only." }, { status: 403, headers });
+    await takeAccountLimit(`hf-consumer-video:${requireTenant().id}:${userId}:${body.action}`, body.action === "status" ? 30 : 6, 60_000);
+    await takeWebsiteAccountRead(caller);
     if (body.action === "submit") {
-      const render = await requireRender(); if (render.response) return render.response;
-      return Response.json({ job: await submitConsumerMarketingVideo({ userId: owner.user.id, draftId: body.draftId, id: body.id }, body) }, { headers });
+      const refused = await websiteToolSpend(caller, "submit"); if (refused) return refused;
+      return Response.json({ job: await submitConsumerMarketingVideo({ userId, draftId: body.draftId, id: body.id }, body) }, { headers });
     }
-    if (body.action === "status") return Response.json(await pollConsumerMarketingVideo({ userId: owner.user.id, draftId: body.draftId, id: body.id }), { headers });
-    if (body.action === "setup") return Response.json(await connectedMarketingSetup(owner.user.id, body.types ?? undefined), { headers });
-    const draftId = body.action === "quote-rehearsal" ? await ensureConsumerRehearsal(owner.user.id) : body.draftId;
+    if (body.action === "status") return Response.json(await pollConsumerMarketingVideo({ userId, draftId: body.draftId, id: body.id }), { headers });
+    if (body.action === "setup") return Response.json(await connectedMarketingSetup(userId, body.types ?? undefined, await readFunding({ workflow: "marketing-video" })), { headers });
+    const refused = await websiteToolSpend(caller, "quote"); if (refused) return refused;
+    const draftId = body.action === "quote-rehearsal" ? await ensureConsumerRehearsal(userId) : body.draftId;
     const input = body.action === "quote-rehearsal" ? MARKETING_VIDEO_REHEARSAL : body.input;
-    return Response.json({ job: await quoteConsumerMarketingVideo(owner.user.id, draftId, input, body.idempotencyKey) }, { headers });
+    return Response.json({ job: await quoteConsumerMarketingVideo(userId, draftId, input, body.idempotencyKey) }, { headers });
   } catch (error) { return problem(error); }
 }, { requireRequestScope: true });

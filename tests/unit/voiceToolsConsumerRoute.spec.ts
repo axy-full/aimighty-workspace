@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { websiteRouteModules } from "../helpers/websiteRouteAccess";
 import * as zod from "zod";
 import * as tenant from "../../lib/tenant";
 import { MediaSourceError } from "../../lib/mediaBindings";
@@ -72,6 +73,8 @@ async function fixture(options: { analysis?: boolean } = {}) {
     },
   };
   const output = { exports: {} as Record<"GET" | "POST", (request: Request) => Promise<Response>> };
+  // The real route guard, read budget and neutral refusals, over this fixture's session, tenant and rate recorder.
+  Object.assign(deps, await websiteRouteModules({ auth: deps["@/lib/auth"], tenant, accountDb: deps["@/lib/accountDb"] }));
   new Function("require", "module", "exports", compile(readFileSync("app/api/higgsfield/consumer/audio-tools/route.ts", "utf8")))((name: string) => {
     if (!(name in deps)) throw new Error(`Unexpected route dependency ${name}`);
     return deps[name];
