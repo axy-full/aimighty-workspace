@@ -85,7 +85,10 @@
 .gx-hbtn:hover { background: var(--gx-input-hover); }
 .gx-hbtn[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
 .gx-credits-n { font-family: var(--gx-mono); font-size: 13px; font-weight: 600; }
-.gx-credits-u { color: var(--gx-text-3); font-size: 12px; }
+.gx-credits-u { color: var(--gx-text-2); font-size: 12px; }
+/* The balance cannot pay for the last price quoted here: amber, and it still opens Plans & credits. */
+.gx .gx-hbtn.gx-credits[data-low] { color: #FFB340; background: rgba(255, 159, 10, .14); border-color: rgba(255, 159, 10, .6); }
+.gx .gx-hbtn.gx-credits[data-low] .gx-credits-u { color: #FFB340; }
 .gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
 .gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
 .gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid rgba(255, 255, 255, .12); flex: none; }
@@ -583,6 +586,25 @@
 .gx-tile-refresh:hover { background: var(--gx-input-hover); }
 .gx-tile-refresh:disabled { opacity: .6; cursor: default; }
 .gx-tile-refresh[aria-busy="true"] > span { animation: gx-spin 1s linear infinite; }
+/* Release on a take held for credits: the price on the button; a refusal says why, with the way to more credits. */
+.gx-release { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
+.gx-release[data-place="inspector"] { margin-top: 0; flex: 1 1 100%; }
+.gx .gx-hbtn.gx-release-btn { justify-content: center; width: 100%; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: center; line-height: 1.25; color: #FFC46B; border-color: rgba(255, 159, 10, .45); }
+.gx-release[data-place="inspector"] .gx-release-btn { width: auto; align-self: flex-start; }
+.gx-release-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; line-height: 1.4; color: #FF8A80; overflow-wrap: anywhere; min-width: 0; }
+.gx-release-note[data-tone="short"] { color: #FFC46B; }
+.gx-release-ask { color: var(--gx-text-2); }
+.pd-take-cell > .gx-release { margin-top: 6px; }
+/* Release sits under the take it starts, never beside it. */
+.gx .pd-take-cell:has(> .gx-release) { flex-wrap: wrap; align-content: flex-start; }
+.gx .pd-take-cell > .gx-release { flex: 1 1 100%; }
+/* A held take's need: on the chip where the tile shows it whole, else on its own line under the name. A price is never cut. */
+.gx-tile { container-type: inline-size; }
+.gx-tile-need { display: none; }
+@container (max-width: 259px) {
+  .gx-tile-chip .gx-chip-need { display: none; }
+  .gx-tile-need { display: block; }
+}
 /* Skeletons: the card's own shape, a slow pulse, no text. */
 .gx-skel { pointer-events: none; }
 .gx-skel-thumb { display: block; width: 100%; border-radius: 6px; background: rgba(255, 255, 255, .06); animation: gx-pulse 1.4s ease-in-out infinite; }
@@ -605,6 +627,7 @@
 .gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
 @media (max-width: 767px), (pointer: coarse) {
   .gx-tile-refresh { width: 44px; height: 44px; font-size: 18px; }
+  .gx .gx-hbtn.gx-release-btn { min-height: 44px; }
   .gx-tile-chip { height: 22px; font-size: 12px; }
   .gx-main > .gx-banner { margin: 0 12px 8px; }
   .gx-stage > .gx-banner { margin: 12px; }
@@ -742,7 +765,20 @@
 .wsx-name { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wsx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
 .wsx-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
-.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-pack-line { margin-bottom: 6px; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.wsx-whole { white-space: nowrap; }
+/* The buttons line up along the row's foot, however the lines above them wrap. */
+.wsx-pack .wsx-pack-go { margin-top: auto; justify-content: center; }
+/* The Plans card's labels clear the #7C7C84 floor. */
+.wsx-plans .gx-eyebrow { color: var(--gx-text-2); }
+.wsx-ask { font-size: 12.5px; color: var(--gx-text-2); }
+.wsx-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wsx-list > .gx-eyebrow { margin-bottom: 4px; }
+.wsx-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; padding: 4px 0; border-top: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-list-what { min-width: 0; font-size: 13px; color: var(--gx-text); overflow-wrap: anywhere; }
+.wsx-list-row[data-status]:not([data-status="requested"]) .wsx-list-what { color: var(--gx-text-2); }
+.wsx-list-amount { flex: none; font-family: var(--gx-mono); font-size: 13px; font-weight: 600; color: var(--gx-text); }
 .wsx-bar { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12.5px; min-height: 28px; }
 .wsx-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wsx-bar-track { height: 8px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }

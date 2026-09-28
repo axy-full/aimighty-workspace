@@ -53,6 +53,7 @@ import { formatCredits } from "./cost";
 import { releaseConnectedJob, watchConnectedJob, type LastRead } from "../shell/connected-collector";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration, type DispatchRequest } from "./generate-submit";
+import { rememberWorkspaceQuote } from "./last-quote";
 import {
   batchNotice, batchPhase, batchSettledText, rememberWorkspaceBatch, sendConnectedBatch, sendWorkspaceBatch,
   settleConnectedBatch, settleWorkspaceBatch, takesPhrase, takeView,
@@ -586,6 +587,12 @@ export function useComposer(options: {
   }, [blockedForQuote, quoteKey, connectedKey, scope, target?.id]);
 
   const credits = liveCredits(quote, quoteKey);
+  /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
+     (lib/workspace/last-quote.ts): recorded, never asked for. */
+  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, Math.max(1, state.count)) : null;
+  useEffect(() => {
+    if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
+  }, [scope, buttonTotal]);
   const blocked = composerBlock({
     projects: options.projects,
     state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
@@ -944,6 +951,8 @@ export function useComposer(options: {
           scope,
           storageId,
           shown,
+          /* The button's whole figure is this composer's last quote (recorded above), not one take's. */
+          remember: false,
           request: model.audioTask
             ? {
                 endpoint: "/api/audio",
