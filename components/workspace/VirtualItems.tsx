@@ -1,6 +1,6 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 
 /**
  * A long list or grid that keeps only what is on screen in the page (SOW §5:
@@ -36,9 +36,38 @@ export type VirtualItemsProps<T> = {
   after?: ReactNode;
   /** Scroll this item into view when it changes (keyboard selection). */
   revealKey?: string | null;
+  /** Bumped to bring `revealKey` into view again when it has not changed ("Back to the takes"). */
+  revealNonce?: number;
+  /** "center" keeps the item clear of whatever is pinned over the scroller's edges (the phone's tab bar). */
+  revealAlign?: "auto" | "center";
   /** The role each virtual row gets when the container is a list. */
   rowRole?: string;
+  /** An item that takes a row to itself (a group's heading); its own CSS spans the grid (`grid-column: 1 / -1`). */
+  wholeRow?: (item: T) => boolean;
+  /** Items share a row only with neighbours of the same run: a new run (a group's takes, a batch) starts a new row. */
+  runOf?: (item: T) => string;
+  /** A whole row's height before it is measured (a heading is shorter than a row of cards). */
+  estimateWholeRow?: number;
 };
+
+/**
+ * The rows a windowed list lays out, as [first, end) item ranges: `columns`
+ * items a row, except that a whole-row item has its row to itself and a new
+ * run starts a new row. Without `wholeRow` and `runOf` every row is simply the
+ * next `columns` items.
+ */
+export function rowRanges<T>(items: readonly T[], columns: number, wholeRow?: (item: T) => boolean, runOf?: (item: T) => string): [number, number][] {
+  const rows: [number, number][] = [];
+  let start = 0;
+  for (let i = 1; i <= items.length; i++) {
+    const end = i === items.length
+      || i - start >= columns
+      || Boolean(wholeRow?.(items[i]) || wholeRow?.(items[i - 1]))
+      || Boolean(runOf && runOf(items[i]) !== runOf(items[i - 1]));
+    if (end) { rows.push([start, i]); start = i; }
+  }
+  return items.length ? rows : [];
+}
 
 /** The nearest ancestor that really scrolls vertically: a wrapper that only scrolls
  *  sideways computes overflow-y:auto too, but grows with its content, so it is skipped. */
@@ -48,6 +77,47 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
     if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
   }
   return (document.scrollingElement as HTMLElement | null) ?? null;
+}
+
+type WindowedList = Virtualizer<HTMLElement, Element>;
+/* The windowed lists each scroller holds, so that a smooth move of the page can hold their corrections. */
+const listsIn = new WeakMap<Element, Set<WindowedList>>();
+
+/**
+ * Scroll `el` smoothly into view: a page's own move to something the list
+ * does not hold, such as the editor that opens above a long grid. A windowed
+ * list corrects its scroller's position whenever it measures a row above the
+ * fold that it had only estimated, and outside iOS (where virtual-core defers
+ * the correction) that correction is an instant scroll, which ends a smooth
+ * one where it stands: the page stays at the end of the grid and the editor
+ * never comes into view. So every windowed list in that scroller leaves its
+ * corrections out until the move is over; the move goes past those rows anyway.
+ */
+export function smoothScrollIntoView(el: Element | null | undefined, block: ScrollLogicalPosition = "start") {
+  if (!el) return;
+  const scroller = scrollParent(el as HTMLElement);
+  const lists = scroller ? listsIn.get(scroller) : undefined;
+  if (scroller && lists?.size) holdCorrections(scroller, [...lists]);
+  el.scrollIntoView({ block, behavior: "smooth" });
+}
+
+/** Until the scroller stops: its `scrollend`, or, where there is none, a moment without a scroll event (a move that never started lets go the same way). */
+function holdCorrections(scroller: HTMLElement, lists: WindowedList[]) {
+  const hold = () => false;
+  for (const list of lists) list.shouldAdjustScrollPositionOnItemSizeChange = hold;
+  const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
+  const still = "onscrollend" in window ? 1000 : 250;
+  let timer = setTimeout(release, still);
+  function moved() { clearTimeout(timer); timer = setTimeout(release, still); }
+  function release() {
+    clearTimeout(timer);
+    target.removeEventListener("scroll", moved);
+    target.removeEventListener("scrollend", release);
+    /* A later move holds them with its own function: only this move lets go of its hold. */
+    for (const list of lists) if (list.shouldAdjustScrollPositionOnItemSizeChange === hold) list.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+  }
+  target.addEventListener("scroll", moved, { passive: true });
+  target.addEventListener("scrollend", release);
 }
 
 export function VirtualItems<T>(props: VirtualItemsProps<T>) {
@@ -70,13 +140,21 @@ function Keyed({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight, scroll, className, style, attrs, before, after, revealKey, rowRole }: VirtualItemsProps<T>) {
+function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight, scroll, className, style, attrs, before, after, revealKey, revealNonce, revealAlign = "auto", rowRole, wholeRow, runOf, estimateWholeRow }: VirtualItemsProps<T>) {
   const container = useRef<HTMLDivElement>(null);
   const sizer = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [margin, setMargin] = useState(0);
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
 
+  /* How far down its scroller the list starts. */
+  const settleMargin = useCallback((parent: HTMLElement | null) => {
+    const box = sizer.current;
+    const from = scroll === "self" ? container.current : parent;
+    if (!box || !from) return;
+    const offset = Math.round(box.getBoundingClientRect().top - from.getBoundingClientRect().top + from.scrollTop);
+    setMargin((current) => (current === offset ? current : offset));
+  }, [scroll]);
   /* Where the list sits inside whatever scrolls it, and how wide it is. */
   const place = useCallback(() => {
     const box = sizer.current;
@@ -86,14 +164,8 @@ function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight
     /* A scrollbar appearing narrows the list, which can change the columns, the height and so the
        scrollbar again; widths within a scrollbar's breadth are treated as the same, which ends that loop. */
     setWidth((current) => (current && Math.abs(current - box.clientWidth) < 24 ? current : box.clientWidth));
-    if (scroll === "ancestor" && parent) {
-      const offset = Math.round(box.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop);
-      setMargin((current) => (current === offset ? current : offset));
-    } else if (scroll === "self" && container.current) {
-      const offset = Math.round(box.getBoundingClientRect().top - container.current.getBoundingClientRect().top + container.current.scrollTop);
-      setMargin((current) => (current === offset ? current : offset));
-    }
-  }, [scroll]);
+    settleMargin(parent);
+  }, [scroll, settleMargin]);
   useLayoutEffect(() => { place(); });
   useEffect(() => {
     const box = sizer.current;
@@ -103,28 +175,51 @@ function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight
     if (scroller && scroller !== document.scrollingElement) observer.observe(scroller);
     return () => observer.disconnect();
   }, [place, scroller]);
+  /* Something above the list can grow or shrink without the list rendering (an editor opening over a grid):
+     where the list starts is read again as the page scrolls, once a frame. */
+  useEffect(() => {
+    const target: HTMLElement | Window | null = scroller === document.scrollingElement ? window : scroller;
+    if (!target) return;
+    let frame = 0;
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; settleMargin(scroller); }); };
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => { target.removeEventListener("scroll", onScroll); cancelAnimationFrame(frame); };
+  }, [settleMargin, scroller]);
 
   const columns = "columns" in layout
     ? Math.max(1, layout.columns)
     : Math.max(1, Math.floor((Math.max(width, layout.minColumnWidth) + gap) / (layout.minColumnWidth + gap)));
-  const rows = Math.ceil(items.length / columns);
+  const rows = useMemo(() => rowRanges(items, columns, wholeRow, runOf), [items, columns, wholeRow, runOf]);
+  const whole = (row: number) => Boolean(wholeRow && rows[row] && wholeRow(items[rows[row][0]]));
 
   const virtualizer = useVirtualizer({
-    count: rows,
+    count: rows.length,
     getScrollElement: () => scroller,
-    estimateSize: () => estimateRowHeight + gap,
+    estimateSize: (row) => (estimateWholeRow != null && whole(row) ? estimateWholeRow : estimateRowHeight) + gap,
+    /* With headings among the rows, a row keeps its measured height by what it holds, not where it sits:
+       a filter that moves a heading into a row of cards does not lend the cards the heading's height. */
+    getItemKey: wholeRow || runOf ? (row) => (rows[row] ? getKey(items[rows[row][0]]) : row) : undefined,
     overscan: 4,
     scrollMargin: margin,
   });
+  /* Known to its scroller, so a smooth move of the page there can hold this list's corrections (smoothScrollIntoView). */
+  useEffect(() => {
+    if (!scroller) return;
+    const lists = listsIn.get(scroller) ?? new Set<WindowedList>();
+    listsIn.set(scroller, lists);
+    lists.add(virtualizer);
+    return () => { lists.delete(virtualizer); };
+  }, [scroller, virtualizer]);
 
   /* Keyboard selection: bring the row holding the selected item into view. */
   useEffect(() => {
     if (!revealKey) return;
     const index = items.findIndex((item) => getKey(item) === revealKey);
-    if (index >= 0) virtualizer.scrollToIndex(Math.floor(index / columns), { align: "auto" });
-    // Only when the selection itself changes.
+    const row = rows.findIndex(([start, end]) => index >= start && index < end);
+    if (row >= 0) virtualizer.scrollToIndex(row, { align: revealAlign });
+    // Only when the selection itself changes, or a reveal is asked for again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealKey]);
+  }, [revealKey, revealNonce]);
 
   const rowStyle: CSSProperties = { display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, columnGap: gap, paddingBottom: gap };
   return (
@@ -132,7 +227,7 @@ function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight
       {before}
       <div ref={sizer} style={{ position: "relative", width: "100%", height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
-          const start = row.index * columns;
+          const [start, end] = rows[row.index] ?? [0, 0];
           return (
             <div
               key={row.key}
@@ -141,7 +236,7 @@ function Windowed<T>({ items, getKey, renderItem, layout, gap, estimateRowHeight
               role={rowRole === "listitem" ? "presentation" : undefined}
               style={{ ...rowStyle, position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)` }}
             >
-              {items.slice(start, start + columns).map((item, offset) => (
+              {items.slice(start, end).map((item, offset) => (
                 rowRole
                   ? <div key={getKey(item)} role={rowRole} aria-setsize={items.length} aria-posinset={start + offset + 1}>{renderItem(item, start + offset)}</div>
                   : <Keyed key={getKey(item)}>{renderItem(item, start + offset)}</Keyed>

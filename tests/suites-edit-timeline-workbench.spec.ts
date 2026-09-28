@@ -37,20 +37,19 @@ async function open(page: Page) {
   return { errors, store, posts };
 }
 
-test("Takes lists generations then assets by type, re-edits a still at its price and sends takes to the cut; Edit & Sound orders, re-times and trims the cut", async ({ page }, info) => {
+test("Takes lists every take once, re-edits a still at its price and sends takes to the cut; Edit & Sound orders, re-times and trims the cut", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   const { errors, store, posts } = await open(page);
-  /* Takes: every generation first, then every asset grouped by type. */
+  /* Takes: every take once, grouped by shot (these two are on none). */
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
   const takes = page.getByTestId("edit-takes").getByTestId("edit-take");
   await expect(takes).toHaveCount(2);
-  await expect(page.getByTestId("asset-group")).toHaveText([/Videos\s*1/, /Images\s*1/]);
+  await expect(page.getByTestId("takes-shot")).toHaveText([/Not on a shot\s*2/]);
 
   /* The still: an instruction, a price, then the re-edit with the take as its reference. */
   await takes.filter({ hasText: "Mara at the window" }).click();
   await expect(page.getByTestId("edit-blocked")).toHaveText("Write what should change.");
   await page.getByTestId("edit-instruction").fill("Make it night, rain on the glass");
-  await page.getByTestId("edit-price").click();
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
   const quoted = posts.at(-1)!.body;
   expect(quoted.references).toEqual([{ genId: "gen_still", role: "reference_image" }]);
