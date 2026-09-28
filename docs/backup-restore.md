@@ -417,6 +417,21 @@ restored `workbench_team_canvas` by the first window that opens it. Never
 delete rows to "clear" the outbox; a row that cannot be pushed only stays
 pending, and the saved canvas is already correct.
 
+### Atomik board runs
+
+Every tenant snapshot includes `rig_agent_runs` and `rig_agent_steps`: each
+time someone asked Atomik to build a production's Rig board, the request, the
+proposal the person approved (and its fingerprint), the run's state, and each
+step's batch of canvas operations with what became of them. Both tables are
+created the first time someone asks, so older snapshots simply lack them.
+Nothing in a build is paid or priced: the columns a later paid step would use
+(a request key, a job, credits reserved and settled) are empty. After a
+restore, a run still marked `planning`, `running` or `paused` is safe to wake:
+a step applied again changes nothing, because its canvas op id is already in
+`rig_canvas_ops`, and a planning turn that had started is not sent again (the
+run asks the person to ask again). Never delete runs or steps; an undo takes a
+build's cards off the canvas softly and records itself on the run.
+
 ## Verification evidence
 
 Run the disposable local suite (no remote calls or application env loading):
