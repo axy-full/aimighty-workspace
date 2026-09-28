@@ -115,7 +115,9 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
-      usd: !settled ? null : g.costUsd ?? null,
+      /* A workspace on its own keys: a failed take's recorded zero is Particl's metering, not its provider's word, so
+         no dollar figure unless it recorded a charge or its provider confirmed none. */
+      usd: !settled ? null : failed && !unbilled && !((g.costUsd ?? 0) > 0) ? null : g.costUsd ?? null,
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
       ...(failure ? { failure, failureLine: failureLine(failure, { cancelled: g.status === "cancelled" }).text } : {}),
       ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),

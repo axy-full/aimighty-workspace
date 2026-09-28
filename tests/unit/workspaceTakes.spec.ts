@@ -58,6 +58,21 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takesSubtitle([{ credits: 1_200 }])).toBe("1 asset · 1,200 cr settled");
 });
 
+test("on a workspace's own keys a failed take's recorded zero is not a price: no figure until its provider confirms it", () => {
+  const own = { provider: "fal", stage: "submit", code: "http_422", kind: "invalid_request", message: null, billing: { state: "unknown", basis: "silent" }, payer: "own" } as const;
+  const [silent, confirmed, charged] = projectTakes([
+    /* Refused at submit and recorded at zero by Particl: a 422 may still be charged, and fal did not say. */
+    gen("o1", { status: "failed", creditsBilled: null, costUsd: 0, failure: own }),
+    /* fal's own rule for a server error: never charged. */
+    gen("o2", { status: "failed", creditsBilled: null, costUsd: 0, failure: { ...own, code: "http_503", kind: "provider_error", billing: { state: "not_charged", basis: "fal-5xx" } } }),
+    gen("o3", { status: "failed", creditsBilled: null, costUsd: 0.42, failure: own }),
+  ]);
+  expect(silent).toMatchObject({ status: "failed", credits: null, usd: null });
+  expect(silent).not.toHaveProperty("failedUnbilled");
+  expect(confirmed).toMatchObject({ status: "failed", failedUnbilled: true, usd: 0 });
+  expect(charged).toMatchObject({ status: "failed", credits: null, usd: 0.42 });
+});
+
 test("engine labels give the real name long, an abbreviation short, for every catalogue and audio id", () => {
   /* Owner decision, 20 September 2026: a directly integrated engine is named.
      The Rig's ENGINE column abbreviates it; nothing renames it. */
