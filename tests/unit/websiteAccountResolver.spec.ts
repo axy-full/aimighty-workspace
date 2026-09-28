@@ -125,26 +125,28 @@ test("the commercial API is always preferred, and a managed workspace is offered
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: "reframe" })).toEqual({ kind: "website_account", tool: "reframe" });
   expect(tools.websiteToolTransport({ workflow: "voice-tool", voiceTool: null })).toEqual({ kind: "none" });
   expect(tools.websiteToolTransport({ workflow: "reference-match" })).toEqual({ kind: "none" });
-  // Marketing video is the first whose Particl-credit quote, reservation and settlement are built.
-  expect([...tools.WEBSITE_BILLING_READY]).toEqual(["marketing-video"]);
+  // The tools whose Particl-credit quote, reservation and settlement are built.
+  expect([...tools.WEBSITE_BILLING_READY]).toEqual(["marketing-video", "shorts", "marketing-template"]);
   // Even designated, every tool switched on, priced, and the private rate set.
   const host = await designatedHost();
   await withEnv({ HF_ACCOUNT_CREDIT_USD: "0.02", HF_ACCOUNT_FIXED_CREDITS: JSON.stringify(Object.fromEntries(tools.WEBSITE_TOOL_IDS.map((id) => [id, 5]))) }, async () => {
     await account.setPlatformAccountTools(tools.WEBSITE_TOOL_IDS.filter((id) => !tools.servedByCommercialApi(id)), host.userId);
     await inClient(client(), async () => {
       for (const target of [
-        ...(["shorts", "marketing-template", "generation", "virality", "genjutsu", "reference-match"] as const).map((workflow) => ({ workflow })),
+        ...(["generation", "virality", "genjutsu", "reference-match"] as const).map((workflow) => ({ workflow })),
         ...["reframe", "voice_change", "dubbing", "video_analysis", "unknown"].map((voiceTool) => ({ workflow: "voice-tool" as const, voiceTool })),
         { tool: "soul-build" as const }, { tool: "element-build" as const },
       ]) {
         await expect(funding.websiteFunding(target)).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
         expect(await funding.readFunding(target)).toEqual({ kind: "own_account" });
       }
-      // The one built tool is offered through the platform's account, and only while the rate is set.
-      expect(await funding.websiteFunding({ workflow: "marketing-video" })).toEqual({ kind: "platform_account", tool: "marketing-video" });
-      await withEnv({ HF_ACCOUNT_CREDIT_USD: undefined }, async () => {
-        await expect(funding.websiteFunding({ workflow: "marketing-video" })).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
-      });
+      // The built tools are offered through the platform's account, and only while the rate is set.
+      for (const workflow of ["marketing-video", "shorts", "marketing-template"] as const) {
+        expect(await funding.websiteFunding({ workflow })).toEqual({ kind: "platform_account", tool: workflow });
+        await withEnv({ HF_ACCOUNT_CREDIT_USD: undefined }, async () => {
+          await expect(funding.websiteFunding({ workflow })).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
+        });
+      }
       // The own-account guard of every managed workspace is unchanged.
       expect(() => jobs.requireConsumerFunding()).toThrow(jobs.ConsumerJobError);
     });
@@ -286,6 +288,8 @@ test("the registry records each admission once, moves one way, and never swaps a
   expect(await registry.releaseWebsiteLease("dispatch", "b")).toBe(false);
   expect(await registry.releaseWebsiteLease("dispatch", "a")).toBe(true);
   expect(await registry.takeWebsiteLease("dispatch", "b", 5_000)).toBe(true);
+  // Given back: the files after this one share the process's platform database.
+  expect(await registry.releaseWebsiteLease("dispatch", "b")).toBe(true);
 });
 
 test("moving or releasing the designation while its jobs run needs a confirmation", async () => {

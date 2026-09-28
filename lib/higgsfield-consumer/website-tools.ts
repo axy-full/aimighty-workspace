@@ -41,7 +41,8 @@ export const WEBSITE_TOOLS: readonly WebsiteTool[] = Object.freeze([
   { id: "marketing-video", label: "Marketing video", pricing: "get_cost" },
   { id: "shorts", label: "Shorts", pricing: "get_cost" },
   { id: "reframe", label: "Reframe", pricing: "get_cost" },
-  { id: "marketing-template", label: "Ad templates", pricing: "get_cost" },
+  // Video templates only: an image template runs on the API's presets instead.
+  { id: "marketing-template", label: "Video templates", pricing: "get_cost" },
   { id: "generation", label: "Account models", pricing: "get_cost" },
   { id: "voice-change", label: "Change voice", pricing: "fixed" },
   { id: "dubbing", label: "Dub", pricing: "fixed" },
@@ -123,7 +124,7 @@ export function websiteToolTransport(target: { workflow: ConsumerWorkflow; voice
  * listed tool is still off until the private rate is set and the platform
  * desk switches it on.
  */
-export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>(["marketing-video"]);
+export const WEBSITE_BILLING_READY: ReadonlySet<WebsiteToolId> = new Set<WebsiteToolId>(["marketing-video", "shorts", "marketing-template"]);
 
 /** The engine a website-account job is metered under, and its model id per
  * tool (a margin key, like every engine's): never shown as a provider name. */

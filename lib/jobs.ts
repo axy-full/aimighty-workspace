@@ -134,6 +134,9 @@ export function rowToGeneration(r: any): Generation {
      paid Particl credits, so the account's own credits and job ids never leave
      the server, and no provider quote stands in for its receipt. */
   const platformFunded = params.consumerFunding === "platform_account";
+  /* One clip of a Shorts session: the session carries the one receipt, so the
+     clip has no charge of its own to show (never a "0"). */
+  const sessionClip = platformFunded && typeof params.consumerParentJobId === "string";
   if (platformFunded) {
     delete params.consumerCredits;
     delete params.consumerCreditUnit;
@@ -210,7 +213,7 @@ export function rowToGeneration(r: any): Generation {
     costUsd: inCredits || providerCreditQuote ? null : (r.cost_usd ?? null),
     refineCostUsd: inCredits || providerCreditQuote ? null : (r.refine_cost_usd ?? null),
     providerCreditQuote,
-    creditsBilled: inCredits && !providerCreditQuote
+    creditsBilled: inCredits && !providerCreditQuote && !sessionClip
       ? Number(r.receipt_credits ?? 0)
       : null,
     refineModel: r.refine_model ?? null,

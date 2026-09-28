@@ -1842,16 +1842,24 @@ export async function getConsumerMarketingTemplateQuote(
   costs: MarketingTemplateCosts | null,
   value: ConsumerMarketingTemplateInput,
   source: { url: string; type: "image" } | null,
-  options: Options & { resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string> },
+  options: Options & {
+    resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string>;
+    /** Only a template the account prices itself (its create tool's get_cost) is quoted,
+     * and that is known before anything is imported (the platform's shared account). */
+    requireGetCost?: boolean;
+  },
 ): Promise<ConsumerMarketingTemplateQuote> {
   const input = parseConsumerMarketingTemplateInput(value);
   if (input.presetId !== template.id || Boolean(input.productImage) !== (source !== null) || (source && (!safeImportUrl(source.url) || source.type !== "image")))
     throw new ConsumerVideoError("invalid_input");
-  consumerMarketingTemplateParams(input, source ? "00000000-0000-4000-8000-000000000000" : null);
+  const placeholder = consumerMarketingTemplateParams(input, source ? "00000000-0000-4000-8000-000000000000" : null);
   try {
     return await withConsumerSession(accessToken, options, 150_000, async (session) => {
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      // The advertised arguments do not depend on the imported id: checked before any import.
+      if (options.requireGetCost && !(await verifiedTemplateShape(session, placeholder)).getCost)
+        throw new ConsumerAdmissionStopped(new MarketingTemplateError("price_unknown", "This template has no exact price on the account. Nothing was submitted."));
       let mediaId: string | null = null;
       if (source) {
         await requireConnectedTools(session, importCalls([source]));

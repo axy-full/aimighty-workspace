@@ -18,9 +18,12 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { uploadReservationsReady } from "@/lib/uploadReservations";
 import { ConsumerOAuthError } from "./oauth";
-import { approvalMatches, workspaceJobView } from "./client-view";
+import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess } from "./access";
 import { OWN_ACCOUNT, websiteFunding, type ConsumerFunding } from "./funding";
+import {
+  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice,
+} from "./account-billing";
 import {
   ownsConsumerJob,
   createConsumerJob,
@@ -28,9 +31,9 @@ import {
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
   readConsumerJobAfterAdmissions,
-  claimConsumerDispatch,
   markConsumerAccepted,
   markConsumerUncertain,
+  markConsumerFailed,
   claimConsumerPoll,
   releaseConsumerPoll,
   ConsumerJobError,
@@ -65,6 +68,8 @@ import { ConsumerVideoServiceError } from "./video-service";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 const PRESETS_TTL_MS = 3_600_000;
+/** This service's website tool, for the platform's account (lib/higgsfield-consumer/website-tools.ts). */
+const TOOL = "shorts" as const;
 /** Stop starting new clip downloads after this much of one poll request. */
 const COLLECT_BUDGET_MS = 60_000;
 type Snapshot = {
@@ -209,7 +214,11 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
     },
   });
   await accessForNewWork(userId, funding, access.generation);
-  const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: quote.workspace.name ?? "Connected wallet", source: described };
+  // On the platform's account the client's price is Particl credits, converted
+  // privately from the account's own price for the whole session; its wallet is never named.
+  const platform = funding.kind === "platform_account";
+  const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
+  const payload: Snapshot = { input: quote.input, params: quote.params, workspaceName: platform ? "" : quote.workspace.name ?? "Connected wallet", source: described };
   try {
     const { job } = await createConsumerJob({
       userId,
@@ -224,6 +233,7 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
       quoteCredits: quote.credits,
       quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS,
       originalAssetIds: [consumerMediaKey(normalized.source)],
+      ...(particlCredits === undefined ? {} : { particlCredits }),
     });
     return consumerShortsView(job);
   } catch (error) {
@@ -246,18 +256,26 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
   if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this session’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
+  const platform = job.funding === "platform_account";
+  // A tool switched off, unpriced or paused since the quote refuses here: nothing is sent.
+  if (platform && (await websiteFunding({ workflow: "shorts" })).kind !== "platform_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
   const input = parseConsumerShortsInput(snapshot.input);
   const access = await accessForJob(job);
   let claimToken: string | undefined;
+  let admitted = false;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
+  // One dispatch at a time on the shared account: its last wallet check and its paid call.
+  const lease = platform ? await takeDispatchLease() : null;
   try {
     const result = await submitConsumerShorts(access.accessToken, input, snapshot.params, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
-        const claim = await claimConsumerDispatch(scope);
-        if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This session already has a submission. Refresh its status.");
-        claimToken = claim.claimToken;
+        // A platform session's price must still be the approved one; it is reserved, with its registry row, then claimed.
+        const token = await admitConsumerJob(scope, job, TOOL);
+        if (!token) throw new ConsumerVideoServiceError("already_submitted", "This session already has a submission. Refresh its status.");
+        claimToken = token;
+        admitted = true;
       },
     });
     if (!claimToken) throw new ConsumerVideoServiceError("not_admitted", "No paid request was admitted.");
@@ -272,15 +290,30 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
       result.state === "accepted"
         ? await markConsumerAccepted({ ...scope, claimToken, providerJobId: result.providerJobId })
         : await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+    await recordWebsiteSubmission(job, result);
     return consumerShortsView(next ?? (await ownedJob(scope)));
   } catch (error) {
     if (claimToken) {
+      // On the platform's account a call that never left is failed and its
+      // reservation released to zero (lib/higgsfield-consumer/account-billing.ts).
+      if (websiteCallNeverLeft(job, error, admitted)) {
+        const failed = await markConsumerFailed({ ...scope, claimToken });
+        if (failed?.status === "failed") await releaseWebsiteJob(job, TOOL);
+        return consumerShortsView(failed ?? (await ownedJob(scope)));
+      }
       const next = await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+      await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerShortsView(next ?? (await ownedJob(scope)));
     }
     throw error;
+  } finally {
+    await lease?.release();
   }
 }
+/** A platform session that ended is settled once, for the whole session:
+ * collected or not, its approved price (also a repair when an earlier poll
+ * ended it but did not reach its settlement). */
+const settleEnded = (job: ConsumerJob) => settleEndedWebsiteJob(job, TOOL);
 /**
  * One leased poll: read the session; once it is terminal read every clip's
  * `job_status`, collect each completed clip (idempotent per clip), and settle
@@ -288,6 +321,7 @@ export async function submitConsumerShortsJob(scope: ConsumerJobScope, approval:
  */
 export async function pollConsumerShorts(scope: ConsumerJobScope) {
   let prior = await ownedJob(scope);
+  await settleEnded(prior);
   if (prior.status === "uncertain" && prior.providerReceipt) {
     const saved = typeof prior.providerReceipt.job_id === "string" ? consumerShortsAcknowledgement({ id: prior.providerReceipt.job_id }) : null;
     const response = consumerShortsAcknowledgement(prior.providerReceipt.response);
@@ -295,6 +329,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     if (providerJobId) {
       await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedJob(scope));
+      if (prior.status === "accepted" && prior.providerJobId && prior.funding === "platform_account") await acceptWebsiteJob(prior, prior.providerJobId);
     }
   }
   if (prior.status !== "accepted") return { job: await consumerShortsView(prior) };
@@ -317,7 +352,8 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
     if (!session.jobIds.length) {
       await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
-      return { job: await consumerShortsView(settled ?? (await ownedJob(scope))), providerStatus: { status: session.status } };
+      if (settled) await settleEnded(settled);
+      return { job: await consumerShortsView(settled ?? (await ownedJob(scope))), providerStatus: providerDetail(claim.job, { status: session.status }) };
     }
     const statuses = await readConsumerShortsClips(access.accessToken, session.jobIds, wallet);
     const outcomes: ShortsClipOutcome[] = [];
@@ -366,6 +402,7 @@ export async function pollConsumerShorts(scope: ConsumerJobScope) {
           },
         })
       : await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+    if (done) await settleEnded(done);
     return { job: await consumerShortsView(done ?? (await ownedJob(scope))) };
   } finally {
     await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 }).catch(() => null);

@@ -47,6 +47,7 @@ import {
 } from "./platform-jobs";
 import { readPlatformDesignation, WebsiteToolsUnavailableError } from "./platform-account";
 import { WEBSITE_METER_ENGINE, websiteMeterModel, websiteTool, type WebsiteToolId } from "./website-tools";
+import { ConsumerVideoError } from "./video-contract";
 
 /** What kind of output each tool's job is metered as. */
 const METER_KIND: Record<WebsiteToolId, "video" | "image" | "audio"> = {
@@ -262,6 +263,35 @@ export async function takeDispatchLease(): Promise<{ release(): Promise<void> }>
   if (!(await takeWebsiteLease("dispatch", holder, WEBSITE_DISPATCH_LEASE_MS))) throw new WebsiteToolsUnavailableError("busy");
   return { release: () => releaseWebsiteLease("dispatch", holder).then(() => {}, () => {}) };
 }
+
+/* ── The paid-call half every website-tool service shares ───────────── */
+
+/**
+ * The admission a service's transport runs just before its one paid call,
+ * for either funding: a job on its owner's own account is claimed exactly as
+ * always; a platform job is priced, reserved (with its registry row) and
+ * claimed. Null: the job already has a submission.
+ */
+export async function admitConsumerJob(scope: ConsumerJobScope, job: ConsumerJob, tool: WebsiteToolId): Promise<string | null> {
+  if (job.funding !== "platform_account") return (await claimConsumerDispatch(scope))?.claimToken ?? null;
+  return admitWebsiteJob(scope, job, tool, job.quoteCredits);
+}
+/** The transport's answer, on the platform registry (a job on its owner's own account has none). */
+export async function recordWebsiteSubmission(job: ConsumerJob, result: { state: "accepted"; providerJobId: string } | { state: "uncertain" }) {
+  if (job.funding !== "platform_account") return;
+  if (result.state === "accepted") await acceptWebsiteJob(job, result.providerJobId);
+  else await holdUncertainWebsiteJob(job);
+}
+/**
+ * Whether an error after the claim proves the paid call never left. The
+ * transports throw a ConsumerVideoError only before sending (an error after
+ * sending is an uncertain reply, not a throw), and an admission that stopped
+ * after its claim never called the transport at all. Only a platform job
+ * acts on it (failed, its reservation released to zero); a job on its
+ * owner's own account stays uncertain, as it always has.
+ */
+export const websiteCallNeverLeft = (job: Pick<ConsumerJob, "funding">, error: unknown, admitted: boolean) =>
+  job.funding === "platform_account" && (!admitted || error instanceof ConsumerVideoError);
 
 /** What a client is told before approving a website-tool job: its exact price, and that a failed job is still charged it. */
 export const WEBSITE_CHARGE_TERMS = Object.freeze({ onFailure: "charged" as const });

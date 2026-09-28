@@ -15,9 +15,13 @@ import { consumerJobsById, fenceConsumerQuotes, type ConsumerJobScope, type Cons
 import { websiteJobPinByMeter } from "./platform-jobs";
 import { releaseWebsiteJob, settleEndedWebsiteJob } from "./account-billing";
 import { pollConsumerMarketingVideo } from "./video-service";
+import { pollConsumerShorts } from "./shorts-service";
+import { pollConsumerMarketingTemplate } from "./marketing-template-service";
 
 const POLLS: Partial<Record<ConsumerWorkflow, (scope: ConsumerJobScope) => Promise<unknown>>> = {
   "marketing-video": pollConsumerMarketingVideo,
+  shorts: pollConsumerShorts,
+  "marketing-template": pollConsumerMarketingTemplate,
 };
 
 export const isWebsiteMeterId = (id: string) => /^gen_hfc_[a-f0-9]{40}$/.test(id);

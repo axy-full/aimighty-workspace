@@ -200,7 +200,18 @@ test("a client's job view and approval never name the account's wallet, credits,
     receipt_credits: 25,
   }));
   expect(card.providerCreditQuote).toBeNull();
+  expect(card.creditsBilled).toBe(25);
   expect(JSON.stringify(card.params)).not.toMatch(/consumerCredits|consumerCreditUnit|consumerProviderJobId|consumerFunding/);
+  // One clip of a platform Shorts session: the session carries the receipt, so the clip shows no charge (never "0").
+  const clip = await (await modules()).tenant.runInTenant(workspace(), async () => rowToGeneration({
+    id: `gen_hfc_${"b".repeat(40)}`, provider: "higgsfield", model: "shorts_studio", status: "succeeded", kind: "video",
+    params: JSON.stringify({ consumerJobId: "j.clip-0", consumerProviderJobId: provider, consumerParentJobId: "j", consumerParentProviderJobId: provider,
+      clipIndex: 0, consumerCredits: 40, consumerCreditUnit: "higgsfield_credits", consumerFunding: "platform_account", originalSha256: "s" }),
+    receipt_credits: null,
+  }));
+  expect([clip.creditsBilled, clip.providerCreditQuote]).toEqual([null, null]);
+  expect(clip.params).toMatchObject({ consumerParentJobId: "j", clipIndex: 0 });
+  expect(JSON.stringify(clip.params)).not.toMatch(/consumerCredits|consumerParentProviderJobId|consumerProviderJobId/);
   void jobs;
 });
 

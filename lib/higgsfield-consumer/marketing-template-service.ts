@@ -15,15 +15,18 @@ import { accessForJob, accessForNewWork, consumerCacheScope, type ResolvedAccess
 import { refuseForeignAccountObjects } from "./account-objects";
 import { OWN_ACCOUNT, jobFunding, websiteFunding, type ConsumerFunding } from "./funding";
 import {
+  acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice,
+} from "./account-billing";
+import {
   ownsConsumerJob,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
   listConsumerRecoveryJobs,
   readConsumerJobAfterAdmissions,
-  claimConsumerDispatch,
   markConsumerAccepted,
   markConsumerUncertain,
+  markConsumerFailed,
   claimConsumerPoll,
   releaseConsumerPoll,
   ConsumerJobError,
@@ -69,6 +72,8 @@ import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from 
 import { ConsumerVideoServiceError } from "./video-service";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
+/** This service's website tool, for the platform's account (lib/higgsfield-consumer/website-tools.ts). */
+const TOOL = "marketing-template" as const;
 type TemplateSnapshot = { id: string; name: string; category: string; previewUrl: string | null };
 type Snapshot = {
   input: ConsumerMarketingTemplateInput;
@@ -199,25 +204,39 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
   const { template, costs } = await requireTemplate(userId, input.presetId, funding);
+  // On the platform's account: video templates the account prices itself, only.
+  // Image templates are served from the API's presets instead.
+  const platform = funding.kind === "platform_account";
+  if (platform && templateOutputKind(template) !== "video") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const access = await accessForNewWork(userId, funding);
   const source = await resolveConsumerMarketingTemplateSource(input);
-  const quote = await getConsumerMarketingTemplateQuote(access.accessToken, template, costs, input, source, {
-    resolveMedia: async (workspaceId, perform) => {
-      await accessForNewWork(userId, funding, access.generation);
-      return resolveConsumerMarketingTemplateImport(
-        { userId, draftId, quoteKey: idempotencyKey, request: input, workspaceId, connectionGeneration: access.generation },
-        perform,
-      );
-    },
-  });
+  let quote: Awaited<ReturnType<typeof getConsumerMarketingTemplateQuote>>;
+  try {
+    quote = await getConsumerMarketingTemplateQuote(access.accessToken, template, costs, input, source, {
+      requireGetCost: platform,
+      resolveMedia: async (workspaceId, perform) => {
+        await accessForNewWork(userId, funding, access.generation);
+        return resolveConsumerMarketingTemplateImport(
+          { userId, draftId, quoteKey: idempotencyKey, request: input, workspaceId, connectionGeneration: access.generation },
+          perform,
+        );
+      },
+    });
+  } catch (error) {
+    // A template the account cannot price itself is not offered on its shared account.
+    if (platform && error instanceof MarketingTemplateError && error.code === "price_unknown") throw new ConsumerJobError("particl_quote_unavailable", 409);
+    throw error;
+  }
   await accessForNewWork(userId, funding, access.generation);
+  if (platform && quote.priceSource !== "get_cost") throw new ConsumerJobError("particl_quote_unavailable", 409);
+  const particlCredits = platform ? websitePrice(TOOL, quote.credits).particlCredits : undefined;
   const payload: Snapshot = {
     input: quote.input,
     params: quote.params,
     shape: quote.shape,
     priceSource: quote.priceSource,
     costsVersion: costs?.version ?? null,
-    workspaceName: quote.workspace.name ?? "Connected wallet",
+    workspaceName: platform ? "" : quote.workspace.name ?? "Connected wallet",
     template: { id: template.id, name: template.name, category: template.category, previewUrl: template.previewUrl },
     outputKind: templateOutputKind(template),
   };
@@ -235,6 +254,7 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
       quoteCredits: quote.credits,
       quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS,
       originalAssetIds: input.productImage ? [consumerMediaKey(input.productImage)] : [],
+      ...(particlCredits === undefined ? {} : { particlCredits }),
     });
     return consumerMarketingTemplateView(job);
   } catch (error) {
@@ -258,22 +278,31 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
   if (!approvalMatches(job, approval))
     throw new ConsumerVideoServiceError("approval_changed", "Review this job’s wallet and exact credit quote again.");
   if (job.quoteExpiresAt <= Date.now()) throw new ConsumerJobError("quote_expired");
+  const platform = job.funding === "platform_account";
+  // A tool switched off, unpriced or paused since the quote refuses here: nothing is sent.
+  if (platform && (await websiteFunding({ workflow: "marketing-template" })).kind !== "platform_account") throw new ConsumerJobError("particl_quote_unavailable", 409);
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
+  if (platform && (snapshot.priceSource !== "get_cost" || snapshot.outputKind !== "video")) throw new ConsumerJobError("particl_quote_unavailable", 409);
   const input = parseConsumerMarketingTemplateInput(snapshot.input);
   consumerMarketingTemplateParams(input, snapshot.params.product_image ?? null);
   const { template, costs } = await requireTemplate(scope.userId, input.presetId, jobFunding(job));
   const access = await accessForJob(job);
   let claimToken: string | undefined;
+  let admitted = false;
   let providerReceipt: Record<string, ConsumerJson> | undefined;
+  // One dispatch at a time on the shared account: its last wallet check and its paid call.
+  const lease = platform ? await takeDispatchLease() : null;
   try {
     const result = await submitConsumerMarketingTemplate(
       access.accessToken, template, costs, input, snapshot.params, snapshot.shape, job.higgsfieldWorkspaceId!, job.quoteCredits,
       {
         admit: async () => {
           await accessForJob(job);
-          const claim = await claimConsumerDispatch(scope);
-          if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
-          claimToken = claim.claimToken;
+          // A platform job's price must still be the approved one; it is reserved, with its registry row, then claimed.
+          const token = await admitConsumerJob(scope, job, TOOL);
+          if (!token) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
+          claimToken = token;
+          admitted = true;
         },
       },
     );
@@ -289,18 +318,33 @@ export async function submitConsumerMarketingTemplateJob(scope: ConsumerJobScope
       result.state === "accepted"
         ? await markConsumerAccepted({ ...scope, claimToken, providerJobId: result.providerJobId })
         : await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+    await recordWebsiteSubmission(job, result);
     return consumerMarketingTemplateView(next ?? (await ownedTemplateJob(scope)));
   } catch (error) {
     // Once claimed, an interrupted request might have reached the provider.
     if (claimToken) {
+      // On the platform's account a call that never left is failed and its
+      // reservation released to zero (lib/higgsfield-consumer/account-billing.ts).
+      if (websiteCallNeverLeft(job, error, admitted)) {
+        const failed = await markConsumerFailed({ ...scope, claimToken });
+        if (failed?.status === "failed") await releaseWebsiteJob(job, TOOL);
+        return consumerMarketingTemplateView(failed ?? (await ownedTemplateJob(scope)));
+      }
       const next = await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
+      await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerMarketingTemplateView(next ?? (await ownedTemplateJob(scope)));
     }
     throw error;
+  } finally {
+    await lease?.release();
   }
 }
+/** A platform job that ended is settled once (also a repair when an earlier
+ * poll ended the job but did not reach its settlement). */
+const settleEnded = (job: ConsumerJob) => settleEndedWebsiteJob(job, TOOL);
 export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
   let prior = await ownedTemplateJob(scope);
+  await settleEnded(prior);
   if (prior.status === "uncertain" && prior.providerReceipt) {
     const savedId = consumerMarketingTemplateAcknowledgement(prior.providerReceipt);
     const responseId = consumerMarketingTemplateAcknowledgement(prior.providerReceipt.response);
@@ -308,6 +352,7 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     if (providerJobId) {
       await accessForJob(prior);
       prior = (await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt })) ?? (await ownedTemplateJob(scope));
+      if (prior.status === "accepted" && prior.providerJobId && prior.funding === "platform_account") await acceptWebsiteJob(prior, prior.providerJobId);
     }
   }
   if (prior.status !== "accepted") return { job: await consumerMarketingTemplateView(prior) };
@@ -324,7 +369,8 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     if (failed) {
       await accessForJob(claim.job);
       const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
-      return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), providerStatus: { status: failed }, pollAfterSeconds };
+      if (settled) await settleEnded(settled);
+      return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), providerStatus: providerDetail(claim.job, { status: failed }), pollAfterSeconds };
     }
     if (terminal) {
       await accessForJob(claim.job);
@@ -336,6 +382,7 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
         // Refused the same way on every poll: settle once, receipt kept.
         if (!uncollectableOriginal(error)) throw error;
         const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "invalid_result" });
+        if (settled) await settleEnded(settled);
         return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), collection: { code: error.code, message: error.message }, pollAfterSeconds };
       }
       const completed = await completeConsumerJob({
@@ -343,6 +390,7 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
         leaseToken: claim.leaseToken,
         resultManifest: { original, providerResult: { template: snapshot.template.id, outputKind: snapshot.outputKind } },
       });
+      if (completed) await settleEnded(completed);
       return { job: await consumerMarketingTemplateView(completed ?? (await ownedTemplateJob(scope))), pollAfterSeconds };
     }
     return { job: await consumerMarketingTemplateView(await ownedTemplateJob(scope)), providerStatus: providerDetail(claim.job, response.raw), pollAfterSeconds };

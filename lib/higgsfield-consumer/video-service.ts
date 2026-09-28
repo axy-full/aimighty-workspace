@@ -5,17 +5,17 @@ import { newProject } from "@/lib/workbench/studio";
 import { approvalMatches, providerDetail, workspaceJobView } from "./client-view";
 import { accessForJob, accessForNewWork } from "./access";
 import { websiteFunding } from "./funding";
-import { acceptWebsiteJob, admitWebsiteJob, holdUncertainWebsiteJob, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websitePrice } from "./account-billing";
+import { acceptWebsiteJob, admitConsumerJob, recordWebsiteSubmission, releaseWebsiteJob, settleEndedWebsiteJob, takeDispatchLease, websiteCallNeverLeft, websitePrice } from "./account-billing";
 import {
   ownsConsumerJob,
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerRecoveryJobs, readConsumerJobAfterAdmissions,
-  claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain, markConsumerFailed,
+  markConsumerAccepted, markConsumerUncertain, markConsumerFailed,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
   reconcileConsumerReceipt, completeConsumerJob, failConsumerPoll, consumerJobSetAside,
   type ConsumerJob, type ConsumerJobScope, type ConsumerJson,
 } from "./jobs";
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
-import { ConsumerVideoError, parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
+import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoFailureResult, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
 import { collectConsumerVideoOriginal, uncollectableOriginal } from "./video-original";
 import { setupIdsOfVideoInput } from "./marketing-records";
 import { refuseForeignMarketingSetup } from "./marketing-setup";
@@ -147,16 +147,10 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
     const result = await submitConsumerVideo(access.accessToken, input, job.higgsfieldWorkspaceId!, job.quoteCredits, {
       admit: async () => {
         await accessForJob(job);
-        if (platform) {
-          // Today's price must still be the approved one; it is reserved, with the job's registry row, then claimed.
-          const token = await admitWebsiteJob(scope, job, TOOL, job.quoteCredits);
-          if (!token) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
-          claimToken = token;
-        } else {
-          const claim = await claimConsumerDispatch(scope);
-          if (!claim) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
-          claimToken = claim.claimToken;
-        }
+        // A platform job's price must still be the approved one; it is reserved, with its registry row, then claimed.
+        const token = await admitConsumerJob(scope, job, TOOL);
+        if (!token) throw new ConsumerVideoServiceError("already_submitted", "This job already has a submission. Refresh its status.");
+        claimToken = token;
         admitted = true;
       },
     });
@@ -171,26 +165,21 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
     const next = result.state === "accepted"
       ? await markConsumerAccepted({ ...scope, claimToken, providerJobId: result.providerJobId })
       : await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
-    if (platform) {
-      if (result.state === "accepted") await acceptWebsiteJob(job, result.providerJobId);
-      else await holdUncertainWebsiteJob(job);
-    }
+    await recordWebsiteSubmission(job, result);
     return consumerVideoView(next ?? await ownedVideo(scope));
   } catch (error) {
     // Once claimed, an interrupted request might have reached the provider.
     // Never turn it back into a quote or automatically submit it again.
     if (claimToken) {
-      // The transport throws only when its one paid call never left (an error
-      // after sending is an uncertain reply, not a throw); an admission that
-      // stopped after its claim never called it at all. On the platform's
-      // account that job is failed and its reservation released to zero.
-      if (platform && (!admitted || error instanceof ConsumerVideoError)) {
+      // On the platform's account a call that never left is failed and its
+      // reservation released to zero (lib/higgsfield-consumer/account-billing.ts).
+      if (websiteCallNeverLeft(job, error, admitted)) {
         const failed = await markConsumerFailed({ ...scope, claimToken });
-        await releaseWebsiteJob(job, TOOL);
+        if (failed?.status === "failed") await releaseWebsiteJob(job, TOOL);
         return consumerVideoView(failed ?? await ownedVideo(scope));
       }
       const next = await markConsumerUncertain({ ...scope, claimToken, providerReceipt });
-      if (platform) await holdUncertainWebsiteJob(job);
+      await recordWebsiteSubmission(job, { state: "uncertain" });
       return consumerVideoView(next ?? await ownedVideo(scope));
     }
     throw error;

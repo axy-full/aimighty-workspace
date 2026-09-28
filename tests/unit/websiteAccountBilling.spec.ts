@@ -2,11 +2,12 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import ts from "typescript";
-import type { TenantWorkspace } from "../../lib/tenant";
+import type { WebsiteToolId } from "../../lib/higgsfield-consumer/website-tools";
 import type { ConsumerVideoInput } from "../../lib/higgsfield-consumer/video-contract";
 import type * as Service from "../../lib/higgsfield-consumer/video-service";
+import { RATE, ACCESS_TOKEN, balance, inFlightNow, intentState, meterRow, priceOf as priceOfTool, websiteAccountFixtures, withEnv } from "../helpers/websiteAccount";
 
 /* Marketing video on the platform's website account, for a managed client
    workspace: an exact Particl-credit quote, a reservation taken with the job's
@@ -21,12 +22,13 @@ process.env.ENGINE_MOCK = "1";
 // No request leaves this process: a token refresh or a stray call fails loudly instead.
 globalThis.fetch = (async () => { throw new Error("This spec never contacts the network."); }) as typeof fetch;
 
-const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const input: ConsumerVideoInput = { prompt: "A plain bottle on a studio background.", duration: 15, resolution: "720p", aspectRatio: "16:9", generateAudio: true };
-/** A synthetic private rate (dollars per account credit), for these fixtures only. */
-const RATE = "0.02";
-const IN_FLIGHT = "('reserved','claimed','accepted','uncertain')";
-let sequence = 0;
+const fixtures = websiteAccountFixtures(directory, "bill");
+fixtures.isolate();
+/** The platform owner's own connected account, designated, with marketing video switched on. */
+const designate = (options: { tools?: WebsiteToolId[] } = {}) => fixtures.designate(options.tools ?? ["marketing-video"]);
+const client = (credits = 1000) => fixtures.client(credits);
+const priceOf = (websiteCredits: number) => priceOfTool("marketing-video", websiteCredits);
 
 async function modules() {
   return {
@@ -34,63 +36,10 @@ async function modules() {
     registry: await import("../../lib/higgsfield-consumer/platform-jobs"),
     billing: await import("../../lib/higgsfield-consumer/account-billing"),
     jobs: await import("../../lib/higgsfield-consumer/jobs"),
-    store: await import("../../lib/higgsfield-consumer/store"),
     contract: await import("../../lib/higgsfield-consumer/video-contract"),
-    platform: await import("../../lib/platform"),
     tenant: await import("../../lib/tenant"),
-    database: await import("../../lib/db"),
-    credits: await import("../../lib/credits"),
-    terms: await import("../../lib/billingTerms"),
     requests: await import("../../lib/generationRequests"),
   };
-}
-async function withEnv<T>(values: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
-  const before = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
-  for (const [key, value] of Object.entries(values)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
-  try { return await fn(); }
-  finally { for (const [key, value] of Object.entries(before)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-}
-
-/** The platform owner's own connected account, designated, with marketing video switched on. */
-async function designate(options: { tools?: string[] } = {}) {
-  const { platform, store, account } = await modules();
-  await platform.platformReady();
-  const n = ++sequence, host = { workspaceId: `ws_billhost${n}${randomBytes(3).toString("hex")}`, userId: `acct_billhost_${n}` };
-  await platform.platformDb().batch([
-    { sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,?,0,0)",
-      args: [host.workspaceId, host.workspaceId, "Host", `file:${path.join(directory, `${host.workspaceId}.db`)}`, host.userId] },
-    { sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'owner',0,0)", args: [host.workspaceId, host.userId] },
-  ], "write");
-  const state = randomBytes(32).toString("base64url"), sessionHash = store.hashConsumerSecret(`session-${n}`);
-  await store.storeAuthorization({ ...host, state, sessionHash, verifier: randomBytes(32).toString("base64url"), clientId: "https://particl.example/client", redirectUri: "https://particl.example/callback" });
-  const authorization = await store.consumeAuthorization(state, { ...host, sessionHash });
-  expect(await store.completeAuthorization(authorization!, {
-    accessToken: "platform-fixture-token", refreshToken: "platform-fixture-refresh", expiresAt: Date.now() + 3_600_000, scope: "openid email offline_access",
-    clientId: authorization!.clientId, redirectUri: authorization!.redirectUri,
-  }, Date.now(), sha(`issuer\nhost-${n}`))).toBe(true);
-  await account.designatePlatformAccount(host, host.userId, Date.now(), { acknowledgeInFlight: true });
-  await account.setPlatformAccountTools(options.tools ?? ["marketing-video"], host.userId);
-  return host;
-}
-/** A managed client workspace with one saved project and `credits` granted. */
-async function client(credits = 1000): Promise<TenantWorkspace> {
-  const { platform, tenant, database } = await modules();
-  await platform.platformReady();
-  const id = `ws_billclient${++sequence}${randomBytes(3).toString("hex")}`;
-  const ws = {
-    id, slug: id, name: id, legacy: false, dbUrl: `file:${path.join(directory, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
-    allowanceUsd: null, gatewayKeyId: null, ownerId: "client-owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null,
-    flagNote: null, concurrency: 10, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null,
-  } as TenantWorkspace;
-  await platform.platformDb().batch([
-    { sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,'client-owner',0,0)", args: [id, id, id, ws.dbUrl] },
-    { sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES(?,?,?,'manual',0)", args: [`grant_${id}`, id, credits] },
-  ], "write");
-  await tenant.runInTenant(ws, async () => {
-    await database.ready();
-    await database.db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('m-d','member','draft','Client draft','{}',1,?)", args: [Date.now()] });
-  });
-  return ws;
 }
 
 /** video-service.ts over the real ledger, registry, credits and grant, with the account as a fixture transport. */
@@ -128,12 +77,12 @@ async function service() {
     },
     "./mcp": {
       getConsumerVideoQuote: async (token: string, value: ConsumerVideoInput) => {
-        expect(token).toBe("platform-fixture-token");
+        expect(token).toBe(ACCESS_TOKEN);
         state.quotes++;
         return { input: value, workspace: { id: state.wallet, name: "Owner's own wallet", credits: state.balance }, credits: state.websiteCredits };
       },
       submitConsumerVideo: async (token: string, _value: ConsumerVideoInput, wallet: string, credits: number, options: { admit: () => Promise<void> }) => {
-        expect(token).toBe("platform-fixture-token");
+        expect(token).toBe(ACCESS_TOKEN);
         if (wallet !== state.wallet) throw new m.contract.ConsumerVideoError("workspace_changed");
         if (credits !== state.websiteCredits) throw new m.contract.ConsumerVideoError("quote_changed");
         if (state.balance < credits) throw new m.contract.ConsumerVideoError("insufficient_credits");
@@ -145,7 +94,7 @@ async function service() {
         return { state: "accepted", providerJobId: state.providerJobId, raw: { job_id: state.providerJobId } };
       },
       readConsumerVideoJob: async (token: string, providerJobId: string, wallet: string) => {
-        expect(token).toBe("platform-fixture-token");
+        expect(token).toBe(ACCESS_TOKEN);
         expect(wallet).toBe(state.wallet);
         state.reads++;
         return { raw: state.pollRaw ?? { raw_data: { id: providerJobId, status: "processing" } }, pollAfterSeconds: 15 };
@@ -167,47 +116,6 @@ const completed = (id: string) => ({ raw_data: { id, status: "completed", job_se
   params: { prompt: input.prompt, duration: input.duration, resolution: input.resolution, aspect_ratio: input.aspectRatio,
     generate_audio: input.generateAudio, mode: "ugc", width: 1344, height: 768, medias: [], avatars: [], products: [] } } });
 const rejected = (id: string, status: string) => ({ raw_data: { ...completed(id).raw_data, status, result_url: null } });
-async function meterRow(id: string) {
-  const { platform } = await modules();
-  const row = (await platform.platformDb().execute({ sql: "SELECT status,billed_credits,engine,model FROM meter_events WHERE id=?", args: [id] })).rows[0];
-  return row ? { ...row } : null;
-}
-async function intentState(workspaceId: string, id: string) {
-  const { platform } = await modules();
-  return (await platform.platformDb().execute({ sql: "SELECT state FROM recovery_intents WHERE workspace_id=? AND id=?", args: [workspaceId, id] })).rows[0]?.state ?? null;
-}
-async function balance(ws: TenantWorkspace) {
-  const { credits } = await modules();
-  return (await credits.creditStateFor(ws))!.balance;
-}
-async function inFlightNow() {
-  const { platform, registry } = await modules();
-  await registry.websiteJobsReady();
-  return Number((await platform.platformDb().execute(`SELECT COUNT(*) AS n FROM website_account_jobs WHERE state IN ${IN_FLIGHT}`)).rows[0].n);
-}
-/** The client's price for an account price: at the private rate, through the retail terms. */
-async function priceOf(websiteCredits: number) {
-  const { terms } = await modules();
-  return terms.creditsAtTerms(websiteCredits * Number(RATE), terms.currentBillingTerms("video", "website:marketing-video"));
-}
-
-/* Jobs other spec files left in flight on this process's platform database
-   never fill the shared account's caps here; the cap test sets its own. */
-const CAPS = ["HF_ACCOUNT_MAX_ACTIVE", "HF_ACCOUNT_WORKSPACE_SHARE"] as const;
-const capsBefore: Partial<Record<(typeof CAPS)[number], string | undefined>> = {};
-test.beforeEach(() => { for (const key of CAPS) { capsBefore[key] = process.env[key]; process.env[key] = "1000"; } });
-test.afterEach(() => { for (const key of CAPS) { const value = capsBefore[key]; if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
-/* One worker reuses one platform client across spec files: leave its platform
-   database as this file found it — no designation, and none of these clients'
-   jobs holding the shared account's capacity. */
-test.afterAll(async () => {
-  const { account, platform, registry } = await modules();
-  const designation = await account.readPlatformDesignation();
-  if (designation) await account.releasePlatformAccount(designation.userId, { acknowledgeInFlight: true });
-  await registry.websiteJobsReady();
-  await platform.platformDb().execute(`UPDATE website_account_jobs SET state='released' WHERE workspace_id LIKE 'ws_billclient%' AND state IN ${IN_FLIGHT}`);
-});
-
 test("nothing is offered until the rate is set, the account designated and the tool switched on; nothing is read from the account", async () => {
   const { tenant, account } = await modules();
   const ws = await client();
@@ -247,7 +155,7 @@ test("the client is quoted exact Particl credits and told a failed job is still 
       expect(view).toMatchObject({ status: "quoted", quoteCredits: price, creditUnit: "particl_credits", workspaceId: null, workspaceName: null,
         providerJobId: null, providerReceipt: null, chargeTerms: { credits: price, onFailure: "charged" } });
       const text = JSON.stringify(view);
-      for (const secret of [f.state.wallet, "Owner's own wallet", "higgsfield_credits", "platform-fixture-token"]) expect(text).not.toContain(secret);
+      for (const secret of [f.state.wallet, "Owner's own wallet", "higgsfield_credits", ACCESS_TOKEN]) expect(text).not.toContain(secret);
       // Approval names the price alone: never the wallet, never the account's own figure.
       for (const approval of [{ credits: price + 1 }, { workspaceId: f.state.wallet, credits: price }, { credits: f.state.websiteCredits }])
         await expect(f.service.submitConsumerMarketingVideo(scopeOf(view.id), approval)).rejects.toMatchObject({ code: "approval_changed" });
