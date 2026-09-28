@@ -114,7 +114,7 @@ test("Continue shows the route's own quote, sends it as the ceiling, and can be 
   // The price moved while the button was up: Continue asks again before it claims, and shows the new price instead of spending it.
   state.price = 16;
   await again.click();
-  await expect(page.getByText("The price changed to 16 cr. Continue runs at that price.").filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText("The estimate is now about 16 cr. Press Continue again to approve it.").filter({ visible: true }).first()).toBeVisible();
   await expect(again).toContainText("16 cr");
   expect(state.claims).toBe(1);
   expect(state.renders).toEqual([]);

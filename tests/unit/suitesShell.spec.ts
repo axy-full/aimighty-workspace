@@ -21,8 +21,15 @@ test("every suite has the README's pages, numbered in order, with its group gaps
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
     business: ["01 Ads", "02 Image ads", "|03 Setup"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
-    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools"],
+    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory"],
   });
+});
+
+test("Atomik › Memory is the shell's own page on Agent's backing page, told apart by the hint", () => {
+  expect(shellPage("atomik", "memory")).toMatchObject({ title: "Memory", own: true, legacy: { suite: "atomik", page: "agent" } });
+  expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
+  expect(pageOfLegacy("atomik", "agent", "memory")?.id).toBe("memory");
+  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
