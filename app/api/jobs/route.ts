@@ -5,6 +5,8 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { assetCursor, assetPageQuery, AssetQueryError } from "@/lib/assetPagination";
+import { trayJobs } from "@/lib/jobsTray.server";
+import { statusFilter } from "@/lib/jobsTray";
 
 export const dynamic = "force-dynamic";
 /* The list answers at once; this is the budget for the reconciliation it
@@ -19,6 +21,9 @@ export const GET = withTenant(async function GET(req: Request) {
   const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const url = new URL(req.url);
+  const view = url.searchParams.get("view");
+  if (view !== null && view !== "tray") return NextResponse.json({ error: "Unknown view." }, { status: 400 });
+  const filter = statusFilter(url.searchParams.get("status"));
   const stable = url.searchParams.get("pagination") === "stable";
   let page: ReturnType<typeof assetPageQuery> | null = null;
   try {
@@ -51,10 +56,14 @@ export const GET = withTenant(async function GET(req: Request) {
     } catch { /* listing still works */ }
   }
 
+  /* The header's jobs tray: this person's own takes from both engines, in flight or just finished. */
+  if (view === "tray")
+    return NextResponse.json(await trayJobs(got.user.id), { headers: { "Cache-Control": "private, no-store" } });
+
   const rows = await listGenerations({
     projectId: projectId && projectId !== "all" ? projectId : undefined,
     createdBy: url.searchParams.get("mine") === "1" ? got.user.id : undefined,
-    status: url.searchParams.get("status") ?? undefined,
+    ...filter,
     kind: url.searchParams.get("kind") ?? undefined,
     identityId: url.searchParams.get("identityId") ?? undefined,
     castName: url.searchParams.get("castName") ?? undefined,
