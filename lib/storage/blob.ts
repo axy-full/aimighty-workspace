@@ -120,10 +120,13 @@ export function createBlobBackend(): StorageBackend {
        the route as it does today. */
     async presignGet(key: string, validUntilMs: number, _options: StoragePresignOptions = {}): Promise<string> {
       void _options;
+      validUntilMs = Math.min(validUntilMs, Date.now() + 900_000);
+      const access = key.includes(PUBLIC_HOST) ? "public" : "private";
+      if (/^https?:\/\//.test(key)) key = decodeURIComponent(new URL(key).pathname.slice(1));
       const { issueSignedToken, presignUrl } = await sdk();
       const token = await issueSignedToken({ pathname: key, operations: ["get"], validUntil: validUntilMs });
       const { presignedUrl } = await presignUrl(token, {
-        operation: "get", pathname: key, access: "private", validUntil: validUntilMs,
+        operation: "get", pathname: key, access, validUntil: validUntilMs,
       });
       return presignedUrl;
     },

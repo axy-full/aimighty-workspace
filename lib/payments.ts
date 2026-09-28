@@ -16,6 +16,11 @@ export function paymentProvider(): PaymentProvider {
   return v === "stripe" || v === "razorpay" ? v : "manual";
 }
 
+/** Whether a pack can be asked for at all here: "manual" queues the request; no card provider is wired yet (startCheckout). */
+export function checkoutReady(): boolean {
+  return paymentProvider() === "manual";
+}
+
 export type Checkout = { kind: "queued" } | { kind: "redirect"; url: string };
 
 export async function startCheckout(req: TopupRequest): Promise<Checkout> {

@@ -7,6 +7,7 @@ import {
   readPendingGeneration,
   type PendingGeneration,
 } from "../workbench/pending-generation";
+import { rememberWorkspaceQuote } from "./last-quote";
 import { dispatchGate, neutralCopy } from "./rig";
 
 /**
@@ -160,6 +161,11 @@ export async function dispatchGeneration(options: {
    * priced again, so a batch is never stopped half way by a second quote.
    */
   quoted?: QuotedDispatch;
+  /**
+   * Whether this quote is the header's last price (lib/workspace/last-quote.ts). The Gen composer says
+   * no: its button shows the whole press (every take), which it records itself.
+   */
+  remember?: boolean;
   /** Injected only by tests; the browser's own storage otherwise. */
   storage?: Storage;
 }): Promise<DispatchOutcome> {
@@ -179,6 +185,8 @@ export async function dispatchGeneration(options: {
       body = options.quoted.body;
     } else {
       const fresh = await quoteDispatch(scope, request);
+      /* The header's last quote (lib/workspace/last-quote.ts): this is the figure the press is measured against. */
+      if (options.remember !== false) rememberWorkspaceQuote(scope, fresh.credits);
       const gate = dispatchGate(shown, fresh.credits);
       if (!gate.ok) return { state: "repriced", credits: gate.credits, reason: gate.reason };
       credits = fresh.credits;

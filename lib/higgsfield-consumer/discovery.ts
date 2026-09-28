@@ -1,4 +1,5 @@
 import { discoverConsumerTools, type DiscoveredConsumerTool } from "./mcp";
+import { CONNECTED_REACH, reachFromTools, type ConnectedReachId } from "./reach";
 
 /** Lexical hints help inspect a catalogue; they do not verify usable features. */
 export function summarizeConsumerTools(tools: DiscoveredConsumerTool[]) {
@@ -37,5 +38,32 @@ export async function discoverConsumerCapabilities(
     capabilitiesVerified: false as const,
     ...catalogue,
     summary: summarizeConsumerTools(catalogue.tools),
+  };
+}
+
+/** Analyse video stays off until the platform turns it on: the same switch
+ * lib/higgsfield-consumer/voice-tool-service reads (VIDEO_ANALYSIS_ENABLED),
+ * read here so owner review never loads the paid voice-tool service. */
+export const analysisSwitchedOn = () => process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED === "1";
+
+/**
+ * Atomik › Tools & connections: the same free tools/list read, reduced to one
+ * flag per capability row. Tool names, descriptions and schemas stay on the
+ * server; only row ids, flags and counts are returned. `off` names rows the
+ * platform has switched off, which read as off whatever the account offers.
+ */
+export async function discoverAtomikReach(
+  accessToken: string,
+  options: { signal?: AbortSignal; off?: readonly ConnectedReachId[]; now?: number } = {},
+) {
+  const catalogue = await discoverConsumerTools(accessToken, { signal: options.signal });
+  const off = options.off ?? (analysisSwitchedOn() ? [] : (["analysis"] as const));
+  const reach = reachFromTools(catalogue.tools.map((tool) => tool.name), { off });
+  return {
+    status: "checked" as const,
+    checkedAt: options.now ?? Date.now(),
+    reach,
+    available: reach.filter((row) => row.available).length,
+    total: CONNECTED_REACH.length,
   };
 }

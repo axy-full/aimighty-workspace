@@ -17,6 +17,7 @@ import { INSPECTOR_SURFACE } from "@/lib/shell/preview-bridge";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
+import { ReleaseTake } from "./ReleaseTake";
 
 /**
  * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
@@ -69,7 +70,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const role = referenceRole(entry.media);
   const facts: [string, string][] = [
     ["Kind", generation ? "Generation" : "Upload"],
-    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
+    /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
+    ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
@@ -101,6 +103,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
       <span className="gx-eyebrow">Actions</span>
+      {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
           <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
@@ -137,7 +140,7 @@ function Preview({ entry }: { entry: LibraryEntry }) {
         <video ref={player} src={entry.url} playsInline preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       ) : entry.url && entry.media === "audio" ? (
         <><audio ref={player} src={entry.url} preload="metadata" aria-label={entry.take.name} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} /><span className="gx-badge">AUDIO</span></>
-      ) : <span className="gx-badge">{entry.take.status === "rendering" ? takeStatusWord(entry.take).toUpperCase() : entry.take.status === "failed" ? (entry.take.cancelled ? "CANCELLED" : "FAILED") : entryFace(entry) === "unavailable" ? "PREVIEW UNAVAILABLE" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
+      ) : <span className="gx-badge">{entry.take.status === "rendering" || entry.take.status === "held" ? takeStatusWord(entry.take).toUpperCase() : entry.take.status === "failed" ? (entry.take.cancelled ? "CANCELLED" : "FAILED") : entryFace(entry) === "unavailable" ? "PREVIEW UNAVAILABLE" : entryPreview(entry) ? "DOCUMENT" : "NO PREVIEW"}</span>}
       {timed ? <button type="button" className="gx-play" aria-pressed={playing} onClick={toggle}>{playing ? "Pause" : "Play"}</button> : null}
     </div>
   );
