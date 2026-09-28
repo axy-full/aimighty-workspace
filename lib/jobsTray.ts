@@ -14,11 +14,12 @@
  * what is actually rendering; a ring appears only for a row that carries a
  * real 0–1 figure. Money is the ledger's (lib/usageLedgerTerms): the price as
  * it was approved and reserved, what was charged once it settled, and "not
- * billed" only where the ledger shows nothing charged.
+ * billed" only where the ledger shows nothing charged — or, on a workspace
+ * that pays its vendors, only where the provider's own recorded word says so.
  */
 import type { GenPreset } from "./shell/recipe";
 import { failureKind } from "./jobState";
-import { failedChip, failureCopy } from "./errors";
+import { failedChip, failureCopy, failureUncharged } from "./errors";
 import { accountFailure, type ProviderOutcome, type TakeFailure } from "./providerOutcome";
 import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-consumer/resume";
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
@@ -178,8 +179,10 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
   const takeId = `generation:${row.id}`;
   const reserved = amount(money.reserved, money.unit);
   const charged = amount(money.charged, money.unit);
-  /* A settled take the ledger shows at zero: nothing was charged for it. */
-  const unbilled = money.charged === 0;
+  /* Credits: a settled take the ledger shows at zero was not charged (Particl's own receipt). Dollars: the money is
+     the workspace's own with its vendor, and a recorded zero is only Particl's metering — a refused request may still
+     be charged — so only the provider's recorded word (refunded, not charged) says it was not. */
+  const unbilled = money.unit === "cr" ? money.charged === 0 : failureUncharged(row.failure);
   const again = (): Pick<TrayJob, "action" | "preset" | "takeId"> =>
     recreate && "preset" in recreate ? { action: "recreate", preset: recreate.preset } : { action: "open", takeId };
   switch (row.status) {

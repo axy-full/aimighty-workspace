@@ -56,12 +56,16 @@ export function creditLedgerState(status: string, credits: number, paidByPlatfor
 
 /**
  * A take in a workspace that pays its vendors. Missing accounting evidence
- * is unknown, including when a render failed.
+ * is unknown, including when a render failed. The money is the workspace's
+ * own with its vendor, so a failed take's recorded zero is only Particl's
+ * metering (a refused request may still be charged): it reads "not billed"
+ * only when `uncharged` confirms it — the provider's own recorded word
+ * (refunded, not charged), or a take discarded before it was ever sent.
  */
-export function dollarLedgerState(status: string, usd: number | null): LedgerState {
+export function dollarLedgerState(status: string, usd: number | null, uncharged = false): LedgerState {
   const billed = usd != null && Number.isFinite(usd) && usd > 0;
   if (status === "succeeded") return billed ? "charged" : usd == null ? "unpriced" : "not-billed";
-  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : usd == null ? "failed-unknown" : "failed-not-billed";
+  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : uncharged ? "failed-not-billed" : "failed-unknown";
   if (status === "held") return "waiting";
   return "running";
 }

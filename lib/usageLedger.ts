@@ -13,7 +13,7 @@ import {
 } from "./usageLedgerTerms";
 import type { Generation } from "./jobs";
 import { accountFailure, parseOutcome, takeFailure } from "./providerOutcome";
-import { billingSentence, failureCopy } from "./errors";
+import { billingSentence, failureCopy, failureUncharged } from "./errors";
 
 /**
  * GET /api/usage?rows=1 — the usage ledger, one row per job, paged on the
@@ -41,6 +41,13 @@ const CHARGE = "CASE WHEN paid_by_platform=1 THEN COALESCE(billed_credits,0) ELS
 const LISTED = `g.id NOT GLOB 'gen_hfc_*' AND NOT (json_valid(g.params) AND (COALESCE(json_extract(g.params,'$.consumerCreditUnit'),'')='higgsfield_credits' OR COALESCE(json_extract(g.params,'$.demo'),0)<>0))`;
 /* A known refinement charge cannot settle an unknown render charge. */
 const DOLLARS = "CASE WHEN g.cost_usd IS NULL THEN NULL ELSE g.cost_usd+COALESCE(g.refine_cost_usd,0) END";
+/* A take discarded while held, before it was ever sent (lib/held.ts): no provider could have charged for it. */
+const DISCARDED = "CASE WHEN g.status='cancelled' AND json_valid(g.params) THEN json_extract(g.params,'$.discardedAt') END";
+/* A failed take's recorded zero is Particl's own metering, not its provider's word: "not billed" needs the provider's
+   own recorded outcome on the workspace's key (refunded, not charged) or a take discarded before it was sent.
+   The same evidence the rows read (dollarLedgerState, failureUncharged). */
+const UNCHARGED = `(${DISCARDED} IS NOT NULL OR (json_valid(g.provider_outcome) AND json_extract(g.provider_outcome,'$.funding')='own'
+  AND json_extract(g.provider_outcome,'$.billing.state') IN ('refunded','not_charged')))`;
 const MONTH = (col: string) => `strftime('%Y-%m',datetime(${col}/1000,'unixepoch'))`;
 
 type Cursor = { at: number; id: string };
@@ -206,7 +213,7 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
   const args: (string | number)[] = [];
   filters(q, "g.created_at", "g.id", where, args);
   const rs = await db().execute({
-    sql: `SELECT g.id,g.kind,g.model,g.status,g.created_at,g.created_by,g.provider_outcome,${DOLLARS} AS usd
+    sql: `SELECT g.id,g.kind,g.model,g.status,g.created_at,g.created_by,g.provider_outcome,${DOLLARS} AS usd,${DISCARDED} AS discarded
           FROM generations g WHERE ${where.join(" AND ")} ORDER BY g.created_at DESC,g.id DESC LIMIT ?`,
     args: [...args, q.limit + 1],
   });
@@ -217,9 +224,11 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
     /* The workspace pays its vendors: a failed take's provider outcome is its own money, in the provider's unit. */
     const failure = r.status === "failed" || r.status === "cancelled"
       ? takeFailure(r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome)), { credits: false }) : null;
+    /* "Not billed" on evidence only: the provider's own recorded word, or a take discarded before it was sent. */
+    const uncharged = failureUncharged(failure) || r.discarded != null;
     return {
       id: String(r.id), at: Number(r.created_at), who: nameFor(viewer, author(r), who),
-      engine: modelLabel(String(r.model)), kind: String(r.kind ?? "video"), usd, state: dollarLedgerState(String(r.status), usd),
+      engine: modelLabel(String(r.model)), kind: String(r.kind ?? "video"), usd, state: dollarLedgerState(String(r.status), usd, uncharged),
       ...(failure ? { why: failureCopy(failure.kind, failure.payer).what, provider: failure.billing ? billingSentence(failure.billing, failure.provider) : null } : {}),
     };
   }), q.limit);
@@ -237,7 +246,7 @@ async function dollarTotals(q: LedgerQuery): Promise<DollarLedgerPage["totals"]>
   const rs = await db().execute({
     sql: `SELECT COUNT(*) AS jobs,
                  COALESCE(SUM(CASE WHEN g.status IN ('succeeded','failed','cancelled') THEN COALESCE(${DOLLARS},0) ELSE 0 END),0) AS charged,
-                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND ${DOLLARS} IS NOT NULL AND ${DOLLARS}<=0)
+                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND COALESCE(${DOLLARS},0)<=0 AND ${UNCHARGED})
                                     OR (g.status='succeeded' AND ${DOLLARS} IS NOT NULL AND ${DOLLARS}<=0) THEN 1 ELSE 0 END),0) AS not_billed
           FROM generations g WHERE ${where.join(" AND ")}`,
     args,
