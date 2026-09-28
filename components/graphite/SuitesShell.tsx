@@ -38,7 +38,7 @@ import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
 import { Glyph } from "./icons";
-import { WorkflowHost } from "./tools/WorkflowHost";
+import { WorkflowHosts } from "./tools/WorkflowHost";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
@@ -324,13 +324,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
               {bar ? null : projectHead}
-              {/* Gen still composes without a project list, so the failed read sits above it rather than in its place.
+              {/* Keep Gen's draft editable while generation waits for the project list to recover.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
-              {shell.view === "gen" && projectsError && !project ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
+              {shell.view === "gen" && projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {shell.view === "gen" ? (
                 <>
                   {bar ? null : genHead}
-                  <div className="gx-stage gx-scroll" data-testid="content">
+                  {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
+                  <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
                     <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
                       <GenView scope={scope} project={project} items={items} library={library} projects={data.status} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
                     </Boundary>
@@ -365,7 +366,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         {firstRunAbove}
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.page.id === "astra" ? <AstraOutputs /> : null}
@@ -380,7 +381,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
                           <div className="gx-extras" data-testid="page-workflows">
-                            {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`].map((surface) => <WorkflowHost key={surface.tool} surface={surface} scope={scope} project={project} />)}
+                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
                           </div>
                         ) : null}
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}

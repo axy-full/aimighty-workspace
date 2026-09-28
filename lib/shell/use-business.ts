@@ -1,15 +1,18 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONNECTED_GENERATION_ENDPOINT } from "@/lib/higgsfield-consumer/generation-client";
 import { presentTimeout } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType, DTC_ADS_MODEL, catalogueBlock, retryAfterMs, AUTO_RETRIES, type CatalogueStatus } from "./business";
+import { useConnectedCapability } from "./use-connected-capability";
 
 /**
  * What the Business pages read before they can compose (FINAL_SPEC §2):
- * whether the connected account is connected, the live catalogue entries for
- * Marketing Studio (their ranges and roles drive the chips — never a
- * hard-coded list), and the account's setup items by type.
+ * whether the connected account is connected (the shell's one shared answer,
+ * lib/shell/use-connected-capability — a member is known from the session and
+ * nothing is read for them), the live catalogue entries for Marketing Studio
+ * (their ranges and roles drive the chips — never a hard-coded list), and the
+ * account's setup items by type.
  *
  * A failed read keeps its error on screen in the product's words: the
  * route's reason when it gives one, else that the account did not answer.
@@ -36,30 +39,18 @@ export function readFailure(status: number | null, json: { error?: unknown; code
 const failureOf = (error: unknown) => (error instanceof Error && error.name === "ReadFailure" ? error.message : READ_FAILED);
 const readError = (status: number, json: { error?: unknown; code?: unknown } | null) => Object.assign(new Error(readFailure(status, json)), { name: "ReadFailure" });
 
-export function useBusiness(scopeReady: boolean) {
+export function useBusiness(scope: string) {
   const scoped = useScopedFetch();
-  const [connection, setConnection] = useState<{ owner: boolean; connected: boolean } | null>(null);
+  const capability = useConnectedCapability(scope || null, { read: Boolean(scope) });
+  /* Null until the owner's connection is read; a failed read is the owner's error to retry, never a demotion to member. */
+  const connection = useMemo(() => (capability.status === "loading" ? null : { owner: capability.owner, connected: capability.connected, reconnect: capability.reconnect }), [capability.status, capability.owner, capability.connected, capability.reconnect]);
+  const connectionError = capability.status === "error" ? capability.error : null;
   const [models, setModels] = useState<Record<string, CatalogueModel>>({});
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
   const [catalogueStatus, setCatalogueStatus] = useState<CatalogueStatus>("idle");
   /* Failed reads so far; each one schedules the next read a little later. */
   const [catalogueFailures, setCatalogueFailures] = useState(0);
   const [setup, setSetup] = useState<SetupState>({ connected: null, reads: {}, loading: false, error: null });
-
-  useEffect(() => {
-    if (!scopeReady) return;
-    let live = true;
-    (async () => {
-      try {
-        const me = await scoped("/api/me", { cache: "no-store" }).then((r) => r.json()) as { owner?: boolean };
-        const connection = me.owner === true
-          ? await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" }).then((r) => (r.ok ? r.json() : { connected: false })) as { connected?: boolean; requiresReconnect?: boolean }
-          : { connected: false };
-        if (live) setConnection({ owner: me.owner === true, connected: connection.connected === true && connection.requiresReconnect !== true });
-      } catch { if (live) setConnection({ owner: false, connected: false }); }
-    })();
-    return () => { live = false; };
-  }, [scoped, scopeReady]);
 
   /* The two Marketing Studio entries, from the live catalogue. A failed read is tried again a few times, further
      apart each time and never while the tab is hidden or offline; after that only Read again (readCatalogue) asks. */
@@ -111,5 +102,5 @@ export function useBusiness(scopeReady: boolean) {
     } finally { reading.current = false; }
   }, [scoped]);
 
-  return { connection, models, catalogueError, catalogueStalled, readCatalogue, modelBlock, setup, readSetup, setupTypes: SETUP_TYPES };
+  return { connection, connectionError, refreshConnection: capability.refresh, models, catalogueError, catalogueStalled, readCatalogue, modelBlock, setup, readSetup, setupTypes: SETUP_TYPES };
 }

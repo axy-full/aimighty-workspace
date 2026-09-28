@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TRAIL } from "@/components/ui/Mark";
 import { Glyph, SUITE_LOOK } from "./icons";
 import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
+import { OWNER_BADGE, isOwnerRunSuite, ownerBadgeNote } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
@@ -19,7 +21,9 @@ function initialsOf(name: string) {
  * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
  * Atomik; the search field that opens ⌘K; the jobs pill (while something
  * renders, is held, or finished unseen), which opens the jobs tray; the
- * credits pill; the avatar, which opens Workspace.
+ * credits pill; the avatar, which opens Workspace. A member sees the key and
+ * "Owner" on the suites that run on the owner's Higgsfield account (Business,
+ * Viral); the note says who runs them.
  *
  * On a phone (app/phone-chrome.css) the context badge is a button: the Suites
  * and Search open under it, one tap away. `bar` is the top bar's second row
@@ -28,6 +32,9 @@ function initialsOf(name: string) {
 export function Header({ account, bar = null }: { account: WorkspaceAccount | null; bar?: ReactNode }) {
   const shell = useShell();
   const { rates, name, requestScope } = useSession();
+  /* The session says who owns the workspace: nothing is read for the badge. */
+  const capability = useConnectedCapability(undefined, { read: false });
+  const ownerNote = ownerBadgeNote(capability.ownerName);
   const balance = account?.credits?.balance ?? null;
   const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
   /* Amber when the balance cannot pay for the last price a Generate showed here; it reads that quote, never asks for one. */
@@ -76,15 +83,25 @@ export function Header({ account, bar = null }: { account: WorkspaceAccount | nu
         </button>
       )}
       <div className="gx-seg" role="tablist" aria-label="Suites" id="gx-suites">
-        {HEADER_SEGMENT.map((s) => (
-          <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
-            onClick={() => { setMenu(false); if (s.id === "gen") shell.goGen(); else if (s.id === "crew") shell.goCrew(); else shell.goSuite(s.id as ShellSuiteId); }}>
-            <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
-            <span className="gx-seg-label">{s.label}</span>
-            <span className="gx-sig" aria-hidden="true" />
-          </button>
-        ))}
+        {HEADER_SEGMENT.map((s) => {
+          const ownerRun = !capability.owner && isOwnerRunSuite(s.id);
+          return (
+            <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={ownerRun ? `${s.title} · ${ownerNote}` : s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
+              aria-describedby={ownerRun ? "gx-owner-run-note" : undefined} data-owner-run={ownerRun || undefined}
+              onClick={() => { setMenu(false); if (s.id === "gen") shell.goGen(); else if (s.id === "crew") shell.goCrew(); else shell.goSuite(s.id as ShellSuiteId); }}>
+              <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
+              <span className="gx-seg-label">{s.label}</span>
+              {ownerRun ? (
+                <span className="gx-owner-badge" aria-hidden="true" data-testid={`owner-badge-${s.id}`}>
+                  <Glyph name="key" size={10} className="gx-owner-badge-key" /><span className="gx-owner-badge-label">{OWNER_BADGE}</span>
+                </span>
+              ) : null}
+              <span className="gx-sig" aria-hidden="true" />
+            </button>
+          );
+        })}
       </div>
+      {!capability.owner ? <span id="gx-owner-run-note" hidden>{ownerNote}</span> : null}
       <button type="button" className="gx-search" onClick={() => { setMenu(false); shell.setPalette(true); }} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
         <Glyph name="search" size={14} className="gx-glyph" />
         <span className="gx-search-label">Search</span>
