@@ -1,5 +1,7 @@
 # Atomik Generate — catalogue-driven workflows on the connected account
 
+> Retired from Atomik on 28 September 2026: Atomik no longer generates on a signed-in account (API-key and direct engines only). Atomik › Generate points to Gen, whose model sheet offers Studio engines only. The record below describes the connected-account workflows as they were built.
+
 PR I, slice I1 (19 September 2026). Atomik Super Agent gains a **Generate** page with four workflows — Image, Video, Sound and 3D — that run on the workspace owner's connected account. The page never names the provider: it speaks of the connected account, its wallet and its credits. Slice I2 (same day) adds a second group, **Tools**, on the same page; see "Tools" below. Slice I3 (same day) adds a third group, **Voice** — Change voice, Dub and (gated off) Analyse video; see "Voice tools" below.
 
 ## What it does

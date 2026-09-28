@@ -13,6 +13,7 @@ import { useAtomik } from "./AtomikProvider";
 import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
+import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 
 /**
  * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
@@ -106,15 +107,14 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
   }
   if (c.kind === "checkpoint") {
     const step = c.step;
-    const connected = a.isConnected(step);
-    const cost = connected ? undefined : a.credits(step) ?? undefined;
+    const cost = a.credits(step) ?? undefined;
     const lastDone = c.done[c.done.length - 1];
-    const sameKind = a.engines.filter((e) => e.kind === step.kind && !e.connected);
+    const sameKind = a.engines.filter((e) => e.kind === step.kind);
     return (
       <div className={box}>
         <Mono>Checkpoint · stopped</Mono>
         <span className={title}>{lastDone ? `${lastDone.title} done` : "Ready"} · {a.fmt(c.spentCredits)} spent.</span>
-        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}{connected ? ", billed in connected credits" : ""}. {firstSentence(step.prompt)}</span>
+        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}. {firstSentence(step.prompt)}</span>
         {picking ? (
           <span className="flex flex-col gap-[6px]">
             {sameKind.map((e) => (
@@ -125,11 +125,11 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
         ) : (
           <>
             <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(step)} onClick={() => a.approve(step)}>
-              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}{connected ? ` · ${a.approveLabel(step)}` : ""}
+              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}
             </Button>
-            {a.stepQuoteError && !connected && <span role="alert" className={body}>{a.stepQuoteError}</span>}
+            {a.stepQuoteError && <span role="alert" className={body}>{a.stepQuoteError}</span>}
             <span className="flex gap-[6px]">
-              {!connected && <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>}
+              <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>
               <Button placement="card" className="flex-1" muted onClick={() => a.stop(step)}>Stop</Button>
             </span>
           </>
@@ -165,12 +165,13 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
     );
   }
   if (c.kind === "plan") {
-    const running = c.steps.filter((s) => s.status === "running").length;
+    const running = c.steps.filter((s) => s.status === "running" && !a.isReadOnly(s)).length;
+    const readOnly = c.steps.every(a.isReadOnly);
     return (
       <div className={box}>
-        <Mono>{running ? "Running" : "Plan"}</Mono>
-        <span className={title}>{c.steps.length} steps · {a.fmt(a.totals.total)}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}.</span>
-        <span className={body}>{running ? `${running} rendering now.` : "Priced. Nothing is charged until you run a step."}</span>
+        <Mono>{running ? "Running" : readOnly ? "Read-only" : "Plan"}</Mono>
+        <span className={title}>{c.steps.length} steps{readOnly ? "" : ` · ${a.fmt(a.totals.total)}`}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}.</span>
+        <span className={body}>{running ? `${running} rendering now.` : readOnly ? ACCOUNT_STEP_NOTE : "Priced. Nothing is charged until you run a step."}</span>
       </div>
     );
   }
@@ -207,14 +208,13 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
         {a.totals.unpriced > 0 && <> + {a.totals.unpriced} at checkpoint</>}
         {a.totals.underCap !== null && <> · {a.fmt(a.totals.underCap)} under cap</>}
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
-        {a.totals.connected > 0 && <> · <span className="text-ink">{a.totals.connected.toLocaleString("en-US")}</span> connected cr</>}
       </Mono>
       {checkpoint && (
-        <Button variant="primary" placement="rail" cost={a.isConnected(checkpoint) ? undefined : a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
-          Continue · {checkpoint.title}{a.isConnected(checkpoint) ? ` · ${a.approveLabel(checkpoint)}` : ""}
+        <Button variant="primary" placement="rail" cost={a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
+          Continue · {checkpoint.title}
         </Button>
       )}
-      {checkpoint && a.stepQuoteError && !a.isConnected(checkpoint) && <span role="alert" className="text-[12.5px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
+      {checkpoint && a.stepQuoteError && <span role="alert" className="text-[12.5px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
       <div className="flex gap-[8px] pt-[8px]"><ChatComposer inputHeight={46} /></div>
     </>
   );
@@ -240,8 +240,8 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
 
 function PlanCard({ steps, checkpoint }: { steps: Step[]; checkpoint: Step | null }) {
   const a = useAtomik();
-  /* Unpriced is not free: a step counts as paid unless its price is a real zero. */
-  const paid = steps.filter((s) => !a.isConnected(s) && a.credits(s) !== 0).length;
+  /* Unpriced is not free: a step counts as paid unless its price is a real zero. A read-only step is not one to pay for. */
+  const paid = steps.filter((s) => !a.isReadOnly(s) && a.credits(s) !== 0).length;
   return (
     <div className="flex flex-col gap-[6px]">
       <Mono>Atomik · {a.chat?.title ?? "plan"} · {paid} paid {paid === 1 ? "step" : "steps"}</Mono>
@@ -259,7 +259,8 @@ function Row({ n, first, step, checkpoint }: { n: number; first: boolean; step: 
   const scope = [step.kind, step.params.seconds ? `${step.params.seconds}s` : null, step.params.resolution].filter(Boolean).join(" · ");
   return (
     <>
-      <div className={`grid h-[46px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${first ? "bg-[rgba(245,246,248,.04)]" : ""}`}>
+      <div title={a.isReadOnly(step) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(step) ? "" : undefined}
+        className={`grid h-[46px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${first ? "bg-[rgba(245,246,248,.04)]" : ""}`}>
         <Mono cost>{String(n).padStart(2, "0")}</Mono>
         <span className="flex min-w-0 flex-col gap-[4px]">
           <span className="truncate text-[13px] font-medium leading-[1.2] text-ink">{step.title} <span className="font-normal text-ink-body">· {scope}</span></span>

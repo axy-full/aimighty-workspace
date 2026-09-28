@@ -13,10 +13,10 @@ export const metadata: Metadata = {
 
 /* Copy from lib/workspace/spec-cards.ts (Atomik), lib/workbench/atomik-server.ts
    and atomik-references.ts (what the agent reads), lib/workbench/suite-agent-plan.ts
-   (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/higgsfield-consumer/{tools,
-   voice-tools}.ts (Generate), lib/shell/tools-connections.ts and
-   lib/higgsfield-consumer/reach.ts (Tools & connections), docs/atomik-models.md
-   (Models) and docs/durable-production-pipelines.md (Runs, Recipes). The public
+   (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/shell/tools-connections.ts
+   (Tools & connections), lib/atomikModelPolicy.ts (Models) and
+   docs/durable-production-pipelines.md (Runs, Recipes). Atomik works with
+   API-key and direct engines only, never a signed-in account. The public
    site states no prices: the sample plan and the recipes list their steps only. */
 
 const AGENT_CHIPS = ["≤ 8 actions", "editable nodes", "≤ 6 visuals", "links not fetched", "each render approved"];
@@ -30,16 +30,16 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
     body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions." },
   { tag: "02 Runs", name: "Runs",
     body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place and its approved attempts, and recovery never re-dispatches." },
-  { tag: "03 Generate", name: "Generate", gated: "Analyse video gated",
-    body: "Image, video, sound and 3D workflows from the connected account’s catalogue. Tools: upscale image and video, remove background, extend canvas, reframe, deflicker, lip-sync. Voice: change voice and dub; Analyse video stays off." },
+  { tag: "03 Generate", name: "Generate",
+    body: "Single generations run in Gen, on Particl’s own engines: video, stills and sound, each priced before it runs." },
   { tag: "04 Recipes", name: "Recipes",
     body: "Every saved run keeps its plan: same stages, same inputs, same engines." },
   { tag: "05 Builds", name: "Builds", badge: "Not yet runnable",
     body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in. There is no build service yet." },
   { tag: "06 Tools", name: "Tools & connections",
-    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
+    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
   { tag: "07 Models", name: "Models",
-    body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
+    body: "Claude, OpenAI and Grok planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
 ];
 
 const WINDOWS: [string, string, string][] = [
