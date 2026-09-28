@@ -12,7 +12,7 @@ import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
-import { engineChoices, keyStepInputsLine } from "@/lib/atomikKeySteps";
+import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
  * Atomik on a phone (design/particl-v2-mobile/README.md; board M3, live):
@@ -77,7 +77,7 @@ export default function AtomikSheet() {
                 const at = step?.id === s.id;
                 return (
                   <div key={s.id} role="listitem">
-                    <div title={a.isReadOnly(s) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(s) ? "" : undefined}
+                    <div title={a.isReadOnly(s) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(s) ? "" : undefined} data-library-step={keyStepFamily(s.model) ?? undefined}
                       className={`grid h-[48px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${at ? "bg-selected" : ""}`}>
                       <span className="ui-mono tracking-normal text-ink-muted">{String(i + 1).padStart(2, "0")}</span>
                       <span className="flex min-w-0 flex-col gap-[4px]"><span className="truncate text-[13px] font-medium leading-[1.2] text-ink">{s.title}</span><Mono className="truncate">{a.engineLabel(s.model)}</Mono></span>

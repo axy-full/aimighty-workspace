@@ -14,7 +14,7 @@ import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
-import { engineChoices, keyStepInputsLine } from "@/lib/atomikKeySteps";
+import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
  * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
@@ -204,6 +204,8 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const a = useAtomik();
   const c = a.current;
   const checkpoint = c.kind === "checkpoint" ? c.step : null;
+  /* A library step says what it works from before it is approved, as the compact card does. */
+  const inputs = checkpoint ? keyStepInputsLine(checkpoint) : null;
   const footer = (
     <>
       <Mono className="whitespace-nowrap">
@@ -212,6 +214,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
         {a.totals.underCap !== null && <> · {a.fmt(a.totals.underCap)} under cap</>}
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
       </Mono>
+      {inputs && <span className="text-[12.5px] leading-[1.45] text-ink-body">{inputs}</span>}
       {checkpoint && (
         <Button variant="primary" placement="rail" cost={a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
           Continue · {checkpoint.title}
@@ -262,7 +265,7 @@ function Row({ n, first, step, checkpoint }: { n: number; first: boolean; step: 
   const scope = [step.kind, step.params.seconds ? `${step.params.seconds}s` : null, step.params.resolution].filter(Boolean).join(" · ");
   return (
     <>
-      <div title={a.isReadOnly(step) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(step) ? "" : undefined}
+      <div title={a.isReadOnly(step) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(step) ? "" : undefined} data-library-step={keyStepFamily(step.model) ?? undefined}
         className={`grid h-[46px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${first ? "bg-[rgba(245,246,248,.04)]" : ""}`}>
         <Mono cost>{String(n).padStart(2, "0")}</Mono>
         <span className="flex min-w-0 flex-col gap-[4px]">

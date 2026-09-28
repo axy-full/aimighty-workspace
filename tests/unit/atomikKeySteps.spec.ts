@@ -434,6 +434,11 @@ test("a library step nothing can price is not proposed, and says why; without a 
     const short = await turn((body) => priceKeyStep(body, actor));
     expect(short.steps.map((step) => step.model)).toEqual([MARKETING]);
     expect(short.message.text).toContain("Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 30 seconds.");
+    /* Left out for its inputs and left out for its price: one list says both. */
+    const both = await turn(async () => ({ error: "No estimate came back" }));
+    expect(both.steps).toEqual([]);
+    expect(both.message.text.split("Not proposed:")).toHaveLength(2);
+    expect(both.message.text).toMatch(/Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 30 seconds\.\n- Mocked campaign still — no price: No estimate came back\.$/);
   })));
 
 test("the quote's fingerprint binds an approval to the exact source, stills, settings and Studio project", async () =>

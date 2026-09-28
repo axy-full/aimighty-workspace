@@ -943,7 +943,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   const costUsd = result.costUsd;
   const turn = extractTurn(result.text, allowed, { library, presets }) ?? {
     say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
-    activity: [], propose: [], ask: null, title: null, remember: [],
+    activity: [], propose: [], ask: null, title: null, remember: [], declined: [],
   };
   /* A library step is priced before it is shown: the admission quote for the exact body its render
      will send. One nothing could price is not proposed, and the plan says why (no estimate, no work). */
@@ -953,7 +953,11 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   });
   if (keyPrices.unpriced.length) {
     turn.propose = turn.propose.filter((p) => !keyStepFamily(p.model) || keyPrices.usd.has(p));
-    turn.say = `${turn.say}${notProposed(keyPrices.unpriced)}`.slice(0, 8000);
+    /* One list of what was left out: the unpriced join the ones whose inputs fell short. */
+    const listed = notProposed(turn.declined);
+    turn.say = (listed && turn.say.endsWith(listed)
+      ? `${turn.say.slice(0, -listed.length)}${notProposed([...turn.declined, ...keyPrices.unpriced])}`
+      : `${turn.say}${notProposed(keyPrices.unpriced)}`).slice(0, 8000);
   }
   /* What Atomik suggests keeping waits for a person (lib/atomikMemory › proposeMemory): nothing is kept
      silently, no planner reads it until someone accepts it, and a suggestion that cannot be saved never
@@ -1037,6 +1041,8 @@ type ParsedTurn = {
   }[];
   /** What Atomik suggests keeping in memory: saved as proposals a person reviews, never as memory itself. */
   remember: { kind: Exclude<MemoryKind, "reference">; text: string }[];
+  /** The library steps left out, each with why (already listed at the end of `say`). */
+  declined: string[];
 };
 
 /** The steps a plan leaves out, each with why, as the reply tells the person. */
@@ -1223,7 +1229,7 @@ export function extractTurn(
     say: `${say || "Here's what I'd do."}${note}${notProposed(declined)}`.slice(0, 8000),
     activity: (Array.isArray(raw.activity) ? raw.activity : [])
       .map((a: unknown) => String(a).slice(0, 90)).filter(Boolean).slice(0, 8),
-    ask, propose, remember: rememberOf(raw.remember),
+    ask, propose, remember: rememberOf(raw.remember), declined,
   };
 }
 
