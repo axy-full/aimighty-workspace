@@ -213,7 +213,7 @@ test("Send to Edit on an older run pages the Library back to that run's take and
   await expect(page.locator("[data-section='edit-panel']")).toContainText("Selected · Harbour motion");
   await expect(page.getByTestId("edit-image")).toHaveCount(0);
   expect(f.generationCursors).toContain("60");
-  await expect(page.getByText("This asset is no longer in the project.")).toHaveCount(0);
+  await expect(page.getByText("This asset is not in this project.")).toHaveCount(0);
   /* And the page opens at it, not at the top of seventy stills. */
   await expect.poll(async () => (await page.locator("[data-section='edit-panel']").boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
   await inView(page, "[data-section='edit-panel']");
