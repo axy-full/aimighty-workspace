@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AtomikMark } from "@/components/AtomikMark";
 import SitePage, { sitePrices } from "@/components/marketing/SitePage";
-import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile, Window } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile } from "@/components/marketing/ui";
+import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 import styles from "./atomik.module.css";
 
 export const metadata: Metadata = {
@@ -37,11 +37,6 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
     body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
   { tag: "06 Models", name: "Models",
     body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
-];
-
-const WINDOWS: [string, string, string][] = [
-  ["runs", "atomik-runs", "Atomik, Runs"],
-  ["approvals", "atomik-approvals", "Atomik, Approvals"],
 ];
 
 export default async function AtomikPage() {
@@ -118,11 +113,6 @@ export default async function AtomikPage() {
       </Section>
 
       <Section id="atomik-pages" label="Atomik pages" className={styles.pages}>
-        <Grid col={280} style={{ gap: 20 }}>
-          {WINDOWS.map(([path, name, alt]) => (
-            <Window key={name} path={`particl.app / atomik / ${path}`} src={shot(name)} alt={alt} width={924} height={540} />
-          ))}
-        </Grid>
         <Grid col={250}>
           {TILES.map(({ tag, name, body, badge, gated }) => (
             <Tile key={tag} tag={tag} badge={badge ? <Amber>{badge.toUpperCase()}</Amber> : undefined} name={name} body={body}>

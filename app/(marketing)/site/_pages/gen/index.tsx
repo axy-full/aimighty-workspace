@@ -55,12 +55,9 @@ export default async function GenHome() {
             <Stat figure="SHA-256" name="References stay byte-identical" body="No resize, no re-encode, no metadata stripping. The rail shows ✓ BYTE-IDENTICAL when the hash matches." />
           </Grid>
         </Cols>
-        <Cols col={420}>
-          <Window path="particl.app / gen · enhance" src={shot("gen-composer-prompt-enhancer")} alt="Gen, a prompt enhancer result" width={924} height={540} />
-          <Grid col={200}>
-            {COMPOSER_TILES.map(([tag, name, body]) => <Tile key={tag} tag={tag} name={name} body={body} />)}
-          </Grid>
-        </Cols>
+        <Grid col={200}>
+          {COMPOSER_TILES.map(([tag, name, body]) => <Tile key={tag} tag={tag} name={name} body={body} />)}
+        </Grid>
       </Section>
 
       <Section id="gen-engines" label="Engines">
