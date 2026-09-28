@@ -62,7 +62,9 @@ export function Library({ project = null, items, library, projects = "ready", ov
   const [filter, setFilter] = useState<AssetFilter>("All");
   const [query, setQuery] = useState("");
   const production = shell.view === "suite" && shell.suite.id === "studio" ? PRODUCTION_TOOLS[shell.page.id] : undefined;
-  const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : libraryFor(shell.page.legacy.page);
+  /* Atomik › Tools & connections has no tool cards: its legacy page id's cards are the old Skills registry's. */
+  const toolsPage = shell.view === "suite" && shell.suite.id === "atomik" && shell.page.id === "skills";
+  const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : toolsPage ? [] : libraryFor(shell.page.legacy.page);
   const tools = libraryCount(groups);
   /* A Production stage's live draft files new Cast and Elements before the shell's copy is re-read. */
   const live = usePublishedProject();
@@ -143,7 +145,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             renderItem={(entry) => (
               <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={library.refresh}
                 selected={state.selKind === "take" && state.selId === entry.take.id} cut={cutId === entry.take.id}
-                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && now - entry.take.createdAt < FRESH_MS}
+                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && entry.take.status !== "held" && now - entry.take.createdAt < FRESH_MS}
                 /* `+` sends the asset into the composer as a reference; the toast names the role. */
                 action={<button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
                   disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>} />

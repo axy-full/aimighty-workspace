@@ -90,7 +90,8 @@ export type DraftState =
   | { state: "failed" }
   | { state: "expired"; expiresAt: number }
   | { state: "ready"; expiresAt: number; retry: string | null }
-  | { state: "finalising"; finalId: string }
+  /** `held`: the final is parked until credits or a render slot free up (lib/held.ts); its own card says which, with Release. */
+  | { state: "finalising"; finalId: string; held?: true }
   | { state: "finalFailed"; finalId: string }
   | { state: "final"; finalId: string };
 
@@ -105,10 +106,10 @@ export function draftState(
   // A library page may not contain the claimed final yet. Follow it before offering another.
   if (claimedId && !finals.some((f) => f.id === claimedId)) return { state: "finalising", finalId: claimedId };
   if (latest?.status === "succeeded") return { state: "final", finalId: latest.id };
-  if (latest && finalHoldsDraft(latest)) return {
-    state: latest.status === "failed" || latest.status === "cancelled" ? "finalFailed" : "finalising",
-    finalId: latest.id,
-  };
+  if (latest && finalHoldsDraft(latest)) {
+    if (latest.status === "failed" || latest.status === "cancelled") return { state: "finalFailed", finalId: latest.id };
+    return { state: "finalising", finalId: latest.id, ...(latest.status === "held" ? { held: true as const } : {}) };
+  }
   if (draft.status !== "succeeded") return { state: "rendering" };
   /* The server sends the expiry; without it, the row's own birth is the earliest the clock can have started. */
   const expiresAt = draftExpiry(draft.params) ?? draftExpiresAt(draftSentAt(draft.createdAt));

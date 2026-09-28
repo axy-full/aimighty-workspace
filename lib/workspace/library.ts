@@ -472,6 +472,7 @@ export function libraryEntries(state: Pick<LibraryState, "uploads" | "generation
 export type EntryFace = "media" | "live" | "held" | "failed" | "stopped" | "unavailable" | "audio" | "file";
 export function entryFace(entry: Pick<LibraryEntry, "take" | "asset" | "url" | "media">): EntryFace {
   if (entry.take.status === "failed") return entry.take.cancelled ? "stopped" : "failed";
+  if (entry.take.status === "held") return "held";
   if (entry.take.status === "rendering") return entry.take.stage === "held" ? "held" : "live";
   if (entry.url && (entry.media === "image" || entry.media === "video")) return "media";
   if (entry.media === "audio") return "audio";

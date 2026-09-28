@@ -295,6 +295,8 @@ test("a draft's final is available for seven days from when its request left, re
     expect(draftState({ ...draft, status: "failed" }, [], born)).toEqual({ state: "failed" });
     const final = { id: "f1", status: "queued", charged: false, createdAt: born + DAY };
     expect(draftState(draft, [final], born + 8 * DAY)).toEqual({ state: "finalising", finalId: "f1" });
+    /* A final held for credits or a slot still holds its draft, and says it is waiting rather than rendering. */
+    expect(draftState(draft, [{ ...final, status: "held" }], born + 2 * DAY)).toEqual({ state: "finalising", finalId: "f1", held: true });
     expect(draftState(draft, [{ ...final, status: "succeeded" }], born + 8 * DAY)).toEqual({ state: "final", finalId: "f1" });
     expect(draftState(draft, [{ ...final, status: "failed" }], born + 2 * DAY)).toEqual({ state: "ready", expiresAt: draftExpiresAt(born), retry: "f1" });
     /* A failed final whose outcome kept a charge holds the draft: its task may exist at the vendor. */

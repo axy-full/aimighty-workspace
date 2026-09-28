@@ -180,7 +180,8 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
   const status = view.state === "rendering" ? "Rendering the draft…"
     : view.state === "failed" ? "The draft did not render, so it has no final to make."
     : view.state === "expired" ? `This draft expired on ${draftDate(expiresAt!)}: a final can only be made within seven days of its draft.`
-    : view.state === "finalising" ? `Making the ${FINAL_RESOLUTION} final…`
+    /* A held final waits for credits or a slot: its card says which, and carries Release. */
+    : view.state === "finalising" ? (view.held ? `The ${FINAL_RESOLUTION} final is waiting to start.` : `Making the ${FINAL_RESOLUTION} final…`)
     : view.state === "finalFailed" ? "The final did not render. Another final is unavailable for this draft; review the take’s status."
     : view.state === "final" ? `The ${FINAL_RESOLUTION} final is made, without the watermark.`
     /* Whether that final was charged is its own card's and the usage ledger's to say, from the recorded outcome; not guessed here. */

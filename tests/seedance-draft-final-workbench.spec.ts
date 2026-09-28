@@ -283,6 +283,32 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   expect(s.errors).toEqual([]);
 });
 
+test("a draft is one take at its button's price: takes set before Draft first do not reach the credits pill's last quote", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const s = await seeded(page);
+  const balance = Number((await (await page.request.get("/api/me")).json()).credits.balance);
+  /* The Generate button's own price read, answered with a figure one take can afford and two cannot (as in the credits-out spec). */
+  const price = Math.max(1, balance - 10);
+  await page.route(/\/api\/workbench\/engines\?.*model=/, async (route) => {
+    const response = await route.fetch();
+    return route.fulfill({ response, json: { ...(await response.json()), credits: price } });
+  });
+  await openGen(page, s.project);
+  await page.getByTestId("gen-prompt").fill(WORDS);
+  const pill = page.getByTestId("workspace-credits");
+  const go = page.getByTestId("gen-generate");
+  await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
+  await expect(go).toHaveText(`Generate 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
+  await expect(pill).toHaveAttribute("data-low", "true");
+  /* Draft first: one take, at one take's price, and that is the last quote the pill measures the balance against. */
+  await page.getByTestId("gen-draft-toggle").click();
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
+  await expect(go).toHaveAttribute("aria-label", `Generate draft · ${price.toLocaleString("en-US")} cr`);
+  await expect(pill).not.toHaveAttribute("data-low");
+  expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
+  expect(s.errors).toEqual([]);
+});
+
 test("a draft past its seven days cannot make a final: the button is off, it says why, and nothing can be charged for one", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(240_000);
