@@ -142,24 +142,36 @@ async function freshPresets(fingerprint: string): Promise<Row[]> {
 
 /**
  * The Marketing Studio presets the planner may name: the ones this platform
- * key listed within the hour. When none are fresh, the catalogue is read once
- * (a free, non-generating read on the API key, which keeps them fresh for
- * admission); a key that lists none is not asked again for ten minutes.
+ * key listed within the hour, which admission also accepts. Read from what is
+ * kept, never from the provider, so a planning quote is never held up by it
+ * and the quote and its turn read the same list.
  */
 export async function plannerPresets(): Promise<PresetItem[]> {
   if (!higgsfieldConfigured()) return [];
   await ready();
-  const { fingerprint } = higgsfieldCredentials();
-  let rows = await freshPresets(fingerprint);
-  const key = `${requireTenant().id}:${fingerprint}`;
-  if (!rows.length && !engineMock() && Date.now() - (presetReads.get(key) ?? 0) > PRESET_RETRY_MS) {
-    presetReads.set(key, Date.now());
-    try {
-      await listMarketingPresets();
-      rows = await freshPresets(fingerprint);
-    } catch { /* no presets on this plan: a still can still be made from words and stills */ }
-  }
+  const rows = await freshPresets(higgsfieldCredentials().fingerprint);
   return rows.map((r, i) => ({ handle: `P${i + 1}`, id: String(r.id), name: libraryName(r.name) }));
+}
+
+/**
+ * Whether the presets kept for this key have gone stale and are worth reading
+ * again: none listed within the hour, and not asked in the last ten minutes
+ * (a key that lists none is not asked on every look). Marks the attempt.
+ */
+export async function plannerPresetsStale(): Promise<boolean> {
+  if (engineMock() || !higgsfieldConfigured()) return false;
+  await ready();
+  const { fingerprint } = higgsfieldCredentials();
+  const key = `${requireTenant().id}:${fingerprint}`;
+  if (Date.now() - (presetReads.get(key) ?? 0) <= PRESET_RETRY_MS) return false;
+  if ((await freshPresets(fingerprint)).length) return false;
+  presetReads.set(key, Date.now());
+  return true;
+}
+
+/** Read the preset catalogue on the API key (free, non-generating), keeping what it lists for an hour. Never throws. */
+export async function refreshPlannerPresets(): Promise<void> {
+  try { await listMarketingPresets(); } catch { /* no presets on this plan: a still is still made from words and stills */ }
 }
 
 /**

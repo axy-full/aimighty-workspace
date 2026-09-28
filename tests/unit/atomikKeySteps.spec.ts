@@ -456,6 +456,14 @@ test("the quote's fingerprint binds an approval to the exact source, stills, set
       id TEXT NOT NULL, credential_fingerprint TEXT NOT NULL, name TEXT NOT NULL, seen_at INTEGER NOT NULL, PRIMARY KEY(id,credential_fingerprint))`);
     await s.database.db().execute({ sql: "INSERT INTO higgsfield_marketing_presets(id,credential_fingerprint,name,seen_at) VALUES(?,?,?,?)",
       args: [PRESET_ID, higgsfield.higgsfieldCredentials().fingerprint, "Bold studio", Date.now()] });
+    /* The presets the planner may name: this key's, listed within the hour, read from what is kept. */
+    await s.database.db().execute({ sql: "INSERT INTO higgsfield_marketing_presets(id,credential_fingerprint,name,seen_at) VALUES(?,?,?,?),(?,?,?,?)",
+      args: ["9b3c1f2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b", higgsfield.higgsfieldCredentials().fingerprint, "Faded catalogue", Date.now() - 2 * 3_600_000,
+        "7c3c1f2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b", "b".repeat(64), "Another key's look", Date.now()] });
+    const { plannerPresets, plannerPresetsStale } = await import("../../lib/atomikLibrary");
+    expect(await plannerPresets()).toEqual([{ handle: "P1", id: PRESET_ID, name: "Bold studio" }]);
+    /* A mocked engine never reads the provider's catalogue. */
+    expect(await plannerPresetsStale()).toBe(false);
     const dispatches: string[] = [];
     const admission = load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
       "@/lib/inngest": { enqueueRender: async (id: string) => { dispatches.push(id); return true; } },
