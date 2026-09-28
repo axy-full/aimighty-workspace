@@ -1,20 +1,18 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
-import { createClient } from "@libsql/client";
-import { mkdirSync, readFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { test, expect, type Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { reachFromTools } from "../lib/higgsfield-consumer/reach";
 
 /**
  * Atomik › Tools & connections (idea 20), which replaced Atomik › Skills.
- * What Atomik can do: Particl's own rows, then the connected account's, each
- * with its live status and an Open that goes where it runs (the account is
- * mocked at its route; nothing is priced or sent). Claude & ChatGPT: real
- * tokens on the real routes — made with a ceiling in the workspace's unit,
- * shown once, filled into the setup, revoked (disabled, never erased) — the
- * setup for five clients, and the old page's skill packs.
+ * What Atomik can do: Particl's own rows, each with an Open that goes where
+ * it runs. The connected Higgsfield account's rows and the skill packs (which
+ * taught an assistant to use that account through a sign-in) went with the
+ * Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): nothing here asks
+ * the account anything. Claude & ChatGPT: real tokens on the real routes —
+ * made with a ceiling in the workspace's unit, shown once, filled into the
+ * setup, revoked (disabled, never erased) — and the setup for five clients.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -22,26 +20,21 @@ const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.TOOLS_SHOTS;
 const PATH = "/suites?suite=atomik&page=skills&sp=skills";
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-tools", productionProjectId: "prod-tools", shotMappings: {} });
-const OURS = (JSON.parse(readFileSync("tests/fixtures/connected-tools-98.json", "utf8")) as { tools: { name: string }[] }).tools.map((t) => t.name);
-const checked = (names = OURS) => {
-  const reach = reachFromTools(names, { off: ["analysis"] });
-  return { status: "checked", checkedAt: Date.now(), reach, available: reach.filter((r) => r.available).length, total: reach.length };
-};
+/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
+const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 
-type Reply = { status: number; json: unknown } | "hang";
 /* `armed` names #392's development-only crash probes (lib/shell/fault.ts): each named boundary throws as it renders. */
-async function open(page: Page, replies: Reply[] = [{ status: 200, json: checked() }], armed: string[] = []) {
+async function open(page: Page, armed: string[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [], generations: [] });
-  const asked: unknown[] = [];
-  await page.route("**/api/higgsfield/consumer/capabilities", async (route: Route) => {
-    asked.push(route.request().postDataJSON());
-    const reply = replies[Math.min(asked.length - 1, replies.length - 1)];
-    if (reply === "hang") return;
-    return route.fulfill({ status: reply.status, json: reply.json });
+  /* Every account route this page asks, for the check that it asks none (the collector's list aside). */
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/higgsfield/consumer/") && `${request.method()} ${path}` !== COLLECTOR_LIST) asked.push(`${request.method()} ${path}`);
   });
   if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = list; }, armed);
   const errors: string[] = [];
@@ -128,7 +121,7 @@ async function checkLayout(page: Page, phone: boolean) {
   expect(problems).toEqual([]);
 }
 
-test("What Atomik can do: Particl's own rows, then every connected row with its live status and an Open that goes where it runs", async ({ page }, info) => {
+test("What Atomik can do: Particl's own rows, each with an Open that goes where it runs; no connected-account rows, and nothing asks the account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { asked, errors } = await open(page);
   await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
@@ -138,21 +131,22 @@ test("What Atomik can do: Particl's own rows, then every connected row with its 
   const built = page.getByTestId("reach-particl").getByTestId("reach-row");
   await expect(built).toHaveCount(6);
   for (const pill of await built.getByTestId("reach-status").all()) await expect(pill).toHaveText("Built in");
-  const connected = page.getByTestId("reach-connected").getByTestId("reach-row");
-  await expect(connected).toHaveCount(14);
-  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available · checked");
-  await expect(connected.and(page.locator('[data-id="analysis"]')).getByTestId("reach-status")).toHaveText("Switched off");
-  await expect(connected.and(page.locator('[data-id="analysis"]')).getByTestId("reach-open")).toHaveCount(0);
-  await expect(connected.and(page.locator('[data-id="templates"]')).getByTestId("reach-status")).toHaveText("Available");
-  expect(asked).toEqual([{ view: "reach" }]);
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-open")).toHaveCount(6);
+  /* The connected account's section, its status and its check are gone. */
+  await expect(page.getByTestId("reach-connected")).toHaveCount(0);
+  await expect(page.getByTestId("reach-summary")).toHaveCount(0);
+  await expect(page.getByTestId("reach-check")).toHaveCount(0);
+  await expect(page.getByTestId("reach-engines")).toHaveCount(0);
+  await expect(page.getByTestId("tools-view")).not.toContainText(/connected account|Higgsfield/i);
   await checkLayout(page, PHONES.includes(info.project.name));
-  await shot(page, "reach-checked");
+  await shot(page, "reach-particl");
 
   /* The side panels describe this page, not the old Skills registry behind its page id. */
   const inspector = page.getByTestId("inspector");
   const openedInspector = !(await inspector.isVisible());
   if (openedInspector) await page.getByTestId("toggle-inspector").click();
   await expect(inspector).toContainText("Nothing on this page spends.");
+  await expect(inspector).not.toContainText("connected account");
   await expect(inspector).not.toContainText("Audit installed skills");
   await expect(inspector).not.toContainText("Not runnable yet");
   if (openedInspector) await page.getByTestId("close-inspector").click();
@@ -162,18 +156,7 @@ test("What Atomik can do: Particl's own rows, then every connected row with its 
   await expect(library).toContainText("This page has no tools of its own.");
   if (openedLibrary) await page.getByTestId("close-library").click();
 
-  await page.getByTestId("reach-check").click();
-  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
-  expect(asked).toHaveLength(2);
-
-  /* Open goes where the capability runs: the account's ad templates are Business › Image ads. */
-  await connected.and(page.locator('[data-id="templates"]')).getByTestId("reach-open").click();
-  await expect(page).toHaveURL(/[?&]sp=dtc(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
-  /* Back on the page within a minute, the answer is reused: the owner's six-a-minute allowance is not spent twice. */
-  await page.goBack();
-  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
-  expect(asked).toHaveLength(2);
+  /* Open goes where the capability runs. */
   await built.and(page.locator('[data-id="thinking"]')).getByTestId("reach-open").click();
   await expect(page).toHaveURL(/[?&]sp=models(&|$)/);
   await page.goBack();
@@ -184,12 +167,13 @@ test("What Atomik can do: Particl's own rows, then every connected row with its 
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("tools-tab-reach")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("tools-tab-reach")).toBeFocused();
+  expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);
 });
 
 test("inside the shell's panel boundaries: the page fails on its own card, and Try again brings it back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, [{ status: 200, json: checked() }], ["stage:skills"]);
+  const { asked, errors } = await open(page, ["stage:skills"]);
   const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]');
   await expect(fault).toContainText("Tools & connections stopped");
   /* The chrome is untouched: header, page title, strip; and the page head still offers no Run stage. */
@@ -206,114 +190,31 @@ test("inside the shell's panel boundaries: the page fails on its own card, and T
   if (opened) await page.getByTestId("close-inspector").click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
 
-  /* Fixed underneath: Try again renders the page, and it checks the account as it would have. */
+  /* Fixed underneath: Try again renders the page again. */
   await withinOneLoad(page, async () => {
     await page.evaluate(() => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = []; });
     await fault.getByTestId("fault-retry").click();
     await expect(page.getByTestId("tools-view")).toBeVisible();
   });
   await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
-  await expect(page.getByTestId("reach-connected").getByTestId("reach-row")).toHaveCount(14);
-  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
   await checkLayout(page, PHONES.includes(info.project.name));
+  expect(asked).toEqual([]);
   expect(errors, "a caught throw never reaches the window").toEqual([]);
 });
 
 test("inside the shell's panel boundaries: a failing Atomik gate keeps its own row, and the page keeps working with no plan sheet to open", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { asked, errors } = await open(page, [{ status: 200, json: checked() }], ["atomik-gate"]);
+  const { asked, errors } = await open(page, ["atomik-gate"]);
   await expect(page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]')).toContainText("The Atomik gate stopped");
   await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
-  await expect(page.getByTestId("reach-summary")).toContainText("13 of 14 available");
-  expect(asked).toEqual([{ view: "reach" }]);
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
   await page.getByTestId("tools-tab-connect").click();
   await expect(page.getByTestId("tokens-empty")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
+  expect(asked).toEqual([]);
   expect(errors, "a caught throw never reaches the window").toEqual([]);
-});
-
-test("without an account, or when the check fails, each row says so and the page says what to do next", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { asked, errors } = await open(page, [
-    { status: 409, json: { status: "unavailable", code: "not_connected", error: "Connect the owner’s account in Workspace › Engines." } },
-    { status: 503, json: { status: "unavailable", code: "unavailable", error: "Tool discovery is temporarily unavailable." } },
-    { status: 429, json: { status: "unavailable", code: "rate_limited", error: "Too many discovery requests. Try again later." } },
-    { status: 200, json: checked(OURS.filter((name) => !name.startsWith("marketing_studio_v2_"))) },
-  ]);
-  const connected = page.getByTestId("reach-connected").getByTestId("reach-row");
-  await expect(page.getByTestId("reach-summary")).toHaveText("Connect the account in Workspace › Engines");
-  for (const pill of await connected.getByTestId("reach-status").all()) await expect(pill).toHaveText("Connect first");
-  await expect(connected.getByTestId("reach-open")).toHaveCount(0);
-  await expect(page.getByTestId("reach-engines")).toBeVisible();
-  await checkLayout(page, PHONES.includes(info.project.name));
-  await shot(page, "reach-connect");
-
-  await page.getByTestId("reach-check").click();
-  await expect(page.getByTestId("reach-summary")).toContainText("could not be checked. Try again, or open Workspace › Engines.");
-  for (const pill of await connected.getByTestId("reach-status").all()) await expect(pill).toHaveText("Not checked");
-  await expect(page.getByTestId("reach-check")).toHaveText("Try again");
-  await page.getByTestId("reach-check").click();
-  await expect(page.getByTestId("reach-summary")).toHaveText("Checked too often. Try again in a minute.");
-  await page.getByTestId("reach-check").click();
-  /* This client offers no Marketing Studio templates: that row, and only that one besides the switched-off analysis, is not offered. */
-  await expect(page.getByTestId("reach-summary")).toContainText("12 of 14 available");
-  await expect(connected.and(page.locator('[data-id="templates"]')).getByTestId("reach-status")).toHaveText("Not offered");
-  expect(asked).toHaveLength(4);
-
-  await page.getByTestId("reach-check").click();
-  await expect(page.getByTestId("reach-summary")).toContainText("12 of 14 available");
-  await page.getByTestId("reach-engines").count().then((n) => expect(n).toBe(0));
-  expect(errors).toEqual([]);
-});
-
-test("while the account is being read, the rows and the button say so", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { asked, errors } = await open(page, ["hang"]);
-  await expect(page.getByTestId("reach-summary")).toHaveText("Checking the connected account…");
-  await expect(page.getByTestId("reach-check")).toBeDisabled();
-  await expect(page.getByTestId("reach-check")).toHaveText("Checking…");
-  await expect(page.getByTestId("reach-connected")).toHaveAttribute("aria-busy", "true");
-  for (const pill of await page.getByTestId("reach-connected").getByTestId("reach-status").all()) await expect(pill).toHaveText("Checking…");
-  expect(asked).toHaveLength(1);
-  await checkLayout(page, PHONES.includes(info.project.name));
-  expect(errors).toEqual([]);
-});
-
-test("a member sees who uses the connected account, and the page never asks the account on their behalf", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  await signInLocally(page.request);
-  const owner = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };
-  await signInLocally(page.request);
-  const member = await page.request.get("/api/me").then((r) => r.json()) as { email: string };
-  const code = randomBytes(18).toString("base64url");
-  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
-  try {
-    await platform.execute({
-      sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
-      args: [code, owner.workspace.id, member.email, "Tools member", "member", owner.id, Date.now(), Date.now() + 3_600_000],
-    });
-  } finally { platform.close(); }
-  expect((await page.request.post("/api/auth/accept", { data: { code } })).ok()).toBe(true);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  await mockProjects(page, { current: fixture() });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  let asked = 0;
-  await page.route("**/api/higgsfield/consumer/capabilities", (route) => { asked++; return route.fulfill({ status: 403, json: { error: "Only the owner" } }); });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(PATH);
-  await expect(page.getByTestId("reach-summary")).toHaveText("Only the workspace owner uses the connected account");
-  const connected = page.getByTestId("reach-connected").getByTestId("reach-row");
-  await expect(connected).toHaveCount(14);
-  for (const pill of await connected.getByTestId("reach-status").all()) await expect(pill).toHaveText("Owner only");
-  await expect(page.getByTestId("reach-check")).toHaveCount(0);
-  await expect(page.getByTestId("reach-particl").getByTestId("reach-open")).toHaveCount(6);
-  await checkLayout(page, PHONES.includes(info.project.name));
-  await shot(page, "reach-member");
-  expect(asked).toBe(0);
-  expect(errors).toEqual([]);
 });
 
 test("a token is made with a ceiling in the workspace's unit, shown once, filled into the setup, and revoked by disabling it", async ({ page, playwright }, info) => {
@@ -425,22 +326,19 @@ test("the token list recovers from a failed read, and the setup covers five clie
   expect(errors).toEqual([]);
 });
 
-test("the old Skills page's packs are still here, with the same install commands and folders", async ({ page }, info) => {
+test("Claude & ChatGPT no longer lists the Higgsfield skill packs: they taught an assistant to use the account through a sign-in", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page);
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const { asked, errors } = await open(page);
   await page.getByTestId("tools-tab-connect").click();
-  const packs = page.getByTestId("skill-packs");
-  await expect(packs.getByTestId("skill-row").first()).toBeHidden();
-  await packs.locator("summary").click();
-  await expect(packs.getByTestId("skill-row")).toHaveCount(8);
-  const first = packs.getByTestId("skill-row").first();
-  await expect(first).toContainText("higgsfield-generate");
-  await expect(first.getByRole("link", { name: "Open the higgsfield-generate folder" })).toHaveAttribute("href", "https://github.com/higgsfield-ai/skills/tree/main/higgsfield-generate");
-  await first.getByRole("button", { name: "Copy the install command for higgsfield-generate" }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("npx skills add higgsfield-ai/skills --skill higgsfield-generate");
-  await expect(packs.getByTestId("skill-packs-all")).toHaveAttribute("href", "https://github.com/higgsfield-ai/skills");
+  await expect(page.getByTestId("connect-tokens")).toBeVisible();
+  await expect(page.getByTestId("connect-setup")).toBeVisible();
+  await expect(page.getByTestId("connect-tools")).toBeVisible();
+  await expect(page.getByTestId("skill-packs")).toHaveCount(0);
+  await expect(page.getByTestId("skill-row")).toHaveCount(0);
+  await expect(page.getByText(/Skill packs|higgsfield-ai\/skills|npx skills add/)).toHaveCount(0);
+  await expect(page.locator('a[href*="github.com/higgsfield-ai"]')).toHaveCount(0);
   await checkLayout(page, PHONES.includes(info.project.name));
-  await shot(page, "connect-packs");
+  await shot(page, "connect-no-packs");
+  expect(asked).toEqual([]);
   expect(errors).toEqual([]);
 });

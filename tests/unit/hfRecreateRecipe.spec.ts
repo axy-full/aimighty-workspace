@@ -92,7 +92,7 @@ test("what Gen cannot recreate says so, and the menu and the Inspector block it"
   /* Where the take was made is named when it is known (the Suites recovery's reasons). */
   const source = "This take was made from a source clip. Run that tool again from Takes.";
   const connectedTool = "This take came from a connected tool, not Gen. Run that tool again.";
-  const business = "This ad was made in Business, with its product and setup. Make it again from Ads.";
+  const business = "This ad was made in Business on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield.";
   const dialogue = "A dialogue is made in Edit & Sound, not Gen.";
   for (const [blocked, why] of [
     [made("video", {}, "edit"), tool],
@@ -162,15 +162,15 @@ test("the card's chips: kept where Gen holds the take's value, changed with a re
   ]);
 });
 
-test("a connected recipe: named by the account's list, the right reason for each person, and a vanished identity is never sent", () => {
+test("a connected recipe: named by the account's list, recreated on Studio engines with that reason for everyone, and a vanished identity is never sent", () => {
   const preset = recreatePreset(take({ provider: "higgsfield", kind: "image", model: "soul_cinematic", params: { task: "connected-generation", settings: { aspect_ratio: "3:4", soul_id: "soul_abc" } } }), { name: "Pier" });
   const studio: ComposerModel = { id: "gpt-image-2", label: "GPT Image 2", type: "image", ratios: ["1:1", "3:4"] };
-  /* A member: the account is the owner's. Its catalogue id is not a name, so it is not dressed up as one. */
+  /* The Higgsfield sign-in is retired: everyone recreates an account take on Studio engines, and the chip says so.
+     Its catalogue id is not a name, so it is not dressed up as one. */
   const member = chipsFor({ preset, model: studio, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "The connected account is the owner’s" });
-  /* The owner who chose Studio engines is told that, not that the account is someone else's. */
+  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "Made on the Higgsfield account; recreated on Studio engines" });
   const ownerOnStudio = chipsFor({ preset, model: studio, owner: true, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(ownerOnStudio[0]).toMatchObject({ why: "Studio engines chosen" });
+  expect(ownerOnStudio[0]).toMatchObject({ why: "Made on the Higgsfield account; recreated on Studio engines" });
   /* The owner whose account is not connected sees why, once. */
   const unconnected = "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
   expect(chipsFor({ preset, billing: "connected", owner: true, model: null, settings: composerSettings(null), blocked: unconnected })).toEqual([
@@ -183,8 +183,8 @@ test("a connected recipe: named by the account's list, the right reason for each
   expect(chipsFor({ preset, billing: "connected", owner: true, model: soul, settings: composerSettings(soul, undefined, preset.picks) })[0]).toMatchObject({ value: "Soul Cinematic", state: "kept" });
   expect(owner(null)).toMatchObject({ state: "reading" });
   expect(owner([{ soulId: "soul_abc", name: "Mara", status: "ready" }])).toMatchObject({ value: "Mara", state: "kept" });
-  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "No longer on the account" });
-  expect(owner([])).toMatchObject({ state: "changed", why: "No longer on the account" });
+  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
+  expect(owner([])).toMatchObject({ state: "changed", why: "Made on the Higgsfield account" });
 });
 
 test("a recreated sound take: its length, Instrumental and voice read kept until Gen holds something else, and say why", () => {

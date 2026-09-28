@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import {
-  ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_SUITES,
-  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunSuite, ownerBadgeNote, ownerRunBy,
-  ownerRunEyebrow, ownerRunTitle, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
+  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, HISTORY_KEPT, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_SUITES,
+  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunSuite,
+  ownerRunEyebrow, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
+import { SIGN_IN_RETIRED, SIGN_IN_RETIRED_MESSAGE } from "../../lib/higgsfield-consumer/retired";
 import { SHELL_SUITES } from "../../lib/shell/ia";
 import { REACH_REUSE_MS, createReachMemory, reachConnection, reachStateFrom, type ReachState } from "../../lib/shell/tools-connections";
 import { CONNECTED_REACH } from "../../lib/higgsfield-consumer/reach";
@@ -229,14 +230,12 @@ test("a member is decided from the session: never loading, never connected, and 
   expect(capabilityOf(true, answered, "Harbour Owner")).toMatchObject({ owner: true, status: "ready", connected: true, ownerName: null });
 });
 
-test("a member's words: who runs the provider-account tools by name, what runs there, and the workspace-credit way", () => {
+test("the words everyone meets since the sign-in was retired: what ran on the account, that Particl no longer signs in, no owner name, and the workspace-credit way", () => {
   expect(CONNECTED_PROVIDER).toBe("Higgsfield");
-  expect(ownerRunBy("Harbour Owner")).toBe("Harbour Owner");
-  expect(ownerRunBy("   ")).toBe("the workspace owner");
-  expect(ownerRunBy(null)).toBe("the workspace owner");
-  expect(ownerRunTitle("Harbour Owner")).toBe("Higgsfield-account tools are run by Harbour Owner");
-  expect(ownerRunTitle(undefined)).toBe("Higgsfield-account tools are run by the workspace owner");
-  expect(ownerBadgeNote("Harbour Owner")).toBe("Run by Harbour Owner on the Higgsfield account");
+  expect(ACCOUNT_RETIRED).toBe("Particl no longer signs in to Higgsfield");
+  expect(HISTORY_KEPT).toBe("Past results stay in your Library.");
+  /* The card and the routes say the same thing. */
+  expect(`${ACCOUNT_RETIRED}. ${HISTORY_KEPT}`).toBe(SIGN_IN_RETIRED_MESSAGE);
   expect(OWNER_RUNS.business.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
   expect(OWNER_RUNS.viral.alternative).toMatchObject({ type: "video", action: "Open Gen · Video" });
   expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
@@ -247,9 +246,10 @@ test("a member's words: who runs the provider-account tools by name, what runs t
   expect(ownerRunEyebrow("business")).toBe(OWNER_RUNS.business.eyebrow);
   expect(ALTERNATIVE_LABEL).toBe("On this workspace’s credits");
   for (const run of Object.values(OWNER_RUNS)) {
-    /* One short line each, never a connect prompt a member cannot act on, never the account's credits. */
+    /* One short line each, in the past tense, never a connect prompt, never who runs it, never the account's credits. */
     expect(run.line.split(". ").length).toBe(1);
-    for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b/i);
+    expect(run.line).toMatch(/ ran on a signed-in Higgsfield account\.$/);
+    for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b|\brun by\b|\bowner\b/i);
   }
   expect(OWNER_RUN_SUITES).toEqual(["business", "viral"]);
   expect(isOwnerRunSuite("business") && isOwnerRunSuite("viral")).toBe(true);
@@ -294,19 +294,19 @@ test("an Atomik plan that spends through the connected account is the owner's; p
   expect(runsOnOwnerAccount(null)).toBe(false);
 });
 
-test("the run engine refuses every member's connected plan before reading or pricing, while workspace plans remain available", async () => {
+test("the run engine refuses every connected plan before reading or pricing, saying the sign-in is retired, while workspace plans remain available", async () => {
   let requests = 0;
-  const plans = ownerAccountPlans(PLANS, false, "Workspace owner");
-  const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("A member must not reach the connected account."); } }) });
+  const plans = ownerAccountPlans(PLANS, false);
+  const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("Nothing may reach the connected account."); } }) });
   for (const page of ["motion", "swap", "generate", "shorts"]) {
-    expect(engine.start(page)).toEqual({ ok: false, reason: "Run by Workspace owner on the Higgsfield account" });
+    expect(engine.start(page)).toEqual({ ok: false, reason: "Particl no longer signs in to Higgsfield." });
     expect(engine.getState().run).toBeNull();
     expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
   }
   expect(requests).toBe(0);
   expect(plans.marketing).toBe(PLANS.marketing);
   expect(plans.boards).toBe(PLANS.boards);
-  expect(ownerAccountPlans(PLANS, true, null)).toBe(PLANS);
+  expect(ownerAccountPlans(PLANS, true)).toBe(PLANS);
 });
 
 test("the owner's failed read of the account is said as it is on Generate — never 'no account is connected'", () => {
@@ -329,8 +329,21 @@ test("Business, Viral, Gen's composer and the connected workflows no longer read
   }
   /* The connection itself is read in one place for the shell's surfaces. */
   for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts"]) expect(readFileSync(file, "utf8"), file).not.toContain("/api/higgsfield/consumer/connection");
-  /* Engines, where the account is connected and disconnected, busts the shared answer. */
-  expect(readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8")).toContain("bustConnectedCapability(scope)");
+  /* Engines is the one place that still reads the owner's connection: to list running jobs and to Disconnect. It never starts a sign-in. */
+  const row = readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8");
+  expect(row).toContain("CONNECTION_ENDPOINT");
+  expect(row).toContain('method: "DELETE"');
+  expect(row).not.toMatch(/consumer\/connect"|consumerAuthorizeUrl|"Reconnect|Opening sign-in|window\.location\.assign/);
+});
+
+test("retired with the Higgsfield sign-in: the capability answers member for everyone, the owner included, so no surface reads the account", () => {
+  expect(SIGN_IN_RETIRED).toBe(true);
+  const hook = readFileSync("lib/shell/use-connected-capability.ts", "utf8");
+  expect(hook).toContain("const owner = !SIGN_IN_RETIRED && session.signedIn && session.owner === true;");
+  /* With owner false the store is never asked, whatever it holds. */
+  expect(capabilityOf(false, { status: "ready", connected: true, reconnect: false, error: null, at: 1 }, "Harbour Owner")).toMatchObject({ owner: false, status: "member", connected: false });
+  /* The shell's collector still finishes jobs already running: it keys on the session, not on this hook. */
+  expect(readFileSync("lib/shell/state.tsx", "utf8")).toContain("owner: session.owner");
 });
 
 /* ── Atomik › Tools & connections: the reach check rides the same capability ── */
@@ -454,11 +467,11 @@ test("Tools: a reach reply shares only what it says of the connection, read as t
   expect(reachConnection({ kind: "owner-only" })).toBeNull();
 });
 
-test("Tools & connections takes owner, scope and revision from the shared capability, and reads no connection of its own", () => {
+test("Tools & connections lists Particl's own reach only: no connected-account section, no check of the account, no skill packs", () => {
   const source = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(source).toContain("useConnectedCapability(undefined, { read: false })");
-  expect(source).toContain("markConnectedCapability(scope)");
-  expect(source).toContain("settleConnectedCapability(ticket.scope, connection, ticket.revision)");
-  expect(source).not.toContain("/api/higgsfield/consumer/connection");
+  expect(source).not.toContain("/api/higgsfield/consumer/");
+  expect(source).not.toContain("useConnectedCapability");
+  expect(source).not.toMatch(/reach-connected|SKILL_PACKS|SkillPacks|skill-packs/);
+  expect(source).toContain("PARTICL_REACH");
   expect(source).not.toMatch(/session\.(owner|requestScope)/);
 });

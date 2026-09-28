@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { requireTenant } from "@/lib/tenant";
 import { getConsumerAccess } from "./oauth";
 import { readConnectedWorkflow } from "./mcp";
+import { SIGN_IN_RETIRED } from "./retired";
 import {
   parseBundleFile,
   parseSlashCommand,
@@ -29,8 +30,10 @@ async function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
   return value;
 }
 type Owner = { id: string; owner?: boolean } | undefined;
+/* Retired with the Higgsfield sign-in (./retired): no grant is used, so there
+   are no connected recipes and `/name` in a message is plain text. */
 async function access(user: Owner, token: unknown) {
-  if (!user?.owner || token) return null;
+  if (SIGN_IN_RETIRED || !user?.owner || token) return null;
   const granted = await getConsumerAccess(requireTenant().id, user.id).catch(() => null);
   return granted ? { ...granted, scope: createHash("sha256").update(`${requireTenant().id}:${user.id}:${granted.generation}`).digest("hex") } : null;
 }

@@ -185,6 +185,7 @@ async function plannerService() {
       },
     },
     "./jobs": { getConsumerJob: async (scope: { id: string }) => state.jobs.get(scope.id) ?? null },
+    "./retired": await import("../../lib/higgsfield-consumer/retired"),
   };
   const loaded = { exports: {} as typeof PlannerService };
   const source = ts.transpileModule(readFileSync("lib/higgsfield-consumer/planner-service.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -285,4 +286,17 @@ test("A4: a batch is ONE approval for the exact sum of its waiting steps; each s
   expect(f.state.steps.get(ids[2])!.error).toMatch(/never sent again/);
   await expect(f.service.approveConnectedBatch("owner", ids, { credits: 126, workspaceId: f.wallet })).rejects.toMatchObject({ code: "already_claimed" });
   expect(f.state.batchSubmits).toHaveLength(1);
+});
+
+test("retired with the Higgsfield sign-in: the planner never reads the account, for the owner or anyone else, and proposes no connected engines", async () => {
+  const f = await plannerService();
+  const owner = { id: "owner", owner: true };
+  expect(await f.service.connectedPlannerFor(owner, null, "production")).toBeNull();
+  expect(await f.service.connectedEngineModels(owner, null)).toBeNull();
+  for (const user of [{ id: "member", owner: false }, undefined]) {
+    expect(await f.service.connectedPlannerFor(user, null, "production")).toBeNull();
+    expect(await f.service.connectedEngineModels(user, null)).toBeNull();
+  }
+  expect(await f.service.connectedPlannerFor(owner, "api-token", "production")).toBeNull();
+  expect(f.state.quotes).toBe(0);
 });

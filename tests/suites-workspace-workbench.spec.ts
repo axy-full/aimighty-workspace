@@ -52,9 +52,10 @@ async function open(page: Page, path: string) {
   await page.route("**/api/usage", (route) => route.fulfill({ json: { unit: "credits", pending: 0, spentCredits: 312, promptSpendCredits: 0, credits: { granted: 1612, used: 312, balance: 1300 }, vendors: [{ id: "byteplus", label: "BytePlus" }], totalGenerations: 15, succeeded: 15, failed: 0, promptCount: 0, storage: null, timing: [], refines: [], byModel: [{ model: "seedance-2.5", label: "Seedance 2.5", provider: "byteplus", kind: "video", n: 6, credits: 240, spend: 240, promptSpend: 0 }, { model: "nano-banana-2", label: "Nano Banana 2", provider: "google", kind: "image", n: 9, credits: 72, spend: 72, promptSpend: 0 }], byProject: [], byPerson: [] } }));
   await page.route("**/api/workspaces/keys", (route) => route.fulfill({ json: { usesPlatformKeys: true, mode: "platform", canPlatform: true, keyring: true, allowance: null, credits: null, gatewayMinted: false, keys: [{ name: "ark", label: "Connected video account", does: "Seedance video · prompt writer", set: true, masked: "ark_••••1234" }, { name: "openai", label: "Connected language account", does: "Thinking models", set: false, masked: null }, { name: "xai", label: "xAI · Grok", does: "Crew", set: true, masked: "xai_••••" }] } }));
   await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok-4.6" } }));
+  /* No grant held and nothing running: the Higgsfield account's row has nothing to show. */
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.request().method() === "POST"
-    ? route.fulfill({ json: { probe: { reachable: true, balance: 1234, unit: "credits" } } })
-    : route.fulfill({ json: { connected: true, requiresReconnect: false } }));
+    ? route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } })
+    : route.fulfill({ json: { connected: false, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } }));
   await page.route("**/api/account/security", (route) => route.fulfill({ json: { enabled: true, requiredWorkspaces: [], pendingRecoveryBatch: null, recoveryReplacementAuthorizedUntil: null, enabledAt: 1, recoveryCodesRemaining: 8, sessions: [{ id: "s1", current: true, label: "Chrome on macOS", createdAt: Date.now() - 86_400_000, expiresAt: Date.now() + 86_400_000 }, { id: "s2", current: false, label: "Safari on iPhone", createdAt: Date.now() - 3 * 86_400_000, expiresAt: Date.now() + 86_400_000 }] } }));
   await page.route(/\/api\/workspaces\/audit(\?.*)?$/, (route) => route.fulfill({ json: { events: [{ id: "e1", workspaceId: "w", actorId: "u1", action: "member.updated", targetType: "member", targetId: "u2", details: { role: "admin" }, createdAt: Date.now() }], nextCursor: null, actors: {} } }));
   /* GET/POST /api/rules and PATCH/DELETE /api/rules/[id] answer with the rules in force (lib/platformLayer.ts EffectiveRule). */
@@ -87,15 +88,14 @@ async function open(page: Page, path: string) {
   return { errors, patches, writes, ruleWrites };
 }
 
-test("Atomik › Tools & connections keeps the eight packs the Skills page listed, each with its folder", async ({ page }, info) => {
+test("Atomik › Tools & connections no longer lists the Skills page's packs: they needed a Higgsfield sign-in", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?suite=atomik&page=skills&sp=skills");
   await expect(page.getByTestId("tools-view")).toBeVisible();
   await page.getByTestId("tools-tab-connect").click();
-  await page.getByTestId("skill-packs").locator("summary").click();
-  await expect(page.getByTestId("skill-row")).toHaveCount(8);
-  await expect(page.getByTestId("skill-row").first()).toContainText("higgsfield-generate");
-  await expect(page.getByTestId("skill-row").first().getByRole("link", { name: "Open the higgsfield-generate folder" })).toHaveAttribute("href", "https://github.com/higgsfield-ai/skills/tree/main/higgsfield-generate");
+  await expect(page.getByTestId("connect-tokens")).toBeVisible();
+  await expect(page.getByTestId("skill-packs")).toHaveCount(0);
+  await expect(page.getByTestId("skill-row")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -162,13 +162,11 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
   await expect(page.getByTestId("ws-engine").first()).toContainText("connected");
   await expect(page.getByTestId("ws-engine").nth(1)).toContainText("platform key");
   await expect(page.getByTestId("ws-engines")).not.toContainText("Verify checks");
-  /* The account every "Connect … in Workspace › Engines" points at is connected here. */
-  await expect(page.getByTestId("engine-connected-account")).toContainText("Connected");
-  await expect(page.getByTestId("connected-account-connect")).toHaveText("Reconnect");
+  /* The Higgsfield sign-in is retired: no grant held and nothing running, so no account row, and no developer-API check. */
   await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");
-  await expect(page.getByTestId("engine-developer-api")).toContainText("Same grant as the connected account");
-  await page.getByTestId("developer-api-verify").click();
-  await expect(page.getByTestId("developer-api-result")).toHaveText("Reachable with this account's grant · balance 1,234 credits.");
+  await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
+  await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
+  await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
 
   await tabs.getByRole("tab", { name: "Security" }).click();
   await expect(page.getByTestId("ws-security")).toContainText("2 signed in");
@@ -184,17 +182,19 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
   expect(errors).toEqual([]);
 });
 
-test("Engines: the owner connects the account from here, and the sign-in's outcome is said on return", async ({ page }, info) => {
+test("Engines: nothing connects the Higgsfield account any more; a sign-in returning from before the retirement is told so", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=connected");
-  await expect(page.getByTestId("connected-account-outcome")).toHaveText("Account connected.");
-  /* The shell's own URL keeps only its params, so a reload does not repeat the outcome. */
+  let asked = 0;
+  await page.route("**/api/higgsfield/consumer/connect", (route) => { asked++; return route.fallback(); });
+  await page.route("https://clerk.higgsfield.ai/**", (route) => { asked++; return route.abort(); });
+  const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=retired");
+  await expect(page.getByTestId("connected-account-retired")).toHaveText("Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  /* The shell's own URL keeps only its params, so a reload does not repeat it. */
   await expect.poll(() => new URL(page.url()).searchParams.get("higgsfield")).toBeNull();
-  let authorize: string | null = null;
-  await page.route("**/api/higgsfield/consumer/connect", (route) => route.fulfill({ json: { url: "https://clerk.higgsfield.ai/oauth/authorize?state=unit" } }));
-  await page.route("https://clerk.higgsfield.ai/**", (route) => { authorize = route.request().url(); return route.fulfill({ contentType: "text/html", body: "<p>account sign-in</p>" }); });
-  await page.getByTestId("connected-account-connect").click();
-  await expect.poll(() => authorize).toBe("https://clerk.higgsfield.ai/oauth/authorize?state=unit");
+  await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
+  await expect(page.getByTestId("engine-connected-account").getByRole("button", { name: /Connect|Reconnect/ })).toHaveCount(0);
+  await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
+  expect(asked).toBe(0);
   expect(errors).toEqual([]);
 });
 
@@ -236,7 +236,7 @@ test("General › Prompt rules: the team's rules edit here, the platform's switc
   expect(errors).toEqual([]);
 });
 
-test("a rename holds across tabs and reaches the header; Disconnect turns the developer API's Verify off at once", async ({ page }, info) => {
+test("a rename holds across tabs and reaches the header; Engines' Disconnect still revokes a grant Particl holds", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* /api/me answers with the workspace's name as the platform now has it: the old one until the rename lands. */
   let saved: string | null = null;
@@ -267,20 +267,21 @@ test("a rename holds across tabs and reaches the header; Disconnect turns the de
   await expect(page.getByTestId("ws-name")).toHaveValue("Harbour Studio");
   await expect(page.getByTestId("ws-save")).toBeDisabled();
 
-  /* One reading of the connection serves both Engines rows. */
+  /* A grant Particl still holds: the retired row offers Disconnect only (no developer-API check), and Disconnect revokes it. */
   let connected = true;
+  const posts: unknown[] = [];
   await page.route("**/api/higgsfield/consumer/connection", (route) => {
-    if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ json: { ok: true } }); }
-    if (route.request().method() === "POST") return route.fulfill({ json: { probe: { reachable: true, balance: 1234, unit: "credits" } } });
-    return route.fulfill({ json: { connected, requiresReconnect: false } });
+    if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ json: { connected: false, requiresReconnect: false } }); }
+    if (route.request().method() === "POST") { posts.push(route.request().postDataJSON()); return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } }); }
+    return route.fulfill({ json: { connected, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } });
   });
   await tabs.getByRole("tab", { name: "Engines" }).click();
-  await expect(page.getByTestId("engine-developer-api")).toContainText("Same grant as the connected account");
-  await expect(page.getByTestId("developer-api-verify")).toBeEnabled();
+  await expect(page.getByTestId("engine-connected-account")).toContainText("Sign-in retired");
+  await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   await page.getByTestId("connected-account-disconnect").click();
-  await expect(page.getByTestId("engine-connected-account")).toContainText("Not connected");
-  await expect(page.getByTestId("engine-developer-api")).toContainText("Connect the Higgsfield account above first");
-  await expect(page.getByTestId("developer-api-verify")).toBeDisabled();
+  await expect(page.getByTestId("connected-account-note")).toHaveText("Account disconnected. Particl no longer holds access to it.");
+  await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
+  expect(posts).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

@@ -179,10 +179,14 @@ test("tokens read in the workspace's unit: credits never show a dollar, a blank 
   expect(tokenBody("Reader", "read", "credits", 500)).toEqual({ name: "Reader", scope: "read" });
 });
 
-test("the old Skills page's packs are kept, with the page's own copy, beside the new tabs", () => {
+test("the skill packs went with the Higgsfield sign-in (they taught an assistant to use the account); the page keeps its place and its two tabs", () => {
+  /* The list itself stays in lib/shell/skills.ts until the account code is removed; nothing shows it. */
   expect(SKILL_PACKS).toHaveLength(8);
   const view = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(view).toContain("SKILL_PACKS.map");
-  expect(view).toContain('data-testid="skill-row"');
+  expect(view).not.toContain("SKILL_PACKS");
+  expect(view).not.toContain('data-testid="skill-row"');
+  expect(view).not.toContain('data-testid="skill-packs"');
+  expect(view).toContain('{ id: "reach", label: "What Atomik can do" }');
+  expect(view).toContain('{ id: "connect", label: "Claude & ChatGPT" }');
   expect(shellPage("atomik", "skills")).toMatchObject({ label: "Tools", title: "Tools & connections", own: true });
 });

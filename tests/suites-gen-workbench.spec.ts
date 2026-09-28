@@ -76,7 +76,7 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   expect(errors).toEqual([]);
 });
 
-test("length is every second the engine allows, the sheet lists both catalogues, and an asset drags in as a reference", async ({ page }, info) => {
+test("length is every second the engine allows, the sheet lists Studio engines only, and an asset drags in as a reference", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
   const { errors } = await open(page);
@@ -91,7 +91,9 @@ test("length is every second the engine allows, the sheet lists both catalogues,
 
   await page.getByTestId("gen-model").click();
   const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  await expect(sheet.getByRole("tab")).toHaveText(["Studio engines", "Higgsfield catalogue"]);
+  /* The Higgsfield catalogue went with the Higgsfield sign-in, for the workspace owner too. */
+  await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
+  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
   await expect(sheet.getByRole("option").first()).toBeVisible();
   /* With a pointer the search holds focus, so Escape alone closes it; elsewhere Close does. */
   await page.keyboard.press("Escape");

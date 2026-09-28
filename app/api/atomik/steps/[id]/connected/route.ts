@@ -4,6 +4,7 @@ import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { ConnectedStepError, approveConnectedBatch, approveConnectedStep, pollConnectedStep, neutralReason } from "@/lib/higgsfield-consumer/planner-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,6 +19,10 @@ export const maxDuration = 180;
  * exact summed credits of a batch's waiting steps (this step among them),
  * then one durable claim per item and one paid batch call. `status` is one leased read that
  * settles the step when the original is collected and filed.
+ *
+ * `approve` and `approve-batch` are retired with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts): they answer 410 and nothing is sent.
+ * `status` stays, so a step already approved is still collected.
  */
 type Ctx = { params: Promise<{ id: string }> };
 const headers = { "Cache-Control": "private, no-store" };
@@ -26,6 +31,7 @@ const body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve-batch"), stepIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,100}$/)).min(2).max(4), credits: z.number().int().positive().max(1_000_000), workspaceId: z.uuid() }).strict(),
   z.object({ action: z.literal("status") }).strict(),
 ]);
+const RETIRED = new Set(["approve", "approve-batch"]);
 
 export const POST = withTenant(async (req: Request, ctx: Ctx) => {
   const owner = await requireOwner();
@@ -33,7 +39,9 @@ export const POST = withTenant(async (req: Request, ctx: Ctx) => {
   const { id } = await ctx.params;
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) return Response.json({ error: "That step is gone." }, { status: 404, headers });
   try {
-    const parsed = body.safeParse(JSON.parse(await readBoundedText(req, 4000)));
+    const raw: unknown = JSON.parse(await readBoundedText(req, 4000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
+    const parsed = body.safeParse(raw);
     if (!parsed.success) return Response.json({ error: "Review the approval." }, { status: 400, headers });
     const input = parsed.data;
     await takeAccountLimit(`atomik-connected:${requireTenant().id}:${owner.user.id}:${input.action === "approve-batch" ? "approve" : input.action}`, input.action === "status" ? 30 : 6, 60_000);

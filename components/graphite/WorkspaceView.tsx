@@ -22,7 +22,6 @@ import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach"
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
-import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -199,7 +198,7 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
         <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Prompt enhancer" style={{ alignSelf: "flex-start" }}>
           {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => set("promptEnhancer", p)} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
         </div>
-        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr; a connected model that enhances on the account does it inside the render.</span>
+        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr.</span>
       </div>
       <div className="wsx-actions">
         <button type="button" className="gx-primary" disabled={!admin || (!changed.length && !renamed) || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>
@@ -556,13 +555,11 @@ function Engines() {
   const session = useSession();
   const write = useWrite();
   const owner = session.role === "owner";
-  /* The keys and the account connection are the owner's (both routes answer 403 to anyone else). */
+  /* The keys and the account's row are the owner's (both routes answer 403 to anyone else). */
   const { data, error, read } = useRead<Keys>(owner ? "/api/workspaces/keys" : null);
   const [entering, setEntering] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  /* The account row reads the connection; the developer-API row follows it. */
-  const [linked, setLinked] = useState<boolean | null>(null);
   const save = async (name: string) => {
     setNote(null);
     const { error: refused } = await write("/api/workspaces/keys", "PUT", { name, value: key.trim() });
@@ -573,7 +570,7 @@ function Engines() {
     <>
       <div className="wsx-card" data-testid="ws-engines">
         <span className="gx-eyebrow">Engines</span>
-        {!owner ? <span className="gx-reason">Engine keys and the connected account are the owner’s to change.</span> : null}
+        {!owner ? <span className="gx-reason">Engine keys are the owner’s to change.</span> : null}
         {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
         {(data?.keys ?? []).filter((k) => k.name !== "xai").map((k) => {
           const status = keyStatus(data?.mode, k.set);
@@ -596,9 +593,8 @@ function Engines() {
         {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
-      <ConnectedAccountRow owner={owner} onLinked={setLinked} />
+      <ConnectedAccountRow owner={owner} />
       <XaiEngineRow />
-      {owner ? <DeveloperApiRow connected={linked} /> : null}
     </>
   );
 }

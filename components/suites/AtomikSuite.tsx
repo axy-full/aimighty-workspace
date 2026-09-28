@@ -45,10 +45,8 @@ import {
 } from "./atomik-suite-data";
 import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
-import { AtomikGenerate } from "./AtomikGenerate";
 import { providerDisplayName } from "@/lib/vendorNames";
-import { setAtomikRail } from "@/lib/atomikRail";
-import type { ConnectedRecipe } from "@/lib/higgsfield-consumer/workflows";
+import { ACCOUNT_RETIRED, HISTORY_KEPT } from "@/lib/shell/connected-capability";
 
 type Drafts = {
   project: Project | null;
@@ -75,7 +73,7 @@ type Props = {
   embedded?: boolean;
   /** A host that routes its own pages opens another Atomik page through this instead of `?page=`. */
   onPage?: (page: AtomikPage) => void;
-  /** Generate's current connected-account request (AtomikGenerate `onInput`). */
+  /** Generate's connected-account request, when that page ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
   onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 };
 const providerNames: Record<string, string> = {
@@ -199,10 +197,8 @@ function MappedAtomik({
   page,
   heading,
   pageTitle,
-  refreshProject,
   embedded = false,
   onPage,
-  onGenerateInput,
 }: {
   project: Project;
   page: AtomikPage;
@@ -415,7 +411,7 @@ function MappedAtomik({
             {page === "runs"
               ? "Readable plans, approved stages, and recoverable production history."
               : page === "generate"
-                ? "Image, video, sound and 3D workflows on the connected account, each quoted in connected credits before it runs."
+                ? "This page ran on a signed-in Higgsfield account."
               : page === "recipes"
                 ? "Reuse a saved plan with its exact context, models and checkpoints."
                 : page === "approvals"
@@ -532,7 +528,10 @@ function MappedAtomik({
           }
         />
       ) : page === "generate" ? (
-        <AtomikGenerate project={project} scope={session.requestScope ?? ""} refreshProject={refreshProject} onInput={onGenerateInput} />
+        <div className={styles.empty} data-testid="atomik-generate-retired">
+          <h2>Not offered</h2>
+          <p>{ACCOUNT_RETIRED}. {HISTORY_KEPT} Make images, video and sound in Gen, on Studio engines.</p>
+        </div>
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (
@@ -749,45 +748,6 @@ function SaveRecipe({ run }: { run: PublicPipelineRun }) {
     </button>
   );
 }
-/** The connected account's workflow bundles as recipes (A5 + A6): run one
- * from the Atomik composer as `/name brief`; every paid step it plans is
- * priced for approval like any other. Only where that composer exists — the
- * app shell's rail; a host without it (the Suites shell) lists nothing it
- * could not start. */
-function ConnectedRecipes() {
-  const atomik = useAtomik();
-  const { data } = useApi<{ recipes: ConnectedRecipe[] }>(atomik.hosted ? "/api/atomik/recipes" : null);
-  const recipes = data?.recipes ?? [];
-  if (!atomik.hosted || !recipes.length) return null;
-  return (
-    <section className={styles.panel} aria-label="Connected recipes">
-      <h2>Connected recipes</h2>
-      <p className={styles.note}>
-        Workflows from the connected account. Type /name and a brief in Atomik; each paid step is priced before it runs.
-      </p>
-      <div className={styles.recipeGrid}>
-        {recipes.map((recipe) => (
-          <article key={recipe.name} className={styles.panel}>
-            <h3>/{recipe.name}</h3>
-            <p>{recipe.description}</p>
-            <div className={styles.actions}>
-              <button
-                disabled={atomik.busy || !!atomik.recoveryText}
-                onClick={() => {
-                  atomik.setDraftText(`/${recipe.name} `);
-                  setAtomikRail("expanded");
-                }}
-              >
-                Use in Atomik
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function Recipes({
   runs,
   busy,
@@ -841,7 +801,6 @@ function Recipes({
           </article>
         ))}
       </div>
-      <ConnectedRecipes />
       {!recipes.length && (
         <div className={styles.empty}>
           <h2>No saved recipes yet</h2>

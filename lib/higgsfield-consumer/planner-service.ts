@@ -45,6 +45,7 @@ import {
   type ConsumerGenerationView,
 } from "./generation-service";
 import { getConsumerJob } from "./jobs";
+import { SIGN_IN_RETIRED } from "./retired";
 import type { ConnectedModel } from "./catalogue";
 
 const CONTEXT_TTL_MS = 2 * 60_000;
@@ -230,8 +231,13 @@ export async function pollConnectedStep(userId: string, stepId: string) {
   return { ...settled, pollAfterSeconds: polled.pollAfterSeconds ?? 15 };
 }
 
-/** Only the workspace owner, signed in (not an API token), plans on the connected account. */
-const ownsConnection = (user: { id: string; owner?: boolean } | undefined, token: unknown) => Boolean(user?.owner && !token);
+/**
+ * Only the workspace owner, signed in (not an API token), planned on the
+ * connected account. Retired with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts): nobody does now, so the planner never
+ * reads the account and proposes no connected steps or engines.
+ */
+const ownsConnection = (user: { id: string; owner?: boolean } | undefined, token: unknown) => !SIGN_IN_RETIRED && Boolean(user?.owner && !token);
 export async function connectedPlannerFor(user: { id: string; owner?: boolean } | undefined, token: unknown, productionId: string | null) {
   return ownsConnection(user, token) ? connectedPlanner(user!.id, productionId).catch(() => null) : null;
 }

@@ -1,16 +1,13 @@
-import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
-import { connectedRecipes } from "@/lib/higgsfield-consumer/recipes-service";
+import { retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The recipes the workspace owner's connected account offers (A5 + A6), for
- * the composer's `/` menu and the Recipes page. Names and short descriptions
- * only; a recipe's text is read when it is run. Empty for anyone else.
+ * The connected account's workflow bundles as Atomik recipes (the composer's
+ * `/` menu) are retired with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts): the account is not read, and `/name`
+ * in a message is plain text. Particl's own saved recipes are unaffected.
  */
-export const GET = withTenant(async function GET() {
-  const got = await requireUser();
-  if (got.response) return got.response;
-  return NextResponse.json({ recipes: await connectedRecipes(got.user, got.token) }, { headers: { "Cache-Control": "private, no-store" } });
-});
+export async function GET() {
+  return retiredResponse();
+}

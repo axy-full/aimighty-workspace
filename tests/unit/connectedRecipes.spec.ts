@@ -122,6 +122,7 @@ async function recipesService() {
       },
     },
     "./workflows": await import("../../lib/higgsfield-consumer/workflows"),
+    "./retired": await import("../../lib/higgsfield-consumer/retired"),
   };
   const loaded = { exports: {} as typeof RecipesService };
   const source = ts.transpileModule(readFileSync("lib/higgsfield-consumer/recipes-service.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -129,21 +130,15 @@ async function recipesService() {
   return { service: loaded.exports, reads };
 }
 
-test("A6: /name runs a recipe only for the signed-in owner, refuses an unknown name, and reads its text once per hour", async () => {
+test("A6, retired with the Higgsfield sign-in: /name is plain text for everyone, the owner included, and the account's workflows are never read", async () => {
   const { service, reads } = await recipesService();
   const owner = { id: "owner", owner: true };
   expect(await service.recipeForMessage(owner, undefined, "a plain request")).toBeNull();
   expect(await service.recipeForMessage({ id: "member", owner: false }, undefined, "/character-sheet a knight")).toBeNull();
   expect(await service.recipeForMessage(owner, { scope: "render" }, "/character-sheet a knight")).toBeNull();
+  /* An unknown name is no longer refused, and a known one reads nothing: both are ordinary words. */
+  expect(await service.recipeForMessage(owner, undefined, "/subtitles burn them")).toBeNull();
+  expect(await service.recipeForMessage(owner, undefined, "/character-sheet a knight in rain")).toBeNull();
+  expect(await service.connectedRecipes(owner, undefined)).toEqual([]);
   expect(reads).toEqual([]);
-  await expect(service.recipeForMessage(owner, undefined, "/subtitles burn them")).rejects.toMatchObject({ name: "RecipeError", message: "There is no /subtitles recipe on the connected account." });
-  const recipe = (await service.recipeForMessage(owner, undefined, "/character-sheet a knight in rain"))!;
-  expect(recipe).toMatchObject({ name: "character-sheet", args: "a knight in rain" });
-  expect(recipe.guidance).toContain("references/presets.md");
-  expect(recipe.guidance).not.toMatch(/higgsfield/i);
-  const count = reads.length;
-  await service.recipeForMessage(owner, undefined, "/character-sheet another brief");
-  expect(reads.length).toBe(count);
-  expect(reads).toEqual([{ kind: "catalog" }, { kind: "instructions", workflow: "character-sheet" }, { kind: "file", workflow: "character-sheet", path: "references/presets.md" }]);
-  expect((await service.connectedRecipes(owner, undefined)).length).toBe(13);
 });
