@@ -8,6 +8,12 @@ updates:
       time: "09:00"
       timezone: Asia/Kolkata
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node follows the Node runtime (24 on Vercel and in CI): its
+      # major moves with the runtime, never on its own.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
     groups:
       nextjs-patches:
         patterns:
