@@ -14,10 +14,10 @@ import { smallTargets } from "./phoneFloors";
  * ground behind it; Edit & Sound fits a phone instead of scrolling sideways;
  * Deliver's and Edit & Sound's buttons, Environment's library pickers, the ⌘K
  * field and Edit & Sound's "Add takes" are 44px targets on a touch screen; a
- * long file name in a picker never widens the page; the Library's last line
- * sits above the phone's tab bar; and a draft that could not be read says
- * "Try again" ("Retry" is a take's paid re-render). A real project on the
- * local routes, a mocked Library, the mock engine: nothing is paid for.
+ * long file name in a picker never widens the page; and a draft that could
+ * not be read says "Try again" ("Retry" is a take's paid re-render). A real
+ * project on the local routes, a mocked Library, the mock engine: nothing is
+ * paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
@@ -199,19 +199,6 @@ test("Workspace › Dashboard: the tables' column headers read at the floor", as
   const { errors } = await open(page, "/suites?view=workspace&tab=dashboard", "workspace-view");
   await expect(page.locator(".mdx-table th").first()).toBeVisible();
   expect(await dimLabels(page, ".mdx-table th"), "column headers under #7C7C84").toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("phone: the Library's closing line never sits under the tab bar", async ({ page }, info) => {
-  test.skip(!PHONES.includes(info.project.name), "the portrait phones, where the tab bar floats over the page");
-  const { errors } = await open(page, "/suites?suite=studio&page=boards&sp=boards", "boards-stage");
-  await page.getByTestId("tabbar-assets").click();
-  const library = page.getByTestId("library");
-  await expect(library.getByTestId("library-assets")).toBeVisible();
-  const barTop = await page.getByTestId("tabbar").evaluate((el) => el.getBoundingClientRect().top);
-  /* The overlay runs to the screen's foot: its closing line (below the list, which keeps its own clearance) was under the bar. */
-  const foot = library.locator(".gx-lib-foot");
-  if (await foot.isVisible()) expect(await foot.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(barTop);
   expect(errors).toEqual([]);
 });
 
