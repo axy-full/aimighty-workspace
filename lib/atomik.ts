@@ -11,6 +11,7 @@ import { getSetting } from "./settings";
 import { fenceGenerationRequest, generationRequestsReady } from "./generationRequests";
 import type { Transaction } from "@libsql/client";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
+import { cinemaStudioEnabled } from "./vendorRates";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
 import { getPlatformLayer, platformDb, platformReady } from "./platform";
@@ -545,9 +546,11 @@ export function fitStepParams(
   return out;
 }
 
-/** Particl's own engines that make a shot from a prompt (Topaz only upscales), less any the workspace switched off. */
+/** Particl's own engines that make a shot from a prompt (Topaz only upscales), less any the workspace switched off.
+ *  API-key engines count as Particl's own (Cinema Studio 4.0), and follow their deploy switch as /api/engines does. */
 export function ownGenerateEngines(off: readonly string[] = []): ModelDef[] {
-  return MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id));
+  return MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id)
+    && (!m.cinemaStudio || cinemaStudioEnabled()));
 }
 
 /** The engines switched off under Settings › Engines & rates (§13: `ATOMIK MAY PROPOSE`). */

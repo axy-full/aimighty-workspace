@@ -100,6 +100,20 @@ test("the engines Atomik offers the planner are Particl's own; none is on a sign
   });
 });
 
+test("an API-key engine is offered where it exists: Cinema Studio 4.0 is on the planner's list, and off with its deploy switch", async () => {
+  const { CINEMA_STUDIO_MODEL_ID } = await import("../../lib/cinemaStudioTypes");
+  const { ownGenerateEngines } = await import("../../lib/atomik");
+  const before = process.env.HF_CINEMA_STUDIO_ENABLED;
+  try {
+    delete process.env.HF_CINEMA_STUDIO_ENABLED;
+    expect(ownGenerateEngines().map((m) => m.id)).toContain(CINEMA_STUDIO_MODEL_ID);
+    process.env.HF_CINEMA_STUDIO_ENABLED = "0";
+    expect(ownGenerateEngines().map((m) => m.id)).not.toContain(CINEMA_STUDIO_MODEL_ID);
+  } finally {
+    if (before === undefined) delete process.env.HF_CINEMA_STUDIO_ENABLED; else process.env.HF_CINEMA_STUDIO_ENABLED = before;
+  }
+});
+
 /* ── Nothing in Atomik reaches the account ───────────────────────────── */
 
 const walk = (root: string): string[] =>
