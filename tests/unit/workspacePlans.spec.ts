@@ -317,7 +317,7 @@ test("an expired quote is re-quoted on approve, shows the price change and dispa
   expect(run.status).toBe("waiting");
   expect(run.approved).toBe(false);
   expect(run.quote!.credits).toBe(42);
-  expect(run.notice).toBe("Quote refreshed — price changed from 36 cr to 42 cr.");
+  expect(run.notice).toBe("Quote refreshed — estimate changed from about 36 cr to about 42 cr.");
   expect(calls.filter((call) => call.path === "/api/generate/quote").length).toBe(quotesBefore * 2);
   expect(dispatches()).toHaveLength(0);
 });
@@ -330,7 +330,7 @@ test("an input edited after the quote forces a re-quote instead of a dispatch", 
   await until(() => engine.getState().run?.status === "waiting");
   ctx.request = { ...ctx.request, shots: [shot("Opening", "wide"), shot("Turn", "closer still")] };
   expect(await engine.approve()).toEqual({ ok: false, reason: "refreshed" });
-  expect(engine.getState().run!.notice).toBe("Quote refreshed — price unchanged at 36 cr. Approve again to continue.");
+  expect(engine.getState().run!.notice).toBe("Quote refreshed — estimate unchanged at about 36 cr. Approve again to continue.");
   expect(dispatches()).toHaveLength(0);
 });
 

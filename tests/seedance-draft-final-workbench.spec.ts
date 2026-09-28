@@ -457,7 +457,7 @@ test("a moved final quote needs fresh approval and sends no render", async ({ pa
   const approve = strip.getByTestId("draft-final-approve-send");
   moved = true;
   await approve.click();
-  await expect(strip.getByTestId("draft-final-note")).toContainText(`The price is now ${original + 1} cr. Approve again`);
+  await expect(strip.getByTestId("draft-final-note")).toContainText(`The estimate is now about ${original + 1} cr. Approve again`);
   await expect(approve).toHaveAttribute("aria-label", `Approve · ${original + 1} cr`);
   expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
   expect((await ledger(s)).jobs).toHaveLength(1);

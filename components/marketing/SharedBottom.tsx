@@ -24,8 +24,8 @@ function SuitesStrip() {
     <Section id="suites" panel label="Suites">
       <Head
         eyebrow="Five suites · one workspace · one shell"
-        title="One room. One balance. One composer."
-        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Every tool is a preset that opens the same composer. Assets are visible and draggable on every page. Quotes are shown in credits, everywhere.</p>}
+        title="One room. One composer."
+        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Every tool is a preset that opens the same composer. Assets are visible and draggable on every page.</p>}
       />
       <div className="mk-suites-grid">
         {SITE_SUITES.map((suite) => (
@@ -42,20 +42,19 @@ function SuitesStrip() {
 }
 
 const SHELL_TILES: [string, string, string][] = [
-  ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief, one cast and one ledger across every suite; switching suites waits for pending saves."],
+  ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief and one cast across every suite; switching suites waits for pending saves."],
   ["⌘K", "Palette", "Generate, suites, every page, Workspace, models, assets and “Ask Atomik: …”. Enter runs the top hit."],
   ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Rig node. Download original is always the original bytes."],
   ["⌘J", "Inspector", "Controls, Inputs and Versions for whatever is selected: asset, take, run, node, item or stage."],
   ["Right-click", "Menu everywhere", "Copy, cut, paste, duplicate, move to, retry, and a 20-deep undo."],
   ["Enhancer", "One prompt enhancer", "One provider, chosen in Workspace › General. Never on raw: prompts."],
-  ["One balance", "Credits, everywhere", "Every quote is in credits and on the button."],
 ];
 
 function Shell() {
   return (
     <Section id="shell" label="Shell">
       <Head eyebrow="The shell" title="The same room on every page."
-        lead="Library on the left, Inspector on the right, one composer, one balance, one prompt enhancer. Every card is a button; nothing dead-ends in a toast." />
+        lead="Library on the left, Inspector on the right, one composer, one prompt enhancer. Every card is a button; nothing dead-ends in a toast." />
       <Cols col={420}>
         <Window path="⌘K · search everything" src={shot("palette-cmd-k")} alt="The ⌘K palette" width={924} height={540} />
         <Grid col={200}>
@@ -66,7 +65,7 @@ function Shell() {
         <div className="mk-head">
           <div className="mk-eyebrow">On a phone</div>
           <h3 className="mk-h3">The same room, one hand.</h3>
-          <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a glass tab bar, stage sheets that pull up over the work, the balance always in view. Every tap target is at least 44 px.</p>
+          <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a glass tab bar, stage sheets that pull up over the work. Every tap target is at least 44 px.</p>
           <Chips items={["Home", "Workflow", "Canvas", "Takes", "Edit", "≥ 44 px targets"]} />
         </div>
         <div className="mk-phone">

@@ -210,7 +210,7 @@ test("a stale quote is re-quoted before anything is dispatched", async ({ page }
   /* Past the quote's lifetime: Approve re-quotes and waits again; nothing is sent. */
   await page.clock.fastForward("06:00");
   await page.getByTestId("atomik-panel").getByRole("button", { name: "Approve 12 cr" }).click();
-  await expect(page.getByTestId("atomik-gate")).toContainText("Quote refreshed — price changed from 12 cr to 14 cr.");
+  await expect(page.getByTestId("atomik-gate")).toContainText("Quote refreshed — estimate changed from about 12 cr to about 14 cr.");
   await expect(page.getByTestId("atomik-gate-price")).toHaveText("14 cr");
   await expect(page.getByTestId("run-chip")).toHaveText("Approve 14 cr");
   expect(mock.quoteCalls).toBe(2);

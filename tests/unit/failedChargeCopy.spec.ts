@@ -37,6 +37,7 @@ test("the seven places that promised it say only what they are about", () => {
   expect(read("app/(marketing)/site/_pages/gen/index.tsx")).not.toMatch(/Failed renders|failed render/);
   expect(read("app/(marketing)/site/_pages/workspace/index.tsx")).not.toMatch(/Failed renders/);
   expect(read("app/(marketing)/site/_pages/atomik/index.tsx")).not.toMatch(/Failed generations|failed generation/);
-  expect(read("components/marketing/SharedBottom.tsx")).toContain('"Every quote is in credits and on the button."');
+  /* The shell's credits tile is gone with the rest of the site's charging copy; nothing there speaks of a failure. */
+  expect(read("components/marketing/SharedBottom.tsx")).not.toMatch(/failed renders?|never billed/i);
   expect(read("components/marketing/SiteChrome.tsx")).toContain('<span className="mk-tag">Every take has an owner</span>');
 });

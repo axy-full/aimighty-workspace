@@ -56,7 +56,7 @@ export function SiteFooter({ member }: { member: boolean }) {
         <div className="mk-footer-top">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Brand />
-            <p className="mk-footer-blurb">The studio&rsquo;s own room for making shots, and for knowing what they cost.</p>
+            <p className="mk-footer-blurb">The studio&rsquo;s own room for making shots.</p>
           </div>
           <div className="mk-footer-cols">
             <nav className="mk-footer-col" aria-label="Suites">
