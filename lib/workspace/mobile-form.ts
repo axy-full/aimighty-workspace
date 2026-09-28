@@ -195,7 +195,7 @@ export const FORM_QUOTE_NOTE: Record<FormQuoteState, string> = {
   changed: "This composition changed since the last estimate, so that price no longer applies.",
   expired: "The last estimate has aged out and must be taken again.",
   attempted: "This estimate was already submitted once; it will not be sent again.",
-  ready: "Approved against this exact amount and wallet. A missing or stale estimate blocks submission.",
+  ready: "Approved against this estimate and wallet. A missing or stale estimate blocks submission.",
 };
 
 /**

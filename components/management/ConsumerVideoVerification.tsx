@@ -83,7 +83,7 @@ export default function ConsumerVideoVerification() {
   return <section className="rounded-xl border border-line p-4 space-y-3" aria-label="Marketing Video verification">
     <div><h3 className="text-sm font-medium">Verify Marketing Video</h3>
       <p className="mt-1 text-xs text-mute leading-relaxed">One 15-second, 720p product demonstration with generated audio: a plain reusable bottle, without people, logos or text. Saved in a separate connected-account qualification project.</p></div>
-    {!underway && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("quote-rehearsal")}>{busy === "quote-rehearsal" ? "Reading exact price…" : "Get verification quote"}</button>}
+    {!underway && <button type="button" className="management-button" disabled={!!busy} onClick={() => void act("quote-rehearsal")}>{busy === "quote-rehearsal" ? "Getting the quote…" : "Get verification quote"}</button>}
     {job && <>
       <p role="status" className="text-sm">{job.status === "quoted" ? `${job.quoteCredits} connected credits · ${job.workspaceName}` : job.status === "accepted" ? "The connected account accepted the video request. Check the saved job for its result." : job.status === "uncertain" || job.status === "dispatching" ? "Submission needs reconciliation. This request will not be sent again." : `Verification: ${job.status}`}</p>
       {job.status === "quoted" && <>
