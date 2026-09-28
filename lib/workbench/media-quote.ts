@@ -3,7 +3,7 @@ import { MODELS, type ModelDef } from '../models';
 import { estimateCostUsd, estimateImageCostUsd } from '../vendorPricing';
 import { generatedReferenceSeconds, videoReferenceSeconds } from '../referenceDuration';
 import { billCredits } from '../creditTerms';
-import { soulCharacterGenerationEnabled } from '../vendorRates';
+import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from '../vendorRates';
 import { elevenConfigured, musicCredits, sfxCredits, usdForCredits } from '../elevenlabs';
 import { composerSettings, type ComposerPicks } from '../workspace/composer';
 
@@ -20,7 +20,7 @@ function baselineCost(model: ModelDef) {
     : estimateCostUsd(model.id, model.resolutions[0], ratio, duration, 0, false, { audio: false, task: 'generate' })?.net ?? Infinity;
 }
 export function workbenchGenerationModels(models: ModelDef[] = MODELS) {
-  return models.filter(model => (model.soulIdentity ? soulCharacterGenerationEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
+  return models.filter(model => (model.soulIdentity ? soulCharacterGenerationEnabled() : model.cinemaStudio ? cinemaStudioEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
     .sort((a, b) => baselineCost(a) - baselineCost(b));
 }
 

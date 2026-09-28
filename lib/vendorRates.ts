@@ -1,5 +1,6 @@
 import type { TaskId } from "./tasks";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
+import { CINEMA_STUDIO_MODEL_ID } from "./cinemaStudioTypes";
 
 /** No published/current Soul Character price was verified. Operators must first
  * verify access and both rates using the authenticated estimate endpoint.
@@ -13,6 +14,23 @@ export function soulCharacterRates(): Record<string, number> | null {
 
 export function soulCharacterGenerationEnabled(): boolean {
   return process.env.HF_SOUL_CHARACTER_ENABLED === "1" && soulCharacterRates() !== null;
+}
+
+/** Cinema Studio 4.0 is token-metered, and its estimate endpoint returns no
+ * figure. Its two rates (USD per 1,000 video tokens, without and with video
+ * input) are private runtime configuration, set by the operator from the
+ * provider's published pricing for the account. With either missing the
+ * engine has no price and is not offered. */
+export function cinemaStudioRates(): { standard: number; withVideo: number } | null {
+  const standard = Number(process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS);
+  const withVideo = Number(process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS_WITH_VIDEO);
+  return Number.isFinite(standard) && standard > 0 && Number.isFinite(withVideo) && withVideo > 0
+    ? { standard, withVideo } : null;
+}
+
+/** Off unless the operator both enables it and prices it. */
+export function cinemaStudioEnabled(): boolean {
+  return process.env.HF_CINEMA_STUDIO_ENABLED === "1" && cinemaStudioRates() !== null;
 }
 
 /**
@@ -57,6 +75,11 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
   [MARKETING_IMAGE_MODEL_ID]: { imagePricing: {}, imageRefInUsd: 0 },
   get [SOUL_CHARACTER_MODEL_ID]() {
     return { imagePricing: soulCharacterGenerationEnabled() ? soulCharacterRates()! : {}, imageRefInUsd: 0 };
+  },
+  /* Per million tokens, like the other token tiers; empty (unpriced) while disabled. */
+  get [CINEMA_STUDIO_MODEL_ID]() {
+    const rates = cinemaStudioEnabled() ? cinemaStudioRates() : null;
+    return { tiers: rates ? [{ resolutions: ["480p", "720p"], withoutVideo: rates.standard * 1000, withVideo: rates.withVideo * 1000 }] : [] };
   },
   "dreamina-seedance-2-5-260628": {
     tiers: [{

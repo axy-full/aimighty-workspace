@@ -38,6 +38,7 @@ const FIXED: Record<string, EngineLabel> = {
   "higgsfield/marketing-studio-image": { short: "Marketing", long: "Marketing image" },
   marketing_studio_video: { short: "Marketing", long: "Marketing video" },
   "hf-soul-character": { short: "Identity", long: "Identity render" },
+  "higgsfield-cinema-studio-4.0": { short: "Cinema 4", long: "Cinema Studio 4.0" },
   "fal-ai/flux-lora": { short: "Identity", long: "Flux · Identity" },
 };
 
