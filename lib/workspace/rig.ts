@@ -89,6 +89,72 @@ export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "vi
 export const shotReferenceRole = (node: Pick<CanvasNode, "firstFrameId"> | null | undefined) => (asset: Pick<Asset, "kind" | "id">) =>
   node?.firstFrameId && asset.id === node.firstFrameId && asset.kind === "image" ? "first_frame" : referenceRole(asset);
 
+/* ── A card that is not a shot (the Card Inspector) ───────────────────── */
+
+const ASSET_KIND_WORD: Record<Asset["kind"], string> = { image: "Image", video: "Video", audio: "Audio", document: "Document", link: "Link" };
+
+/** Where a source came from, in one word. */
+export function assetOrigin(asset: Pick<Asset, "generationId" | "uploadId" | "url">): string {
+  if (asset.generationId) return "Generated";
+  if (asset.uploadId) return "Uploaded";
+  if (asset.url.startsWith("/campaign/")) return "Sample";
+  return "Linked";
+}
+
+export type CardSource = { asset: Asset; kind: string; origin: string; /** False when the picture reaches the card through its input. */ own: boolean };
+
+/** The picture a card holds: its own source, else what its input feeds it (a finishing card); null when it has none. */
+export function cardSource(project: Project, node: CanvasNode): CardSource | null {
+  const assets = allAssets(project);
+  const own = node.assetId ? assets.find((a) => a.id === node.assetId) : undefined;
+  const asset = own ?? resolveAsset(node, allNodes(project), assets);
+  return asset ? { asset, kind: ASSET_KIND_WORD[asset.kind] ?? "File", origin: assetOrigin(asset), own: asset === own } : null;
+}
+
+export type CardVersionRow = { id: string; v: string; label: string; meta: string; current: boolean; saved: boolean };
+
+/** Every asset in the source's line: what it was made from and what was made from those (by parentId), newest first, each once. */
+function sourceLine(all: Asset[], source: Asset): Asset[] {
+  /* The draft's own copy of an asset it also shares is the one listed. */
+  const seen = new Set<string>();
+  const assets = all.filter((a) => !seen.has(a.id) && !!seen.add(a.id));
+  const byId = new Map(assets.map((a) => [a.id, a] as const));
+  const line = new Set([source.id]);
+  for (let at: Asset | undefined = source; at?.parentId && !line.has(at.parentId); ) {
+    at = byId.get(at.parentId);
+    if (at) line.add(at.id);
+  }
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const a of assets) if (a.parentId && line.has(a.parentId) && !line.has(a.id)) { line.add(a.id); grew = true; }
+  }
+  return assets.filter((a) => line.has(a.id)).map((a, i) => ({ a, i })).sort((x, y) => y.a.version - x.a.version || x.i - y.i).map(({ a }) => a);
+}
+
+function savedDay(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+/**
+ * A card's versions: its source's line, newest first, the one the card shows
+ * marked current; then the versions saved on the card itself, newest first.
+ */
+export function cardVersions(project: Project, node: CanvasNode): CardVersionRow[] {
+  const assets = allAssets(project);
+  const source = node.assetId ? assets.find((a) => a.id === node.assetId) : undefined;
+  const rows: CardVersionRow[] = source
+    ? sourceLine(assets, source).map((a) => ({ id: a.id, v: `v${a.version}`, label: a.id === source.id ? `Current · ${a.name}` : a.name, meta: ASSET_KIND_WORD[a.kind] ?? "File", current: a.id === source.id, saved: false }))
+    : [];
+  for (const saved of [...(node.versions ?? [])].reverse()) rows.push({ id: saved.id, v: "Saved", label: saved.label, meta: savedDay(saved.savedAt), current: false, saved: true });
+  return rows;
+}
+
+/** The cards this card feeds, in canvas order. */
+export function cardUsers(project: Project, nodeId: string): { id: string; name: string }[] {
+  return project.nodes.filter((n) => n.linked.includes(nodeId)).map((n) => ({ id: n.id, name: n.title }));
+}
+
 /* ── Takes and versions ──────────────────────────────────────────────── */
 
 const visual = (a: Asset) => a.kind === "image" || a.kind === "video";

@@ -57,9 +57,8 @@ function Card({ node, kind, shot, asset, selected, wiring, onSelect, onWireFrom,
   const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
   return (
     <>
-      {isShot ? (
-        <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
-      ) : null}
+      {/* Every card is picked (and dragged) by its face: a shot into the shot Inspector, any other card into the Card Inspector. */}
+      <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
       {/* A reference says what it is to the production (Cast, Environment, Element or Ref); any other card, its type. */}
       <span className="pxw-graph-kicker">{kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span>{def.label.toUpperCase()}</span>}<span>{version}</span></span>
       {media ? <Media id={node.id} asset={asset} height={def.shape === "scene" ? 88 : 66} badge={isShot && selected} /> : null}
@@ -104,7 +103,8 @@ export function RigGraph() {
   const shotsById = useMemo(() => new Map(rig.shots.map((s) => [s.id, s])), [rig.shots]);
   const [dropOver, setDropOver] = useState<string | null>(null);
   const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
-  const selId = state.selKind === "shot" ? state.selId : null;
+  /* The picked card: a shot, or any other card on the canvas. */
+  const selId = state.selKind === "shot" || state.selKind === "node" ? state.selId : null;
 
   const [wireFrom, setWireFrom] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -408,7 +408,7 @@ export function RigGraph() {
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
             const kind = refKindOf(node, project);
             const def = nodeDef(node.type);
-            const selected = !!shot && shot.id === selId;
+            const selected = card.id === selId && (state.selKind === "node" ? !shot : !!shot);
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
             const dropAsset = Boolean(shot);
             /* Mine while I drag it; a teammate's while they drag it. */

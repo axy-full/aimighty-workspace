@@ -139,6 +139,25 @@
 .pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faint); flex: none; }
 @media (max-width: 759px) { .pxw .pxw-insp-version .pxw-link-button { min-height: 44px; } }
 
+/* ── Inspector: a card that is not a shot (a reference, a note, a look board) ── */
+/* Its secondary lines are read, not decoration: at the label floor. */
+.pxw [data-inspector-body="node"] .pxw-insp-output-label,
+.pxw [data-inspector-body="node"] .pxw-insp-row-kind,
+.pxw [data-inspector-body="node"] .pxw-insp-version-meta,
+.pxw [data-inspector-body="node"] .pxw-inspector-note { color: var(--pxw-label-floor); }
+.pxw .pxw-card-text { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-muted); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+/* Two by two: "Environment" never squeezes, at 320px or on a phone. */
+.pxw .pxw-kind-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pxw .pxw-kind-picker > button { min-height: 36px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-body); font-size: 12.5px; font-weight: 530; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-kind-picker > button:hover:not(:disabled) { background: var(--pxw-control-hover); }
+.pxw .pxw-kind-picker > button[aria-pressed="true"] { background: var(--pxw-blue-tint); border-color: var(--pxw-blue-tint-border); color: var(--pxw-primary); }
+/* A locked card's kind still reads: dimmed by colour to the floor, never by opacity below it. */
+.pxw .pxw-kind-picker > button:disabled { color: var(--pxw-label-floor); cursor: not-allowed; }
+.pxw .pxw-kind-picker > button[aria-pressed="true"]:disabled { color: var(--pxw-secondary); }
+.pxw .pxw-kind-note { margin-top: 8px; }
+.pxw .pxw-card-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.pxw .pxw-card-users > .pxw-link-button { font-size: 12.5px; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Delete shot: quiet until needed, red when it matters. */
 .pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
@@ -219,6 +238,15 @@
   .pxw [data-inspector-body="shot"] input { min-height: 44px; min-width: 44px; }
   .pxw [data-inspector-body="shot"] .pxw-insp-play { padding: 0 13px; align-items: center; }
   .pxw [data-inspector-body="shot"] .pxw-stepper-btn { width: 44px; height: 44px; }
+
+  /* The Card Inspector keeps the same floors. */
+  .pxw [data-inspector-body="node"] .pxw-kicker,
+  .pxw [data-inspector-body="node"] .pxw-insp-output-label,
+  .pxw [data-inspector-body="node"] .pxw-insp-row-kind,
+  .pxw [data-inspector-body="node"] .pxw-insp-row-v,
+  .pxw [data-inspector-body="node"] .pxw-insp-version-v,
+  .pxw [data-inspector-body="node"] .pxw-insp-version-meta { font-size: 12px; }
+  .pxw [data-inspector-body="node"] button { min-height: 44px; min-width: 44px; }
   .pxw [data-inspector-body="shot"] select,
   .pxw [data-inspector-body="shot"] input,
   .pxw [data-inspector-body="shot"] textarea { font-size: 16px; }
