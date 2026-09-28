@@ -4,7 +4,7 @@ import { db } from "../db";
 import { currentTenant, requireTenant } from "../tenant";
 import { quotaVerdict, workspaceLimits } from "../limits";
 import { uploadReservationsReady } from "../uploadReservations";
-import { readOriginalBytesLimited, storeOriginalBytes, storeVideoBytes } from "../storage";
+import { readOriginalBytesLimited, storeOriginalBytes, storeVideoBytes, originalPath } from "../storage";
 import { inspectAudioBuffer } from "../mediaSource.server";
 import { astraTextureDimensions, validateAstraGlb } from "../astra-blender/glb";
 import { withRecoveryActivity } from "../recovery";
@@ -531,7 +531,7 @@ export async function collectConsumerVideoOriginal(
         if (
           stored.bytes !== size ||
           stored.sha256 !== sha256 ||
-          stored.url !== result.asset.url
+          (stored.url !== result.asset.url && stored.url !== originalPath(kind, generationId))
         )
           throw new ConsumerOriginalError("conflict");
         // Measured outside the write transaction and never allowed to fail it.
@@ -592,7 +592,7 @@ export async function collectConsumerVideoOriginal(
               identity.model,
               identity.prompt,
               JSON.stringify(params),
-              stored.url,
+              originalPath(kind, generationId),
               job.userId,
               job.createdAt,
               Date.now(),

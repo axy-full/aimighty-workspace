@@ -13,13 +13,14 @@ import "@/app/workspace-assets.css";
 import { VirtualItems } from "../VirtualItems";
 
 /** Status dot + label under each card. Failed renders are not billed and say so. */
-export function takeStatus(take: Pick<Take, "status" | "failedUnbilled">): { label: string; dot: string } {
+export function takeStatus(take: Pick<Take, "status" | "failedUnbilled" | "needs">): { label: string; dot: string } {
   switch (take.status) {
     case "approved": return { label: "Approved", dot: "var(--pxw-green)" };
     case "picked": return { label: "Picked", dot: "var(--pxw-blue)" };
     case "changes": return { label: "Changes requested", dot: "var(--pxw-amber)" };
     case "review": return { label: "Review", dot: "var(--pxw-amber)" };
     case "rendering": return { label: "Rendering", dot: "var(--pxw-blue)" };
+    case "held": return { label: take.needs != null ? `Held · needs ${take.needs.toLocaleString("en-US")} cr` : "Held · needs credits", dot: "var(--pxw-amber)" };
     case "failed": return { label: take.failedUnbilled ? "Failed · not billed" : "Failed", dot: "var(--pxw-red)" };
     default: return { label: "Source", dot: "var(--pxw-neutral-state)" };
   }

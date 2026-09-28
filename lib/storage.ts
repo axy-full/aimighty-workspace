@@ -7,7 +7,7 @@ import { currentTenant } from "./tenant";
 import { isFixtureUrl } from "./mock";
 import { fetchBytes } from "./mockFs";
 import type { ByteRange } from './mediaRange';
-import { cloudBackend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
+import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
 
 export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
@@ -36,7 +36,7 @@ export const audioPath  = (genId: string) => `${prefix()}generations/${genId}.mp
 export const modelPath  = (genId: string) => `${prefix()}generations/${genId}.glb`;
 export type OriginalKind = "video" | "image" | "audio" | "model";
 const originalExt: Record<OriginalKind, string> = { video: "mp4", image: "png", audio: "mp3", model: "glb" };
-const originalPath = (kind: OriginalKind, genId: string) =>
+export const originalPath = (kind: OriginalKind, genId: string) =>
   kind === "image" ? imagePath(genId) : kind === "audio" ? audioPath(genId) : kind === "model" ? modelPath(genId) : videoPath(genId);
 /** The photo set an identity was trained from, zipped for the trainer. */
 export const identityZipPath = (identityId: string) => `${prefix()}identities/${identityId}.zip`;
@@ -78,7 +78,15 @@ export function usingBlob(): boolean {
  *  absolute URL from an older browser-direct upload. Route URLs and empty
  *  values are not storage-shaped and fall through to the caller's own key. */
 function storedObject(stored?: string | null): ResolvedObject | null {
-  return stored && /^https?:\/\//.test(stored) ? resolveStored(stored) : null;
+  const found = stored ? resolveStored(stored) : null;
+  if (found) assertWorkspaceKey(/^https?:\/\//.test(found.key) ? decodeURIComponent(new URL(found.key).pathname.slice(1)) : found.key);
+  return found;
+}
+
+function assertWorkspaceKey(key: string) {
+  const ws = currentTenant()?.workspace;
+  if (key.startsWith("/") || key.split("/").some(part => part === ".." || part === ".") || key.includes("\\")) throw new Error("Invalid storage key.");
+  if (ws && !ws.legacy && !key.startsWith(`ws/${ws.id}/`) && !key.startsWith("platform/")) throw new Error("The stored asset does not belong to this workspace.");
 }
 
 async function download(sourceUrl: string): Promise<Buffer> {
@@ -110,13 +118,13 @@ return await withRecoveryActivity('storage', async () => {
     // partial first attempt leaves an object behind and every retry then dies
     // on "already exists" — the video never records as saved.
     await cloudBackend().put(videoPath(genId), buf, { contentType: "video/mp4", overwrite: true });
-    // Always hand back our own route, never a storage URL.
-    return { url: `/api/media/${genId}`, bytes: buf.length };
+    // Persist the stable object key; response serializers expose authenticated routes.
+    return { url: originalPath("video", genId), bytes: buf.length };
   }
 
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp4`), buf);
-  return { url: `/api/media/${genId}`, bytes: buf.length };
+  return { url: originalPath("video", genId), bytes: buf.length };
 
 });
 }
@@ -196,7 +204,7 @@ export async function storeOriginalBytes(kind: OriginalKind, genId: string, byte
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; await verifyExisting(); }
     } finally { await unlink(temporary).catch(() => {}); }
   });
-  return { url: `/api/media/${genId}`, bytes: bytes.length, sha256 };
+  return { url: originalPath(kind, genId), bytes: bytes.length, sha256 };
 }
 
 /* ── Image renders (Nano Banana) — bytes arrive in the API response, not at
@@ -207,11 +215,11 @@ return await withRecoveryActivity('storage', async () => {
 
   if (usingCloud()) {
     await cloudBackend().put(imagePath(genId), buf, { contentType: "image/png", overwrite: true });
-    return { url: `/api/media/${genId}`, bytes: buf.length };
+    return { url: imagePath(genId), bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.png`), buf);
-  return { url: `/api/media/${genId}`, bytes: buf.length };
+  return { url: imagePath(genId), bytes: buf.length };
 
 });
 }
@@ -229,11 +237,11 @@ return await withRecoveryActivity('storage', async () => {
 
   if (usingCloud()) {
     await cloudBackend().put(audioPath(genId), buf, { contentType: "audio/mpeg", overwrite: true });
-    return { url: `/api/media/${genId}`, bytes: buf.length };
+    return { url: audioPath(genId), bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp3`), buf);
-  return { url: `/api/media/${genId}`, bytes: buf.length };
+  return { url: audioPath(genId), bytes: buf.length };
 
 });
 }
@@ -318,7 +326,7 @@ return await withRecoveryActivity('storage', async () => {
   if (usingCloud()) {
     await cloudBackend().put(uploadPath(uploadId, ext), buf, { contentType, overwrite: true });
     return {
-      url: `/api/uploads/${uploadId}`,
+      url: uploadPath(uploadId, ext),
       sha256: createHash("sha256").update(buf).digest("hex"),
     };
   }
@@ -329,7 +337,7 @@ return await withRecoveryActivity('storage', async () => {
 
   // Hash what actually landed on disk, not what we held in memory.
   const written = await readFile(file);
-  return { url: `/api/uploads/${uploadId}`, sha256: createHash("sha256").update(written).digest("hex") };
+  return { url: uploadPath(uploadId, ext), sha256: createHash("sha256").update(written).digest("hex") };
 
 });
 }
@@ -450,8 +458,23 @@ return await withRecoveryActivity('storage', async () => {
  * a private object: nothing becomes public, the link just works for a while.
  * -------------------------------------------------------------------- */
 
-export async function presignedReadUrl(pathname: string, hours = 24): Promise<string> {
-  return cloudBackend().presignGet(pathname, Date.now() + hours * 3600_000);
+export async function presignedReadUrl(pathname: string, hours = 0.25, stored?: string | null): Promise<string> {
+  assertWorkspaceKey(pathname);
+  const location = storedObject(stored);
+  return (location?.backend ?? cloudBackend()).presignGet(location?.key ?? pathname, Date.now() + Math.min(hours, 0.25) * 3600_000);
+}
+
+/** Called only after the upload row has been authorized in this workspace. */
+export async function presignedUploadUrl(uploadId: string, ext: string, stored: string | null, options: import("./storage/types").StoragePresignOptions = {}): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
+  const location = storedObject(stored);
+  const key = location?.key ?? uploadPath(uploadId, ext);
+  assertWorkspaceKey(key);
+  // Blob cannot sign response type/disposition overrides. Preserve the safe
+  // authenticated streaming response until this object has reached R2.
+  const backend = r2Backend();
+  if (!await backend.head(key)) return null;
+  return backend.presignGet(key, Date.now() + 900_000, options);
 }
 
 /* ── Streaming assembly, for chat attachments up to 2GB ───────────────────

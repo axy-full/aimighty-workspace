@@ -369,7 +369,8 @@ test("a late failed poll cannot overwrite a completed take or its settled bill",
       expect((await syncGeneration(gen)).status).toBe("succeeded");
       release();
       expect((await older).status).toBe("succeeded");
-      expect((await getGeneration(gen.id))?.storedUrl).toBe("local-master");
+      expect((await getGeneration(gen.id))?.storedUrl).toBe(`/api/media/${gen.id}`);
+      expect((await (await import("../../lib/db")).db().execute({ sql: "SELECT stored_url FROM generations WHERE id=?", args: [gen.id] })).rows[0].stored_url).toBe("local-master");
       expect(
         (
           await platformDb().execute(
@@ -431,7 +432,7 @@ test("an aged synchronous job recovers its persisted produced outcome before the
         "succeeded",
       );
       expect((await getGeneration("gen_stored_outcome"))?.storedUrl).toBe(
-        "local-master.png",
+        "/api/media/gen_stored_outcome",
       );
       expect(calls).toBe(0);
     });

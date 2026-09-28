@@ -433,7 +433,8 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
   async function release() {
     setBusy(true); setErr(null);
     try {
-      const res = await fetch(`/api/jobs/${gen.id}/release`, { method: "POST" });
+      // The route charges exactly the price shown here, or starts nothing (app/api/jobs/[id]/release).
+      const res = await fetch(`/api/jobs/${gen.id}/release`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credits: needs }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not release it");
       onChanged?.();

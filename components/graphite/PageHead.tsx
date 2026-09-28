@@ -48,8 +48,9 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
       {!shell.wide ? <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button> : null}
       {/* Every width (FINAL_SPEC §6 › Inspector): lit while the panel is open. */}
       <button type="button" className="gx-hbtn" aria-pressed={shell.wide ? shell.inspector : shell.inspOpen} aria-keyshortcuts="Meta+J" onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
-      {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path. */}
-      {shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id) ? null : (<>
+      {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path.
+          Atomik › Tools & connections has its own controls, and the plan behind its old Skills page has nothing to run. */}
+      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (shell.suite.id === "atomik" && shell.page.id === "skills") ? null : (<>
       {!availability.enabled && availability.reason ? <span className="gx-reason" id="gx-action-reason" data-testid="primary-reason">{availability.reason}</span> : null}
       <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run}>
         {label}

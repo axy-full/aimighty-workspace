@@ -1,21 +1,16 @@
 import { createHash, createHmac } from "node:crypto";
+import { Readable } from "node:stream";
 import { withRecoveryActivity } from "../recovery";
 import {
   ObjectExistsError,
   uncertainUnlessExists,
   type StorageBackend,
-  type StorageBody,
-  type StorageGetOptions,
-  type StorageGetResult,
-  type StorageListResult,
-  type StoragePresignOptions,
   type StoragePutOptions,
 } from "./types";
 
 /**
- * Cloudflare R2 over the S3 REST API, signed with AWS Signature Version 4
- * from node:crypto and sent with fetch. No SDK: the production bundle stays
- * private and small, and every byte on the wire is visible here.
+ * Cloudflare R2 through the AWS S3 SDK, loaded only when R2 is selected.
+ * Signed reads expire after at most fifteen minutes.
  *
  * Path-style addressing (https://<account>.r2.cloudflarestorage.com/<bucket>/<key>),
  * region "auto", service "s3". Conditional writes use If-None-Match: * and a
@@ -43,7 +38,9 @@ export const R2_REGION = "auto";
 export const R2_PART_SIZE = 8 * 1024 * 1024;
 export const R2_MAX_PARTS = 10_000;
 const DELETE_BATCH = 1000;
-const PRESIGN_MAX_SECONDS = 7 * 24 * 3600;
+const PRESIGN_MAX_SECONDS = 15 * 60;
+export const R2_MULTIPART_THRESHOLD = 100 * 1024 * 1024;
+const PRIVATE_CACHE_CONTROL = "private, max-age=31536000, immutable";
 
 /* ── SigV4 ─────────────────────────────────────────────────────────────── */
 
@@ -168,28 +165,10 @@ export function presignRequest(input: PresignInput): SigV4Result {
   };
 }
 
-/* ── XML, the little S3 needs ──────────────────────────────────────────── */
-
-const unescapeXml = (text: string): string =>
-  text.replace(/&(amp|lt|gt|quot|apos|#(\d+)|#x([0-9a-fA-F]+));/g, (_, name: string, dec?: string, hex?: string) =>
-    name === "amp" ? "&" : name === "lt" ? "<" : name === "gt" ? ">" : name === "quot" ? "\"" : name === "apos" ? "'"
-      : String.fromCodePoint(dec ? Number(dec) : parseInt(hex!, 16)));
-
-const escapeXml = (text: string): string =>
-  text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&apos;" })[c]!);
-
-const xmlText = (xml: string, tag: string): string | null => {
-  const match = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`));
-  return match ? unescapeXml(match[1]) : null;
-};
-
-const xmlBlocks = (xml: string, tag: string): string[] =>
-  [...xml.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g"))].map((m) => m[1]);
-
 /** A non-success S3 response. Carries the status and S3 code, never a credential. */
 export class R2RequestError extends Error {
-  constructor(readonly status: number, readonly code: string | null, readonly operation: string, key?: string) {
-    super(`R2 ${operation}${key ? ` ${key}` : ""} failed (${status}${code ? ` ${code}` : ""})`);
+  constructor(readonly status: number, readonly code: string | null, readonly operation: string, key?: string, cause?: unknown) {
+    super(`R2 ${operation}${key ? ` ${key}` : ""} failed (${status}${code ? ` ${code}` : ""})`, { cause });
     this.name = "R2RequestError";
   }
 }
@@ -197,240 +176,173 @@ export class R2RequestError extends Error {
 const toBuffer = (chunk: Buffer | Uint8Array): Buffer =>
   Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
 
-const emptyStream = (): ReadableStream<Uint8Array> => new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
 
 /* ── Backend ───────────────────────────────────────────────────────────── */
 
 export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): StorageBackend {
   const fetchImpl: typeof fetch = deps.fetch ?? ((input, init) => fetch(input, init));
   const now = deps.now ?? (() => new Date());
-  const credentials = { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey };
-  const base = config.endpoint.replace(/\/+$/, "");
-  const bucketUrl = (key: string | null) => new URL(`${base}/${rfc3986(config.bucket)}${key === null ? "" : `/${encodeKey(key)}`}`);
-
-  type RequestOptions = {
-    query?: Record<string, string>;
-    headers?: Record<string, string>;
-    /** Sent but not signed. */
-    unsigned?: Record<string, string>;
-    body?: Buffer;
-    signal?: AbortSignal;
-    /** Statuses returned to the caller instead of thrown. */
-    allow?: number[];
-    operation: string;
+  let clientPromise: Promise<import("@aws-sdk/client-s3").S3Client> | undefined;
+  const sdk = () => import("@aws-sdk/client-s3");
+  const client = () => clientPromise ??= sdk().then(({ S3Client }) => new S3Client({
+    region: R2_REGION,
+    endpoint: config.endpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    maxAttempts: 1,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
+    requestHandler: {
+      async handle(request: { protocol: string; hostname: string; port?: number; path: string; method: string; headers: Record<string, string>; query?: Record<string, string | string[] | null | undefined>; body?: BodyInit }, options?: { abortSignal?: unknown }) {
+        const query = new URLSearchParams();
+        for (const [key, value] of Object.entries(request.query ?? {})) {
+          for (const item of Array.isArray(value) ? value : [value]) query.append(key, item ?? "");
+        }
+        const url = `${request.protocol}//${request.hostname}${request.port ? `:${request.port}` : ""}${request.path}${query.size ? `?${query}` : ""}`;
+        const timeout = AbortSignal.timeout(120_000);
+        const signal = options?.abortSignal ? AbortSignal.any([options.abortSignal as AbortSignal, timeout]) : timeout;
+        // Node fetch rejects Expect: 100-continue. The SDK adds it for large
+        // buffers, but SigV4 explicitly excludes this transport-only header.
+        const headers = Object.fromEntries(Object.entries(request.headers).filter(([name]) => name.toLowerCase() !== "expect"));
+        const response = await fetchImpl(url, {
+          method: request.method,
+          headers: { ...headers, ...(request.method === "GET" ? { "accept-encoding": "identity" } : {}) },
+          body: request.body,
+          signal,
+          redirect: "error",
+        });
+        return { response: {
+          statusCode: response.status,
+          headers: Object.fromEntries(response.headers),
+          body: response.body ? Readable.fromWeb(response.body as import("node:stream/web").ReadableStream) : Readable.from([]),
+        } };
+      },
+    },
+  }));
+  const statusOf = (error: unknown) => (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+  const missing = (error: unknown) => statusOf(error) === 404;
+  const translate = (error: unknown, operation: string, key?: string): never => {
+    if (statusOf(error) === 412) throw new ObjectExistsError(key ?? "");
+    throw new R2RequestError(statusOf(error) ?? 0, null, operation, key, error);
   };
-
-  async function request(method: string, key: string | null, options: RequestOptions): Promise<Response> {
-    const signed = signRequest({
-      method,
-      url: bucketUrl(key),
-      query: options.query,
-      headers: options.headers,
-      payloadHash: options.body ? sha256Hex(options.body) : EMPTY_SHA256,
-      credentials,
-      region: R2_REGION,
-      date: now(),
-    });
-    const response = await fetchImpl(signed.url, {
-      method,
-      headers: { ...signed.headers, ...(options.unsigned ?? {}) },
-      ...(options.body ? { body: new Uint8Array(options.body) } : {}),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-    if (response.ok || options.allow?.includes(response.status)) return response;
-    const text = await response.text().catch(() => "");
-    throw new R2RequestError(response.status, xmlText(text, "Code"), options.operation, key ?? undefined);
-  }
-
-  async function putObject(key: string, body: Buffer, options: StoragePutOptions): Promise<void> {
-    const response = await request("PUT", key, {
-      headers: { "content-type": options.contentType, ...(options.overwrite ? {} : { "if-none-match": "*" }) },
-      body,
-      signal: options.signal,
-      allow: options.overwrite ? [] : [412],
-      operation: "PutObject",
-    });
-    if (response.status === 412) throw new ObjectExistsError(key);
-  }
-
-  async function abortMultipart(key: string, uploadId: string): Promise<void> {
-    await request("DELETE", key, { query: { uploadId }, allow: [404], operation: "AbortMultipartUpload" });
-  }
-
-  async function putMultipart(key: string, body: AsyncIterable<Buffer | Uint8Array>, options: StoragePutOptions): Promise<void> {
-    const created = await request("POST", key, {
-      query: { uploads: "" },
-      headers: { "content-type": options.contentType },
-      signal: options.signal,
-      operation: "CreateMultipartUpload",
-    });
-    const uploadId = xmlText(await created.text(), "UploadId");
-    if (!uploadId) throw new R2RequestError(created.status, null, "CreateMultipartUpload", key);
-
-    const parts: { number: number; etag: string }[] = [];
-    const uploadPart = async (bytes: Buffer) => {
-      const number = parts.length + 1;
-      if (number > R2_MAX_PARTS) throw new Error(`Upload ${key} needs more than ${R2_MAX_PARTS} parts.`);
-      const response = await request("PUT", key, {
-        query: { partNumber: String(number), uploadId },
-        body: bytes,
-        signal: options.signal,
-        operation: "UploadPart",
-      });
-      const etag = response.headers.get("etag");
-      if (!etag) throw new R2RequestError(response.status, null, "UploadPart", key);
-      parts.push({ number, etag });
-    };
-
+  async function putBuffer(key: string, body: Buffer, options: StoragePutOptions) {
+    const { PutObjectCommand } = await sdk();
     try {
-      let pending: Buffer[] = [], pendingBytes = 0;
+      await (await client()).send(new PutObjectCommand({
+        Bucket: config.bucket, Key: key, Body: body,
+        ContentType: options.contentType, CacheControl: PRIVATE_CACHE_CONTROL,
+        ...(options.overwrite ? {} : { IfNoneMatch: "*" }),
+      }), { abortSignal: options.signal });
+    } catch (error) { translate(error, "PutObject", key); }
+  }
+  async function putMultipart(key: string, body: AsyncIterable<Buffer | Uint8Array>, options: StoragePutOptions) {
+    const { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = await sdk();
+    const s3 = await client();
+    let uploadId: string | undefined;
+    const abort = async () => {
+      if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(20_000) });
+    };
+    try {
+      const created = await s3.send(new CreateMultipartUploadCommand({ Bucket: config.bucket, Key: key, ContentType: options.contentType, CacheControl: PRIVATE_CACHE_CONTROL }), { abortSignal: options.signal });
+      uploadId = created.UploadId;
+      if (!uploadId) throw new Error("Storage did not acknowledge the multipart upload.");
+      const parts: { PartNumber: number; ETag: string }[] = [];
+      const upload = async (bytes: Buffer) => {
+        if (parts.length >= R2_MAX_PARTS) throw new Error("Multipart upload exceeds the part limit.");
+        const PartNumber = parts.length + 1;
+        const result = await s3.send(new UploadPartCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId, PartNumber, Body: bytes }), { abortSignal: options.signal });
+        if (!result.ETag) throw new Error("Storage did not acknowledge an uploaded part.");
+        parts.push({ PartNumber, ETag: result.ETag });
+      };
+      let pending = Buffer.alloc(R2_PART_SIZE), length = 0;
       for await (const chunk of body) {
         const bytes = toBuffer(chunk);
-        if (!bytes.length) continue;
-        pending.push(bytes);
-        pendingBytes += bytes.length;
-        while (pendingBytes >= R2_PART_SIZE) {
-          const joined = pending.length === 1 ? pending[0] : Buffer.concat(pending, pendingBytes);
-          await uploadPart(joined.subarray(0, R2_PART_SIZE));
-          const rest = joined.subarray(R2_PART_SIZE);
-          pending = rest.length ? [rest] : [];
-          pendingBytes = rest.length;
+        for (let offset = 0; offset < bytes.length;) {
+          const take = Math.min(R2_PART_SIZE - length, bytes.length - offset);
+          bytes.copy(pending, length, offset, offset + take);
+          offset += take; length += take;
+          if (length === R2_PART_SIZE) { await upload(pending); pending = Buffer.alloc(R2_PART_SIZE); length = 0; }
         }
       }
-      if (pendingBytes) await uploadPart(pending.length === 1 ? pending[0] : Buffer.concat(pending, pendingBytes));
-      if (!parts.length) {
-        // Nothing arrived: S3 wants at least one part, so the empty object is a plain put.
-        await abortMultipart(key, uploadId);
-        await putObject(key, Buffer.alloc(0), options);
-        return;
-      }
-      const completion = Buffer.from(
-        `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.number}</PartNumber><ETag>${escapeXml(p.etag)}</ETag></Part>`).join("")}</CompleteMultipartUpload>`,
-      );
-      const completed = await request("POST", key, {
-        query: { uploadId },
-        headers: { "content-type": "application/xml", ...(options.overwrite ? {} : { "if-none-match": "*" }) },
-        body: completion,
-        signal: options.signal,
-        allow: options.overwrite ? [] : [412],
-        operation: "CompleteMultipartUpload",
-      });
-      if (completed.status === 412) throw new ObjectExistsError(key);
-      // S3 may answer 200 with an error document once the parts are being joined.
-      const text = await completed.text();
-      if (/<Error>/.test(text)) throw new R2RequestError(completed.status, xmlText(text, "Code"), "CompleteMultipartUpload", key);
+      if (length) await upload(pending.subarray(0, length));
+      if (!parts.length) { await abort(); uploadId = undefined; await putBuffer(key, Buffer.alloc(0), options); return; }
+      await s3.send(new CompleteMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, ...(options.overwrite ? {} : { IfNoneMatch: "*" }) }), { abortSignal: options.signal });
     } catch (error) {
-      await abortMultipart(key, uploadId).catch(() => {});
-      throw error;
+      await abort().catch(() => {});
+      translate(error, "MultipartUpload", key);
     }
   }
-
-  async function deleteEach(keys: string[]): Promise<void> {
-    for (const key of keys) await request("DELETE", key, { allow: [404], operation: "DeleteObject" });
-  }
-
-  async function deleteBatch(keys: string[]): Promise<void> {
-    const body = Buffer.from(
-      `<Delete><Quiet>true</Quiet>${keys.map((key) => `<Object><Key>${escapeXml(key)}</Key></Object>`).join("")}</Delete>`,
-    );
-    let text: string;
-    try {
-      const response = await request("POST", null, {
-        query: { delete: "" },
-        headers: { "content-type": "application/xml", "content-md5": createHash("md5").update(body).digest("base64") },
-        body,
-        operation: "DeleteObjects",
-      });
-      text = await response.text();
-    } catch {
-      // A store without batch deletion still honours one DELETE per key.
-      await deleteEach(keys);
-      return;
-    }
-    const failed = xmlBlocks(text, "Error").map((block) => xmlText(block, "Key")).filter((key): key is string => key !== null);
-    if (failed.length) await deleteEach(failed);
-  }
-
   return {
     kind: "r2",
-
-    async put(key: string, body: StorageBody, options: StoragePutOptions): Promise<void> {
+    async put(key, body, options) {
       await withRecoveryActivity("r2-put", async () => {
-        if (Buffer.isBuffer(body)) await putObject(key, body, options);
-        else await putMultipart(key, body as AsyncIterable<Buffer | Uint8Array>, options);
+        if (Buffer.isBuffer(body) && body.length <= R2_MULTIPART_THRESHOLD && !options.multipart) await putBuffer(key, body, options);
+        else await putMultipart(key, Buffer.isBuffer(body) ? (async function* () { yield body; })() : body, options);
       }, { uncertainOnError: uncertainUnlessExists });
     },
-
-    async get(keyOrUrl: string, options: StorageGetOptions = {}): Promise<StorageGetResult | null> {
-      if (/^https?:\/\//.test(keyOrUrl)) throw new Error("The R2 backend reads keys, not URLs.");
-      const { range, signal, identity } = options;
-      const response = await request("GET", keyOrUrl, {
-        ...(range ? { headers: { range: `bytes=${range.start}-${range.end}` } } : {}),
-        ...(range || identity ? { unsigned: { "accept-encoding": "identity" } } : {}),
-        signal,
-        allow: [404],
-        operation: "GetObject",
-      });
-      if (response.status === 404) return null;
-      return { stream: response.body ?? emptyStream(), headers: response.headers, statusCode: response.status };
+    async get(key, options = {}) {
+      if (/^https?:\/\//.test(key)) throw new Error("The R2 backend reads keys, not URLs.");
+      const { GetObjectCommand } = await sdk();
+      try {
+        const out = await (await client()).send(new GetObjectCommand({ Bucket: config.bucket, Key: key, ...(options.range ? { Range: `bytes=${options.range.start}-${options.range.end}` } : {}) }), { abortSignal: options.signal });
+        if (!out.Body) throw new Error("Storage returned no response body.");
+        const headers = new Headers();
+        if (out.ContentLength != null) headers.set("content-length", String(out.ContentLength));
+        if (out.ContentRange) headers.set("content-range", out.ContentRange);
+        if (out.ContentType) headers.set("content-type", out.ContentType);
+        if (out.ContentEncoding) headers.set("content-encoding", out.ContentEncoding);
+        if (out.CacheControl) headers.set("cache-control", out.CacheControl);
+        if (out.AcceptRanges) headers.set("accept-ranges", out.AcceptRanges);
+        return { stream: out.Body.transformToWebStream(), headers, statusCode: out.$metadata.httpStatusCode ?? 200 };
+      } catch (error) { if (missing(error)) return null; return translate(error, "GetObject", key); }
     },
-
-    async head(key: string): Promise<{ size: number } | null> {
-      const response = await request("HEAD", key, { allow: [404], operation: "HeadObject" });
-      if (response.status === 404) return null;
-      const length = response.headers.get("content-length");
-      if (length === null || !/^\d+$/.test(length)) throw new R2RequestError(response.status, null, "HeadObject", key);
-      return { size: Number(length) };
+    async head(key) {
+      const { HeadObjectCommand } = await sdk();
+      try {
+        const out = await (await client()).send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }));
+        if (out.ContentLength == null || !Number.isSafeInteger(out.ContentLength) || out.ContentLength < 0) throw new Error("Storage returned no object length.");
+        return { size: out.ContentLength };
+      } catch (error) { if (missing(error)) return null; return translate(error, "HeadObject", key); }
     },
-
-    async del(keys: string[]): Promise<void> {
+    async del(keys) {
       if (!keys.length) return;
+      const { DeleteObjectsCommand, DeleteObjectCommand } = await sdk();
+      const s3 = await client();
       await withRecoveryActivity("r2-delete", async () => {
-        for (let i = 0; i < keys.length; i += DELETE_BATCH) await deleteBatch(keys.slice(i, i + DELETE_BATCH));
+        for (let start = 0; start < keys.length; start += DELETE_BATCH) {
+          const batch = keys.slice(start, start + DELETE_BATCH);
+          let failed: string[];
+          try {
+            const out = await s3.send(new DeleteObjectsCommand({ Bucket: config.bucket, Delete: { Objects: batch.map(Key => ({ Key })), Quiet: true } }));
+            failed = (out.Errors ?? []).map(error => error.Key).filter((key): key is string => Boolean(key));
+            if ((out.Errors?.length ?? 0) !== failed.length) throw new Error("Storage returned an incomplete deletion result.");
+          } catch { failed = batch; }
+          for (const key of failed) {
+            try { await s3.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key })); }
+            catch (error) { if (!missing(error)) translate(error, "DeleteObject", key); }
+          }
+        }
       }, { uncertainOnError: true });
     },
-
-    async list(options: { prefix?: string; cursor?: string; limit?: number } = {}): Promise<StorageListResult> {
-      const response = await request("GET", null, {
-        query: {
-          "list-type": "2",
-          "max-keys": String(Math.max(1, Math.min(1000, options.limit ?? 1000))),
-          ...(options.prefix ? { prefix: options.prefix } : {}),
-          ...(options.cursor ? { "continuation-token": options.cursor } : {}),
-        },
-        operation: "ListObjectsV2",
-      });
-      const xml = await response.text();
-      const items = xmlBlocks(xml, "Contents").map((block) => {
-        const key = xmlText(block, "Key");
-        if (key === null) throw new R2RequestError(response.status, null, "ListObjectsV2");
-        const etag = xmlText(block, "ETag");
-        return {
-          key,
-          size: Number(xmlText(block, "Size") ?? 0),
-          uploadedAt: new Date(xmlText(block, "LastModified") ?? 0),
-          ...(etag ? { etag: etag.replace(/^"|"$/g, "") } : {}),
-        };
-      });
-      const cursor = xmlText(xml, "NextContinuationToken");
-      return { items, ...(cursor ? { cursor } : {}), hasMore: xmlText(xml, "IsTruncated") === "true" };
+    async list(options = {}) {
+      const { ListObjectsV2Command } = await sdk();
+      try {
+        const out = await (await client()).send(new ListObjectsV2Command({ Bucket: config.bucket, Prefix: options.prefix, ContinuationToken: options.cursor, MaxKeys: Math.max(1, Math.min(1000, options.limit ?? 1000)) }));
+        return { items: (out.Contents ?? []).map(item => {
+          if (!item.Key) throw new Error("Storage returned an unnamed object.");
+          return { key: item.Key, size: item.Size ?? 0, uploadedAt: item.LastModified ?? new Date(0), ...(item.ETag ? { etag: item.ETag.replace(/^"|"$/g, "") } : {}) };
+        }), ...(out.NextContinuationToken ? { cursor: out.NextContinuationToken } : {}), hasMore: out.IsTruncated ?? false };
+      } catch (error) { return translate(error, "ListObjectsV2"); }
     },
-
-    async presignGet(key: string, validUntilMs: number, options: StoragePresignOptions = {}): Promise<string> {
+    async presignGet(key, validUntilMs, options = {}) {
       const date = now();
-      const expiresSeconds = Math.max(1, Math.min(PRESIGN_MAX_SECONDS, Math.ceil((validUntilMs - date.getTime()) / 1000)));
-      return presignRequest({
-        method: "GET",
-        url: bucketUrl(key),
-        query: {
-          ...(options.contentDisposition ? { "response-content-disposition": options.contentDisposition } : {}),
-          ...(options.contentType ? { "response-content-type": options.contentType } : {}),
-        },
-        credentials,
-        region: R2_REGION,
-        date,
-        expiresSeconds,
-      }).url;
+      if (!Number.isFinite(validUntilMs) || validUntilMs <= date.getTime()) throw new Error("The storage download expiry must be in the future.");
+      const [{ GetObjectCommand }, { getSignedUrl }] = await Promise.all([sdk(), import("@aws-sdk/s3-request-presigner")]);
+      return getSignedUrl(await client(), new GetObjectCommand({
+        Bucket: config.bucket, Key: key, ResponseCacheControl: "private, no-store",
+        ...(options.contentDisposition ? { ResponseContentDisposition: options.contentDisposition } : {}),
+        ...(options.contentType ? { ResponseContentType: options.contentType } : {}),
+      }), { expiresIn: Math.min(PRESIGN_MAX_SECONDS, Math.ceil((validUntilMs - date.getTime()) / 1000)), signingDate: date });
     },
   };
 }

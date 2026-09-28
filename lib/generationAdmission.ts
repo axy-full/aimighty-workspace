@@ -35,7 +35,7 @@ import {
   TEXT_FREE_TOKENS,
   hasFreeTier,
 } from "@/lib/enhance";
-import { tokenSpendThisMonth } from "@/lib/auth";
+import { tokenCreditsThisMonth, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { ceilingProblem } from "@/lib/refLimits";
 import { videoReferenceProblem } from "@/lib/generationReferences";
@@ -203,16 +203,34 @@ export async function executeGenerationAdmission(
 
     // A token may carry a monthly ceiling. Checked before submit, so an agent
     // in a loop stops at the wall instead of discovering it on the invoice.
-    // Measured and stated in what the workspace pays: credits on the
-    // platform's keys, its vendors' dollars on its own (tokenSpendThisMonth).
+    // A ceiling cannot be edited: the way past it is a new token, made where
+    // tokens are made, or the turn of the month.
+    const pastCeiling = "Make a new token in Atomik › Tools & connections, or wait for the 1st.";
     if (got.token?.capUsd != null) {
       const spent = await tokenSpendThisMonth(got.token.id);
       if (spent.usd >= got.token.capUsd) {
         return admissionReply(
           {
+            /* A dollar ceiling set before the workspace moved to credits is
+               still enforced, but the engine's dollars are not named to it. */
+            error: creditsApply(requireTenant())
+              ? `The token "${got.token.name}" has reached the monthly ceiling it was made with. ${pastCeiling}`
+              : `The token "${got.token.name}" has reached its $${got.token.capUsd.toFixed(2)} monthly ceiling ` +
+                `($${spent.usd.toFixed(2)} spent). ${pastCeiling}`,
+          },
+          { status: 429 },
+        );
+      }
+    }
+    // The same wall in credits, for a token made in a credits workspace.
+    if (got.token?.capCredits != null) {
+      const spent = await tokenCreditsThisMonth(got.token.id);
+      if (spent >= got.token.capCredits) {
+        return admissionReply(
+          {
             error:
-              `The token "${got.token.name}" has reached its $${got.token.capUsd.toFixed(2)} monthly ceiling ` +
-              `(${spent.credits != null ? `${Math.round(spent.credits).toLocaleString("en-US")} cr` : `$${spent.usd.toFixed(2)}`} this month). Raise or remove the cap in Settings.`,
+              `The token "${got.token.name}" has reached its ${got.token.capCredits.toLocaleString("en-US")} cr monthly ceiling ` +
+              `(${spent.toLocaleString("en-US")} cr spent). ${pastCeiling}`,
           },
           { status: 429 },
         );
@@ -278,12 +296,12 @@ export async function executeGenerationAdmission(
       if (body.task !== "genjutsu" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(body.resolution) ||
           Boolean(body.sourceGenId) === Boolean(body.sourceUploadId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(body.sourceGenId || body.sourceUploadId)))
         return admissionReply({ error: "Choose one original video, a transform operation and 480p or 720p output." }, { status: 400 });
-      if (body.references != null && (!Array.isArray(body.references) || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
+      if (!Array.isArray(body.references) || body.references.length < GENJUTSU_LIMITS.minImages || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
         if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
         const r = ref as Record<string, unknown>;
         return Boolean(r.uploadId) === Boolean(r.genId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(r.uploadId || r.genId)) || r.role !== "reference_image" ||
           Object.keys(r).some(k => !["uploadId", "genId", "role"].includes(k));
-      }))) return admissionReply({ error: "Choose up to eight original still references using saved media identities." }, { status: 400 });
+      })) return admissionReply({ error: "Choose one to eight original still references using saved media identities." }, { status: 400 });
       if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using transforms." }, { status: 400 });
       const draft = await readDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });

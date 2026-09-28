@@ -77,3 +77,10 @@ export const cycleKey = (start: number): string => {
   const d = new Date(start);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
+
+/** Midnight UTC on the 1st: where a token's monthly ceiling turns. It is the
+ *  turn the spend gate reckons a token's month from (lib/generationRequests,
+ *  cycleBounds(1)), so the token list, the pre-check and the gate agree. */
+export function tokenMonthStart(at = Date.now()): number {
+  return cycleBounds(1, at).start;
+}
