@@ -758,7 +758,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
           before={<>
           {running ? (
-            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live">
+            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>
               <div className="gx-tile-media">
                 {/* A solid ring: no invented progress. The chip carries the job's own phase. */}
                 <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[running.tone ?? "blue"] }} aria-hidden="true" /></span>

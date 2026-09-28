@@ -50,7 +50,6 @@ test("Takes lists every take once, re-edits a still at its price and sends takes
   await takes.filter({ hasText: "Mara at the window" }).click();
   await expect(page.getByTestId("edit-blocked")).toHaveText("Write what should change.");
   await page.getByTestId("edit-instruction").fill("Make it night, rain on the glass");
-  await page.getByTestId("edit-price").click();
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
   const quoted = posts.at(-1)!.body;
   expect(quoted.references).toEqual([{ genId: "gen_still", role: "reference_image" }]);

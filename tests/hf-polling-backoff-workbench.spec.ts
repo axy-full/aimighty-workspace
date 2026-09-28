@@ -791,12 +791,11 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await expect(page.getByTestId("project-name")).toHaveText("Harbour cut");
   await page.getByTestId("edit-takes").getByTestId("edit-take").filter({ hasText: "Mara at the window" }).click();
   await page.getByTestId("edit-instruction").fill("Make it night, rain on the glass");
-  await page.getByTestId("edit-price").click();
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
   await pauseClock(page);
   await draw(page, 0.5);
   await page.getByTestId("edit-render").click();
-  await expect(page.getByTestId("edit-price")).toHaveText("Rendering…");
+  await expect(page.getByTestId("edit-render")).toHaveText("Rendering…");
   await settled(page);
   const seen = () => reads.length;
 
@@ -804,8 +803,8 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await nextRead(page, 2000, seen);
   const checking = page.getByTestId("edit-checking");
   await expect(checking).toHaveText("Could not check this re-edit. Checking again shortly.");
-  await expect(page.getByTestId("edit-price")).toHaveText("Rendering…");
-  await expect(page.getByTestId("edit-price")).toBeDisabled();
+  await expect(page.getByTestId("edit-render")).toHaveText("Rendering…");
+  await expect(page.getByTestId("edit-render")).toBeDisabled();
   await shoot(page, info.project.name, "reedit-read-failed", "edit-checking");
 
   /* The next read (the 3 s pace, doubled: 6 s) finds nothing on record: it stops, says where a finished one goes — never
@@ -813,9 +812,9 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await nextRead(page, 6000, seen);
   await expect(page.getByTestId("edit-image").getByRole("alert")).toHaveText("This re-edit can no longer be checked from here. If it renders, it lands in the library.");
   await expect(checking).toBeHidden();
-  await expect(page.getByTestId("edit-price")).toHaveText("Price the re-edit");
-  await expect(page.getByTestId("edit-price")).toBeEnabled();
-  await shoot(page, info.project.name, "reedit-gone", "edit-price");
+  await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
+  await expect(page.getByTestId("edit-render")).toBeEnabled();
+  await shoot(page, info.project.name, "reedit-gone", "edit-render");
   await page.clock.runFor(10 * MIN);
   expect(await statusReads(page)).toHaveLength(2);
   expect(reads).toHaveLength(2);

@@ -1151,7 +1151,8 @@ export function useComposer(options: {
     if (run?.jobId && phase?.done && announced.current !== run.jobId) {
       announced.current = run.jobId;
       if (phase.tone === "green") {
-        toast(`${run.name} rendered. Filed in Takes for review.`);
+        /* The run's name is its prompt cut at 60 characters: never the subject of a sentence ("…lamp in rendered."). */
+        toast("Your take rendered. Filed in Takes for review.");
         /* Takes and the Library sidebar may already be loaded; re-read so the new take shows. */
         const id = run.projectId ?? target?.id;
         if (id) void refreshProjectLibrary(scope, id);
