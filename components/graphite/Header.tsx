@@ -7,6 +7,7 @@ import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
+import { lowBalance, useLastQuote } from "@/lib/workspace/last-quote";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 
@@ -24,11 +25,15 @@ function initialsOf(name: string) {
 export function Header({ account }: { account: WorkspaceAccount | null }) {
   const shell = useShell();
   const { state } = useWorkspace();
-  const { rates, name } = useSession();
+  const { rates, name, requestScope } = useSession();
   /* The session says who owns the workspace: nothing is read for the badge. */
   const capability = useConnectedCapability(undefined, { read: false });
   const ownerNote = ownerBadgeNote(capability.ownerName);
-  const credits = creditsLabel(account?.credits?.balance ?? null, rates.unit, rates.creditUsd);
+  const balance = account?.credits?.balance ?? null;
+  const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
+  /* Amber when the balance cannot pay for the last price a Generate showed here; it reads that quote, never asks for one. */
+  const lastQuote = useLastQuote(requestScope);
+  const low = rates.unit !== "usd" && lowBalance(balance, lastQuote);
   const selected = shell.view === "gen" ? "gen" : shell.view === "crew" ? "crew" : shell.view === "suite" ? shell.suite.id : null;
   /* The context badge: the phone's Home and its Library read HOME and ASSETS; every other view names itself. */
   const studioPage = shell.view === "suite" && shell.suite.id === "studio" ? shell.page.id : null;
@@ -84,7 +89,9 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
           <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
         </button>
       ) : null}
-      <button type="button" className="gx-hbtn" onClick={() => shell.goWorkspace("credits")} title={credits.title} data-testid="workspace-credits" aria-label={`Credits: ${credits.text}`}>
+      <button type="button" className="gx-hbtn gx-credits" data-low={low || undefined} onClick={() => shell.goWorkspace("credits")} data-testid="workspace-credits"
+        title={low ? `${credits.title} · below the last price quoted (${lastQuote!.credits.toLocaleString("en-US")} cr) · Plans & credits` : credits.title}
+        aria-label={low ? `Credits: ${credits.text}, below the last price quoted, ${lastQuote!.credits.toLocaleString("en-US")} cr. Open Plans & credits` : `Credits: ${credits.text}`}>
         <span className="gx-credits-n">{credits.text.replace(/\s*cr$/i, "")}</span>
         {/cr$/i.test(credits.text) ? <span className="gx-credits-u">cr</span> : null}
       </button>

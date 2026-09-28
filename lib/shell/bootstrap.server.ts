@@ -51,6 +51,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     requestScope: scope,
     name: ctx.user.name ?? null,
     email: ctx.user.email ?? null,
+    userId: ctx.user.id,
     workspace: {
       id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest),
       /* A member's owner-run card names who runs the connected account; the owner needs no such line. */
