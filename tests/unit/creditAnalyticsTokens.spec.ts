@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* A credit workspace is never shown the vendor's dollars: beside its credits
    they are the margin (lib/analyticsRedact.ts). So its API tokens report the
@@ -15,7 +16,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-credit-analytics-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 
 function workspace(id: string, credits: boolean): TenantWorkspace {
   return {

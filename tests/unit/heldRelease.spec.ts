@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /**
  * Held takes: discarding one is free, a finished take of any engine starts
@@ -15,7 +16,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-held-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 function workspace(name: string, concurrency: number): TenantWorkspace {

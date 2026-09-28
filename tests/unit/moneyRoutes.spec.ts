@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* The money a route hands the browser: in the unit the workspace pays in,
    and every figure the vendor has charged, hidden takes included. */
@@ -12,7 +13,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-money-routes-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 function workspace(id: string, credits: boolean): TenantWorkspace {

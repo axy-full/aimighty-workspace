@@ -8,6 +8,7 @@ import {
   connectedLedgerState, creditLedgerState, dollarLedgerState, ledgerAmount, settledFact,
   type CreditLedgerRow, type DollarLedgerRow, type LedgerState,
 } from "../../lib/usageLedgerTerms";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* Idea 25 — the usage ledger per job. A credit workspace reads what admission
    reserved, settled or released, in credits and nothing else; "not billed" is
@@ -18,7 +19,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-usage-ledger-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 const run = randomUUID().slice(0, 8);

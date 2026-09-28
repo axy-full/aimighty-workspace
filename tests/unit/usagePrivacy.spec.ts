@@ -6,6 +6,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import ts from "typescript";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* GET /api/usage's own body (no ?rows) under the rule /api/analytics and the
    per-job ledger keep: everyone's spend by person is the owners' and admins'.
@@ -18,7 +19,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-usage-privacy-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 const run = randomUUID().slice(0, 8);

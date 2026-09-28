@@ -2,13 +2,14 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /** The platform's view across workspaces: spend, billed, margin, and which engines fail. */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-admin-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 
 const workspace = (id: string, own = false) => ({
   id, slug: id, name: id, legacy: false, dbUrl: process.env.TURSO_DATABASE_URL, dbToken: null,
