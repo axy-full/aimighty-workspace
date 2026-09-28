@@ -56,7 +56,7 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, meta, testId, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
   /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
@@ -70,6 +70,10 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   rowStart?: boolean;
   /** The Library's `+` (use as reference), beside the name. */
   action?: ReactNode;
+  /** The line under a grid card's name, when its strip knows better than the take's own detail (a draft's watermark, components/graphite/DraftFinal.tsx). */
+  meta?: ReactNode;
+  /** The card's test id, when its strip names its takes its own way (a draft and its final). */
+  testId?: string;
   onOpen: () => void;
   /** Re-read the library: a finished take whose stored copy was not there yet. */
   onRefresh: () => Promise<unknown> | void;
@@ -88,13 +92,16 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   /* A finished take whose copy is missing says so under its name; Refresh sits in the picture's corner. */
   const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take, compact);
   const kind = entryKind(entry);
+  /* Draft mode (lib/draftFinal.ts): a draft or its final says so, unless its strip's label already does ("draft · 480p"). */
+  const pair = take.pair && !label ? (take.pair.role === "draft" ? "Draft" : "Final") : null;
   const refresh = async () => { setBroken(null); setAttempt((n) => n + 1); await onRefresh(); };
   const fail = () => setBroken(entry.url);
   const inner = (
     <>
       <Face key={attempt} face={face} entry={entry} onFail={fail} />
-      {/* The kind, except where Refresh has the picture to itself. */}
-      {face !== "unavailable" && (variant !== "grid" || kind === "audio" || kind === "file") ? <span className="gx-badge">{KIND_BADGE[kind]}</span> : null}
+      {/* The kind, except where Refresh has the picture to itself; a draft or a final (always a video) is named as one. */}
+      {face !== "unavailable" && (variant !== "grid" || kind === "audio" || kind === "file")
+        ? <span className="gx-badge" {...(pair ? { "data-testid": "take-pair" } : {})}>{pair ? pair.toUpperCase() : KIND_BADGE[kind]}</span> : null}
       {/* NEW gives its corner to Refresh. */}
       {fresh && face !== "unavailable" ? <span className="gx-badge gx-badge--new">NEW</span> : null}
       {chip ? <Chip {...chip} need={needs ? ` · needs ${needs} cr` : null} /> : null}
@@ -107,11 +114,14 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   /* A take held for credits carries its way out: Release at the exact price (the 2-up Library tile leaves it to the Inspector). */
   const release = take.status === "held" && variant !== "library" ? <ReleaseTake entry={entry} onReleased={onRefresh} place="tile" /> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
-  const spoken = [label, take.name, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
+  const spoken = [label, take.name, pair, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
   const shownName = label ?? take.name;
   /* In a strip the card is one of the strip's list of takes (TakeStrip), under #406's `gen-batch-take`. */
   const strip = Boolean(label) && variant === "grid";
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": strip ? "gen-batch-take" : "take-tile", ...(strip ? { role: "listitem" } : {}) };
+  const attrs = {
+    "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": testId ?? (strip ? "gen-batch-take" : "take-tile"),
+    ...(take.pair ? { "data-pair": take.pair.role } : {}), ...(strip ? { role: "listitem" } : {}),
+  };
 
   if (variant === "take") {
     return (
@@ -146,7 +156,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
       ) : (
         <>
           <span className="gx-asset-name">{shownName}</span>
-          <span className="gx-asset-meta">{take.meta}</span>
+          <span className="gx-asset-meta">{meta ?? take.meta}</span>
         </>
       )}
       {why}

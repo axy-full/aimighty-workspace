@@ -71,8 +71,7 @@ test("Storyboards: agent prompts, the look, a priced frame filed as an asset, a 
 
   /* Black-and-white sketch; price, then render at that price. */
   await page.getByTestId("boards-style-bw-sketch").click();
-  await frames.nth(0).getByTestId("frame-price").click();
-  await expect(frames.nth(0).getByTestId("frame-render")).toContainText(/Render · \d+ credits/);
+  await expect(frames.nth(0).getByTestId("frame-render")).toContainText(/Render frame · \d+ credits/);
   const priced = quotes.at(-1)!;
   expect(priced).toMatchObject({ model: "gemini-3.1-flash-image", references: [] });
   expect(String(priced.prompt)).toContain("black-and-white pencil sketch");
@@ -95,8 +94,7 @@ test("Storyboards: agent prompts, the look, a priced frame filed as an asset, a 
   await frames.nth(1).getByTestId("frame-read-shot-a2-start").click();
   await expect(frames.nth(1).getByTestId("frame-reading")).toContainText("(1 image seen)", { timeout: 60_000 });
   await expect(frames.nth(1).getByTestId("frame-prompt")).toHaveValue(/blocked as drawn/);
-  await frames.nth(1).getByTestId("frame-price").click();
-  await expect(frames.nth(1).getByTestId("frame-render")).toBeVisible();
+  await expect(frames.nth(1).getByTestId("frame-render")).toBeEnabled();
   const withDrawing = quotes.at(-1)!;
   expect(withDrawing.references).toEqual([{ uploadId: sketchQuote.sketchAssetId, role: "reference_image" }]);
   expect(String(withDrawing.prompt)).toContain("keep its composition, camera angle and the position, pose and direction of every figure");
@@ -125,11 +123,10 @@ test("a frame's own agent prompt reads its beat; a line drawing is put on its be
   await expect(drawing).toHaveCount(1);
   await drawing.getByTestId("drawing-shot").selectOption("shot-a2");
   await drawing.getByTestId("drawing-look-live").click();
-  await expect(drawing.getByTestId("drawing-price")).toBeDisabled();
+  await expect(drawing.getByTestId("drawing-render")).toBeDisabled();
   await drawing.locator("[data-testid$='-estimate']").click();
   await drawing.locator("[data-testid$='-start']").click();
   await expect(drawing.getByTestId("drawing-reading")).toContainText("(1 image seen)", { timeout: 60_000 });
-  await drawing.getByTestId("drawing-price").click();
   await expect(drawing.getByTestId("drawing-render")).toContainText(/Convert · \d+ credits/);
   const converted = quotes.at(-1)!;
   expect(String(converted.prompt)).toContain("Cinematic live-action storyboard frame");

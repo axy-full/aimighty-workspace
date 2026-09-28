@@ -20,6 +20,7 @@ import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotRefe
 import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
 import { RIG_INTENT_EVENT, RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
+import { renderedSubject } from "@/lib/workspace/take-subject";
 import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -610,7 +611,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       announced.current = run.jobId;
       if (phase.tone === "green") {
         const billed = runJob?.creditsBilled;
-        toast(`${run.name} rendered${typeof billed === "number" ? ` · ${formatCredits(billed)} settled` : ""}. Filed in Takes for review.`);
+        /* A shot the composer made is named with its prompt cut short: that take is "Your take", as Gen says it. */
+        const said = renderedSubject(run.name, shots.find((s) => s.id === run.shotId)?.note ?? "");
+        toast(`${said} rendered${typeof billed === "number" ? ` · ${formatCredits(billed)} settled` : ""}. Filed in Takes for review.`);
         /* Takes and the Library may already be loaded; re-read so the take shows as it says. */
         void refreshProjectLibrary(scope, run.projectId);
       }
@@ -618,7 +621,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       const id = run.jobId;
       holdTimer.current = setTimeout(() => setRun((r) => (r?.jobId === id ? null : r)), phase.tone === "green" ? DONE_HOLD_MS : FAILED_HOLD_MS);
     }
-  }, [run, phase, runJob, dispatch, toast, scope]);
+  }, [run, phase, runJob, dispatch, toast, scope, shots]);
   useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
 
   /* ── Selection and editing ─────────────────────────────────────────── */

@@ -146,3 +146,83 @@ test("Gen › Edit hosts Seedance Edit on this workspace's credits, 2.5 by defau
   await expect(page.getByTestId("gen-prompt")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/* One take on this workspace's credits, route-mocked end to end: one Studio video engine at a fixed price. */
+const PRICE = 18;
+const ENGINES = [
+  { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion from a prompt or references.", rate: { credits: PRICE, resolution: "480p", ratio: "16:9", duration: 5 } },
+];
+/* Longer than the 60 characters a take's name keeps: the name is cut mid-phrase, after "…desk lamp in". */
+const LONG = "A slow, cinematic push in on a battered scuffed desk lamp in a dark study, dust in the beam";
+type Seen = { complete: string | null; toasts: string[] };
+
+/** Moves the page's clock on two seconds at a time until `seen` holds: status reads run at lib/poll's pace. */
+async function until(page: Page, seen: () => Promise<boolean>, what: string) {
+  await expect.poll(async () => { if (await seen()) return true; await page.clock.fastForward("00:02"); return seen(); }, { message: what, timeout: 60_000, intervals: [50] }).toBe(true);
+}
+
+test("one take lands: its card says Complete with the ring held still, and the toast is a whole sentence", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await mockProjects(page, { current: fixture() });
+  /* The take stays out of the Library read, so the card on screen is the composer's own run. */
+  await mockLibrary(page, { uploads: [], generations: [] });
+  await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
+  await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) =>
+    route.fulfill({ json: { models: ENGINES, audio: null, credits: new URL(route.request().url()).searchParams.has("model") ? PRICE : null } }));
+  let status = "running", charges = 0;
+  await page.route("**/api/generate/quote", (route) => route.fulfill({ json: { estimatedCredits: PRICE, fingerprint: "f".repeat(64), unit: "cr" } }));
+  await page.route(/\/api\/generate$/, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    charges++;
+    return route.fulfill({ json: { id: "gen_lamp", status: "running" }, headers: { "Idempotency-Status": "complete" } });
+  });
+  await page.route(/\/api\/jobs\/gen_lamp(\?.*)?$/, (route) =>
+    route.fulfill({ json: { generation: generation({ id: "gen_lamp", kind: "video", status, prompt: LONG, creditsBilled: status === "succeeded" ? PRICE : null }) } }));
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto("/suites?view=gen");
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+
+  await page.getByTestId("gen-prompt").fill(LONG);
+  /* The first live price can wait on a cold compile. */
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await page.getByTestId("gen-generate").click();
+  await expect.poll(() => charges).toBe(1);
+  const card = page.getByTestId("gen-running");
+  await expect(card.locator(".gx-tile-chip")).toHaveText("Rendering");
+  /* While it renders the ring pulses — never for a person who asked for less motion. */
+  const animation = () => card.locator(".gx-ring").evaluate((el) => getComputedStyle(el).animationName);
+  expect(await animation()).toBe("gx-pulse");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(animation).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect.poll(animation).toBe("gx-pulse");
+
+  /* Read in the task the card changes in (it lets go of the take a moment later): the ring as it is when the card
+     says Complete, and every toast shown. */
+  await page.evaluate(() => {
+    const seen: Seen = { complete: null, toasts: [] };
+    (window as unknown as { seen: Seen }).seen = seen;
+    new MutationObserver(() => {
+      const card = document.querySelector('[data-testid="gen-running"]');
+      if (seen.complete === null && card?.querySelector(".gx-tile-chip")?.textContent === "Complete")
+        seen.complete = getComputedStyle(card.querySelector(".gx-ring")!).animationName;
+      const toast = document.querySelector('[data-testid="toast"]')?.textContent?.trim();
+      if (toast && !seen.toasts.includes(toast)) seen.toasts.push(toast);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+  status = "succeeded";
+  const seen = () => page.evaluate(() => (window as unknown as { seen: Seen }).seen);
+  await until(page, async () => { const now = await seen(); return now.complete !== null && now.toasts.some((t) => t.includes("rendered")); }, "the take lands and is announced");
+  const { complete, toasts } = await seen();
+  expect(complete, "the ring once the card says Complete").toBe("none");
+  /* The take's name is its prompt cut at 60 characters: never the subject of the sentence. */
+  expect(toasts.filter((t) => t.includes("rendered"))).toEqual(["Your take rendered. Filed in Takes for review."]);
+  expect(charges).toBe(1);
+  expect(errors).toEqual([]);
+});
