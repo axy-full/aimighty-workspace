@@ -32,8 +32,16 @@ async function setup(page: Page) {
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   /* A managed workspace pays in credits. The server writes the same local files: wait for its lock. */
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
-  try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Cast test", "admin", "test", Date.now()] }); }
-  finally { platform.close(); }
+  let tenantUrl = "";
+  try {
+    await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Cast test", "admin", "test", Date.now()] });
+    tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
+  } finally { platform.close(); }
+  expect(tenantUrl).toMatch(/^file:/);
+  /* The still an earlier build on the connected account left in this workspace, as its collector filed it. */
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
+  try { await tenant.execute({ sql: "INSERT OR IGNORE INTO generations(id,model,prompt,params,status,kind,stored_url,created_by,created_at,updated_at) VALUES(?,'soul_location','an earlier build','{}','succeeded','image',?,?,?,?)", args: [OLD_BUILD, `/api/media/${OLD_BUILD}`, me.id, Date.now(), Date.now()] }); }
+  finally { tenant.close(); }
   const project = newProject(`Cast ${randomUUID().slice(0, 6)}`);
   project.script = SCRIPT;
   project.production = {
@@ -139,6 +147,8 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
 
   /* The request's four stills are filed as Cast: four takes on the fox, four Character assets bound to the Soul ID. */
   await expect(fox.locator(".pd-takes [role=radio]")).toHaveCount(4, { timeout: 60_000 });
+  /* The picture mounts once it is on screen (a short landscape phone scrolls to it). */
+  await fox.locator(".pd-frame-image").scrollIntoViewIfNeeded();
   await expect(fox.locator(".pd-frame-image img")).toBeVisible();
   await expect.poll(async () => (await f.read()).assets.filter((a) => a.category === "Character" && a.soulIdentityId === soul.id).length, { timeout: 20_000 }).toBe(4);
   const entry = (await f.read()).production!.cast!.entries.find((e) => e.id === "cast-fox")!;
