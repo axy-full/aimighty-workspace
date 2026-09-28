@@ -330,7 +330,7 @@ export async function requireRender(): Promise<
   return got;
 }
 
-/** The token's billed month in whole credits, as used by a credit ceiling. */
+/** The token's billed month in credits (tenths), as used by a credit ceiling. */
 export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
   const rs = await db().execute({
     sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,

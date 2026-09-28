@@ -74,6 +74,7 @@ import {
   notifyComposerStorage,
   type PendingAudio,
 } from "@/lib/useComposerPersistence";
+import { isCreditAmount, ceilDeci, creditsFigure, fromDeci, toDeci } from "@/lib/creditTerms";
 
 /** The Gen creation desk. Paid requests retain the existing scoped recovery protocol. */
 const subscribeHydration = () => () => {};
@@ -405,8 +406,9 @@ function ScopedComposer({
     refs.filter((r) => r.kind === "image").length,
   );
   const perTakePrice =
-    unit == null ? null : rates.unit === "cr" ? Math.ceil(unit - 1e-9) : unit;
-  const price = perTakePrice == null ? null : perTakePrice * count;
+    unit == null ? null : rates.unit === "cr" ? fromDeci(ceilDeci(unit)) : unit;
+  // In whole tenths for credits, so 0.3 × 3 reads 0.9, not 0.8999999999999999.
+  const price = perTakePrice == null ? null : rates.unit === "cr" ? fromDeci(toDeci(perTakePrice) * count) : perTakePrice * count;
   /** `19 CR / 5S` on a video chip; `3 CR / STILL` on an image chip. */
   const rateLine = (mId: string) => {
     const m = getModel(mId);
@@ -635,7 +637,7 @@ function ScopedComposer({
               result.error || "Audio pricing could not be loaded.",
             );
           if (
-            !Number.isInteger(result.estimatedCredits) ||
+            !isCreditAmount(result.estimatedCredits) ||
             result.estimatedCredits < 0 ||
             !Number.isFinite(result.price) ||
             result.price < 0 ||
@@ -674,7 +676,7 @@ function ScopedComposer({
           minimumFractionDigits: 2,
           maximumFractionDigits: 4,
         }).format(value.price)
-      : `${Math.ceil(value.price ?? value.credits ?? 0).toLocaleString()} cr`;
+      : `${creditsFigure(fromDeci(ceilDeci(value.price ?? value.credits ?? 0)))} cr`;
   const costLabel =
     kind === "audio"
       ? pendingAudio

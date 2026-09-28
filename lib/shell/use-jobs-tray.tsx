@@ -7,6 +7,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { requestAccountRefresh } from "@/lib/workspace/data";
 import { parseTrayReply, seenKey, settled, trayOrder, traySummary, withComposerSlot, type TrayJob, type TrayReply, type TraySummary } from "@/lib/jobsTray";
 import { onJobAnnounced } from "./jobs-bus";
+import { isCreditAmount, toDeci } from "../creditTerms";
 
 /**
  * The header's jobs, read from GET /api/jobs?view=tray by one lib/poll poller
@@ -236,7 +237,7 @@ export function JobsTrayProvider({ children }: { children: ReactNode }) {
       }
       if (!reply?.error || response.status >= 500) { say({ message: UNCONFIRMED, topUp: false }); return false; }
       /* The route's own words: short (Top up), a price that moved (the next press approves the new figure), a cap, or every slot busy. */
-      const moved = Number.isSafeInteger(reply.credits) && Number(reply.credits) > 0 && reply.credits !== credits ? Number(reply.credits) : undefined;
+      const moved = isCreditAmount(reply.credits) && Number(reply.credits) > 0 && toDeci(reply.credits) !== toDeci(credits) ? Number(reply.credits) : undefined;
       say({ message: reply.error, topUp: response.status === 402, ...(moved ? { credits: moved } : {}) });
       return false;
     } catch {

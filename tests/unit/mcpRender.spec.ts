@@ -36,7 +36,7 @@ test("render_shot is quoted first and sent with that exact price as its ceiling"
 });
 
 test("an unusable quote sends nothing", async () => {
-  for (const quote of [{ estimatedCredits: -1, price: 1, unit: "cr" }, { price: 18, unit: "cr" }, { estimatedCredits: 1.5, price: 1.5, unit: "cr" }]) {
+  for (const quote of [{ estimatedCredits: -1, price: 1, unit: "cr" }, { price: 18, unit: "cr" }, { estimatedCredits: 1.55, price: 1.55, unit: "cr" }]) {
     const api = workspace(quote);
     await expect(runTool("render_shot", { prompt: "Rain." }, api.call as never, "")).rejects.toThrow("could not be priced");
     expect(api.calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);

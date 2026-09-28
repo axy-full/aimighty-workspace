@@ -28,6 +28,7 @@ import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
 import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { isCreditAmount, toDeci } from "../creditTerms";
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
@@ -36,7 +37,7 @@ export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
   kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
-  sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
+  sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().min(0).max(1_000_000).refine(isCreditAmount).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
   fromJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   fromBeats: z.literal(true).optional(),
@@ -467,7 +468,7 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   /* A dollar approval counts only where the workspace pays the vendor itself: on the platform's keys a
      refusal that turned on it would tell, one guess at a time, what the vendor charges. */
   const approvedUsd = paidByPlatform(textVendor(input.model)) ? null : input.maxUsd ?? null;
-  if (compiled.estimateCredits > input.maxCredits || (approvedUsd != null && compiled.estimateUsd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
+  if (toDeci(compiled.estimateCredits) > toDeci(input.maxCredits) || (approvedUsd != null && compiled.estimateUsd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
   const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();

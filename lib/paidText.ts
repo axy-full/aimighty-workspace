@@ -3,7 +3,7 @@ import { engineMock } from './mock';
 import { creditsApply } from "./credits";
 import { atomikPublicResponse } from "./workbench/atomik-response";
 import { workbenchScopeProblem } from "./workbench/request-scope";
-import { billCredits } from "./creditTerms";
+import { billCredits, isCreditAmount, toDeci } from "./creditTerms";
 import { paidByPlatform } from "./platformSpend";
 import { atomikReasoningRequest } from "./atomik-reasoning";
 import { withRecoveryActivity } from './recovery';
@@ -118,7 +118,7 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
     throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
   const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
   const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimate, "text") : 0;
-  if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
+  if (input.maxCredits !== undefined && (!isCreditAmount(input.maxCredits) || toDeci(estimateCredits) > toDeci(input.maxCredits)))
     throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
   const requestBody = JSON.stringify({
     model: input.model,
@@ -166,7 +166,7 @@ export function requestMaxCredits(value: unknown, required = false): number | un
     if (required) throw new PaidTextError("Review a writing quote before running with reasoning effort.", 409);
     return undefined;
   }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10000)
+  if (!isCreditAmount(value) || value > 10000)
     throw new PaidTextError("The writing credit ceiling is invalid. Request a new quote.", 400);
   return value;
 }

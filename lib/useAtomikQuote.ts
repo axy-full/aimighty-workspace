@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "./session";
 import type { PaidTextQuote } from "./paidText";
+import { isCreditAmount } from "./creditTerms";
 
 /** Quotes are scoped reads. Only an answer matching the current input may enable Run. */
 export function useAtomikQuote(url: string, body: Record<string, unknown> | null) {
@@ -26,7 +27,7 @@ export function useAtomikQuote(url: string, body: Record<string, unknown> | null
         });
         const quote = await response.json();
         if (!response.ok) throw new Error(quote.error ?? "The writing quote is unavailable.");
-        if (typeof quote.model !== "string" || !Number.isInteger(quote.estimateCredits) || quote.estimateCredits < 0 || (quote.estimateUsd !== undefined && !Number.isFinite(quote.estimateUsd)))
+        if (typeof quote.model !== "string" || !isCreditAmount(quote.estimateCredits) || (quote.estimateUsd !== undefined && !Number.isFinite(quote.estimateUsd)))
           throw new Error("The writing quote is incomplete. Try again before running.");
         if (!controller.signal.aborted) setResult({ key, quote });
       } catch (error) {

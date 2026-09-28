@@ -110,7 +110,7 @@ test("legacy text reserves before its only provider call and charges even when t
     expect(out.text).toContain("not the requested");
     expect(calls).toBe(1);
     expect((await metered("text_paid"))[0].status).toBe("succeeded");
-    expect(Number((await metered("text_paid"))[0].billed_credits)).toBe(1);
+    expect(Number((await metered("text_paid"))[0].billed_credits)).toBe(0.2); // a tenth is the smallest step
   }));
 
 test("an answer the caller refuses is paid to the provider but settles at zero for the workspace", async () =>

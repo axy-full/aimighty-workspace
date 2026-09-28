@@ -17,8 +17,8 @@ import { billCredits } from "../../lib/creditTerms";
    (the breakdown page shows 43 cr, and no $, in a credit workspace). */
 const cr = buildRateTable("cr");
 const usd = buildRateTable("usd");
-/** What the breakdown page shows for one take in credits: whole, rounded up (lib/price.ts). */
-const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
+/** What the breakdown page shows for one take in credits: to a tenth, rounded up (lib/price.ts). */
+const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n * 10 - 1e-9)) / 10 : 0);
 
 test("a proposed take in credits is what that take bills, rounded up on its own", () => {
   for (const engine of ["seedance", "kling", "nano-banana"] as ShotEngine[]) {
@@ -30,5 +30,5 @@ test("a proposed take in credits is what that take bills, rounded up on its own"
     }
   }
   // The rate card's Seedance 2.5, 5s 1080p line (SOW §7A, at US$0.80 a credit), not the vendor's dollars.
-  expect(whole(takeCost(cr, 5, "seedance"))).toBe(6);
+  expect(whole(takeCost(cr, 5, "seedance"))).toBe(5.4);
 });

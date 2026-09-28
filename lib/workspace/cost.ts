@@ -1,5 +1,6 @@
 import { billingOf, estimateTokens } from "../models";
 import { resolveShotSettings, type ShotSettings } from "./engines";
+import { creditsFigure } from "../creditTerms";
 
 /**
  * What a Rig shot costs, as the person is shown it: CREDITS from the live
@@ -37,9 +38,9 @@ export function shotTokens(settings: ShotSettings): number | undefined {
   return estimateTokens(settings.resolution, settings.ratio, settings.durationS) ?? undefined;
 }
 
-/** "1,296 cr" — Western grouping regardless of the viewer's locale. */
+/** "1,296 cr", "12.3 cr" — to a tenth, Western grouping regardless of the viewer's locale. */
 export function formatCredits(n: number): string {
-  return `${n.toLocaleString("en-US")} cr`;
+  return `${creditsFigure(n)} cr`;
 }
 /** "108,000 tokens" — Western grouping regardless of the viewer's locale. */
 export function formatTokens(n: number): string {

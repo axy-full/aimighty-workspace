@@ -15,6 +15,7 @@ import type { UploadedFile } from "@/lib/uploadClient";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
 import styles from "./gen.module.css";
 import edit from "./seedance-edit.module.css";
+import { isCreditAmount } from "@/lib/creditTerms";
 
 type Source = {
   key: string;
@@ -162,7 +163,7 @@ export default function AstraUpscale({
       if (!response.ok)
         throw new Error(result.error || "This source could not be quoted.");
       if (
-        !Number.isInteger(result.estimatedCredits) ||
+        !isCreditAmount(result.estimatedCredits) ||
         !result.fingerprint ||
         !Number.isFinite(result.price) ||
         !result.unit

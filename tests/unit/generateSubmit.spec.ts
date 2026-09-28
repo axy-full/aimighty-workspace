@@ -277,7 +277,8 @@ test("a stored request whose fate or price cannot be read sends nothing", async 
     { "/api/generate/check": () => ({ json: { state: "pending" } }) },
     { "/api/generate/check": () => "network" },
     { "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": () => "network" },
-    { "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": () => ({ json: { estimatedCredits: 2.5, price: 2.5, unit: "cr" } }) },
+    // Not a whole tenth: no price this app could have quoted.
+    { "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": () => ({ json: { estimatedCredits: 2.55, price: 2.55, unit: "cr" } }) },
   ];
   for (const routes of cases)
     await withServer(routes, async () => {

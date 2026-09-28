@@ -153,7 +153,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     expect(byId.get(id("held"))).toMatchObject({ state: "held", credits: 15, who: "Editor", engine: "Seedance 2.5", kind: "video" });
     expect(byId.get(id("settled"))).toMatchObject({ state: "charged", credits: 12 });
     expect(byId.get(id("released"))).toMatchObject({ state: "failed-not-billed", credits: 0 });
-    expect(byId.get(id("failed_paid"))).toMatchObject({ state: "failed-charged", credits: 8 });
+    expect(byId.get(id("failed_paid"))).toMatchObject({ state: "failed-charged", credits: 7.5 });
     expect(byId.get(id("own_key"))).toMatchObject({ state: "own-key", credits: 0 });
     expect(byId.get(id("agent_unbilled"))).toMatchObject({ state: "failed-not-billed", credits: 0, engine: expect.stringMatching(/^Atomik · /) });
     /* The whole answer is credits: no dollar field, figure or sign, not even the vendor's costs as numbers. */
@@ -162,7 +162,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     for (const vendorUsd of ["0.8", "0.5", "0.3512", "0.0421", "0.039"]) expect(wire).not.toContain(vendorUsd);
     /* Charged plus held is exactly what the balance has used. */
     const used = (await billingStateFor(ws.id)).credits.used;
-    expect(all.totals).toEqual({ jobs: 8, charged: 12 + 8 + 2, held: 15, notBilled: 3 });
+    expect(all.totals).toEqual({ jobs: 8, charged: 12 + 7.5 + 2, held: 15, notBilled: 3 });
     expect(all.rows.reduce((sum, r) => sum + r.credits, 0)).toBe(used);
     expect(all.months).toEqual([monthOf(at), monthOf(earlier)]);
 

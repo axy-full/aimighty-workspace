@@ -21,6 +21,7 @@ import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, 
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
+import { creditsFigure } from "@/lib/creditTerms";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -299,9 +300,9 @@ function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
   const free = grants?.free ?? 0;
   return (
     <span className="flex flex-col gap-0.5">
-      <span className="mono-v">{usd(s.engineCostUsd, 2)} · {Math.round(s.billedCredits).toLocaleString()} CR</span>
+      <span className="mono-v">{usd(s.engineCostUsd, 2)} · {creditsFigure(s.billedCredits)} CR</span>
       <span className={`text-[11.5px] ${m < 0 ? "text-lift" : "text-dim"}`}>margin {m < 0 ? "−" : "+"}{usd(Math.abs(m), 2)} · {s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
-      {free > 0 && <span className="text-[11.5px] text-mute">{Math.round(free).toLocaleString()} of {Math.round(free + (grants?.paid ?? 0)).toLocaleString()} CR given, not sold</span>}
+      {free > 0 && <span className="text-[11.5px] text-mute">{creditsFigure(free)} of {creditsFigure(free + (grants?.paid ?? 0))} CR given, not sold</span>}
     </span>
   );
 }

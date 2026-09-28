@@ -6,6 +6,7 @@ import { quoteRound, roomRate, runRound, type RoundEvent } from "@/lib/crew/roun
 import { CrewError, claimRound, listMembers, listMessages, readSession, releaseRound } from "@/lib/crew/store";
 import { xaiConnected } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
+import { isCreditAmount, toDeci } from "@/lib/creditTerms";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -52,10 +53,10 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     if (body.quoteOnly === true)
       return Response.json({ model: quote.model, calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(credits ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
 
-    if (typeof body.maxCredits !== "number" || !Number.isInteger(body.maxCredits) || body.maxCredits < 0) throw new CrewError("Review the round's price before running it.", 409);
+    if (!isCreditAmount(body.maxCredits)) throw new CrewError("Review the round's price before running it.", 409);
     if (typeof body.round !== "number" || !Number.isInteger(body.round) || body.round < 1) throw new CrewError("Reload the room before running a round.", 409);
     if (body.round !== session.roundsRun + 1) throw new CrewError(body.round <= session.roundsRun ? `Round ${body.round} has already run. Read the room again before running another.` : "Reload the room before running a round.", 409);
-    if (quote.estimateCredits > body.maxCredits) throw new CrewError("The round's price changed. Review the new price before running.", 409);
+    if (toDeci(quote.estimateCredits) > toDeci(body.maxCredits)) throw new CrewError("The round's price changed. Review the new price before running.", 409);
     if (!(await claimRound(caller.userId, session.id, body.round))) {
       const now = await readSession(caller.userId, session.id);
       throw new CrewError(now && now.roundsRun >= body.round ? `Round ${body.round} has already run. Read the room again before running another.` : "This room is already running a round.", 409);

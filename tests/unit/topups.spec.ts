@@ -51,7 +51,7 @@ test("the discount is credits given, never a cheaper unit", () => {
     setCreditUsd("0.10");
     expect(packById("agency")!.perCredit).toBeLessThan(creditUsd());
     expect(billCredits(2.864, "dreamina-seedance-2-5-260628")).toBe(43);
-    expect(billCredits(0.63, "fal-ai/kling-video/v3/standard")).toBe(10);
+    expect(billCredits(0.63, "fal-ai/kling-video/v3/standard")).toBe(9.5);
   } finally { setCreditUsd(undefined); }
 });
 

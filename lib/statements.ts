@@ -2,12 +2,13 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
+import { marginFor, marginKeyOf } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
 import { creditFundingFor } from "./billingLedger";
 import { GROK_STT_MODEL } from "./xaiVoice";
+import { legacyBilledCredits } from "./creditUnits";
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -202,7 +203,7 @@ export async function statementFor(month: string, projectId: string | null): Pro
     const kind = (r.kind === "image" || r.kind === "audio" ? r.kind : "video") as RawLine["kind"];
     const usd = Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0);
     const m = meter.get(String(r.id));
-    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : billCreditsWith(usd, marginFor(marginKeyOf(kind, r.model)), 0.10)) : 0;
+    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : legacyBilledCredits(usd, marginFor(marginKeyOf(kind, r.model)))) : 0;
     if (!(credits > 0) && !(usd > 0) && r.status !== "succeeded") continue;
     let p: { resolution?: string; duration?: number } = {};
     try { p = JSON.parse(r.params ?? "{}"); } catch { p = {}; }

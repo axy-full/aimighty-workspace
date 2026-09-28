@@ -96,7 +96,7 @@ test("one body is quoted, approved and estimated, and the approval carries the q
   // /api/generate checks a fingerprint, so a generation quote without one is no quote.
   expect(readStepQuote({ estimatedCredits: 14, price: 14, unit: "cr" }, video)).toBeNull();
   expect(readStepQuote({ estimatedCredits: -1, price: 14, unit: "cr", fingerprint }, video)).toBeNull();
-  expect(readStepQuote({ estimatedCredits: 1.5, price: 14, unit: "cr", fingerprint }, video)).toBeNull();
+  expect(readStepQuote({ estimatedCredits: 1.55, price: 14, unit: "cr", fingerprint }, video)).toBeNull(); // not a whole tenth
   expect(readStepQuote({ estimatedCredits: 14, price: 14, unit: "eur", fingerprint }, video)).toBeNull();
   expect(readStepQuote({ error: "Pick a voice." }, audio)).toBeNull();
   const sound = readStepQuote({ estimatedCredits: 2, price: 2, unit: "cr" }, audio)!;
@@ -195,7 +195,7 @@ test("a credit workspace gets each estimate as admission bills it, and planning 
     expect(loaded.chat.textCostUsd).toBeUndefined();
     expect(loaded.messages.every((m) => m.costUsd === undefined)).toBe(true);
     // What ran reads what the ledger billed it, never "1 cr".
-    expect(by("astp_done").billedCredits).toBe(14);
+    expect(by("astp_done").billedCredits).toBe(13.5);
     expect(by("astp_video").billedCredits).toBeNull();
     // A connected step is priced in connected credits elsewhere, never here.
     expect(by("astp_connected").estCredits).toBeNull();

@@ -1,4 +1,5 @@
 import type { TaskId } from "./tasks";
+import { ceilDeci, fromDeci } from "./creditTerms";
 
 /**
  * The rates a browser is allowed to see — already in the unit that workspace
@@ -137,7 +138,7 @@ export function estimateVideo(
     /* Rounded the way the server rounds it, at the same point: four places of
        whatever unit this is. In dollars that is hundredths of a cent; in
        credits it is a ten-thousandth of a credit, and either way what follows
-       rounds up to whole credits. Kept identical so the two paths cannot
+       rounds up to a tenth of a credit. Kept identical so the two paths cannot
        disagree by a rounding step. */
     return Math.round(perSecond * duration * 10_000) / 10_000;
   }
@@ -158,8 +159,9 @@ export function estimateImage(
 }
 
 /**
- * Whole units, rounded up, at least one — the rule the metering layer bills
- * by, applied to a figure that is already in the workspace's unit.
+ * Tenths of a credit, rounded up, at least one tenth — the rule the metering
+ * layer bills by (lib/creditTerms.ts billDeciWith), applied to a figure that
+ * is already in the workspace's unit.
  *
  * Dollars are not rounded this way, so a table in dollars returns the figure
  * untouched: a workspace on its own keys is quoted what its vendor charges,
@@ -169,5 +171,5 @@ export function charged(table: RateTable, amount: number | null): number | null 
   if (amount == null) return null;
   if (table.unit === "usd") return amount;
   if (!(amount > 0)) return 0;
-  return Math.max(1, Math.ceil(amount - 1e-9));
+  return fromDeci(Math.max(1, ceilDeci(amount)));
 }

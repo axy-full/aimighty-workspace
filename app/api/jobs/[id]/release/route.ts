@@ -3,6 +3,7 @@ import { getGeneration } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
 import { releaseHeldJobs } from "@/lib/held";
 import { mayRelease } from "@/lib/workspace/release";
+import { isCreditAmount } from "@/lib/creditTerms";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -25,8 +26,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const { id } = await params;
   const body = await req.json().catch(() => null) as { credits?: unknown } | null;
   const approved = Number(body?.credits ?? Number.NaN);
-  if (!Number.isSafeInteger(approved) || approved < 0)
-    return NextResponse.json({ error: "Release needs the price you approve, in whole credits." }, { status: 400 });
+  if (!isCreditAmount(approved))
+    return NextResponse.json({ error: "Release needs the price you approve, in credits to a tenth." }, { status: 400 });
   const gen = await getGeneration(id);
   if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!mayRelease(got.user, gen.createdBy)) {

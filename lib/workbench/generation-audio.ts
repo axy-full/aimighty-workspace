@@ -1,4 +1,5 @@
 import { GROK_TTS_MODEL } from "../grokVoiceModel";
+import { isCreditAmount } from "../creditTerms";
 
 export type NodeAudioTask = "sound" | "music" | "speech";
 export type NodeAudioSetup = {
@@ -52,5 +53,5 @@ export function nodeAudioBody(input: {
 }
 
 export function validAudioQuote(value: { estimatedCredits?: unknown }): value is { estimatedCredits: number } {
-  return typeof value.estimatedCredits === "number" && Number.isInteger(value.estimatedCredits) && value.estimatedCredits >= 0;
+  return isCreditAmount(value.estimatedCredits);
 }

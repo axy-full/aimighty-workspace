@@ -12,8 +12,8 @@ test("outpaint and cutout resolve to Bria rows at fal's flat prices, and build t
   expect(stillToolFor(expand.id)).toBe("outpaint"); expect(stillToolFor(rmbg.id)).toBe("cutout"); expect(stillToolFor("gemini-3-pro-image")).toBeNull();
   expect(estimateImageCostUsd(expand.id, "adaptive", 0)?.net).toBe(0.04);
   expect(estimateImageCostUsd(rmbg.id, "adaptive", 0)?.net).toBe(0.018);
-  expect(billCredits(0.04, expand.id)).toBe(1); // 0.04 × 1.4 / 0.10 = 0.56 → 1 whole credit
-  expect(billCredits(0.018, rmbg.id)).toBe(1);
+  expect(billCredits(0.04, expand.id)).toBe(0.1); // under a tenth: the smallest charge, one tenth
+  expect(billCredits(0.018, rmbg.id)).toBe(0.1);
   expect(canvasFor("9:16")).toEqual([1152, 2048]);
   expect(canvasFor("16:9")).toEqual([2048, 1152]);
   expect(canvasFor("1:1")).toEqual([2048, 2048]);

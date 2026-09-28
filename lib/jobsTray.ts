@@ -21,6 +21,7 @@ import { failureKind } from "./jobState";
 import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-consumer/resume";
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
+import { isCreditAmount } from "./creditTerms";
 
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
@@ -55,7 +56,7 @@ export type TrayJob = {
   action: TrayAction | null;
   /** Open in Takes: the take as the project's Library names it ("generation:<id>"). */
   takeId?: string | null;
-  /** Release: the whole credits it approves — the figure on its button, sent with the press (POST /api/jobs/:id/release `{ credits }`). */
+  /** Release: the credits it approves (to a tenth) — the figure on its button, sent with the press (POST /api/jobs/:id/release `{ credits }`). */
   releaseCredits?: number | null;
   /** Recreate: the take's own recipe as Gen reads it (lib/shell/recipe recreatePreset), built where the take is read. */
   preset?: GenPreset | null;
@@ -302,7 +303,7 @@ export function parseTrayReply(value: unknown): TrayReply | null {
     const price = job.price && typeof job.price === "object" && Number.isFinite(job.price.amount) && UNITS.has(job.price.unit) ? job.price : null;
     const takeId = typeof job.takeId === "string" && TAKE_ID.test(job.takeId) ? job.takeId : null;
     const preset = parsePreset(job.preset);
-    const releaseCredits = Number.isSafeInteger(job.releaseCredits) && Number(job.releaseCredits) > 0 ? Number(job.releaseCredits) : null;
+    const releaseCredits = isCreditAmount(job.releaseCredits) && Number(job.releaseCredits) > 0 ? Number(job.releaseCredits) : null;
     const action = job.action && ACTIONS.has(job.action) && (job.action !== "open" || takeId) && (job.action !== "recreate" || preset) && (job.action !== "release" || releaseCredits) ? job.action : null;
     return [{
       ...job,

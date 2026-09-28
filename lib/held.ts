@@ -5,7 +5,8 @@ import { db, ready, now } from "./db";
 import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
-import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
+import { billCredits, creditUsd, creditsFigure, floorDeci, fromDeci, heldPriceNow, marginKeyOf, toDeci } from "./creditTerms";
+import { approvedHeldPrice, sameCredits } from "./creditUnits";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
@@ -29,7 +30,8 @@ import { notify } from "./push";
  */
 export const HELD_LIMIT = 20;
 export type HeldWhy = "credits" | "slots";
-export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy };
+/** `needs` is in tenths of a credit at `unitUsd`, the price of a credit when the take was held (absent on older rows: the legacy price). */
+export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy; unitUsd?: number };
 type Defer = (fn: () => Promise<void>) => void | Promise<void>;
 
 /**
@@ -78,12 +80,15 @@ export async function discardHeldJob(id: string, tx?: Transaction): Promise<bool
 }
 
 export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
-  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
+  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why, unitUsd: creditUsd() };
 }
 
+/** What is left, to a tenth and rounded down: never more than can be spent. */
+const leftOf = (left: number | null | undefined): number => fromDeci(floorDeci(Math.max(0, Number(left ?? 0) || 0)));
+
 export function heldMessage(needs: number, left: number): string {
-  const l = Math.max(0, Math.floor(left));
-  return `Held: this needs ${needs} credit${needs === 1 ? "" : "s"} and ${l} ${l === 1 ? "is" : "are"} left. Top up to release it — nothing is lost.`;
+  const l = leftOf(left);
+  return `Held: this needs ${creditsFigure(needs)} credit${needs === 1 ? "" : "s"} and ${creditsFigure(l)} ${l === 1 ? "is" : "are"} left. Top up to release it — nothing is lost.`;
 }
 
 export async function heldCount(): Promise<number> {
@@ -96,12 +101,14 @@ export async function heldCount(): Promise<number> {
 export function planRelease(held: { id: string; needs: number }[], balance: number | null): { release: string[]; short: string[] } {
   if (balance == null) return { release: held.map((h) => h.id), short: [] };
   const release: string[] = [];
-  let left = balance;
+  // In whole tenths, so a run of releases never drifts past what the balance holds.
+  let left = floorDeci(balance);
   let i = 0;
   for (; i < held.length; i++) {
-    if (held[i].needs > left) break;
+    const needs = toDeci(held[i].needs);
+    if (needs > left) break;
     release.push(held[i].id);
-    left -= held[i].needs;
+    left -= needs;
   }
   return { release, short: held.slice(i).map((h) => h.id) };
 }
@@ -168,7 +175,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       estUsd,
       estimateValid: held.estUsd != null && Number.isFinite(estUsd) && estUsd >= 0 && (estUsd > 0 || needs === 0),
       needs,
-      heldAt: typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null,
+      heldAt: approvedHeldPrice(held),
       why: held.why === "slots" ? "slots" : "credits",
       token: row.token_id ? {
         id: String(row.token_id),
@@ -184,16 +191,16 @@ export type ReleaseRefusal = { status: number; error: string; needs: number; bal
 
 export const SLOTS_BUSY = "Every render slot is busy. It starts on its own when one is free.";
 export function stillShort(needs: number, balance: number | null): string {
-  const left = Math.max(0, Math.floor(balance ?? 0));
-  return `Still short: this needs ${needs} credit${needs === 1 ? "" : "s"} and ${left} ${left === 1 ? "is" : "are"} left.`;
+  const left = leftOf(balance);
+  return `Still short: this needs ${creditsFigure(needs)} credit${needs === 1 ? "" : "s"} and ${creditsFigure(left)} ${left === 1 ? "is" : "are"} left.`;
 }
 /** The price on the button is what the person approved (lib/workspace/rig.ts dispatchGate says the same for Generate). */
 export function repriced(needs: number): string {
-  return `The price is now ${needs.toLocaleString("en-US")} cr. Press Release again to approve it.`;
+  return `The price is now ${creditsFigure(needs)} cr. Press Release again to approve it.`;
 }
 /** Written on a take whose price moved while it waited: nobody approved the new figure, so nothing starts it on its own. */
 export function movedPrice(needs: number): string {
-  return `The price is now ${needs.toLocaleString("en-US")} cr. Release it at that price to start it.`;
+  return `The price is now ${creditsFigure(needs)} cr. Release it at that price to start it.`;
 }
 
 /**
@@ -241,10 +248,10 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
       continue;
     }
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
-    if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
+    if (opts.only && opts.approved != null && !sameCredits(r.needs, opts.approved)) { refuse(409, repriced(r.needs), r); continue; }
     /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
        release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
-    if (!opts.only && balance != null && r.needs !== r.heldAt) {
+    if (!opts.only && balance != null && !sameCredits(r.needs, r.heldAt)) {
       const said = movedPrice(r.needs);
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held' AND COALESCE(error,'')<>?",
         args: [said, now(), r.id, said] }).catch(() => {});
@@ -324,7 +331,7 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
   const admins = await workspaceAdmins(ws.id).catch(() => [] as { id: string; email: string; name: string }[]);
   if (!admins.length) return;
   const title = "Renders are being held";
-  const body = `A take needs ${gen.needs} credits and ${Math.max(0, Math.floor(gen.left))} are left. Top up to release it — nothing is lost.`;
+  const body = `A take needs ${creditsFigure(gen.needs)} credits and ${creditsFigure(leftOf(gen.left))} are left. Top up to release it — nothing is lost.`;
   await notify("balanceLow", admins.map((a) => a.id), { title, body, url: "/settings#credits" }).catch(() => {});
   if (!mailConfigured()) return;
   const link = `${siteUrl()}/settings#credits`;

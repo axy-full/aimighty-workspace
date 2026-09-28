@@ -223,13 +223,13 @@ test("held slot jobs recheck and reserve credits before release", async () => {
   await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)`, args: ["grant_held_budget", ws.id, 15, "Test", 0] });
   await runInTenant(ws, async () => {
     await ready();
-    for (const id of ["gen_held_a", "gen_held_b"]) await db().execute({ sql: `INSERT INTO generations(id,kind,model,prompt,params,status,provider,billed_to,created_at,updated_at) VALUES(?,'video','mock','test',?,'held','byteplus','byteplus',0,0)`, args: [id, JSON.stringify({ held: { estUsd: .75, needs: 12, why: "slots", at: 0 } })] });
+    for (const id of ["gen_held_a", "gen_held_b"]) await db().execute({ sql: `INSERT INTO generations(id,kind,model,prompt,params,status,provider,billed_to,created_at,updated_at) VALUES(?,'video','mock','test',?,'held','byteplus','byteplus',0,0)`, args: [id, JSON.stringify({ held: { estUsd: .75, needs: 11.3, why: "slots", at: 0 } })] });
     const deferred: Array<() => Promise<void>> = [];
     const result = await releaseHeldJobs({ defer: (fn) => { deferred.push(fn); } });
     expect(result.released).toHaveLength(1);
     expect(result.short).toBe(1);
     expect(deferred).toHaveLength(1); // Intentionally never call the provider.
-    expect(await creditsUsed(ws.id)).toBe(12);
+    expect(await creditsUsed(ws.id)).toBe(11.3); // 11.25, rounded up to a tenth
     expect(Number((await db().execute(`SELECT COUNT(*) AS n FROM generations WHERE status='held'`)).rows[0].n)).toBe(1);
   });
 });

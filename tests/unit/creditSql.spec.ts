@@ -8,10 +8,11 @@ import { setCreditUsd } from "../helpers/creditRate";
 /** The ledger's SQL sum must agree with the meter's JavaScript, row by row. */
 test("the SQL rounding agrees with the meter", async () => {
   const { billedCreditsSum } = await import("../../lib/creditSql");
-  const { billCreditsWith, marginFor, marginKeyOf } = await import("../../lib/creditTerms");
-  /* Takes that predate metering keep the price they were made at, US$0.10 a
-     credit, whatever CREDIT_USD says now (lib/creditSql.ts). */
-  const historical = (usd: number, key: string) => billCreditsWith(usd, marginFor(key), 0.10);
+  const { marginFor, marginKeyOf } = await import("../../lib/creditTerms");
+  const { legacyBilledCredits } = await import("../../lib/creditUnits");
+  /* Takes that predate metering keep the terms they were made at — whole
+     credits at US$0.10 — whatever CREDIT_USD or the rounding is now (lib/creditSql.ts). */
+  const historical = (usd: number, key: string) => legacyBilledCredits(usd, marginFor(key));
   const dir = mkdtempSync(path.join(tmpdir(), "particl-sql-"));
   const c = createClient({ url: `file:${path.join(dir, "t.db")}` });
   await c.execute(`CREATE TABLE credit_receipts(event_id TEXT PRIMARY KEY, credits REAL, revision INTEGER)`);

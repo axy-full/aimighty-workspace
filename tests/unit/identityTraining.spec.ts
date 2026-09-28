@@ -46,7 +46,7 @@ test("the approval carries the shown price, and a higher charge is refused", () 
   expect(trainApprovalProblem({ maxCredits: 53 }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: 0 }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: "54" }, charge)).toContain("price changed");
-  expect(trainApprovalProblem({ maxCredits: 54.5 }, charge)).toContain("price changed");
+  expect(trainApprovalProblem({ maxCredits: 54.55 }, charge)).toContain("price changed"); // not a whole tenth
   expect(trainApprovalProblem({ maxUsd: 3.59 }, charge)).toContain("price changed");
   // The sheet knows this answer by its exact words, and reads the terms again.
   expect(trainApprovalProblem({ maxCredits: 1 }, charge)).toBe(TRAIN_PRICE_CHANGED);

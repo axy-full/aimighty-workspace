@@ -7,6 +7,7 @@ import {
 import { MODELS, type ModelDef } from "../../lib/models";
 import { NO_REFERENCES, quoteWorkbenchMedia, rendersSound, workbenchAudioRates, workbenchGenerationModels, workbenchRate, workbenchUse } from "../../lib/workbench/media-quote";
 import { composerSettings, type ComposerReference } from "../../lib/workspace/composer";
+import { isCreditAmount } from "../../lib/creditTerms";
 import { pinCreditUsd } from "../helpers/creditRate";
 
 /* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
@@ -219,7 +220,7 @@ test("the engines route's rate is the button's own quote at the composer's untou
     priced++;
     /* Only an engine that settles on what it delivers carries "approximate" (shown as "about"). */
     expect(Object.keys(rate).sort()).toEqual(model.cinemaStudio ? ["approximate", "credits", "duration", "ratio", "resolution"] : ["credits", "duration", "ratio", "resolution"]);
-    expect(Number.isInteger(rate.credits) && rate.credits >= 1).toBe(true);
+    expect(isCreditAmount(rate.credits) && rate.credits >= 0.1).toBe(true);
     /* The same settings the composer opens with (no project aspect), so picking the row shows this figure on Generate. */
     const composed = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations });
     expect({ resolution: rate.resolution, ratio: rate.ratio }).toEqual({ resolution: composed.resolution, ratio: composed.ratio });
@@ -289,7 +290,7 @@ test("sound effects are one flat price and music is billed by its length, with t
   try {
     const at10 = workbenchAudioRates(10)!;
     expect(at10.sound.seconds).toBeNull();
-    expect(Number.isInteger(at10.sound.credits) && at10.sound.credits >= 1).toBe(true);
+    expect(isCreditAmount(at10.sound.credits) && at10.sound.credits >= 0.1).toBe(true);
     expect(at10.music.seconds).toBe(10);
     expect(workbenchAudioRates(3)!.music).toEqual(at10.music);
     expect(workbenchAudioRates(60)!.music.credits).toBeGreaterThan(at10.music.credits);

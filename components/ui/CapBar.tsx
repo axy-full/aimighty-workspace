@@ -16,7 +16,7 @@ import Mono from "./Mono";
  *           `--ink-body`) over a 110px bar, 5 apart (boards M2, M3)
  *
  * The figures are in the workspace's unit (§1: prices are read, never
- * typed): whole credits with `cr` after them, or — for a workspace that
+ * typed): credits to a tenth with `cr` after them, or — for a workspace that
  * pays its vendors in dollars — `$0.13 of $2.86`, with no `cr`.
  */
 type Props = {

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { ceilDeci, fromDeci } from "../creditTerms";
 
 /**
  * The last price a Generate button showed in this workspace's credits — the
@@ -17,7 +18,8 @@ const listeners = new Set<() => void>();
 
 export function rememberWorkspaceQuote(scope: string | null | undefined, credits: number | null | undefined): void {
   if (!scope || typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) return;
-  const whole = Math.ceil(credits);
+  // To the tenth it was quoted at, rounded up: a price never reads lower than it is.
+  const whole = fromDeci(ceilDeci(credits));
   if (quotes.get(scope)?.credits === whole) return;
   quotes.set(scope, { credits: whole, at: Date.now() });
   for (const listener of listeners) listener();

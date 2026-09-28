@@ -31,7 +31,7 @@ function workspace(name: string, credits: boolean): TenantWorkspace {
 const EST_USD = 1.37;
 const heldRow = (id: string, status: string, why: "credits" | "slots") => ({
   id, kind: "video", provider: "byteplus", model: "dreamina-seedance-2-0-260128", prompt: "test", status,
-  params: JSON.stringify({ ratio: "16:9", duration: 5, held: { estUsd: EST_USD, needs: 21, at: 1, why } }),
+  params: JSON.stringify({ ratio: "16:9", duration: 5, held: { estUsd: EST_USD, needs: 20.6, at: 1, why } }),
   created_at: 0, updated_at: 0,
 });
 const leaksDollars = (value: unknown) => {
@@ -46,7 +46,7 @@ test("a held take in a credit workspace reaches the browser with its credits and
     // A discarded held take is cancelled with its snapshot still on it.
     for (const [status, why] of [["held", "credits"], ["held", "slots"], ["cancelled", "credits"]] as const) {
       const gen = rowToGeneration(heldRow(`gen_${status}_${why}`, status, why));
-      expect(gen.params).toEqual({ ratio: "16:9", duration: 5, held: { why, needs: 21 } });
+      expect(gen.params).toEqual({ ratio: "16:9", duration: 5, held: { why, needs: 20.6 } });
       expect(leaksDollars(gen)).toBe(false);
     }
   });
@@ -82,7 +82,7 @@ test("GET-path reads strip the dollars while the release still meters the take f
       args: [row.id, row.kind, row.provider, row.model, row.prompt, row.params, row.status, Date.now(), Date.now()],
     });
     const one = await getGeneration(row.id);
-    expect(one?.params.held).toEqual({ why: "credits", needs: 21 });
+    expect(one?.params.held).toEqual({ why: "credits", needs: 20.6 });
     expect(leaksDollars(one)).toBe(false);
     expect(leaksDollars(await listGenerations())).toBe(false);
 

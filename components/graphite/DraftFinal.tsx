@@ -12,6 +12,7 @@ import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/librar
 import { neutralCopy } from "@/lib/workspace/rig";
 import { useWorkspace } from "@/lib/workspace/state";
 import { TakeStrip } from "./TakeStrip";
+import { isCreditAmount } from "@/lib/creditTerms";
 
 /**
  * A Seedance 2.5 draft and its 1080p final (lib/draftFinal.ts), drawn as ONE
@@ -42,7 +43,7 @@ async function quoteFinal(scope: string, draft: Generation): Promise<Quote> {
     headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
     body: JSON.stringify(draftFinalBody({ modelId: draft.model, draftId: draft.id })),
   });
-  if (typeof fresh.estimatedCredits !== "number" || !Number.isInteger(fresh.estimatedCredits) || fresh.estimatedCredits < 0 || typeof fresh.fingerprint !== "string" || !FINGERPRINT.test(fresh.fingerprint))
+  if (!isCreditAmount(fresh.estimatedCredits) || typeof fresh.fingerprint !== "string" || !FINGERPRINT.test(fresh.fingerprint))
     throw new Error("The final’s price could not be confirmed. Nothing was sent.");
   return { credits: fresh.estimatedCredits, fingerprint: fresh.fingerprint };
 }

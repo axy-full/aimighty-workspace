@@ -1,3 +1,5 @@
+import { ceilDeci, fromDeci, isCreditAmount, toDeci } from "./creditTerms";
+
 /**
  * Training a face from the New asset sheet (the legacy LoRA trainer behind
  * /api/identities). Pure, so the sheet and the train route share it.
@@ -34,7 +36,7 @@ export function trainingPhotos(refs: { kind: string; uploadId?: string | null }[
 
 /** What the train request carries: the approved price, in its own unit. */
 export function trainApproval(price: number, inCredits: boolean): { maxCredits: number } | { maxUsd: number } {
-  return inCredits ? { maxCredits: Math.max(0, Math.ceil(price - 1e-9)) } : { maxUsd: price };
+  return inCredits ? { maxCredits: fromDeci(Math.max(0, ceilDeci(price))) } : { maxUsd: price };
 }
 
 /** What the train route answers when the approved price is below the charge. */
@@ -47,7 +49,7 @@ export function trainApprovalProblem(
 ): string | null {
   const changed = TRAIN_PRICE_CHANGED;
   const { maxCredits, maxUsd } = body;
-  if (maxCredits != null && (typeof maxCredits !== "number" || !Number.isInteger(maxCredits) || maxCredits < 0 || charge.credits > maxCredits)) return changed;
+  if (maxCredits != null && (!isCreditAmount(maxCredits) || toDeci(charge.credits) > toDeci(maxCredits))) return changed;
   if (maxUsd != null && (typeof maxUsd !== "number" || !Number.isFinite(maxUsd) || maxUsd < 0 || charge.usd > maxUsd + 1e-9)) return changed;
   return null;
 }

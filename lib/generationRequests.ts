@@ -7,7 +7,7 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { creditUsd, marginFor, marginKeyOf, toDeci } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
@@ -17,6 +17,7 @@ import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { workbenchScopeProblem } from "./workbench/request-scope";
+import { legacyBilledCredits } from "./creditUnits";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -323,7 +324,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const baseline = new Map<string, Baseline>(rows.rows.map((r) => [String(r.id), {
     id: String(r.id), projectId: r.project_id == null ? null : String(r.project_id), shotId: r.shot_id == null ? null : String(r.shot_id),
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
-    credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
+    credits: legacyBilledCredits(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model)))), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
@@ -341,7 +342,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
     const billed = paid ? creditsAtTerms(cost, terms) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
-    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
+    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts, false, terms.creditUsd); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
     const merged = new Map(baseline);
     merged.delete(event.id);
@@ -362,8 +363,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (recent >= limits.rendersPerHour) throw new SpendReservationError("This workspace has reached its hourly job limit, including reserved jobs. Try again later.", 429);
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
-      const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + creditsAtTerms(cost, terms) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      // In whole tenths: a float sum of tenths (9.9 + 0.1) must not pass a cap it only meets.
+      const shotDeci = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + toDeci(r.credits), 0);
+      if (shotDeci + toDeci(creditsAtTerms(cost, terms)) > toDeci(shotCap)) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
     if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
@@ -386,9 +388,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     /* The same wall in credits, reckoned like the production cap above: what the
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
     if (options.token?.capCredits != null) {
-      const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
-      const needs = creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms);
-      if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
+      const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + toDeci(r.credits), 0);
+      const needs = toDeci(creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms));
+      if (spent + needs > toDeci(options.token.capCredits)) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,

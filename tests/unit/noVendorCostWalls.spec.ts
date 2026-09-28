@@ -88,7 +88,7 @@ test("a quote's approval credits carry the margin only where credits are billed"
   expect(await runInTenant(workspace("quote_cr", true), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
   /* On its own keys the workspace reads its vendor's dollars in `price`: the approval counts the same
      dollars in credits at the price of a credit, so the two side by side say nothing more. */
-  expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(14);
+  expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(13.4);
   /* A quote leaves the server in credits alone (/api/rig/quote). */
   const q = quoteOf([{ key: "s1", usd: 1.339101, engine: SEEDANCE }, { key: "s2", usd: 0.512901, engine: SEEDANCE }], liveTerms());
   const shown = publicQuote(q);

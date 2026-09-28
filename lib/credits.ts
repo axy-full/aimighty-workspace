@@ -42,7 +42,7 @@ export async function creditState(): Promise<CreditState | null> {
  * on its own keys is billed nothing in credits — its vendors bill it in
  * dollars, which its quote states — and a credit count at the platform's
  * rate beside those dollars would state the margin. Its approval counts the
- * same dollars in whole credits at the price of a credit instead, so the
+ * same dollars in credits (to a tenth) at the price of a credit instead, so the
  * ceiling still holds and says nothing else.
  */
 export function quotedCredits(usd: number, engine?: string | null): number {

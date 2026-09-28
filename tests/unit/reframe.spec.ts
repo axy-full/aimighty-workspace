@@ -23,7 +23,7 @@ test("reframe is a locked task on Luma Ray 2, priced at $0.06 a second, and take
   expect(falEndpointFor(model, "reframe", false)).toBe(ID);
   expect(perSecondRate(ID, "adaptive", { task: "reframe" })).toBe(0.06);
   expect(estimateCostUsd(ID, "adaptive", "9:16", 5, 0, true, { task: "reframe" })?.net).toBe(0.3);
-  expect(billCredits(0.3, ID)).toBe(5); // 0.30 × 1.4 / 0.10 = 4.2 → 5 whole credits
+  expect(billCredits(0.3, ID)).toBe(4.5); // at US$0.10 a credit, in tenths, rounded up
   // Unlike an edit, a 1080p source is fine; only the five-minute ceiling applies.
   expect(sourceProblem(task, { resolution: "1080p", duration: 5 })).toBeNull();
   expect(sourceProblem(task, { resolution: "720p", duration: 301 })).toMatch(/five minutes/);

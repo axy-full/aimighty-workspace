@@ -22,6 +22,7 @@ import {
   TOPAZ_IMAGE_PRESETS,
   type TopazImageSettings,
 } from "@/lib/topaz";
+import { isCreditAmount } from "@/lib/creditTerms";
 type Asset = {
   key: string;
   id: string;
@@ -176,7 +177,7 @@ export default function TopazImageUpscale({
       if (!response.ok)
         throw new Error(result.error || "The upscale could not be quoted.");
       if (
-        !Number.isInteger(result.estimatedCredits) ||
+        !isCreditAmount(result.estimatedCredits) ||
         result.estimatedCredits < 0 ||
         !/^[a-f0-9]{64}$/.test(result.fingerprint) ||
         !Number.isFinite(result.price) ||

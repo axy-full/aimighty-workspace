@@ -25,6 +25,7 @@ import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
+import { roundToTenth } from "@/lib/creditUnits";
 
 /**
  * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage · Dashboard ·
@@ -529,7 +530,7 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
 function Usage() {
   const { data, error } = useRead<UsageBody>("/api/usage");
   const { unit, rows, total } = usageRows(data);
-  const money = (n: number) => (unit === "cr" ? cr(Math.round(n)) : `$${n.toFixed(2)}`);
+  const money = (n: number) => (unit === "cr" ? cr(roundToTenth(n)) : `$${n.toFixed(2)}`);
   const shown = rows.filter((r) => r.amount > 0 || r.n > 0).sort((a, b) => b.amount - a.amount);
   const max = Math.max(1, ...shown.map((r) => r.amount));
   return (

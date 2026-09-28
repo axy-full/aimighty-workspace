@@ -12,7 +12,7 @@ test("a balance reads in credits, mono-friendly and grouped en-US", () => {
   expect(creditsLabel(2250).text).toBe("2,250 cr");
   expect(creditsLabel(2250).known).toBe(true);
   expect(creditsLabel(1234567).text).toBe("1,234,567 cr");
-  expect(creditsLabel(19.6).text).toBe("20 cr");
+  expect(creditsLabel(19.6).text).toBe("19.6 cr");
   expect(formatCredits(2250)).toBe("2,250 cr");
 });
 

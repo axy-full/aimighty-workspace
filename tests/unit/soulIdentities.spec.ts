@@ -93,7 +93,7 @@ const input = (projectId: string): CreateSoulIdentityInput => ({
   subjectType: "character",
   references: [{ uploadId: "source" }],
   consent: true,
-  maxCredits: 38,
+  maxCredits: 37.5,
 });
 async function submit(
   value: CreateSoulIdentityInput,
@@ -179,7 +179,7 @@ test("training reserves once before submission, concurrent request replay recove
       poll: async () => ({ id: providerId, status: "completed" }),
     });
     expect(completed?.status).toBe("ready");
-    expect(completed?.creditsBilled).toBe(38);
+    expect(completed?.creditsBilled).toBe(37.5);
     expect(
       (await requireReadySoulIdentity(identityId, production, project))
         .providerReferenceId,
@@ -189,7 +189,7 @@ test("training reserves once before submission, concurrent request replay recove
         throw new Error("must not repoll terminal");
       },
     });
-    expect(Number((await meterFor(identityId)).billed_credits)).toBe(38);
+    expect(Number((await meterFor(identityId)).billed_credits)).toBe(37.5);
     expect(calls).toBe(1);
     const serialized = JSON.stringify(completed);
     expect(serialized).not.toMatch(
@@ -256,7 +256,7 @@ test("an accepted failed training retains its documented per-request charge and 
       }),
     );
     expect(identity.status).toBe("failed");
-    expect(identity.creditsBilled).toBe(38);
+    expect(identity.creditsBilled).toBe(37.5);
     const { platformDb } = await import("../../lib/platform");
     expect(
       (
@@ -293,7 +293,7 @@ test("a persisted platform receipt recovers a known handle after tenant outcome 
     });
     expect(recovered?.status).toBe("ready");
     expect(calls).toBe(1);
-    expect(recovered?.creditsBilled).toBe(38);
+    expect(recovered?.creditsBilled).toBe(37.5);
   }));
 
 test("empty funding and changed quote reject before provider work", async () =>
@@ -437,7 +437,7 @@ test("new unsaved draft can read empty identities and terms, but a paid request 
     const { listSoulIdentities, soulIdentityTerms } =
       await import("../../lib/soulIdentities");
     expect(await listSoulIdentities("new-unsaved-draft")).toEqual([]);
-    expect(soulIdentityTerms().trainingCredits).toBe(38);
+    expect(soulIdentityTerms().trainingCredits).toBe(37.5);
     expect(
       (await submit(input("new-unsaved-draft"), "new-draft-key")).status,
     ).toBe(404);
@@ -504,7 +504,7 @@ test("successful provider completion stays unavailable until a failed meter sett
     await platformDb().execute("DROP TRIGGER deny_soul_meter");
     const recovered = await syncSoulIdentity(identity.id);
     expect(recovered?.status).toBe("ready");
-    expect(recovered?.creditsBilled).toBe(38);
+    expect(recovered?.creditsBilled).toBe(37.5);
     const receipt = (
       await platformDb().execute({
         sql: "SELECT settled_at FROM soul_training_receipts WHERE id=?",
@@ -599,7 +599,7 @@ test("definitive rejection releases the exact paid claim after a recovery poll l
       await submit(input(project), "rejection-poll-race"),
     );
     expect((await syncSoulIdentity(recovered.id))?.status).toBe("uncertain");
-    expect(Number((await meterFor(recovered.id)).billed_credits)).toBe(38);
+    expect(Number((await meterFor(recovered.id)).billed_credits)).toBe(37.5);
     rejectSubmit();
     const finished = await read(await running);
     expect(finished.status).toBe("failed");
@@ -681,7 +681,7 @@ test("stale never-submitted cleanup loses to an acquired paid claim and cannot r
       releaseSnapshot();
       expect((await cleanup)?.status).toBe("submitting");
       expect((await meterFor(identity.id)).status).toBe("running");
-      expect(Number((await meterFor(identity.id)).billed_credits)).toBe(38);
+      expect(Number((await meterFor(identity.id)).billed_credits)).toBe(37.5);
     } finally {
       client.execute = original;
       releaseSnapshot();
@@ -690,7 +690,7 @@ test("stale never-submitted cleanup loses to an acquired paid claim and cannot r
     }
     const finished = await read(await running);
     expect(finished.status).toBe("ready");
-    expect(finished.creditsBilled).toBe(38);
+    expect(finished.creditsBilled).toBe(37.5);
     expect(submitted).toBe(1);
   }));
 
@@ -738,7 +738,7 @@ test("new training is stamped with the production host and render family before 
     });
     expect(origins).toEqual(["api-v1"]);
     expect(ready?.status).toBe("ready");
-    expect(ready?.creditsBilled).toBe(38);
+    expect(ready?.creditsBilled).toBe(37.5);
   }));
 
 test("an identity accepted before the marker keeps polling its original host; a refusal there is an unknown outcome, never another request", async () =>
@@ -793,7 +793,7 @@ test("an identity accepted before the marker keeps polling its original host; a 
     expect(unknown?.error).toMatch(
       /earlier host.*outcome is unknown.*reservation is retained.*no new training request/,
     );
-    expect(unknown?.creditsBilled).toBe(38);
+    expect(unknown?.creditsBilled).toBe(37.5);
     expect((await meterFor(identity.id)).status).toBe("running");
     // A read inside the lease window neither polls nor hides the notice.
     const held = await syncSoulIdentity(identity.id, {
@@ -816,7 +816,7 @@ test("an identity accepted before the marker keeps polling its original host; a 
     });
     expect(origins).toEqual(["dev-v1", "dev-v1", "dev-v1"]);
     expect(settled?.status).toBe("ready");
-    expect(settled?.creditsBilled).toBe(38);
+    expect(settled?.creditsBilled).toBe(37.5);
     expect(submits).toBe(1);
     expect(
       (

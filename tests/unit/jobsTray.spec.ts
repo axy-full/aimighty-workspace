@@ -224,7 +224,7 @@ test("a reply is checked row by row before the tray draws it", () => {
       { ...row("open", "complete", T0, T0), action: "open", takeId: "generation:gen_1" },
       { ...row("again-nothing", "failed", T0, T0), action: "recreate", preset: { prompt: 4 } },
       { ...row("again", "failed", T0, T0), action: "recreate", preset: preset("again") },
-      { ...row("free", "held", T0), action: "release", releaseCredits: 12.5 },
+      { ...row("free", "held", T0), action: "release", releaseCredits: 12.55 },
       { ...row("priced", "held", T0), action: "release", releaseCredits: 43 },
       { ...row("bad-stage", "rendering", T0), stage: "exploding" },
       { id: 7, name: "no id" },
@@ -239,7 +239,7 @@ test("a reply is checked row by row before the tray draws it", () => {
   expect(reply?.jobs[2]).toMatchObject({ action: "open", takeId: "generation:gen_1" });
   expect(reply?.jobs[3]).toMatchObject({ action: null, preset: null });
   expect(reply?.jobs[4].action).toBe("recreate");
-  /* Release approves whole credits, or it is no Release. */
+  /* Release approves credits to a tenth, or it is no Release. */
   expect(reply?.jobs[5]).toMatchObject({ action: null, releaseCredits: null });
   expect(reply?.jobs[6]).toMatchObject({ action: "release", releaseCredits: 43 });
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);

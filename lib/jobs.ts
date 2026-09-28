@@ -13,6 +13,7 @@ import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
+import { approvedHeldPrice, sameCredits } from "./creditUnits";
 import { withoutVendorDollars } from "./analyticsRedact";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
@@ -126,8 +127,8 @@ function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind:
   if (typeof held.why === "string") out.why = held.why;
   const needs = heldPriceNow(held, kind, model);
   /* A changed quote needs approval even if the take originally waited only for a slot. */
-  const approved = typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null;
-  if (inCredits && held.why === "slots" && needs !== approved) out.why = "credits";
+  const approved = approvedHeldPrice(held);
+  if (inCredits && held.why === "slots" && !sameCredits(needs, approved)) out.why = "credits";
   if (inCredits && needs > 0) out.needs = needs;
   if (!inCredits && typeof held.estUsd === "number") out.estUsd = held.estUsd;
   return out;

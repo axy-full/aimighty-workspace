@@ -12,12 +12,13 @@ import {
 const TERMS: Terms = { perCredit: 0.10, table: { "*": 1 } };
 const shot = (key: string, usd: number, engine = "*") => ({ key, usd, engine });
 
-test("one job rounds up to a whole credit, and never to nothing", () => {
+test("one job rounds up to the next tenth of a credit, and never to nothing", () => {
   expect(quoteOf([shot("a", 2.90)], TERMS).totalCredits).toBe(29);
-  // Nothing that costs the platform money costs a workspace less than one.
-  expect(quoteOf([shot("a", 0.001)], TERMS).totalCredits).toBe(1);
-  // A fraction over rounds up, not to nearest.
-  expect(quoteOf([shot("a", 2.91)], TERMS).totalCredits).toBe(30);
+  // Nothing that costs the platform money costs a workspace less than a tenth.
+  expect(quoteOf([shot("a", 0.001)], TERMS).totalCredits).toBe(0.1);
+  // A fraction over rounds up to the next tenth, not to nearest.
+  expect(quoteOf([shot("a", 2.901)], TERMS).totalCredits).toBe(29.1);
+  expect(quoteOf([shot("a", 2.91)], TERMS).totalCredits).toBe(29.1);
   // Free is free.
   expect(quoteOf([shot("a", 0)], TERMS).totalCredits).toBe(0);
   expect(quoteOf([], TERMS)).toEqual(EMPTY_QUOTE);
@@ -37,12 +38,21 @@ test("shots round one at a time, and the totals are the ones in the design", () 
 });
 
 /* A batch is one press, so it multiplies before it rounds. Separate shots are
-   separate presses and do not. The difference is real money: eight tenths of
-   a credit, eight times, is one credit as a batch and eight as eight shots. */
+   separate presses and do not. The difference is real money: half a tenth of
+   a credit, eight times, is 0.4 credits as a batch and 0.8 as eight shots. */
 test("a batch multiplies before rounding; separate shots do not", () => {
-  expect(quoteOf([shot("one", 0.01, "*")], TERMS).totalCredits).toBe(1);
-  expect(quoteOf([{ ...shot("batch", 0.01), count: 8 }], TERMS).totalCredits).toBe(1);
-  expect(quoteOf(Array.from({ length: 8 }, (_, i) => shot(`s${i}`, 0.01)), TERMS).totalCredits).toBe(8);
+  expect(quoteOf([shot("one", 0.005, "*")], TERMS).totalCredits).toBe(0.1);
+  expect(quoteOf([{ ...shot("batch", 0.005), count: 8 }], TERMS).totalCredits).toBe(0.4);
+  expect(quoteOf(Array.from({ length: 8 }, (_, i) => shot(`s${i}`, 0.005)), TERMS).totalCredits).toBe(0.8);
+});
+
+test("a total of many lines in tenths is exact, and a per-unit price stands only when it truly is", () => {
+  const ten = quoteOf(Array.from({ length: 10 }, (_, i) => shot(`s${i}`, 0.01)), TERMS);
+  expect(ten.totalCredits).toBe(1);        // 0.1 ten times, not 0.9999999999999999
+  expect(ten.unitCredits).toBe(0.1);
+  const three = quoteOf([shot("a", 0.01), shot("b", 0.02), shot("c", 0.03)], TERMS);
+  expect(three.totalCredits).toBe(0.6);     // not 0.6000000000000001
+  expect(three.unitCredits).toBeNull();
 });
 
 /* The design's copy reads as a rate times a count. Real shots differ in length

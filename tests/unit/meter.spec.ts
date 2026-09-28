@@ -83,10 +83,10 @@ test("one id, one row: the completion updates the running event", async () => {
   const r = rows.rows[0] as Record<string, unknown>;
   expect(r.status).toBe("succeeded");
   expect(Number(r.engine_cost_usd)).toBeCloseTo(2.9, 6);
-  expect(Number(r.billed_credits)).toBe(44);
+  expect(Number(r.billed_credits)).toBe(43.5);
   expect(r.project_id).toBe("p1");
   expect(Number(r.duration_ms)).toBe(40_000);
-  expect(await creditsUsed("ws_unit")).toBe(44);
+  expect(await creditsUsed("ws_unit")).toBe(43.5);
   const s = await meterSummary("ws_unit");
   expect(s.jobs).toBe(1);
   expect(s.byEngine[0].engine).toBe("byteplus");
@@ -189,7 +189,7 @@ test("changing vendor keys while a job runs cannot change who funds its complete
       Number(r.billed_credits),
     ]),
   ).toEqual([
-    ["key_added", 1, 17],
+    ["key_added", 1, 16.5],
     ["key_removed", 0, 0],
   ]);
 });

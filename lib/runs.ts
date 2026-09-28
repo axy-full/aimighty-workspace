@@ -3,6 +3,7 @@ import {
   cleanFailure, isStageState,
   type Failure, type RunView, type StageState, type StageView,
 } from "./runState";
+import { fromDeci, toDeci } from "./creditTerms";
 
 /**
  * Runs, read and written (brief 3, surface 1a).
@@ -25,7 +26,7 @@ import {
 
 const stageState = (v: unknown): StageState => (isStageState(v) ? v : "queued");
 
-/* A figure in the workspace's unit: whole credits stay whole, and a dollar
+/* A figure in the workspace's unit: credits keep their tenths, and a dollar
    workspace keeps its cents — the old `Math.round` turned a $0.13 stage into
    $0, which is not a price. */
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -441,7 +442,7 @@ export async function startRun(
     sql: `INSERT INTO runs (id, recipe_id, project_id, num, state, estimate_credits, started_by, started_at, updated_at)
           VALUES (?,?,?,?,?,?,?,?,?)`,
     args: [rid, recipeId, projectId, num, "running",
-           stages.reduce((n, s) => n + s.credits, 0), by, ts, ts],
+           fromDeci(stages.reduce((n, s) => n + toDeci(s.credits), 0)), by, ts, ts],
   });
   for (const s of stages) {
     await db().execute({

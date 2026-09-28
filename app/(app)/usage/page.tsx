@@ -24,6 +24,7 @@ import ManagementPage, {
   ManagementNotice,
   ManagementStat,
 } from "@/components/management/ManagementPage";
+import { ceilDeci, creditsFigure, fromDeci } from "@/lib/creditTerms";
 const gb = (n: number) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.round(n / 1e6)} MB`;
 type Vendor = {
@@ -983,7 +984,7 @@ function ProductionPerformance() {
           value={
             projected != null
               ? money.inCredits
-                ? Math.ceil(projected).toLocaleString() + " cr"
+                ? creditsFigure(fromDeci(ceilDeci(projected))) + " cr"
                 : usd(projected, 2)
               : "—"
           }

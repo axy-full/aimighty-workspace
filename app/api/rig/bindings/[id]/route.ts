@@ -1,4 +1,5 @@
 import { syncCreditReceipts } from "@/lib/creditReceipts";
+import { roundToTenth } from "@/lib/creditUnits";
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
@@ -80,7 +81,7 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
       state: String(r.review_state ?? ""),
       approved: String(r.review_state ?? "") === "approved",
       kind: String(r.kind ?? "video"),
-      seconds, credits: Math.round(Number(r.credits ?? 0)),
+      seconds, credits: roundToTenth(Number(r.credits ?? 0)),
     };
   }
 

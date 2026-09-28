@@ -1,6 +1,6 @@
 import { estimateCostUsd } from "./vendorPricing";
 import { previewItems, supportedDuration, type PreviewPlan } from "./previews";
-import { billCredits } from "./creditTerms";
+import { billCredits, fromDeci, toDeci } from "./creditTerms";
 
 /**
  * The preview batch, priced in the vendors' dollars.
@@ -24,6 +24,7 @@ export function previewPlan(modelId: string, resolution: string, duration: numbe
     modelId, resolution, duration: d, items, count: items.length, perClipUsd,
     totalUsd: Math.round(perClipUsd * items.length * 100) / 100,
     perClipCredits: billCredits(perClipUsd, modelId),
-    totalCredits: billCredits(perClipUsd, modelId) * items.length,
+    // In whole tenths: 0.3 × 3 is 0.9, not 0.8999999999999999.
+    totalCredits: fromDeci(toDeci(billCredits(perClipUsd, modelId)) * items.length),
   };
 }

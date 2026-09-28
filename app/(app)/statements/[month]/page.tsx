@@ -9,6 +9,7 @@ import { useProject } from "@/lib/projectContext";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import type { Statement, StatementLine } from "@/lib/statements";
+import { creditsFigure } from "@/lib/creditTerms";
 
 /**
  * A statement on paper: one month, itemised by production, shot and take,
@@ -33,7 +34,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
   const url = signedIn && admin ? `/api/statements?month=${encodeURIComponent(month)}${project ? `&project=${encodeURIComponent(project)}` : ""}` : null;
   const { data, error, refresh } = useApi<Statement>(url, 60_000);
   const amount = useMemo(() => (data?.unit === "cr"
-    ? (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`
+    ? (n: number) => `${creditsFigure(n)} cr`
     : (n: number) => `$${n.toFixed(2)}`), [data?.unit]);
 
   if (!signedIn) return <div className="page"><div className="page-inner"><Empty title="Statements are private" line="Sign in as an owner or admin to read them." /></div></div>;

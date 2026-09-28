@@ -1,4 +1,4 @@
-import { creditRateLine } from "@/lib/creditTerms";
+import { creditRateLine, creditsFigure } from "@/lib/creditTerms";
 import type { Unit } from "@/lib/rateTable";
 
 /** Numbers group Western-style regardless of the browser's locale. */
@@ -6,8 +6,9 @@ export function formatCount(n: number) {
   return Math.round(n).toLocaleString("en-US");
 }
 
+/** A balance to a tenth, one decimal only when it is not zero: "2,250 cr", "0.9 cr". */
 export function formatCredits(balance: number) {
-  return `${formatCount(balance)} cr`;
+  return `${creditsFigure(balance)} cr`;
 }
 
 /**

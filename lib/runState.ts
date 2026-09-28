@@ -16,6 +16,8 @@
  * Pure. The rows are read in lib/runs.ts and the money is the quote engine's.
  */
 
+import { roundToTenth } from "./creditUnits";
+
 export const STAGE_STATES = ["queued", "running", "done", "needs_you", "skipped"] as const;
 export type StageState = (typeof STAGE_STATES)[number];
 
@@ -238,7 +240,7 @@ export function cleanFailure(v: unknown): Failure | null {
     const label = str(f.label, 80);
     if (!id || !label || seen.has(id)) continue;
     const kind = f.kind === "rerender" || f.kind === "skip" ? f.kind : "settings";
-    const credits = Math.max(0, Math.round(Number(f.credits) || 0));
+    const credits = Math.max(0, roundToTenth(Number(f.credits) || 0));
     seen.add(id);
     fixes.push({ id, label, note: str(f.note, 160), kind, credits });
     if (fixes.length >= 4) break;

@@ -68,7 +68,7 @@ for (const rejected of [false, true])
             status: "running",
             engineCostUsd: 0.0364,
           });
-          expect((await billingStateFor(id)).credits.balance).toBe(99);
+          expect((await billingStateFor(id)).credits.balance).toBe(99.9);
           const job = (await loadJob(id))!;
           await expect(produce(job)).rejects.toThrow(
             rejected ? "Invalid input" : "Connection lost",
@@ -76,7 +76,7 @@ for (const rejected of [false, true])
           expect(await produce(job)).toBeNull();
           expect(calls).toBe(1);
           expect((await billingStateFor(id)).credits.balance).toBe(
-            rejected ? 100 : 99,
+            rejected ? 100 : 99.9,
           );
           const row = (
             await db().execute({
@@ -144,7 +144,7 @@ test("a queued job whose funding source changed releases its reservation without
         });
       });
       expect((await billingStateFor(id)).credits.balance).toBe(
-        initiallyPaid ? 99 : 100,
+        initiallyPaid ? 99.9 : 100,
       );
       await runInTenant(initiallyPaid ? own : paid, async () => {
         const job = (await loadJob(id))!;
@@ -197,12 +197,12 @@ for (const [status, released] of [[400, true], [503, false]] as const)
           args: [id, JSON.stringify({ task: "speech", voiceId: "eve", estUsd: 0.05 }), Date.now(), Date.now()],
         });
         await reserveGenerationSpend({ id, kind: "audio", engine: "xai", model: "grok-tts", status: "running", engineCostUsd: 0.05 });
-        expect((await billingStateFor(id)).credits.balance).toBe(99);
+        expect((await billingStateFor(id)).credits.balance).toBe(99.9);
         const job = (await loadJob(id))!;
         await expect(produce(job)).rejects.toThrow(`(${status})`);
         expect(await produce(job)).toBeNull();
         expect(calls).toBe(1);
-        expect((await billingStateFor(id)).credits.balance).toBe(released ? 100 : 99);
+        expect((await billingStateFor(id)).credits.balance).toBe(released ? 100 : 99.9);
         const row = (await db().execute({ sql: "SELECT status,cost_usd FROM generations WHERE id=?", args: [id] })).rows[0];
         expect(row.status).toBe("failed");
         expect(Number(row.cost_usd)).toBe(released ? 0 : 0.05);

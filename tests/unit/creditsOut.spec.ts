@@ -504,13 +504,13 @@ test("a take held for credits is its own state: Held · needs N cr, its price, a
     gen("c", { status: "held", error: "This take and reserved takes exceed the shot's credit cap. An admin must start it.", params: { held: { why: "credits", needs: 40 } } }),
   ] as never);
   /* Held for credits is not "rendering": its own status, the need on the chip, nothing charged. */
-  expect(credits).toMatchObject({ status: "held", needs: 12, credits: null, reason: "Needs 12 cr" });
-  expect(takeChip(credits)).toEqual({ label: "Held · needs 12 cr", tone: "waiting" });
-  expect(takeStatusWord(credits)).toBe("Held · needs 12 cr");
+  expect(credits).toMatchObject({ status: "held", needs: 11.2, credits: null, reason: "Needs 11.2 cr" });
+  expect(takeChip(credits)).toEqual({ label: "Held · needs 11.2 cr", tone: "waiting" });
+  expect(takeStatusWord(credits)).toBe("Held · needs 11.2 cr");
   /* The chip carries the need; the 2-up tile says Held and the need under the name. */
   expect(takeReasonLine(credits)).toBeNull();
   expect(takeChip(credits, true)).toEqual({ label: "Held", tone: "waiting" });
-  expect(takeReasonLine(credits, true)).toBe("Needs 12 cr");
+  expect(takeReasonLine(credits, true)).toBe("Needs 11.2 cr");
   /* Waiting for a slot is a place in the line. */
   expect(slots).toMatchObject({ status: "rendering", stage: "queued", reason: "Waiting for a free slot" });
   expect(slots.needs).toBeUndefined();
@@ -534,14 +534,14 @@ test("the amber pill reads the last quote in this workspace's credits and never 
   expect(lastWorkspaceQuote("scope-a")).toBeNull();
   expect(lowBalance(10, null)).toBe(false);
   rememberWorkspaceQuote("scope-a", 12.2);
-  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 13 });
+  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 12.2 }); // to the tenth it was quoted at
   expect(lowBalance(12, lastWorkspaceQuote("scope-a"))).toBe(true);
   expect(lowBalance(13, lastWorkspaceQuote("scope-a"))).toBe(false);
   /* Unknown is not low; another workspace's quote is not this one's. */
   expect(lowBalance(null, lastWorkspaceQuote("scope-a"))).toBe(false);
   expect(lastWorkspaceQuote("scope-b")).toBeNull();
   for (const bad of [Number.NaN, -1, null, undefined]) rememberWorkspaceQuote("scope-a", bad as number);
-  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 13 });
+  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 12.2 }); // to the tenth it was quoted at
   expect(lowBalance(0, { credits: 0 })).toBe(false);
 });
 
