@@ -5,6 +5,7 @@ import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
@@ -12,7 +13,6 @@ import {
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput, MARKETING_25_PRICING_WATCH } from "@/lib/higgsfieldMarketing";
-import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 import { allowanceCheck, renderKeyNameFor } from "@/lib/allowance";
