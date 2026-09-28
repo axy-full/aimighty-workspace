@@ -158,6 +158,9 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   expect(composerBlock({ ...base, quote: { key, credits: null, state: "loading", reason: null } })).toBe("Getting the live price…");
   /* A current, ready figure clears the block and lands on the button. */
   expect(composerBlock({ ...base, quote: ready(key, 18) })).toBeNull();
+  expect(composerBlock({ ...base, quote: ready(key, 18), projects: "loading" })).toBe("Reading the projects…");
+  expect(composerBlock({ ...base, quote: ready(key, 18), projects: "error" })).toContain("Try again");
+  expect(composerBlock({ ...base, quote: ready(key, 18), projects: "ready" })).toBeNull();
   expect(composerButtonLabel({ billing: "workspace", quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
   expect(composerButtonLabel({ billing: "connected", quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 connected cr");
   /* An approximate figure (an engine that settles on what it delivers) never reads as exact. */

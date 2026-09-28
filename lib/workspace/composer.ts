@@ -1,4 +1,5 @@
 import { displayModelName } from "../models";
+import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
@@ -57,6 +58,8 @@ export type ComposerModel = {
   rate?: EngineRate | null;
   /** Sizes the engine lists but that were never rendered here (lib/models.ts › untestedResolutions). */
   untested?: string[];
+  /** Workspace video engines with draft mode (lib/draftFinal.ts): Gen offers "Draft first · 480p". */
+  draft?: true;
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -99,7 +102,8 @@ export type ComposerState = {
 };
 export const TAKES_MAX = 4;
 
-export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string };
+/** `draft`: "Draft first" (lib/draftFinal.ts), honoured only on an engine with draft mode: a 480p draft whose final is made after. */
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string; draft?: boolean };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
@@ -302,6 +306,8 @@ export type EngineRow = {
   /** A take from this engine carries sound as the workbench renders it (lib/workbench/media-quote.ts › rendersSound). */
   audio?: boolean;
   rate?: EngineRate | null;
+  /** The engine has draft mode (lib/models.ts › supportsDraft). */
+  draft?: boolean;
 };
 
 /** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
@@ -344,6 +350,7 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ...(engine.audio ? { audio: true } : {}),
       ...(engine.rate ? { rate: engine.rate } : {}),
       ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
+      ...(engine.draft && engine.kind === "video" ? { draft: true as const } : {}),
     }));
   if (audio?.configured) {
     /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone speaks only. */
@@ -433,7 +440,15 @@ export function activeModel(
 
 /* ── Settings the engine allows ───────────────────────────────────────── */
 
-export type ComposerSettings = { ratio: string; resolution: string; duration: number; /** A trained character, only where the model declares `soul_id`. */ soulId?: string };
+export type ComposerSettings = {
+  ratio: string; resolution: string; duration: number;
+  /** A trained character, only where the model declares `soul_id`. */ soulId?: string;
+  /** A draft first (lib/draftFinal.ts): 480p, watermarked, and made into its 1080p final after. */ draft?: true;
+};
+
+/** Whether "Draft first" applies to this engine as the composer stands. */
+export const draftOffered = (model: Pick<ComposerModel, "draft" | "resolutions"> | null | undefined): boolean =>
+  Boolean(model?.draft && model.resolutions?.includes(DRAFT_RESOLUTION));
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
 export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {
@@ -443,13 +458,17 @@ export function composerSettings(model: ComposerModel | null, projectAspect?: st
     : projectAspect && ratios.includes(projectAspect)
     ? projectAspect
     : ratios.includes("16:9") ? "16:9" : ratios.find((r) => r !== "adaptive") ?? ratios[0] ?? "16:9";
+  /* A draft is 480p whatever size was picked; the pick comes back when the draft is switched off. */
+  const draft = Boolean(picks.draft) && draftOffered(model);
   return {
     ratio,
-    resolution: picks.resolution && model?.resolutions?.includes(picks.resolution) ? picks.resolution : model?.resolutions?.[0] ?? "720p",
+    resolution: draft ? DRAFT_RESOLUTION
+      : picks.resolution && model?.resolutions?.includes(picks.resolution) ? picks.resolution : model?.resolutions?.[0] ?? "720p",
     duration: picks.duration != null && model?.durations?.includes(picks.duration)
       ? picks.duration
       : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
     ...(model?.soulId && picks.soulId ? { soulId: picks.soulId } : {}),
+    ...(draft ? { draft: true as const } : {}),
   };
 }
 
@@ -498,6 +517,8 @@ export function quoteKeyFor(input: {
     input.settings.ratio, input.settings.resolution, input.settings.duration, input.settings.soulId ?? "",
     input.references.map((r) => `${r.origin}:${r.id}`),
     priced, input.seconds, input.instrumental, input.voiceId,
+    // Keep existing recovery keys unchanged. Only the new draft body gets its own discriminator.
+    ...(input.settings.draft ? ["draft"] : []),
   ]);
 }
 
@@ -543,6 +564,8 @@ export function composerBlock(input: {
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
+  /** A failed project list is not evidence that this workspace has no project. */
+  projects?: "loading" | "ready" | "error";
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
@@ -551,6 +574,8 @@ export function composerBlock(input: {
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
+  if (input.projects === "loading") return "Reading the projects…";
+  if (input.projects === "error") return "Projects didn’t load. Use Try again above before generating.";
   if (state.billing === "connected") {
     if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
@@ -578,6 +603,8 @@ type ButtonInput = {
   submitting: boolean;
   /** Takes per Generate; the price shown is the batch's total. */
   count?: number;
+  /** A draft first (one take, 480p): the button says so. */
+  draft?: boolean;
 };
 
 /**
@@ -589,9 +616,9 @@ type ButtonInput = {
  */
 export function composerButtonParts(input: ButtonInput): { action: string; price: string | null } {
   if (input.submitting) return { action: "Submitting…", price: null };
-  const count = Math.max(1, input.count ?? 1);
+  const count = input.draft ? 1 : Math.max(1, input.count ?? 1);
   const total = shownTotal(input.quote, input.quoteKey, count);
-  const action = count > 1 ? `Generate ${count} takes` : "Generate";
+  const action = input.draft ? "Generate draft" : count > 1 ? `Generate ${count} takes` : "Generate";
   if (total === null) return { action, price: null };
   const about = input.quote?.approximate ? "about " : "";
   return { action, price: `${about}${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };

@@ -116,7 +116,8 @@ export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSecon
 export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferencePrices = NO_REFERENCES): WorkbenchRate | null {
   if (model.marketing || model.soulIdentity) return null;
   if (!model.resolutions.length || !model.ratios.length || (model.kind === 'video' && !model.durations.length)) return null;
-  const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations }, at.aspect, at.picks);
+  /* "Draft first" prices a draft-mode engine at 480p, as its draft is billed. */
+  const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations, ...(model.supportsDraft ? { draft: true as const } : {}) }, at.aspect, at.picks);
   try {
     const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration }, refs);
     return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}) };

@@ -16,6 +16,7 @@ import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
 import { engineMock, mockJobId, mockTag, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
 import { preflight } from "./preflight";
+import { DRAFT_RESOLUTION, FINAL_RESOLUTION } from "./draftFinal";
 
 const HOST =
   process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -48,6 +49,10 @@ export type VideoParams = {
   /** Saved by admission: whether a clip is sent in, and its measured seconds, as quoted. */
   hasVideoInput?: boolean;
   inputSeconds?: number;
+  /** Seedance 2.5 draft mode: a 480p watermarked preview whose task can render the final (lib/draftFinal.ts). */
+  draft?: boolean;
+  /** A draft's final: the draft's task id at the vendor. Nothing else about the render is sent (buildFinalRequestBody). */
+  draftTaskId?: string;
 };
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
@@ -182,6 +187,42 @@ async function toRefContent(ref: Reference) {
   };
 }
 
+/**
+ * What a draft adds to an ordinary request: `draft: true` and the watermark.
+ * The vendor renders drafts at 480p only and errors on anything else, so a
+ * draft at another size is refused here, before it is sent.
+ */
+export function draftFields(m: ModelDef, p: Pick<VideoParams, "resolution" | "task">): { draft: true; watermark: true } {
+  if (!m.supportsDraft) throw new Error(`${m.label} has no draft mode.`);
+  if (p.resolution !== DRAFT_RESOLUTION) throw new Error(`A draft renders at ${DRAFT_RESOLUTION} only.`);
+  if ((p.task ?? "generate") !== "generate") throw new Error("A draft is a new take; edits and extensions have no draft here.");
+  return { draft: true, watermark: true };
+}
+
+/**
+ * The 1080p final of a Seedance 2.5 draft. Its ONLY content item is the
+ * draft's task id: the vendor reuses the draft's prompt, references, length,
+ * ratio, seed, audio and task type, and rejects any of them sent again, even
+ * unchanged — so none is, and this builder takes none of them. 1080p is the
+ * only size a 2.5 final renders at. The watermark is off: only drafts carry one.
+ */
+export function buildFinalRequestBody(
+  modelId: string,
+  draftTaskId: string,
+  p: Pick<VideoParams, "outputFormat"> = {},
+): Record<string, unknown> {
+  const m = getModel(modelId);
+  if (!m.supportsDraft) throw new Error(`${m.label} has no draft mode, so it has no final to make.`);
+  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(draftTaskId)) throw new Error("The draft's task id cannot be read.");
+  return {
+    model: m.id,
+    content: [{ type: "draft_task", draft_task: { id: draftTaskId } }],
+    resolution: FINAL_RESOLUTION,
+    watermark: false,
+    ...(p.outputFormat === "mov" ? { output_format: "mov" } : {}),
+  };
+}
+
 export async function buildRequestBody(
   modelId: string,
   prompt: string,
@@ -189,6 +230,9 @@ export async function buildRequestBody(
   references: Reference[] = []
 ): Promise<Record<string, unknown>> {
   const m = getModel(modelId);
+
+  /* A draft's final is its own request shape: see buildFinalRequestBody. */
+  if (p.draftTaskId) return buildFinalRequestBody(modelId, p.draftTaskId, p);
 
   if (m.paramStyle === "flags") {
     return {
@@ -240,6 +284,7 @@ export async function buildRequestBody(
   void task.preferMov;   // the vendor's advice, recorded in lib/tasks.ts
   if (p.seed != null) body.seed = p.seed;
   if (m.supportsAudio) body.generate_audio = Boolean(p.generateAudio);
+  if (p.draft) Object.assign(body, draftFields(m, p));
   return body;
 }
 
@@ -248,10 +293,40 @@ export async function buildRequestBody(
  * reads them back and reports the catalogue's own token estimate, so a
  * mocked render costs what the button said it would. An id without the tag
  * (from before this) keeps the old fixed count. */
-function mockVideoTag(p: VideoParams, references: Reference[]): string {
+function mockVideoTag(p: VideoParams, references: Reference[], prompt = ""): string {
   const inputSeconds = references.filter((r) => r.kind === "video").reduce((a, r) => a + (Number((r as { duration?: number }).duration) || 0), 0)
     || Number((p as { inputSeconds?: number }).inputSeconds ?? 0) || 0;
-  return `${p.resolution}-${String(p.ratio).replace(":", "x")}-${p.duration}-${Math.round(inputSeconds)}`;
+  const tag = `${p.resolution}-${String(p.ratio).replace(":", "x")}-${p.duration}-${Math.round(inputSeconds)}`;
+  return mockRefuses(prompt, p) ? `${tag}-${MOCK_REFUSED}` : tag;
+}
+
+/* ── The mock refuses a clip when the words ask it to ───────────────────
+ * ModelArk fails a task whose output trips its moderation, and bills none
+ * of it. So that path can be walked end to end without a vendor, a prompt
+ * that carries `[mock:refused]` is refused the same way under ENGINE_MOCK,
+ * and `[mock:final-refused]` refuses only a draft's final (whose task
+ * carries the draft's words). Nothing outside the mock reads these. */
+const MOCK_REFUSED = "refused";
+function mockRefuses(prompt: string, p: VideoParams): boolean {
+  return /\[mock:refused\]/i.test(prompt) || (Boolean(p.draftTaskId) && /\[mock:final-refused\]/i.test(prompt));
+}
+
+/** A finished mock task as ModelArk's poll returns one, so it is read by the same code as the real thing. */
+function mockTaskResponse(taskId: string): ArkTaskResponse {
+  const started = mockStartedAt(taskId);
+  if (!mockDone(taskId)) return { id: taskId, model: "mock", status: "running", created_at: Math.floor(started / 1000) };
+  const ended = { created_at: Math.floor(started / 1000), updated_at: Math.floor(Date.now() / 1000) };
+  if (mockTag(taskId)?.endsWith(`-${MOCK_REFUSED}`))
+    return {
+      id: taskId, model: "mock", status: "failed", ...ended,
+      error: { code: "OutputVideoSensitiveContentDetected", message: "The output video may contain sensitive content, so the request was refused." },
+    };
+  const tokens = mockTokensFor(taskId);
+  return {
+    id: taskId, model: "mock", status: "succeeded", ...ended,
+    content: { video_url: fixtureUrl("clip.mp4") },
+    usage: { completion_tokens: tokens, total_tokens: tokens },
+  };
 }
 
 const LEGACY_MOCK_TOKENS = 244_800;
@@ -269,7 +344,14 @@ export async function submitTask(
   p: VideoParams,
   references: Reference[] = []
 ): Promise<string> {
-  if (engineMock()) return mockJobId("ark", mockVideoTag(p, references));
+  if (engineMock()) {
+    /* Nothing is sent, but a draft or final the vendor would reject is rejected here as well. */
+    await preflight(() => {
+      if (p.draftTaskId) buildFinalRequestBody(modelId, p.draftTaskId, p);
+      else if (p.draft) draftFields(getModel(modelId), p);
+    });
+    return mockJobId("ark", mockVideoTag(p, references, prompt));
+  }
   // Everything up to the POST: a failure here was never sent, so it is never charged.
   const { payload, authorization } = await preflight(async () => {
     const payload = JSON.stringify(await buildRequestBody(modelId, prompt, p, references));
@@ -343,14 +425,8 @@ function sane(sec: number | undefined): number | null {
 }
 
 export async function fetchTask(taskId: string): Promise<ArkTask> {
-  if (isMockJob(taskId)) {
-    const done = mockDone(taskId);
-    return {
-      id: taskId, model: "mock", status: done ? "succeeded" : "running",
-      videoUrl: done ? fixtureUrl("clip.mp4") : null, totalTokens: done ? mockTokensFor(taskId) : null, error: null,
-      vendorStartedAt: mockStartedAt(taskId), vendorEndedAt: done ? Date.now() : null, raw: null,
-    };
-  }
+  /* A mocked task answers in the vendor's own shape and is read like any other. */
+  if (isMockJob(taskId)) return readTask(mockTaskResponse(taskId), taskId);
   const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
     cache: "no-store",
@@ -361,7 +437,11 @@ export async function fetchTask(taskId: string): Promise<ArkTask> {
     throw new Error(`Ark poll failed (${res.status}): ${text.slice(0, 600)}`);
   }
 
-  const j = parseArk<ArkTaskResponse>(text, "poll");
+  return readTask(parseArk<ArkTaskResponse>(text, "poll"), taskId);
+}
+
+/** A poll's payload as our task. Seedance drafts and their finals answer in the same shape as any task. */
+function readTask(j: ArkTaskResponse, taskId: string): ArkTask {
   const rawStatus = String(j.status ?? "queued").toLowerCase();
   const status: ArkStatus = (
     ["queued", "running", "succeeded", "failed", "cancelled"].includes(rawStatus)
