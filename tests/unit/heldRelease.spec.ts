@@ -131,6 +131,39 @@ test("a finished still starts the take that waited for its slot, and the paid su
   }
 });
 
+test("a transcription's bill, delivered in its own request, starts no held take there; the sync starts it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { deliverGenerationSettlement, generationSettlementReady } = await import("../../lib/generationSettlement");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { engineFor } = await import("../../lib/engines");
+  const engine = engineFor("byteplus"), original = engine.render;
+  let submits = 0;
+  engine.render = async () => { submits++; return { handle: { provider: "byteplus", ref: "after-transcript", model: "mock" } }; };
+  try {
+    await runInTenant(await setup("transcript-slot", 1), async () => {
+      await ready();
+      const spoken = { id: `stt_${"d".repeat(32)}`, kind: "audio" as const, engine: "xai", model: "grok-stt" };
+      await reserveGenerationSpend({ ...spoken, status: "running", engineCostUsd: 0.2 });
+      await held("gen_after_transcript", { why: "slots" });
+      await generationSettlementReady();
+      await db().execute({ sql: "INSERT INTO generation_settlements(id,event,created_at) VALUES(?,?,?)", args: [spoken.id, JSON.stringify({ ...spoken, status: "succeeded", engineCostUsd: 0.1 }), Date.now()] });
+      /* The request may be near its time limit: its bill lands, and nothing else is started from it. */
+      await deliverGenerationSettlement(spoken.id, { releaseHeld: false });
+      expect(await metered(spoken.id)).toMatchObject({ status: "succeeded" });
+      expect(await status("gen_after_transcript")).toMatchObject({ status: "held" });
+      expect(submits).toBe(0);
+      /* The sync's own pass starts it. */
+      await releaseHeldJobs();
+      expect((await db().execute("SELECT status,ark_task_id FROM generations WHERE id='gen_after_transcript'")).rows[0]).toMatchObject({ status: "running", ark_task_id: "after-transcript" });
+      expect(submits).toBe(1);
+    });
+  } finally {
+    engine.render = original;
+  }
+});
+
 test("a take its own cap stops is marked with the reason and does not hold up the takes behind it", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { releaseHeldJobs } = await import("../../lib/held");

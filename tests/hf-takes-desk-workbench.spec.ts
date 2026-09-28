@@ -342,7 +342,7 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
   await expect(panel.getByTestId("transcribe-run")).toHaveText("Pricing transcript…");
   await expect(panel.getByTestId("transcribe-run")).toBeDisabled();
   releaseQuote();
-  await expect(panel.getByTestId("transcribe-run")).toHaveText("Transcribe · 3 credits");
+  await expect(panel.getByTestId("transcribe-run")).toHaveText("Transcribe · about 3 credits");
   expect(bodies).toEqual([{ sourceGenId: "gen_voice", projectId: "prod-desk", diarize: true, quoteOnly: true }]);
   await panel.getByTestId("transcribe-run").click();
   await expect(panel.getByTestId("transcript")).toContainText("The storm");
