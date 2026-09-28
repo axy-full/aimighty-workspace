@@ -9,8 +9,8 @@ import { imagePath, videoPath, uploadPath, usingBlob, presignedReadUrl } from ".
 export function genjutsuPath(model: string): string {
   const variant = genjutsuVariantForModel(model);
   if (!variant) throw new HiggsfieldHttpError(422, "Choose a supported transform operation.");
-  // The spelling is the provider's published API identifier.
-  return `higgsfiled/genjutsu/${variant}/v1.0`;
+  // Canonical model route; existing receipts keep their original status URLs.
+  return `higgsfield/genjutsu/${variant}/v1.0`;
 }
 
 export function genjutsuSourceProblem(seconds: number): string | null {
@@ -22,8 +22,8 @@ export function genjutsuSourceProblem(seconds: number): string | null {
 export async function genjutsuInput(model: string, prompt: string, resolution: string, source: Reference | null, images: Reference[]) {
   genjutsuPath(model);
   if (typeof prompt !== "string" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(resolution as "480p" | "720p") ||
-      !source || source.kind !== "video" || images.length > GENJUTSU_LIMITS.maxImages || images.some(r => r.kind !== "image" || r.role !== "reference_image"))
-    throw new HiggsfieldHttpError(422, "Choose one original video, up to eight still references, and 480p or 720p output.");
+      !source || source.kind !== "video" || images.length < GENJUTSU_LIMITS.minImages || images.length > GENJUTSU_LIMITS.maxImages || images.some(r => r.kind !== "image" || r.role !== "reference_image"))
+    throw new HiggsfieldHttpError(422, "Choose one original video, one to eight still references, and 480p or 720p output.");
   const refs = [source, ...images];
   if (refs.some(r => !/^[A-Za-z0-9_-]{1,160}$/.test(r.id) || !/^[A-Za-z0-9]+$/.test(r.ext)))
     throw new HiggsfieldHttpError(422, "A transform source identity is invalid.");
