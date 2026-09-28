@@ -31,7 +31,7 @@ const KIND_BADGE = { image: "IMAGE", video: "VIDEO", audio: "AUDIO", file: "FILE
 
 /* `need` is the tail of a held take's label (" · needs 12 cr"): on the chip where the tile has room for it whole,
    else said on its own line under the name (graphite.css) — a price is never cut. */
-function Chip({ label, tone, need }: { label: string; tone: ChipTone; need?: string | null }) {
+export function Chip({ label, tone, need }: { label: string; tone: ChipTone; need?: string | null }) {
   const head = need && label.endsWith(need) ? label.slice(0, -need.length) : null;
   return (
     <span className="gx-tile-chip" data-tone={tone} data-testid="take-chip" title={label}>
@@ -58,7 +58,7 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
   /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
@@ -68,6 +68,8 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   checked?: boolean;
   cut?: boolean;
   fresh?: boolean;
+  /** The first take of a shot's or a batch's run in a grouped grid: it starts a row (Takes). */
+  rowStart?: boolean;
   /** The Library's `+` (use as reference), beside the name. */
   action?: ReactNode;
   onOpen: () => void;
@@ -114,11 +116,11 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   const shownName = label ?? take.name;
   /* In a strip the card is one of the strip's list of takes (TakeStrip), under #406's `gen-batch-take`. */
   const strip = Boolean(label) && variant === "grid";
-  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-testid": strip ? "gen-batch-take" : "take-tile", ...(strip ? { role: "listitem" } : {}) };
+  const attrs = { "data-status": take.status, "data-face": face, "data-variant": variant, "data-take": take.id, "data-testid": strip ? "gen-batch-take" : "take-tile", ...(strip ? { role: "listitem" } : {}) };
 
   if (variant === "take") {
     return (
-      <div className="pd-take-cell gx-tile" {...attrs}>
+      <div className="pd-take-cell gx-tile" {...attrs} data-row-start={rowStart || undefined}>
         <button type="button" role="radio" aria-checked={checked} aria-label={spoken} className="pd-take" onClick={onOpen} data-testid="edit-take" data-media={entry.media ?? "file"}
           {...previewAttrs(entryPreview(entry))} {...dragAttrs(take.id, { name: take.name, kind: entry.media ?? "file" })}>
           <span className="gx-tile-media pd-take-media">{inner}</span>

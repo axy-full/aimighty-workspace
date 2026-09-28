@@ -808,10 +808,10 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await expect(page.getByTestId("edit-price")).toBeDisabled();
   await shoot(page, info.project.name, "reedit-read-failed", "edit-checking");
 
-  /* The next read (the 3 s pace, doubled: 6 s) finds nothing on record: it stops, says where a finished one goes and that
-     a failed one costs nothing, and offers the price again. No read after that, and the re-edit was sent once. */
+  /* The next read (the 3 s pace, doubled: 6 s) finds nothing on record: it stops, says where a finished one goes — never
+     that a failed one cost nothing — and offers the price again. No read after that, and the re-edit was sent once. */
   await nextRead(page, 6000, seen);
-  await expect(page.getByTestId("edit-image").getByRole("alert")).toHaveText("This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.");
+  await expect(page.getByTestId("edit-image").getByRole("alert")).toHaveText("This re-edit can no longer be checked from here. If it renders, it lands in the library.");
   await expect(checking).toBeHidden();
   await expect(page.getByTestId("edit-price")).toHaveText("Price the re-edit");
   await expect(page.getByTestId("edit-price")).toBeEnabled();
