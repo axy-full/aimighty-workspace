@@ -1,12 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { useSession } from "@/lib/session";
 import { SKILL_PACKS, SKILLS_REPO } from "@/lib/shell/skills";
 import { useShell } from "@/lib/shell/state";
 import {
-  CLIENTS, DEFAULT_CEILING, STATUS_LABEL, ceilingShare, mcpEndpoint, mcpTools, parseTokens, reachRows, reachStateFrom, reachSummary, readCeiling, setupGuide, tokenBody, tokenFacts, usable,
+  CLIENTS, DEFAULT_CEILING, STATUS_LABEL, ceilingShare, createReachMemory, mcpEndpoint, mcpTools, parseTokens, reachConnection, reachRows, reachStateFrom, reachSummary, readCeiling, setupGuide, tokenBody, tokenFacts, usable,
   type ApiToken, type ClientId, type ReachOpen, type ReachRow, type ReachState, type TokenUnit, type ToolsTab,
 } from "@/lib/shell/tools-connections";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useWorkspace } from "@/lib/workspace/state";
 
@@ -25,11 +25,12 @@ const noop = () => () => {};
 const readOrigin = () => window.location.origin;
 const serverOrigin = () => "";
 
-/* One reach result per workspace scope for a minute, so moving between pages
+/* One reach answer per workspace scope for a minute, so moving between pages
    does not spend the owner's discovery allowance (six a minute, shared with
-   Workspace › Engines). The tab is kept the same way while the page is left. */
-const REUSE_MS = 60_000;
-let remembered: { scope: string; at: number; state: ReachState } | null = null;
+   Workspace › Engines), and only while the connection it was read under
+   stands (lib/shell/tools-connections › createReachMemory). The tab is kept
+   the same way while the page is left. */
+const reachMemory = createReachMemory();
 let lastTab: ToolsTab = "reach";
 
 const TABS: { id: ToolsTab; label: string }[] = [
@@ -70,46 +71,54 @@ export function ToolsView() {
 /* ── What Atomik can do ─────────────────────────────────────────────── */
 
 function Reach({ onTab }: { onTab: (tab: ToolsTab) => void }) {
-  const session = useSession();
   const shell = useShell();
-  const scoped = useScopedFetch();
-  const scope = session.requestScope ?? "";
-  const owner = session.owner === true;
-  /* A member never asks; an owner reuses a check under a minute old, or asks once on arrival. */
-  const [state, setState] = useState<ReachState>(() => {
-    if (!owner) return { kind: "owner-only" };
-    const reuse = remembered && remembered.scope === scope && Date.now() - remembered.at < REUSE_MS ? remembered.state : null;
-    return reuse ?? { kind: "checking" };
+  /* Who owns the workspace, which scope this is and the connection's revision come from the capability every
+     surface shares (a member never asks). Discovery's own reply carries the connection, so nothing else is read. */
+  const { owner, scope, revision } = useConnectedCapability(undefined, { read: false });
+  const scoped = useScopedFetch(scope || null);
+  /* What is on screen, and for which scope and connection: an answer from another workspace, or from before a
+     connect, reconnect or disconnect, is not this page's. An owner reuses a check under a minute old. */
+  const [shown, setShown] = useState<{ scope: string; revision: number; state: ReachState } | null>(() => {
+    const kept = owner ? reachMemory.recall(scope, revision) : null;
+    return kept ? { scope, revision, state: kept } : null;
   });
+  const current = shown && shown.scope === scope && shown.revision === revision ? shown.state : null;
+  const state: ReachState = !owner ? { kind: "owner-only" } : current ?? { kind: "checking" };
+  const answered = current !== null;
   const live = useRef(true);
-  const inFlight = useRef(false);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
 
   const check = useCallback(async () => {
-    if (!owner || inFlight.current) return;
-    inFlight.current = true;
-    setState({ kind: "checking" });
+    if (!owner) return;
+    /* Where the connection stands before the request; the check supersedes any still in flight for this scope. */
+    const ticket = reachMemory.begin(scope, markConnectedCapability(scope) ?? 0);
+    if (live.current) setShown({ scope: ticket.scope, revision: ticket.revision, state: { kind: "checking" } });
     let next: ReachState;
     try {
       const response = await scoped("/api/higgsfield/consumer/capabilities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ view: "reach" }) });
       next = reachStateFrom(response.status, await response.json().catch(() => null));
     } catch {
       next = { kind: "error", message: "The connected account could not be checked. Try again, or open Workspace › Engines." };
-    } finally {
-      inFlight.current = false;
     }
-    /* Only an answer is kept: "connect first" must not outlive connecting in Engines. */
-    if (next.kind === "checked") remembered = { scope, at: Date.now(), state: next };
-    if (live.current) setState(next);
+    /* A reply that set out before a connect, reconnect or disconnect, or before a newer check, lands on nothing:
+       not shown, not kept, and the newer check still answers. A current one shares what it says of the connection. */
+    if (!reachMemory.land(ticket, markConnectedCapability(ticket.scope) ?? 0, next)) return;
+    const connection = reachConnection(next);
+    if (connection) settleConnectedCapability(ticket.scope, connection, ticket.revision);
+    if (live.current) setShown({ scope: ticket.scope, revision: ticket.revision, state: next });
   }, [owner, scoped, scope]);
 
+  /* One automatic check on arrival, and again when the connection changes under the page, unless an answer
+     for this scope and connection is under a minute old; "Check again" runs it on purpose. */
   useEffect(() => {
-    if (!owner || state.kind !== "checking") return;
-    const timer = setTimeout(() => void check(), 0);
+    if (!owner || answered) return;
+    const timer = setTimeout(() => {
+      const kept = reachMemory.recall(scope, revision);
+      if (kept) setShown({ scope, revision, state: kept });
+      else void check();
+    }, 0);
     return () => clearTimeout(timer);
-    // One automatic check per visit, decided by the first render's state; "Check again" runs it on purpose.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [owner, answered, scope, revision, check]);
 
   const rows = reachRows(state);
   const open = (target: ReachOpen) => ("gen" in target ? shell.goGen() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));

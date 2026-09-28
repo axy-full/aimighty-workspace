@@ -58,3 +58,39 @@ export async function signInLocally(api: APIRequestContext, name = "Workbench Te
     workspace: { id: string; name: string; slug: string };
   };
 }
+
+/**
+ * A member of someone else's workspace, through the real invitation route:
+ * `owner` signs up (and so owns a fresh workspace), a member invitation to it
+ * is filed in the local platform database, and `member` accepts it — so
+ * `member` (a page's request context, say) holds a member's session there.
+ * `ownerName` renames the owner's account, so a page can be checked for
+ * naming this workspace's owner and no other.
+ */
+export async function joinLocallyAsMember(owner: APIRequestContext, member: APIRequestContext, options: { ownerName?: string } = {}) {
+  const { workspace } = await signInLocally(owner, options.ownerName);
+  const ownerAccount = await owner.get("/api/me").then((response) => response.json()) as { id: string };
+  await signInLocally(member, "Workbench Member");
+  const memberAccount = await member.get("/api/me").then((response) => response.json()) as { id: string; email: string };
+  const code = randomBytes(18).toString("base64url");
+  const email = memberAccount.email;
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await db.execute({
+      sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+      args: [code, workspace.id, email, "Workbench Member", "member", ownerAccount.id, Date.now(), Date.now() + 3_600_000],
+    });
+    if (options.ownerName) await db.execute({
+      sql: "UPDATE accounts SET name = ? WHERE id = (SELECT account_id FROM memberships WHERE workspace_id = ? AND role = 'owner')",
+      args: [options.ownerName, workspace.id],
+    });
+  } finally {
+    db.close();
+  }
+  const accepted = await member.post("/api/auth/accept", {
+    data: { code, accept: true },
+  });
+  expect(accepted.ok(), await accepted.text()).toBeTruthy();
+  expect(await member.get("/api/me").then((response) => response.json())).toMatchObject({ id: memberAccount.id, role: "member", workspace: { id: workspace.id } });
+  return { workspace, email };
+}
