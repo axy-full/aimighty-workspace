@@ -19,9 +19,15 @@ import { currentTenant, requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { musicCredits, sfxCredits, usdForCredits } from "./elevenlabs";
-import { stepAudioTask } from "./atomikStepRender";
+import { stepAudioTask, stepRender } from "./atomikStepRender";
 import { textModelFor } from "./platformLayer";
-import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment } from "./attachments";
+import { modelConfigured } from "./providers";
+import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment, type StepRef } from "./attachments";
+import { GENJUTSU_LIMITS } from "./genjutsuTypes";
+import {
+  KEY_STEP_MODELS, MAX_KEY_STEPS, keyStepFamily, keyStepInputs, keyStepLabel, keyStepsOffered, librarySection,
+  type KeyStepFamily, type LibraryItem, type PresetItem,
+} from "./atomikKeySteps";
 import { readUploadBytes, readImageBytes } from "./storage";
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "./atomikAccountStep";
 import { MEMORY_HEADING, cleanMemoryText, isMemoryKind, mentionsMoney, type MemoryKind } from "./atomikMemoryText";
@@ -63,8 +69,8 @@ export type Step = {
   id: string; chatId: string; messageId: string; position: number;
   kind: StepKind; title: string; prompt: string; model: string;
   params: Record<string, unknown>;
-  /** What the person attached, carried onto the render this step makes. */
-  refs: { uploadId: string; role: "reference_image" | "reference_video" }[];
+  /** What the person attached, carried onto the render this step makes; for a library step, its stills from the library. */
+  refs: StepRef[];
   status: StepStatus; genId: string | null;
   /** The engine's dollars, before it runs; null when it cannot be known ahead. */
   estCostUsd: number | null; error: string | null;
@@ -577,6 +583,10 @@ export async function patchStep(stepId: string, patch: {
   if (isAccountStep(cur)) throw new StepEditError(ACCOUNT_STEP_NOTE);
   if ((patch.prompt !== undefined || patch.model !== undefined || patch.params !== undefined) && cur.status !== "proposed")
     throw new MediaSourceError("That step has already run. Ask for a new version instead.");
+  /* A library step's engine and inputs were chosen from this project's library and priced together
+     (lib/atomikKeySteps.ts): neither moves on its own. Its prompt may still change; the checkpoint re-prices it. */
+  if (keyStepFamily(cur.model) && ((patch.model !== undefined && patch.model !== cur.model) || patch.params !== undefined))
+    throw new StepEditError("This step works from media in the project's library, so its engine and inputs stay as planned. Ask Atomik for a new version instead.");
 
   const model = patch.model ?? cur.model;
   /* A different engine must be one the planner could have proposed for
@@ -628,6 +638,10 @@ export async function patchStep(stepId: string, patch: {
 export async function estimateStepUsd(
   kind: StepKind, model: string, params: Record<string, unknown>,
 ): Promise<number | null> {
+  /* A library step has no list rate: only the provider's live estimate for its
+     exact inputs prices it, through its admission quote (runTurn, and the rail's
+     checkpoint quote). No figure is made up here. */
+  if (keyStepFamily(model)) return null;
   const own = MODELS.find((m) => m.id === model);
   /* Where a value is missing, fall back to what the RENDERER would use —
      the engine's own first option — rather than to a house guess. The two
@@ -679,6 +693,8 @@ export type Engine = {
    *  an engine that does not take one. */
   ratios: string[]; resolutions: string[]; durations: number[];
   supportsAudio: boolean;
+  /** Set on an engine that works from the project's library rather than from words (lib/atomikKeySteps.ts). */
+  family?: KeyStepFamily;
 };
 
 /**
@@ -717,6 +733,30 @@ export async function engines(): Promise<Engine[]> {
     ratios: [], resolutions: [], durations: [], supportsAudio: true,
   });
   return out;
+}
+
+/**
+ * The API-key engines that work from the project's library (Motion Transfer,
+ * Object Swap, Marketing Studio Image): offered to the planner only beside
+ * what they need (lib/atomikKeySteps.ts › keyStepsOffered) and never as an
+ * engine to switch an ordinary shot to, so they are kept apart from
+ * `engines()`. Only where this platform's key can run them, and never one the
+ * workspace switched off under Settings › Engines & rates.
+ */
+export async function keyStepEngines(off?: readonly string[]): Promise<Engine[]> {
+  const disabled = off ?? (await enginesOff());
+  return KEY_STEP_MODELS.flatMap((id): Engine[] => {
+    const m = MODELS.find((model) => model.id === id);
+    const family = keyStepFamily(id);
+    if (!m || !family || disabled.includes(id) || !modelConfigured(m)) return [];
+    return [{
+      id, label: keyStepLabel(id) ?? m.label, kind: m.kind as StepKind, own: true, family,
+      note: family === "transform"
+        ? `changes a library clip of ${GENJUTSU_LIMITS.minSeconds}-${GENJUTSU_LIMITS.maxSeconds} s, guided by 1-${GENJUTSU_LIMITS.maxImages} library stills; ${m.resolutions.join("/")}`
+        : `product and campaign stills, from library stills and an optional preset; ${m.resolutions.join("/")}, ${m.ratios.slice(0, 5).join(" ")}`,
+      ratios: m.ratios, resolutions: m.resolutions, durations: [], supportsAudio: false,
+    }];
+  });
 }
 
 /* ── The turn ─────────────────────────────────────────────────────────── */
@@ -776,10 +816,13 @@ export function memorySection(lines: string) {
  */
 export function turnPreamble(p: {
   engineText: string; context?: string; memory?: string; rules?: string; attached?: Attachment[];
+  /** The library steps' brief and the project's library (lib/atomikKeySteps.ts › librarySection), when any is offered. */
+  library?: string;
 }): string {
   const attached = attachmentLine(p.attached ?? []);
   return [
     "ENGINES YOU MAY CHOOSE (exact ids):", p.engineText,
+    p.library ? `\n${p.library}` : "",
     p.context ? `\nTHIS PROJECT ALREADY HAS:\n${p.context}` : "",
     p.memory ? `\n${memorySection(p.memory)}` : "",
     p.rules ? `\nTHE PLATFORM'S RULES, BY ENGINE — write every proposal's prompt to the rules for its engine:\n${p.rules}` : "",
@@ -806,6 +849,13 @@ export type TurnResult = {
 type TurnOptions = { context?: string; rules?: string; model?: string; effort?: string; maxCredits?: number;
   /** The workspace's memory for this turn (lib/atomikMemory › plannerMemoryText): ranked, small, never money. The quote and the turn read the same. */
   memory?: string;
+  /** This project's library and the Marketing Studio presets, for library steps (lib/atomikLibrary.ts › plannerInputs). The quote and the turn read the same. */
+  library?: LibraryItem[]; presets?: PresetItem[];
+  /** Prices a library step on the admission quote for the exact body its render sends (lib/atomikLibrary.ts › priceKeyStep).
+   *  A library step it cannot price is not proposed; without it, none is. */
+  priceKeyStep?: (body: Record<string, unknown>) => Promise<{ usd: number } | { error: string }>;
+  /** The Studio project a transform files under, for that quote (the person's own, for this production). */
+  workbenchProjectId?: string | null;
   quoteOnly?: boolean; userMessage?: { text: string; attachments: Attachment[] }; projectId?: string | null };
 export async function runTurn(chatId: string | null, opts: TurnOptions & { quoteOnly: true }): Promise<PaidTextQuote>;
 export async function runTurn(chatId: string, opts?: TurnOptions & { quoteOnly?: false }): Promise<TurnResult>;
@@ -826,9 +876,18 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
 
   const model = await resolveModel(opts.model ?? chat.model, "shot");
   const effort = opts.effort;
-  /* What the reply is checked against: the same list the planner was shown. */
-  const allowed = await engines();
+  /* What the reply is checked against: the same list the planner was shown. The
+     library steps are on it only beside what they work from: a transform needs a
+     clip and a still in this project's library (lib/atomikKeySteps.ts). */
+  const library = opts.library ?? [];
+  const presets = opts.presets ?? [];
+  const offered = keyStepsOffered(library);
+  const keyEngines = (await keyStepEngines()).filter((e) => (e.family === "transform" ? offered.transform : offered.marketing));
+  const allowed = [...(await engines()), ...keyEngines];
   const engineText = allowed.map((e) => `  ${e.id} — ${e.label} (${e.kind}). ${e.note}`).join("\n");
+  const libraryText = keyEngines.length
+    ? librarySection({ offered: { transform: keyEngines.some((e) => e.family === "transform"), marketing: keyEngines.some((e) => e.family === "marketing") }, library, presets })
+    : "";
 
   /* What the person attached to the message this turn answers: the agent
      is shown the stills themselves, and any render it proposes for them
@@ -841,7 +900,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
       : m.text,
   }));
 
-  const preamble = turnPreamble({ engineText, context: opts.context, memory: opts.memory, rules: opts.rules, attached });
+  const preamble = turnPreamble({ engineText, library: libraryText, context: opts.context, memory: opts.memory, rules: opts.rules, attached });
 
   const started = Date.now();
   /* The stills the person attached go with the words, as pictures: the
@@ -882,10 +941,20 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
     projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false });
   const costUsd = result.costUsd;
-  const turn = extractTurn(result.text, allowed) ?? {
+  const turn = extractTurn(result.text, allowed, { library, presets }) ?? {
     say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
     activity: [], propose: [], ask: null, title: null, remember: [],
   };
+  /* A library step is priced before it is shown: the admission quote for the exact body its render
+     will send. One nothing could price is not proposed, and the plan says why (no estimate, no work). */
+  const keyPrices = await priceKeyProposals(turn.propose, {
+    projectId: chat.projectId, workbenchProjectId: opts.workbenchProjectId ?? null, price: opts.priceKeyStep,
+    until: Math.min(started + KEY_PRICING_DEADLINE_MS, Date.now() + KEY_PRICING_BUDGET_MS),
+  });
+  if (keyPrices.unpriced.length) {
+    turn.propose = turn.propose.filter((p) => !keyStepFamily(p.model) || keyPrices.usd.has(p));
+    turn.say = `${turn.say}${notProposed(keyPrices.unpriced)}`.slice(0, 8000);
+  }
   /* What Atomik suggests keeping waits for a person (lib/atomikMemory › proposeMemory): nothing is kept
      silently, no planner reads it until someone accepts it, and a suggestion that cannot be saved never
      costs the turn it came with. */
@@ -914,8 +983,9 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   let pos = 0;
   for (const p of turn.propose) {
     const stepId = newId("astp");
-    const est = await estimateStepUsd(p.kind, p.model, p.params);
-    const refs = stepReferences(attached, p.attachments);
+    const est = keyStepFamily(p.model) ? keyPrices.usd.get(p) ?? null : await estimateStepUsd(p.kind, p.model, p.params);
+    /* A library step carries the stills it was priced with; any other step, what the person attached. */
+    const refs = p.refs ?? stepReferences(attached, p.attachments);
     await withMediaSources({ params: p.params, refs }, (tx) => tx.execute({
       sql: `INSERT INTO atomik_steps
               (id, chat_id, message_id, position, kind, title, prompt, model, params, refs,
@@ -960,10 +1030,55 @@ type ParsedTurn = {
   say: string;
   activity: string[];
   ask: Ask | null;
-  propose: { kind: StepKind; title: string; prompt: string; model: string; params: Record<string, unknown>; attachments?: boolean }[];
+  propose: {
+    kind: StepKind; title: string; prompt: string; model: string; params: Record<string, unknown>; attachments?: boolean;
+    /** A library step's stills, from this project's library (lib/atomikKeySteps.ts); no other step has this. */
+    refs?: StepRef[];
+  }[];
   /** What Atomik suggests keeping in memory: saved as proposals a person reviews, never as memory itself. */
   remember: { kind: Exclude<MemoryKind, "reference">; text: string }[];
 };
+
+/** The steps a plan leaves out, each with why, as the reply tells the person. */
+const notProposed = (lines: readonly string[]) =>
+  lines.length ? `\n\nNot proposed:\n${lines.map((line) => `- ${line.replace(/[.\s]+$/, "")}.`).join("\n")}` : "";
+
+/** How long a plan's library steps may take to price, and the latest they may finish: the turn's route ends at 300 s. */
+const KEY_PRICING_BUDGET_MS = 45_000;
+const KEY_PRICING_DEADLINE_MS = 285_000;
+
+/**
+ * Price a plan's library steps, together, each on the admission quote for the
+ * exact body its render sends. A step whose quote is refused, fails or does
+ * not arrive in time is unpriced, and the reply says why; the others keep
+ * the engine's dollars like every other estimate.
+ */
+async function priceKeyProposals(
+  propose: ParsedTurn["propose"],
+  opts: { projectId: string | null; workbenchProjectId: string | null; price?: TurnOptions["priceKeyStep"]; until: number },
+): Promise<{ usd: Map<ParsedTurn["propose"][number], number>; unpriced: string[] }> {
+  const usd = new Map<ParsedTurn["propose"][number], number>();
+  const unpriced: string[] = [];
+  await Promise.all(propose.filter((p) => keyStepFamily(p.model)).map(async (p) => {
+    let answer: { usd: number } | { error: string } = { error: "nothing here could price it" };
+    if (opts.price) {
+      const body = stepRender({ kind: p.kind, title: p.title, prompt: p.prompt, model: p.model, params: p.params, refs: p.refs ?? [] },
+        opts.projectId, { workbenchProjectId: opts.workbenchProjectId }).body;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<{ error: string }>((resolve) => {
+        timer = setTimeout(() => resolve({ error: "its price did not arrive in time" }), Math.max(0, opts.until - Date.now()));
+      });
+      try {
+        answer = await Promise.race([opts.price(body).catch(() => ({ error: "it could not be priced right now" })), late]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if ("usd" in answer && Number.isFinite(answer.usd) && answer.usd > 0) usd.set(p, answer.usd);
+    else unpriced.push(`${p.title} — no price: ${("error" in answer ? answer.error : "").slice(0, 240) || "it could not be priced"}`);
+  }));
+  return { usd, unpriced };
+}
 
 /** At most three suggestions a turn, words only (a reference needs a person to pick the asset), never about money. */
 function rememberOf(raw: unknown): ParsedTurn["remember"] {
@@ -986,8 +1101,17 @@ function rememberOf(raw: unknown): ParsedTurn["remember"] {
  *  was given; by default, every own engine that makes a shot from a prompt.
  *  Only those engines are ever named on a step: an id the planner invents —
  *  a signed-in account's model included — is replaced by the kind's default,
- *  and its account settings (a preset, a batch) are never carried. */
-export function extractTurn(text: string, allowed?: readonly Pick<Engine, "id" | "kind">[]): ParsedTurn | null {
+ *  and its account settings (a preset, a batch) are never carried.
+ *
+ *  A library step (a transform, a Marketing Studio still) is made only from
+ *  the `library` and `presets` the planner was shown, by handle; one whose
+ *  engine was not offered, or whose inputs are incomplete, is named as not
+ *  proposed with why — never swapped for an engine that ignores its inputs. */
+export function extractTurn(
+  text: string,
+  allowed?: readonly Pick<Engine, "id" | "kind">[],
+  inputs: { library?: readonly LibraryItem[]; presets?: readonly PresetItem[] } = {},
+): ParsedTurn | null {
   if (!text) return null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const tryParse = (s: string): any | null => {
@@ -1013,8 +1137,11 @@ export function extractTurn(text: string, allowed?: readonly Pick<Engine, "id" |
   /* Only an engine the planner was offered: switched off under Settings ›
      Engines means off here too, and an upscaler cannot make a shot. */
   const pool = allowed ?? ownGenerateEngines().map((m) => ({ id: m.id, kind: m.kind as StepKind }));
-  const defaultFor = (k: StepKind) => pool.find((e) => e.kind === k && e.id !== "elevenlabs")?.id ?? null;
+  /* A library engine is never a stand-in: it would ignore the words and wait for inputs nobody chose. */
+  const defaultFor = (k: StepKind) => pool.find((e) => e.kind === k && e.id !== "elevenlabs" && !keyStepFamily(e.id))?.id ?? null;
   const unmade: string[] = [];
+  const declined: string[] = [];
+  let librarySteps = 0;
 
   const propose: ParsedTurn["propose"] = [];
   for (const r of (Array.isArray(raw.propose) ? raw.propose : []).slice(0, 12)) {
@@ -1028,6 +1155,25 @@ export function extractTurn(text: string, allowed?: readonly Pick<Engine, "id" |
     const named = String(s.model ?? "").trim();
     /* No engine here makes 3D, so a 3D step is named as not proposed rather than made as something else. */
     if (s.kind === "3d") { unmade.push(String(s.title ?? "").slice(0, 60) || "a 3d step"); continue; }
+
+    /* A library step: its engine decides its kind, and its inputs come from the
+       project's library by handle, checked here and priced before it is saved. */
+    const family = keyStepFamily(named);
+    if (family) {
+      const title = String(s.title ?? "").slice(0, 60) || (family === "transform" ? "Transform" : "Campaign still");
+      if (!pool.some((e) => e.id === named)) { declined.push(`${title} — that engine is not offered for this project`); continue; }
+      if (librarySteps >= MAX_KEY_STEPS) { declined.push(`${title} — a plan holds at most ${MAX_KEY_STEPS} library steps`); continue; }
+      const engine = MODELS.find((m) => m.id === named);
+      const fitted = engine ? fitStepParams(engine, { ratio: s.ratio, resolution: s.resolution }) : {};
+      const made = keyStepInputs(named, s, fitted, inputs.library ?? [], inputs.presets ?? []);
+      if ("problem" in made) { declined.push(`${title} — ${made.problem}`); continue; }
+      librarySteps++;
+      propose.push({
+        kind: family === "transform" ? "video" : "image", model: named, prompt: prompt.slice(0, 4000), title,
+        params: made.params, attachments: false, refs: made.refs,
+      });
+      continue;
+    }
     const kind: StepKind = s.kind === "image" ? "image" : s.kind === "audio" ? "audio" : "video";
 
     /* The engine has to match the KIND, not merely exist. Checking the id
@@ -1074,7 +1220,7 @@ export function extractTurn(text: string, allowed?: readonly Pick<Engine, "id" |
   const note = unmade.length ? `\n\nNot proposed, because no engine for it is switched on here: ${unmade.join(", ")}.` : "";
   return {
     title: raw.title ? String(raw.title).slice(0, 80) : null,
-    say: `${say || "Here's what I'd do."}${note}`.slice(0, 8000),
+    say: `${say || "Here's what I'd do."}${note}${notProposed(declined)}`.slice(0, 8000),
     activity: (Array.isArray(raw.activity) ? raw.activity : [])
       .map((a: unknown) => String(a).slice(0, 90)).filter(Boolean).slice(0, 8),
     ask, propose, remember: rememberOf(raw.remember),

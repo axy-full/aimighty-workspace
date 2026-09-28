@@ -8,6 +8,7 @@ import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
+import { plannerInputs } from "@/lib/atomikLibrary";
 
 export const dynamic = "force-dynamic";
 
@@ -77,11 +78,14 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     const projectId = typeof body.projectId === "string" ? body.projectId : null;
+    /* The project's library and presets for library steps, read as the turn will read them. */
+    const inputs = await plannerInputs(auth.user.id, projectId);
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
+      library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
   const id = await createChat({

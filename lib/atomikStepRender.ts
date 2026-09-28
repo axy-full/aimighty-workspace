@@ -1,18 +1,21 @@
 import type { Step } from "./atomik";
+import type { StepRef } from "./attachments";
+import { keyStepFamily, keyStepSource } from "./atomikKeySteps";
 
 /**
  * The render an approved Atomik step makes, as the ordinary routes take it.
  *
- * One builder for the three places that must agree on it: the free quote the
- * rail asks for before Continue is offered, the paid request Continue sends,
- * and the server's advance estimate for an audio step. A price is only true
- * for the exact body it was quoted on, so none of them builds its own.
+ * One builder for the places that must agree on it: the free quote the rail
+ * asks for before Continue is offered, the paid request Continue sends, the
+ * server's advance estimate for an audio step, and the planner's quote for a
+ * library step before it is proposed. A price is only true for the exact body
+ * it was quoted on, so none of them builds its own.
  *
  * `refine: false` because the planner already wrote the prompt to be rendered
  * exactly as written, and because the quote route prices without the prompt
  * writer: an unquoted paid rewrite has no place behind a priced button.
  *
- * Pure, and type-only in its imports, so the browser can use it.
+ * Pure, and its imports are pure, so the browser can use it.
  */
 export type StepRender = {
   /** Where Continue sends it. */
@@ -29,7 +32,15 @@ export function stepAudioTask(params: Record<string, unknown>): string {
   return typeof params.task === "string" && params.task ? params.task : "sound";
 }
 
-export function stepRender(step: Renderable, projectId: string | null): StepRender {
+/** Where a render files beyond its project: a transform files under the approver's own Studio project for it. */
+export type StepRenderContext = { workbenchProjectId?: string | null };
+
+/** A library step's stills as admission takes them: a saved identity and the reference role, nothing else. */
+const stillReferences = (refs: readonly StepRef[] | undefined) =>
+  (refs ?? []).filter((r) => r.role === "reference_image" && (r.uploadId || r.genId))
+    .map((r) => (r.genId ? { genId: r.genId, role: r.role } : { uploadId: r.uploadId!, role: r.role }));
+
+export function stepRender(step: Renderable, projectId: string | null, context: StepRenderContext = {}): StepRender {
   const seconds = Number(step.params.seconds) || undefined;
   if (step.kind === "audio")
     return {
@@ -37,6 +48,29 @@ export function stepRender(step: Renderable, projectId: string | null): StepRend
       quoteUrl: "/api/audio",
       body: { task: stepAudioTask(step.params), text: step.prompt, projectId, title: step.title, durationSeconds: seconds },
     };
+  /* A library step (lib/atomikKeySteps.ts), in the shape the transform and Marketing Studio forms send. */
+  const family = keyStepFamily(step.model);
+  if (family === "transform")
+    return {
+      url: "/api/generate",
+      quoteUrl: "/api/generate/quote",
+      body: {
+        prompt: step.prompt, model: step.model, task: "genjutsu", projectId,
+        ...(context.workbenchProjectId ? { workbenchProjectId: context.workbenchProjectId } : {}),
+        resolution: step.params.resolution, ...keyStepSource(step.params), references: stillReferences(step.refs), refine: false,
+      },
+    };
+  if (family === "marketing") {
+    const references = stillReferences(step.refs);
+    return {
+      url: "/api/generate",
+      quoteUrl: "/api/generate/quote",
+      body: {
+        prompt: step.prompt, model: step.model, projectId, ratio: step.params.ratio, resolution: step.params.resolution,
+        references: references.length ? references : undefined, marketing: step.params.marketing, refine: false,
+      },
+    };
+  }
   return {
     url: "/api/generate",
     quoteUrl: "/api/generate/quote",

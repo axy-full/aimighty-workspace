@@ -14,6 +14,7 @@ import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
+import { engineChoices, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
  * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
@@ -109,12 +110,13 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
     const step = c.step;
     const cost = a.credits(step) ?? undefined;
     const lastDone = c.done[c.done.length - 1];
-    const sameKind = a.engines.filter((e) => e.kind === step.kind);
+    const sameKind = engineChoices(a.engines, step);
+    const inputs = keyStepInputsLine(step);
     return (
       <div className={box}>
         <Mono>Checkpoint · stopped</Mono>
         <span className={title}>{lastDone ? `${lastDone.title} done` : "Ready"} · {a.fmt(c.spentCredits)} spent.</span>
-        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}. {firstSentence(step.prompt)}</span>
+        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}. {firstSentence(step.prompt)}{inputs ? ` ${inputs}` : ""}</span>
         {picking ? (
           <span className="flex flex-col gap-[6px]">
             {sameKind.map((e) => (
@@ -129,7 +131,8 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
             </Button>
             {a.stepQuoteError && <span role="alert" className={body}>{a.stepQuoteError}</span>}
             <span className="flex gap-[6px]">
-              <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>
+              {/* A library step's engine goes with its inputs, so there is nothing to change it to. */}
+              <Button placement="card" className="flex-1" disabled={!sameKind.length} onClick={() => setPicking(true)}>Change engine</Button>
               <Button placement="card" className="flex-1" muted onClick={() => a.stop(step)}>Stop</Button>
             </span>
           </>

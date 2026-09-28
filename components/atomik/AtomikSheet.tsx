@@ -12,6 +12,7 @@ import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
+import { engineChoices, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
  * Atomik on a phone (design/particl-v2-mobile/README.md; board M3, live):
@@ -100,7 +101,7 @@ export default function AtomikSheet() {
             : "Nothing needs you."}
         </span>
         <span className="text-[14px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>
-          {step ? `Next: ${step.title.toLowerCase()} on ${a.engineLabel(step.model)}.`
+          {step ? `Next: ${step.title.toLowerCase()} on ${a.engineLabel(step.model)}.${keyStepInputsLine(step) ? ` ${keyStepInputsLine(step)}` : ""}`
             : cur.kind === "question" ? "Pick a response, then review the planning estimate below."
             : cur.kind === "planning" ? "Atomik is working out what to render."
             : cur.kind === "done" ? `${done.length} ${done.length === 1 ? "take" : "takes"} on the grid; approve them there.`
@@ -115,7 +116,7 @@ export default function AtomikSheet() {
             </button>
             {a.stepQuoteError && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
             <span className="flex gap-[8px]">
-              <button type="button" className={`${secondary} text-ink`} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>
+              <button type="button" className={`${secondary} text-ink disabled:opacity-60`} disabled={!engineChoices(a.engines, step).length} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>
               <button type="button" className={`${secondary} text-ink-body`} onClick={() => a.stop(step)} disabled={a.busy}>Stop here</button>
             </span>
             <Mono className="text-center">{a.fmt(spent)} of {a.fmt(a.totals.total)}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}{a.totals.planning ? ` · planning ${a.fmt(a.totals.planning)}` : ""}</Mono>
@@ -130,7 +131,7 @@ export default function AtomikSheet() {
             not start — so a phone is told, as the rail tells a desktop. */}
         {a.error && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.error}</span>}
       </div>
-      {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={a.engines.filter((e) => e.kind === engineMenu.step.kind).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
+      {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={engineChoices(a.engines, engineMenu.step).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
     </Sheet>
   );
 }
