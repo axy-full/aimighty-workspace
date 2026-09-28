@@ -87,15 +87,17 @@ test("Gen › Results: a failed take's charge is said only from a receipt, whole
 
   if (PHONES.includes(info.project.name)) {
     expect(await smallTargets(page, ".gx-gen-results"), "targets under 44×44").toEqual([]);
-    /* At the bottom of the page the last card's charge sits above the tab bar. */
+    /* Scrolled to the end (the shell's content pane scrolls Gen), the last card's charge sits above the tab bar. */
     const last = tile(results, "Released take").getByTestId("take-charge");
     const bar = page.getByTestId("tabbar");
-    await expect.poll(async () => {
-      await page.getByTestId("gen-view").evaluate((el) => { el.scrollTop = el.scrollHeight; });
-      const end = await last.boundingBox();
-      const top = (await bar.isVisible()) ? (await bar.boundingBox())?.y ?? null : null;
-      return Boolean(end && end.height > 0 && (top == null || end.y + end.height <= top + 1));
-    }, { message: "the last charge line clears the tab bar" }).toBe(true);
+    if (await bar.isVisible()) {
+      await expect.poll(async () => {
+        await page.getByTestId("content").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        const end = await last.boundingBox();
+        const top = (await bar.boundingBox())?.y ?? null;
+        return Boolean(end && top != null && end.height > 0 && end.y + end.height <= top + 1);
+      }, { message: "the last charge line clears the tab bar" }).toBe(true);
+    }
   }
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("gen-failed-takes.png") });
