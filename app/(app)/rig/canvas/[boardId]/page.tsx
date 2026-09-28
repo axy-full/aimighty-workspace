@@ -586,7 +586,7 @@ function Canvas() {
             <button type="button" onClick={() => setZoom((z) => (z >= 1 ? 0.75 : z >= 0.75 ? 0.5 : 1))} className="ui-mono ui-mono-cost px-[10px] py-[8px] text-ink-body">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
-            <button type="button" onClick={runUnrun} disabled={!unrun.length || unrunCost == null} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {unrunCost == null ? "No price" : fmt(unrunCost)}</button>
+            <button type="button" onClick={runUnrun} disabled={!unrun.length || unrunCost == null} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · <span className="whitespace-nowrap">{unrunCost == null ? "No price" : fmt(unrunCost)}</span></button>
           </div>
           {/* The menu sits on the surface, whose pointerdown clears it: without this a
               press on an item closed the menu before its click, and nothing was added. */}

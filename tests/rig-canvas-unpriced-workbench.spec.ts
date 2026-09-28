@@ -71,7 +71,8 @@ const creditsOn = async (button: Locator) => Number(/(\d[\d,]*) cr/i.exec((await
  * The UI floors on what this change draws (the reasons and the price slots): no
  * serif, 12px or more on a phone, a colour at #7C7C84 or brighter once its own
  * alpha and every opacity above it are laid over what is painted behind it, and
- * never cut short. Then no horizontal overflow, and 44px targets on a phone.
+ * never cut short or split over lines. Then no horizontal overflow, and 44px
+ * targets on a phone.
  */
 async function floors(page: Page, phone: boolean, where: string, drawn: Locator[]) {
   for (const locator of drawn) {
@@ -102,6 +103,7 @@ async function floors(page: Page, phone: boolean, where: string, drawn: Locator[
       const floor = 0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5;
       if (0.2126 * mix("r") + 0.7152 * mix("g") + 0.0722 * mix("b") < floor) out.push(`${name}: ${style.color} is under #7C7C84 after alpha`);
       if (style.textOverflow === "ellipsis" || el.scrollWidth > el.clientWidth + 1) out.push(`${name}: cut short`);
+      if (el.getClientRects().length > 1) out.push(`${name}: split over lines`);
       return out;
     }), phone);
     expect(problems, where).toEqual([]);
@@ -174,7 +176,7 @@ test("a node with no confirmed price shows no price, cannot Run, says why, and s
       await expect(press).toBeDisabled();
       await press.dispatchEvent("click");
     }
-    drawn.push(inspector(page).getByText(WHY), press, all);
+    drawn.push(inspector(page).getByText(WHY), press, all, all.getByText("No price"));
     await floors(page, false, `${info.project.name}: no confirmed price`, drawn);
     await pick(page, false, "Kite");
     await expect(press).toContainText(/\d+ cr/i);
@@ -263,9 +265,9 @@ test("a priced node still runs at the price on its button", async ({ page }, inf
   const { maxCredits, ...unceilinged } = posted[0];
   expect(maxCredits).toBe(price);
   expect(f.quoted()).toContainEqual(unceilinged);
-  /* Accepted, and followed: the node is rendering. */
+  /* Accepted, and followed: the node is rendering (on a desktop the button is named by its busy label now). */
   if (phone) await expect(press).toContainText("Running");
-  else await expect(press).toHaveAttribute("aria-busy", "true");
+  else await expect(inspector(page).getByRole("button", { name: /Running/ })).toHaveAttribute("aria-busy", "true");
   await page.waitForTimeout(500);
   expect(posted).toHaveLength(1);
   expect(f.paid()).toEqual(["/api/generate"]);
