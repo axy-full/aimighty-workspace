@@ -21,8 +21,6 @@ const originalFetch = globalThis.fetch;
 const requestId = "5c1d4e1a-2b3c-4d5e-8f90-a1b2c3d4e5f6";
 const statusUrl = `https://api.higgsfield.ai/requests/${requestId}/status`;
 const cancelUrl = `https://api.higgsfield.ai/requests/${requestId}/cancel`;
-/* Synthetic rates for the arithmetic only; the real rates are private runtime configuration. */
-const RATES = { standard: "0.01", withVideo: "0.006" };
 const actor: AdmissionActor = {
   user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null },
 };
@@ -39,24 +37,24 @@ function load<T>(file: string, overrides: Record<string, unknown>): T {
   }, target, target.exports);
   return target.exports as T;
 }
-function enable(on = true) {
-  if (on) {
-    process.env.HF_CINEMA_STUDIO_ENABLED = "1";
-    process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS = RATES.standard;
-    process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS_WITH_VIDEO = RATES.withVideo;
-  } else {
-    delete process.env.HF_CINEMA_STUDIO_ENABLED;
-    delete process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS;
-    delete process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS_WITH_VIDEO;
-  }
+/** The deploy-time kill switch; unset, the engine is on. */
+function switchedOff(off: boolean) {
+  if (off) process.env.HF_CINEMA_STUDIO_ENABLED = "0";
+  else delete process.env.HF_CINEMA_STUDIO_ENABLED;
 }
 test.beforeEach(() => {
-  enable(false);
+  switchedOff(false);
   process.env.ENGINE_MOCK = "1";
   process.env.HF_CREDENTIALS = "fixture:key";
   globalThis.fetch = async () => { throw new Error("External network forbidden"); };
 });
-test.afterEach(() => { globalThis.fetch = originalFetch; enable(false); process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { globalThis.fetch = originalFetch; switchedOff(false); process.env.ENGINE_MOCK = "1"; });
+/** USD for a token count at the engine's own published tier (per million tokens). */
+async function tokenUsd(tokens: number, withVideo = false) {
+  const { VENDOR_RATES } = await import("../../lib/vendorRates");
+  const tier = VENDOR_RATES[CINEMA_STUDIO_MODEL_ID].tiers![0];
+  return (tokens / 1_000_000) * (withVideo ? tier.withVideo : tier.withoutVideo);
+}
 
 function workspace(name: string): TenantWorkspace {
   return { id: name, slug: name, name, legacy: true, dbUrl: `file:${path.join(dir, `${name}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: false, allowanceUsd: null, gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 20, rendersPerHour: 200, storageQuotaBytes: null, deletedAt: null };
@@ -64,48 +62,38 @@ function workspace(name: string): TenantWorkspace {
 const settings = (patch: Partial<VideoParams> = {}): VideoParams =>
   ({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, generateAudio: true, hasVideoInput: false, ...patch });
 
-test("Cinema Studio is off by default: hidden, unpriced, and absent from every engine catalogue", async () => {
+test("Cinema Studio is on for every workspace, priced from its published rates, and a deploy-time switch turns it off", async () => {
   const { getModel } = await import("../../lib/models");
   const { cinemaStudioEnabled, VENDOR_RATES } = await import("../../lib/vendorRates");
   const { cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
   const { workbenchGenerationModels } = await import("../../lib/workbench/media-quote");
   const model = getModel(CINEMA_STUDIO_MODEL_ID);
-  expect(model).toMatchObject({ provider: "higgsfield", kind: "video", billing: "token", hidden: true, cinemaStudio: true });
-  expect(cinemaStudioEnabled()).toBe(false);
-  expect(VENDOR_RATES[CINEMA_STUDIO_MODEL_ID]).toEqual({ tiers: [] });
-  expect(cinemaStudioQuoteUsd(settings())).toBeNull();
-  expect(workbenchGenerationModels().map(m => m.id)).not.toContain(CINEMA_STUDIO_MODEL_ID);
-  // Enabling without both private rates, or pricing without enabling, still offers nothing.
-  process.env.HF_CINEMA_STUDIO_ENABLED = "1";
-  process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS = RATES.standard;
-  expect(cinemaStudioEnabled()).toBe(false);
-  enable(true);
-  delete process.env.HF_CINEMA_STUDIO_ENABLED;
-  expect(cinemaStudioEnabled()).toBe(false);
-  expect(cinemaStudioQuoteUsd(settings())).toBeNull();
-  for (const bad of ["0", "-1", "NaN", "", "abc"]) {
-    enable(true);
-    process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS_WITH_VIDEO = bad;
-    expect(cinemaStudioEnabled()).toBe(false);
-  }
-  enable(true);
+  expect(model).toMatchObject({ provider: "higgsfield", kind: "video", billing: "token", cinemaStudio: true });
+  expect(model.hidden).toBeFalsy();
   expect(cinemaStudioEnabled()).toBe(true);
+  expect(VENDOR_RATES[CINEMA_STUDIO_MODEL_ID].tiers).toHaveLength(1);
+  expect(cinemaStudioQuoteUsd(settings())).toBeGreaterThan(0);
   expect(workbenchGenerationModels().map(m => m.id)).toContain(CINEMA_STUDIO_MODEL_ID);
+  for (const value of ["1", "true", ""]) {
+    process.env.HF_CINEMA_STUDIO_ENABLED = value;
+    expect(cinemaStudioEnabled(), value).toBe(true);
+  }
+  switchedOff(true);
+  expect(cinemaStudioEnabled()).toBe(false);
+  expect(workbenchGenerationModels().map(m => m.id)).not.toContain(CINEMA_STUDIO_MODEL_ID);
 });
 
-test("the quote is the published token formula on the metered frame, at the with-video rate once a clip is sent", async () => {
-  enable(true);
+test("the approximate quote is the published token formula on the metered frame, at the with-video rate once a clip is sent", async () => {
   const { cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
-  const usd = (tokens: number, per1k: string) => (tokens / 1000) * Number(per1k);
   // (0 + 5 s) × 1280 × 720 × 24 / 1024
-  expect(cinemaStudioQuoteUsd(settings())).toBeCloseTo(usd(108_000, RATES.standard), 10);
+  expect(cinemaStudioQuoteUsd(settings())).toBeCloseTo(await tokenUsd(108_000), 10);
   // 480p 16:9 is metered on its 16-pixel grid: 854 → 864 wide.
-  expect(cinemaStudioQuoteUsd(settings({ resolution: "480p" }))).toBeCloseTo(usd((864 * 480 * 24 * 5) / 1024, RATES.standard), 10);
+  expect(cinemaStudioQuoteUsd(settings({ resolution: "480p" }))).toBeCloseTo(await tokenUsd((864 * 480 * 24 * 5) / 1024), 10);
   // Portrait names the short side: 9:16 at 720p is 720 × 1280.
-  expect(cinemaStudioQuoteUsd(settings({ ratio: "9:16" }))).toBeCloseTo(usd(108_000, RATES.standard), 10);
+  expect(cinemaStudioQuoteUsd(settings({ ratio: "9:16" }))).toBeCloseTo(await tokenUsd(108_000), 10);
   // Reference clips bill their seconds with the output, at the with-video rate.
-  expect(cinemaStudioQuoteUsd(settings({ hasVideoInput: true, inputSeconds: 3.5 }))).toBeCloseTo(usd((1280 * 720 * 24 * 8.5) / 1024, RATES.withVideo), 10);
-  expect(cinemaStudioQuoteUsd(settings({ duration: 30, hasVideoInput: true, inputSeconds: 30 }))).toBeCloseTo(usd((1280 * 720 * 24 * 60) / 1024, RATES.withVideo), 10);
+  expect(cinemaStudioQuoteUsd(settings({ hasVideoInput: true, inputSeconds: 3.5 }))).toBeCloseTo(await tokenUsd((1280 * 720 * 24 * 8.5) / 1024, true), 10);
+  expect(cinemaStudioQuoteUsd(settings({ duration: 30, hasVideoInput: true, inputSeconds: 30 }))).toBeCloseTo(await tokenUsd((1280 * 720 * 24 * 60) / 1024, true), 10);
   for (const patch of [
     { duration: 3 }, { duration: 31 }, { duration: 5.5 }, { resolution: "1080p" }, { ratio: "adaptive" }, { ratio: "2:3" },
     { hasVideoInput: true }, { hasVideoInput: true, inputSeconds: 0 }, { hasVideoInput: true, inputSeconds: 30.5 },
@@ -148,19 +136,19 @@ test("the request cites attached media in the provider's token form and sends on
   await expect(cinemaStudioInput("x", settings(), [still])).rejects.toThrow(/private media storage/);
 });
 
-async function job(id: string, usd = 1.08): Promise<VideoJob> {
+async function job(id: string, usd?: number): Promise<VideoJob> {
   const { db, ready, now } = await import("../../lib/db"), { getModel } = await import("../../lib/models"), { getTask } = await import("../../lib/tasks");
   const { meter } = await import("../../lib/meter"), { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
   await ready();
   const model = getModel(CINEMA_STUDIO_MODEL_ID);
+  usd ??= (await import("../../lib/cinemaStudio")).cinemaStudioQuoteUsd(settings())!;
   const params = { ...settings(), higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint(), higgsfieldVendorCostUsd: usd };
   await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_by,created_at,updated_at) VALUES(?,'video',?,'A harbour at dawn',?,'queued','higgsfield','generate','owner',?,?)", args: [id, model.id, JSON.stringify(params), now(), now()] });
   await meter({ id, kind: "video", engine: "higgsfield", model: model.id, status: "running", engineCostUsd: usd });
   return { genId: id, model, task: getTask("generate"), prompt: "A harbour at dawn", params, source: null, references: [], ts: now() };
 }
 
-test("dispatch re-prices before the sole paid POST, and refuses when the frozen quote, switch or connection changed", async () => {
-  enable(true);
+test("dispatch re-prices before the sole paid POST, and refuses when the kept quote, switch or connection changed", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant({ ...workspace("cinema_transport"), usesPlatformKeys: true }, async () => {
     const { cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
@@ -182,14 +170,12 @@ test("dispatch re-prices before the sole paid POST, and refuses when the frozen 
       body: { prompt: "A harbour at dawn", duration: 5, resolution: "720p", aspect_ratio: "16:9", generate_audio: true } }]);
     expect(out).toEqual({ handle: { provider: "higgsfield", model: CINEMA_STUDIO_MODEL_ID, ref: requestId, endpoint: statusUrl, cancelUrl, credentialFingerprint: value.params.higgsfieldCredentialFingerprint } });
     calls.length = 0;
-    // A changed private rate, a disabled engine, rotated credentials, or a take whose clip basis
-    // no longer matches its quote: nothing is sent.
-    process.env.HF_CINEMA_STUDIO_USD_PER_1K_TOKENS = "0.011";
+    // A kept quote the settings no longer price the same (rates changed since), the kill switch,
+    // rotated credentials, or a take whose clip basis no longer matches its quote: nothing is sent.
+    await expect(higgsfield.render({ ...req, params: { ...req.params, higgsfieldVendorCostUsd: req.params.higgsfieldVendorCostUsd! * 1.1 } })).rejects.toThrow(/Nothing was submitted/);
+    switchedOff(true);
     await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);
-    enable(true);
-    delete process.env.HF_CINEMA_STUDIO_ENABLED;
-    await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);
-    enable(true);
+    switchedOff(false);
     process.env.HF_CREDENTIALS = "rotated:secret";
     await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);
     process.env.HF_CREDENTIALS = "fixture:key";
@@ -214,8 +200,7 @@ test("dispatch re-prices before the sole paid POST, and refuses when the frozen 
   }, actor);
 });
 
-test("an accepted request recovers a lost tenant handle from its receipt, collects once at the frozen price and keeps its aspect", async () => {
-  enable(true);
+test("an accepted request recovers a lost tenant handle from its receipt, collects once, settles on the delivered output and keeps its aspect", async () => {
   const { runInTenant } = await import("../../lib/tenant"), { engineFor } = await import("../../lib/engines"), { submitVideoJob, submitVideoRow } = await import("../../lib/submitVideo");
   const { db } = await import("../../lib/db"), { platformDb } = await import("../../lib/platform"), { reconcileGenjutsuVideo } = await import("../../lib/genjutsuVideo");
   const { getGeneration, syncGeneration } = await import("../../lib/jobs"), { readVideoBytes } = await import("../../lib/storage"), { fixtureUrl } = await import("../../lib/mock");
@@ -246,20 +231,26 @@ test("an accepted request recovers a lost tenant handle from its receipt, collec
       expect(submissions).toBe(1);
       const gen = (await getGeneration(id))!;
       expect(gen.status).toBe("succeeded");
-      expect(gen.costUsd).toBe(1.08);
+      // The fixture delivers 10 s at 640 × 360: the published formula on that output, within the
+      // sane band of the 5 s 720p quote, is what settles.
+      const { cinemaStudioDeliveredUsd, cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
+      const delivered = cinemaStudioDeliveredUsd({ resolution: "720p", width: 640, height: 360, seconds: 10 })!;
+      expect(delivered).toBeCloseTo(await tokenUsd(Math.ceil((10 * 640 * 360 * 24) / 1024)), 10);
+      expect(delivered).not.toBe(cinemaStudioQuoteUsd(settings()));
+      expect(gen.costUsd).toBe(delivered);
       expect(gen.params).toMatchObject({ ratio: "16:9", duration: 5 });
       expect(gen.params).not.toHaveProperty("higgsfieldVideoHandle");
       expect(JSON.stringify(gen)).not.toContain("credentialFingerprint");
       expect(await readVideoBytes(id)).toEqual(readFileSync("public/fixtures/clip.mp4"));
       const meter = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd FROM meter_events WHERE id=?", args: [id] })).rows[0];
-      expect(meter).toMatchObject({ status: "succeeded", engine_cost_usd: 1.08 });
+      expect(meter).toMatchObject({ status: "succeeded", engine_cost_usd: delivered });
       expect(Number((await platformDb().execute({ sql: "SELECT settled_at FROM higgsfield_generation_receipts WHERE id=?", args: [id] })).rows[0].settled_at)).toBeGreaterThan(0);
     }, actor);
   } finally { engine.render = render; engine.poll = poll; await unlink(path.resolve(".data/generations", `${id}.mp4`)).catch(() => {}); }
 });
 
 test("an ambiguous paid POST is never resent or refunded; a definitive refusal releases its reservation; provider failure settles at zero", async () => {
-  enable(true);
+  const quoted = (await import("../../lib/cinemaStudio")).cinemaStudioQuoteUsd(settings())!;
   const { runInTenant } = await import("../../lib/tenant"), { engineFor } = await import("../../lib/engines"), { submitVideoJob } = await import("../../lib/submitVideo");
   const { HiggsfieldHttpError } = await import("../../lib/higgsfield"), { platformDb } = await import("../../lib/platform"), { reconcileGenjutsuVideo } = await import("../../lib/genjutsuVideo"), { getGeneration } = await import("../../lib/jobs");
   const engine = engineFor("higgsfield"), render = engine.render, poll = engine.poll;
@@ -273,7 +264,7 @@ test("an ambiguous paid POST is never resent or refunded; a definitive refusal r
         expect((await submitVideoJob(value)).ok).toBe(false);
         expect((await submitVideoJob(value)).ok).toBe(false);
         expect(calls).toBe(1);
-        expect(await cost(value.genId)).toBe(uncertain ? 1.08 : 0);
+        expect(await cost(value.genId)).toBe(uncertain ? quoted : 0);
       }, actor);
     }
     engine.render = async req => ({ handle: { provider: "higgsfield", model: req.kind === "video" ? req.model.id : "", ref: requestId, endpoint: statusUrl, credentialFingerprint: req.kind === "video" ? req.params.higgsfieldCredentialFingerprint : undefined } });
@@ -335,14 +326,17 @@ function prepared(result: PrepareAdmissionResult): PreparedAdmission {
   return result.value;
 }
 
-test("admission refuses a disabled engine, first or last frames, and any take without an approved credit price", async () => fixture("cinema_admission_rules", async f => {
+test("admission refuses a switched-off engine, first or last frames, and any take without a reviewed credit price", async () => fixture("cinema_admission_rules", async f => {
   const still = await f.upload("still", "image");
+  switchedOff(true);
   const disabled = await f.post({ ...f.body({ references: [still] }), maxCredits: 1000 }, "cinema-disabled");
   expect(disabled.status, await disabled.text()).toBe(503);
   expect(await f.admission.prepareGeneration(f.body({ references: [still] }), actor)).toMatchObject({ ok: false, status: 503 });
-  enable(true);
+  switchedOff(false);
   expect(await f.admission.prepareGeneration(f.body({ references: [{ ...still, role: "first_frame" }] }), actor)).toMatchObject({ ok: false, status: 400 });
   const quote = prepared(await f.admission.prepareGeneration(f.body({ references: [still] }), actor));
+  // The figure is approximate, and the quote says so.
+  expect(quote.quote.approximate).toBe(true);
   const unapproved = await f.post(f.body({ references: [still] }), "cinema-unapproved");
   expect(unapproved.status, await unapproved.text()).toBe(400);
   const underApproved = await f.post({ ...f.body({ references: [still] }), maxCredits: quote.quote.estimatedCredits - 1 }, "cinema-under");
@@ -351,8 +345,7 @@ test("admission refuses a disabled engine, first or last frames, and any take wi
   expect(f.dispatches).toEqual([]);
 }));
 
-test("admission freezes the formula quote with its clip seconds and dispatches once at the approved price", async () => fixture("cinema_admission", async f => {
-  enable(true);
+test("admission keeps the formula quote with its clip seconds and dispatches once within the reviewed price", async () => fixture("cinema_admission", async f => {
   const { cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
   const still = await f.upload("still", "image"), clip = await f.upload("clip", "video", 3.5);
   const body = f.body({ prompt: "@Image1 crosses the harbour as in @Video1", references: [still, clip] });
@@ -379,3 +372,71 @@ test("admission freezes the formula quote with its clip seconds and dispatches o
   const meter = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd FROM meter_events WHERE id=?", args: [result.id] })).rows[0];
   expect(meter).toMatchObject({ status: "running", engine_cost_usd: usd });
 }));
+
+test("settlement uses the provider's own charge or the delivered-output figure only within a sane band of the quote", async () => {
+  const { cinemaStudioSettlementUsd, cinemaStudioDeliveredUsd } = await import("../../lib/cinemaStudio");
+  expect(cinemaStudioSettlementUsd(1, 0.9)).toBe(0.9);
+  expect(cinemaStudioSettlementUsd(1, 2.5)).toBe(2.5);
+  expect(cinemaStudioSettlementUsd(1, 0.5)).toBe(0.5);
+  expect(cinemaStudioSettlementUsd(1, 3)).toBe(3);
+  // A reported per-job charge wins when it is sane; otherwise the delivered figure or the quote.
+  expect(cinemaStudioSettlementUsd(1, 0.9, 1.2)).toBe(1.2);
+  expect(cinemaStudioSettlementUsd(1, 0.9, 40)).toBe(0.9);
+  // Outside half to three times the quote, a measurement or unit mistake is assumed: the quote stands.
+  for (const wrong of [0.49, 3.01, 1e6, 0, -1, Number.NaN, Infinity, null])
+    expect(cinemaStudioSettlementUsd(1, wrong as number | null), String(wrong)).toBe(1);
+  for (const bad of [{ width: 0 }, { height: Number.NaN }, { seconds: -1 }, { hasVideoInput: true, inputSeconds: Number.NaN }])
+    expect(cinemaStudioDeliveredUsd({ resolution: "720p", width: 1280, height: 720, seconds: 5, ...bad }), JSON.stringify(bad)).toBeNull();
+  // Reference seconds are billed with the output, at the with-video rate.
+  expect(cinemaStudioDeliveredUsd({ resolution: "720p", width: 1280, height: 720, seconds: 5, hasVideoInput: true, inputSeconds: 3.5 }))
+    .toBeCloseTo(await tokenUsd(Math.ceil((8.5 * 1280 * 720 * 24) / 1024), true), 10);
+});
+
+test("the pricing watch reads only the free estimate, at most once per interval, and flags a changed published text to the platform log", async () => {
+  const { checkHiggsfieldPricing, pricingDescriptionSha256 } = await import("../../lib/higgsfieldPricingWatch");
+  const { CINEMA_STUDIO_PRICING_WATCH } = await import("../../lib/cinemaStudio");
+  const { platformDb } = await import("../../lib/platform");
+  expect(CINEMA_STUDIO_PRICING_WATCH).toMatchObject({ model: CINEMA_STUDIO_MODEL_ID, path: "higgsfield/cinema-studio/4.0" });
+  expect(CINEMA_STUDIO_PRICING_WATCH.expectedSha256).toMatch(/^[a-f0-9]{64}$/);
+  const published = "Token-metered pricing. A fixture of the published text.";
+  const watch = { model: "cinema-watch-fixture", path: "higgsfield/cinema-studio/4.0", body: { prompt: "p" }, expectedSha256: pricingDescriptionSha256(published), formulaUsd: () => 0.5 };
+  const calls: { url: string; method?: string; body: unknown }[] = [];
+  let reply: () => Response = () => Response.json({ type: "description", pricing_description: `  ${published.replace(" A ", "   A ")}\n` });
+  const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), method: init?.method, body: JSON.parse(String(init?.body)) });
+    return reply();
+  }) as typeof fetch;
+  const row = async () => (await platformDb().execute({ sql: "SELECT * FROM higgsfield_pricing_watch WHERE model=?", args: [watch.model] })).rows[0];
+  // Development and mock mode never call it.
+  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher })).toBe("skipped");
+  expect(calls).toEqual([]);
+  // Whitespace does not count as a change.
+  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("unchanged");
+  expect(calls).toEqual([{ url: "https://api.higgsfield.ai/estimate/higgsfield/cinema-studio/4.0", method: "POST", body: { prompt: "p" } }]);
+  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("busy");
+  expect(calls).toHaveLength(1);
+  const warnings: string[] = [], warn = console.warn;
+  console.warn = (message: string) => { warnings.push(message); };
+  try {
+    await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
+    reply = () => Response.json({ type: "description", pricing_description: "Token-metered pricing. A changed text." });
+    expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("changed");
+    expect(await row()).toMatchObject({ status: "changed", detail: "Token-metered pricing. A changed text." });
+    await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
+    reply = () => Response.json({ type: "estimate", credits: "9", usd: "0.61" });
+    expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("priced");
+    expect(JSON.parse(String((await row()).detail))).toEqual({ usd: 0.61, formulaUsd: 0.5 });
+  } finally { console.warn = warn; }
+  expect(warnings.map(w => JSON.parse(w))).toEqual([
+    expect.objectContaining({ event: "higgsfield.pricing_watch", model: watch.model, result: "changed" }),
+    expect.objectContaining({ event: "higgsfield.pricing_watch", model: watch.model, result: "priced" }),
+  ]);
+  // A failed read is retried sooner and never throws into the quote.
+  await platformDb().execute({ sql: "UPDATE higgsfield_pricing_watch SET next_at=0 WHERE model=?", args: [watch.model] });
+  reply = () => new Response("provider detail", { status: 503 });
+  expect(await checkHiggsfieldPricing(watch, { fetch: fetcher, force: true })).toBe("unavailable");
+  const retry = Number((await row()).next_at) - Date.now();
+  expect(retry).toBeGreaterThan(30 * 60_000);
+  expect(retry).toBeLessThan(2 * 60 * 60_000);
+  expect(calls.every(call => call.url.startsWith("https://api.higgsfield.ai/estimate/") && call.method === "POST")).toBe(true);
+});
