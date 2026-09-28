@@ -359,7 +359,8 @@ function layout(
   let x: number = TIDY.left, top: number = TIDY.top, bandBottom: number = TIDY.top, right: number = TIDY.left;
   for (const section of sections) {
     const cards = section.members.filter(movable);
-    const title = section.card ? (movable(section.card) ? section.card : null) : section.group && canMake(section.id) ? section : null;
+    /* A kind's title is made only over cards this Tidy lays out: never a title over cards that stay where they are. */
+    const title = section.card ? (movable(section.card) ? section.card : null) : section.group && cards.length && canMake(section.id) ? section : null;
     if (!cards.length && !title) continue;
     /* Columns evened out: 6 cards at 5 a column are 3 and 3, not 5 and 1. */
     const count = Math.max(1, Math.ceil(cards.length / rows)), per = Math.ceil(cards.length / count);

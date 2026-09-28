@@ -299,24 +299,23 @@ test("tidy: a person's sections sit by what they hold, titles keep their names a
 });
 
 test("tidy: locked cards and cards this Tidy may not move keep their place; the rest step down past them", () => {
-  const nodes = [card("a", "scene"), card("b", "scene"), card("lock", "scene", { x: 420, y: 300, locked: true }), card("theirs", "character", { x: 0, y: 0 })];
+  const nodes = [card("a", "scene"), card("b", "scene"), card("lock", "scene", { x: 60, y: 300, locked: true }), card("theirs", "character", { x: 0, y: 0 })];
   /* Only a, b and the titles are this writer's to move (an Atomik run's own cards, say). */
   const movable = (n: CanvasNode) => !n.locked && n.id !== "theirs";
   const { plan, nodes: laid } = tidied(nodes, { movable });
   const at = (id: string) => laid.find((n) => n.id === id)!;
-  expect([at("lock").x, at("lock").y, at("theirs").x, at("theirs").y]).toEqual([420, 300, 0, 0]);
+  expect([at("lock").x, at("lock").y, at("theirs").x, at("theirs").y]).toEqual([60, 300, 0, 0]);
   expect(plan.spots.map((s) => s.id).sort()).toEqual(["a", "b"]);
-  /* Cast holds only a card that stays put: its title is still made, clear of that card. */
-  const cast = plan.made.find((t) => t.id === CAST)!;
-  expect([cast.x, cast.y]).toEqual([60, 240]);
-  /* Shots' title sits clear above the locked shot; its cards step down past it, in order. */
+  /* Cast holds only a card that stays put: no title is made over it. Shots' title steps clear below the card in its way,
+     and its cards step down past the locked shot, in order. */
+  expect(plan.made.map((t) => [t.id, t.x, t.y])).toEqual([[SHOTS, 60, 240]]);
+  expect([at("a").x, at("a").y, at("b").x, at("b").y]).toEqual([60, 560, 60, 820]);
   expect(overlapping(laid)).toEqual([]);
-  expect([plan.made.find((t) => t.id === SHOTS)!.y, at("a").x, at("a").y, at("b").y]).toEqual([60, 420, 560, 820]);
   expect(laid.every((n) => ["lock", "theirs"].includes(n.id) || (n.x % 20 === 0 && n.y % 20 === 0))).toBe(true);
   /* A title a person took off is never made again: its cards keep their block, untitled. */
-  const untitled = tidyBoard(nodes, assets, { canMake: (id) => id !== SHOTS });
-  expect(untitled.made.map((t) => t.id)).toEqual([CAST]);
-  expect(untitled.spots.find((s) => s.id === "a")).toBeTruthy();
+  const untitled = tidyBoard(nodes, assets, { movable, canMake: (id) => id !== SHOTS });
+  expect(untitled.made).toEqual([]);
+  expect(untitled.spots.map((s) => [s.id, s.x, s.y])).toEqual([["a", 60, 560], ["b", 60, 820]]);
 });
 
 test("tidy: a feature-sized board fits the canvas: columns grow taller and bands wider until it does, with nothing overlapping", () => {
