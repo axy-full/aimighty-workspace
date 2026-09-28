@@ -689,3 +689,211 @@ test("stale never-submitted cleanup loses to an acquired paid claim and cannot r
     expect(finished.creditsBilled).toBe(38);
     expect(submitted).toBe(1);
   }));
+
+test("new training is stamped with the production host and render family before the paid POST, on the identity and its receipt", async () =>
+  scope("soul_host_origin", async (_ws, project) => {
+    const { db } = await import("../../lib/db");
+    const { platformDb } = await import("../../lib/platform");
+    const seen: unknown[] = [];
+    const identity = await read(
+      await submit(input(project), "origin-key", {
+        submit: async (_name, _urls, options) => {
+          seen.push(options);
+          const row = (
+            await db().execute(
+              "SELECT provider_origin,model_version,paid_claim FROM soul_identities",
+            )
+          ).rows[0];
+          expect(row.paid_claim).not.toBeNull();
+          expect(row.provider_origin).toBe("api-v1");
+          expect(row.model_version).toBe("v1");
+          return { id: providerId, status: "queued" as const };
+        },
+      }),
+    );
+    expect(seen).toEqual([{ modelVersion: "v1" }]);
+    expect(identity.status).toBe("training");
+    expect(
+      (
+        await platformDb().execute({
+          sql: "SELECT provider_origin FROM soul_training_receipts WHERE id=?",
+          args: [identity.id],
+        })
+      ).rows[0].provider_origin,
+    ).toBe("api-v1");
+    expect(JSON.stringify(identity)).not.toMatch(
+      /api-v1|provider_origin|model_version/,
+    );
+    const { syncSoulIdentity } = await import("../../lib/soulIdentities");
+    const origins: string[] = [];
+    const ready = await syncSoulIdentity(identity.id, {
+      poll: async (_id, origin) => {
+        origins.push(origin);
+        return { id: providerId, status: "completed" };
+      },
+    });
+    expect(origins).toEqual(["api-v1"]);
+    expect(ready?.status).toBe("ready");
+    expect(ready?.creditsBilled).toBe(38);
+  }));
+
+test("an identity accepted before the marker keeps polling its original host; a refusal there is an unknown outcome, never another request", async () =>
+  scope("soul_host_legacy", async (_ws, project, production) => {
+    const { db } = await import("../../lib/db");
+    const { platformDb } = await import("../../lib/platform");
+    const { HiggsfieldHttpError } = await import("../../lib/higgsfield");
+    const { syncSoulIdentity, requireReadySoulIdentity } =
+      await import("../../lib/soulIdentities");
+    let submits = 0;
+    const identity = await read(
+      await submit(input(project), "legacy-key", {
+        submit: async () => {
+          submits++;
+          return { id: providerId, status: "queued" as const };
+        },
+      }),
+    );
+    // As written before the marker existed: no origin on the row or the receipt.
+    await db().execute({
+      sql: "UPDATE soul_identities SET provider_origin=NULL,model_version=NULL WHERE id=?",
+      args: [identity.id],
+    });
+    await platformDb().execute({
+      sql: "UPDATE soul_training_receipts SET provider_origin=NULL WHERE id=?",
+      args: [identity.id],
+    });
+    const origins: string[] = [];
+    const lease = () =>
+      db().execute({
+        sql: "UPDATE soul_identities SET last_polled_at=0 WHERE id=?",
+        args: [identity.id],
+      });
+    // A transient failure stays training, with a temporary notice.
+    const transient = await syncSoulIdentity(identity.id, {
+      poll: async (_id, origin) => {
+        origins.push(origin);
+        throw new HiggsfieldHttpError(503);
+      },
+    });
+    expect(transient?.status).toBe("training");
+    expect(transient?.error).toMatch(/temporarily unavailable/);
+    // The earlier host refuses this account: the outcome is unknown.
+    await lease();
+    const unknown = await syncSoulIdentity(identity.id, {
+      poll: async (_id, origin) => {
+        origins.push(origin);
+        throw new HiggsfieldHttpError(401);
+      },
+    });
+    expect(unknown?.status).toBe("uncertain");
+    expect(unknown?.error).toMatch(
+      /earlier host.*outcome is unknown.*reservation is retained.*no new training request/,
+    );
+    expect(unknown?.creditsBilled).toBe(38);
+    expect((await meterFor(identity.id)).status).toBe("running");
+    // A read inside the lease window neither polls nor hides the notice.
+    const held = await syncSoulIdentity(identity.id, {
+      poll: async () => {
+        throw new Error("must stay leased");
+      },
+    });
+    expect(held?.status).toBe("uncertain");
+    expect(held?.error).toBe(unknown?.error);
+    await expect(
+      requireReadySoulIdentity(identity.id, production, project),
+    ).rejects.toThrow(/not ready/);
+    // It is still checked at the host that accepted it, and an answer settles it.
+    await lease();
+    const settled = await syncSoulIdentity(identity.id, {
+      poll: async (_id, origin) => {
+        origins.push(origin);
+        return { id: providerId, status: "completed" };
+      },
+    });
+    expect(origins).toEqual(["dev-v1", "dev-v1", "dev-v1"]);
+    expect(settled?.status).toBe("ready");
+    expect(settled?.creditsBilled).toBe(38);
+    expect(submits).toBe(1);
+    expect(
+      (
+        await platformDb().execute({
+          sql: "SELECT provider_origin,settled_at FROM soul_training_receipts WHERE id=?",
+          args: [identity.id],
+        })
+      ).rows[0],
+    ).toMatchObject({ provider_origin: null });
+  }));
+
+test("a receipt recorded for another host is never used to restore an identity", async () =>
+  scope("soul_host_receipt", async (_ws, project) => {
+    const { db } = await import("../../lib/db");
+    const { platformDb } = await import("../../lib/platform");
+    const { syncSoulIdentity } = await import("../../lib/soulIdentities");
+    let calls = 0;
+    const identity = await read(
+      await submit(input(project), "origin-receipt-key", {
+        submit: async () => {
+          calls++;
+          await db().execute(
+            "CREATE TRIGGER deny_soul_origin_outcome BEFORE UPDATE OF provider_reference_id ON soul_identities BEGIN SELECT RAISE(ABORT,'fixture storage failure'); END",
+          );
+          return { id: providerId, status: "completed" };
+        },
+      }),
+    );
+    await db().execute("DROP TRIGGER deny_soul_origin_outcome");
+    await platformDb().execute({
+      sql: "UPDATE soul_training_receipts SET provider_origin='dev-v1' WHERE id=?",
+      args: [identity.id],
+    });
+    const unresolved = await syncSoulIdentity(identity.id, {
+      poll: async () => {
+        throw new Error("no handle to poll");
+      },
+    });
+    expect(unresolved?.status).toBe("uncertain");
+    expect(calls).toBe(1);
+    expect((await meterFor(identity.id)).status).toBe("running");
+  }));
+
+test("an identities table saved before the marker gains its columns and its rows read as the earlier host", async () =>
+  scope("soul_host_migration", async () => {
+    const { db } = await import("../../lib/db");
+    await db().execute(`CREATE TABLE soul_identities(id TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT,
+      production_project_id TEXT, name TEXT NOT NULL, description TEXT NOT NULL, subject_type TEXT NOT NULL,
+      references_json TEXT NOT NULL, status TEXT NOT NULL, provider_reference_id TEXT, credential_fingerprint TEXT NOT NULL,
+      paid_claim TEXT, cost_usd REAL, settlement_status TEXT, settled_at INTEGER, error TEXT,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_polled_at INTEGER, consent_at INTEGER NOT NULL,
+      purged_at INTEGER)`);
+    const { higgsfieldCredentialFingerprint } =
+      await import("../../lib/higgsfield");
+    await db().execute({
+      sql: `INSERT INTO soul_identities(id,owner,name,description,subject_type,references_json,status,provider_reference_id,
+        credential_fingerprint,paid_claim,cost_usd,created_at,updated_at,consent_at)
+        VALUES('soul_legacy',?,'Earlier','', 'character','[{"uploadId":"source"}]','training',?,?,'claim',2.5,0,0,0)`,
+      args: [user.id, providerId, higgsfieldCredentialFingerprint()],
+    });
+    const { syncSoulIdentity } = await import("../../lib/soulIdentities");
+    const origins: string[] = [];
+    const settled = await syncSoulIdentity("soul_legacy", {
+      poll: async (_id, origin) => {
+        origins.push(origin);
+        return { id: providerId, status: "completed" };
+      },
+    });
+    expect(origins).toEqual(["dev-v1"]);
+    expect(settled?.status).toBe("ready");
+    const columns = (
+      await db().execute("PRAGMA table_info(soul_identities)")
+    ).rows.map((column) => String(column.name));
+    expect(columns).toEqual(
+      expect.arrayContaining(["provider_origin", "model_version"]),
+    );
+    expect(
+      (
+        await db().execute(
+          "SELECT provider_origin,model_version FROM soul_identities WHERE id='soul_legacy'",
+        )
+      ).rows[0],
+    ).toMatchObject({ provider_origin: null, model_version: null });
+  }));

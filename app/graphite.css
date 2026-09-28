@@ -237,7 +237,8 @@
 .gx-project-new .gx-reason { grid-column: 1 / -1; margin: 0; }
 .gx-asset-add { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; background: var(--gx-input); font-size: 15px; line-height: 1; position: relative; }
 .gx-asset-add:hover { color: var(--gx-accent-text); }
-.gx-lib-foot { flex: none; color: var(--gx-text-3); font-size: 12px; padding: 0 4px; }
+/* text-2, not text-3: text-3 composites under the #7C7C84 label floor on the panel. */
+.gx-lib-foot { flex: none; color: var(--gx-text-2); font-size: 12px; padding: 0 4px; }
 /* The end of an asset list: Load more while the project has more, or a failed read with Try again. */
 .gx-lib-more, .gx-retry { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; min-width: 0; }
 .gx-lib-more .gx-gen-error, .gx-retry .gx-gen-error { flex: 1 1 100%; overflow-wrap: anywhere; }
@@ -565,6 +566,9 @@
 @media (max-width: 767px) { .gx .gx-gen-go.gx-draft-go { align-self: stretch; } }
 .gx-running { display: grid; place-items: center; }
 .gx-ring { width: 44px; height: 44px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); animation: gx-pulse 1.6s ease-in-out infinite; }
+/* A run that is over (Complete, or failed) holds still, as a settled batch take does; with reduced motion no ring pulses. */
+.gx-tile[data-done="true"] .gx-ring { animation: none; }
+@media (prefers-reduced-motion: reduce) { .gx-ring { animation: none; } }
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
 .gx-sheet { width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: gx-pop .2s var(--gx-ease) both; }
 .gx-sheet-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; }
