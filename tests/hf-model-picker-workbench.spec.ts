@@ -127,13 +127,15 @@ test("every Studio engine wears spec chips and a price; the picked row's price i
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
     await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
-    await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^\d+ cr$/);
+    await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^(about )?\d+ cr$/);
     /* A 16:9 project and an untouched composer: length and size, and the aspect only if it is not 16:9. */
     await expect(row.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^\d+ s · \S+( · \S+)?$/);
     await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^\d+(p|K)$/);
     await expect(row.locator('[data-spec="length"]')).toHaveText(/^\d+(–|\/)\d+ s$/);
     await expect(row.locator('[data-spec="refs"]')).toHaveText(/refs$|^Prompt only$/);
   }
+  /* Cinema Studio is priced from its published pricing and settles on the delivered take: it says "about". */
+  await expect(sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ }).getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d+ cr$/);
   /* The default engine is the selected row; its price is what the button asks for, once there is a prompt. */
   const selected = sheet.locator('[role="option"][aria-selected="true"]');
   await expect(selected).toHaveCount(1);
@@ -532,7 +534,9 @@ test("the engines route prices every Studio engine in credits only, and each fig
   for (const model of models) {
     if (model.marketing || model.soulIdentity) { expect(model.rate).toBeNull(); continue; }
     expect(model.rate, model.id).not.toBeNull();
-    expect(Object.keys(model.rate!).sort()).toEqual(["credits", "duration", "ratio", "resolution"]);
+    /* Cinema Studio's rate is approximate (published pricing, settled on the delivered take), and says so. */
+    expect(Object.keys(model.rate!).sort()).toEqual(model.id === "higgsfield-cinema-studio-4.0"
+      ? ["approximate", "credits", "duration", "ratio", "resolution"] : ["credits", "duration", "ratio", "resolution"]);
     const q = new URLSearchParams({ model: model.id, resolution: model.rate!.resolution, ratio: model.rate!.ratio, duration: String(model.rate!.duration ?? 5) });
     const quote = await page.request.get(`/api/workbench/engines?${q}`).then((r) => r.json()) as { credits: number };
     expect(quote.credits, model.id).toBe(model.rate!.credits);

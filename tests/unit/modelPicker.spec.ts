@@ -89,6 +89,11 @@ test("a Studio row is priced where the composer stands, a connected row only by 
   expect(rowPrice(video, {}, touched, priced)).toMatchObject({ credits: 86, detail: "10 s · 1080p", kind: "rate" });
   /* An engine the route could not price there says so rather than keep a stale figure. */
   expect(rowPrice(pro, {}, touched, priced, true)).toMatchObject({ kind: "none" });
+  /* An approximate rate says so on the row and in its title. */
+  const approximate = sheetRatesFrom(rateQuery(touched), { models: [{ id: seedance.id, rate: { credits: 86, resolution: "1080p", ratio: "16:9", duration: 10, approximate: true } }] });
+  expect(rowPrice(video, {}, touched, approximate)).toMatchObject({ credits: 86, approximate: true });
+  expect(rowPrice(video, {}, touched, approximate).title).toMatch(/^About 86 cr per take/);
+  expect(rowPrice(video, {}, touched, priced).approximate).toBeUndefined();
   /* A figure for other settings than this engine's is dropped, even from the sheet's read. */
   const stale = sheetRatesFrom("k", { models: [{ id: seedance.id, rate: { credits: 8, resolution: "480p", ratio: "16:9", duration: 5 } }] });
   expect(rowPrice(video, {}, touched, stale).kind).toBe("none");
@@ -208,7 +213,8 @@ test("the engines route's rate is the button's own quote at the composer's untou
     if (model.marketing || model.soulIdentity) { expect(rate).toBeNull(); continue; }
     if (!rate) continue;
     priced++;
-    expect(Object.keys(rate).sort()).toEqual(["credits", "duration", "ratio", "resolution"]);
+    /* Only an engine that settles on what it delivers carries "approximate" (shown as "about"). */
+    expect(Object.keys(rate).sort()).toEqual(model.cinemaStudio ? ["approximate", "credits", "duration", "ratio", "resolution"] : ["credits", "duration", "ratio", "resolution"]);
     expect(Number.isInteger(rate.credits) && rate.credits >= 1).toBe(true);
     /* The same settings the composer opens with (no project aspect), so picking the row shows this figure on Generate. */
     const composed = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations });
@@ -239,7 +245,8 @@ test("wherever the composer stands, each engine's rate is the button's quote at 
       const composed = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations }, at.aspect, at.picks);
       const quoted = quoteWorkbenchMedia(model, composed, NO_REFERENCES).credits;
       if (quoted == null) { expect(rate).toBeNull(); continue; }
-      expect(rate, `${model.id} ${JSON.stringify(at)}`).toEqual({ credits: quoted, resolution: composed.resolution, ratio: composed.ratio, duration: model.kind === "video" ? composed.duration : null });
+      expect(rate, `${model.id} ${JSON.stringify(at)}`).toEqual({ credits: quoted, resolution: composed.resolution, ratio: composed.ratio, duration: model.kind === "video" ? composed.duration : null,
+        ...(model.cinemaStudio ? { approximate: true } : {}) });
       checked++;
     }
   }
