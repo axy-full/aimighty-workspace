@@ -80,10 +80,12 @@ const ACTION_ID = /^[A-Za-z0-9_-]{8,100}$/;
 const tidySchema = z.object({ action: z.literal("tidy"), productionId: z.string().max(100), opId: z.string().regex(ACTION_ID) });
 
 /**
- * A server action on the canvas. `tidy`: lays the whole board out (columns by
- * input depth, rows in canvas order; locked cards stay where they are) for
- * everyone at once. Free: nothing is priced or charged. `opId` names the
- * press, so a retry of the same press changes nothing twice.
+ * A server action on the canvas. `tidy`: lays the whole board out by sections
+ * (lib/workspace/rig-board.ts: a block of columns per section under its title,
+ * rows in canvas order; locked cards stay where they are) for everyone at once,
+ * making any kind's section title the board lacks. Free: nothing is priced or
+ * charged. `opId` names the press, so a retry of the same press changes nothing
+ * twice. `moved`: cards it moved; `sections`: section titles it made.
  */
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
@@ -96,7 +98,7 @@ export const POST = withTenant(async (req: Request) => {
   try {
     await requireProduction(productionId);
     const result = await applyCanvasOps(productionId, { opId: `tidy:${who.userId}:${opId}`, ops: [{ kind: "tidy" }], author: who.userId!, what: "tidy" });
-    const moved = result.outcomes.flatMap((o) => o.nodeIds).length;
-    return Response.json({ revision: result.revision, moved, live: result.live, credits: 0 }, { headers: NO_STORE });
+    const count = (kind: string) => result.outcomes.filter((o) => o.kind === kind).flatMap((o) => o.nodeIds).length;
+    return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });

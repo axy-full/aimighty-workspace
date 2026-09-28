@@ -53,7 +53,7 @@
 .pxw .pxw-graph-node[data-shape="flow"] { padding: 13px; }
 .pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1); }
 .pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
-.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer) { pointer-events: none; position: relative; }
+.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer):not(.pxw-graph-live) { pointer-events: none; position: relative; }
 .pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
 .pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
@@ -86,6 +86,48 @@
 .pxw .pxw-graph-port[data-armed] { border-color: var(--pxw-blue); background: var(--pxw-blue-selected-row); }
 .pxw .pxw-graph-status { margin: 0 0 12px; font-size: 12px; color: var(--pxw-amber-ink); }
 .pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-faint); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
+
+/* ── The board: every card its shape's height, sections, notes, the add buttons (lib/workspace/rig-board.ts) ── */
+/* The height is set on the card (rig-graph CARD_HEIGHT, which the server's Tidy lays out by): the words give way, the footer keeps the bottom. */
+.pxw .pxw-graph-node { box-sizing: border-box; }
+.pxw .pxw-graph-node > .pxw-graph-kicker,
+.pxw .pxw-graph-node > .pxw-graph-media,
+.pxw .pxw-graph-node > .pxw-graph-title,
+.pxw .pxw-graph-node > .pxw-graph-readouts,
+.pxw .pxw-graph-node > .pxw-graph-foot { flex: none; }
+.pxw .pxw-graph-desc { flex: 0 1 auto; min-height: 0; -webkit-line-clamp: 2; }
+.pxw .pxw-graph-foot { margin-top: auto; padding-top: 8px; min-width: 0; }
+.pxw .pxw-graph-kicker-label { display: inline-flex; gap: 7px; min-width: 0; }
+.pxw .pxw-graph-code { color: var(--pxw-muted); }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-code { color: #7fb6ff; }
+.pxw .pxw-graph-status { flex: none; color: var(--pxw-muted); font-weight: 560; }
+.pxw .pxw-graph-status[data-tone="red"] { color: var(--pxw-red-ink); }
+.pxw .pxw-graph-detail { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-graph-status + .pxw-graph-detail::before { content: "·"; margin-right: 6px; }
+/* A note is its words: more of them show, as written (line breaks kept). */
+.pxw .pxw-graph-node[data-shape="text"] .pxw-graph-note-text { -webkit-line-clamp: 5; white-space: pre-line; overflow-wrap: anywhere; }
+.pxw .pxw-graph-placeholder { color: var(--pxw-label-floor); font-style: normal; }
+/* The pencil on a note or a section title; the words it edits, in place. */
+.pxw .pxw-graph-edit { position: absolute; top: 6px; right: 6px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border-radius: 8px; border: 1px solid var(--pxw-control-border); background: var(--pxw-control); color: var(--pxw-muted); cursor: pointer; }
+.pxw .pxw-graph-edit:hover { color: var(--pxw-primary); border-color: var(--pxw-blue); }
+.pxw .pxw-graph-editor { position: relative; z-index: 2; display: block; box-sizing: border-box; width: 100%; flex: 1 1 auto; min-height: 0; margin-top: 6px; padding: 6px 8px; resize: none; border-radius: 8px; border: 1px solid var(--pxw-blue); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 12.5px; line-height: 1.5; outline: none; cursor: text; }
+/* A section title: a heading on the board, not a card — its name, what it holds, and a rule that spans its columns. */
+.pxw .pxw-graph-node[data-section],
+.gx .pxw .pxw-graph-node[data-section] { justify-content: flex-end; padding: 0 40px 8px 2px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.16); border-radius: 0; box-shadow: none; backdrop-filter: none; }
+.pxw .pxw-graph-node[data-section][data-selected],
+.gx .pxw .pxw-graph-node[data-section][data-selected] { background: rgba(10, 132, 255, 0.08); border: 0; border-bottom: 1.5px solid var(--pxw-blue); border-radius: 8px 8px 0 0; box-shadow: none; }
+.pxw .pxw-graph-node[data-section] .pxw-graph-hit { border-radius: 8px 8px 0 0; }
+.pxw .pxw-graph-node[data-section] .pxw-graph-edit { top: 4px; }
+.pxw .pxw-graph-section-name { display: block; font-size: 20px; font-weight: 620; line-height: 1.2; letter-spacing: -0.02em; color: var(--pxw-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-graph-section-count { display: block; margin-top: 3px; font-family: var(--pxw-mono); font-size: 11px; letter-spacing: 0.08em; color: var(--pxw-label-floor); }
+.pxw .pxw-graph-node[data-section] .pxw-graph-editor { flex: none; height: 30px; margin: 0; padding: 2px 6px; font-size: 18px; font-weight: 600; line-height: 1.2; }
+/* Add to the board: a pill at the board's top-left, clear of the zoom cluster at its bottom-right. */
+.pxw .pxw-graph-tools-strip { position: absolute; left: 12px; top: 12px; z-index: 7; }
+.pxw .pxw-graph-tools { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
+.pxw .pxw-graph-tools button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; cursor: pointer; }
+.pxw .pxw-graph-tools button:hover { background: rgba(255, 255, 255, 0.08); }
+.pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
+@media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
 
 /* ── Inspector: shot ──────────────────────────────────────────────────── */
 .pxw .pxw-insp-output { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
@@ -206,7 +248,14 @@
   .pxw .pxw-graph-kicker,
   .pxw .pxw-graph-badge,
   .pxw .pxw-graph-readouts > span,
+  .pxw .pxw-graph-section-count,
   .pxw .pxw-graph-foot { font-size: 12px; }
+  /* The board's own buttons are thumb-sized, and a field never makes a phone zoom in. */
+  .pxw .pxw-graph-edit { width: 44px; height: 44px; top: 2px; right: 2px; }
+  .pxw .pxw-graph-node[data-section],
+  .gx .pxw .pxw-graph-node[data-section] { padding-right: 50px; }
+  .pxw .pxw-graph-node[data-section] .pxw-graph-edit { top: 2px; }
+  .pxw .pxw-graph-editor { font-size: 16px; }
   .pxw .pxw-graph-node .pxw-graph-port,
   .gx .pxw .pxw-graph-node .pxw-graph-port { width: 44px; height: 44px; margin-top: -22px; border: 16.5px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1.5px var(--pxw-hover-border); }
   /* The glass port's blur (app/glass.css) paints the whole border box: over a 44px target it is a frosted halo, not a dot. */

@@ -45,7 +45,8 @@ type Canvas = TeamCanvasView;
 type LiveRoom = Room<Presence, Storage>;
 /** The newest change the server made to the canvas (canvas-ops-log latestServerChange). */
 export type ServerChange = { seq: number; at: number; what: string; agent: boolean };
-export type TidyOutcome = { ok: true; moved: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
+/** `moved`: cards the Tidy moved; `sections`: section titles it made (lib/workspace/rig-board.ts). */
+export type TidyOutcome = { ok: true; moved: number; sections: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
 
 export type TeamCanvasApi = {
   /** "live" once in the room; "saved" when only the server copy is shared; "off" before a project is saved. */
@@ -407,14 +408,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     } catch (error) {
       return { ok: false, error: error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 ? error.message : TIDY_FAILED };
     }
-    const v = (answer ?? {}) as { moved?: unknown; live?: unknown };
+    const v = (answer ?? {}) as { moved?: unknown; sections?: unknown; live?: unknown };
     if (typeof v.moved !== "number") return { ok: false, error: TIDY_FAILED };
     const live = v.live === "sent" || v.live === "waiting" ? v.live : "off";
     /* No live room: it is here now, and teammates' windows fold it in on their next check. With a room, the room brings it;
        one the room could not take yet goes out again on the next read of the canvas. */
     if (!room.current) await foldServer(pid);
     else if (live === "waiting") setTimeout(() => void draftRequest(`${API}?productionId=${encodeURIComponent(pid)}&head=1`, scope).catch(() => null), 3000);
-    return { ok: true, moved: v.moved, live };
+    return { ok: true, moved: v.moved, sections: typeof v.sections === "number" ? v.sections : 0, live };
   }, [scope, send, foldServer]);
 
   return { mode, peers, server, publish, catchUp, presence, flush: send, tidy };
