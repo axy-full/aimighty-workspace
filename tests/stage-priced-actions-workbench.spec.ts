@@ -70,6 +70,54 @@ test("frames quote automatically, reject a moved price, and submit only after th
   expect(store.current.production!.boards!.frames.shot.pending![0].style).toBe("bw-sketch");
 });
 
+test("a sent frame keeps its action closed until its job lands or fails, so another tap buys nothing", async ({ page }) => {
+  await signInLocally(page.request);
+  const store = { current: fixture() };
+  await mockProjects(page, store);
+  await mockMedia(page);
+  const posted: Record<string, unknown>[] = [];
+  let status: "running" | "failed" | "succeeded" = "running";
+  await page.route(/\/api\/generate(\/quote)?$/, (route) => {
+    if (route.request().url().endsWith("/quote")) return route.fulfill({ json: { estimatedCredits: 7, fingerprint: "a".repeat(64) } });
+    posted.push(route.request().postDataJSON());
+    return route.fulfill({ json: { id: `gen_once_${posted.length}`, status: "queued" } });
+  });
+  await page.route(/\/api\/jobs\/gen_once_\d+$/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    return route.fulfill({ json: { generation: generation({ id, status, ...(status === "failed" ? { error: "The engine turned this frame down." } : {}) }) } });
+  });
+  await page.goto(`/suites?suite=studio&page=boards&project=${store.current.id}`);
+  const frame = page.getByTestId("board-frame").first();
+  const action = frame.getByTestId("frame-render");
+  await expect(action).toHaveText("Render frame · 7 credits");
+  await action.click();
+  await expect.poll(() => posted.length).toBe(1);
+  /* In flight: closed however it is pressed, and nothing more is sent. */
+  await expect(action).toHaveText("Rendering…");
+  await expect(action).toBeDisabled();
+  await fit(page, action);
+  await action.click({ force: true });
+  await action.dispatchEvent("click");
+  await page.waitForTimeout(800);
+  expect(posted).toHaveLength(1);
+  /* The job fails: the action opens again at its price, and says why. */
+  status = "failed";
+  await expect(action).toHaveText("Render frame · 7 credits");
+  await expect(action).toBeEnabled();
+  await expect(frame.getByTestId("frame-error")).toHaveText("The engine turned this frame down.");
+  /* Sent again: what the failed job said is cleared, and the action is closed until this job lands. */
+  status = "running";
+  await action.click();
+  await expect.poll(() => posted.length).toBe(2);
+  await expect(frame.getByTestId("frame-error")).toHaveCount(0);
+  await expect(action).toBeDisabled();
+  status = "succeeded";
+  await expect(action).toHaveText("Render frame · 7 credits");
+  await expect(action).toBeEnabled();
+  await expect.poll(() => store.current.production!.boards!.frames.shot.takes.map((take) => take.genId)).toEqual(["gen_once_2"]);
+  expect(posted.map((body) => body.maxCredits)).toEqual([7, 7]);
+});
+
 test("a frame whose price cannot be read says why, offers Try again and sends nothing", async ({ page }) => {
   await signInLocally(page.request);
   const store = { current: fixture() };
@@ -208,9 +256,13 @@ test("the server retains more than five pending renders and the stages resume ev
   await page.route("**/api/generate", (route) => { submitted++; return route.fulfill({ json: { id: "gen_frame_7", status: "queued" } }); });
   await page.goto(`/suites?suite=studio&page=boards&project=${project.id}`);
   await expect.poll(() => frames.every((job) => seen.has(job.jobId))).toBe(true);
-  await expect(page.getByTestId("frame-render")).toHaveText("Render frame · 2 credits");
+  /* Renders in flight keep the frame's own action closed; another take is asked for deliberately, by picking the frame. */
+  await expect(page.getByTestId("frame-render")).toHaveText("Rendering…");
+  await expect(page.getByTestId("frame-render")).toBeDisabled();
+  await page.getByTestId("frame-select").check();
+  await expect(page.getByTestId("boards-render-selected")).toHaveText("Storyboard 1 frames · 2 credits");
   expect(submitted).toBe(0);
-  await page.getByTestId("frame-render").click();
+  await page.getByTestId("boards-render-selected").click();
   await expect.poll(async () => (await read()).production!.boards!.frames.shot.pending?.length).toBe(8);
   expect(submitted).toBe(1);
   await page.goto(`/suites?suite=studio&page=boards&sp=environment&project=${project.id}`);

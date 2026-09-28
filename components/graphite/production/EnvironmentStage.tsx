@@ -228,7 +228,8 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     const input = plateRequest(latest.current, env, entry, getModel(env.model));
     if (!input || sending.current.has(entry.id)) return;
     sending.current.add(entry.id);
-    setWorking((w) => ({ ...w, [entry.id]: "Sending…" }));
+    /* A new send replaces what the last attempt said. */
+    setWorking((w) => ({ ...w, [entry.id]: "Sending…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
     try {
       if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering a plate.");
       const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `env-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
