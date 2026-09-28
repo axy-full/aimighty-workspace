@@ -4,8 +4,9 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
 import { collabConfigured } from "@/lib/collab";
+import { db } from "@/lib/db";
 import {
-  patchTeamCanvas, readTeamCanvas, requireProduction, teamPatchSchema, teamRoomFor, TeamCanvasError,
+  masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,10 @@ function failure(error: unknown) {
   throw error;
 }
 
-/** The production's shared Rig canvas, and the live room to edit it in when Liveblocks is set up. */
+/**
+ * The production's shared Rig canvas, and the live room to edit it in when Liveblocks is set up.
+ * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
+ */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
   if (who.response) return who.response;
@@ -36,6 +40,7 @@ export const GET = withTenant(async (req: Request) => {
       canvas: saved ? { nodes: saved.canvas.nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed) } : null,
       revision: saved?.revision ?? 0,
       room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
+      locks: saved ? [...(await masterLocks(db(), saved.canvas))] : [],
     }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
@@ -54,6 +59,13 @@ export const PATCH = withTenant(async (req: Request) => {
   try {
     await requireProduction(productionId);
     const saved = await patchTeamCanvas(productionId, patch, who.userId!);
-    return Response.json({ revision: saved.revision }, { headers: NO_STORE });
+    /* Writes that would have changed a locked master did not land; the rest of the edit did. `held` says which,
+       with the card (or asset) as the canvas holds it, so the window puts it back. */
+    const held = saved.masterHolds.map((h) => ({
+      ...h,
+      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: saved.canvas.nodes[h.nodeId] } : {}),
+      ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
+    }));
+    return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });

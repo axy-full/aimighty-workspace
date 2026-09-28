@@ -4,7 +4,7 @@ import { db, ready, now } from "@/lib/db";
 import { workbenchTransaction } from "./records";
 import { canvasAssetSchema, canvasNodeSchema } from "./studio-schema";
 import { PROJECT_JSON_BYTES, PROJECT_LIMITS } from "./project-limits";
-import { applyTeamPatch, emptyTeamCanvas, parseTeamCanvas, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { applyTeamPatch, emptyTeamCanvas, guardMasters, parseTeamCanvas, type MasterHold, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
 
 /*
  * The one Rig canvas a production's team shares, in the workspace database.
@@ -87,18 +87,42 @@ export async function patchTeamCanvas(productionId: string, patch: Omit<TeamPatc
 }
 
 /**
+ * Which of the elements a canvas's cards (and a patch's) stand for are locked
+ * in the elements table: the masters (team-canvas-model guardMasters). The
+ * table decides, never a card's own lock record.
+ */
+export async function masterLocks(client: Pick<Transaction, "execute">, canvas: Pick<TeamCanvas, "nodes" | "removed">, patch?: Pick<TeamPatch, "upsertNodes">): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const n of [...Object.values(canvas.nodes), ...Object.values(canvas.removed), ...(patch?.upsertNodes ?? [])])
+    if (typeof n?.elementId === "string" && ID.test(n.elementId)) ids.add(n.elementId);
+  const locked = new Set<string>();
+  const all = [...ids];
+  for (let start = 0; start < all.length; start += 500) {
+    const batch = all.slice(start, start + 500);
+    const rows = (await client.execute({ sql: `SELECT id FROM elements WHERE locked=1 AND id IN (${batch.map(() => "?").join(",")})`, args: batch })).rows;
+    for (const row of rows) locked.add(String(row.id));
+  }
+  return locked;
+}
+
+/**
  * The same fold inside a transaction the caller holds (a draft save carries
  * its node edits to the canvas this way). With `onlyIfShared`, a production
  * whose canvas nobody has opened yet is left alone: the first Rig to open it
  * brings the whole draft.
+ *
+ * Writes that would change a locked master do not land (guardMasters, against
+ * the elements table); `masterHolds` says which. `trusted`: the master lock's
+ * own write of a card's lock record (lib/masters.ts), which nothing else sends.
  */
-export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false) {
+export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false, masters: { trusted?: boolean } = {}) {
   const row = (await tx.execute({ sql: "SELECT body,revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
   if (!row && onlyIfShared) return null;
   let current = emptyTeamCanvas();
   if (row) { try { current = parseTeamCanvas(JSON.parse(String(row.body))); } catch { current = emptyTeamCanvas(); } }
   const at = Math.max(now(), ...Object.values(current.stamps).map(Number).filter(Number.isFinite));
-  const next = applyTeamPatch(current, { ...patch, at });
+  const guarded = masters.trusted ? { patch: { ...patch, at }, held: [] as MasterHold[] } : guardMasters(current, { ...patch, at }, { locks: await masterLocks(tx, current, patch) });
+  const next = applyTeamPatch(current, guarded.patch, "trusted");
   if (Object.keys(next.nodes).length > PROJECT_LIMITS.nodes)
     throw new TeamCanvasError(`A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} nodes.`, 413);
   const body = JSON.stringify(next);
@@ -109,5 +133,5 @@ export async function applyTeamCanvasPatch(tx: Transaction, productionId: string
           ON CONFLICT(production_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
     args: [productionId, body, revision, userId, now()],
   });
-  return { canvas: next, revision };
+  return { canvas: next, revision, masterHolds: guarded.held };
 }

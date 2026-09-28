@@ -361,6 +361,19 @@ retains both. Provider acceptance without durable handle persistence requires
 support investigation; automated recovery cannot safely invent the missing
 provider ID.
 
+### Rig master locks
+
+Every tenant snapshot includes `element_lock_events`, the append-only history of
+each element lock and unlock (the Rig's locked masters): who, when, whether
+Atomik did it, the reason an unlock gave, and a snapshot of what the lock froze
+(each attribute's current version with the sha256 of its source). The element
+row itself keeps only its last lock state, and `attribute_versions.sha256` keeps
+the hash recorded when a lock first froze that version. Nothing in either is paid
+or priced. Restore both with the elements they describe; never edit or delete
+history rows. A master whose source was changed or re-rendered after a restore is
+reported by the Rig's source check against the restored snapshot, not repaired
+by rewriting it.
+
 ### Higgsfield consumer jobs
 
 Every tenant snapshot includes `higgsfield_consumer_jobs`, its immutable payload

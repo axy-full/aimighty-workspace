@@ -158,6 +158,26 @@
 .pxw .pxw-card-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .pxw .pxw-card-users > .pxw-link-button { font-size: 12.5px; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── Card Inspector: the master lock and the cut-out ── */
+.pxw [data-section="master"] .pxw-inspector-note,
+.pxw [data-section="cutout"] .pxw-inspector-note,
+.pxw [data-testid="card-lock-history"] .pxw-inspector-note { margin-top: 6px; }
+.pxw .pxw-master-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; }
+.pxw .pxw-master-badge { font-family: var(--pxw-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pxw-amber-ink); }
+.pxw .pxw-master-by { font-size: 12px; color: var(--pxw-muted); overflow-wrap: anywhere; }
+/* Full width, and the words wrap rather than run off a narrow Inspector: an action with a price is never cut. */
+.pxw .pxw-master-button { margin-top: 10px; width: 100%; justify-content: center; white-space: normal; text-align: center; }
+.pxw .pxw-master-unlock { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.pxw .pxw-master-label { font-size: 12px; color: var(--pxw-muted); }
+.pxw .pxw-master-unlock textarea { width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13px; line-height: 1.45; }
+.pxw .pxw-master-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.pxw .pxw-master-actions > .pxw-btn { white-space: normal; text-align: center; justify-content: center; }
+.pxw .pxw-lock-event .pxw-lock-line { white-space: normal; overflow-wrap: anywhere; }
+.pxw .pxw-cutout-quote { margin-top: 6px; }
+.pxw .pxw-cutout-price { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-body); overflow-wrap: anywhere; }
+/* A locked master says so on its card, in the kind's own colour. */
+.pxw .pxw-graph-master { color: inherit; }
+
 /* Delete shot: quiet until needed, red when it matters. */
 .pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
@@ -247,6 +267,11 @@
   .pxw [data-inspector-body="node"] .pxw-insp-version-v,
   .pxw [data-inspector-body="node"] .pxw-insp-version-meta { font-size: 12px; }
   .pxw [data-inspector-body="node"] button { min-height: 44px; min-width: 44px; }
+  /* A phone keyboard never zooms the page to type a reason. */
+  .pxw [data-inspector-body="node"] textarea { font-size: 16px; min-height: 64px; }
+  .pxw [data-inspector-body="node"] .pxw-master-badge,
+  .pxw [data-inspector-body="node"] .pxw-master-by,
+  .pxw [data-inspector-body="node"] .pxw-master-label { font-size: 12px; }
   .pxw [data-inspector-body="shot"] select,
   .pxw [data-inspector-body="shot"] input,
   .pxw [data-inspector-body="shot"] textarea { font-size: 16px; }
