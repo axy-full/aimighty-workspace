@@ -1,10 +1,12 @@
 import { isGenjutsuModel } from "../genjutsuTypes";
+import { CINEMA_STUDIO_PATH, isCinemaStudioModel, isHiggsfieldVideoModel } from "../cinemaStudioTypes";
+import { cinemaStudioInput, cinemaStudioPreflightError, cinemaStudioQuoteUsd } from "../cinemaStudio";
 import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem, genjutsuFrameProblem } from "../genjutsu";
 import { isIP } from "node:net";
 import type { EngineAdapter, PollResult, StillRenderRequest } from "./types";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "../models";
 import { estimateImageCostUsd } from "../vendorPricing";
-import { soulCharacterGenerationEnabled } from "../vendorRates";
+import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from "../vendorRates";
 import { recoveryFetch } from "../recovery";
 import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId } from "../mock";
 import { fixtureBytes } from "../mockFs";
@@ -93,12 +95,32 @@ export const higgsfield: EngineAdapter = {
   kinds: ["image", "video"],
   configured: () => higgsfieldConfigured(),
   estimate(req) {
-    if (req.kind === "video" && isGenjutsuModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
+    if (req.kind === "video" && isHiggsfieldVideoModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
     if (req.kind === "image" && req.model.id === MARKETING_IMAGE_MODEL_ID) return req.higgsfieldVendorCostUsd ?? null;
     if (req.kind !== "image" || req.model.id !== SOUL_CHARACTER_MODEL_ID || !soulCharacterGenerationEnabled()) return null;
     return estimateImageCostUsd(req.model.id, req.size, 0)?.net ?? null;
   },
   async render(req) {
+    if (req.kind === "video" && isCinemaStudioModel(req.model.id)) {
+      const fingerprint = req.params.higgsfieldCredentialFingerprint;
+      let input: Awaited<ReturnType<typeof cinemaStudioInput>>;
+      try {
+        sameCredentials(fingerprint);
+        // The approximate quote is frozen on the take. Send only while the switch
+        // is on and the same settings and references still give the same figure.
+        if (req.task.id !== "generate" || req.source ||
+            Boolean(req.params.hasVideoInput) !== req.references.some(r => r.kind === "video")) throw new Error("source");
+        const fresh = cinemaStudioEnabled() ? cinemaStudioQuoteUsd(req.params) : null;
+        if (!(req.params.higgsfieldVendorCostUsd! > 0) || fresh !== req.params.higgsfieldVendorCostUsd) throw new Error("price");
+        input = await cinemaStudioInput(req.prompt, req.params, req.references);
+      } catch { throw cinemaStudioPreflightError(); }
+      if (engineMock()) return { handle: { provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint } };
+      // Exactly one POST. Ambiguous failures retain the durable paid claim.
+      const result = await call(`${API_ORIGIN}/${CINEMA_STUDIO_PATH}`, "POST", input);
+      const ref = typeof result.request_id === "string" ? result.request_id : "";
+      if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
+      return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint: typeof result.status_url === "string" ? result.status_url : undefined, cancelUrl: typeof result.cancel_url === "string" ? result.cancel_url : undefined, credentialFingerprint: fingerprint } };
+    }
     if (req.kind === "video" && isGenjutsuModel(req.model.id)) {
       const fingerprint = req.params.higgsfieldCredentialFingerprint;
       let input: Awaited<ReturnType<typeof genjutsuInput>>;
@@ -151,7 +173,7 @@ export const higgsfield: EngineAdapter = {
       credentialFingerprint: fingerprint } };
   },
   async poll(handle): Promise<PollResult> {
-    if (handle.provider !== "higgsfield" || (!isHiggsfieldImageModel(handle.model) && !isGenjutsuModel(handle.model)))
+    if (handle.provider !== "higgsfield" || (!isHiggsfieldImageModel(handle.model) && !isHiggsfieldVideoModel(handle.model)))
       throw new Error("Unsupported connected-account request handle.");
     // Collection remains possible after an operator disables new submissions.
     sameCredentials(handle.credentialFingerprint);
@@ -169,13 +191,13 @@ export const higgsfield: EngineAdapter = {
     if (!status) throw new Error("The connected account returned an unknown request status.");
     let master: string | null = null;
     let video: string | null = null;
-    if (status === "succeeded" && isGenjutsuModel(handle.model)) {
+    if (status === "succeeded" && isHiggsfieldVideoModel(handle.model)) {
       const output = raw.video;
       if (!output || typeof output !== "object" || Array.isArray(output) || typeof (output as Record<string, unknown>).url !== "string")
         throw new Error("The connected account returned no recognized original video. The accepted request remains available for collection.");
       video = engineMock() && isMockJob(handle.ref) ? fixtureUrl("clip.mp4") : imageUrl((output as Record<string, unknown>).url);
     }
-    if (status === "succeeded" && !isGenjutsuModel(handle.model)) {
+    if (status === "succeeded" && !isHiggsfieldVideoModel(handle.model)) {
       const images = raw.images;
       if (!Array.isArray(images) || images.length !== 1)
         throw new Error("The connected account returned an unexpected image count. The request remains available for collection.");
@@ -187,7 +209,7 @@ export const higgsfield: EngineAdapter = {
       vendorStartedAt: null, vendorEndedAt: null, raw };
   },
   async cancel(handle) {
-    if (handle.provider !== "higgsfield" || !isGenjutsuModel(handle.model)) throw new HiggsfieldHttpError(422, "Choose a transform request.");
+    if (handle.provider !== "higgsfield" || !isHiggsfieldVideoModel(handle.model)) throw new HiggsfieldHttpError(422, "Choose a video request.");
     sameCredentials(handle.credentialFingerprint);
     if (!UUID.test(handle.ref) || handle.cancelUrl !== `${API_ORIGIN}/requests/${handle.ref}/cancel`)
       throw new HiggsfieldHttpError(409, "This request has no verified cancellation URL.");

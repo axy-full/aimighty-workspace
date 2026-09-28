@@ -1,10 +1,13 @@
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
@@ -444,6 +447,10 @@ export async function executeGenerationAdmission(
       const draft = await readDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
     }
+    const cinema = isCinemaStudioModel(modelId);
+    // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
+    if (cinema && !cinemaStudioEnabled())
+      return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
     if (model.marketing && !options.checkpoint)
       return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
@@ -1126,6 +1133,8 @@ export async function executeGenerationAdmission(
       const rolesProblem = videoReferenceProblem(model, references, params.resolution);
       if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
     }
+    if (cinema && references.some((r) => r.role === "first_frame" || r.role === "last_frame"))
+      return admissionReply({ error: "Cinema Studio takes reference stills and clips, cited in the prompt. It has no first or last frame." }, { status: 400 });
 
     /* Motion control moves a character: it needs the still as well as the clip. */
     if (task.needsImage && !references.some((r) => r.kind === "image")) {
@@ -1853,6 +1862,24 @@ export async function executeGenerationAdmission(
     /* Whether the input includes video decides the token rate. A final sends no input of its own:
        its rate, and its input seconds, are its draft's (lib/draftFinal.ts). */
     const hasVideoInput = final ? final.hasVideoInput : references.some((r) => r.kind === "video");
+    if (cinema) {
+      // An approximate quote from the published token formula, kept on the take:
+      // dispatch sends only while the same settings price the same, and the take
+      // settles on its delivered output. Now and then, check the published text.
+      // (Cinema Studio has no draft mode, so it is never a final.)
+      scheduleHiggsfieldPricingCheck(CINEMA_STUDIO_PRICING_WATCH);
+      const usd = cinemaStudioQuoteUsd({
+        resolution: params.resolution,
+        ratio: params.ratio,
+        duration: params.duration,
+        hasVideoInput,
+        inputSeconds: hasVideoInput ? inputSeconds : undefined,
+      });
+      if (usd == null)
+        return admissionReply({ error: "Cinema Studio has no confirmed price for these settings." }, { status: 400 });
+      params.higgsfieldCredentialFingerprint = higgsfieldCredentialFingerprint();
+      params.higgsfieldVendorCostUsd = usd;
+    }
     const estUsd = params.higgsfieldVendorCostUsd ??
       estimateCostUsd(
         modelId,
@@ -2005,12 +2032,15 @@ export async function executeGenerationAdmission(
           source: sourceRef,
           rules: rules.map((r) => r.id),
         },
+        { approximate: cinema },
       );
       if (stopped) return stopped;
     }
 
     if (genjutsu && body.maxCredits == null)
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
+    if (cinema && body.maxCredits == null)
+      return admissionReply({ error: "Review the approximate credit price before generating with Cinema Studio." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     // The claim is bound in the same write: a claim naming no job proves there is none.
