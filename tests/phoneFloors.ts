@@ -140,16 +140,49 @@ export async function lastRowClearsPinned(page: Page): Promise<string[]> {
  * No functional label is dimmer than `#7C7C84` — the brief's floor for
  * kickers, column headers, nav numbers and counts, every one of which carries
  * `data-functional-label`.
+ *
+ * Measured as it lands on the screen, not as it is written: a colour with an
+ * alpha (the Suites shell's `rgba(235, 235, 245, .45)` tertiary text) and any
+ * opacity on the label or above it are composited over the ground behind the
+ * label — every translucent background above it, laid over black, the darkest
+ * ground a phone shows. Read by its RGB alone, a .45 white passed the floor it
+ * falls well under.
  */
 export async function dimLabels(page: Page, scope = ".pxm-shell"): Promise<string[]> {
-  return page.evaluate((scope) => {
+  return page.evaluate(async (scope) => {
+    /* At rest: an entrance still fading in (the shell's `gx-enter`) is not how the label reads. Loops (a pulse) are left as they are. */
+    await Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => null)));
     const roots = Array.from(document.querySelectorAll<HTMLElement>(scope));
     if (!roots.length) return [`no ${scope}`];
     const labels = new Set<HTMLElement>();
     for (const root of roots) for (const el of Array.from(root.querySelectorAll<HTMLElement>("[data-functional-label]"))) labels.add(el);
-    const luminance = (color: string) => {
-      const [r, g, b] = (color.match(/\d+(\.\d+)?/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number);
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    type Rgba = { r: number; g: number; b: number; a: number };
+    /* rgb()/rgba() in 0–255, or color(srgb …) in 0–1 (how Chromium writes a color-mix()). */
+    const parse = (color: string): Rgba | null => {
+      const srgb = color.match(/^color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)(?:\s*\/\s*([\d.e-]+))?\)$/);
+      if (srgb) return { r: Number(srgb[1]) * 255, g: Number(srgb[2]) * 255, b: Number(srgb[3]) * 255, a: srgb[4] == null ? 1 : Number(srgb[4]) };
+      const rgb = color.match(/^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/);
+      if (rgb) return { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]), a: rgb[4] == null ? 1 : Number(rgb[4]) };
+      return color === "transparent" ? { r: 0, g: 0, b: 0, a: 0 } : null;
+    };
+    const over = (top: Rgba, under: Rgba): Rgba => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const luminance = (c: Rgba) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    /* The ground behind a label: its ancestors' background colours from the first opaque one down, over black. */
+    const ground = (el: HTMLElement): Rgba => {
+      const layers: Rgba[] = [];
+      for (let up = el.parentElement; up; up = up.parentElement) {
+        const bg = parse(getComputedStyle(up).backgroundColor);
+        if (!bg || bg.a <= 0) continue;
+        layers.push(bg);
+        if (bg.a >= 1) break;
+      }
+      return layers.reverse().reduce((under, layer) => over(layer, under), { r: 0, g: 0, b: 0, a: 1 });
+    };
+    /* Opacity on the label and every ancestor fades it too. */
+    const opacity = (el: HTMLElement) => {
+      let o = 1;
+      for (let up: HTMLElement | null = el; up; up = up.parentElement) o *= Number(getComputedStyle(up).opacity);
+      return o;
     };
     /* #7C7C84 itself, computed the same way, is the floor. */
     const floor = 0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5;
@@ -161,8 +194,13 @@ export async function dimLabels(page: Page, scope = ".pxm-shell"): Promise<strin
          kind chip over media) owns its own contrast; the floor is about labels
          on the ground. */
       if (!/^rgba\(0, 0, 0, 0\)$|^transparent$/.test(style.backgroundColor)) continue;
-      if (luminance(style.color) < floor)
-        out.push(`${el.className || el.tagName}: ${style.color} — “${(el.textContent ?? "").trim().slice(0, 24)}”`);
+      /* Text painted by a gradient (background-clip: text) is not its `color`. */
+      if (style.backgroundClip === "text" || style.getPropertyValue("-webkit-background-clip") === "text") continue;
+      const ink = parse(style.color);
+      if (!ink) { out.push(`${el.className || el.tagName}: unreadable colour ${style.color}`); continue; }
+      const seen = over({ ...ink, a: ink.a * opacity(el) }, ground(el));
+      if (luminance(seen) < floor)
+        out.push(`${el.className || el.tagName}: ${style.color}${ink.a < 1 || opacity(el) < 1 ? ` (reads ${[seen.r, seen.g, seen.b].map(Math.round).join(", ")})` : ""} — “${(el.textContent ?? "").trim().slice(0, 24)}”`);
     }
     return out;
   }, scope);

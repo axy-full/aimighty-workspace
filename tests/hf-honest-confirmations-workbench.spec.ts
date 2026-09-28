@@ -2,6 +2,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
+import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -83,6 +84,7 @@ async function roomWithSolutions(page: Page, overRig = false) {
     await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
     await expect(page.getByTestId("page-title")).toHaveText("Rig");
     await expect(page.getByTestId("rig-list")).toBeVisible();
+    await openSuitesMenu(page);
     await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
   } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
@@ -233,6 +235,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(library).toContainText("crew-min");
   expect(new URL(page.url()).searchParams.get("view")).toBeNull();
   if (info.project.name === "workbench-390x844") await library.getByRole("button", { name: "Close" }).click();
+  await openSuitesMenu(page);
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
   await expect(solutions).toHaveCount(3);
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
@@ -102,8 +103,12 @@ async function asMember(page: Page, playwright: PlaywrightWorkerArgs["playwright
 }
 /** No suite carries the old "Owner" badge or its note. */
 async function noBadges(page: Page) {
+  /* A phone keeps the Suites behind its context badge (app/phone-chrome.css), one tap away. */
+  await openSuitesMenu(page);
+  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
   for (const suite of ["business", "viral"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  await closeSuitesMenu(page);
 }
 
 test("the owner meets one calm card where the Higgsfield account ran — Business, Viral, Cast — and makes the same kind of thing in Gen on this workspace's credits", async ({ page }, info) => {
