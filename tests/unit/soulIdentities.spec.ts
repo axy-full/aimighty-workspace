@@ -691,7 +691,7 @@ test("stale never-submitted cleanup loses to an acquired paid claim and cannot r
   }));
 
 test("new training is stamped with the production host and render family before the paid POST, on the identity and its receipt", async () =>
-  scope("origin", async (_ws, project) => {
+  scope("soul_host_origin", async (_ws, project) => {
     const { db } = await import("../../lib/db");
     const { platformDb } = await import("../../lib/platform");
     const seen: unknown[] = [];
@@ -738,7 +738,7 @@ test("new training is stamped with the production host and render family before 
   }));
 
 test("an identity accepted before the marker keeps polling its original host; a refusal there is an unknown outcome, never another request", async () =>
-  scope("legacy", async (_ws, project, production) => {
+  scope("soul_host_legacy", async (_ws, project, production) => {
     const { db } = await import("../../lib/db");
     const { platformDb } = await import("../../lib/platform");
     const { HiggsfieldHttpError } = await import("../../lib/higgsfield");
@@ -825,7 +825,7 @@ test("an identity accepted before the marker keeps polling its original host; a 
   }));
 
 test("a receipt recorded for another host is never used to restore an identity", async () =>
-  scope("origin_receipt", async (_ws, project) => {
+  scope("soul_host_receipt", async (_ws, project) => {
     const { db } = await import("../../lib/db");
     const { platformDb } = await import("../../lib/platform");
     const { syncSoulIdentity } = await import("../../lib/soulIdentities");
@@ -857,7 +857,7 @@ test("a receipt recorded for another host is never used to restore an identity",
   }));
 
 test("an identities table saved before the marker gains its columns and its rows read as the earlier host", async () =>
-  scope("migration", async () => {
+  scope("soul_host_migration", async () => {
     const { db } = await import("../../lib/db");
     await db().execute(`CREATE TABLE soul_identities(id TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT,
       production_project_id TEXT, name TEXT NOT NULL, description TEXT NOT NULL, subject_type TEXT NOT NULL,
