@@ -14,6 +14,8 @@ import { findConnectedTool } from "@/lib/higgsfield-consumer/tools";
 import { CONNECTED_GENERATION_ENDPOINT, connectedFailureText, connectedOriginal, connectedQuoteRequest, connectedStatusRequest, connectedSubmitRequest, parseConnectedJob, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter, PendingSoulBuild } from "@/lib/higgsfield-consumer/soul-build";
 import { CONFIRM } from "@/lib/shell/confirmations";
+import { CAPABILITY_UNREADABLE, castStillPrompt } from "@/lib/shell/connected-capability";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useConfirm } from "@/lib/shell/use-confirm";
 import type { Asset, Project } from "@/lib/workbench/studio";
@@ -24,6 +26,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { SoulIdHost } from "../tools/SoulIdHost";
+import { OwnerRunCard, openGenOn } from "../OwnerRunCard";
 import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
@@ -45,7 +48,10 @@ const FINISH: { tool: Exclude<Purpose, "build">; label: string }[] = [{ tool: "u
  * the connected account builds every character and element; the results are
  * saved in the library as Cast and Elements. The cast list comes from the
  * beat sheet for free, or from the chosen agent with a prompt per entry; a
- * character can render with a Soul ID built below.
+ * character can render with a Soul ID built below. A member (idea 19) keeps
+ * the list — names, prompts, references — and makes reference stills in Gen
+ * on this workspace's credits; the builds are the owner's, on the owner's
+ * account, so nothing of the account is read for them.
  */
 export function CastStage({ projectId, scope, items, onBeats }: { projectId: string; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const editor = useDraftEditor(scope, projectId);
@@ -62,8 +68,12 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const runs = useAgentRuns({ scope, projectId: p.id, save: editor.ensureSaved });
   const agent = useAgentChoice(runs.models);
   useStageFacts("cast", p);
+  /* Whether this person owns the workspace comes from the session: a member's page reads nothing from the account. */
+  const capability = useConnectedCapability(scope, { read: false });
+  const refreshConnection = capability.refresh;
+  const member = !capability.owner;
   const cast = p.production?.cast ?? EMPTY;
-  const [connected, setConnected] = useState<boolean | null>(null);
+  const connected = capability.status === "loading" ? null : capability.connected;
   const [models, setModels] = useState<Record<string, Model> | null>(null);
   const [elements, setElements] = useState<Elements | null>(null);
   const [confirmElement, setConfirmElement] = useState<string | null>(null);
@@ -80,15 +90,17 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     if (!response.ok || !json) throw new Error(json?.error ?? "The connected account could not be reached.");
     return json;
   }, [scoped]);
-  /* The account, Soul Cinema in its catalogue, and the Soul IDs Particl built. */
+  /* The account, Soul Cinema in its catalogue, and the Soul IDs Particl built — the owner's to read; the reply's connection is shared with the shell. */
   useEffect(() => {
+    if (member) return;
     let alive = true;
-    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then((r) => r.json()).then((j: { connection?: { connected?: boolean } }) => { if (alive) setConnected(Boolean(j.connection?.connected)); }).catch(() => { if (alive) setConnected(false); });
+    const since = markConnectedCapability(scope);
+    void scoped(`${CONNECTED_GENERATION_ENDPOINT}?draftId=${encodeURIComponent(p.id)}`).then(async (r) => { if (!r.ok) throw new Error("The connected account could not be read."); return r.json(); }).then((j: { connection?: { connected?: boolean; requiresReconnect?: boolean } }) => { if (alive) settleConnectedCapability(scope, j.connection, since); }).catch(() => { if (alive) refreshConnection(); });
     void call<{ catalogue: { models: Model[] } }>({ action: "catalogue", type: "image" }).then((j) => { if (alive) setModels(Object.fromEntries(j.catalogue.models.map((m) => [m.id, m]))); }).catch(() => { if (alive) setModels({}); });
     void call<Elements>({ action: "elements" }).then((j) => { if (alive) setElements(j); }).catch(() => undefined);
     void call<{ characters: ConnectedCharacter[] }>({ action: "characters" }).then((j) => { if (alive) setSouls(j.characters ?? []); }).catch(() => undefined);
     return () => { alive = false; };
-  }, [call, scoped, p.id]);
+  }, [call, scoped, p.id, member, scope, refreshConnection]);
 
   /* An element sent without a named id (or with its answer lost) waits to be matched to the account's list: read it again while one waits. */
   const waiting = Boolean(elements?.pending?.some((b) => !b.stale));
@@ -262,7 +274,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "cast" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeCast ? "The agent is working." : !agentModel ? "Choose an agent above." : !p.production?.beats?.scenes.length && !(p.script ?? "").trim() ? "Write the script or break it into beats first." : null;
   const readySouls = souls.filter((s) => s.status === "ready");
-  const accountBlocked = connected === false ? "Connect the Higgsfield account in Workspace › Engines." : connected === null || models === null ? "Reading the connected account…" : null;
+  const accountBlocked = capability.status === "error" ? capability.error ?? CAPABILITY_UNREADABLE : connected === false ? `${capability.reconnect ? "Reconnect" : "Connect"} the Higgsfield account in Workspace › Engines.` : connected === null || models === null ? "Reading the connected account…" : null;
   const characters = cast.entries.filter((e) => e.kind === "character").length;
 
   return (
@@ -275,9 +287,14 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         </div>
       ) : null}
       {runs.error ? <p className="gx-gen-error" role="alert" data-testid="agent-error">{runs.error}</p> : null}
-      {connected === false ? (
+      {member ? <OwnerRunCard surface="cast" scope={scope} aspect={p.aspect} /> : capability.status === "error" ? (
+        <section className="gx-gen-card pd-recover" data-testid="cast-connect" role="alert">
+          <p className="gx-gen-error">{capability.error ?? CAPABILITY_UNREADABLE}</p>
+          <button type="button" className="gx-hbtn" onClick={refreshConnection}>Try again</button>
+        </section>
+      ) : connected === false ? (
         <section className="gx-gen-card pd-recover" data-testid="cast-connect">
-          <p className="gx-hint">Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built.</p>
+          <p className="gx-hint">{capability.reconnect ? "Reconnect the Higgsfield account to build characters and elements." : "Soul Cinema runs on your connected Higgsfield account. Connect it once and every character and element here can be built."}</p>
           <button type="button" className="gx-primary" onClick={() => shell.goWorkspace("engines")}>Open Workspace › Engines</button>
         </section>
       ) : null}
@@ -368,7 +385,10 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                 </div>
               ) : null}
               <div className="gx-gen-enhance">
-                {quote ? (
+                {member ? (
+                  <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} aria-describedby={castStillPrompt(entry) ? undefined : `cast-still-why-${entry.id}`} data-testid="cast-still-gen"
+                    onClick={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })}>Make a still in Gen</button>
+                ) : quote ? (
                   <>
                     <button type="button" className="gx-primary" disabled={Boolean(working[key(entry, "build")])} onClick={() => void build(entry)} data-testid="cast-build">{working[key(entry, "build")] || `Build with ${label} · ${quote.quoteCredits.toLocaleString()} Higgsfield credits`}</button>
                     <button type="button" className="gx-hbtn" onClick={() => setQuotes((all) => { const next = { ...all }; delete next[key(entry, "build")]; return next; })}>Change</button>
@@ -378,8 +398,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                 )}
                 <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this entry"}`} onClick={() => setCast((c) => ({ ...c, entries: c.entries.filter((x) => x.id !== entry.id) }))}>Remove</button>
               </div>
-              {reason && !quote && !building ? <span className="gx-reason" data-testid="cast-blocked">{reason}</span> : null}
-              {shown && !building ? (
+              {reason && !member && !quote && !building ? <span className="gx-reason" data-testid="cast-blocked">{reason}</span> : null}
+              {member && !castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
+              {shown && !building && !member ? (
                 <div className="pd-finish" data-testid="cast-finish">
                   {FINISH.map(({ tool, label: finishLabel }) => {
                     const k = key(entry, tool), fq = quotes[k], available = Boolean(toolModel(tool));
@@ -407,7 +428,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         {!cast.entries.length ? <p className="gx-empty">No cast yet. Add from the beat sheet, let the agent cast the film, or add one by hand.</p> : null}
       </section>
 
-      <section className="gx-gen-card" aria-label="Reference elements" data-testid="cast-elements" data-section="elements">
+      {member ? null : <section className="gx-gen-card" aria-label="Reference elements" data-testid="cast-elements" data-section="elements">
         <span className="gx-eyebrow" data-functional-label="">Reference elements · built in Particl</span>
         {elements == null ? <p className="gx-hint">Reading…</p>
           : !elements.available ? <p className="gx-hint">The account does not list its elements through its tools.</p>
@@ -417,9 +438,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               {(elements.pending ?? []).map((b) => <li key={b.id} className="gx-soul-row" data-testid={`element-pending-${b.id}`}><span className="gx-soul-name">{b.name}</span><span className="gx-hint">{b.stale ? "The account never named it; Particl cannot list it" : "Sent · waiting for the account to name it"}</span></li>)}
             </ul>
           ) : <p className="gx-hint">None yet. Save a build as a reference element; elements made on higgsfield.ai stay there.</p>}
-      </section>
+      </section>}
 
-      <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>
+      {member ? null : <div className="gx-extras" data-testid="page-soul" data-section="soul"><SoulIdHost scope={scope} items={items} projectId={p.id} /></div>}
       <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );

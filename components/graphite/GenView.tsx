@@ -17,7 +17,6 @@ import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
-import { useSession } from "@/lib/session";
 import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { WorkflowHost } from "./tools/WorkflowHost";
@@ -31,6 +30,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { CONNECTED_GENERATION_ENDPOINT, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import type { ConnectedCharacter } from "@/lib/higgsfield-consumer/characters";
 import { useComposer, type BatchView } from "@/lib/workspace/use-composer";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { resumeLine, resumePhase, shortName } from "@/lib/higgsfield-consumer/resume";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
@@ -84,7 +84,12 @@ type RecipeCard = {
   };
 };
 
-/** Gen (README › Gen): one composer on the left, this project's results on the right. */
+/**
+ * Gen (README › Gen): one composer on the left, this project's results on the
+ * right. The Higgsfield catalogue and Analysis run on the owner's connected
+ * account, so a member is offered neither: Studio engines on this
+ * workspace's credits are the whole of Gen for them (idea 19).
+ */
 export function GenView({ scope, project, items, library, projects = "ready", workspaceName, onProject }: {
   scope: string; project: Project | null; items: LibraryEntry[];
   /** The open project's library store (its read: skeletons, a failed read's banner); `projects` is the project list's own read. */
@@ -93,7 +98,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const composer = useComposer({ scope, open: true, project, onProject, workspaceName, initialType: "video", compose: composeForSend });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
@@ -117,6 +122,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   }, []);
   const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "analysis" | "edit">("compose");
+  /* Whether this person owns the workspace, from the session: nothing is read to decide what a member is offered. */
+  const { owner } = useConnectedCapability(scope, { read: false });
   /* Soul models carry a trained character: the account's list is read once a Soul model is chosen. */
   const scopedFetch = useScopedFetch(scope);
   const [characters, setCharacters] = useState<{ list: ConnectedCharacter[] | null; note: string }>({ list: null, note: "Reading the account’s characters…" });
@@ -137,9 +144,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
   /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
-  const session = useSession();
-  const groups = session.owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
-  useEffect(() => { if (!session.owner && state.billing === "connected") dispatchComposer({ type: "billing", value: "workspace" }); }, [session.owner, state.billing, dispatchComposer]);
+  const groups = owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
   /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
   const modelButton = useRef<HTMLButtonElement>(null);
@@ -212,7 +217,6 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const recipeEpoch = useRef(0);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; });
-  const owner = session.owner;
   const { dismiss: dismissEnhanced, auto: autoNow, setAuto } = enhancer;
   const autoWas = useRef(autoNow);
   useEffect(() => { autoWas.current = autoNow; });
@@ -506,12 +510,12 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 
   const analysis = WORKFLOW_SURFACES["gen:analysis"][0];
   const tabs = (
-    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output">
+    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={owner ? 5 : 4}>
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
         <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
       ))}
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
-      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button>
+      {owner ? <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "analysis"} onClick={() => setMode("analysis")} data-testid="gen-tab-analysis"><span>Analysis</span></button> : null}
     </div>
   );
   if (mode === "edit") {
@@ -524,7 +528,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
       </div>
     );
   }
-  if (mode === "analysis") {
+  if (mode === "analysis" && owner) {
     return (
       <div className="gx-gen gx-enter" data-testid="gen-view">
         <div className="gx-gen-col">
@@ -684,6 +688,10 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
         {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
+        {/* The owner's read of the connected account failed: said as it is (never "not connected"), with Try again. */}
+        {block && block === composer.capability?.unreadable ? (
+          <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
+        ) : null}
         {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
             sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">
@@ -795,7 +803,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
             emptyActions={state.billing === "connected"
               ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
-                 ...(session.owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
+                 ...(owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
               /* The engine list itself is missing (a failed read): read it again. */
               : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
             onPick={pickModel} onClose={closeSheet} />
