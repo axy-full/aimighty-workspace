@@ -480,7 +480,7 @@ export const MODELS: ModelDef[] = [
   ...Object.entries(GENJUTSU_MODELS).map(([variant, id]): ModelDef => ({
     id, label: GENJUTSU_LABELS[variant as keyof typeof GENJUTSU_LABELS], short: "TRANSFORM", family: "genjutsu",
     provider: "higgsfield", kind: "video", billing: "second", genjutsu: true, hidden: true, paramStyle: "fields",
-    supportsTasks: ["genjutsu"], resolutions: ["720p", "480p"], ratios: ["adaptive"], durations: [],
+    supportsTasks: ["genjutsu"], resolutions: ["720p", "480p", "1080p"], ratios: ["adaptive"], durations: [],
     supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 8, maxReferenceVideos: 1, maxVideoSecondsTotal: 30,
     use: "Transform an original video with optional image references. A live quote is required.",
   })),

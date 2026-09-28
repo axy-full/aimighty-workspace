@@ -1,5 +1,5 @@
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
-import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem } from "@/lib/genjutsu";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
 import { readDraft } from "@/lib/workbench/records";
@@ -727,14 +727,15 @@ export async function executeGenerationAdmission(
         notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {
-        try {
-          genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes);
-          const problem = genjutsuSourceProblem(genjutsuSource.seconds);
-          if (problem) throw new Error(problem);
-          sourceSeconds = genjutsuSource.seconds;
-          sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
-          sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
-        } catch { return admissionReply({ error: "Transform needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
+        try { genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes); }
+        catch { return admissionReply({ error: `Transform needs a readable original video between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds, no larger than 200 MB.` }, { status: 400 }); }
+        // Refused before any estimate: the documented source floor, and Object Swap's pixel floor.
+        const problem = genjutsuSourceProblem(genjutsuSource.seconds) ??
+          genjutsuFrameProblem(modelId, genjutsuSource.width, genjutsuSource.height);
+        if (problem) return admissionReply({ error: problem }, { status: 400 });
+        sourceSeconds = genjutsuSource.seconds;
+        sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
+        sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
       }
       // A stored render without a recorded ratio or length (a connected-account
       // render, or one from before the columns) is measured once from the
