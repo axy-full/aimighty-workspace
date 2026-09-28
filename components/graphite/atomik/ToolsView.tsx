@@ -348,7 +348,7 @@ export function ToolsInspector() {
   return (
     <div className="tc-insp" data-inspector-body="tools">
       <span className="tc-insp-title">Tools &amp; connections</span>
-      <span className="tc-insp-sub">Atomik Supercomputer</span>
+      <span className="tc-insp-sub">Atomik Agent</span>
       <p className="tc-insp-note">Nothing on this page spends. A token spends only when your assistant starts a take, and stops at its monthly ceiling; revoking one disables it, and nothing is erased.</p>
     </div>
   );
