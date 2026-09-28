@@ -57,7 +57,7 @@ export default async function GenHome() {
             <Stat figure="4–30 s" name="Length by the second" body="Any whole second a video engine accepts. Ratio, resolution and audio clamp when you switch engines." />
             <Stat figure="SHA-256" name="References stay byte-identical" body="No resize, no re-encode, no metadata stripping. The rail shows ✓ BYTE-IDENTICAL when the hash matches." />
             <Stat figure={cr(enhancer)} name="Prompt enhancer" body="Rewritten in the engine's own recipe. @Image1 citations preserved; a raw: prefix sends your exact words." />
-            <Stat figure="0 cr" name="Failed renders" body="Quotes are live. Only succeeded takes enter the ledger, each with the rate it was charged at." />
+            <Stat figure="Receipts" name="Failed renders" body="Quotes are live. A failed render shows what it was charged, from its receipt, when that is known; every take keeps the rate it was charged at." />
           </Grid>
         </Cols>
         <Cols col={420}>
@@ -70,7 +70,7 @@ export default async function GenHome() {
 
       <Section id="gen-engines" label="Engines">
         <Head eyebrow="Engines" title="Pick the engine per shot."
-          lead="Studio engines in the model sheet, and the connected catalogue beside them. Settings clamp to what the engine accepts, the quote updates live, and failed renders are never billed." />
+          lead="Studio engines in the model sheet, and the connected catalogue beside them. Settings clamp to what the engine accepts, the quote updates live, and a failed render shows what it was charged, when that is known." />
         <Grid col={250}>
           {ENGINES.map(({ id, kind, role, body }) => {
             const e = engine(id);

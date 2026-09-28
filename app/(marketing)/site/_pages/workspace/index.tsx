@@ -83,7 +83,7 @@ export default async function WorkspacePage() {
             { name: "By project · person · month", chip: "CSV", desc: "Credits used, completed generations, attempts and failures, with a CSV export." },
             { name: "Dashboard", chip: "by period", desc: "Spend by project, person and model, revisions per shot and where generations stall; filter and export." },
             { name: "Rate snapshot", chip: "immutable", desc: "Every generation keeps the rate it was charged at; changing a rate never rewrites history." },
-            { name: "Failed renders", chip: "0 cr", desc: "Never billed, shown as such." },
+            { name: "Failed renders", chip: "receipt", desc: "Each shows what it was charged, from its receipt: not billed, charged or still held. Nothing is assumed free." },
           ]} />
           <Group tag="Engines" note="the owner’s keys" rows={[
             { name: "Connections", chip: "sealed", desc: "Each key is encrypted, shown only by its last four characters and never sent back." },

@@ -84,7 +84,7 @@ export function SiteFooter({ member }: { member: boolean }) {
         </div>
         <div className="mk-footer-bottom">
           <span>© {new Date().getFullYear()} particl</span>
-          <span className="mk-tag">Failed renders are never billed · every take has an owner</span>
+          <span className="mk-tag">Every take has an owner</span>
         </div>
       </div>
     </footer>
