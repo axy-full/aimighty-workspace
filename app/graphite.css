@@ -266,6 +266,9 @@
 .gx-primary:hover { background: var(--gx-accent-hover); }
 .gx-primary:disabled { opacity: .4; }
 .gx-reason { color: var(--gx-text-2); font-size: 12px; }
+/* Gen's line saying why Generate waits is one line tall with or without a reason (GenView), a little over the text's own
+   line so a fallback font's taller line fits inside it too: nothing below it moves when the price lands. */
+.gx-gen-reason { min-height: 1.5em; }
 
 /* ── Inspector ─────────────────────────────────────────────────────────── */
 .gx-insp-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 18px 20px 0; }
