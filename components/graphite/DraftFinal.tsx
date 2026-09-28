@@ -52,16 +52,14 @@ const LANDED = "Your last press of Make the final reached the server: that final
 
 /**
  * The draft's next step: its state, and on a draft that can still make one,
- * the priced final with its approval. `actions: false` (Studio › Takes) says
- * where the pair stands and leaves the final to Gen and the Inspector.
+ * the priced final with its approval (Gen's strip and the Inspector).
  */
-export function DraftFinalBar({ scope, projectId, draft, finals, actions = true }: {
+export function DraftFinalBar({ scope, projectId, draft, finals }: {
   scope: string;
   /** The workbench project whose library holds the pair: re-read once the final is sent and once it lands. */
   projectId: string | null;
   draft: Generation;
   finals: readonly Generation[];
-  actions?: boolean;
 }) {
   const { toast } = useWorkspace();
   const [now, setNow] = useState(() => Date.now());
@@ -90,11 +88,11 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
   const quoteKey = ready ? `${scope}:${draft.id}:${view.retry ?? ""}:${asked}` : "";
   const price = quote && quote.key === quoteKey ? quote.value : null;
   const problem = failed && failed.key === quoteKey ? failed.text : null;
-  const pricing = actions && ready && !price && !problem;
+  const pricing = ready && !price && !problem;
 
   /* A fresh quote of the final whenever the draft can make one: the price on the button is exactly this final's. */
   useEffect(() => {
-    if (!actions || !quoteKey) return;
+    if (!quoteKey) return;
     let live = true;
     quoteFinal(scope, draft)
       .then((value) => { if (live) setQuote({ key: quoteKey, value }); })
@@ -102,7 +100,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
     return () => { live = false; };
     /* `draft` is read for its id and model, which the key already names. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions, quoteKey, scope]);
+  }, [quoteKey, scope]);
 
   /* A final on its way is followed to the end, here as anywhere it is shown; the library is read again when it lands. */
   const following = view.state === "finalising" ? view.finalId : null;
@@ -191,7 +189,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
     <div className="gx-draft-bar" data-testid="draft-final" data-state={view.state} data-draft-id={draft.id}>
       {facts.length ? <p className="gx-draft-facts" data-testid="draft-final-facts">{facts.join(" · ")}</p> : null}
       {status ? <p className="gx-draft-status" id={statusId} data-tone={view.state === "expired" || view.state === "failed" || view.state === "finalFailed" ? "red" : view.state === "final" ? "green" : undefined} data-testid="draft-final-status">{status}</p> : null}
-      {actions && (view.state === "ready" || view.state === "expired") && !approving ? (
+      {(view.state === "ready" || view.state === "expired") && !approving ? (
         <button ref={makeButton} type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={view.state === "expired" || !price || sending}
           aria-describedby={view.state === "expired" ? statusId : undefined} data-priced={price && view.state === "ready" ? "" : undefined}
           onClick={() => { setNote(null); setApproving(true); }} data-testid="draft-final-make"
@@ -200,13 +198,13 @@ export function DraftFinalBar({ scope, projectId, draft, finals, actions = true 
           {view.state === "ready" && price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{price.credits.toLocaleString("en-US")} cr</span> : null}
         </button>
       ) : null}
-      {actions && ready && problem && !approving ? (
+      {ready && problem && !approving ? (
         <div className="gx-draft-row">
           <p className="gx-draft-status" data-tone="red" role="alert">{problem}</p>
           <button type="button" className="gx-hbtn" onClick={() => setAsked((n) => n + 1)} data-testid="draft-final-requote">Try again</button>
         </div>
       ) : null}
-      {actions && ready && approving && price ? (
+      {ready && approving && price ? (
         <div className="gx-draft-approve" ref={panel} role="group" aria-label={`Approve the ${FINAL_RESOLUTION} final`} data-testid="draft-final-approve">
           <p className="gx-draft-approve-title">Make the {FINAL_RESOLUTION} final from this draft?</p>
           <ul className="gx-draft-approve-list">
@@ -243,7 +241,7 @@ function pairNote(entry: LibraryEntry, role: "draft" | "final"): string | null {
  * "final · 1080p", each tile the caller's own (`tile`), and the draft's next
  * step under them (DraftFinalBar).
  */
-export function DraftStrip({ scope, projectId, draft, finals, tile, testId, actions = true, plain = false }: {
+export function DraftStrip({ scope, projectId, draft, finals, tile, testId }: {
   scope: string;
   projectId: string | null;
   draft: LibraryEntry;
@@ -251,8 +249,6 @@ export function DraftStrip({ scope, projectId, draft, finals, tile, testId, acti
   /** The caller's tile for one take (the card contract's TakeTile), with the label and watermark note the strip gives it. */
   tile: (entry: LibraryEntry, label: string, note: string | null) => ReactNode;
   testId: string;
-  actions?: boolean;
-  plain?: boolean;
 }) {
   const draftGen = draft.asset.value as Generation;
   /* Finals newest first after their draft: the one that stands leads. */
@@ -262,9 +258,9 @@ export function DraftStrip({ scope, projectId, draft, finals, tile, testId, acti
   const settled = billed.every((c) => typeof c === "number") ? `${billed.reduce((s: number, c) => s + (c ?? 0), 0).toLocaleString("en-US")} cr settled` : null;
   const live = [draft, ...ordered].some((e) => e.take.status === "rendering");
   return (
-    <TakeStrip batchId={`draft:${draftGen.id}`} testId={testId} state={live ? "live" : "done"} plain={plain}
+    <TakeStrip batchId={`draft:${draftGen.id}`} testId={testId} state={live ? "live" : "done"}
       label={ordered.length ? `draft → final` : "draft"} name={draft.take.name} meta={settled}
-      foot={<DraftFinalBar scope={scope} projectId={projectId} draft={draftGen} finals={finalGens} actions={actions} />}>
+      foot={<DraftFinalBar scope={scope} projectId={projectId} draft={draftGen} finals={finalGens} />}>
       {tile(draft, `draft · ${DRAFT_RESOLUTION}`, pairNote(draft, "draft"))}
       {ordered.map((f) => tile(f, `final · ${FINAL_RESOLUTION}`, pairNote(f, "final")))}
     </TakeStrip>

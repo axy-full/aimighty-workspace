@@ -140,7 +140,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             after={<>
               {!shown.length && (project ? !view.skeletons : view.empty)
                 ? <p className="gx-empty" style={{ gridColumn: "1 / -1" }}>{!project ? "Open a project to see what it has made." : items.length ? "Nothing matches." : "Nothing made or uploaded in this project yet."}</p> : null}
-              {project ? <LibraryMore library={library} /> : null}
+              {project && !failed ? <LibraryMore library={library} auto /> : null}
             </>}
             renderItem={(entry) => (
               <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={library.refresh}
