@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Atomik › Tools & connections (idea 20), which replaced Atomik › Skills.
@@ -175,8 +176,11 @@ test("inside the shell's panel boundaries: the page fails on its own card, and T
   const { asked, errors } = await open(page, ["stage:skills"]);
   const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]');
   await expect(fault).toContainText("Tools & connections stopped");
-  /* The chrome is untouched: header, page title, strip; and the page head still offers no Run stage. */
+  /* The chrome is untouched: header, page title, strip; and the page head still offers no Run stage.
+     A phone keeps the Suites behind its context badge (app/phone-chrome.css), one tap away. */
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await closeSuitesMenu(page);
   await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
   await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
