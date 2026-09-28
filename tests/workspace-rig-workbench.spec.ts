@@ -339,3 +339,19 @@ test("graph view: the real graph, edges from real boxes, selection shared with t
   await expect(page.locator(".pxw-crumbs .pxw-kicker")).toHaveText("STUDIO");
   expect(errors).toEqual([]);
 });
+
+test("a shot the composer named with its prompt renders as \"Your take\", never a cut-off prompt", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  test.setTimeout(180_000);
+  /* The composer files its take on a shot named with the prompt cut at 60 characters (lib/workspace/use-composer.ts). */
+  const prompt = "A slow, cinematic push in on a battered scuffed desk lamp in a dark study, dust in the beam";
+  const title = prompt.slice(0, 60).trim();
+  const { project } = await seeded(page, (nodes) => [...nodes, shot("rig-p", title, prompt, 1300)]);
+  await page.goto(rigUrl(project.id, "rig-p"));
+  await expect(page.getByTestId("inspector-title")).toHaveText(title);
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  await expect(header).toBeEnabled();
+  await header.click();
+  /* The real (mocked) job finishes: the toast names the take the way Gen's does, not "…desk lamp in rendered". */
+  await expect(page.locator(".pxw-toast").filter({ hasText: /rendered/ })).toHaveText(/^Your take rendered · \d[\d,]* cr settled\. Filed in Takes for review\.$/, { timeout: 90_000 });
+});

@@ -158,3 +158,36 @@ test("the Inspector shows provenance and hides three ways", async ({ page }, inf
   await page.keyboard.press("ControlOrMeta+j");
   await expect(inspector).toHaveCount(0);
 });
+
+test("the Library's closing note is no dimmer than #7C7C84 on the ground it really sits on", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const wide = WIDE.includes(info.project.name);
+  const { errors } = await open(page);
+  await openAssets(page, wide);
+  const library = page.getByTestId("library");
+  await expect(library.locator(".gx-asset[data-asset='upload:up_plate']")).toBeVisible();
+  const note = library.locator(".gx-lib-foot");
+  await expect(note).toHaveText("Everything this project has made or uploaded, on every page.");
+  /* The panel has finished arriving: a sliding overlay's opacity is not the note's. */
+  await library.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)));
+  /* Alpha-aware: the colour's alpha and every opacity above it, blended over each translucent ground beneath it
+     down to the first opaque one (black when none is) — what the eye gets, not the colour's RGB alone. */
+  const seen = await note.evaluate((el) => {
+    const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
+    const grounds: number[][] = [];
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      const [r, g, b, a = 1] = parse(getComputedStyle(node).backgroundColor);
+      if (a > 0) grounds.push([r, g, b, a]);
+      if (a >= 1) break;
+    }
+    let under = [0, 0, 0];
+    for (const [r, g, b, a] of grounds.reverse()) under = [r, g, b].map((v, i) => v * a + under[i] * (1 - a));
+    let opacity = 1;
+    for (let node: Element | null = el; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+    const [r, g, b, a = 1] = parse(getComputedStyle(el).color);
+    const [sr, sg, sb] = [r, g, b].map((v, i) => (v * a + under[i] * (1 - a)) * opacity + under[i] * (1 - opacity));
+    return 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
+  });
+  expect(seen, "the note, blended over its ground").toBeGreaterThanOrEqual(0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5);
+  expect(errors).toEqual([]);
+});
