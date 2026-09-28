@@ -91,6 +91,8 @@ function Card({ node, kind, shot, asset, selected, wiring, editing, onSelect, on
 
 /** The height of the zoom cluster's strip at the bottom of the board (cluster 44 + inset 12). */
 const ZOOM_STRIP = 56;
+/** The space Fit keeps around the fitted cards (lib/viewport.ts fitView's margin). */
+const FIT_MARGIN = 48;
 
 /** The pane the board scrolls in: the nearest ancestor that really scrolls (a wrapper that grows with its content computes overflow-y:auto too), else the outermost one that could. */
 function boardPane(el: HTMLElement): HTMLElement | null {
@@ -161,9 +163,10 @@ export function RigGraph() {
     const root = canvas.current, box = surface.current?.getBoundingClientRect();
     if (!root || !box) return;
     const boxes = Array.from(root.querySelectorAll<HTMLElement>("[data-node-id]")).map((el) => ({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }));
-    /* Fit into the board between the add buttons' strip and the zoom cluster's, so no fitted node sits under either. */
-    const top = tools.current ? tools.current.offsetTop + tools.current.offsetHeight : 0;
-    const fitted = fitView(boxes, { w: box.width, h: box.height - ZOOM_STRIP - top });
+    /* Fit into the board above the zoom cluster's strip, and below the add buttons at its top-left: the fit's own margin
+       clears most of them, so only what reaches past it is kept free (a phone's board is short). No fitted node sits under either. */
+    const top = tools.current ? Math.max(0, tools.current.offsetTop + tools.current.offsetHeight + 4 - FIT_MARGIN) : 0;
+    const fitted = fitView(boxes, { w: box.width, h: box.height - ZOOM_STRIP - top }, FIT_MARGIN);
     setView({ ...fitted, pan: { x: fitted.pan.x, y: fitted.pan.y + top } });
   }, [setView]);
   /* A native wheel listener (React's is passive, so it could not stop the page zooming):

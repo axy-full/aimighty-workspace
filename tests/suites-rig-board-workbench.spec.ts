@@ -101,6 +101,8 @@ async function closeOverlay(page: Page) {
 }
 
 const node = (page: Page, id: string) => page.getByTestId("rig-graph").locator(`.pxw-graph-node[data-node-id="${id}"]`);
+/** The board at the top of its pane (a tap on Fit scrolls the pane to the controls at the board's bottom, and a phone shows a short band). */
+const toBoard = (page: Page) => page.getByTestId("rig-graph-surface").evaluate((el) => el.scrollIntoView({ block: "start" }));
 
 /** Scrolls the board's pane until a control of its bottom cluster sits above a phone's fixed tab bar. */
 async function reach(page: Page, testId: string) {
@@ -168,6 +170,14 @@ const zoomOf = (page: Page) => page.getByTestId("rig-graph").locator(".pxw-graph
 test("cards read at a glance: preview, kind or type (a shot its number), state and version; every card its shape's height; labels keep the floor", async ({ page }, info) => {
   const { errors } = await openMocked(page);
   const graph = page.getByTestId("rig-graph");
+  /* Fitted, every card is on the board and clear of the add buttons at its top-left and the zoom cluster at its bottom-right. */
+  const surface = (await page.getByTestId("rig-graph-surface").boundingBox())!;
+  const tools = (await page.locator(".pxw-graph-tools").boundingBox())!, zoom = (await page.getByRole("group", { name: "Zoom" }).boundingBox())!;
+  for (const box of await graph.locator(".pxw-graph-node").evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { id: (el as HTMLElement).dataset.nodeId, x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }))) {
+    expect(box.x >= surface.x - 0.5 && box.right <= surface.x + surface.width + 0.5 && box.y >= surface.y - 0.5, `${box.id} is on the board`).toBe(true);
+    expect(box.y >= tools.y + tools.height || box.x >= tools.x + tools.width, `${box.id} is clear of the add buttons`).toBe(true);
+    expect(box.bottom <= zoom.y || box.right <= zoom.x, `${box.id} is clear of the zoom cluster`).toBe(true);
+  }
   /* A reference: its kind, its version, its picture, and that it has a source. */
   await expect(node(page, "mira").locator(".pxw-graph-kind")).toHaveText("CAST");
   await expect(node(page, "mira").locator(".pxw-graph-kicker")).toContainText("v1");
@@ -278,19 +288,21 @@ test("a note is added and written right on the board, a section title is added a
 });
 
 test("a card let go snaps to the 20 px grid (Alt places it exactly), and let go under a section title it joins that section", async ({ page }, info) => {
-  const nodes = [section("sec-1", "Scene 1 · Harbour", 0, 0), card("board", "Harbour board", "media", 400, 100, { assetId: "frame" }), card("empty", "Pickup plate", "media", 400, 420)];
+  /* One row, so a phone's short board shows it all when fitted. */
+  const nodes = [section("sec-1", "Scene 1 · Harbour", 0, 0), card("board", "Harbour board", "media", 330, 30, { assetId: "frame" }), card("empty", "Pickup plate", "media", 640, 0)];
   const { errors, team } = await openMocked(page, nodes);
   const moved = (id: string) => team.patches.flatMap((p) => p.upsertNodes).filter((n) => n.id === id).at(-1);
 
   /* Dragged by an odd amount: it lands on the grid, within a grid step of where the pointer let it go. */
+  await toBoard(page);
   const zoom = await zoomOf(page);
   const b = (await node(page, "board").boundingBox())!;
-  await drag(page, { x: b.x + b.width / 2, y: b.y + 20 }, { x: 37, y: 23 });
+  await drag(page, { x: b.x + b.width / 2, y: b.y + b.height / 2 }, { x: 37, y: 23 });
   await expect.poll(() => moved("board")?.x).toBeDefined();
   const landed = moved("board")!;
-  expect([landed.x % 20, landed.y % 20]).toEqual([0, 0]);
-  expect(Math.abs(landed.x - (400 + 37 / zoom))).toBeLessThanOrEqual(11);
-  expect(Math.abs(landed.y - (100 + 23 / zoom))).toBeLessThanOrEqual(11);
+  expect([Math.abs(landed.x % 20), Math.abs(landed.y % 20)]).toEqual([0, 0]);
+  expect(Math.abs(landed.x - (330 + 37 / zoom))).toBeLessThanOrEqual(11);
+  expect(Math.abs(landed.y - (30 + 23 / zoom))).toBeLessThanOrEqual(11);
   /* It was let go under no title: it is filed nowhere. */
   expect(team.canvas.nodes.board.section).toBeUndefined();
 
@@ -298,15 +310,18 @@ test("a card let go snaps to the 20 px grid (Alt places it exactly), and let go 
     /* With Alt held it lands exactly where it was let go: off the grid, by what the pointer travelled on the board. */
     const c = (await node(page, "board").boundingBox())!;
     const before = team.patches.length;
-    await drag(page, { x: c.x + c.width / 2, y: c.y + 20 }, { x: 37, y: 23 }, { alt: true });
+    await drag(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, { x: 37, y: 23 }, { alt: true });
     await expect.poll(() => team.patches.length).toBeGreaterThan(before);
     expect([team.canvas.nodes.board.x, team.canvas.nodes.board.y]).toEqual([landed.x + Math.round(37 / zoom), landed.y + Math.round(23 / zoom)]);
   }
 
   /* Let go just under the section's title, the pickup joins that section: the title counts it, the team has it. */
-  await page.getByTestId("rig-zoom-fit").click();
+  await (await reach(page, "rig-zoom-fit")).click();
+  await toBoard(page);
   const t = (await node(page, "sec-1").boundingBox())!, e = (await node(page, "empty").boundingBox())!;
-  await drag(page, { x: e.x + e.width / 2, y: e.y + 12 }, { x: t.x + 8 - e.x, y: t.y + t.height + 24 - e.y });
+  const grab = { x: e.x + e.width / 2, y: e.y + e.height / 2 };
+  /* The pickup's top-left goes just under the title's: its grab point moves with it. */
+  await drag(page, grab, { x: t.x + 8 - e.x, y: t.y + t.height + 24 - e.y });
   await expect.poll(() => team.canvas.nodes.empty?.section).toBe("sec-1");
   await expect(node(page, "sec-1").locator(".pxw-graph-section-count")).toHaveText("1 card");
   expect([team.canvas.nodes.empty.x % 20, team.canvas.nodes.empty.y % 20]).toEqual([0, 0]);
