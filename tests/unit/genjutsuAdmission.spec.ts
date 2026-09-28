@@ -123,8 +123,9 @@ async function setup(name: string) {
     }
     return { ...(origin === "upload" ? { uploadId: id } : { genId: id }), role: "reference_image" };
   }
+  const defaultReference = await image(100);
   function body(source: VideoSource, patch: Record<string, unknown> = {}) {
-    return { model: GENJUTSU_MODELS["motion-transfer"], task: "genjutsu", prompt: "", resolution: "720p", projectId: "project", workbenchProjectId: "draft", references: [], refine: false, ...source, ...patch };
+    return { model: GENJUTSU_MODELS["motion-transfer"], task: "genjutsu", prompt: "", resolution: "720p", projectId: "project", workbenchProjectId: "draft", references: [defaultReference], refine: false, ...source, ...patch };
   }
   async function post(body: Record<string, unknown>, key: string) {
     return handler.POST(new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) }));
@@ -153,7 +154,8 @@ test("Genjutsu quote measures retained upload and generated originals instead of
     expect(quote.compiled.projectId).toBe("project");
     expect(quote.request.workbenchProjectId).toBe("draft");
     expect(quote.quote.estimatedCredits).toBeGreaterThan(0);
-    expect(f.state.estimates.at(-1)!.input).toMatchObject({ prompt: "", resolution: "720p", image_urls: [] });
+    expect(f.state.estimates.at(-1)!.input).toMatchObject({ prompt: "", resolution: "720p" });
+    expect(f.state.estimates.at(-1)!.input.image_urls).toHaveLength(1);
     expect(f.state.estimates.at(-1)!.input.video_url).toContain(Object.values(source)[0]);
   }
   expect(f.state.inspections).toHaveLength(2);
@@ -182,10 +184,10 @@ test("Genjutsu uses inspected 1–30 second boundaries and refuses an unreadable
   expect(f.state.dispatches).toEqual([]);
 }));
 
-test("Genjutsu admits zero, one or eight ordered still references and refuses unsupported inputs before estimation", async () => fixture("genjutsu_references", async f => {
+test("Genjutsu admits one to eight ordered still references and refuses unsupported inputs before estimation", async () => fixture("genjutsu_references", async f => {
   const source = await f.video();
   const refs = await Promise.all(Array.from({ length: 9 }, (_, index) => f.image(index, index % 2 ? "generation" : "upload")));
-  for (const count of [0, 1, 8]) {
+  for (const count of [1, 8]) {
     const selected = refs.slice(0, count);
     const quote = prepared(await f.admission.prepareGeneration(f.body(source, { references: selected, model: GENJUTSU_MODELS["object-swap"] }), actor));
     expect((quote.compiled.references as Reference[]).map(ref => ref.id)).toEqual([source.sourceUploadId, ...selected.map(ref => ref.uploadId ?? ref.genId)]);
@@ -195,13 +197,14 @@ test("Genjutsu admits zero, one or eight ordered still references and refuses un
   }
   const videoReference = await f.image(20, "upload", "video");
   for (const patch of [
+    { references: [] }, { references: null }, { references: undefined },
     { references: refs }, { references: [videoReference] }, { references: [{ ...refs[0], role: "first_frame" }] },
     { references: [{ image_url: "https://attacker.invalid/private.png" }] },
     { references: [{ uploadId: refs[0].uploadId, genId: refs[1].genId, role: "reference_image" }] },
     { sourceGenId: "ambiguous-second-source" }, { sourceUploadId: undefined }, { resolution: "1080p" },
     { task: "generate" }, { prompt: "x".repeat(5001) },
   ]) expect(await f.admission.prepareGeneration(f.body(source, patch), actor), JSON.stringify(patch)).toMatchObject({ ok: false });
-  expect(f.state.estimates).toHaveLength(3);
+  expect(f.state.estimates).toHaveLength(2);
   expect(await f.outputs()).toEqual([]);
   expect(f.state.dispatches).toEqual([]);
 }));

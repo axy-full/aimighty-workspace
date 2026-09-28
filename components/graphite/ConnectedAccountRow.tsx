@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "@/lib/session";
+import { bustConnectedCapability, markConnectedCapability, settleConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { consumerAuthorizeUrl, connectionOutcome } from "@/lib/shell/workspace-view";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -11,7 +13,9 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * the ledger only (nothing is sent, deleted or resubmitted). The sign-in
  * callback returns here with `?higgsfield=<outcome>`; every read reports
  * whether the grant is live (`onLinked`), so the developer-API row below
- * follows a disconnect at once.
+ * follows a disconnect at once. Every read settles the shell's shared answer
+ * (lib/shell/use-connected-capability), and a connect or disconnect busts it,
+ * so no other surface keeps the old connection.
  */
 type CapacityJob = { id: string; draftId: string; projectName: string | null; workflow: string; status: string; createdAt: number; releasable: boolean };
 type Capacity = { limit: number; active: number; mine: CapacityJob[] };
@@ -29,11 +33,15 @@ const since = (ms: number) => {
 
 export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLinked?: (live: boolean) => void }) {
   const scoped = useScopedFetch();
+  const session = useSession();
+  const scope = session.signedIn ? session.requestScope ?? null : null;
   const [state, setState] = useState<Connection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"connect" | "disconnect" | null>(null);
+  const readVersion = useRef(0);
+  const invalidateRead = useCallback(() => { readVersion.current++; }, []);
   /* The callback's outcome, read as the tab opens. The shell's first URL write
      (lib/workspace/state.tsx › writeUrl) keeps only its own params, so a reload
      does not repeat it. */
@@ -41,19 +49,22 @@ export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLin
     try { return connectionOutcome(new URLSearchParams(window.location.search).get("higgsfield")); } catch { return null; }
   });
   const read = useCallback(async () => {
+    const version = ++readVersion.current;
+    const since = markConnectedCapability(scope);
     try {
       const response = await scoped("/api/higgsfield/consumer/connection", { cache: "no-store" });
       const json = await response.json().catch(() => null) as (Connection & { error?: string }) | null;
       if (!response.ok || !json) throw new Error(json?.error ?? "The connection could not be read.");
+      if (version !== readVersion.current || !settleConnectedCapability(scope, json, since)) return;
       setState(json); setProblem(null);
       onLinked?.(json.connected === true && json.requiresReconnect !== true);
-    } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); onLinked?.(false); }
-  }, [scoped, onLinked]);
+    } catch (error) { if (version === readVersion.current) { setProblem(error instanceof Error ? error.message : "The connection could not be read."); onLinked?.(false); } }
+  }, [scoped, onLinked, scope]);
   useEffect(() => {
     if (!owner) return;
     const t = setTimeout(() => void read(), 0);
-    return () => clearTimeout(t);
-  }, [read, owner]);
+    return () => { clearTimeout(t); invalidateRead(); };
+  }, [read, owner, invalidateRead]);
   const mine = state?.capacity?.mine ?? [];
   const running = mine.length;
   const act = async (kind: "connect" | "disconnect") => {
@@ -68,9 +79,14 @@ export function ConnectedAccountRow({ owner, onLinked }: { owner: boolean; onLin
       if (kind === "connect") {
         const url = consumerAuthorizeUrl(json?.url);
         if (!url) throw new Error("The account returned a sign-in address this page will not open.");
+        bustConnectedCapability(scope);
         window.location.assign(url);
         return;
       }
+      bustConnectedCapability(scope);
+      readVersion.current++;
+      setState(null);
+      onLinked?.(false);
       setNote("Account disconnected."); await read();
     } catch (error) { setProblem(error instanceof Error ? error.message : "The connection could not be changed."); }
     finally { setBusy(null); }
