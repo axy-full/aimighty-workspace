@@ -26,11 +26,11 @@ import type { TakeStage, TakeStatus } from "@/lib/workspace/takes";
  */
 export const VIRAL_PAGES = { motion: "motion-transfer", swap: "object-swap" } as const;
 export type ViralPage = keyof typeof VIRAL_PAGES;
-/** What the key route renders: 480p and 720p, and 1080p once the provider's estimate prices it (lib/genjutsuTypes.ts). */
+/** What the key route renders (lib/genjutsuTypes.ts): 480p, 720p and 1080p, each at the provider's live estimate. */
 export const VIRAL_RESOLUTIONS: readonly string[] = GENJUTSU_RESOLUTIONS;
 export type ViralResolution = string;
-/** The documented source window: at least 4 s (a shorter source fails at the provider), at most 30 s. */
-export const SOURCE_SECONDS = { min: Math.max(4, GENJUTSU_LIMITS.minSeconds), max: GENJUTSU_LIMITS.maxSeconds } as const;
+/** The documented source window (lib/genjutsuTypes.ts): at least 4 s, at most 30 s. Object Swap's pixel floor is admission's to say. */
+export const SOURCE_SECONDS = { min: GENJUTSU_LIMITS.minSeconds, max: GENJUTSU_LIMITS.maxSeconds } as const;
 /** The API takes 1–8 reference images. */
 export const REFERENCE_MAX = GENJUTSU_LIMITS.maxImages;
 export const PROMPT_MAX = GENJUTSU_LIMITS.maxPromptChars;
