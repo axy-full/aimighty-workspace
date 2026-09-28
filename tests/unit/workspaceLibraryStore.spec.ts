@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { loadProjectLibrary, projectLibraryState, refreshProjectLibrary } from "../../lib/workspace/library";
+import { loadProjectLibrary, projectLibraryState, refreshProjectLibrary, retryProjectLibrary } from "../../lib/workspace/library";
 
 /* The project library store over a fake /api/workbench/library: one read in flight, a change, a refresh. */
 type Pending = { source: string; resolve: (body: unknown) => void; fail: () => void };
@@ -61,5 +61,43 @@ test("a failed first read is an error that a refresh clears, not 'Reading…' fo
     await lib.settle(lib.page(["g9"]));
     await again;
     expect(projectLibraryState("scope-b", "p2")).toMatchObject({ status: "ready", error: null, retrying: false });
+  } finally { lib.restore(); }
+});
+
+test("a grid's refresh after a change here (a Release) reads again once a read already in flight lands", async () => {
+  const lib = fakeLibrary();
+  try {
+    const first = loadProjectLibrary("scope-c", "p3");
+    await lib.settle(lib.page(["held"]));
+    await first;
+    /* A background read is out when a Release answers and its tile asks for a refresh. */
+    const background = refreshProjectLibrary("scope-c", "p3");
+    const afterRelease = retryProjectLibrary("scope-c", "p3");
+    await lib.settle(lib.page(["held"]));
+    await background;
+    /* That read was issued before the release: its answer is not the last word. */
+    await lib.settle(lib.page(["released"]));
+    await afterRelease;
+    expect(projectLibraryState("scope-c", "p3").generations.map((g) => g.id)).toEqual(["released"]);
+    expect(lib.pending).toHaveLength(0);
+  } finally { lib.restore(); }
+});
+
+test("Try again while a failed first read is being tried again joins that read instead of asking twice", async () => {
+  const lib = fakeLibrary();
+  try {
+    const first = loadProjectLibrary("scope-d", "p4");
+    await lib.settle((p) => p.fail());
+    await first;
+    expect(projectLibraryState("scope-d", "p4").status).toBe("error");
+    /* The background retry is out (the failure stays on screen, saying Trying…); Try again is pressed anyway. */
+    const retry = refreshProjectLibrary("scope-d", "p4");
+    const tryAgain = retryProjectLibrary("scope-d", "p4");
+    await lib.settle(lib.page(["g1"]));
+    await Promise.all([retry, tryAgain]);
+    expect(projectLibraryState("scope-d", "p4")).toMatchObject({ status: "ready", error: null, retrying: false });
+    /* One read answered both: nothing else was asked for. */
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(lib.pending).toHaveLength(0);
   } finally { lib.restore(); }
 });

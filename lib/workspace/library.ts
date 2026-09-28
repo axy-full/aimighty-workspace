@@ -154,6 +154,19 @@ export function refreshProjectLibrary(scope: string, projectId: string) {
   return load(scope, projectId, true);
 }
 
+/**
+ * A grid's own refresh: Try again, a take's Refresh, the re-read after a Release. It resets the automatic retries.
+ * Only a first read that failed, with its automatic retry out, is joined: nothing is on screen for anything but
+ * Try again to have changed. Any other refresh reads once more after a read in flight (`load`), which may have
+ * begun before the change it is for.
+ */
+export function retryProjectLibrary(scope: string, projectId: string): Promise<void> {
+  const e = entry(keyOf(scope, projectId));
+  if (e.busy && e.state.status === "error") return e.busy;
+  e.retry.attempts = 0;
+  return load(scope, projectId);
+}
+
 /** The next page of every source that has one (the existing library cursors); a page already on its way is the one awaited. */
 async function more(scope: string, projectId: string) {
   const key = keyOf(scope, projectId);
@@ -560,14 +573,8 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
     items,
     /** True while a cursor says the project has more than is loaded. */
     hasMore: Boolean(state.next.uploads || state.next.generations),
-    /** Try again after a failed read: resets the automatic retries. */
-    refresh: useCallback(() => {
-      if (!projectId) return Promise.resolve();
-      const e = entry(keyOf(scope, projectId));
-      if (e.busy) return e.busy;
-      e.retry.attempts = 0;
-      return load(scope, projectId);
-    }, [scope, projectId]),
+    /** Try again after a failed read, a take's Refresh, the re-read after a Release (retryProjectLibrary). */
+    refresh: useCallback(() => (projectId ? retryProjectLibrary(scope, projectId) : Promise.resolve()), [scope, projectId]),
     more: useCallback(() => (projectId ? more(scope, projectId) : Promise.resolve()), [scope, projectId]),
     upload: useCallback((files: File[]) => (projectId ? uploadToProject(scope, projectId, files) : Promise.reject(new Error("Open a saved project first."))), [scope, projectId]),
   };
