@@ -686,7 +686,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
 
         {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
         {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
-        {block ? <p className="gx-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : null}
+        {/* Why Generate waits keeps its line when there is no reason: the takes stepper and Generate below it stay put as a
+            price lands or a submission starts, so a press on + made across that moment is neither lost nor carried onto Generate. */}
+        {block ? <p className="gx-reason gx-gen-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : <p className="gx-reason gx-gen-reason" aria-hidden="true" />}
         {/* The owner's read of the connected account failed: said as it is (never "not connected"), with Try again. */}
         {block && block === composer.capability?.unreadable ? (
           <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
