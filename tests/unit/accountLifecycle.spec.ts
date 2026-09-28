@@ -637,45 +637,60 @@ test("verification token rotation and concurrent verification keep one account a
   const { beginSignup, resendSignup, verifySignup } =
     await import("../../lib/signupRegistration");
   const { platformDb } = await import("../../lib/platform");
-  const reg = await beginSignup(
-    {
-      name: "Proof",
-      email: "proof@example.test",
-      workspace: "Proof house",
-      password,
-    },
-    "proof-source",
-  );
-  await platformDb().execute(
-    `DELETE FROM account_action_limits WHERE key LIKE 'signup-email-minute:%'`,
-  );
-  const rotated = await resendSignup(reg.email, "proof-resend");
-  expect(rotated?.token).not.toBe(reg.token);
-  await expect(verifySignup(reg.token)).rejects.toMatchObject({ status: 410 });
-  const results = await Promise.allSettled([
-    verifySignup(rotated!.token),
-    verifySignup(rotated!.token),
-  ]);
-  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-  expect(
-    (results.find((r) => r.status === "rejected") as PromiseRejectedResult)
-      .reason.status,
-  ).toBe(409);
-  expect(
-    (
-      await platformDb().execute(
-        `SELECT id FROM accounts WHERE email='proof@example.test'`,
-      )
-    ).rows,
-  ).toHaveLength(1);
-  expect(
-    (
-      await platformDb().execute(
-        `SELECT request_id FROM workspace_provisioning WHERE name='Proof house'`,
-      )
-    ).rows,
-  ).toHaveLength(1);
-  await expect(resendSignup(reg.email, "proof-resend")).rejects.toMatchObject({
-    status: 429,
-  });
+  // The one-a-minute resend limit counts in fixed windows of the clock. On a
+  // running clock a minute can turn between the two resends, and the second
+  // then lands in a fresh window and is allowed. One instant keeps both in the
+  // same window, so the last resend is refused on every run.
+  const clock = Date.now,
+    at = clock();
+  Date.now = () => at;
+  try {
+    const reg = await beginSignup(
+      {
+        name: "Proof",
+        email: "proof@example.test",
+        workspace: "Proof house",
+        password,
+      },
+      "proof-source",
+    );
+    await platformDb().execute(
+      `DELETE FROM account_action_limits WHERE key LIKE 'signup-email-minute:%'`,
+    );
+    const rotated = await resendSignup(reg.email, "proof-resend");
+    expect(rotated?.token).not.toBe(reg.token);
+    await expect(verifySignup(reg.token)).rejects.toMatchObject({
+      status: 410,
+    });
+    const results = await Promise.allSettled([
+      verifySignup(rotated!.token),
+      verifySignup(rotated!.token),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(
+      (results.find((r) => r.status === "rejected") as PromiseRejectedResult)
+        .reason.status,
+    ).toBe(409);
+    expect(
+      (
+        await platformDb().execute(
+          `SELECT id FROM accounts WHERE email='proof@example.test'`,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    expect(
+      (
+        await platformDb().execute(
+          `SELECT request_id FROM workspace_provisioning WHERE name='Proof house'`,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    await expect(
+      resendSignup(reg.email, "proof-resend"),
+    ).rejects.toMatchObject({
+      status: 429,
+    });
+  } finally {
+    Date.now = clock;
+  }
 });
