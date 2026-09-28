@@ -6,7 +6,7 @@ Repo audited: `/Users/axy/Documents/Codex/2026-09-13/vercel-plugin-vercel-openai
 
 Public sources (shallow clones in `/private/tmp/hf-audit/`): `cli` (README.md, MODELS.md), `skills` (9 skills + references), `higgsfield-js` (src/v2, src/agents, src/client.ts), `higgsfield-client` (Python), `cursor-plugin`, `fnf-local-pluging-bridge-mcp`, `omagotchi`; plus `docs.higgsfield.ai` (llms.txt, openapi.json saved as `/private/tmp/hf-audit/openapi.json`, webhooks / file-uploads / billing / rate-limits / errors pages) and higgsfield.ai Supercomputer pages. The `higgsfield-ai/higgsfield` repo is an unrelated GPU-orchestration and training framework (last updated 2026-09-14) and is not relevant.
 
-Live MCP (this Claude session's connector, workspace "ZigZag Films", team plan, 1,468.53 credits): 91 tools advertised. The read-only calls made were `get_workflow_instructions`, `apps_search`, `apps_describe` (×2), `balance`, `list_workspaces`, `transactions` (size 3), `shorts_studio_list_presets`, `get_explainer_presets`, `video_analysis_jobs` and `personal_clipper_jobs`. The last returned **"Tool personal_clipper_jobs not found"** even though it is advertised.
+Live MCP (this Claude session's connector; workspace name, plan and balance withheld): 91 tools advertised. The read-only calls made were `get_workflow_instructions`, `apps_search`, `apps_describe` (×2), `balance`, `list_workspaces`, `transactions` (size 3), `shorts_studio_list_presets`, `get_explainer_presets`, `video_analysis_jobs` and `personal_clipper_jobs`. The last returned **"Tool personal_clipper_jobs not found"** even though it is advertised.
 
 ---
 
