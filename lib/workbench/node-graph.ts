@@ -19,13 +19,22 @@ export const NODE_DEFS:Record<NodeType,NodeDefinition>={
  output:{label:'Output',family:'Flow',description:'Select a result for the sequence or image handoff',tools:['Preview','Sequence','Export'],shape:'flow',role:'Editor'},
  note:{label:'Direction',family:'Flow',description:'Notes, department ownership and creative intent',tools:['Write','Assign','Connect'],shape:'text',role:'Director'},
 };
+/**
+ * A card whose type this release does not know: one a newer release made, reaching a tab still open from before it
+ * (the team canvas pushes teammates' cards to every open window). It is drawn as a plain card and never wired, never a crash.
+ */
+export const UNKNOWN_NODE_DEF:NodeDefinition={label:'Card',family:'Flow',description:'A card from a newer version of Particl. Reload the page to work with it.',tools:[],shape:'flow',role:''};
+/** Whether this release knows the node type (an own key of NODE_DEFS: "constructor" and the like are not types). */
+export function isKnownNodeType(type:string):type is NodeType{return Object.prototype.hasOwnProperty.call(NODE_DEFS,type);}
+/** The definition every reader goes through: NODE_DEFS for a known type, the plain card for any other. */
+export function nodeDef(type:string):NodeDefinition{return isKnownNodeType(type)?NODE_DEFS[type]:UNKNOWN_NODE_DEF;}
 export const OP_LABELS={direction:'Direction',grade:'Colour correction',transform:'Transform',mask:'Mask',mix:'Composite'};
 export function newOperation(kind:NodeOperation['kind']):NodeOperation{return {id:uid('op'),kind,enabled:true,values:kind==='grade'?{brightness:100,contrast:100,saturation:100}:kind==='transform'?{scale:100,rotation:0,flip:false}:kind==='mask'?{shape:'ellipse',size:80,invert:false}:kind==='mix'?{opacity:50,blend:'source-over'}:{note:''}};}
 export function operationsFor(n:CanvasNode):NodeOperation[]{return n.operations??(n.type==='grade'?[{id:'grade-default',kind:'grade',enabled:true,values:{brightness:100,contrast:100,saturation:100}}]:n.type==='transform'?[{id:'transform-default',kind:'transform',enabled:true,values:{scale:100,rotation:0,flip:false}}]:n.type==='merge'?[{id:'mix-default',kind:'mix',enabled:true,values:{opacity:50,blend:'source-over'}}]:[]);}
-export function createNode(type:NodeType,index:number,position={x:100,y:100}):CanvasNode{return {id:uid('node'),title:NODE_DEFS[type].label+' '+String(index+1).padStart(2,'0'),type,...position,width:NODE_DEFS[type].shape==='scene'?344:NODE_DEFS[type].shape==='operator'||NODE_DEFS[type].shape==='flow'?236:280,linked:[],operations:operationsFor({type} as CanvasNode),role:NODE_DEFS[type].role,status:'draft',text:type==='note'?'Add a direction for your crew.':''};}
+export function createNode(type:NodeType,index:number,position={x:100,y:100}):CanvasNode{const def=nodeDef(type);return {id:uid('node'),title:def.label+' '+String(index+1).padStart(2,'0'),type,...position,width:def.shape==='scene'?344:def.shape==='operator'||def.shape==='flow'?236:280,linked:[],operations:operationsFor({type} as CanvasNode),role:def.role,status:'draft',text:type==='note'?'Add a direction for your crew.':''};}
 /** What a node emits: text nodes carry direction, every other node carries media (an asset or a rendered result). */
 export type NodeOutputKind='text'|'media';
-export function nodeOutputKind(type:NodeType):NodeOutputKind{return NODE_DEFS[type].shape==='text'?'text':'media';}
+export function nodeOutputKind(type:string):NodeOutputKind{return nodeDef(type).shape==='text'?'text':'media';}
 /** What a node consumes and how many inputs it can hold. Operators take one raster, a composite takes background + foreground. */
 export const NODE_INPUTS:Record<NodeType,{accepts:'any'|'media';max:number}>={
  brief:{accepts:'any',max:100},note:{accepts:'any',max:100},moodboard:{accepts:'any',max:100},character:{accepts:'any',max:100},element:{accepts:'any',max:100},media:{accepts:'any',max:100},
@@ -37,6 +46,8 @@ export function canConnect(nodes:CanvasNode[],source:string,target:string):strin
  const to=nodes.find(n=>n.id===target),from=nodes.find(n=>n.id===source);if(!to||!from)return 'Choose two existing nodes.';
  if(to.locked)return 'Unlock this node before changing its inputs.';
  if(to.linked.includes(source))return 'These nodes are already connected.';
+ /* A card from a newer release has rules this page does not know: it is never wired from here. */
+ if(!isKnownNodeType(to.type)||!isKnownNodeType(from.type))return 'This card is from a newer version of Particl. Reload the page to connect it.';
  const rule=NODE_INPUTS[to.type],label=NODE_DEFS[to.type].label;
  if(rule.accepts==='media'&&nodeOutputKind(from.type)==='text')return label+' nodes take an image input, not a direction. Connect a media, scene or finishing node instead.';
  if(to.linked.length>=rule.max)return rule.max===1?label+' nodes take one input. Disconnect the current input first.':rule.max===2?label+' nodes take two inputs: background and foreground. Disconnect one first.':'This node has reached its input limit.';
@@ -55,7 +66,7 @@ export function resolveAsset(n:CanvasNode,nodes:CanvasNode[],assets:Asset[],visi
  const parent=nodes.find(p=>p.id===inputId);return parent?resolveAsset(parent,nodes,assets,visited):undefined;
 }
 export function hasImageTools(n:CanvasNode,nodes:CanvasNode[],visited=new Set<string>()):boolean{if(visited.has(n.id))return false;visited.add(n.id);if(!n.bypassed&&operationsFor(n).some(o=>o.enabled&&o.kind!=='direction'))return true;return n.linked.some(id=>{const source=nodes.find(v=>v.id===id);return !!source&&hasImageTools(source,nodes,visited)});}
-export function nodeHeight(n:CanvasNode){if(n.collapsed)return 48;const shape=NODE_DEFS[n.type].shape;return shape==='scene'?340:shape==='reference'?286:shape==='text'?234:shape==='operator'?158:148;}
+export function nodeHeight(n:CanvasNode){if(n.collapsed)return 48;const shape=nodeDef(n.type).shape;return shape==='scene'?340:shape==='reference'?286:shape==='text'?234:shape==='operator'?158:148;}
 const ARRANGE_COLUMN=400,ARRANGE_GAP=38,ARRANGE_LEFT=60,ARRANGE_TOP=70;
 /**
  * Column by longest input chain, rows in node order. Locked nodes keep their place and take no
@@ -84,7 +95,7 @@ export function generationReferenceIds(n:CanvasNode,p:Project):string[]{
  const visit=(node:CanvasNode)=>{if(seenNodes.has(node.id))return;seenNodes.add(node.id);if(!node.bypassed&&node.type!=='switch'&&node.assetId&&p.assets.some(a=>a.id===node.assetId))seenAssets.add(node.assetId);const inputs=node.type==='switch'?[node.activeInput&&node.linked.includes(node.activeInput)?node.activeInput:node.linked[0]]:node.linked;for(const id of inputs){const source=p.nodes.find(value=>value.id===id);if(source)visit(source);}};
  visit(n);return [...seenAssets];
 }
-export function generationBrief(n:CanvasNode,p:Project){const upstream=n.linked.map(id=>p.nodes.find(v=>v.id===id)).filter(Boolean);return `PRODUCTION: ${p.name}\nNODE: ${n.title}\nOWNER: ${n.role||NODE_DEFS[n.type].role}\nMODE: ${n.mode||'Image'}\n\nPROJECT BRIEF\n${p.brief}\n\nDIRECTION\n${n.text||p.direction}\n\nCONNECTED REFERENCES\n${upstream.map(s=>`${s!.title}: ${s!.text||resolveAsset(s!,p.nodes,p.assets)?.prompt||'Source reference'} [${resolveAsset(s!,p.nodes,p.assets)?.url||'Text only'}]`).join('\n')}\n\nTOOL STACK\n${JSON.stringify(operationsFor(n),null,2)}`;}
+export function generationBrief(n:CanvasNode,p:Project){const upstream=n.linked.map(id=>p.nodes.find(v=>v.id===id)).filter(Boolean);return `PRODUCTION: ${p.name}\nNODE: ${n.title}\nOWNER: ${n.role||nodeDef(n.type).role}\nMODE: ${n.mode||'Image'}\n\nPROJECT BRIEF\n${p.brief}\n\nDIRECTION\n${n.text||p.direction}\n\nCONNECTED REFERENCES\n${upstream.map(s=>`${s!.title}: ${s!.text||resolveAsset(s!,p.nodes,p.assets)?.prompt||'Source reference'} [${resolveAsset(s!,p.nodes,p.assets)?.url||'Text only'}]`).join('\n')}\n\nTOOL STACK\n${JSON.stringify(operationsFor(n),null,2)}`;}
 
 // Each stage renders to its own canvas, preserving the source and stack order.
 export async function renderNode(n:CanvasNode,p:Project,options:{resolution?:NodeRenderResolution;signal?:AbortSignal}={}):Promise<HTMLCanvasElement>{
