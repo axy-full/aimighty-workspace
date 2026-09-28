@@ -82,6 +82,10 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
 type WindowedList = Virtualizer<HTMLElement, Element>;
 /* The windowed lists each scroller holds, so that a smooth move of the page can hold their corrections. */
 const listsIn = new WeakMap<Element, Set<WindowedList>>();
+/* The last smooth move started in each scroller: an older one never re-aims over a newer one. */
+const movesIn = new WeakMap<Element, number>();
+/* The person taking the scroll over while a move runs. */
+const TAKE_OVER = ["wheel", "touchstart", "pointerdown"] as const;
 
 /**
  * Scroll `el` smoothly into view: a page's own move to something the list
@@ -92,32 +96,64 @@ const listsIn = new WeakMap<Element, Set<WindowedList>>();
  * one where it stands: the page stays at the end of the grid and the editor
  * never comes into view. So every windowed list in that scroller leaves its
  * corrections out until the move is over; the move goes past those rows anyway.
+ *
+ * A target past the list (the Rig's Build from Storyboards, under its shots)
+ * moves while the rows before it are measured on the way, and the move keeps
+ * the destination it set out for, so it can end short. Then, unless the person
+ * took the scroll over or a newer move started, the target is brought in at
+ * once; the list, correcting again, keeps it in place as it measures.
  */
 export function smoothScrollIntoView(el: Element | null | undefined, block: ScrollLogicalPosition = "start") {
   if (!el) return;
   const scroller = scrollParent(el as HTMLElement);
   const lists = scroller ? listsIn.get(scroller) : undefined;
-  if (scroller && lists?.size) holdCorrections(scroller, [...lists]);
+  if (scroller && lists?.size) {
+    const move = (movesIn.get(scroller) ?? 0) + 1;
+    movesIn.set(scroller, move);
+    holdCorrections(scroller, [...lists], (touched) => {
+      if (!touched && movesIn.get(scroller) === move && el.isConnected && !arrived(el, scroller, block)) el.scrollIntoView({ block });
+    });
+  }
   el.scrollIntoView({ block, behavior: "smooth" });
 }
 
-/** Until the scroller stops: its `scrollend`, or, where there is none, a moment without a scroll event (a move that never started lets go the same way). */
-function holdCorrections(scroller: HTMLElement, lists: WindowedList[]) {
+/** Where `block` put it: its top (or centre, or bottom) within what the scroller shows. */
+function arrived(el: Element, scroller: HTMLElement, block: ScrollLogicalPosition) {
+  const box = el.getBoundingClientRect();
+  const view = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
+  const at = block === "center" ? (box.top + box.bottom) / 2 : block === "end" ? box.bottom : box.top;
+  return at >= view.top - 2 && at <= view.bottom + 2;
+}
+
+/**
+ * Until the scroller stops: its `scrollend`, or, where there is none, a moment without a scroll event (a move that never
+ * started lets go the same way). `done` hears whether the person took the scroll over meanwhile.
+ */
+function holdCorrections(scroller: HTMLElement, lists: WindowedList[], done: (touched: boolean) => void) {
   const hold = () => false;
   for (const list of lists) list.shouldAdjustScrollPositionOnItemSizeChange = hold;
   const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
   const still = "onscrollend" in window ? 1000 : 250;
+  let touched = false, scrolled = false;
   let timer = setTimeout(release, still);
-  function moved() { clearTimeout(timer); timer = setTimeout(release, still); }
+  function moved() { scrolled = true; clearTimeout(timer); timer = setTimeout(release, still); }
+  /* The end of this move, not of one before it that had yet to say so. */
+  function ended() { if (scrolled) release(); }
+  function took() { touched = true; }
   function release() {
     clearTimeout(timer);
     target.removeEventListener("scroll", moved);
-    target.removeEventListener("scrollend", release);
+    target.removeEventListener("scrollend", ended);
+    for (const type of TAKE_OVER) target.removeEventListener(type, took);
+    window.removeEventListener("keydown", took);
     /* A later move holds them with its own function: only this move lets go of its hold. */
     for (const list of lists) if (list.shouldAdjustScrollPositionOnItemSizeChange === hold) list.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    done(touched);
   }
   target.addEventListener("scroll", moved, { passive: true });
-  target.addEventListener("scrollend", release);
+  target.addEventListener("scrollend", ended);
+  for (const type of TAKE_OVER) target.addEventListener(type, took, { passive: true });
+  window.addEventListener("keydown", took);
 }
 
 export function VirtualItems<T>(props: VirtualItemsProps<T>) {
