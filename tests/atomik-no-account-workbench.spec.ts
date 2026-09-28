@@ -110,7 +110,8 @@ test("an older plan made on the connected account is shown read-only: no Continu
     await expect(row).toContainText("Connected account");
   }
   await expect(page.getByRole("button", { name: /^Continue/ })).toHaveCount(0);
-  const copy = (await page.locator("body").innerText()).toLowerCase();
+  /* The rail (or the phone's sheet) says nothing of an account price, a provider or recipes. */
+  const copy = (await surface.innerText()).toLowerCase();
   expect(copy).not.toContain("connected cr");
   expect(copy).not.toContain("higgsfield");
   expect(copy).not.toContain("connected recipes");
