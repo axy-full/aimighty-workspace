@@ -84,6 +84,15 @@ test("no card copy names a vendor or a prototype fixture", () => {
   expect(problems).toEqual([]);
 });
 
+test("no card or fact promises a failed render is free: its charge is what the ledger or its provider says", () => {
+  const claims: string[] = [];
+  for (const id of Object.keys(SPEC_PAGES) as PageId[])
+    for (const facts of [EMPTY_FACTS, full])
+      for (const text of specCopy(id, facts))
+        if (/not billed|never billed|not charged|isn.t charged/i.test(text)) claims.push(`${id}: "${text}"`);
+  expect(claims).toEqual([]);
+});
+
 test("with no data every card is READY; states come only from evidence", () => {
   for (const id of Object.keys(SPEC_PAGES) as PageId[])
     for (const card of SPEC_PAGES[id]!.groups.flatMap((g) => g.cards)) expect(cardState(card, EMPTY_FACTS), `${id}/${card.name}`).toBe("READY");
