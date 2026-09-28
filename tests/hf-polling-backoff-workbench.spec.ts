@@ -223,10 +223,23 @@ async function openBusiness(page: Page, sp: "ads" | "setup", options: Business =
   return { errors, posts, seen, lists: () => lists };
 }
 
-/** Stop the page's clock where it is: from here only runFor moves time, so every wait is counted exactly. */
+/**
+ * Stop the page's clock where it is: from here only runFor moves time, so every wait is counted exactly.
+ * The installed clock runs on until it is paused, so the pause is set 50 ms past the page's time as read.
+ * On a slow runner that moment can pass before the pause arrives, and Playwright refuses a pause in the
+ * past ("Cannot fast-forward to the past"): then the page's time is read again and the margin grows by
+ * 50 ms (100, 150, …), five tries at most. Any other error is thrown as it is.
+ */
 async function pauseClock(page: Page) {
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 50);
+  for (let attempt = 1; ; attempt++) {
+    const now = await page.evaluate(() => Date.now());
+    try {
+      await page.clock.pauseAt(now + 50 * attempt);
+      return;
+    } catch (error) {
+      if (attempt === 5 || !(error instanceof Error && error.message.includes("Cannot fast-forward to the past"))) throw error;
+    }
+  }
 }
 async function setHidden(page: Page, hidden: boolean) {
   await page.evaluate((value) => {

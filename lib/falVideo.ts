@@ -61,19 +61,19 @@ export function falEndpointFor(model: ModelDef, task: TaskId, hasStartImage: boo
  */
 export async function mediaUrl(ref: Reference): Promise<string> {
   if (ref.kind === "video") {
-    if (usingBlob()) return presignedReadUrl(ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext));
+    if (usingBlob()) return presignedReadUrl(ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext), 0.25, ref.storedUrl);
     const bytes = ref.fromGeneration ? await readVideoBytes(ref.id) : await readUploadBytes(ref.id, ref.ext, ref.storedUrl);
     return `data:video/mp4;base64,${bytes.toString("base64")}`;
   }
   if (ref.fromGeneration) {
-    if (usingBlob()) return presignedReadUrl(imagePath(ref.id));
+    if (usingBlob()) return presignedReadUrl(imagePath(ref.id), 0.25, ref.storedUrl);
     return `data:image/png;base64,${(await readImageBytes(ref.id)).toString("base64")}`;
   }
   // A delivery copy, when one exists, is what travels (see lib/ark.ts).
   const useDelivery = Boolean(ref.deliveryUrl);
   const sendId = useDelivery ? `${ref.id}-api` : ref.id;
   const sendExt = useDelivery ? "jpg" : ref.ext;
-  if (usingBlob()) return presignedReadUrl(uploadPath(sendId, sendExt));
+  if (usingBlob()) return presignedReadUrl(uploadPath(sendId, sendExt), 0.25, ref.deliveryUrl ?? ref.storedUrl);
   const bytes = await readUploadBytes(sendId, sendExt, ref.deliveryUrl ?? ref.storedUrl);
   return `data:${useDelivery ? "image/jpeg" : ref.mime.toLowerCase()};base64,${bytes.toString("base64")}`;
 }
@@ -344,7 +344,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
     params: deliveredParams ? {...gen.params,...deliveredParams} : gen.params,
     status: "succeeded",
     sourceUrl: url,
-    storedUrl: stored.url,
+    storedUrl: `/api/media/${gen.id}`,
     costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
     creditsBilled: creditsApply(currentTenant()?.workspace)
       ? billCredits(

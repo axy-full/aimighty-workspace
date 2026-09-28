@@ -106,11 +106,11 @@
   .gx .gx-tool-tag, .gx .gx-ref-thumb, .gx .gx-project-tile { border-radius: 12px; }
   .gx .gx-asset-thumb, .gx .gx-insp-card, .gx .gx-home-take-thumb, .gx .gx-home-take { border-radius: 12px; }
   .gx .gx-asset, .gx .gx-well, .gx .gx-textarea, .gx .gx-enhanced, .gx .gx-stage-facts, .gx .gx-tool-group, .gx .gx-stage-group, .gx .gx-stage-work, .gx .wsx-pack, .gx .gx-popover { border-radius: 14px; }
-  .gx .gx-card, .gx .gx-gen-card, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-home-card, .gx .gx-home-next { border-radius: 16px; }
+  .gx .gx-card, .gx .gx-gen-card, .gx .wsx-card, .gx .tc-card, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-home-card, .gx .gx-home-next { border-radius: 16px; }
   .gx .gx-palette, .gx .gx-sheet, .gx .gx-ctx { border-radius: 18px; }
 
   /* ── Fills: cards on the gradient, .gx inputs and tiles on fill-2, .gx wells dashed, .gx thumbnails on fill-3, .gx the selection ring at the thumbnail radius. ── */
-  .gx .gx-card, .gx .gx-gen-card, .gx .gx-asset, .gx .gx-insp-card, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-popover, .gx .gx-stage-facts, .gx .gx-tool-group, .gx .gx-stage-group, .gx .gx-stage-work, .gx .gx-home-card, .gx .gx-home-take { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
+  .gx .gx-card, .gx .gx-gen-card, .gx .gx-asset, .gx .gx-insp-card, .gx .wsx-card, .gx .tc-card, .gx .bz-group, .gx .bz-detail, .gx .bz-rolecard, .gx .cw-goal, .gx .cw-msg, .gx .cw-member, .gx .cw-solution, .gx .vr-job, .gx .gx-popover, .gx .gx-stage-facts, .gx .gx-tool-group, .gx .gx-stage-group, .gx .gx-stage-work, .gx .gx-home-card, .gx .gx-home-take { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
   .gx .gx-insp-card { background: var(--gl-fill-3); box-shadow: none; }
   .gx .gx-stage-grid { background: var(--gl-divider); }
   .gx .gx-stage-card { background: var(--gl-fill-3); }
@@ -179,5 +179,5 @@
   .gx .gx-sheet-row, .gx .gx-palette-row, .gx .gx-ctx-item, .gx .gx-popover-item, .gx .gx-hbtn, .gx .gx-primary, .gx .gx-chip, .gx .gx-tab, .gx .gx-pill, .gx .gx-search, .gx .gx-field, .gx .gx-toggle, .gx .gx-select, .gx .gx-model, .gx .gx-rowlink, .gx .gx-seg, .gx .gx-seg-btn, .gx .gx-seg-btn::before, .gx .gx-badge { border-radius: 999px; }
   .gx .gx-ctx, .gx .gx-palette, .gx .gx-popover, .gx .gx-toast { background: var(--gl-panel-2); border: var(--gl-edge); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift-dialog); }
   .gx .gx-primary, .gx .gx-primary:hover, .gx .gx-gen-go { background: var(--gl-primary); box-shadow: var(--gl-primary-shadow); }
-  .gx .gx-home-card, .gx .gx-home-next, .gx .gx-home-take, .gx .gx-gen-card, .gx .gx-asset, .gx .wsx-card, .gx .sk-row, .gx .bz-group, .gx .cw-goal, .gx .cw-msg, .gx .vr-job { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
+  .gx .gx-home-card, .gx .gx-home-next, .gx .gx-home-take, .gx .gx-gen-card, .gx .gx-asset, .gx .wsx-card, .gx .tc-card, .gx .bz-group, .gx .cw-goal, .gx .cw-msg, .gx .vr-job { background: var(--gl-card-grad); border: var(--gl-edge); box-shadow: var(--gl-spec); }
 }

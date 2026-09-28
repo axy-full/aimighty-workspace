@@ -127,7 +127,7 @@ export async function resolveConsumerGenjutsuSources(
       return {
         url: engineMock()
           ? `https://fixtures.particl.invalid/${path}`
-          : await presignedReadUrl(path),
+          : await presignedReadUrl(path, 0.25, ref.storedUrl),
         type: ref.kind as "video" | "image",
       };
     }),
