@@ -155,6 +155,9 @@ export function SoundGenerate({
   const [grokVoiceId, setGrokVoiceId] = useState("");
   const [quote, setQuote] = useState<{ key: string; credits: number; minutes?: number; seconds?: number } | null>(null);
   const [error, setError] = useState("");
+  /* A price that could not be read is its own line: the next price that reads clears it, and only it — never a
+     refusal or a landing said since (a recovery's landing arrives moments before the fresh price does). */
+  const [quoteError, setQuoteError] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const { key: placementsKey, placements, remember } = useSoundPlacementList(scope, project.id);
@@ -323,7 +326,7 @@ export function SoundGenerate({
         .then((data) => {
           if (!validAudioQuote(data)) throw new Error("Audio pricing returned an invalid estimate.");
           if (!abort.signal.aborted) {
-            setError("");
+            setQuoteError("");
             setQuote({
               key: bodyKey,
               credits: data.estimatedCredits,
@@ -335,7 +338,7 @@ export function SoundGenerate({
         .catch((e) => {
           if (!abort.signal.aborted) {
             setQuote(null);
-            setError(e instanceof Error ? e.message : "The quote could not be read.");
+            setQuoteError(e instanceof Error ? e.message : "The quote could not be read.");
           }
         });
     }, 300);
@@ -484,6 +487,7 @@ export function SoundGenerate({
     setLane(isSoundTool(id) ? "dialogue" : soundTask(id).lane);
     setQuote(null);
     setError("");
+    setQuoteError("");
     setStatus("");
   };
   const sourceLabel = (a: Asset) => `${a.name}${a.kind === "video" ? " · video" : ""}${a.seconds ? ` · ${Math.round(a.seconds)} s` : ""}`;
@@ -721,9 +725,9 @@ export function SoundGenerate({
         </ul>
       )}
       {status && <p role="status">{status}</p>}
-      {(error || pendingProblem || (!pending && unavailable(task))) && (
+      {(error || quoteError || pendingProblem || (!pending && unavailable(task))) && (
         <p role="alert" className={styles.error}>
-          {error || pendingProblem || `${soundJobLabel(task)} is not connected for this workspace.`}
+          {error || quoteError || pendingProblem || `${soundJobLabel(task)} is not connected for this workspace.`}
         </p>
       )}
     </section>
