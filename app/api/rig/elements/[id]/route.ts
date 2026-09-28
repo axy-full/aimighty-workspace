@@ -5,6 +5,7 @@ import { getElement, elementUsage, overridesOf, type ElementFull } from "@/lib/e
 import { lockHistory, lockMaster, masterCheck, MasterLockError, unlockMaster, type LockBy } from "@/lib/masters";
 import { requireTenant } from "@/lib/tenant";
 import { TeamCanvasError } from "@/lib/workbench/team-canvas";
+import { MediaSourceError } from "@/lib/mediaBindings";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 /**
@@ -183,6 +184,8 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
     });
   } catch (error) {
     if (error instanceof MasterLockError || error instanceof TeamCanvasError) return NextResponse.json({ error: error.message }, { status: error.status });
+    /* The card's picture is no longer in the library: nothing was locked. */
+    if (error instanceof MediaSourceError) return NextResponse.json({ error: error.message }, { status: 409 });
     throw error;
   }
 });
