@@ -235,7 +235,8 @@ test("the composer takes a recipe in one step, a settings-only one keeps its wor
 });
 
 test("citations count within their kind, the way the engine numbers what it is sent", () => {
-  expect(referenceTags(["video", "image", "image", "audio", undefined])).toEqual(["@Video1", "@Image1", "@Image2", null, null]);
+  /* A sound is cited too since Cinema Studio takes sound references (<<<audio_1>>>); a document has no tag. */
+  expect(referenceTags(["video", "image", "image", "audio", undefined, "audio"])).toEqual(["@Video1", "@Image1", "@Image2", "@Audio1", null, "@Audio2"]);
   expect(cites("@Image1 walks", "@Image1")).toBe(true);
   expect(cites("@Image12 walks", "@Image1")).toBe(false);
 });
@@ -255,6 +256,10 @@ test("a gone reference: the ones still here are renumbered, the gone one keeps a
   expect(retagRecipe("@Image1 and @Image12", [{ kind: "image", found: true }]).prompt).toBe("@Image1 and @Image12");
   const three = retagRecipe("@Image1, @Image2, @Image3", [{ kind: "image", found: false }, { kind: "image", found: true }, { kind: "image", found: false }]);
   expect(three.prompt).toBe("@Image2, @Image1, @Image3");
+  /* Sounds are renumbered within their own kind, and never move a picture's citation. */
+  const sounds = retagRecipe("@Audio2 under @Image1, then @Audio1", [{ kind: "audio", found: false }, { kind: "image", found: true }, { kind: "audio", found: true }]);
+  expect(sounds.now).toEqual(["@Audio2", "@Image1", "@Audio1"]);
+  expect(sounds.prompt).toBe("@Audio1 under @Image1, then @Audio2");
 });
 
 test("a size or length the new model does not offer lands on the nearest one at or below it", () => {

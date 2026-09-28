@@ -405,7 +405,7 @@
 .gx-fv-hash-row { display: flex; align-items: baseline; gap: 8px; min-height: 36px; padding: 8px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
 .gx-fv-hash-row[aria-selected="true"], .gx-fv-hash-row:hover { background: var(--gx-input); }
 .gx-fv-hash-row[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--gx-accent); }
-.gx-fv-hash-chip { flex: none; width: 58px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-fv-hash-chip { flex: none; min-width: 58px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-text-2); }
 .gx-fv-hash-name { flex: none; font-size: 13px; font-weight: 600; }
 .gx-fv-hash-aka { min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The grid a chip opens: every entry with its loop (or a drawing of it), its name and its other name. */
@@ -431,6 +431,11 @@
 .gx-fv-media[data-preview="loading"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .06), rgba(255, 255, 255, 0)); animation: gx-pulse 1.4s ease-in-out infinite; }
 .gx-fv-name { padding: 0 3px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-fv-aka { padding: 0 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* An entry that is a name alone (Cinema Studio's genres, eras, palettes…): no drawing, a full-size target, and the whole name. */
+.gx-fv-tile[data-plain] { justify-content: center; min-height: 48px; padding: 7px 8px; background: var(--gx-input); border-color: var(--gx-hair); }
+.gx-fv-tile[data-plain]:hover { background: var(--gx-input-hover); }
+.gx-fv-tile[data-plain][aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-fv-tile[data-plain] .gx-fv-name { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 /* The drawings: figures, frames and moves in the shell's greys, the move itself in the accent. */
 .gx-fv-glyph { color: var(--gx-text-2); }
 .gx-fv-g-fig { fill: #8C8C95; }
@@ -508,6 +513,8 @@
 .gx-well-hint { font-size: 12.5px; color: var(--gx-text-2); flex: 1; min-width: 0; }
 .gx-ref { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 4px 4px 4px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
 .gx-ref-thumb { width: 32px; height: 32px; border-radius: 4px; overflow: hidden; background: var(--gx-root); flex: none; position: relative; }
+/* A sound reference (Cinema Studio's) has no picture: a small waveform stands in. */
+.gx-ref-wave { display: block; width: 100%; height: 100%; fill: none; stroke: var(--gx-text-2); stroke-width: 2; stroke-linecap: round; }
 .gx-ref-name { font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .gx-ref-x { width: 28px; height: 28px; border-radius: 4px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; }
 .gx-ref-x:hover { color: var(--gx-text); background: var(--gx-input-hover); }

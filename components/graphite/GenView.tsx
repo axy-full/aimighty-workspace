@@ -38,6 +38,9 @@ import { dismissable, useClock } from "./ResumedJobs";
 import Boundary from "@/components/Boundary";
 import { PanelFault, TileFault } from "./PanelFault";
 import { cleanSetup, composeForSend, recipeSetup, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
+import { CINEMA_BANK, recipeCinema } from "@/lib/workspace/cinema-vocabulary";
+import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import type { GenInputAsset } from "@/lib/genAssetInput";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 
 /** A connected-account job id (the composer's workspace jobs and the Rig's are not UUIDs). */
@@ -55,6 +58,9 @@ type Filter = (typeof FILTERS)[number];
 const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
+/** A sound Cinema Studio can take as a reference: a WAV uploaded to this workspace (the provider documents WAV; generated sounds are MP3). */
+const cinemaSound = (asset: Pick<GenInputAsset, "kind" | "origin" | "mime">) => asset.kind === "audio" && asset.origin === "upload" && isCinemaStudioAudioMime(asset.mime);
+const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files uploaded to this workspace.";
 /** What a batch's takes that went were approved at: this workspace's credits, or the connected account's own. */
 const approvedTotal = (batch: BatchView) => {
   const went = batch.takes.filter((take) => take.state !== "refused" && take.state !== "not-sent");
@@ -100,6 +106,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
+  /* Cinema Studio 4.0 on this workspace's credits: its own documented controls under Direction (sent as its parameters,
+     never written into the words) and WAV sound references in the well. */
+  const cinemaModel = state.billing === "workspace" && model != null && isCinemaStudioModel(model.id);
   /* Leaving Gen mid-render: this composer stops polling its connected job. The strip would stay on
      "Rendering" and the shell's collector (which leaves the strip's job to its composer) would never
      read it, so the strip lets go of a connected job this view started and the collector follows it. */
@@ -199,12 +208,17 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     setWellError(null);
     try {
       const asset = await resolveGenInput(id, scope);
-      if (asset.kind !== "image" && asset.kind !== "video") throw new Error("References are images and videos.");
+      if (asset.kind === "audio" && cinemaModel) {
+        if (!cinemaSound(asset)) throw new Error(CINEMA_SOUND_ONLY);
+        dispatchComposer({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: "audio", name: asset.name, url: asset.url } });
+        return;
+      }
+      if (asset.kind !== "image" && asset.kind !== "video") throw new Error(cinemaModel ? "References are images, videos and WAV sounds." : "References are images and videos.");
       dispatchComposer({ type: "addReference", value: { key: asset.key, id: asset.id, origin: asset.origin, kind: asset.kind, name: asset.name, url: asset.url } });
     } catch (error) {
       setWellError(error instanceof Error ? error.message : "This file cannot be used as a reference.");
     }
-  }, [scope, dispatchComposer]);
+  }, [scope, dispatchComposer, cinemaModel]);
 
   /* What is handed over from elsewhere in the shell arrives by letter (lib/shell/gen-preset.ts): a Gen
      that is already open takes it at once — ⌘R included — and nothing lingers to be applied again. Crew ›
@@ -255,10 +269,13 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     const found = Object.keys(kept).length ? null : recoverSetup(next.prompt, type);
     const shot = found?.setup ?? kept;
     const taken = found ? { ...next, shotSpec: found.setup } : next;
+    /* A Cinema Studio take's controls land on its chips; its WAV sound references come back with it. */
+    const onCinema = !lost && billing === "workspace" && Boolean(next.model && isCinemaStudioModel(next.model));
+    const cinema = cleanCinemaControls(next.cinema);
     dispatchComposer({
       type: "recipe",
       value: {
-        type, billing, picks: next.picks ?? {}, sound: next.sound, shot,
+        type, billing, picks: next.picks ?? {}, sound: next.sound, shot, cinema,
         ...(lost ? {} : { model: next.model }),
         ...(settingsOnly ? {} : { prompt: found ? found.words : withoutSetup(next.prompt, shot), references: [] }),
       },
@@ -275,7 +292,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     void Promise.allSettled(refs.map((r) => resolveGenInput(`${r.origin}:${r.id}`, scope))).then((results) => {
       if (recipeEpoch.current !== epoch) return;
       const assets = results.map((result) => (result.status === "fulfilled" ? result.value : null));
-      const usable = assets.map((asset) => (asset && (asset.kind === "image" || asset.kind === "video") ? { ...asset, kind: asset.kind } : null));
+      const usable = assets.map((asset) => (asset && (asset.kind === "image" || asset.kind === "video") ? { ...asset, kind: asset.kind }
+        : asset && onCinema && cinemaSound(asset) ? { ...asset, kind: "audio" as const } : null));
       const kinds = refs.map((r, i) => (r.kind ?? assets[i]?.kind ?? "image"));
       const tags = retagRecipe(latest.current.prompt, kinds.map((kind, i) => ({ kind, found: Boolean(usable[i]) })));
       const missing: MissingReference[] = [];
@@ -289,7 +307,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         }
         const result = results[i];
         missing.push(assets[i]
-          ? { tag: null, kind: assets[i]!.kind, origin: r.origin, gone: false, reason: "References are images and videos." }
+          ? { tag: null, kind: assets[i]!.kind, origin: r.origin, gone: false, reason: assets[i]!.kind === "audio" && onCinema ? CINEMA_SOUND_ONLY : "References are images and videos." }
           : { tag: tags.now[i], kind: kinds[i], origin: r.origin, gone: true, reason: result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "Not found in this workspace." });
       });
       if (tags.prompt !== latest.current.prompt) dispatchComposer({ type: "prompt", value: tags.prompt });
@@ -342,11 +360,16 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     const seconds = wantedSeconds && heldSeconds === wantedSeconds && lengths ? nearestSetting(wantedSeconds, lengths) : undefined;
     if (size !== undefined || seconds !== undefined) dispatchComposer({ type: "pick", value: { ...(size !== undefined ? { resolution: size } : {}), ...(seconds !== undefined ? { duration: seconds } : {}) } });
   }, [wantedSize, wantedSeconds, heldSize, heldSeconds, sizes, lengths, dispatchComposer]);
-  /* Gen's film vocabulary: the chips under Direction, and `#` in the words. */
+  /* Gen's film vocabulary: the chips under Direction, and `#` in the words. On Cinema Studio 4.0 the same chips,
+     grids and `#` offer its own documented controls instead (lib/workspace/cinema-vocabulary.ts). */
   const promptBox = useRef<HTMLTextAreaElement>(null);
   const setShot = useCallback((value: FilmSetup) => dispatchComposer({ type: "shot", value }), [dispatchComposer]);
+  const setCinema = useCallback((value: FilmSetup) => dispatchComposer({ type: "cinema", value }), [dispatchComposer]);
   const setPrompt = useCallback((value: string) => dispatchComposer({ type: "prompt", value }), [dispatchComposer]);
-  const typeahead = useFilmTypeahead({ type: state.type, prompt: state.prompt, setup: state.shot, textarea: promptBox, onPrompt: setPrompt, onSetup: setShot });
+  const typeahead = useFilmTypeahead({
+    type: state.type, prompt: state.prompt, textarea: promptBox, onPrompt: setPrompt,
+    ...(cinemaModel ? { setup: state.cinema, onSetup: setCinema, bank: CINEMA_BANK } : { setup: state.shot, onSetup: setShot }),
+  });
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
@@ -423,17 +446,20 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. */
   const jumpToPickedUp = () => resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]')?.scrollIntoView({ block: "center", behavior: "smooth" });
   const takesReferences = state.type !== "audio" && (state.billing === "workspace" || Boolean(model?.referenceRoles?.length));
-  /* The well names each reference the way the engine counts it: @Image1, @Video1, within its own kind. */
+  /* The well names each reference the way the engine counts it: @Image1, @Video1, @Audio1, within its own kind. */
   const wellTags = referenceTags(state.references.map((r) => r.kind));
-  /* The Direction box takes media: pictures and videos become references when this model takes them; the rest stays in the Library. */
+  /* The Direction box takes media: pictures and videos become references when this model takes them (and, on Cinema
+     Studio, WAV sounds); the rest stays in the Library. */
   const attachToGen = async (attached: Attached) => {
     const { media, unreadable } = await resolveAttached(scope, attached);
     const used: string[] = [], kept = [...unreadable];
     for (const m of media) {
       if (takesReferences && (m.kind === "image" || m.kind === "video")) { dispatchComposer({ type: "addReference", value: { key: m.key, id: m.id, origin: m.origin, kind: m.kind, name: m.name, url: m.url } }); used.push(m.name); }
+      else if (takesReferences && cinemaModel && cinemaSound(m)) { dispatchComposer({ type: "addReference", value: { key: m.key, id: m.id, origin: m.origin, kind: "audio", name: m.name, url: m.url } }); used.push(m.name); }
       else kept.push(m.name);
     }
-    return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, takesReferences ? "references are pictures and video." : `${model?.label ?? "this model"} takes a prompt only.`) ?? ""].filter(Boolean).join(" ") || null;
+    const why = !takesReferences ? `${model?.label ?? "this model"} takes a prompt only.` : cinemaModel ? "references are pictures, video and WAV sounds." : "references are pictures and video.";
+    return [used.length ? `${used.join(", ")} ${used.length === 1 ? "is a reference" : "are references"}.` : "", keptNote(kept, why) ?? ""].filter(Boolean).join(" ") || null;
   };
   /* Sound says what it will be: the voice a line is read in, or the length and, for music, whether it has vocals. */
   const soundTask = model?.audioTask === "sound" || model?.audioTask === "music" ? model.audioTask : null;
@@ -475,6 +501,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const refs = recipe?.refs ?? null;
   /* The setup the take carried, and whether the chips still hold it for this output (a still has no camera travel). */
   const setup = recipe?.preset.shotSpec ? recipeSetup(recipe.preset.shotSpec, recipe.preset.type ?? state.type, state.shot, state.type) : null;
+  /* A Cinema Studio take's controls, and whether its chips still hold them (they only go with Cinema Studio). */
+  const controls = recipe?.preset.cinema ? recipeCinema(recipe.preset.cinema, state.cinema, cinemaModel) : null;
   const carried = refs ? refs.total - refs.missing.length : 0;
   const gone = refs?.missing.filter((m) => m.gone) ?? [];
   const unused = refs?.missing.filter((m) => !m.gone) ?? [];
@@ -482,6 +510,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const notes = recipe && !recipe.hidden ? [
     ...chips.filter((c) => c.state === "changed" && c.why).map((c) => ({ key: c.key, label: c.label, text: c.why!, alert: false })),
     ...(setup?.why && setup.labels.length ? [{ key: "setup", label: "Setup", text: setup.why, alert: false }] : []),
+    ...(controls?.why && controls.labels.length ? [{ key: "cinema", label: "Controls", text: controls.why, alert: false }] : []),
     ...(gone.length ? [{ key: "gone", label: "Not found", text: gone.map((m) => `${m.tag ?? "a sound"} (${from(m)})${orphans.includes(m) ? " · still in the prompt" : ""}`).join(", "), alert: true }] : []),
     ...(unused.length ? [{ key: "unused", label: "Not used here", text: unused.map((m) => `${m.kind === "audio" ? "a sound" : "a file"} (${from(m)})`).join(", "), alert: false }] : []),
     ...(refs?.renumbered.length ? [{ key: "renumbered", label: "Renumbered", text: refs.renumbered.map((r) => `${r.name} ${r.was} → ${r.now}`).join(", "), alert: false }] : []),
@@ -505,6 +534,10 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         {setup?.labels.length ? (
           <li data-state={setup.kept ? "kept" : "changed"} data-chip="setup" data-testid="gen-recipe-setup"
             title={`Setup: ${setup.labels.join(" · ")}${setup.why ? ` — ${setup.why}` : ""}`}>{setup.labels.join(" · ")}</li>
+        ) : null}
+        {controls?.labels.length ? (
+          <li data-state={controls.kept ? "kept" : "changed"} data-chip="cinema" data-testid="gen-recipe-cinema"
+            title={`Controls: ${controls.labels.join(" · ")}${controls.why ? ` — ${controls.why}` : ""}`}>{controls.labels.join(" · ")}</li>
         ) : null}
       </ul>
       {notes.length ? (
@@ -565,7 +598,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
           <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea ref={promptBox} className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
             onChange={(e) => { composer.dispatch({ type: "prompt", value: e.target.value }); typeahead.track(e.target); }} {...typeahead.inputProps} data-testid="gen-prompt" />{typeahead.list}</PromptAttach>
-          <FilmChips scope={scope} type={state.type} setup={state.shot} onChange={setShot} />
+          {cinemaModel
+            ? <FilmChips key="cinema" scope={scope} type={state.type} setup={state.cinema} onChange={setCinema} bank={CINEMA_BANK} testId="gen-cinema" />
+            : <FilmChips key="film" scope={scope} type={state.type} setup={state.shot} onChange={setShot} />}
           <div className="gx-gen-enhance">
             <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
               <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
@@ -616,14 +651,15 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
               }}>
               {state.references.length ? state.references.map((r, i) => (
                 <span className="gx-ref" key={r.key}>
-                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" /> : null}</span>
+                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" />
+                    : r.kind === "audio" ? <svg viewBox="0 0 32 32" aria-hidden="true" className="gx-ref-wave"><path d="M7 14v4M11 10v12M15 6v20M19 11v10M23 8v16M27 13v6" /></svg> : null}</span>
                   {model?.connected && (model.referenceRoles?.length ?? 0) > 1 ? (
                     <button type="button" className="bz-role" title="Click to cycle the role" data-testid="gen-ref-role" onClick={() => { const roles = model.referenceRoles!; const at = roles.indexOf(r.role ?? roles[0]); composer.dispatch({ type: "referenceRole", key: r.key, role: roles[(at + 1) % roles.length] }); }}>{r.role ?? model.referenceRoles![0]}</button>
                   ) : null}
                   <span className="gx-ref-name">{wellTags[i]} · {r.name}</span>
                   <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
                 </span>
-              )) : <span className="gx-well-hint">Drag an asset here from the Library.</span>}
+              )) : <span className="gx-well-hint">{cinemaModel ? "Drag stills, clips or WAV sounds here from the Library." : "Drag an asset here from the Library."}</span>}
               {!shell.wide ? <button type="button" className="gx-hbtn" onClick={() => shell.openLibrary("assets")}>Open Library</button> : null}
             </div>
             {wellError ? <p className="gx-gen-error" role="alert">{wellError}</p> : null}

@@ -15,6 +15,10 @@ import { validateColor } from "./color";
 import { validateAudio } from "./audio";
 import type { Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
+import { CINEMA_STUDIO_CONTROLS } from "../cinemaStudioTypes";
+/** A Cinema Studio 4.0 take's creative controls on its node: documented controls and values only (lib/cinemaStudioTypes.ts). */
+const cinemaControlsSchema = z.object(Object.fromEntries(CINEMA_STUDIO_CONTROLS.map((control) =>
+  [control.key, z.enum(control.options.map((o) => o.value) as [string, ...string[]]).optional()]))).strict();
 const asset = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -167,7 +171,7 @@ export const moleculrSchema = z.object({
   productAssetIds:z.array(z.string().max(100)).max(5),castAssetIds:z.array(z.string().max(100)).max(6),
   format:z.enum(['ugc-review','tutorial','unboxing','try-on','cgi','cinematic-demo','poster','marketplace','motion']),
   hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
-  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
+  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional(),cinema:cinemaControlsSchema.optional()}).strict().optional()}).strict()).max(100),
 }).strict();
 export const productionSchema = z.object({
   scriptApproval: z.object({
