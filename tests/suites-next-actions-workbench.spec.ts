@@ -134,9 +134,13 @@ async function rowFloors(page: Page, info: TestInfo, row: ReturnType<Page["getBy
     expect(await smallTargets(page, scope), `${where}: Next under 44×44`).toEqual([]);
     const bar = page.getByTestId("tabbar");
     if (await bar.isVisible()) {
-      await row.evaluate((el) => el.scrollIntoView({ block: "center" }));
-      const [after, barBox] = [(await row.boundingBox())!, (await bar.boundingBox())!];
-      expect(after.y + after.height, `${where}: the row clears the tab bar`).toBeLessThanOrEqual(barBox.y + 0.5);
+      /* Centred, the row clears the bar. The desk's own smooth move to the take it opened may still be running, and it
+         carries the page on to where it was going, so the row is centred again until that move is over. */
+      await expect.poll(async () => {
+        await row.evaluate((el) => el.scrollIntoView({ block: "center" }));
+        const [after, barBox] = [(await row.boundingBox())!, (await bar.boundingBox())!];
+        return after.y + after.height - barBox.y;
+      }, { message: `${where}: the row clears the tab bar` }).toBeLessThanOrEqual(0.5);
     }
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
