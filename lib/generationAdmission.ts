@@ -1311,7 +1311,7 @@ export async function executeGenerationAdmission(
           },
           { status: 400 },
         );
-      /* A trained likeness is priced as its own render; Marketing Studio by its live estimate. */
+      /* A trained likeness is priced as its own render; Marketing Studio by its live estimate (2.0) or its published rates (2.5). */
       if (
         !trained &&
         !model.marketing &&
