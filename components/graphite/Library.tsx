@@ -144,7 +144,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
             renderItem={(entry) => (
               <TakeTile entry={entry} variant="library" dragEffect="copyMove" onOpen={() => open(entry)} onRefresh={library.refresh}
                 selected={state.selKind === "take" && state.selId === entry.take.id} cut={cutId === entry.take.id}
-                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && now - entry.take.createdAt < FRESH_MS}
+                fresh={entry.take.kind === "GEN" && entry.take.status !== "failed" && entry.take.status !== "rendering" && entry.take.status !== "held" && now - entry.take.createdAt < FRESH_MS}
                 /* `+` sends the asset into the composer as a reference; the toast names the role. */
                 action={<button type="button" className="gx-asset-add" aria-label={`Use ${entry.take.name} as reference`} title={entry.media === "image" || entry.media === "video" ? "Use as reference" : "References are images and videos."}
                   disabled={!(entry.media === "image" || entry.media === "video")} onClick={() => onUseAsReference(entry.take.id)}>+</button>} />
