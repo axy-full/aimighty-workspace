@@ -239,10 +239,10 @@ test("the docked composer runs the desktop machinery: one live quote, re-quoted,
   await page.getByTestId("mobile-composer-prompt").fill("A dune ridge at first light, no figure");
 
   /* The live quote reaches both the sheet's button and the pinned primary. */
-  const priced = /Render\s*\d[\d,]* cr · \d+s/;
+  const priced = /Render\s*\d[\d,]*(?:\.\d)? cr · \d+s/;
   await expect(sheet.getByTestId("mobile-composer-render")).toHaveText(priced, { timeout: 30_000 });
   const label = (await sheet.getByTestId("mobile-composer-render").textContent())!;
-  const credits = Number(/(\d[\d,]*) cr/.exec(label)![1].replace(/\D/g, ""));
+  const credits = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec(label)![1].replace(/,/g, ""));
   expect(credits).toBeGreaterThan(0);
   /* Exactly one filled primary while the sheet is up: the pinned one is behind
      the scrim. (Scrolled into the sheet's own view first — a landscape phone

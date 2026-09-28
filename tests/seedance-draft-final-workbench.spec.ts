@@ -110,7 +110,7 @@ async function settled(s: Seeded, jobs: number) {
   return ledger(s);
 }
 
-const creditsIn = (label: string | null) => Number((label ?? "").replace(/.*· /, "").replace(/\D/g, ""));
+const creditsIn = (label: string | null) => Number((label ?? "").replace(/.*· /, "").replace(/[^\d.]/g, ""));
 
 /**
  * The strip keeps the phone's floors and the wide-font rule: nothing scrolls
@@ -215,7 +215,7 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toBeDisabled();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveAttribute("aria-label", /^Generate draft · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(go).toHaveAttribute("aria-label", /^Generate draft · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const draftPrice = creditsIn(await go.getAttribute("aria-label"));
   /* Exactly what any 480p take of these words costs. */
   expect(draftPrice).toBe(await quoted(page, s, take(s, "480p")));
@@ -225,7 +225,7 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip.getByTestId("draft-final-facts")).toHaveText(/^Watermarked 480p draft · Final available until \w{3} \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/, { timeout: 120_000 });
   const make = strip.getByTestId("draft-final-make");
-  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const finalPrice = creditsIn(await make.getAttribute("aria-label"));
   /* Exactly what a 1080p take of these words costs. */
   expect(finalPrice).toBe(await quoted(page, s, take(s, "1080p")));
@@ -357,7 +357,7 @@ test("a final refused at moderation is not charged on the books, its card says w
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
-  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const finalPrice = creditsIn(await make.getAttribute("aria-label"));
   await make.click();
   await strip.getByTestId("draft-final-approve-send").click();
@@ -391,7 +391,7 @@ test("a final that never reached the server is checked on the next press, never 
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
-  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const finalPrice = creditsIn(await make.getAttribute("aria-label"));
 
   /* The final's request is cut off before it reaches the server. */
@@ -448,7 +448,7 @@ test("a moved final quote needs fresh approval and sends no render", async ({ pa
   await openGen(page, s.project);
   const strip = page.getByTestId("gen-draft").first();
   const make = strip.getByTestId("draft-final-make");
-  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const original = creditsIn(await make.getAttribute("aria-label"));
   await make.click();
   const approve = strip.getByTestId("draft-final-approve-send");

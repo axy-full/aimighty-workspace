@@ -35,7 +35,7 @@ async function open(page: Page, nodes = [shot("a", "Opening", 100, 100), shot("b
   const board = page.getByTestId("rig-graph-surface");
   await expect(board).toBeVisible();
   /* The page head reflows once the shot's price arrives (on the smallest phone it wraps a row): measure after it. */
-  await expect(page.locator(".gx-pagehead")).toContainText(/Generate · \d+ cr/);
+  await expect(page.locator(".gx-pagehead")).toContainText(/Generate · \d[\d,]*(?:\.\d)? cr/);
   return { board, errors, store };
 }
 /** A box that has stopped moving (the Inspector and the page head settle after the board appears). */

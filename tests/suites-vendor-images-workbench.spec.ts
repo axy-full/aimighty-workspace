@@ -51,7 +51,7 @@ test("GPT Image and Grok Imagine: offered in Gen, chosen in Storyboards, priced 
   const frame = page.getByTestId("board-frame").first();
   for (const [label, model, ratio, resolution, takes] of [["GPT Image 2", "gpt-image-2", "16:9", "Medium", 1], ["Grok Imagine 2", "grok-imagine-image-2.0", "16:9", "1K", 2]] as const) {
     await page.getByRole("radio", { name: label, exact: true }).click();
-    await expect(frame.getByTestId("frame-render")).toContainText(/Render frame · \d+ credits?/, { timeout: 30_000 });
+    await expect(frame.getByTestId("frame-render")).toContainText(/Render frame · \d[\d,]*(?:\.\d)? credits?/, { timeout: 30_000 });
     expect(quotes.at(-1)).toMatchObject({ model, ratio, resolution });
     if (takes === 1) {
       /* Five engines fit the picker without pushing the page sideways. */

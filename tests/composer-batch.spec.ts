@@ -282,7 +282,7 @@ test("a batch take that never arrived is not re-sent at a price nobody was shown
   await page.getByRole("menuitem", { name: "×2", exact: true }).click();
   const render = page.locator("[data-render]").filter({ visible: true }).last();
   await expect(render).toBeEnabled();
-  const total = Number(/(\d+) cr/.exec((await render.textContent()) ?? "")?.[1]);
+  const total = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await render.textContent()) ?? "")?.[1]?.replace(/,/g, ""));
   const perTake = total / 2;
   expect(perTake).toBeGreaterThan(1);
   /* The server holds the price the button shows; the first take is answered, the second never arrives. */

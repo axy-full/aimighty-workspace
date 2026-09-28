@@ -67,7 +67,7 @@ test("a crew round whose answer was lost is read from the room, never run twice,
   await page.getByTestId("crew-goal").fill(GOAL);
   await expect(page.getByTestId("crew-goal")).toHaveValue(GOAL);
   const run = page.getByTestId("crew-run");
-  await expect(run).toHaveText(/^Run round · \d+ cr$/, { timeout: 60_000 });
+  await expect(run).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
 
   /* The round reaches the server and runs; its streamed answer is lost, and so is the room read after it. */
   let lose = true;
@@ -105,7 +105,7 @@ test("a crew round whose answer was lost is read from the room, never run twice,
   expect(await charges(f.workspaceId)).toEqual(billed);
 
   /* The next round is the next number, at the price then on the button, run once. */
-  await expect(run).toHaveText(/^Run round · \d+ cr$/);
+  await expect(run).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   await run.click();
   await expect(page.getByTestId("crew-notice")).toContainText("Round 2 complete", { timeout: 60_000 });
   expect(f.rounds.at(-1)!.body).toMatchObject({ round: 2 });

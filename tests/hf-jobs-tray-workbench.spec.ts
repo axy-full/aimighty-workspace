@@ -9,6 +9,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets } from "./phoneFloors";
 import type { TrayJob, TrayReply } from "../lib/jobsTray";
 import type { Generation } from "../lib/jobs";
+import { creditsFigure, heldPriceNow } from "../lib/creditTerms";
 
 /**
  * The header's jobs tray. The pill counts every take this person has in
@@ -169,6 +170,40 @@ async function setHidden(page: Page, hidden: boolean) {
   }, hidden);
 }
 const announce = (page: Page, id: string) => page.evaluate((job) => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: job } })), id);
+
+/* Credits are charged in tenths: the longest figures a tray can hold, each shown whole at every size and in a wider sans. */
+function tenthsTray(): TrayJob[] {
+  const now = Date.now();
+  return [
+    job({ id: "gen_held", name: "Harbour at dawn", stage: "held", label: `Held · needs ${creditsFigure(12_345.6)} cr`, tone: "amber", action: "release", releaseCredits: 12_345.6, createdAt: now - 12 * MIN }),
+    job({ id: "gen_run", name: "A wide shot on the water at first light", stage: "rendering", label: "Rendering", tone: "blue", price: { amount: 1_234.5, unit: "cr" }, createdAt: now - 4 * MIN }),
+    job({ id: "gen_slot", name: "Nets drying on the quay", stage: "queued", label: "Queued", tone: "blue", reason: "Waiting for a free slot", price: { amount: 0.3, unit: "cr" }, createdAt: now - MIN }),
+    job({ id: "gen_done", kind: "image", name: "Gulls over the pier", stage: "complete", label: "Complete", tone: "green", mediaUrl: "/api/media/gen_done", action: "open", takeId: "generation:gen_done", price: { amount: 0.1, unit: "cr" }, createdAt: now - 50 * MIN, settledAt: now - 45 * MIN }),
+  ];
+}
+
+test("figures in tenths of a credit, the longest too, stay whole in the tray at every size and in a wider sans", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const tray: Tray = { reads: 0, reply: () => reply(tenthsTray()) };
+  const errors = await open(page, tray);
+  const pill = page.getByTestId("running-jobs");
+  await expect(pill).toHaveAccessibleName("Jobs: 1 rendering · 1 queued · 1 held");
+  await pill.click();
+  const panel = page.getByRole("dialog", { name: "Jobs" });
+  await expect(panel).toBeVisible();
+  const rows = panel.getByTestId("jobs-row");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0).getByTestId("jobs-stage")).toHaveText("Held · needs 12,345.6 cr");
+  await expect(rows.getByTestId("jobs-price")).toHaveText(["1,234.5 cr", "0.3 cr", "0.1 cr"]);
+  await expect(rows.nth(0).getByTestId("jobs-action")).toHaveText("Release · 12,345.6 cr");
+  await arrived(page);
+  expect(await trayWhole(page)).toEqual([]);
+  await noOverflow(page);
+  await page.addStyleTag({ content: WIDE_FONT });
+  expect(await trayWhole(page), "with a wider font").toEqual([]);
+  await noOverflow(page);
+  expect(errors).toEqual([]);
+});
 
 test("the pill counts the rows the way they are labelled, fits the header, and opens a tray with each job's stage, time, figure and one action", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -657,7 +692,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
     await gen(`gen_t${tag}_running`, "running", { params: { resolution: "1080p", ratio: "16:9", duration: 5, inputSeconds: 5 } });
     await gen(`gen_t${tag}_held`, "held", { params: { resolution: "1080p", ratio: "16:9", duration: 5, held: { why: "credits", needs: 40, estUsd: 2.86, at: now } } });
     /* Held at a figure the terms have since moved from: far more than any local balance covers, so Release is refused and nothing starts. */
-    await gen(`gen_t${tag}_held_big`, "held", { params: { resolution: "1080p", ratio: "16:9", duration: 5, held: { why: "credits", needs: 10, estUsd: 400, at: now } } });
+    await gen(`gen_t${tag}_held_big`, "held", { params: { resolution: "1080p", ratio: "16:9", duration: 5, held: { why: "credits", needs: 10, estUsd: 4000, at: now } } });
     await gen(`gen_t${tag}_done`, "succeeded", { stored: "https://blob.invalid/x.mp4", cost: 1.16 });
     await gen(`gen_t${tag}_failed`, "failed", { error: "fal.ai returned 503 upstream", cost: 0 });
     await gen(`gen_t${tag}_failed_open`, "failed", { error: "The render never came back" });
@@ -731,8 +766,10 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   const fresh = byId.get(`gen_t${tag}_done_new`)!;
   expect(fresh).toMatchObject({ stage: "complete", action: "open", takeId: `generation:gen_t${tag}_done_new`, price: { amount: 17, unit: "cr" } });
   expect(Math.abs(fresh.settledAt! - Date.now())).toBeLessThan(60_000);
-  /* Held: the figure its release is measured against, from the kept estimate at today's terms. */
-  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: "Held · needs 43 cr", releaseCredits: 43, draftId: DRAFT });
+  /* Held: the figure its release is measured against, from the kept estimate at today's terms (tenths of a credit). */
+  const needs = heldPriceNow({ estUsd: 2.86 }, "video", ENGINE);
+  expect(needs).toBeGreaterThan(0);
+  expect(byId.get(`gen_t${tag}_held`)).toMatchObject({ stage: "held", tone: "amber", action: "release", label: `Held · needs ${creditsFigure(needs)} cr`, releaseCredits: needs, draftId: DRAFT });
   /* Failed: "not billed" only where the meter shows nothing charged; unmetered, nothing is claimed. */
   expect(byId.get(`gen_t${tag}_failed`)).toMatchObject({ stage: "failed", label: "Failed · not billed", price: null, action: "recreate", reason: "The engine hit an error" });
   expect(byId.get(`gen_t${tag}_failed`)!.preset).toMatchObject({ prompt: `Prompt for gen_t${tag}_failed`, billing: "workspace", from: { id: `gen_t${tag}_failed` } });
@@ -757,16 +794,16 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   /* An older approval cannot start a repriced take; approving the current quote still cannot exceed the balance. */
   const big = byId.get(`gen_t${tag}_held_big`)!;
   expect(big.releaseCredits).toBeGreaterThan(1_000);
-  expect(big.label).toBe(`Held · needs ${big.releaseCredits!.toLocaleString("en-US")} cr`);
+  expect(big.label).toBe(`Held · needs ${creditsFigure(big.releaseCredits!)} cr`);
   const stale = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: 10 } });
   expect(stale.status()).toBe(409);
   expect(await stale.json()).toMatchObject({ credits: big.releaseCredits });
   const refused = await page.request.post(`/api/jobs/gen_t${tag}_held_big/release`, { headers, data: { credits: big.releaseCredits } });
   expect(refused.status()).toBe(402);
   const answer = (await refused.json()) as { error: string; credits: number };
-  expect(answer.error).toMatch(/^Still short: this needs [\d,]+ credits and [\d,]+ are left\.$/);
+  expect(answer.error).toMatch(/^Still short: this needs \d[\d,]*(?:\.\d)? credits and \d[\d,]*(?:\.\d)? are left\.$/);
   expect(answer.credits).toBeGreaterThan(1_000);
-  expect(Number(/needs ([\d,]+) credits/.exec(answer.error)![1].replace(/,/g, ""))).toBe(answer.credits);
+  expect(Number(/needs (\d[\d,]*(?:\.\d)?) credits/.exec(answer.error)![1].replace(/,/g, ""))).toBe(answer.credits);
 
   /* Every slot busy (someone else's renders fill them), and a held take the balance covers: nothing starts, and the
      answer is the slot, never a cap refusal left on the take by an earlier attempt. */

@@ -51,7 +51,7 @@ async function seeded(page: Page) {
 const url = (id: string, suite = "particl", pageId = "rig") => `/workspace?project=${id}&suite=${suite}&page=${pageId}`;
 const composer = (page: Page) => page.getByTestId("generate-composer");
 const generateButton = (page: Page) => composer(page).getByTestId("composer-generate");
-const priced = /^Generate · \d[\d,]* cr$/;
+const priced = /^Generate · \d[\d,]*(?:\.\d)? cr$/;
 
 /** Every POST that could spend money, in the order it was sent. */
 function watchPaid(page: Page) {
@@ -263,7 +263,7 @@ test("a mocked image generation shows its price, runs to completion and files a 
   await composer(page).getByTestId("composer-prompt").fill("A red lighthouse under a flat grey sky.");
   await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
   await expect(generateButton(page)).toBeEnabled();
-  const credits = Number((await generateButton(page).textContent())!.replace(/\D/g, ""));
+  const credits = Number((await generateButton(page).textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
   expect(credits).toBeGreaterThan(0);
 
   await generateButton(page).click();
@@ -331,7 +331,7 @@ test("a moved price blocks the send and spends nothing", async ({ page }, info) 
   await page.getByTestId("topbar-generate").click();
   await composer(page).getByTestId("composer-prompt").fill("A red lighthouse under a flat grey sky.");
   await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
-  const before = Number((await generateButton(page).textContent())!.replace(/\D/g, ""));
+  const before = Number((await generateButton(page).textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
 
   await generateButton(page).click();
 

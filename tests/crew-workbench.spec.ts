@@ -48,7 +48,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await roster.getByRole("switch", { name: "Editor speaks next round" }).click();
   await expect(roster.getByRole("switch", { name: "Editor speaks next round" })).toHaveAttribute("aria-checked", "false");
   await page.getByTestId("crew-goal").fill(GOAL);
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   await page.getByTestId("crew-run").click();
 
   const messages = page.getByTestId("crew-message");
@@ -62,9 +62,9 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await expect(messages.filter({ hasText: "Pacing & assembly" })).toHaveCount(0);
   const panel = page.getByTestId("crew-panel");
   await expect(page.getByTestId("crew-solutions").locator(".cw-solution")).toHaveCount(3);
-  await expect(panel).toContainText(/\d+ cr settled/);
+  await expect(panel).toContainText(/\d[\d,]*(?:\.\d)? cr settled/);
   await expect(panel).toContainText("1 of 6");
-  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d+ cr settled/);
+  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d[\d,]*(?:\.\d)? cr settled/);
 
   /* An interjection joins the transcript; Pin adds a fourth solution. */
   await page.getByTestId("crew-say").fill("Keep the tin out of frame.");
@@ -135,10 +135,10 @@ test("Crew keeps the phone floors", async ({ page }, info) => {
   await open(page);
   await page.goto(page.url() + "&view=crew");
   await page.getByTestId("crew-goal").fill(GOAL);
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   await page.getByTestId("crew-run").click();
   await expect(page.getByTestId("crew-message")).toHaveCount(11, { timeout: 30_000 });
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   await page.getByTestId("crew-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   expect(await smallText(page), "text under 12px").toEqual([]);
   expect(await smallTargets(page, ".cw, .cw-strip"), "targets under 44×44").toEqual([]);

@@ -81,7 +81,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   const cont = () => surfaceOf(page).getByRole("button", { name: /^Continue/ }).first();
   await expect(cont()).toContainText(/\d+ cr/, { timeout: 60_000 });
   await expect(cont()).toBeEnabled();
-  const price = Number(/(\d[\d,]*) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
+  const price = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
 
   /* The render leaves the browser and is held back: it has not reached the server. */
   let hold = true;
@@ -126,7 +126,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
 
   /* Continue again: a key of its own, admitted once, at the price on the button. */
   await expect(cont()).toBeEnabled();
-  const again = Number(/(\d[\d,]*) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
+  const again = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
   await cont().click();
   await expect.poll(() => renders.length, { timeout: 60_000 }).toBe(2);
   expect(renders[1]).toMatchObject({ key: `atomik-step:${f.stepId}:2`, body: { maxCredits: again } });

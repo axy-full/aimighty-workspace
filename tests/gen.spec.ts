@@ -475,7 +475,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await page.getByLabel("First frame", { exact: true }).selectOption("");
   await expect(primary).toBeEnabled();
   await expect(primary).toContainText(/\d+ cr/);
-  const beforeClip = Number((await primary.innerText()).match(/(\d+) cr/)![1]);
+  const beforeClip = Number((await primary.innerText()).match(/(\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   const clip = await readFile("public/fixtures/clip.mp4");
   await referencePicker.setInputFiles({
     name: "clip-3.mp4",
@@ -498,7 +498,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   ).toBeVisible();
   await expect(primary).toBeEnabled();
   const quotedWithClip = Number(
-    (await primary.innerText()).match(/(\d+) cr/)![1],
+    (await primary.innerText()).match(/(\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""),
   );
   expect(quotedWithClip).toBeGreaterThan(beforeClip);
   await primary.click();

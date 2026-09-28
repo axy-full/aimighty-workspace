@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { creditUsd, fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * Idea 24 — plans and credits as media. A plan card, the rate card and the
@@ -32,6 +33,8 @@ const KLING = "fal-ai/kling-video/v3/standard";
 const GPT_IMAGE = "gpt-image-2.5-flare";
 
 const n = (v: number) => v.toLocaleString("en-US");
+/** Whole takes a balance buys, divided in whole tenths of a credit: 162 at 5.4 is 30, where floating division says 29.999… */
+const within = (credits: number, each: number) => Math.floor(toDeci(credits) / toDeci(each));
 const option = (o: string) => (/^\d+k$/i.test(o) ? o.toUpperCase() : /^\d+$/.test(o) ? `${o} px` : o);
 const spoken = (t: Take) => [t.label, option(t.resolution), t.durationS ? `${t.durationS} seconds` : null, t.audio ? "with sound" : null, `${n(t.credits)} ${t.credits === 1 ? "credit" : "credits"} each`].filter(Boolean).join(", ");
 const settings = (t: Take) => [t.label, option(t.resolution), t.durationS ? `${t.durationS} s` : null, t.audio ? "sound" : null].filter(Boolean).join(" · ") + ` · ${n(t.credits)} cr each`;
@@ -68,7 +71,8 @@ async function tenantOf(workspaceId: string) {
 async function grant(workspaceId: string, credits: number) {
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, credits, "Plans as media", "manual", "test", Date.now()] });
+    /* Granted at today's price of a credit, so the balance grows by exactly this many credits. */
+    await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, credits, "Plans as media", "manual", "test", Date.now(), creditUsd()] });
   } finally { platform.close(); }
 }
 
@@ -155,7 +159,7 @@ test("Pricing: every plan says what a month of its credits makes, at the Generat
   const paid = body.plans.filter((p) => p.id !== "invite");
   for (const plan of paid) {
     const reach = page.getByTestId(`plan-reach-${plan.id}`);
-    const videos = Math.floor(plan.includedCredits / video.credits), images = Math.floor(plan.includedCredits / image.credits);
+    const videos = within(plan.includedCredits, video.credits), images = within(plan.includedCredits, image.credits);
     expect(plan.reach).toEqual({ videos, images });
     await expect(reach.locator(".mr-tile")).toHaveCount(2);
     await expectTile(reach.locator(".mr-tile").first(), videos, "videos a month", video);
@@ -236,8 +240,8 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   /* Each "per take" is what Generate charges for exactly those settings. */
   expect(await buttonQuote(page, video)).toBe(video.credits);
   expect(await buttonQuote(page, image)).toBe(image.credits);
-  expect(video.left).toBe(Math.floor(billing.credits.balance / video.credits));
-  expect(image.left).toBe(Math.floor(billing.credits.balance / image.credits));
+  expect(video.left).toBe(within(billing.credits.balance, video.credits));
+  expect(image.left).toBe(within(billing.credits.balance, image.credits));
 
   await page.goto("/suites?view=workspace&tab=credits");
   await expect(page.getByTestId("workspace-balance")).toBeVisible();
@@ -251,11 +255,11 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   let billingReads = 0;
   page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/billing") billingReads += 1; });
   await grant(workspace.id, 540);
-  const balance = billing.credits.balance + 540;
+  const balance = fromDeci(toDeci(billing.credits.balance) + toDeci(540));
   await page.evaluate(() => window.dispatchEvent(new Event("particl-account-refresh")));
   await expect(page.getByTestId("workspace-balance")).toContainText(n(balance));
-  await expectTile(page.getByTestId("workspace-reach-video"), Math.floor(balance / video.credits), "videos left at your usual settings", video);
-  await expectTile(page.getByTestId("workspace-reach-image"), Math.floor(balance / image.credits), "images left at your usual settings", image);
+  await expectTile(page.getByTestId("workspace-reach-video"), within(balance, video.credits), "videos left at your usual settings", video);
+  await expectTile(page.getByTestId("workspace-reach-image"), within(balance, image.credits), "images left at your usual settings", image);
   expect(billingReads).toBe(0);
 
   /* The rate card folds under the balance; the cells the balance is counted at are outlined. */
@@ -345,8 +349,8 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
     return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: huge }, reach: { video: { ...real.reach!.video!, label: "Seedance 2.5 Cinematic Extended Preview" }, image: real.reach!.image } } });
   });
   await page.reload();
-  await expect(page.getByTestId("workspace-reach-video").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
-  await expect(page.getByTestId("workspace-reach-image").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
+  await expect(page.getByTestId("workspace-reach-video").locator(".mr-num")).toHaveText(`≈\u00a0${n(within(huge, real.reach!.video!.credits))}`);
+  await expect(page.getByTestId("workspace-reach-image").locator(".mr-num")).toHaveText(`≈\u00a0${n(within(huge, real.reach!.image!.credits))}`);
   await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
   await shot(page, info, "workspace-long");
   await page.unroute("**/api/me");

@@ -6,6 +6,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
+import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * Takes 2–4 of one Generate go as ONE priced batch and land as ONE strip
@@ -19,7 +20,11 @@ import { moreTakes } from "./helpers/genTakes";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const PRICE = 18;
+/* A take on this workspace's credits, charged in tenths of a credit; the connected account quotes its own whole credits. */
+const PRICE = 18.3;
+const ACCOUNT = 18;
+/** n takes at a price, added in whole tenths as the composer adds them, written as the product writes credits. */
+const takesAt = (n: number, each = PRICE) => creditsFigure(fromDeci(toDeci(each) * n));
 const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const DRAFT = "ws-batch";
 const PROMPT = "A slow dolly push across the wet harbour at blue hour";
@@ -214,7 +219,7 @@ async function workspaceRoutes(page: Page, answer: { price?: (variation: number,
     if (verdict && "hold" in verdict) {
       held.push(variation);
       status.set(id, "held");
-      return route.fulfill({ status: 202, json: { id, status: "held", held: true, needs: PRICE, notices: ["Held: this needs 18 credits and 0 are left. Top up to release it — nothing is lost."] }, headers: { "Idempotency-Status": "complete" } });
+      return route.fulfill({ status: 202, json: { id, status: "held", held: true, needs: PRICE, notices: [`Held: this needs ${creditsFigure(PRICE)} credits and 0 are left. Top up to release it — nothing is lost.`] }, headers: { "Idempotency-Status": "complete" } });
     }
     charges.push({ variation, batchId: String(body.batchId), maxCredits: Number(body.maxCredits), key: request.headers()["idempotency-key"] ?? null, shotId: String(body.shotId) });
     status.set(id, "running");
@@ -236,10 +241,10 @@ test("this workspace's credits: 4 takes are one batch at the total on the button
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
   /* The first live price can wait on a cold compile of the engines route. */
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(PRICE)} cr`, { timeout: 60_000 });
   await takes(page, 4);
   /* The whole batch's price is on the button before anything is spent. */
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 4 takes · ${takesAt(4)} cr`);
   expect(routes.quotes).toHaveLength(0);
   await floors(page, info);
   await page.getByTestId("gen-generate").click();
@@ -253,7 +258,7 @@ test("this workspace's credits: 4 takes are one batch at the total on the button
   expect(routes.charges.every((c) => c.maxCredits === PRICE)).toBe(true);
   expect(new Set(routes.charges.map((c) => c.key)).size).toBe(4);
   expect(new Set(routes.charges.map((c) => c.shotId)).size).toBe(1);
-  await expect(page.getByRole("status").filter({ hasText: "4 takes sent at 72 cr. They file into Takes as one strip as they land." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: `4 takes sent at ${takesAt(4)} cr. They file into Takes as one strip as they land.` })).toBeVisible();
 
   /* Rendering: one strip, take 1–4, each take followed on its own. */
   const strip = page.getByTestId("gen-batch");
@@ -300,19 +305,19 @@ test("this workspace's credits: a moved price sends none; admission refusing tak
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
   await takes(page, 4);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr", { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 4 takes · ${takesAt(4)} cr`, { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   /* Nothing sent; the new total is on the button, said once. */
-  await expect(page.getByRole("status").filter({ hasText: "The price is now 73 cr for 4 takes. Nothing was sent; press Generate again to approve it." })).toBeVisible();
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 73 cr");
+  await expect(page.getByRole("status").filter({ hasText: `The price is now ${creditsFigure(fromDeci(toDeci(PRICE) * 4 + 10))} cr for 4 takes. Nothing was sent; press Generate again to approve it.` })).toBeVisible();
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 4 takes · ${creditsFigure(fromDeci(toDeci(PRICE) * 4 + 10))} cr`);
   expect(routes.charges).toEqual([]);
   expect(routes.quotes).toHaveLength(4);
   await expect(page.getByTestId("gen-batch")).toHaveCount(0);
   await floors(page, info);
 
-  /* The second, deliberate press approves 73: takes 1–2 made and charged at their own ceilings; take 3 refused; take 4 never asked for. */
+  /* The second, deliberate press approves that price: takes 1–2 made and charged at their own ceilings; take 3 refused; take 4 never asked for. */
   await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "Takes 1–2 were sent at 37 cr. Takes 3–4 were not made (This workspace has reached its monthly cap on the platform's engines). Nothing was charged for them." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: `Takes 1–2 were sent at ${creditsFigure(fromDeci(toDeci(PRICE) * 2 + 10))} cr. Takes 3–4 were not made (This workspace has reached its monthly cap on the platform's engines). Nothing was charged for them.` })).toBeVisible();
   expect(routes.charges.map((c) => [c.variation, c.maxCredits])).toEqual([[1, PRICE], [2, PRICE + 1]]);
   expect(routes.quotes).toHaveLength(8);
   const strip = page.getByTestId("gen-batch");
@@ -330,15 +335,15 @@ test("this workspace's credits: when the credits run out mid-batch, takes 3–4 
   await gen(page);
   await page.getByTestId("gen-prompt").fill(PROMPT);
   await takes(page, 4);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 cr", { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 4 takes · ${takesAt(4)} cr`, { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "Takes 1–2 were sent at 36 cr. Takes 3–4 are held, not charged until they run: top up to release them at the same price." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: `Takes 1–2 were sent at ${takesAt(2)} cr. Takes 3–4 are held, not charged until they run: top up to release them at the same price.` })).toBeVisible();
   /* Two charges; two takes admitted as held, which cost nothing until they run. */
   expect(routes.charges.map((c) => c.variation)).toEqual([1, 2]);
   expect(routes.held).toEqual([3, 4]);
   const strip = page.getByTestId("gen-batch");
   await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Rendering", "Held · needs credits", "Held · needs credits"]);
-  await expect(strip.locator(".gx-batch-meta")).toContainText("72 cr");
+  await expect(strip.locator(".gx-batch-meta")).toContainText(`${takesAt(4)} cr`);
   await floors(page, info);
   await clearOfTabBar(page);
   await shot(page, info, "workspace-held");
@@ -372,7 +377,7 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   release();
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(PRICE)} cr`, { timeout: 60_000 });
   await expect(page.getByTestId("gen-blocked")).toHaveCount(0);
   const priced = await place();
   /* Under 768px Generate's band sticks to the screen (it moves with the scroll), so its place is compared only where it is in the flow. */
@@ -382,7 +387,7 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   /* Aimed at More while the price was on its way, made once it is on the button: More again, never Generate. */
   await page.mouse.click(at.x, at.y);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${3 * PRICE} cr`);
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${takesAt(3)} cr`);
   expect(routes.quotes).toEqual([]);
   expect(routes.charges).toEqual([]);
   expect(errors).toEqual([]);
@@ -419,11 +424,11 @@ async function connectedRoutes(page: Page, answer: { single?: number; price?: (v
     const body = request.postDataJSON() as Record<string, unknown>;
     posts.push(body);
     if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: CATALOGUE, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-    if (body.action === "quote") return route.fulfill({ json: { job: connectedJob(99, 1, "b_single01", answer.single ?? PRICE) } });
+    if (body.action === "quote") return route.fulfill({ json: { job: connectedJob(99, 1, "b_single01", answer.single ?? ACCOUNT) } });
     if (body.action === "quote-batch") {
       round++;
       const keys = body.idempotencyKeys as string[];
-      const quoted = keys.map((_, i) => connectedJob(++n, i + 1, String(body.batchId), answer.price?.(i + 1, round) ?? answer.single ?? PRICE));
+      const quoted = keys.map((_, i) => connectedJob(++n, i + 1, String(body.batchId), answer.price?.(i + 1, round) ?? answer.single ?? ACCOUNT));
       for (const job of quoted) jobs.set(job.id, job);
       return route.fulfill({ json: { jobs: quoted } });
     }
@@ -445,7 +450,7 @@ async function connectedRoutes(page: Page, answer: { single?: number; price?: (v
   return { posts, paid, jobs };
 }
 
-async function connectedGen(page: Page, single = PRICE) {
+async function connectedGen(page: Page, single = ACCOUNT) {
   await gen(page);
   await page.getByTestId("gen-model").click();
   const sheet = page.getByRole("dialog", { name: "Choose a model" });
@@ -459,7 +464,7 @@ async function connectedGen(page: Page, single = PRICE) {
 test("the connected account: one quote per take, ONE paid call for their exact sum, every take followed and filed into one strip", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, library } = await open(page, { owner: true });
-  const routes = await connectedRoutes(page, { price: (variation, round) => (round === 1 && variation === 4 ? PRICE + 2 : PRICE) });
+  const routes = await connectedRoutes(page, { price: (variation, round) => (round === 1 && variation === 4 ? ACCOUNT + 2 : ACCOUNT) });
   await page.clock.install();
   await connectedGen(page);
   await takes(page, 4);

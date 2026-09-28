@@ -46,7 +46,7 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   await expect(dash).toBeVisible();
   await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
   await expect(dash.getByTestId("dash-generations")).toHaveText("2", { timeout: 30_000 });
-  await expect(dash.getByTestId("dash-credits")).toHaveText(/^\d[\d,]* cr$/);
+  await expect(dash.getByTestId("dash-credits")).toHaveText(/^\d[\d,]*(?:\.\d)? cr$/);
   await expect(dash.getByTestId("dash-cost")).toHaveCount(0);
   await expect(dash.getByTestId("dash-models")).not.toContainText("$");
   /* The route itself carries no vendor dollars for this workspace. */

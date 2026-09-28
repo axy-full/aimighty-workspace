@@ -59,7 +59,7 @@ test("a held take says what it waits for and can be discarded at no charge", asy
   await page.goto(`/workspace?project=${project.id}&suite=particl&page=rig&sel=shot:held-a`);
   await expect(page.getByTestId("inspector-title")).toHaveText("Held opening");
 
-  const generate = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  const generate = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]*(?:\.\d)? cr$/ });
   await expect(generate).toBeEnabled();
   await generate.click();
 
