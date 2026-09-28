@@ -8,6 +8,7 @@ import { smallTargets } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
 import { billCredits, marginKeyOf, usdToCredits } from "../lib/creditTerms";
 import { packLine, packRequestLabel, type TopupPack } from "../lib/shell/workspace-view";
+import { estimateCostUsd } from "../lib/vendorPricing";
 
 /**
  * Idea 4 — a way out when credits run out. A take held at zero says what it
@@ -64,6 +65,9 @@ async function seed(page: Page): Promise<Seeded> {
 }
 const balanceOf = async (page: Page) => Number((await (await page.request.get("/api/me")).json()).credits.balance);
 
+/** Every held take here is this take: what the mock engine renders, and bills, once one is released. */
+const SHAPE = { ratio: "16:9", resolution: "720p", duration: 5 } as const;
+
 /** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits),
  *  at the credit's price: this runner and the server both read CREDIT_USD, unset on the local mock server. */
 function dollarsFor(needs: number): number {
@@ -72,14 +76,23 @@ function dollarsFor(needs: number): number {
   return est;
 }
 
-/** A take held at zero for credits, in this project, written as lib/held.ts parks one. */
-async function heldTake(s: Seeded, title: string, needs: number, by: string) {
+/**
+ * What SHAPE costs as the Generate route prices a take it holds (lib/generationAdmission.ts estimateCostUsd): its
+ * engine dollars, and the credits they bill. The mock engine bills a released take by the same measure when its
+ * render ends (lib/ark.ts mockTokensFor), so a take held at this price settles at what its release charged. A take
+ * held at any other figure settles at this one instead, and the first jobs read that reconciles what is in flight
+ * after the render ends (a reload's: app/api/jobs/route.ts) moves the balance in the middle of the test.
+ */
+const RUN_USD = estimateCostUsd(SEEDANCE, SHAPE.resolution, SHAPE.ratio, SHAPE.duration)?.net ?? 0;
+const RUN = billCredits(RUN_USD, marginKeyOf("video", SEEDANCE));
+
+/** A take held at zero for credits, in this project, written as lib/held.ts parks one; priced to bill `needs` unless `estUsd` says otherwise. */
+async function heldTake(s: Seeded, title: string, needs: number, by: string, estUsd = dollarsFor(needs)) {
   const id = `gen_held_${randomUUID().replaceAll("-", "")}`;
-  const estUsd = dollarsFor(needs);
   await tenant(s.workspaceId, (db) => db.execute({
     sql: `INSERT INTO generations(id,model,prompt,title,params,status,kind,provider,billed_to,created_by,project_id,task,created_at,updated_at)
           VALUES(?,?,?,?,?,'held','video','byteplus','byteplus',?,?,'generate',?,?)`,
-    args: [id, SEEDANCE, `${title}, a slow push in`, title, JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd, needs, at: Date.now(), why: "credits" } }),
+    args: [id, SEEDANCE, `${title}, a slow push in`, title, JSON.stringify({ ...SHAPE, watermark: false, held: { estUsd, needs, at: Date.now(), why: "credits" } }),
       by, s.production, Date.now() - 60_000, Date.now() - 60_000],
   }));
   return id;
@@ -307,7 +320,10 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   await grant(s.workspaceId, 30);
   const before = await balanceOf(page);
   const mate = `acct_${randomUUID().slice(0, 8)}`;
-  const theirs = await heldTake(s, "Lamp line", 15, mate);
+  /* Released below, so priced as it will render (RUN): the member's reload reconciles it once the mock has
+     finished it, and the balance it settles at is the one its release left. */
+  expect(RUN).toBeGreaterThan(0);
+  const theirs = await heldTake(s, "Lamp line", RUN, mate, RUN_USD);
   /* Priced over the balance, so nothing settling in the background can start them. */
   const theirsShort = await heldTake(s, "Ferry turn", before + 50, mate);
   const mine = await heldTake(s, "Tide pool", before + 60, s.userId);
@@ -316,7 +332,7 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");
   const takes = page.getByTestId("edit-takes");
-  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText("Held · needs 15 cr", { timeout: 60_000 });
+  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText(`Held · needs ${RUN.toLocaleString("en-US")} cr`, { timeout: 60_000 });
 
   /* A gateway's page instead of the route's answer: not claimed either way, and nothing reached the route. */
   await page.route("**/api/jobs/*/release", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "<html><body>Bad gateway</body></html>" }), { times: 1 });
@@ -334,13 +350,13 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   });
   await tile(takes, "Lamp line").getByTestId("take-release").click();
   await expect(tile(takes, "Lamp line").getByTestId("take-release-note")).toContainText("The release was not confirmed. Press Release again to check");
-  expect(await meterRows(theirs)).toEqual([15]);
+  expect(await meterRows(theirs)).toEqual([RUN]);
   /* Pressed again: already released, and charged once. */
   await tile(takes, "Lamp line").getByTestId("take-release").click();
   await expect(page.getByTestId("toast")).toHaveText("Lamp line was already released.");
   await expect(tile(takes, "Lamp line")).not.toHaveAttribute("data-status", "held");
-  expect(await meterRows(theirs)).toEqual([15]);
-  await expect.poll(() => balanceOf(page)).toBe(before - 15);
+  expect(await meterRows(theirs)).toEqual([RUN]);
+  await expect.poll(() => balanceOf(page)).toBe(before - RUN);
 
   /* A member: their own take carries Release; a teammate's does not, here or in the Inspector. */
   await setRole(s.workspaceId, "member");
@@ -350,7 +366,7 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   await expect(tile(takes, "Ferry turn").getByTestId("take-release")).toHaveCount(0);
   await tile(takes, "Tide pool").getByTestId("take-release").click();
   const note = tile(takes, "Tide pool").getByTestId("take-release-note");
-  await expect(note).toContainText(`Still short: this needs ${(before + 60).toLocaleString("en-US")} credits and ${before - 15} are left.`);
+  await expect(note).toContainText(`Still short: this needs ${(before + 60).toLocaleString("en-US")} credits and ${before - RUN} are left.`);
   await expect(note.getByTestId("take-release-ask")).toHaveText("Ask an admin for credits.");
   await expect(note.getByTestId("take-release-credits")).toHaveCount(0);
   expect(await meterRows(mine)).toEqual([]);
