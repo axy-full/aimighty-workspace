@@ -6,6 +6,7 @@ import { inlineSafe } from "../serveType";
 import { uploadFile, type UploadedFile } from "../uploadClient";
 import { fileProjectUpload } from "../workbench/project-library-client";
 import { projectTakes, type ReviewState, type Take } from "./takes";
+import { finalOf, isDraft } from "../draftFinal";
 
 /**
  * The open project's library — every upload and generation filed to it —
@@ -647,3 +648,35 @@ export function useProjectLibrary(scope: string, projectId: string | null) {
 /** Which batch a library entry's take belongs to (Gen's takes 2–4), for lib/variations.ts's strips: a generation's own params. */
 export const entryBatch = (entry: LibraryEntry): { batchId?: unknown; variation?: unknown } | undefined =>
   entry.asset.origin === "generation" ? (entry.asset.value.params as { batchId?: unknown; variation?: unknown } | undefined) : undefined;
+
+/** A library entry's place in draft mode (lib/draftFinal.ts): a draft, a draft's final, or neither (null). */
+export const entryDraft = (entry: LibraryEntry): { id: string; draft: boolean; finalOf: string | null } | null => {
+  if (entry.asset.origin !== "generation") return null;
+  const g = entry.asset.value;
+  const draft = isDraft(g.params), of = finalOf(g.params);
+  return draft || of ? { id: g.id, draft, finalOf: of } : null;
+};
+
+/**
+ * The Library's flat grid keeps a draft beside its final: each draft moves up to
+ * sit just after the newest final made from it, when that final is in the list.
+ */
+export function pairOrder(entries: readonly LibraryEntry[]): LibraryEntry[] {
+  const finalsFor = new Map<string, LibraryEntry>();
+  for (const e of entries) {
+    const d = entryDraft(e);
+    if (d?.finalOf && !finalsFor.has(d.finalOf)) finalsFor.set(d.finalOf, e);
+  }
+  const moved = new Set(entries.filter((e) => { const d = entryDraft(e); return Boolean(d?.draft && finalsFor.has(d.id)); }));
+  if (!moved.size) return entries as LibraryEntry[];
+  const out: LibraryEntry[] = [];
+  for (const e of entries) {
+    if (moved.has(e)) continue;
+    out.push(e);
+    const d = entryDraft(e);
+    if (!d?.finalOf) continue;
+    const draft = entries.find((x) => moved.has(x) && x.asset.value.id === d.finalOf && !out.includes(x));
+    if (draft && finalsFor.get(d.finalOf) === e) out.push(draft);
+  }
+  return out;
+}

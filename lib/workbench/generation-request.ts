@@ -30,6 +30,8 @@ export type GenerationBodyInput = {
   shotSpec?: Record<string, string> | null;
   /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
   batch?: { id: string; variation: number };
+  /** Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p watermarked draft whose 1080p final is made after. */
+  draft?: boolean;
 };
 
 export function generationRequestBody(input: GenerationBodyInput): Record<string, unknown> {
@@ -50,6 +52,24 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(model.soulIdentity && input.soul ? input.soul : {}),
     ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
     ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
+    ...(input.draft && input.kind === "video" ? { draft: true } : {}),
+  };
+}
+
+/**
+ * The body POST /api/generate (and its quote) receives for a draft's 1080p
+ * final: the draft, and nothing else — its words, references, length and
+ * shape are the draft's, and the server reads them from there
+ * (lib/generationAdmission.ts). `maxCredits` and `quoteFingerprint` are the
+ * approval of a fresh quote, as for any take.
+ */
+export function draftFinalBody(input: { modelId: string; draftId: string; maxCredits?: number; quoteFingerprint?: string }): Record<string, unknown> {
+  return {
+    model: input.modelId,
+    finalOf: input.draftId,
+    refine: false,
+    ...(input.maxCredits === undefined ? {} : { maxCredits: input.maxCredits }),
+    ...(input.quoteFingerprint ? { quoteFingerprint: input.quoteFingerprint } : {}),
   };
 }
 
