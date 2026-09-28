@@ -46,6 +46,13 @@ export type MeterEvent = {
    * failed agent run: the vendor's cost is recorded, the bill is zero.
    */
   unbilled?: boolean;
+  /**
+   * The most the workspace may be charged for this event, in credits, when it
+   * is settled at a cost: the amount the person approved. The vendor's cost is
+   * still recorded in full; whatever it asks beyond the approval is the
+   * platform's, not the workspace's.
+   */
+  maxBilledCredits?: number | null;
 };
 
 export class FundingSourceChangedError extends Error {
@@ -119,9 +126,12 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
         const terms = row ? recordedBillingTerms(row, String(row.kind), String(row.model)) : currentBillingTerms(e.kind, e.model);
         // Reconciliation of the same final cost cannot reprice an existing receipt.
-        const billed = cost == null ? null : !fundedByPlatform || e.unbilled ? 0
+        const priced = cost == null ? null : !fundedByPlatform || e.unbilled ? 0
           : row && row.status !== "running" && row.status === e.status && Number(row.engine_cost_usd) === cost
             ? Number(row.billed_credits ?? 0) : creditsAtTerms(cost, terms);
+        // Never above what was approved for it, however much the vendor's own count comes to.
+        const ceiling = typeof e.maxBilledCredits === "number" && Number.isFinite(e.maxBilledCredits) ? Math.max(0, Math.floor(e.maxBilledCredits)) : null;
+        const billed = priced != null && ceiling != null ? Math.min(priced, ceiling) : priced;
         await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
         await tx.execute({
         sql: `INSERT INTO meter_events
@@ -152,6 +162,19 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   }
   console.error(`meter: ${e.kind} ${e.id} (${e.status}) not written —`, (lastErr as Error)?.message);
   if (critical) throw new Error("The platform could not record this job, so it was not started. Try again in a moment.");
+}
+
+/**
+ * What one event stands at on the meter for this workspace: its status and
+ * the credits it charges (a running event's are its reservation). Null when
+ * no such event was ever written.
+ */
+export async function meteredCharge(id: string): Promise<{ status: MeterStatus; credits: number } | null> {
+  const workspaceId = currentTenant()?.workspace?.id;
+  if (!workspaceId) return null;
+  await platformReady();
+  const row = (await platformDb().execute({ sql: "SELECT status, billed_credits FROM meter_events WHERE workspace_id=? AND id=?", args: [workspaceId, id] })).rows[0];
+  return row ? { status: String(row.status) as MeterStatus, credits: Number(row.billed_credits ?? 0) } : null;
 }
 
 /** Credits the platform has billed a workspace, all time. */
