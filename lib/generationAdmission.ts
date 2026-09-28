@@ -11,7 +11,8 @@ import {
 } from "@/lib/referenceDuration";
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
-import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
+import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput, MARKETING_25_PRICING_WATCH } from "@/lib/higgsfieldMarketing";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 import { allowanceCheck, renderKeyNameFor } from "@/lib/allowance";
@@ -1085,7 +1086,10 @@ export async function executeGenerationAdmission(
       if (marketing) {
         await requireMarketingPreset(marketing);
         marketingFingerprint = higgsfieldCredentialFingerprint();
-        marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
+        const variant = marketing.variant ?? "alpha";
+        marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)), variant);
+        // A 2.5 build is quoted approximately from its published rates: now and then, check them.
+        if (variant !== "alpha") scheduleHiggsfieldPricingCheck(MARKETING_25_PRICING_WATCH[variant]);
       }
       const estStillUsd = marketingUsd ?? (trained
         ? renderUsdForRatio(ratio)
@@ -1294,6 +1298,7 @@ export async function executeGenerationAdmission(
           references: stillRefs,
           rules: rules.map((r) => r.id),
         },
+        { approximate: Boolean(marketing && (marketing.variant ?? "alpha") !== "alpha") },
       );
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)

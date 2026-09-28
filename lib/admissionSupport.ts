@@ -77,6 +77,7 @@ export function admissionCheckpoint(
   usd: number,
   margin: string,
   compiled: Record<string, unknown>,
+  terms: { approximate?: boolean } = {},
 ): AdmissionReply | undefined {
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
@@ -109,6 +110,7 @@ export function admissionCheckpoint(
     estimatedCredits,
     price: unit === "cr" ? estimatedCredits : usd,
     unit,
+    ...(terms.approximate ? { approximate: true as const } : {}),
   } as const;
   return options.checkpoint({
     kind,
