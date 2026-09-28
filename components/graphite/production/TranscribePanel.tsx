@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useStageQuotes } from "./use-stage-quotes";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 
 type Word = { text: string; start: number; end: number; speaker?: number };
@@ -24,24 +25,21 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
  * so choosing another take starts afresh.
  */
 export function TranscribePanel({ scope, source, name, projectId }: { scope: string; source: { genId?: string; uploadId?: string }; name: string; projectId?: string }) {
-  const [quote, setQuote] = useState<number | null>(null);
+  const submitting = useRef(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const body = { ...(source.genId ? { sourceGenId: source.genId } : { sourceUploadId: source.uploadId }), ...(projectId ? { projectId } : {}), diarize: true };
   const headers = { "Content-Type": "application/json", "X-Workbench-Scope": scope };
-  async function price() {
-    setBusy("Pricing…"); setError("");
-    try { setQuote((await studioRequest<{ estimatedCredits: number }>("/api/audio/transcribe", { method: "POST", headers, body: JSON.stringify({ ...body, quoteOnly: true }) })).estimatedCredits); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "This take could not be priced."); }
-    finally { setBusy(""); }
-  }
+  const pricing = useStageQuotes(scope, { transcript: { body, transcription: true } });
+  const quote = pricing.quotes.transcript;
   async function run() {
-    if (quote == null) return;
+    if (quote?.credits == null || submitting.current || result) return;
+    submitting.current = true;
     setBusy("Transcribing…"); setError("");
-    try { setResult(await studioRequest<Result>("/api/audio/transcribe", { method: "POST", headers, body: JSON.stringify({ ...body, maxCredits: quote }) })); }
+    try { setResult(await studioRequest<Result>("/api/audio/transcribe", { method: "POST", headers, body: JSON.stringify({ ...body, maxCredits: quote.credits }) })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The transcription did not complete. A failed transcription is not billed."); }
-    finally { setBusy(""); }
+    finally { submitting.current = false; setBusy(""); }
   }
   function download() {
     if (!result) return;
@@ -58,11 +56,10 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
         <p className="gx-hint">Every word, timed, with the speakers told apart — and subtitles to download. Priced by its length first.</p>
       </div>
       <div className="gx-gen-enhance">
-        {quote == null ? (
-          <button type="button" className="gx-primary" disabled={Boolean(busy)} onClick={() => void price()} data-testid="transcribe-price">{busy || "Price the transcript"}</button>
-        ) : (
-          <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(result)} onClick={() => void run()} data-testid="transcribe-run">{busy || (result ? "Transcribed" : `Transcribe · ${quote.toLocaleString()} credit${quote === 1 ? "" : "s"}`)}</button>
-        )}
+        <button type="button" className="gx-primary" disabled={Boolean(busy) || Boolean(result) || quote?.credits == null} onClick={() => void run()} data-testid="transcribe-run">
+          {busy || (result ? "Transcribed" : quote?.credits != null ? `Transcribe · ${quote.credits.toLocaleString()} credit${quote.credits === 1 ? "" : "s"}` : quote?.error ? "Price unavailable" : "Pricing transcript…")}
+        </button>
+        {quote?.error ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain("transcript")}>Try again</button> : null}
         {result ? (
           <>
             <button type="button" className="gx-hbtn" onClick={() => void navigator.clipboard?.writeText(result.text)} data-testid="transcribe-copy">Copy text</button>
@@ -70,7 +67,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
           </>
         ) : null}
       </div>
-      {error ? <p className="gx-reason" role="alert">{error}</p> : null}
+      {error || quote?.error ? <p className="gx-reason" role="alert">{error || quote?.error}</p> : null}
       {result ? (
         <div className="pd-transcript" data-testid="transcript">
           <span className="gx-hint">{clock(result.seconds)}{result.language ? ` · ${result.language}` : ""}</span>
