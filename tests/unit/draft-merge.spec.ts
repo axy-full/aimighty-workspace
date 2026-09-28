@@ -454,13 +454,14 @@ test.describe("a merge of two valid saves is a valid save (mergeDraft)", () => {
     expect(env(merged).plates).toHaveLength(30);
   });
 
-  test("each window queues renders on one place: the latest five in flight, as the stage keeps them", () => {
+  test("each window queues renders on one place: every render in flight is kept, as the stage keeps them", () => {
     const base = place(0, 0, ["job-0", "job-1"]);
     const mine = clone(base); env(mine).pending!.push({ jobId: "job-a", at }, { jobId: "job-b", at });
     const theirs = clone(base); env(theirs).pending!.push({ jobId: "job-c", at }, { jobId: "job-d", at });
     const merged = mergeDraft(base, mine, theirs);
     expect(valid(merged)).toBe(true);
-    expect(env(merged).pending!.map((x) => x.jobId)).toEqual(["job-1", "job-c", "job-d", "job-a", "job-b"]);
+    /* No render in flight is dropped for a count: each is a paid job the stage still collects. */
+    expect(env(merged).pending!.map((x) => x.jobId)).toEqual(["job-0", "job-1", "job-a", "job-b", "job-c", "job-d"]);
   });
 
   test("each window files a take on a character holding twenty: both new takes, the oldest trimmed", () => {
