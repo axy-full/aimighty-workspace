@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -127,7 +128,9 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await refIsReadable(fault.getByTestId("fault-ref"));
 
   /* The chrome is untouched: header, page title, strip. */
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await closeSuitesMenu(page);
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   const strip = page.getByRole("navigation", { name: "Pages" });
   await settled(page);
@@ -339,6 +342,7 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await expect(page.locator('[data-fault="composer"]')).toHaveCount(0);
 
   /* Search throws as it opens: its card is the dialog, it takes focus, and Close (or Esc) still works. */
+  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   const sheet = page.getByRole("dialog", { name: "Search" });
   await expect(sheet.getByTestId("panel-fault")).toContainText("Search stopped");
@@ -351,6 +355,7 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByTestId("palette-veil")).toHaveCount(0);
+  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   await expect(sheet.getByTestId("panel-fault")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -358,6 +363,7 @@ test("search and a whole view fail on their own: the sheet takes focus and still
 
   /* Fixed underneath: opening search again is a fresh go. */
   await arm(page, []);
+  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   await expect(page.getByRole("textbox", { name: "Search" })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -367,11 +373,14 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await page.goto("/suites?view=workspace");
   const fault = page.locator('[data-testid="panel-fault"][data-fault="workspace"]');
   await expect(fault).toContainText("Workspace stopped");
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await closeSuitesMenu(page);
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
 
   /* Crew is walled off the same way, and its room strip stays. */
+  await openSuitesMenu(page);
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: /Crew/ }).click();
   const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
   await expect(crew).toContainText("Crew stopped");

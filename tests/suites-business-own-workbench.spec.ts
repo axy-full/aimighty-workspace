@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { joinLocallyAsMember } from "./helpers/workbenchLocal";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { upload } from "./helpers/workspaceFixtures";
 import { SIZES, expectBusinessFloors, fixture, openBusiness, png, still } from "./helpers/businessOwn";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
@@ -254,8 +255,11 @@ test("a member works in Business's own tools: the pages are there, the owner's c
   const strip = page.getByRole("navigation", { name: "Pages" });
   await expect(strip.getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
   await expect(strip.getByRole("button")).toHaveCount(9);
+  /* A phone keeps the Suites behind its context badge (app/phone-chrome.css). */
+  await openSuitesMenu(page);
   await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
   await expect(page.getByTestId("owner-badge-viral")).toBeVisible();
+  await closeSuitesMenu(page);
   await page.getByTestId("brand-name").fill("Northline");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Northline");
   await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
