@@ -75,11 +75,13 @@
 .gx-seg-btn[aria-selected="true"]::before { opacity: 1; }
 .gx-seg-btn > span { position: relative; color: var(--gx-text-2); font-weight: 500; }
 .gx-seg-btn[aria-selected="true"] > span { color: var(--gx-text); font-weight: 600; }
-.gx-seg-btn > .gx-seg-count { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); font-weight: 500; }
+/* Counts, the search control's words and key hints are functional labels: --gx-text-2, since the .45 tertiary and .35
+   placeholder inks composite under the #7C7C84 label floor (tests/ui-floors-audit-workbench.spec.ts). */
+.gx-seg-btn > .gx-seg-count { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); font-weight: 500; }
 .gx-search { flex: 0 1 460px; min-width: 120px; height: 32px; padding: 0 10px 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); color: var(--gx-text-2); box-shadow: inset 0 1px 0 rgba(0, 0, 0, .35); }
 .gx-search:hover { background: var(--gx-input-hover); color: var(--gx-text); }
-.gx-search-label { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-placeholder); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-key { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); flex: none; }
+.gx-search-label { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-key { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); flex: none; }
 .gx-spacer { flex: 1; min-width: 0; }
 .gx-hbtn { height: 32px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; background: var(--gx-input); border: 1px solid var(--gx-hair); flex: none; text-decoration: none; color: var(--gx-text); }
 .gx-hbtn:hover { background: var(--gx-input-hover); }
@@ -174,7 +176,8 @@
 .gx-strip-gap { width: 1px; height: 18px; background: var(--gx-hair-strong); margin: 0 8px; flex: none; }
 .gx-tab { height: 30px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--gx-text-2); flex: none; }
 .gx-tab:hover { color: var(--gx-text); }
-.gx-tab-n { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); }
+/* A nav number is a functional label: --gx-text-2, since the .45 tertiary ink composites under the #7C7C84 floor. */
+.gx-tab-n { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
 .gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); font-weight: 600; }
 .gx-tab[aria-current="page"] .gx-tab-n { color: var(--gx-accent-text); }
 
@@ -239,6 +242,11 @@
 .gx-asset-add:hover { color: var(--gx-accent-text); }
 /* text-2, not text-3: text-3 composites under the #7C7C84 label floor on the panel. */
 .gx-lib-foot { flex: none; color: var(--gx-text-2); font-size: 12px; padding: 0 4px; }
+/* A take tile's meta line (model · length) is a functional label: --gx-text-2 over the rule above's .45 tertiary ink. */
+.gx .gx-asset > .gx-asset-meta { color: var(--gx-text-2); }
+/* The phone's Library overlay runs to the screen's foot, under the floating tab bar: its closing note sat under the bar
+   (the list above it keeps its own clearance), so on a phone the note is left out. */
+@media (max-width: 767px) { .gx .gx-panel--overlay.gx-library > .gx-lib-foot { display: none; } }
 /* The end of an asset list: Load more while the project has more, or a failed read with Try again. */
 .gx-lib-more, .gx-retry { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; min-width: 0; }
 .gx-lib-more .gx-gen-error, .gx-retry .gx-gen-error { flex: 1 1 100%; overflow-wrap: anywhere; }
@@ -283,28 +291,43 @@
    wrapper's box, so the stage's own 110px phone clearance (glass.css) lands above its end. It keeps that clearance itself,
    so its last row ends above the floating tab bar. */
 @media (max-width: 767px) { .gx .gx-stage > .gx-legacy.pxw .pxw-spec { padding-bottom: 144px; } }
+/* Edit & Sound (components/workspace/pages/EditPage) was held 680px wide and scrolled sideways inside a phone's page: it
+   fits the screen, the assembly's Mix and Play wrap under its picture, and a stem's description takes a line of its own. */
+@media (max-width: 767px) {
+  .gx .pxw .pxw-edit { min-width: 0; padding: 12px 12px 24px; }
+  .gx .pxw .pxw-assembly { flex-wrap: wrap; }
+  .gx .pxw .pxw-stem { flex-wrap: wrap; row-gap: 8px; }
+  .gx .pxw .pxw-stem-name { width: auto; flex: 1 1 0; }
+  .gx .pxw .pxw-stem-desc { order: 1; flex-basis: 100%; }
+}
+/* A legacy body's buttons and pickers are 44px targets on a touch screen, either way up (Deliver's package, Edit & Sound). */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .pxw .pxw-btn, .gx .pxw .pxw-package-facts select { min-height: 44px; }
+}
 
 /* ── ⌘K palette ────────────────────────────────────────────────────────── */
 .gx-veil { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .6); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
 .gx-palette { width: min(600px, 92vw); padding: 8px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: gx-pop .3s var(--gx-ease) both; }
 .gx-palette-input-row { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 46px; border-bottom: 1px solid var(--gx-hair); }
 .gx-palette-input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 15px; }
+/* The field, not only its row, is the 44px target on a touch screen. */
+@media (max-width: 767px), (pointer: coarse) { .gx-palette-input { min-height: 44px; } }
 .gx-palette-list { display: flex; flex-direction: column; gap: 2px; padding: 8px 2px 2px; }
 .gx-palette-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; width: 100%; }
 .gx-palette-row:hover, .gx-palette-row[aria-selected="true"] { background: var(--gx-input); }
-.gx-palette-group { font-family: var(--gx-mono); font-size: 10.5px; letter-spacing: .12em; color: var(--gx-text-3); }
+.gx-palette-group { font-family: var(--gx-mono); font-size: 10.5px; letter-spacing: .12em; color: var(--gx-text-2); }
 .gx-palette-label { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-palette-hint { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.gx-palette-hint { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Context menu: the one place a shadow is allowed ───────────────────── */
 .gx-ctx { position: fixed; z-index: 80; min-width: 220px; max-width: 280px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 18px 50px rgba(0, 0, 0, .7); animation: gx-pop .15s var(--gx-ease) both; }
-.gx-ctx-title { padding: 6px 10px; font-family: var(--gx-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-eyebrow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-ctx-title { padding: 6px 10px; font-family: var(--gx-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-ctx-sep { display: block; height: 1px; margin: 4px 6px; background: var(--gx-hair); }
 .gx-ctx-item { width: 100%; height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 16px; font-size: 13px; }
 .gx-ctx-item:hover:not(:disabled) { background: var(--gx-input-hover); }
 .gx-ctx-item:disabled { color: var(--gx-placeholder); }
 .gx-ctx-item[data-danger="true"]:not(:disabled) { color: var(--gx-failed); }
-.gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); }
+.gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
 .gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
@@ -884,7 +907,7 @@
 .mdx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mdx-table caption { text-align: left; padding: 0 0 8px; }
 .mdx-table th, .mdx-table td { padding: 8px 10px; border-bottom: 1px solid var(--gx-hair); text-align: left; white-space: nowrap; }
-.mdx-table th { color: var(--gx-text-3); font-weight: 600; font-size: 12px; }
+.mdx-table th { color: var(--gx-text-2); font-weight: 600; font-size: 12px; }
 .mdx-table [data-numeric] { text-align: right; font-family: var(--gx-mono); }
 .mdx-table tr[data-clickable] { cursor: pointer; }
 .mdx-table tr[data-clickable]:hover td { background: rgba(255, 255, 255, .04); }
@@ -1010,7 +1033,7 @@
 .gx-stage-intro { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
 .gx-stage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; padding: 12px 14px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
 .gx-stage-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-3); }
+.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
 .gx-stage-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-stage-group { border-radius: 10px; background: linear-gradient(180deg, #15151A, #101013); border: 1px solid rgba(255, 255, 255, .10); overflow: hidden; }
 .gx-stage-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgba(255, 255, 255, .06); }
@@ -1026,7 +1049,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-stage-card-desc { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
 .gx-stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .gx-chip--static { height: 22px; padding: 0 8px; font-size: 11.5px; cursor: default; }
-.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); }
+.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); }
 .gx-stage-card-foot[data-state="COMPLETE"] { color: #30D158; }
 .gx-stage-card-foot[data-state="ACTIVE"] { color: var(--gx-accent-text); }
 .gx-stage-card-foot[data-state="WAITING"] { color: #FF9F0A; }
