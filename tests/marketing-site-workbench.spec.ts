@@ -4,8 +4,9 @@ import { signInLocally } from "./helpers/workbenchLocal";
 /**
  * The public site (app/(marketing)/site, served by proxy.ts). A visitor sees
  * it at the product's own paths; a member at / still gets the app. Every
- * page is checked at the five sizes for overflow and phone targets, and the
- * hero's handoff is followed into Gen, which prices the take itself.
+ * page is checked at the five sizes for overflow, phone targets and copy
+ * about charging, which the public site does not carry. The hero's handoff
+ * is followed into Gen, which prices the take itself.
  */
 
 const PAGES: [string, string][] = [
@@ -39,6 +40,8 @@ for (const [path, tab] of PAGES) {
     const { overflow, small } = await fits(page);
     expect(overflow, `${path} is wider than the window`).toBe(false);
     expect(small, `${path} has phone targets under 44px`).toEqual([]);
+    /* The public site does not describe how work is charged. */
+    expect(await page.locator("main").innerText(), `${path} talks about charging`).not.toMatch(/\bquot(e|es|ed|ing)\b|\bestimat|\bcharg|\bbill(ed|ing)? (at|there|in|from)|never billed|\bwallet\b/i);
     expect(errors).toEqual([]);
   });
 }

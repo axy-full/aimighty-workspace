@@ -41,7 +41,7 @@ export const SITE_SUITES: SiteSuite[] = [
     blurb: "The production agent. Plans and runs the work.",
     pages: ["Agent", "Runs", "Generate", "Recipes", "Builds", "Tools", "Models", "Approvals", "Budget"] },
   { id: "workspace", href: "/workspace", tab: "Workspace", tag: "06 Workspace", name: "Workspace",
-    blurb: "One isolated tenant, one balance, every action attributed.",
+    blurb: "One isolated tenant, every action attributed.",
     pages: WORKSPACE_TABS.map((tab) => tab.label) },
 ];
 
