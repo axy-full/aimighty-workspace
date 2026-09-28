@@ -762,6 +762,9 @@
 .gx-insp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Next (components/graphite/AssetNextActions.tsx): the tool each take goes on to, in the Inspector and on the selected take. */
 .gx-next { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* Its label reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the
+   Inspector and on the selected take's card. */
+.gx-next > .gx-eyebrow { color: var(--gx-text-2); }
 .gx-next-row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .gx-next .gx-reason { margin: 0; overflow-wrap: anywhere; }
 .gx-hbtn--danger { color: #FF6961; }
