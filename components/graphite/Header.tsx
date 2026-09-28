@@ -2,12 +2,15 @@
 import { TRAIL } from "@/components/ui/Mark";
 import { Glyph, SUITE_LOOK } from "./icons";
 import { HEADER_SEGMENT, type ShellSuiteId } from "@/lib/shell/ia";
+import { OWNER_BADGE, isOwnerRunSuite, ownerBadgeNote } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { creditsLabel } from "@/lib/workspace/format";
 import { lowBalance, useLastQuote } from "@/lib/workspace/last-quote";
-import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
+import Boundary from "@/components/Boundary";
+import { JobsFault, JobsPill } from "./JobsTray";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -15,13 +18,18 @@ function initialsOf(name: string) {
 
 /**
  * 56px. particl trail mark + wordmark → the Studio home; Studio | Gen | Business | Viral |
- * Atomik; the search field that opens ⌘K; the running-jobs pill (only while a
- * job runs); the credits pill; the avatar, which opens Workspace.
+ * Atomik; the search field that opens ⌘K; the jobs pill (while something
+ * renders, is held, or finished unseen), which opens the jobs tray; the
+ * credits pill; the avatar, which opens Workspace. A member sees the key and
+ * "Owner" on the suites that run on the owner's Higgsfield account (Business,
+ * Viral); the note says who runs them.
  */
 export function Header({ account }: { account: WorkspaceAccount | null }) {
   const shell = useShell();
-  const { state } = useWorkspace();
   const { rates, name, requestScope } = useSession();
+  /* The session says who owns the workspace: nothing is read for the badge. */
+  const capability = useConnectedCapability(undefined, { read: false });
+  const ownerNote = ownerBadgeNote(capability.ownerName);
   const balance = account?.credits?.balance ?? null;
   const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
   /* Amber when the balance cannot pay for the last price a Generate showed here; it reads that quote, never asks for one. */
@@ -50,28 +58,33 @@ export function Header({ account }: { account: WorkspaceAccount | null }) {
         <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>
       </button>
       <div className="gx-seg" role="tablist" aria-label="Suites">
-        {HEADER_SEGMENT.map((s) => (
-          <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
-            onClick={() => (s.id === "gen" ? shell.goGen() : s.id === "crew" ? shell.goCrew() : shell.goSuite(s.id as ShellSuiteId))}>
-            <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
-            <span className="gx-seg-label">{s.label}</span>
-            <span className="gx-sig" aria-hidden="true" />
-          </button>
-        ))}
+        {HEADER_SEGMENT.map((s) => {
+          const ownerRun = !capability.owner && isOwnerRunSuite(s.id);
+          return (
+            <button key={s.id} type="button" role="tab" className="gx-seg-btn" aria-selected={selected === s.id} title={ownerRun ? `${s.title} · ${ownerNote}` : s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as React.CSSProperties} data-suite-tab={s.id}
+              aria-describedby={ownerRun ? "gx-owner-run-note" : undefined} data-owner-run={ownerRun || undefined}
+              onClick={() => (s.id === "gen" ? shell.goGen() : s.id === "crew" ? shell.goCrew() : shell.goSuite(s.id as ShellSuiteId))}>
+              <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
+              <span className="gx-seg-label">{s.label}</span>
+              {ownerRun ? (
+                <span className="gx-owner-badge" aria-hidden="true" data-testid={`owner-badge-${s.id}`}>
+                  <Glyph name="key" size={10} className="gx-owner-badge-key" /><span className="gx-owner-badge-label">{OWNER_BADGE}</span>
+                </span>
+              ) : null}
+              <span className="gx-sig" aria-hidden="true" />
+            </button>
+          );
+        })}
       </div>
+      {!capability.owner ? <span id="gx-owner-run-note" hidden>{ownerNote}</span> : null}
       <button type="button" className="gx-search" onClick={() => shell.setPalette(true)} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
         <Glyph name="search" size={14} className="gx-glyph" />
         <span className="gx-search-label">Search</span>
         <span className="gx-key">⌘K</span>
       </button>
       <span className="gx-spacer" />
-      {state.gen ? (
-        <button type="button" className="gx-hbtn gx-jobs" onClick={() => shell.goSuite("atomik", "runs")} data-testid="running-jobs">
-          <span className="gx-jobs-dot" aria-hidden="true" />
-          {/* The job's phase, not a percentage: no engine reports progress, so none is invented. */}
-          <span>{state.gen.name} · {state.gen.label ?? "Running"}</span>
-        </button>
-      ) : null}
+      {/* The tray draws rows the server sent: one that cannot be drawn costs the pill, never the header. */}
+      <Boundary what="Jobs" probe="jobs" fallback={(fault) => <JobsFault fault={fault} />}><JobsPill /></Boundary>
       <button type="button" className="gx-hbtn gx-credits" data-low={low || undefined} onClick={() => shell.goWorkspace("credits")} data-testid="workspace-credits"
         title={low ? `${credits.title} · below the last price quoted (${lastQuote!.credits.toLocaleString("en-US")} cr) · Plans & credits` : credits.title}
         aria-label={low ? `Credits: ${credits.text}, below the last price quoted, ${lastQuote!.credits.toLocaleString("en-US")} cr. Open Plans & credits` : `Credits: ${credits.text}`}>

@@ -15,6 +15,8 @@ import { discardHeldJob } from "@/lib/held";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
+/** The review trail's states; "" takes a take back to review. */
+const REVIEW_STATES = ["picked", "approved", "changes", ""];
 
 /**
  * A held take was never reserved or sent, and it will not finish on its own.
@@ -58,6 +60,19 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* A review is checked before anything is written: a state the trail knows
+     (an unknown word used to clear a sign-off), a take still in the project,
+     and a mark only on a take that finished — a render in flight, held or
+     failed has nothing to judge yet. Clearing is always allowed. */
+  let reviewedFrom: string | null = null;
+  if (body.reviewState !== undefined) {
+    const wanted = String(body.reviewState ?? "");
+    if (!REVIEW_STATES.includes(wanted)) return NextResponse.json({ error: "A review is picked, approved or changes, or empty to clear it." }, { status: 400 });
+    const row = (await db().execute({ sql: "SELECT status, review_state FROM generations WHERE id=? AND deleted=0", args: [id] })).rows[0];
+    if (!row) return NextResponse.json({ error: "This take is no longer in the project." }, { status: 404 });
+    if (wanted && String(row.status) !== "succeeded") return NextResponse.json({ error: "Only a finished take can be picked, approved or sent back." }, { status: 409 });
+    reviewedFrom = String(row.review_state ?? "");
+  }
   /* Discard a held take without hiding it: it stays in the list as cancelled. */
   if (body.discard === true) {
     const problem = await workbenchTransaction(async (tx) => {
@@ -116,11 +131,11 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   }
   // Signing off on a shot, or asking for changes. The name is recorded so a
   // review is answerable to someone rather than appearing from nowhere.
+  let review: Record<string, unknown> | null = null;
   if (body.reviewState !== undefined) {
     /* draft → picked → approved. An artist picks one take per shot; a
-       director approves it or sends it back. */
-    const state = ["approved", "picked", "changes", ""].includes(String(body.reviewState))
-      ? String(body.reviewState) : "";
+       director approves it or sends it back. (Checked above.) */
+    const state = String(body.reviewState ?? "");
     /* The trail keeps both marks: who picked and who approved, each with its
        own moment (brief 2.1). Clearing a state clears that mark alone, so a
        take sent back for changes still says who had picked it. */
@@ -137,10 +152,19 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
              state === "approved" ? 1 : 0, got.user.name, state === "approved" ? 1 : 0, ts,
              ts, id],
     });
+    /* The marks as recorded, for the grids to show at once (who picked, who approved, when). */
+    const marks = (await db().execute({ sql: "SELECT review_state, review_by, picked_by, picked_at, approved_by, approved_at, updated_at FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (marks) review = {
+      reviewState: String(marks.review_state ?? ""), reviewBy: marks.review_by == null ? null : String(marks.review_by),
+      pickedBy: marks.picked_by == null ? null : String(marks.picked_by), pickedAt: marks.picked_at == null ? null : Number(marks.picked_at),
+      approvedBy: marks.approved_by == null ? null : String(marks.approved_by), approvedAt: marks.approved_at == null ? null : Number(marks.approved_at),
+      updatedAt: Number(marks.updated_at),
+    };
     /* Picking a take asks someone for a decision: tell the admins who want
-       to be asked (brief 2.7). Approving it, or sending it back, is the
-       decision itself and needs no nudge. */
-    if (state === "picked") {
+       to be asked (brief 2.7), in this workspace, through the app's own
+       notifications. Approving it, or sending it back, is the decision
+       itself and needs no nudge; nor does a take that was already picked. */
+    if (state === "picked" && reviewedFrom !== "picked") {
       after(await reserveRecoveryContinuation('after-response', async () => {
         const admins = await db().execute({ sql: `SELECT id FROM users WHERE role = 'admin' AND disabled = 0 AND deleted_at IS NULL AND id <> ?`, args: [got.user.id] });
         const gen = await getGeneration(id).catch(() => null);
@@ -184,7 +208,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     });
   }
   invalidate(PROJECTS_KEY);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(review ? { review } : {}) });
 });
 
 /**
