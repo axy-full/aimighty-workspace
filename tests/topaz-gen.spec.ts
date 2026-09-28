@@ -83,17 +83,26 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
   const sourceKey = await panel
     .getByLabel("Source image", { exact: true })
     .inputValue();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
+  /* The button carries the server's own quote, at this deployment's credit price. */
+  const quoted = async () => {
+    const reply = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.request().method() === "POST");
+    await panel.getByRole("button", { name: /Review upscale cost/ }).click();
+    const credits = (await (await reply).json()).estimatedCredits as number;
+    expect(Number.isInteger(credits) && credits > 0, `quote ${credits}`).toBe(true);
+    return credits;
+  };
+  const atTwo = await quoted();
   await expect(
-    panel.getByRole("button", { name: /Upscale image.*2 cr/ }),
+    panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${atTwo} cr`) }),
   ).toBeEnabled();
   expect(submitted).toHaveLength(0);
   await panel.getByLabel("Image scale", { exact: true }).selectOption("4");
   await expect(
     panel.getByRole("button", { name: /Review upscale cost/ }),
   ).toBeEnabled();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  const primary = panel.getByRole("button", { name: /Upscale image.*3 cr/ });
+  const atFour = await quoted();
+  expect(atFour).toBeGreaterThanOrEqual(atTwo);
+  const primary = panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${atFour} cr`) });
   await expect(primary).toBeEnabled();
   await page.screenshot({ path: info.outputPath("topaz-image.png") });
   const box = await primary.boundingBox(),

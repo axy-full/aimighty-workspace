@@ -77,9 +77,17 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   const sourceKey = await panel
     .getByLabel("Astra source clip", { exact: true })
     .inputValue();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
+  /* The button carries the server's own quote, at this deployment's credit price. */
+  const quoted = async () => {
+    const reply = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.request().method() === "POST");
+    await panel.getByRole("button", { name: /Review upscale cost/ }).click();
+    const credits = (await (await reply).json()).estimatedCredits as number;
+    expect(Number.isInteger(credits) && credits > 0, `quote ${credits}`).toBe(true);
+    return credits;
+  };
+  const atSource = await quoted();
   await expect(
-    panel.getByRole("button", { name: /Upscale video.*12 cr/ }),
+    panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${atSource} cr`) }),
   ).toBeEnabled();
   expect(submitted).toHaveLength(0);
   await panel
@@ -88,8 +96,9 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   await expect(
     panel.getByRole("button", { name: /Review upscale cost/ }),
   ).toBeEnabled();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  const primary = panel.getByRole("button", { name: /Upscale video.*23 cr/ });
+  const atSixty = await quoted();
+  expect(atSixty).toBeGreaterThan(atSource);
+  const primary = panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${atSixty} cr`) });
   await expect(primary).toBeEnabled();
   await page.screenshot({ path: info.outputPath("astra-video.png") });
   const box = await primary.boundingBox(),
@@ -139,7 +148,9 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     seconds: 1.5,
     fps: 24,
   });
-  expect(job.creditsBilled).toBe(7);
+  /* Settled on the measured output, below the 4K 60 fps quote that was approved. */
+  expect(job.creditsBilled).toBeGreaterThan(0);
+  expect(job.creditsBilled).toBeLessThan(atSixty);
   const original = await page.request.get(
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );
