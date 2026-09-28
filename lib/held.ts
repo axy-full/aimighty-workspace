@@ -136,7 +136,8 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
     sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, params, token_id,
-                 (SELECT cap_usd FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap
+                 (SELECT cap_usd FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap,
+                 (SELECT cap_credits FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap_credits
           FROM generations WHERE status = 'held' AND deleted = 0 ${only ? "AND id = ?" : ""}
           ORDER BY created_at ASC LIMIT 50`,
     args: only ? [only] : [],
@@ -169,7 +170,11 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       needs,
       heldAt: typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null,
       why: held.why === "slots" ? "slots" : "credits",
-      token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
+      token: row.token_id ? {
+        id: String(row.token_id),
+        capUsd: row.token_cap == null ? null : Number(row.token_cap),
+        capCredits: row.token_cap_credits == null ? null : Number(row.token_cap_credits),
+      } : undefined,
     };
   });
 }
