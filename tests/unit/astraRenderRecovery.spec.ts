@@ -19,6 +19,14 @@ test('storage failure and corrupt render credit approval block dispatch', () => 
   local.setItem(astraRenderPendingKey('scope', 'project'), JSON.stringify({ version: 1, scope: 'scope', projectId: 'project', requestId: input.requestId, createdAt: Date.now(), body: JSON.stringify({ ...input, maxCredits: -1 }) }));
   expect(() => readPendingAstraRender(local, 'scope', 'project')).toThrow('could not be verified');
 });
+test('a render ceiling in tenths of a credit is kept; one finer than a tenth is refused', () => {
+  const local = storage(), body = JSON.stringify({ ...input, maxCredits: 1.5 });
+  persistPendingAstraRender(local, 'scope', 'project', body);
+  expect(readPendingAstraRender(local, 'scope', 'project')?.body).toBe(body);
+  const finer = storage();
+  finer.setItem(astraRenderPendingKey('scope', 'project'), JSON.stringify({ version: 1, scope: 'scope', projectId: 'project', requestId: input.requestId, createdAt: Date.now(), body: JSON.stringify({ ...input, maxCredits: 1.55 }) }));
+  expect(() => readPendingAstraRender(finer, 'scope', 'project')).toThrow('could not be verified');
+});
 test('simultaneous native render actions serialize around one durable recovery record', async () => {
   const local = storage(), order: string[] = [];
   let done!: () => void;

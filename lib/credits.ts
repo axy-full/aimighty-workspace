@@ -1,6 +1,6 @@
 import { currentTenant, type TenantWorkspace } from "./tenant";
 import { paidByPlatform } from "./platformSpend";
-import { billCredits, billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
+import { billCredits, billCreditsWith, creditUsd, creditsFigure, floorDeci, fromDeci, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
 
@@ -69,12 +69,13 @@ export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: st
   if (!state) return { ok: true };
   const need = billCredits(estUsd, engine);
   if (state.balance <= 0 || state.balance < need) {
-    const left = Math.max(0, Math.floor(state.balance));
+    /* What is left, to the tenth a charge is made in: 0.5 left is not "0 left". */
+    const left = Math.max(0, fromDeci(floorDeci(state.balance)));
     return {
       ok: false, status: 402,
       error: need > 0 && left > 0
-        ? `Out of credits: this needs ${need}, ${left} left. Top up in Settings › Credits.`
-        : `Out of credits (${left} left). Top up in Settings › Credits.`,
+        ? `Out of credits: this needs ${creditsFigure(need)}, ${creditsFigure(left)} left. Top up in Settings › Credits.`
+        : `Out of credits (${creditsFigure(left)} left). Top up in Settings › Credits.`,
     };
   }
   return { ok: true };

@@ -33,6 +33,12 @@ test("a credit workspace sees credits only — even when a dollar figure arrives
   expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).toBe("12 credits");
   expect(agentPrice({ estimateCredits: 1234 }, true)).toBe("1,234 credits");
   expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
+  /* Charged in tenths: a small quote reads as its tenths, never rounded away to "0 credits". */
+  expect(agentPrice({ estimateCredits: 0.4 }, true)).toBe("0.4 credits");
+  expect(agentPrice({ estimateCredits: 12.3 }, true)).toBe("12.3 credits");
+  expect(agentPrice({ estimateCredits: 1234.5 }, true)).toBe("1,234.5 credits");
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0.3 }), true)).toBe("reserved up to 0.3 credits");
+  expect(agentCharged(run({ credits: 0.2 }), true)).toBe("0.2 credits");
   expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).not.toContain("$");
 });
 

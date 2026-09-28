@@ -1,4 +1,5 @@
 import type { ChoiceKey } from "./impact";
+import { creditsFigure } from "./creditTerms";
 
 /**
  * What happens to the takes that already exist (brief 3, surface 1b).
@@ -67,7 +68,8 @@ export function footnote(
     : "NOTHING RE-RENDERS";
 }
 
-const credits = (n: number): string => Math.round(n).toLocaleString("en-US");
+/* To the tenth a credit is charged in (lib/creditTerms.ts). */
+const credits = (n: number): string => creditsFigure(n);
 
 /**
  * What a choice does to the takes that already exist.

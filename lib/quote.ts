@@ -85,7 +85,7 @@ export type QuoteLine = {
 };
 
 export type Quote = {
-  /** Whole credits, the only number a workspace ever sees. */
+  /** Credits, to a tenth: the only number a workspace ever sees. */
   totalCredits: number;
   /** The per-unit price, and only when every unit really is the same price. */
   unitCredits: number | null;
@@ -279,8 +279,9 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      the balance covers; a vendor the workspace holds its own key for costs it
      no credits and is not weighed here at all. */
   if (c.balance != null) {
-    const needs = q.lines.reduce((n, l) => n + (l.platformPays ? l.credits : 0), 0);
-    if (needs > 0 && c.balance < needs) {
+    /* Summed and compared in whole tenths: 0.1 + 0.2 is 0.3, and a balance of exactly 0.3 covers it. */
+    const needs = fromDeci(q.lines.reduce((n, l) => n + (l.platformPays ? toDeci(l.credits) : 0), 0));
+    if (needs > 0 && toDeci(c.balance) < toDeci(needs)) {
       return {
         allow: true, gate: "held", notice,
         line: heldMessage(needs, c.balance),

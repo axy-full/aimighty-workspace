@@ -4,6 +4,8 @@
  * calendar days — quiet days count as zero, which is the honest divisor —
  * and the answer is how many days the balance lasts at that pace. Pure.
  */
+import { fromDeci, toDeci } from "./creditTerms";
+
 export type DaySpend = { day: number; credits: number };
 export type Runway = { perDay: number | null; days: number | null; windowDays: number; spent: number; known: boolean };
 
@@ -21,7 +23,8 @@ export function runway(balance: number | null, byDay: DaySpend[], now: number, w
 /** One line, or nothing while there is no pace to speak of. */
 export function runwayLine(r: Runway, credits: (n: number) => string): string {
   if (!r.known || r.perDay == null || r.days == null) return "";
-  const pace = `${credits(Math.round(r.perDay))} a day over the last ${r.windowDays} days`;
+  /* To the tenth credits are charged in, and never "0 a day" for a pace that spent something. */
+  const pace = `${credits(fromDeci(Math.max(1, toDeci(r.perDay))))} a day over the last ${r.windowDays} days`;
   if (r.days === 0) return `At ${pace}, the balance does not last the day.`;
   if (r.days > 365) return `At ${pace}, more than a year of runway.`;
   return `At ${pace}, about ${r.days} day${r.days === 1 ? "" : "s"} of runway.`;

@@ -19,9 +19,9 @@ const listeners = new Set<() => void>();
 export function rememberWorkspaceQuote(scope: string | null | undefined, credits: number | null | undefined): void {
   if (!scope || typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) return;
   // To the tenth it was quoted at, rounded up: a price never reads lower than it is.
-  const whole = fromDeci(ceilDeci(credits));
-  if (quotes.get(scope)?.credits === whole) return;
-  quotes.set(scope, { credits: whole, at: Date.now() });
+  const figure = fromDeci(ceilDeci(credits));
+  if (quotes.get(scope)?.credits === figure) return;
+  quotes.set(scope, { credits: figure, at: Date.now() });
   for (const listener of listeners) listener();
 }
 

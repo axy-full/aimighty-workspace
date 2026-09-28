@@ -188,6 +188,14 @@ test("too few credits holds the work rather than refusing it", () => {
   expect(verdictOf(own, { ...CTX, balance: 0 }).gate).toBe("ok");
 });
 
+test("a balance that exactly covers jobs priced in tenths is enough: they are summed in whole tenths", () => {
+  /* 0.1 + 0.2 in floating point is 0.30000000000000004, which a balance of 0.3 would not cover. */
+  const q = quoteOf([shot("a", 0.01), shot("b", 0.02)], TERMS);
+  expect(q.lines.map((l) => l.credits)).toEqual([0.1, 0.2]);
+  expect(verdictOf(q, { ...CTX, balance: 0.3 }).gate).toBe("ok");
+  expect(verdictOf(q, { ...CTX, balance: 0.2 }).gate).toBe("held");
+});
+
 test("a refusal beats a hold: the walls are checked in the press's own order", () => {
   // Over the production's cap AND short of credits: the cap is what refuses.
   const q = quoteOf([{ ...shot("a", 2.90), projectId: "p1" }], TERMS);

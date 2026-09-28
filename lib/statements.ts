@@ -2,13 +2,16 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { marginFor, marginKeyOf } from "./creditTerms";
+import { fromDeci, marginFor, marginKeyOf, toDeci } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
 import { creditFundingFor } from "./billingLedger";
 import { GROK_STT_MODEL } from "./xaiVoice";
 import { legacyBilledCredits } from "./creditUnits";
+
+/** Credits add in whole tenths, so a statement of 0.1 cr takes totals 0.3, never 0.30000000000000004 (in the CSV too). */
+const plus = (a: number, b: number): number => fromDeci(toDeci(a) + toDeci(b));
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -86,11 +89,11 @@ export function groupLines(rows: RawLine[]): StatementProject[] {
     if (r.shotId && r.shotCode) {
       let s = p.shotMap.get(r.shotId);
       if (!s) { s = { code: r.shotCode, title: r.shotTitle, lines: [], credits: 0, usd: 0 }; p.shotMap.set(r.shotId, s); }
-      s.lines.push(line); s.credits += line.credits; s.usd += line.usd;
+      s.lines.push(line); s.credits = plus(s.credits, line.credits); s.usd += line.usd;
     } else {
       p.loose.push(line);
     }
-    p.credits += line.credits; p.usd += line.usd; p.takes += 1;
+    p.credits = plus(p.credits, line.credits); p.usd += line.usd; p.takes += 1;
   }
   const out = [...byProject.values()].map((p) => {
     const shots = [...p.shotMap.values()].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }));
@@ -295,7 +298,7 @@ export async function statementFor(month: string, projectId: string | null): Pro
     workspace: { name: ws.name, slug: ws.slug },
     projectFilter: projectId,
     projects,
-    totals: { credits: projects.reduce((a, p) => a + p.credits, 0), usd: projects.reduce((a, p) => a + p.usd, 0), takes: projects.reduce((a, p) => a + p.takes, 0) },
+    totals: { credits: projects.reduce((a, p) => plus(a, p.credits), 0), usd: projects.reduce((a, p) => a + p.usd, 0), takes: projects.reduce((a, p) => a + p.takes, 0) },
     packs, ...(funding ? { funding } : {}),
   };
 }

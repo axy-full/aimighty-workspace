@@ -200,7 +200,7 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
         <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Prompt enhancer" style={{ alignSelf: "flex-start" }}>
           {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => set("promptEnhancer", p)} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
         </div>
-        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr; a connected model that enhances on the account does it inside the render.</span>
+        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs about 0.1 cr; a connected model that enhances on the account does it inside the render.</span>
       </div>
       <div className="wsx-actions">
         <button type="button" className="gx-primary" disabled={!admin || (!changed.length && !renamed) || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>

@@ -8,6 +8,8 @@
  * on this side of the wire.
  */
 
+import { fromDeci, toDeci } from "./creditTerms";
+
 export type ReachKind = "video" | "image";
 
 /** One take at named settings, priced in credits. */
@@ -57,10 +59,17 @@ export function isTakeCell(take: PricedTake | null | undefined, group: Pick<Rate
   return take.kind === "image" || take.durationS === group.seconds;
 }
 
-/** Whole takes a number of credits buys; null when either side is unknown. */
+/**
+ * Whole takes a number of credits buys; null when either side is unknown.
+ * Credits are whole tenths (lib/creditTerms.ts), so they are divided as
+ * integer tenths: 162 credits at 5.4 a take is 30 takes, where the floating
+ * division reads 29.999… A figure off the tenth grid divides as it is.
+ */
 export function takesWithin(credits: number | null | undefined, perTake: number | null | undefined): number | null {
   if (typeof credits !== "number" || !Number.isFinite(credits)) return null;
   if (typeof perTake !== "number" || !Number.isFinite(perTake) || perTake <= 0) return null;
+  const have = toDeci(credits), each = toDeci(perTake);
+  if (each > 0 && fromDeci(have) === credits && fromDeci(each) === perTake) return Math.max(0, Math.floor(have / each));
   return Math.max(0, Math.floor(credits / perTake + 1e-9));
 }
 

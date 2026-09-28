@@ -29,3 +29,10 @@ test("it says nothing without a pace, and speaks plainly at the edges", () => {
   expect(runwayLine(runway(100_000, [{ day: now, credits: 7 }], now), cr)).toBe("At 1 cr a day over the last 7 days, more than a year of runway.");
   expect(runwayLine(runway(31, [{ day: now, credits: 210 }], now), cr)).toBe("At 30 cr a day over the last 7 days, about 1 day of runway.");
 });
+
+test("a light pace reads in tenths of a credit, never as nothing a day", () => {
+  /* 2 credits over seven days is 0.29 a day: said as 0.3, the tenth credits are charged in. */
+  expect(runwayLine(runway(25, [{ day: now, credits: 2 }], now), cr)).toBe("At 0.3 cr a day over the last 7 days, about 87 days of runway.");
+  /* A pace under a twentieth of a credit still spent something: at least 0.1 a day. */
+  expect(runwayLine(runway(25, [{ day: now, credits: 0.1 }], now), cr)).toBe("At 0.1 cr a day over the last 7 days, more than a year of runway.");
+});
