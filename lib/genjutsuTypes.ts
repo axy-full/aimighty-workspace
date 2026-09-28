@@ -7,6 +7,7 @@ export type GenjutsuResolution = (typeof GENJUTSU_RESOLUTIONS)[number];
 export const GENJUTSU_LIMITS = {
   minSeconds: 1,
   maxSeconds: 30,
+  minImages: 1,
   maxImages: 8,
   // Particl's bounded creative-input limit; not a claimed provider limit.
   maxPromptChars: 5000,
