@@ -537,3 +537,29 @@ test("accepted own-key jobs keep their collection key without changing new work 
     if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;
   }
 });
+
+test("the original workspace's jobs accepted before managed credits are still collected, with the deployment's keys", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const previous = process.env.FAL_KEY;
+  process.env.FAL_KEY = "shared-fal-unit-key";
+  /* The studio's original workspace: legacy, no keys of its own, and on managed credits now like every workspace. */
+  const legacy = { ...workspace("legacy-inflight", false), usesPlatformKeys: true };
+  try {
+    await platformReady();
+    /* Metered before the deploy as not platform-paid, although it ran on the deployment's keys. */
+    await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',0,?,?)",
+      args: [`${legacy.id}-inflight`, legacy.id, Date.now(), Date.now()] });
+    await runInTenant(legacy, async () => {
+      const keys: (string | null)[] = [];
+      await withAcceptedJobCredentials(`${legacy.id}-inflight`, "fal", async () => { keys.push(vendorKey("fal")); });
+      /* An older job with no meter row reads the same way. */
+      await withAcceptedJobCredentials(`${legacy.id}-pre-meter`, "fal", async () => { keys.push(vendorKey("fal")); });
+      expect(keys).toEqual(["shared-fal-unit-key", "shared-fal-unit-key"]);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;
+  }
+});
