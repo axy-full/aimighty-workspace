@@ -11,7 +11,7 @@ import { dimLabels, smallTargets } from "./phoneFloors";
  * Production › Cast on the platform's key, in a managed workspace (credits),
  * against a local ENGINE_MOCK=1 server: every route is the real one and every
  * engine is the mock. A character renders with a Soul ID trained in this
- * workspace — Soul 2 here, the family it was trained for — 4 stills in one
+ * workspace — Soul Standard here, the family it was trained for — 4 stills in one
  * request at the live estimate shown on the button ("about N cr"), sent once
  * with that figure as its ceiling, and every still is filed as Cast. Entries
  * built earlier on the connected account are shown read-only, a Soul ID
@@ -110,8 +110,8 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   test.skip(!SIZES.includes(info.project.name), "the five sizes");
   test.setTimeout(180_000);
   const f = await setup(page);
-  const soul = await f.train("Mira", "v2");
-  expect(soul.renderModel).toBe("hf-soul-2");
+  const soul = await f.train("Mira", "v1");
+  expect(soul.renderModel).toBe("hf-soul-standard");
   await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
   await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("page-title")).toHaveText("Cast & Elements");
@@ -122,11 +122,11 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   await expect(fox.getByTestId("cast-render-run")).toBeDisabled();
 
   /* Its Soul ID (listed with the family it renders with), 4 stills, 1080p: the live estimate lands on the button. */
-  await fox.getByTestId("cast-identity").selectOption({ label: "Mira · Soul 2" });
+  await fox.getByTestId("cast-identity").selectOption({ label: "Mira · Soul Standard" });
   await fox.getByTestId("cast-batch-4").click();
   await fox.getByTestId("cast-size-1080p").click();
   const run = fox.getByTestId("cast-render-run");
-  await expect(run).toHaveText(/^Render 4 stills · Soul 2 · about \d+ cr$/, { timeout: 30_000 });
+  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d+ cr$/, { timeout: 30_000 });
   const credits = Number((await run.innerText()).match(/about (\d+) cr/)![1]);
   expect(credits).toBeGreaterThan(0);
   await expect(page.getByTestId("cast-render-why")).toHaveCount(1); // Nova's, not the fox's
@@ -142,7 +142,7 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   await run.click();
   const request = await sent;
   expect(request.headers()["idempotency-key"]).toBeTruthy();
-  expect(request.postDataJSON()).toMatchObject({ model: "hf-soul-2", soulIdentityId: soul.id, soulBatch: 4, soulStrength: 1, resolution: "1080p", ratio: "3:4",
+  expect(request.postDataJSON()).toMatchObject({ model: "hf-soul-standard", soulIdentityId: soul.id, soulBatch: 4, soulStrength: 1, resolution: "1080p", ratio: "3:4",
     references: [], maxCredits: credits, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
   expect(request.postData()).not.toContain("custom_reference_id");
   await expect(run).toHaveText("Rendering…");
@@ -163,7 +163,7 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   const first = (await page.request.get(`/api/jobs/${leader}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation;
   expect(first.params.soulBatchIds).toEqual([leader, ...rest]);
   for (const id of rest) expect((await page.request.get(`/api/jobs/${id}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation).toMatchObject({ status: "succeeded", creditsBilled: 0 });
-  await expect(run).toHaveText(/^Render 4 stills · Soul 2 · about \d+ cr$/);
+  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d+ cr$/);
 
   /* Built earlier on the account: shown read-only; a Soul ID trained there asks to be trained again. */
   const harbour = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Frozen harbour"]') });
@@ -193,7 +193,7 @@ test("a render the estimate cannot price stays unsent: the reason, Try again, an
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   test.setTimeout(150_000);
   const f = await setup(page);
-  const soul = await f.train("Mira", "cinema");
+  const soul = await f.train("Mira", "v1");
   /* The quote route answers with no price, as it does when the provider's estimate has no number. */
   let quotes = 0;
   await page.route("**/api/generate/quote", (route) => { quotes++; return route.fulfill({ status: 503, json: { error: "The identity account returned no price for this Soul render. Nothing was submitted.", code: "price_unavailable" } }); });

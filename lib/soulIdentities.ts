@@ -37,29 +37,39 @@ export const SOUL_TRAINING_MODEL = "higgsfield/soul-id";
 export const SOUL_TRAINING_USD = 2.5;
 export const SOUL_MIN_PHOTOS = 1;
 export const SOUL_MAX_PHOTOS = 40;
+/** A training price set in private server configuration: a positive number of dollars, else none. */
+function configuredUsd(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  const usd = Number(raw);
+  return Number.isFinite(usd) && usd > 0 ? usd : undefined;
+}
 /**
- * Training keeps Particl's existing fixed price: the provider publishes no
- * training price and has no training estimate. Each family its
- * custom-reference API documents (v1 → Soul Standard, v2 → Soul 2,
- * cinema → Soul Cinema) trains at that price. A family with no entry here has
- * no price, so it is never offered and never trained.
+ * What training costs the platform, per family (v1 → Soul Standard, v2 →
+ * Soul 2, cinema → Soul Cinema). The provider has no training estimate and
+ * publishes no training price. v1 keeps Particl's existing fixed price. Soul 2
+ * and Soul Cinema each cost what the operator sets privately
+ * (`SOUL_TRAINING_USD_V2`, `SOUL_TRAINING_USD_CINEMA`); unset, the family has
+ * no price, so it is never offered and a request for it is refused. The
+ * workspace pays that cost converted to credits with the markup, like any
+ * other API job.
  */
-const SOUL_TRAINING_PRICES: Readonly<Partial<Record<SoulModelVersion, number>>> = {
-  v1: SOUL_TRAINING_USD,
-  v2: SOUL_TRAINING_USD,
-  cinema: SOUL_TRAINING_USD,
-};
-/** The fixed training price of one family, or null when it has none (unknown or unpriced). */
+function soulTrainingPrices(): Partial<Record<SoulModelVersion, number>> {
+  return { v1: SOUL_TRAINING_USD, v2: configuredUsd("SOUL_TRAINING_USD_V2"), cinema: configuredUsd("SOUL_TRAINING_USD_CINEMA") };
+}
+/** The training price of one family, or null when it has none (unknown or unpriced). */
 export function soulTrainingUsd(
   version: unknown,
-  prices: Readonly<Partial<Record<string, number>>> = SOUL_TRAINING_PRICES,
+  prices: Readonly<Partial<Record<string, number>>> = soulTrainingPrices(),
 ): number | null {
   if (!isSoulVersion(version)) return null;
   const usd = prices[version];
   return typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? usd : null;
 }
-/** What a stored identity's training was priced at: its family's price; rows saved before families were stamped are v1. */
+/** What a stored identity's training was priced at when it was sent, else its family's price now (rows from before families are v1). */
 function trainingUsdOf(row: Row): number {
+  const sent = row.cost_usd == null ? NaN : Number(row.cost_usd);
+  if (Number.isFinite(sent) && sent > 0) return sent;
   return soulTrainingUsd(row.model_version ?? SOUL_MODEL_VERSION) ?? SOUL_TRAINING_USD;
 }
 /**

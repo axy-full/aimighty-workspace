@@ -221,57 +221,97 @@ async function counts() {
 const body = (patch: Record<string, unknown> = {}) => ({ model: "hf-soul-2", prompt: "Mira on the quay at dusk", projectId: "project", ratio: "3:4", resolution: "1080p",
   soulIdentityId: "soul_v2", soulStrength: 0.8, soulBatch: 4, refine: false, ...patch });
 
-test("training: each priced family is offered at the fixed training price and trains for that family; an unpriced family is refused before anything is written", async () => {
+test("training: v1 keeps its price; Soul 2 and Soul Cinema are offered only at a privately configured price, charged that cost with the markup, and refused while unset", async () => {
   const { soulTrainingUsd, SOUL_TRAINING_USD } = await import("../../lib/soulIdentities");
-  for (const version of ["v1", "v2", "cinema"]) expect(soulTrainingUsd(version)).toBe(SOUL_TRAINING_USD);
-  for (const version of ["v3", "", null, undefined, "V1"]) expect(soulTrainingUsd(version)).toBeNull();
-  /* A family the table has no price for is not priced (and so never offered or trained). */
-  expect(soulTrainingUsd("cinema", { v1: SOUL_TRAINING_USD, v2: SOUL_TRAINING_USD })).toBeNull();
-  expect(soulTrainingUsd("v2", { v2: 0 })).toBeNull();
-  await tenant("soul_training_versions", async () => {
-    const { db } = await import("../../lib/db");
-    const { platformDb } = await import("../../lib/platform");
-    const { saveDraft } = await import("../../lib/workbench/records");
-    const { newProject } = await import("../../lib/workbench/studio");
-    const { billCredits } = await import("../../lib/creditTerms");
-    const { soulIdentityTerms, createSoulIdentity, SoulIdentityError } = await import("../../lib/soulIdentities");
-    const { withGenerationRequestData, generationFingerprint } = await import("../../lib/generationRequests");
-    const credits = billCredits(SOUL_TRAINING_USD, "identity-training");
-    expect(soulIdentityTerms().versions).toEqual(["v1", "v2", "cinema"].map((version) => ({ version, trainingCredits: credits })));
-    await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at) VALUES('face','Face','image/png','png',100,'hash','/api/uploads/face',0)");
-    const draft = newProject("Identity production");
-    await saveDraft(actor.user.id, draft, 0);
-    const input = (version: string): CreateSoulIdentityInput => ({ projectId: draft.id, name: `Mira ${version}`, description: "", subjectType: "character",
-      references: [{ uploadId: "face" }], consent: true, maxCredits: credits, modelVersion: version as CreateSoulIdentityInput["modelVersion"] });
-    const seen: unknown[] = [];
-    const train = (value: CreateSoulIdentityInput, key: string) => withGenerationRequestData({ userId: actor.user.id, key, fingerprint: generationFingerprint(value) }, async (claim) => {
-      try {
-        return Response.json({ identity: await createSoulIdentity(value, claim, { submit: async (_name, _urls, options) => { seen.push(options); return { id: referenceId, status: "queued" as const }; } }) }, { status: 202 });
-      } catch (error) {
-        if (error instanceof SoulIdentityError) return Response.json({ error: error.message }, { status: error.status });
-        throw error;
+  const names = ["SOUL_TRAINING_USD_V2", "SOUL_TRAINING_USD_CINEMA"] as const;
+  const saved = names.map((name) => process.env[name]);
+  /* Made-up operator figures, set only here: never a provider's price. */
+  const V2 = 7.25, CINEMA = 9.5;
+  try {
+    for (const name of names) delete process.env[name];
+    expect(soulTrainingUsd("v1")).toBe(SOUL_TRAINING_USD);
+    expect(soulTrainingUsd("v2")).toBeNull();
+    expect(soulTrainingUsd("cinema")).toBeNull();
+    for (const bad of ["0", "-3", "abc", " ", "Infinity"]) {
+      process.env.SOUL_TRAINING_USD_V2 = bad;
+      expect(soulTrainingUsd("v2"), bad).toBeNull();
+    }
+    delete process.env.SOUL_TRAINING_USD_V2;
+    for (const version of ["v3", "", null, undefined, "V1"]) expect(soulTrainingUsd(version)).toBeNull();
+    expect(soulTrainingUsd("cinema", { v1: SOUL_TRAINING_USD })).toBeNull();
+    await tenant("soul_training_versions", async () => {
+      const { db } = await import("../../lib/db");
+      const { platformDb } = await import("../../lib/platform");
+      const { saveDraft } = await import("../../lib/workbench/records");
+      const { newProject } = await import("../../lib/workbench/studio");
+      const { billCredits } = await import("../../lib/creditTerms");
+      const { soulIdentityTerms, createSoulIdentity, syncSoulIdentity, soulIdentitiesReady, SoulIdentityError } = await import("../../lib/soulIdentities");
+      await soulIdentitiesReady();
+      const { withGenerationRequestData, generationFingerprint } = await import("../../lib/generationRequests");
+      const credits = (usd: number) => billCredits(usd, "identity-training");
+      /* Unset: only v1 is offered, at its price as before. */
+      expect(soulIdentityTerms().versions).toEqual([{ version: "v1", trainingCredits: credits(SOUL_TRAINING_USD) }]);
+      expect(soulIdentityTerms().trainingCredits).toBe(credits(SOUL_TRAINING_USD));
+      await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at) VALUES('face','Face','image/png','png',100,'hash','/api/uploads/face',0)");
+      const draft = newProject("Identity production");
+      await saveDraft(actor.user.id, draft, 0);
+      const input = (version: string | undefined, maxCredits: number, name = `Mira ${version}`): CreateSoulIdentityInput => ({ projectId: draft.id, name, description: "", subjectType: "character",
+        references: [{ uploadId: "face" }], consent: true, maxCredits, modelVersion: version as CreateSoulIdentityInput["modelVersion"] });
+      const seen: unknown[] = [];
+      const train = (value: CreateSoulIdentityInput, key: string) => withGenerationRequestData({ userId: actor.user.id, key, fingerprint: generationFingerprint(value) }, async (claim) => {
+        try {
+          return Response.json({ identity: await createSoulIdentity(value, claim, { submit: async (_name, _urls, options) => { seen.push(options); return { id: referenceId, status: "queued" as const }; } }) }, { status: 202 });
+        } catch (error) {
+          if (error instanceof SoulIdentityError) return Response.json({ error: error.message }, { status: error.status });
+          throw error;
+        }
+      });
+      const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM soul_identities")).rows[0].n);
+      /* An unpriced family (unset, or unknown): refused before any row, reservation or provider request. */
+      for (const [version, key] of [["v2", "train-v2-unset"], ["cinema", "train-cinema-unset"], ["v3", "train-v3"]] as const) {
+        const before = { identities: await rows(), sent: seen.length };
+        const refused = await train(input(version, 9999), key);
+        expect(refused.status, version).toBe(400);
+        expect((await refused.json()).error).toMatch(/no training price/);
+        expect(await rows()).toBe(before.identities);
+        expect(seen.length).toBe(before.sent);
       }
+      /* Priced privately: offered, and each costs its own figure, converted to credits with the markup. */
+      process.env.SOUL_TRAINING_USD_V2 = String(V2);
+      process.env.SOUL_TRAINING_USD_CINEMA = String(CINEMA);
+      expect(soulIdentityTerms().versions).toEqual([
+        { version: "v1", trainingCredits: credits(SOUL_TRAINING_USD) },
+        { version: "v2", trainingCredits: credits(V2) },
+        { version: "cinema", trainingCredits: credits(CINEMA) },
+      ]);
+      /* An approval below the version's own price is a changed quote. */
+      expect((await train(input("cinema", credits(CINEMA) - 1), "train-cinema-low")).status).toBe(409);
+      const reply = await train(input("cinema", credits(CINEMA)), "train-cinema");
+      expect(reply.status).toBe(202);
+      const trained = (await reply.json()).identity;
+      expect(trained.renderModel).toBe("hf-soul-cinema");
+      expect(seen.at(-1)).toEqual({ modelVersion: "cinema" });
+      expect((await db().execute({ sql: "SELECT model_version,provider_origin,cost_usd FROM soul_identities WHERE id=?", args: [trained.id] })).rows[0])
+        .toMatchObject({ model_version: "cinema", provider_origin: "api-v1", cost_usd: CINEMA });
+      const reserved = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd FROM meter_events WHERE id=?", args: [trained.id] })).rows[0];
+      expect(reserved.status).toBe("running");
+      expect(Number(reserved.engine_cost_usd)).toBe(CINEMA);
+      /* The price it was sent at stands, even if the configured figure moves before it settles. */
+      process.env.SOUL_TRAINING_USD_CINEMA = String(CINEMA * 2);
+      const ready = await syncSoulIdentity(trained.id, { poll: async () => ({ id: referenceId, status: "completed" as const }) });
+      expect(ready?.status).toBe("ready");
+      const settled = (await platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE id=?", args: [trained.id] })).rows[0];
+      expect(settled.status).toBe("succeeded");
+      expect(Number(settled.engine_cost_usd)).toBe(CINEMA);
+      expect(ready?.creditsBilled).toBe(credits(CINEMA));
+      /* No version named: v1, at its price, as before. */
+      const v1 = await (await train(input(undefined, credits(SOUL_TRAINING_USD), "Mira default"), "train-default")).json();
+      expect(v1.identity.renderModel).toBe("hf-soul-standard");
+      expect(Number((await platformDb().execute({ sql: "SELECT engine_cost_usd FROM meter_events WHERE id=?", args: [v1.identity.id] })).rows[0].engine_cost_usd)).toBe(SOUL_TRAINING_USD);
     });
-    const reply = await train(input("cinema"), "train-cinema");
-    expect(reply.status).toBe(202);
-    const trained = (await reply.json()).identity;
-    expect(trained.renderModel).toBe("hf-soul-cinema");
-    expect(seen).toEqual([{ modelVersion: "cinema" }]);
-    expect((await db().execute({ sql: "SELECT model_version,provider_origin,cost_usd FROM soul_identities WHERE id=?", args: [trained.id] })).rows[0])
-      .toMatchObject({ model_version: "cinema", provider_origin: "api-v1", cost_usd: SOUL_TRAINING_USD });
-    const meter = (await platformDb().execute({ sql: "SELECT engine_cost_usd,billed_credits FROM meter_events WHERE id=?", args: [trained.id] })).rows[0];
-    expect(Number(meter.engine_cost_usd)).toBe(SOUL_TRAINING_USD);
-    /* No version named: v1, as before. */
-    const v1 = await (await train({ ...input("v1"), modelVersion: undefined, name: "Mira default" }, "train-default")).json();
-    expect(v1.identity.renderModel).toBe("hf-soul-standard");
-    /* An unpriced family: refused before any row, reservation or provider request. */
-    const before = { identities: Number((await db().execute("SELECT COUNT(*) AS n FROM soul_identities")).rows[0].n), sent: seen.length };
-    const refused = await train(input("v3"), "train-v3");
-    expect(refused.status).toBe(400);
-    expect((await refused.json()).error).toMatch(/no training price/);
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM soul_identities")).rows[0].n)).toBe(before.identities);
-    expect(seen.length).toBe(before.sent);
-  });
+  } finally {
+    names.forEach((name, i) => { if (saved[i] == null) delete process.env[name]; else process.env[name] = saved[i]; });
+  }
 });
 
 test("admission: a ready identity renders only with its own family, at the live estimate of the exact request; 1 or 4 stills", async () =>

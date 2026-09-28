@@ -10,8 +10,8 @@ import { dimLabels, smallTargets } from "./phoneFloors";
  * Studio › Cast › Build identity on the platform's key, in a managed
  * workspace (credits), against a local ENGINE_MOCK=1 server: the real
  * /api/soul/identities route with the mock trainer. The card says what is
- * missing; only versions with a training price are offered (Soul Standard,
- * Soul 2, Soul Cinema); the fixed price is on the button before anything is
+ * missing; only versions with a training price are offered (Soul Standard;
+ * Soul 2 and Soul Cinema once priced); the price is on the button before anything is
  * sent; a reply lost after the server took the request is recovered by asking
  * about that saved request (same key, same body), never by training twice; the
  * list is this workspace's own Soul IDs, and nothing of the connected account
@@ -71,8 +71,9 @@ test("Build identity on the key: the reasons, the priced versions, the fixed pri
   test.setTimeout(180_000);
   const f = await setup(page);
   const { terms } = await f.read();
-  expect(terms.versions.map((v) => v.version)).toEqual(["v1", "v2", "cinema"]);
-  const credits = terms.versions.find((v) => v.version === "cinema")!.trainingCredits;
+  /* Soul 2 and Soul Cinema have no price until the operator sets one: only Soul Standard is offered here. */
+  expect(terms.versions.map((v) => v.version)).toEqual(["v1"]);
+  const credits = terms.versions.find((v) => v.version === "v1")!.trainingCredits;
   expect(credits).toBeGreaterThan(0);
   await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
   const card = page.getByTestId("soul-card");
@@ -86,17 +87,17 @@ test("Build identity on the key: the reasons, the priced versions, the fixed pri
   await expect(build).toBeDisabled();
   await page.getByTestId("soul-name").fill("Mira");
   await expect(page.getByTestId("soul-blocked")).toHaveText("Pick 1–40 stills of the same person (0 picked).");
-  await expect(card.getByRole("radiogroup", { name: "Renders with" }).getByRole("radio")).toHaveText(["Soul Standard", "Soul 2", "Soul Cinema"]);
+  await expect(card.getByRole("radiogroup", { name: "Renders with" }).getByRole("radio")).toHaveText(["Soul Standard"]);
   await expect(page.getByTestId("soul-version-v1")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("soul-versions-unpriced")).toHaveText("Soul 2 and Soul Cinema training is not offered until it has a price.");
   await expect(page.getByTestId("soul-stills").getByRole("button")).toHaveCount(2);
   for (const still of f.stills) await page.getByTestId(`soul-still-${still.id}`).click();
   await expect(page.getByTestId("soul-blocked")).toHaveText("Confirm you have the rights and consent to train this likeness.");
-  await page.getByTestId("soul-version-cinema").click();
   await page.getByTestId("soul-consent").check();
   await expect(page.getByTestId("soul-blocked")).toHaveCount(0);
   await expect(build).toBeEnabled();
   /* The fixed training price, on the button, before anything is sent. */
-  await expect(build).toHaveText(`Train · Soul Cinema · about ${credits} cr`);
+  await expect(build).toHaveText(`Train · Soul Standard · about ${credits} cr`);
   await expect(page.getByTestId("soul-terms")).toHaveText("Charged once the trainer accepts it, even if training then fails.");
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="soul-card"]')).toEqual([]);
   expect(await dimLabels(page, '[data-testid="soul-card"]')).toEqual([]);
@@ -120,7 +121,7 @@ test("Build identity on the key: the reasons, the priced versions, the fixed pri
   await expect(recover).toContainText("A training request was sent but its reply was lost: Mira.");
   expect(posts).toHaveLength(1);
   expect(posts[0].key).toBeTruthy();
-  expect(JSON.parse(posts[0].body)).toEqual({ projectId: f.project.id, name: "Mira", description: "", subjectType: "character", consent: true, modelVersion: "cinema",
+  expect(JSON.parse(posts[0].body)).toEqual({ projectId: f.project.id, name: "Mira", description: "", subjectType: "character", consent: true, modelVersion: "v1",
     maxCredits: credits, references: f.stills.map((s) => ({ uploadId: s.id })) });
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="soul-card"]')).toEqual([]);
   await noSideScroll(page);
@@ -130,17 +131,17 @@ test("Build identity on the key: the reasons, the priced versions, the fixed pri
   await expect(recover).toHaveCount(0);
   expect(posts).toHaveLength(2);
   expect(posts[1]).toEqual(posts[0]);
-  await expect(page.getByTestId("soul-outcome")).toHaveText("Mira is training for Soul Cinema. It is listed below; characters can render with it once it is ready.");
+  await expect(page.getByTestId("soul-outcome")).toHaveText("Mira is training for Soul Standard. It is listed below; characters can render with it once it is ready.");
   const { identities } = await f.read();
-  expect(identities.map((i) => [i.name, i.renderModel])).toEqual([["Mira", "hf-soul-cinema"]]);
+  expect(identities.map((i) => [i.name, i.renderModel])).toEqual([["Mira", "hf-soul-standard"]]);
   const row = page.getByTestId(`soul-row-${identities[0].id}`);
   await expect(row).toContainText("Mira");
-  await expect(row).toContainText(`Soul Cinema · Ready · ${credits} cr`, { timeout: 45_000 });
+  await expect(row).toContainText(`Soul Standard · Ready · ${credits} cr`, { timeout: 45_000 });
   await expect(page.getByTestId("soul-name")).toHaveValue("");
 
   /* Ready: the character above can choose it now, by the family it renders with. */
   const mira = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Mira"]') });
-  await expect(mira.getByTestId("cast-identity").locator("option")).toHaveText(["None", "Mira · Soul Cinema"]);
+  await expect(mira.getByTestId("cast-identity").locator("option")).toHaveText(["None", "Mira · Soul Standard"]);
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("soul-id-trained.png") });
   expect(f.consumer, "nothing of the connected account is read or sent").toEqual([]);

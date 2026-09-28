@@ -21,6 +21,9 @@ export function trainingPrice(version: SoulTrainingVersion | null | undefined): 
   return null;
 }
 
+/** "A", "A and B", "A, B and C". */
+const listOf = (names: string[]) => names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
 /** What an identity renders with, for the list. */
 function familyOf(identity: SoulIdentity): string {
   if (!identity.renderModel) return "Earlier host · read-only";
@@ -135,6 +138,9 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
                 ))}
               </div>
             ) : <p className="gx-hint">{data ? "No Soul ID version has a training price yet." : "Reading…"}</p>}
+            {data && offered.length && offered.length < SOUL_VERSIONS.length ? (
+              <p className="gx-hint" data-testid="soul-versions-unpriced">{listOf(SOUL_VERSIONS.filter((v) => !offered.some((t) => t.version === v)).map((v) => SOUL_VERSION_LABELS[v]))} training is not offered until it has a price.</p>
+            ) : null}
           </div>
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Stills<span className="bz-note"> · {picked.length} of {min}–{max} · the same person, varied angles and light</span></span>
