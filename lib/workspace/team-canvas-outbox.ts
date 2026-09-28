@@ -98,6 +98,11 @@ export class TeamOutbox {
   get size() {
     return this.waiting.size;
   }
+
+  /** What waits for production `pid`, still here: laid over a canvas the window reads meanwhile, so the read never undoes it. */
+  peek(pid: string): TeamPatch | null {
+    return this.waiting.get(pid) ?? null;
+  }
 }
 
 /**
