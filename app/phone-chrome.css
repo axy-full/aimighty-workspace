@@ -147,7 +147,9 @@
   .gx .gx-library:not(:has(> .gx-seg)) > .gx-panel-head { grid-column: 1 / -1; }
   .gx .gx-library > .gx-field { grid-column: 1; grid-row: 2; align-self: center; min-width: 0; }
   .gx .gx-library > .gx-chips { grid-column: 2; grid-row: 2; align-self: center; }
-  .gx .gx-library > .gx-assets { grid-column: 1 / -1; grid-row: 3; }
+  /* The list fills the row under the controls and scrolls itself: graphite.css's short-screen fallback (a fixed
+     list height in a scrolling panel) would push it past the panel here and scroll both. */
+  .gx .gx-library.gx-panel--overlay > .gx-assets { grid-column: 1 / -1; grid-row: 3; height: auto; }
   .gx .gx-library > .gx-tools, .gx .gx-library > .gx-banner { grid-column: 1 / -1; grid-row: 2 / -1; overflow-y: auto; }
   .gx .gx-library > .gx-lib-foot { display: none; }
 }
