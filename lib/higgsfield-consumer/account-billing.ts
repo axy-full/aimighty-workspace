@@ -333,5 +333,5 @@ export async function recordWebsiteSubmission(job: ConsumerJob, result: { state:
 export const websiteCallNeverLeft = (job: Pick<ConsumerJob, "funding">, error: unknown, admitted: boolean) =>
   job.funding === "platform_account" && (!admitted || error instanceof ConsumerVideoError);
 
-/** What a client is told before approving a website-tool job: its exact price, and that a failed job is still charged it. */
+/** What a client is told before approving a website-tool job: its price, and that a failed job is still charged it. */
 export const WEBSITE_CHARGE_TERMS = Object.freeze({ onFailure: "charged" as const });

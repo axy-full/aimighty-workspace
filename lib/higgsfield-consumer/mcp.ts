@@ -1859,7 +1859,7 @@ export async function getConsumerMarketingTemplateQuote(
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       // The advertised arguments do not depend on the imported id: checked before any import.
       if (options.requireGetCost && !(await verifiedTemplateShape(session, placeholder)).getCost)
-        throw new ConsumerAdmissionStopped(new MarketingTemplateError("price_unknown", "This template has no exact price on the account. Nothing was submitted."));
+        throw new ConsumerAdmissionStopped(new MarketingTemplateError("price_unknown", "This template has no price on the account. Nothing was submitted."));
       let mediaId: string | null = null;
       if (source) {
         await requireConnectedTools(session, importCalls([source]));

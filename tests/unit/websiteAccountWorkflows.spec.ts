@@ -160,7 +160,7 @@ async function templateService(workspace: () => TenantWorkspace) {
         expect(token).toBe(ACCESS_TOKEN);
         state.quotes++;
         // As the transport does: a required account price is checked before any import.
-        if (options.requireGetCost && !state.getCost) throw new templates.MarketingTemplateError("price_unknown", "No exact price.");
+        if (options.requireGetCost && !state.getCost) throw new templates.MarketingTemplateError("price_unknown", "No price on the account.");
         const mediaId = source ? await options.resolveMedia(state.wallet, async () => { state.imports++; return state.mediaId; }) : null;
         const priced = state.getCost ? { credits: state.websiteCredits, source: "get_cost" as const } : templates.priceForTemplate(costs, template)!;
         return { input, params: templates.consumerMarketingTemplateParams(input, mediaId), shape: { nested: false, getCost: state.getCost },
@@ -269,7 +269,7 @@ test("templates on the shared account: an image template, or one the account can
       // Image templates run on the API's presets, never here.
       await expect(f.service.quoteConsumerMarketingTemplate("member", "draft", imageTemplate, randomUUID())).rejects.toMatchObject({ code: "particl_quote_unavailable" });
       expect([f.state.quotes, f.state.imports]).toEqual([0, 0]);
-      // A video template priced only by the catalogue's cost table: no exact price from the account itself.
+      // A video template priced only by the catalogue's cost table: no price from the account itself.
       f.state.getCost = false;
       await expect(f.service.quoteConsumerMarketingTemplate("member", "draft", videoTemplate, randomUUID())).rejects.toMatchObject({ code: "particl_quote_unavailable" });
       expect(f.state.imports).toBe(0);

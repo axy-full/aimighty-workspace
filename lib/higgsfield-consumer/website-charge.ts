@@ -1,6 +1,6 @@
 /**
  * How a page shows a job on the platform's website tools (a managed
- * workspace): its exact price in the workspace's own credits and, said before
+ * workspace): its price in the workspace's own credits and, said before
  * approval, that the price stands whether the run succeeds or fails (owner
  * decision, 27 September). It names no wallet, account or provider. A job on
  * an owner's own account keeps its connected credits and wallet, as before.

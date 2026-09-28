@@ -213,7 +213,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
       }
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice(saved.charge ? "Review the style, source and exact price below before making shorts." : "Review the style, source, wallet and exact price below before making shorts.");
+      if (action === "quote") setNotice(saved.charge ? "Review the style, source and price below before making shorts." : "Review the style, source, wallet and exact price below before making shorts.");
       if (action === "submit") setNotice(saved.status === "failed" ? failedNotice(saved, "The connected account refused this session before it was sent.") : "Session recorded. Use Check result to follow its clips.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
@@ -267,7 +267,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
           </fieldset>
           {validation && <p className={styles.hint} role="status">{validation}</p>}
           <div className={styles.actions}>
-            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
+            <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? capability?.managed ? "Reading the price…" : "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void loadPresets(!!presets)}><RefreshCw size={14} />{presets ? "Reload styles" : "Load styles"}</button>
             <button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved sessions</button>
           </div>
@@ -278,7 +278,7 @@ export function ConsumerShorts({ project, scope, refreshProject, onInput }: {
             <p>{matches ? "One price for the whole set of clips, whatever their number." : "The source or settings changed. Request a new quote before making shorts."}</p>
             {/* Said before approval (owner decision): the approved price stands however many clips the session yields, even none. */}
             <p role="note" className={styles.charge}>{chargedEvenIfFails(selected.charge.credits, "session")}</p>
-            <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The exact price is checked again before submission.</p>
+            <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The price is checked again before submission.</p>
             <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {creditsText(selected.charge.credits)} for this set of shorts, even if it yields no clip.</label>
             <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Make shorts · ${creditsText(selected.charge.credits)}`}</button>
           </div>}

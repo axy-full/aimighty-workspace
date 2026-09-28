@@ -197,7 +197,7 @@ export function MarketingTemplateBrowser({ project, scope, enabled, onPicked }: 
   const visible = (listing?.templates ?? []).filter((card) => (category === "all" || card.category === category) && (!needle || `${card.name} ${card.description} ${card.category}`.toLowerCase().includes(needle)));
   const categories = [...new Set(["all", ...MARKETING_TEMPLATE_CATEGORIES.filter((c) => c !== "all"), ...(listing?.categories ?? [])])];
   return <section className={`suite-panel ${styles.panel}`} aria-label="Template catalogue">
-    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>{capability?.managed ? "Browse the video templates Particl’s website tools run. Pick one here, then create with it in Variants at its exact price in this workspace’s credits." : "Browse the connected account’s Marketing Studio templates. Pick one here, then create with it in Variants at its exact connected-credit price."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools" : "Connected account"}</span></div>
+    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>{capability?.managed ? "Browse the video templates Particl’s website tools run. Pick one here, then create with it in Variants at its price in this workspace’s credits." : "Browse the connected account’s Marketing Studio templates. Pick one here, then create with it in Variants at its exact connected-credit price."}</p></div><span className="suite-badge">{capability?.managed ? "Website tools" : "Connected account"}</span></div>
     {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.allowed === false ? <p className="suite-footnote">The workspace owner can browse the connected account’s template catalogue. Particl’s native creative briefs above remain available.</p> : <>
       {capability && !capability.connected && (capability.managed
         ? <p className="suite-footnote">Website tools are not available for this workspace right now.</p>
@@ -321,7 +321,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
       const result = await post(body);
       if (!live.current || lifecycle.current !== token) return;
       const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
-      if (action === "quote") setNotice(saved.charge ? "Review the template, inputs and exact price below before creating." : "Review the template, inputs, wallet and exact price below before creating.");
+      if (action === "quote") setNotice(saved.charge ? "Review the template, inputs and price below before creating." : "Review the template, inputs, wallet and exact price below before creating.");
       if (action === "submit") setNotice(saved.status === "failed" ? failedNotice(saved, "The connected account refused this template run before it was sent.") : "Request recorded. Use Check result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
@@ -369,7 +369,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         {product && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand this project original is copied to {capability?.managed ? "Particl’s website tools" : "the connected account"} to prepare the quote.</label>}
       </fieldset>
       <div className={styles.actions}>
-        <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
+        <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? capability?.managed ? "Reading the price…" : "Reading exact price…" : capability?.managed ? "Get quote" : "Get connected-credit quote"}</button>
         <button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14} />Refresh saved template jobs</button>
       </div>
       {unresolved && <p role="status" className="suite-footnote">{capability?.managed ? "A submission needs reconciliation. It is never sent again: check it below." : "A submission needs reconciliation. It is never sent again: check it below, or set it aside in Workspace › Engines."}</p>}
@@ -380,7 +380,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
         <p>{matches ? selected.input.prompt || "No description." : "The template, description or product image changed. Request a new quote before creating."}</p>
         {/* Said before approval (owner decision): the approved price stands whether the run succeeds or fails. */}
         <p role="note" className={styles.charge}>{chargedEvenIfFails(selected.charge.credits, "template run")}</p>
-        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The exact price is checked again before submission.</p>
+        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The price is checked again before submission.</p>
         <label className={styles.checkbox}><input type="checkbox" checked={approved} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={(e) => setApproved(e.target.checked)} />Charge {creditsText(selected.charge.credits)} for this template run, even if it fails.</label>
         <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Create with template · ${creditsText(selected.charge.credits)}`}</button>
       </div>}

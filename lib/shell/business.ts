@@ -205,7 +205,7 @@ export const DTC_COPY = "DTC Ads runs on the account’s ms_image engine: a styl
 /** The ad-formats section (FINAL_SPEC §2.2 › ad formats), on the account's template catalogue. */
 export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 /** The same section in a managed workspace: the platform's website tools run video templates, priced in its own credits. */
-export const AD_FORMATS_MANAGED_COPY = { title: "Ad formats", line: "Video ad templates — UGC and motion. Pick one, then create with it at its exact price in this workspace’s credits." } as const;
+export const AD_FORMATS_MANAGED_COPY = { title: "Ad formats", line: "Video ad templates — UGC and motion. Pick one, then create with it at its price in this workspace’s credits." } as const;
 
 /* ── Setup ───────────────────────────────────────────────────────────── */
 /**
