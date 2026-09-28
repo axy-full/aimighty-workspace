@@ -1,14 +1,15 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { cleanRule } from "@/lib/approvalRule";
 import { MODELS, displayModelName } from "@/lib/models";
 import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
 import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
 import { WORKSPACE_TABS } from "@/lib/shell/ia";
 import { ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
+import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import {
-  auditEntries, checkoutUrl, packLine, planLine, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
+  auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
   type BillingPlan, type BillingSubscription, type SecurityBody, type Topups, type UsageBody,
 } from "@/lib/shell/workspace-view";
 import { useSession } from "@/lib/session";
@@ -386,36 +387,56 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
   const statements = useRead<unknown>(admin ? "/api/statements" : null);
   const topups = useRead<Topups>("/api/workspaces/topups");
   const [busy, setBusy] = useState<string | null>(null);
+  /* One write at a time: a double press asks once. */
+  const writing = useRef(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  /* What a request or a withdrawal did is said where it can be read: on a phone, clear of the tab bar. */
+  const noteRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (note) revealClear(noteRef.current); }, [note]);
   const months = statementMonthsOf(statements.data);
-  const packs = topups.data?.applies ? topups.data.packs : [];
-  const open = (topups.data?.requests ?? []).filter((r) => r.status === "requested");
+  const applies = Boolean(topups.data?.applies);
+  const packs = applies ? topups.data!.packs : [];
+  /* The owner and admins ask for packs (the route answers anyone else 403); a member is told who does. */
+  const canRequest = Boolean(topups.data?.canRequest);
+  const requests = applies ? requestRows(topups.data!.requests) : [];
+  const open = requests.filter((r) => r.status === "requested");
+  const openLimit = topups.data?.openLimit ?? 3;
+  const full = open.length >= openLimit;
+  const grants = applies ? topups.data!.history ?? [] : [];
   /* The balance as takes, counted from the balance shown above (it refreshes
      on its own). The route sends none to a workspace billed in dollars. */
   const inCredits = session.credits != null;
   const reach = data?.reach ?? null;
   const request = async (packId: string) => {
+    if (writing.current) return;
+    writing.current = true;
     setBusy(packId); setNote(null);
-    const { json, error: refused } = await write<{ checkout?: { kind: string; url?: string } }>("/api/workspaces/topups", "POST", { packId });
+    const { json, error: refused } = await write<{ checkout?: { kind: string; url?: string }; emailed?: boolean }>("/api/workspaces/topups", "POST", { packId });
+    writing.current = false;
     setBusy(null);
-    if (refused) { setNote({ ok: false, text: refused }); return; }
+    /* No answer at all (the connection dropped): the request may have landed; the list is read again to show it. */
+    if (refused) { setNote({ ok: false, text: /fetch|network|load failed/i.test(refused) ? "The request was not confirmed. Check Requests below before asking again; nothing is charged either way." : refused }); void topups.read(); return; }
     const url = json?.checkout?.kind === "redirect" ? checkoutUrl(json.checkout.url, window.location.origin) : null;
     if (json?.checkout?.kind === "redirect") {
       if (url) { window.location.assign(url); return; }
       setNote({ ok: false, text: "Checkout returned an address this page will not open." }); return;
     }
-    setNote({ ok: true, text: "Requested. The balance updates once the platform confirms payment." });
+    /* Nothing is charged by asking: the platform takes payment its own way, then the credits land. */
+    setNote({ ok: true, text: `Requested. ${json?.emailed ? "The platform admin was emailed" : "It waits on the platform desk"}; nothing is charged here, and the credits land once payment is confirmed.` });
     void topups.read();
   };
   const withdraw = async (id: string) => {
+    if (writing.current) return;
+    writing.current = true;
     setBusy(id); setNote(null);
     const { error: refused } = await write(`/api/workspaces/topups?id=${encodeURIComponent(id)}`, "DELETE");
+    writing.current = false;
     setBusy(null);
-    setNote(refused ? { ok: false, text: refused } : { ok: true, text: "Request withdrawn." });
+    setNote(refused ? { ok: false, text: /fetch|network|load failed/i.test(refused) ? "The withdrawal was not confirmed. Requests below show where it stands." : refused } : { ok: true, text: "Request withdrawn." });
     void topups.read();
   };
   return (
-    <div className="wsx-card" data-testid="ws-plans">
+    <div className="wsx-card wsx-plans" data-testid="ws-plans">
       <span className="gx-eyebrow">Balance</span>
       <span className="wsx-balance" title={credits.title} data-testid="workspace-balance">{credits.text}</span>
       {inCredits && !data && !error ? <span className="cw-dim" role="status" data-testid="workspace-reach-loading">Counting what that buys…</span> : null}
@@ -439,27 +460,52 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
       {packs.length ? (
         <>
           <span className="gx-eyebrow">Add credits</span>
-          <div className="wsx-packs">
+          <div className="wsx-packs" data-testid="ws-packs">
             {packs.map((p) => (
               <div className="wsx-pack" key={p.id} data-testid="ws-pack">
                 <span className="wsx-name">{p.label}</span>
-                <span className="cw-mono">{packLine(p)}</span>
-                <button type="button" className="gx-hbtn" disabled={!topups.data?.canRequest || busy != null} onClick={() => void request(p.id)} data-testid="ws-pack-request">
-                  {busy === p.id ? "Requesting…" : topups.data?.provider === "manual" ? "Request pack" : "Buy credits"}
-                </button>
+                {/* Each figure stays whole: the line breaks between them, never inside a price. */}
+                <span className="wsx-pack-line">{packLine(p).split(" · ").map((part, i) => <Fragment key={i}>{i ? " · " : ""}<span className="wsx-whole">{part}</span></Fragment>)}</span>
+                {canRequest ? (
+                  <button type="button" className="gx-hbtn wsx-pack-go" disabled={busy != null || full} onClick={() => void request(p.id)} data-testid="ws-pack-request">
+                    {busy === p.id ? "Requesting…" : topups.data?.provider === "manual" ? packRequestLabel(p) : `Buy ${p.total.toLocaleString("en-US")} credits`}
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
-          {!topups.data?.canRequest ? <span className="gx-reason">The owner or an admin asks for credits.</span> : null}
-          {open.map((r) => (
-            <div className="wsx-actions" key={r.id} data-testid="ws-topup-request">
-              <span className="cw-dim">{r.label} · {cr(r.credits + r.bonus)} · waiting on the platform</span>
-              {topups.data?.canRequest ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void withdraw(r.id)}>Withdraw</button> : null}
-            </div>
-          ))}
+          {!canRequest ? <span className="wsx-ask" data-testid="ws-packs-ask">Ask an admin: the owner or an admin requests credits.</span>
+            : full ? <span className="wsx-ask" data-testid="ws-packs-full">{openLimit} requests are waiting. Withdraw one, or wait for an answer.</span> : null}
         </>
       ) : null}
-      {note ? <p className={note.ok ? "gx-gen-note" : "gx-gen-error"} role={note.ok ? "status" : "alert"} data-testid="ws-plans-note">{note.text}</p> : null}
+      {note ? <p ref={noteRef} className={note.ok ? "gx-gen-note" : "gx-gen-error"} role={note.ok ? "status" : "alert"} data-testid="ws-plans-note">{note.text}</p> : null}
+      {requests.length ? (
+        <div className="wsx-list" data-testid="ws-topup-requests">
+          <span className="gx-eyebrow">Requests</span>
+          {requests.map((r) => (
+            <div className="wsx-list-row" key={r.id} data-testid="ws-topup-request" data-status={r.status}>
+              <span className="wsx-list-what">{requestLine(r)}</span>
+              {r.status === "requested" && canRequest ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void withdraw(r.id)} data-testid="ws-topup-withdraw">{busy === r.id ? "Withdrawing…" : "Withdraw"}</button> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {applies ? (
+        <div className="wsx-list" data-testid="ws-grants">
+          <span className="gx-eyebrow">Credit history</span>
+          {grants.map((g) => {
+            const row = grantRow(g);
+            return (
+              <div className="wsx-list-row" key={g.id} data-testid="ws-grant">
+                <span className="wsx-list-what">{row.what}{row.when ? ` · ${row.when}` : ""}</span>
+                <span className="wsx-list-amount">{row.amount}</span>
+              </div>
+            );
+          })}
+          {topups.data && !grants.length ? <span className="wsx-ask">No credits in or out yet.</span> : null}
+        </div>
+      ) : null}
+      {topups.error ? <p className="gx-gen-error" role="alert" data-testid="ws-topups-error">{topups.error} <button type="button" className="gx-hbtn" onClick={() => void topups.read()}>Try again</button></p> : null}
       {admin ? (
         <>
           <span className="gx-eyebrow">Statements</span>

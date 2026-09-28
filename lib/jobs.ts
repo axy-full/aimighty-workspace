@@ -12,6 +12,7 @@ import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
+import { heldPriceNow } from "./creditTerms";
 import { withoutVendorDollars } from "./analyticsRedact";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
@@ -112,15 +113,20 @@ function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 /**
  * What a held take's snapshot (lib/held.ts heldInfo) may tell the browser:
  * why it waits, and its price in the one unit this workspace pays in — the
- * credits it `needs`, or, on its own keys, `estUsd`, the dollars that would
- * leave its own account. Never both, for the reason costUsd and
- * creditsBilled are never both: side by side they are the margin.
- * Releasing reads the raw row (heldRows), not this.
+ * credits it `needs` to start now (creditTerms heldPriceNow: what Release
+ * charges), or, on its own keys, `estUsd`, the dollars that would leave its
+ * own account. Never both, for the reason costUsd and creditsBilled are never
+ * both: side by side they are the margin. Releasing reads the raw row
+ * (heldRows), not this.
  */
-function heldForBrowser(held: Record<string, unknown>, inCredits: boolean): Record<string, unknown> {
+function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind: string, model: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (typeof held.why === "string") out.why = held.why;
-  if (inCredits && typeof held.needs === "number") out.needs = held.needs;
+  const needs = heldPriceNow(held, kind, model);
+  /* A changed quote needs approval even if the take originally waited only for a slot. */
+  const approved = typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null;
+  if (inCredits && held.why === "slots" && needs !== approved) out.why = "credits";
+  if (inCredits && needs > 0) out.needs = needs;
   if (!inCredits && typeof held.estUsd === "number") out.estUsd = held.estUsd;
   return out;
 }
@@ -168,7 +174,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
-  if (params.held && typeof params.held === "object") params.held = heldForBrowser(params.held, inCredits);
+  if (params.held && typeof params.held === "object")
+    params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars
      anywhere inside: admission and settlement keep their working numbers there (an audio estimate,
      a dub's per-minute rate, a starter take's display price), each one what a vendor charges, beside

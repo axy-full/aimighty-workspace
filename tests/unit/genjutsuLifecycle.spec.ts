@@ -48,7 +48,7 @@ test("Genjutsu quote uses only documented estimate POST and rejects unusable pri
   const requests:string[]=[];
   globalThis.fetch=async(url,init)=>{requests.push(String(url));expect(init).toMatchObject({method:"POST",redirect:"error",headers:{Authorization:"Key fixture:key"}});expect(JSON.parse(String(init?.body))).toEqual(input);return Response.json({usd:"2.043",credits:"32.68"});};
   expect(await estimateGenjutsuInput(GENJUTSU_MODELS["object-swap"],input)).toBe(2.043);
-  expect(requests).toEqual(["https://api.higgsfield.ai/estimate/higgsfiled/genjutsu/object-swap/v1.0"]);
+  expect(requests).toEqual(["https://api.higgsfield.ai/estimate/higgsfield/genjutsu/object-swap/v1.0"]);
   for(const usd of [0,"0","NaN","-2",null,"1e5",2]) {globalThis.fetch=async()=>Response.json({usd});await expect(estimateGenjutsuInput(GENJUTSU_MODELS["motion-transfer"],input)).rejects.toThrow(/live transform price/);}
   globalThis.fetch=async()=>new Response("provider secret must never escape",{status:503});
   await expect(estimateGenjutsuInput(GENJUTSU_MODELS["motion-transfer"],input)).rejects.toThrow(/Nothing was submitted/);
@@ -61,6 +61,35 @@ test("Genjutsu sends exact original paths, preserves image order and never uses 
   const body=await genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"", "480p",source,refs);
   expect(body.video_url).toMatch(/generations\/video\.mp4$/);expect(body.image_urls[0]).toMatch(/uploads\/still\.png$/);expect(body.image_urls[1]).toMatch(/generations\/generated\.png$/);
   await expect(genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"", "1080p",source,refs)).rejects.toThrow();
+});
+
+test("Genjutsu requires a still reference before signing media or making requests",async()=>{
+  const storage=await import("../../lib/storage");
+  let signed=0;
+  const {genjutsuInput}=load<typeof import("../../lib/genjutsu")>("lib/genjutsu.ts",{
+    "./storage":{...storage,usingBlob:()=>true,presignedReadUrl:async()=>{signed++;return "https://original.example/signed";}},
+  });
+  process.env.ENGINE_MOCK="0";
+  const source={id:"video",kind:"video" as const,mime:"video/mp4",ext:"mp4",storedUrl:"/api/uploads/video",role:"reference_video" as const};
+  for(const model of Object.values(GENJUTSU_MODELS))
+    await expect(genjutsuInput(model,"","720p",source,[])).rejects.toThrow(/one to eight still references/);
+  expect(signed).toBe(0);
+});
+
+test("previously accepted transform handles poll their stored request URL without a new submission or estimate",async()=>{
+  const {runInTenant}=await import("../../lib/tenant");
+  const {higgsfield}=await import("../../lib/engines/higgsfield");
+  await runInTenant({...workspace("genjutsu_legacy_poll"),usesPlatformKeys:true},async()=>{
+    process.env.ENGINE_MOCK="0";
+    const legacy=handle(await job("gen_legacy_handle"));
+    const calls:{url:string;method:string}[]=[];
+    globalThis.fetch=async(url,init)=>{
+      calls.push({url:String(url),method:init?.method??"GET"});
+      return Response.json({request_id:requestId,status:"completed",video:{url:"https://cdn.example/original.mp4"}});
+    };
+    expect(await higgsfield.poll!(legacy)).toMatchObject({status:"succeeded",videoUrl:"https://cdn.example/original.mp4"});
+    expect(calls).toEqual([{url:statusUrl,method:"GET"}]);
+  },actor);
 });
 
 test("failed non-generating estimates never create uncertain external mutations",async()=>{
@@ -84,7 +113,7 @@ test("fresh estimate and credential checks precede the sole paid POST; status an
     const req:VideoRenderRequest={kind:"video",...value,params:{...value.params,higgsfieldCredentialFingerprint:higgsfieldCredentialFingerprint()}};
     const calls:string[]=[];let price="0.75";
     globalThis.fetch=async(url)=>{calls.push(String(url));return String(url).includes("/estimate/")?Response.json({usd:price}):Response.json({request_id:requestId,status_url:statusUrl,cancel_url:cancelUrl});};
-    const out=await higgsfield.render(req);expect(calls).toHaveLength(2);expect(calls[1]).toBe("https://api.higgsfield.ai/higgsfiled/genjutsu/motion-transfer/v1.0");
+    const out=await higgsfield.render(req);expect(calls).toHaveLength(2);expect(calls[1]).toBe("https://api.higgsfield.ai/higgsfield/genjutsu/motion-transfer/v1.0");
     expect(out).toEqual({handle:{...handle(value),credentialFingerprint:req.params.higgsfieldCredentialFingerprint}});
     price="0.76";calls.length=0;await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);expect(calls).toHaveLength(1);
     process.env.HF_CREDENTIALS="rotated:secret";calls.length=0;await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);expect(calls).toHaveLength(0);process.env.HF_CREDENTIALS="fixture:key";

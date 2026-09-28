@@ -128,8 +128,10 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   /* Every take says what it is doing. */
   await expect(tile(results, "Lantern walk").getByTestId("take-chip")).toHaveText("Rendering");
   await expect(tile(results, "Tide timelapse").getByTestId("take-chip")).toHaveText("Queued");
-  await expect(tile(results, "Storm front").getByTestId("take-chip")).toHaveText("Held");
-  await expect(tile(results, "Storm front").getByTestId("take-reason")).toHaveText("Needs 12 cr");
+  /* Held for credits (idea 4): the need rides on the chip, and the way out is Release at that price. */
+  await expect(tile(results, "Storm front").getByTestId("take-chip")).toHaveText("Held · needs 12 cr");
+  await expect(tile(results, "Storm front").getByTestId("take-reason")).toHaveCount(0);
+  await expect(tile(results, "Storm front").getByTestId("take-release")).toContainText("12 cr");
   await expect(tile(results, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   await expect(tile(results, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
   await expect(tile(results, "Night swim").getByTestId("take-reason")).toHaveAttribute("title", "Refused: the prompt was flagged by moderation.");
@@ -224,7 +226,7 @@ test("Library › Assets and Studio › Takes wear the same card; their failed r
   await expect(takes.getByTestId("take-tile")).toHaveCount(8);
   await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
   await expect(tile(takes, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
-  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held");
+  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held · needs 12 cr");
   await expect(tile(takes, "Harbour at dusk").getByTestId("take-reason")).toHaveText("Preview unavailable");
   await shot(page, info, "takes-cards", tile(takes, "Storm front"));
   /* A take that did not render, waits or has no copy says why and what happens next, instead of opening an empty editor. */
