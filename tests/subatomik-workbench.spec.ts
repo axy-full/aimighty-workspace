@@ -402,6 +402,8 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
     page.getByRole("button", { name: "Review transform cost", exact: true }),
   ).toBeDisabled();
   await useCard(page, "upload:motion-original");
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeDisabled();
+  expect(f.quotes).toHaveLength(0);
   await dropIdentity(
     page,
     page.getByLabel("Transform reference drop area"),
@@ -588,6 +590,7 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
     "src",
     "/api/media/saved-camera-take",
   );
+  await dropIdentity(page, page.getByLabel("Transform reference drop area"), "wardrobe-original", "upload");
   await page
     .getByRole("button", { name: "Review transform cost", exact: true })
     .click();
@@ -620,7 +623,7 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
     model: GENJUTSU_MODELS["object-swap"],
     sourceGenId: "saved-camera-take",
     prompt: "",
-    references: [],
+    references: [{ uploadId: "wardrobe-original", role: "reference_image" }],
   });
   await expect(
     page.getByRole("button", {
@@ -639,6 +642,7 @@ test("queued cancellation remains pending until the existing job confirms it", a
   const f = await fixture(page);
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=particl"));
   await useCard(page, "upload:motion-original");
+  await dropIdentity(page, page.getByLabel("Transform reference drop area"), "wardrobe-original", "upload");
   await page
     .getByRole("button", { name: "Review transform cost", exact: true })
     .click();

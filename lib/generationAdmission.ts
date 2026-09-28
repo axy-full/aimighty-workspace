@@ -296,12 +296,12 @@ export async function executeGenerationAdmission(
       if (body.task !== "genjutsu" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(body.resolution) ||
           Boolean(body.sourceGenId) === Boolean(body.sourceUploadId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(body.sourceGenId || body.sourceUploadId)))
         return admissionReply({ error: "Choose one original video, a transform operation and 480p or 720p output." }, { status: 400 });
-      if (body.references != null && (!Array.isArray(body.references) || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
+      if (!Array.isArray(body.references) || body.references.length < GENJUTSU_LIMITS.minImages || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
         if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
         const r = ref as Record<string, unknown>;
         return Boolean(r.uploadId) === Boolean(r.genId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(r.uploadId || r.genId)) || r.role !== "reference_image" ||
           Object.keys(r).some(k => !["uploadId", "genId", "role"].includes(k));
-      }))) return admissionReply({ error: "Choose up to eight original still references using saved media identities." }, { status: 400 });
+      })) return admissionReply({ error: "Choose one to eight original still references using saved media identities." }, { status: 400 });
       if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using transforms." }, { status: 400 });
       const draft = await readDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
