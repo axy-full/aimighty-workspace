@@ -30,7 +30,7 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
     g("SOUL CINEMA", [["Cast & elements", "Prompt · Reference · Build", "entries"], ["Soul ID", "Lock a character's identity", "soul"]]),
   ],
   takes: [
-    g("TAKES", [["Generations", "Every take of the project", "takes"], ["All assets", "By type", "assets"]]),
+    g("TAKES", [["Takes", "By shot · Search · Filter", "takes"], ["Needs review", "Pick · Approve · Request changes", "review"]]),
     g("EDIT", [["Seedance Edit", "Video · 2.5 or 2.0", "video"], ["Re-edit a still", "Instruction · Nano Banana", "image"]]),
   ],
   astra: [

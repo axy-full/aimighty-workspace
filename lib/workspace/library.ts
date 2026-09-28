@@ -5,7 +5,7 @@ import { libraryKind, libraryReady, libraryUrl, type LibraryAsset, type LibraryU
 import { inlineSafe } from "../serveType";
 import { uploadFile, type UploadedFile } from "../uploadClient";
 import { fileProjectUpload } from "../workbench/project-library-client";
-import { projectTakes, type Take } from "./takes";
+import { projectTakes, type ReviewState, type Take } from "./takes";
 
 /**
  * The open project's library — every upload and generation filed to it —
@@ -48,7 +48,7 @@ type Entry = {
   rerun: Promise<void> | null;
   /** A first read that failed is tried again on its own, a few times, further apart each time. */
   retry: { attempts: number; timer: ReturnType<typeof setTimeout> | null };
-  /** Counts full reads that landed: a settle poll that began before one does not overwrite it. */
+  /** Counts full reads that landed and reviews written here: a settle poll that began before either does not overwrite it. */
   epoch: number;
 };
 const entries = new Map<string, Entry>();
@@ -182,6 +182,50 @@ async function more(scope: string, projectId: string) {
     }
   })();
   return e.paging;
+}
+
+/* ── Review ───────────────────────────────────────────────────────────── */
+
+/** The review marks a generation carries (PATCH /api/jobs/:id answers them after a review). */
+export type ReviewFields = Pick<Generation, "reviewState" | "reviewBy" | "pickedBy" | "pickedAt" | "approvedBy" | "approvedAt" | "updatedAt">;
+
+/**
+ * Write a review into the loaded library at once, so every grid of this
+ * project (Takes, the Library, Gen) shows it without a re-read. A settle
+ * poll that began before the write does not overwrite it (the epoch), and a
+ * full read already in flight began before it too: it is read once more
+ * after it lands.
+ */
+export function applyReview(scope: string, projectId: string, generationId: string, review: Partial<ReviewFields>) {
+  const key = keyOf(scope, projectId);
+  const e = entry(key);
+  if (!e.state.generations.some((g) => g.id === generationId)) return;
+  e.epoch++;
+  set(key, { generations: e.state.generations.map((g) => (g.id === generationId ? { ...g, ...review } : g)) });
+  if (e.busy) void load(scope, projectId);
+}
+
+/**
+ * Pick, approve, send back or clear one take through the existing route
+ * (PATCH /api/jobs/:id `{ reviewState }`), which records who reviewed it and
+ * when, and tells the workspace's admins when a take is picked. Nothing here
+ * is paid. Answers the marks the take now carries; a refusal throws with the
+ * route's own words, and a take that is gone is read out of the library.
+ */
+export async function reviewProjectTake(scope: string, projectId: string, generationId: string, state: ReviewState): Promise<Partial<ReviewFields>> {
+  const response = await fetch(`/api/jobs/${encodeURIComponent(generationId)}`, {
+    method: "PATCH", cache: "no-store",
+    headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+    body: JSON.stringify({ reviewState: state }),
+  }).catch(() => null);
+  const json = await response?.json().catch(() => null) as { error?: string; review?: Partial<ReviewFields> } | null;
+  if (!response?.ok) {
+    if (response?.status === 404) void refreshProjectLibrary(scope, projectId);
+    throw new Error(json?.error || (response ? "The review was not saved." : "The review was not saved: the connection dropped."));
+  }
+  const review = json?.review ?? { reviewState: state };
+  applyReview(scope, projectId, generationId, review);
+  return review;
 }
 
 /** How far a search for one take pages back before it gives up (60 of each source a page). */
