@@ -233,6 +233,27 @@ test("remove takes an Atomik run's own cards off softly; a card someone else cha
   expect(planCanvasOps(after, [{ kind: "remove", nodeIds: ["theirs"] }], run).outcomes).toEqual([{ kind: "remove", nodeIds: [] }, { kind: "remove", nodeIds: [], held: PERSON_WINS, card: "theirs" }]);
 });
 
+test("a draft save that still carries cards an undo took off never brings them back; a card put back on the canvas itself does come back", () => {
+  const run = "agent:rar_dddddddddddddddddddddddd";
+  let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [scene("theirs")], removeNodes: [], upsertAssets: [], order: ["theirs"], at: 1, author: "ana" });
+  canvas = applyTeamPatch(canvas, { upsertNodes: [scene("a1"), scene("a2")], made: ["a1", "a2"], removeNodes: [], upsertAssets: [], order: null, at: 2, author: run });
+  canvas = { ...canvas, serverMade: { a1: run, a2: run } };
+  /* The undo takes both off. */
+  const undo = planCanvasOps(canvas, [{ kind: "remove", nodeIds: ["a1", "a2"] }], run);
+  canvas = applyTeamPatch(canvas, { ...undo.patch, at: 3, author: run });
+  expect(Object.keys(canvas.nodes)).toEqual(["theirs"]);
+  /* A window had folded the build in and its draft save lands after the undo: made, or a field it moved. Held. */
+  const stale = applyTeamPatch(canvas, { upsertNodes: [scene("a1"), { ...scene("a2"), x: 300 }], made: ["a1"], fields: { a2: ["x"] }, removeNodes: [], upsertAssets: [], order: null, at: 4, author: "ana", implied: true });
+  expect(Object.keys(stale.nodes)).toEqual(["theirs"]);
+  expect(Object.keys(stale.removed).sort()).toEqual(["a1", "a2"]);
+  /* A person's card taken off by a teammate is unchanged by this rule (only server-made cards are held). */
+  const personal = applyTeamPatch(canvas, { upsertNodes: [], removeNodes: ["theirs"], upsertAssets: [], order: null, at: 5, author: "bo" });
+  expect(Object.keys(applyTeamPatch(personal, { upsertNodes: [scene("theirs")], made: ["theirs"], removeNodes: [], upsertAssets: [], order: null, at: 6, author: "ana", implied: true }).nodes)).toEqual(["theirs"]);
+  /* Put back on the canvas itself (a window's own edit, not a save's implication): it lands. */
+  const back = applyTeamPatch(canvas, { upsertNodes: [scene("a1")], made: ["a1"], removeNodes: [], upsertAssets: [], order: null, at: 7, author: "ana" });
+  expect(Object.keys(back.nodes).sort()).toEqual(["a1", "theirs"]);
+});
+
 test("a removal reaches the live room too, even for a card the room knows the server made", () => {
   const store = new Map<string, unknown>([["a1", scene("a1")], ["theirs", scene("theirs", { linked: ["a1"] })]]);
   let made: Record<string, string> = { a1: "agent:r" };
@@ -361,6 +382,11 @@ test("undo takes off only the run's own cards, softly, and says what a teammate'
     expect(after.removed[id("shot-1")]).toMatchObject({ title: "01 — Opening" });
     expect(after.nodes[id("shot-2")].text).toBe("Bo's prompt");
     expect(after.nodes.theirs).toMatchObject({ title: "Ana's shot", x: 100, y: 100, linked: [] });
+    /* A window that had folded the build in saves its draft just after the undo: the cards stay off (the browser race). */
+    const { applyTeamCanvasPatch } = await import("../../lib/workbench/team-canvas");
+    const { workbenchTransaction } = await import("../../lib/workbench/records");
+    await workbenchTransaction((tx) => applyTeamCanvasPatch(tx, "prod-1", { upsertNodes: [built.nodes[id("shot-1")], built.nodes[id("place-1")]], made: [id("shot-1"), id("place-1")], removeNodes: [], upsertAssets: [], order: null }, "ana", true, { implied: true }));
+    expect(Object.keys((await readTeamCanvas("prod-1"))!.canvas.nodes).sort()).toEqual(["theirs", id("cast-1"), id("shot-2")].sort());
     /* The undo is logged once under its own op id; again, it changes nothing more. */
     const second = await agent.undoRigAgent({ productionId: "prod-1", runId: asked.id, userId: "ana" });
     expect(second.undo).toEqual(undone.undo);

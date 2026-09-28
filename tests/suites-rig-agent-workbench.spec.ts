@@ -44,8 +44,25 @@ async function openRig(tab: Page, draftId: string, errors: string[], paid: strin
   await expect(tab.getByTestId("rig-graph-surface")).toBeVisible();
 }
 
-const cardIds = (tab: Page) => tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node[data-node-id]")).map((el) => el.dataset.nodeId!).sort());
-const kindsOn = (tab: Page) => tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node .pxw-graph-kind")).map((el) => el.textContent!.trim()).sort());
+/**
+ * The graph view, even after a cold dev server hot-reloaded the tab (compiling for the other tab can reload this one,
+ * which puts it back on the list). A reload keeps the project: the canvas and the run are the server's.
+ */
+async function onCanvas(tab: Page) {
+  const surface = tab.getByTestId("rig-graph-surface");
+  if (await surface.isVisible()) return;
+  await expect(tab.getByTestId("rig-team")).toContainText("Team canvas");
+  await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
+  await expect(surface).toBeVisible();
+}
+const cardIds = async (tab: Page) => {
+  await onCanvas(tab);
+  return tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node[data-node-id]")).map((el) => el.dataset.nodeId!).sort());
+};
+const kindsOn = async (tab: Page) => {
+  await onCanvas(tab);
+  return tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node .pxw-graph-kind")).map((el) => el.textContent!.trim()).sort());
+};
 const canvasOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, CanvasNode>; removedIds: string[]; serverMade: Record<string, string> } | null };
 const agentOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
@@ -97,7 +114,7 @@ test("ask Atomik for a board: it proposes the cards and wires, free; approved, t
   const second = await context.newPage();
   await openRig(page, draft.id, errors, paid);
   await openRig(second, draft.id, errors, paid);
-  for (const tab of [page, second]) await expect.poll(() => cardIds(tab)).toEqual(["theirs"]);
+  for (const tab of [page, second]) await expect.poll(() => cardIds(tab), { timeout: 30_000 }).toEqual(["theirs"]);
   await expect.poll(async () => Object.keys((await canvasOf(page.request, headers, productionId)).canvas?.nodes ?? {})).toEqual(["theirs"]);
 
   /* Ask. The card says building is free before anything is asked. */
