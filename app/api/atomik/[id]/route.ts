@@ -9,6 +9,7 @@ import { effectiveRules } from "@/lib/rules";
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
 import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
+import { plannerMemoryText } from "@/lib/atomikMemory";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -83,12 +84,14 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
     const context = await projectContext(loaded.chat.projectId);
+    /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
+    const memory = await plannerMemoryText({ projectId: loaded.chat.projectId, query: text }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, model: b.model, effort, rules,
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, memory, model: b.model, effort, rules,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
-    await runTurn(id, { context, model: b.model, effort, maxCredits, rules });
+    await runTurn(id, { context, memory, model: b.model, effort, maxCredits, rules });
   } catch (e) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
     const known = e instanceof PaidTextError || e instanceof SpendReservationError;

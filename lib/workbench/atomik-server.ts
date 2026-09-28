@@ -30,6 +30,8 @@ import { CREW } from './crew';
 import { projectSchema } from './studio-schema';
 import type { Plan, Project } from './studio';
 import { requireTenant, type TenantToken } from '../tenant';
+import { plannerMemory } from '../atomikMemory';
+import { MEMORY_ABOUT, type PlannerMemoryItem } from '../atomikMemoryText';
 
 export const atomikRequestSchema = z.object({
   astraBlender: astraRequestSchema.optional(),
@@ -175,7 +177,8 @@ export function atomikSystem(input: AtomikRequest) {
   ].join('\n');
 }
 
-export function atomikContext(project: Project, input: AtomikRequest, uploadedText: Record<string, string> = {}, images: AtomikReferenceContent['images'] = []) {
+/** `memory`: the workspace's and this project's kept memory (lib/atomikMemory › plannerMemory), ranked and small; never money. */
+export function atomikContext(project: Project, input: AtomikRequest, uploadedText: Record<string, string> = {}, images: AtomikReferenceContent['images'] = [], memory: PlannerMemoryItem[] = []) {
   const all = [...project.assets, ...(project.sharedAssets ?? [])];
   const refs = input.refs.map(id => all.find(a => a.id === id));
   if (refs.some(r => !r)) throw new AtomikError('A selected reference is no longer part of this project. Refresh your references.');
@@ -207,6 +210,7 @@ export function atomikContext(project: Project, input: AtomikRequest, uploadedTe
       visualEvidence: images.filter(image => image.assetId === a!.id).map(({ assetId, name, dataUrl, ...evidence }) => ({ ...evidence, source: assetId, label: name, pixelsAttached: !!dataUrl })),
       evidence: images.some(image => image.assetId === a!.id) ? (a!.kind === 'video' ? 'Sampled still frames supplied; full video and audio have not been reviewed' : 'Image pixels supplied as a bounded review copy; animated images use first frame only') : uploadedText[a!.id] ? 'Uploaded text supplied' : 'Description only; media content has not been viewed' })),
     currentSequence: project.shots.slice(0, 30).map(s => ({ name: s.name, frames: s.duration, note: s.note.slice(0, 600), assetId: s.assetId })),
+    ...(memory.length ? { memory: { about: MEMORY_ABOUT, entries: memory } } : {}),
   });
 }
 const resultSchema = z.object({
@@ -278,6 +282,10 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const referenceIds = input.astraBlender?.referenceIds ?? input.refs;
   if (input.astraBlender && referenceIds.some(id => ![...project.assets, ...(project.sharedAssets ?? [])].some(asset => asset.id === id && asset.kind === 'image'))) throw new AtomikError('Choose project images or rendered previews as Astra visual references.', 422);
   const references = await loadAtomikReferences(project, referenceIds, owner, input.videoFrames, {}, input.referenceAd);
+  /* The team's memory for this production: read into planning and suite-agent runs, not into Astra's scene
+     edits or a bounded reference-ad review. Read the same way for the quote and the run, so the estimate
+     covers it; a memory that cannot be read leaves the request as it was. */
+  const memory = input.astraBlender || input.referenceAd ? [] : await plannerMemory({ projectId: project.productionProjectId, query: input.request }).catch(() => []);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
   if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
@@ -287,7 +295,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
   const system = input.astraBlender ? astraAgentInstructions(input.astraBlender.mode) : input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
-  const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images);
+  const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images, memory);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
   const reasoning = atomikReasoningRequest(model, input.effort, LIMITS[input.depth].maxTokens);

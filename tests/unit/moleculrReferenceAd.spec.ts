@@ -119,7 +119,8 @@ test('missing video aborts preparation before allocating nodes; only compatible 
   expect(() => buildMoleculrStoryboard(project, () => { allocated++; return 'unused'; })).toThrow('original video');
   expect(allocated).toBe(0);
   const selected = referenceVideoModels(MODELS, ['image', 'image', 'video']);
-  expect(selected.map(model => model.id)).toEqual(['dreamina-seedance-2-5-260628', 'dreamina-seedance-2-0-260128']);
+  // Cinema Studio takes stills and a clip as references, so it is a compatible entry too.
+  expect(selected.map(model => model.id)).toEqual(['dreamina-seedance-2-5-260628', 'dreamina-seedance-2-0-260128', 'higgsfield-cinema-studio-4.0']);
   expect(referenceVideoModels(MODELS, ['image'])).toBe(MODELS);
   expect(referenceVideoModels(MODELS.filter(model => model.provider === 'fal'), ['video'])).toEqual([]);
   expect(referenceAdBinding(fixture(), { assetId: 'ad-generated', notes: '', direction: '' })).toMatchObject({ sourceKey: '{"genId":"original-generation"}' });
