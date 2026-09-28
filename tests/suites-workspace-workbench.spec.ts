@@ -88,14 +88,15 @@ async function open(page: Page, path: string) {
   return { errors, patches, writes, ruleWrites };
 }
 
-test("Atomik › Tools & connections no longer lists the Skills page's packs: they needed a Higgsfield sign-in", async ({ page }, info) => {
+test("Atomik › Tools & connections lists Particl's own reach and server, and no skill packs for a signed-in account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?suite=atomik&page=skills&sp=skills");
   await expect(page.getByTestId("tools-view")).toBeVisible();
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
   await page.getByTestId("tools-tab-connect").click();
-  await expect(page.getByTestId("connect-tokens")).toBeVisible();
+  await expect(page.getByTestId("mcp-tool")).toHaveCount(7);
   await expect(page.getByTestId("skill-packs")).toHaveCount(0);
-  await expect(page.getByTestId("skill-row")).toHaveCount(0);
+  await expect(page.getByTestId("tools-view")).not.toContainText(/higgsfield/i);
   expect(errors).toEqual([]);
 });
 

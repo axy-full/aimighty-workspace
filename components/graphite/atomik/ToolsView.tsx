@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { useShell } from "@/lib/shell/state";
 import {
-  CLIENTS, DEFAULT_CEILING, PARTICL_REACH, STATUS_LABEL, ceilingShare, mcpEndpoint, mcpTools, parseTokens, readCeiling, setupGuide, tokenBody, tokenFacts,
+  CLIENTS, DEFAULT_CEILING, STATUS_LABEL, ceilingShare, mcpEndpoint, mcpTools, parseTokens, reachRows, readCeiling, setupGuide, tokenBody, tokenFacts,
   type ApiToken, type ClientId, type ReachOpen, type ReachRow, type TokenUnit, type ToolsTab,
 } from "@/lib/shell/tools-connections";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -10,15 +10,13 @@ import { useWorkspace } from "@/lib/workspace/state";
 
 /**
  * Atomik › Tools & connections (it replaced Atomik › Skills). Two tabs:
- *  - What Atomik can do: Particl's own reach, each row with an Open that goes
- *    where it runs.
+ *  - What Atomik can do: Particl's own reach, each with an Open that goes
+ *    where it runs. Atomik works with API-key and direct engines only, so
+ *    nothing here reaches a signed-in account.
  *  - Claude & ChatGPT: Particl's own MCP server — make or revoke a token,
  *    copy the setup for a client, see the tools it gets.
- * The connected Higgsfield account's rows and the skill packs (which taught an
- * assistant to use that account through a sign-in) went with the Higgsfield
- * sign-in (lib/higgsfield-consumer/retired.ts). Nothing here generates or
- * spends. A new token's secret lives only in this component's state: shown
- * once, filled into the setup, never stored.
+ * Nothing here generates or spends. A new token's secret lives only in this
+ * component's state: shown once, filled into the setup, never stored.
  */
 const noop = () => () => {};
 const readOrigin = () => window.location.origin;
@@ -64,18 +62,16 @@ export function ToolsView() {
 
 /* ── What Atomik can do ─────────────────────────────────────────────── */
 
-/* Particl's own reach: built in, nothing to check. */
-const ROWS: ReachRow[] = PARTICL_REACH.map((row) => ({ ...row, group: "particl", status: "built-in" }));
-
 function Reach({ onTab }: { onTab: (tab: ToolsTab) => void }) {
   const shell = useShell();
+  const rows = reachRows();
   const open = (target: ReachOpen) => ("gen" in target ? shell.goGen() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
   return (
     <>
       <p className="tc-intro">What Atomik reaches today, and where each one runs. Open goes straight there.</p>
       <section className="tc-card" aria-labelledby="tc-built-in" data-testid="reach-particl">
         <div className="tc-head"><h2 className="tc-title" id="tc-built-in">Built into Particl</h2></div>
-        {ROWS.map((row) => <ReachLine key={row.id} row={row} onOpen={open} />)}
+        {rows.map((row) => <ReachLine key={row.id} row={row} onOpen={open} />)}
       </section>
     </>
   );

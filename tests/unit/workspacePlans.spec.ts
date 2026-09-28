@@ -118,10 +118,13 @@ function fullRequest(): PlanRequest {
     shots: [shot("Opening", "wide"), shot("Turn", "close")],
     stems: [{ name: "Music", body: { task: "music", text: "slow" } }, { name: "Effects", body: { task: "sound", text: "wind" } }],
     variants: [{ name: "Variant 1", body: { model: "image-m", prompt: "hook", marketing: { quality: "high" } } }],
-    motion: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }, { uploadId: "r2" }], resolution: "720p" },
-    swap: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }], resolution: "720p", prompt: "swap it" },
+    /* Motion Transfer and Object Swap: the bodies the API-key transform form sends to /api/generate. */
+    motion: [{ name: "Transfer 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-motion-transfer", prompt: "recast", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }, { uploadId: "r2", role: "reference_image" }] } }],
+    swap: [{ name: "Swap 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-object-swap", prompt: "swap it", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }] } }],
+    /* What the connected account's Shorts form still publishes: no plan reads it any more. */
     shorts: { source: { uploadId: "u1" }, preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" }, aspectRatio: "9:16" },
-    generation: { type: "image", model: "image-x", prompt: "a", parameters: {}, medias: [] },
     astra: { sourceDigest: "c".repeat(64) },
     development: { kind: "screenplay" },
   };
@@ -160,8 +163,9 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 
 /* ------------------------------------------------------------------ registry */
 
-const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources"].sort();
-const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap", "shorts"] as const;
+/* Generate, Shorts and History ran only on the signed-in account, which Atomik no longer uses. */
+const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts", "history"].sort();
+const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
 
 test("the registry has exactly one plan for each of the 24 workspace pages", () => {
   const pages = Object.values(WORKSPACE_PLAN_PAGES).flat();
@@ -355,19 +359,32 @@ test("approved Particl dispatch sends exactly the approved credits and fingerpri
   expect(engine.getState().session[0].label).toBe("2 shots sent to render");
 });
 
-test("approved connected-account dispatch submits exactly the approved wallet and credits", async () => {
-  const { fetcher, dispatches } = backend({ price: () => 142 });
-  const engine = engineFor(context(fetcher));
-  engine.start("motion");
-  await until(() => engine.getState().run?.status === "waiting");
-  const quote = engine.getState().run!.quote!;
-  expect(quote.unit).toBe("connected");
-  expect(quote.line).toContain("2 ordered references");
-  await engine.approve();
-  await until(() => engine.getState().run?.status === "done", "done");
-  const [submit] = dispatches();
-  expect(submit.body).toEqual({ action: "submit", draftId: "draft-1", id: quote.parts[0].quoteId, workspaceId: "wallet-1", credits: 142 });
-  expect(engine.getState().completed.motion).toBe(true);
+for (const [page, model] of [["motion", "higgsfield-genjutsu-motion-transfer"], ["swap", "higgsfield-genjutsu-object-swap"]] as const)
+  test(`${page}: quotes and renders on the API-key transform engine at exactly the approved price, never on the connected account`, async () => {
+    const { fetcher, dispatches, calls } = backend({ price: () => 142 });
+    const engine = engineFor(context(fetcher));
+    engine.start(page);
+    await until(() => engine.getState().run?.status === "waiting");
+    const quote = engine.getState().run!.quote!;
+    expect(quote.unit).toBe("cr");
+    expect(quote.credits).toBe(142);
+    await engine.approve();
+    await until(() => engine.getState().run?.status === "done", "done");
+    const [sent] = dispatches();
+    expect(sent.path).toBe("/api/generate");
+    expect(sent.body).toMatchObject({ task: "genjutsu", model, maxCredits: 142, quoteFingerprint: quote.parts[0].fingerprint, refine: false });
+    expect(calls.some((call) => call.path.startsWith("/api/higgsfield/consumer/")), page).toBe(false);
+    expect(engine.getState().completed[page]).toBe(true);
+  });
+
+test("no plan quotes, submits or polls on the connected account; only Compare reads the results already kept", () => {
+  for (const page of PLAN_PAGES)
+    for (const step of PLANS[page].steps) {
+      const path = step.executor.backend.path;
+      if (!path.startsWith("/api/higgsfield/consumer/")) continue;
+      expect(page, `${page}: ${step.label}`).toBe("compare");
+      expect(step.executor.backend.method, `${page}: ${step.label}`).toBe("GET");
+    }
 });
 
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
@@ -577,20 +594,21 @@ test("activity merges real sources with this session's runs, newest first, with 
   expect(runs.some((entry) => entry.label.includes("Other"))).toBe(false);
 });
 
-test("shorts: without Shorts data it refuses with a reason; with it, it quotes on the Shorts route and submits the exact approved wallet and credits", async () => {
-  const { fetcher, calls, dispatches } = backend();
-  const bare = { ...context(fetcher), request: { ...fullRequest(), shorts: undefined } };
-  const verdict = PLANS.shorts.runnable(bare);
-  expect(verdict).toEqual({ ok: false, reason: "Not runnable yet — Needs Shorts data: choose a source video and a style on Shorts first." });
+test("generate, shorts and history refuse with their reason and read or send nothing, even with the old account data present", async () => {
+  const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
-  expect(engine.start("shorts")).toEqual({ ok: true, action: "started" });
-  await until(() => engine.getState().run?.status === "waiting", "waiting");
-  const quote = calls.find((call) => call.body?.action === "quote")!;
-  expect([quote.path, quote.body?.input]).toEqual(["/api/higgsfield/consumer/shorts", fullRequest().shorts]);
-  expect(dispatches()).toHaveLength(0);
-  expect(await engine.approve()).toEqual({ ok: true });
-  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
-  expect(dispatches().map((call) => [call.path, call.body])).toEqual([["/api/higgsfield/consumer/shorts", { action: "submit", draftId: "draft-1", id: quote.body ? "q-1" : "", workspaceId: "wallet-1", credits: 18 }]]);
+  const reasons = {
+    generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
+    shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
+    history: "Not runnable yet — reconciling needed the signed-in account.",
+  } as const;
+  for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {
+    expect(PLANS[page].runnable(context(fetcher)), page).toEqual({ ok: false, reason });
+    expect(PLANS[page].paid, page).toBe(false);
+    expect(engine.start(page), page).toEqual({ ok: false, reason });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(calls).toHaveLength(0);
 });
 
 /* ------------------------------------------------------------ Deliver, Agent */

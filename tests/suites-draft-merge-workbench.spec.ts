@@ -1421,6 +1421,9 @@ test("Gen, two takes: take 2's request cut off stops the batch; the next Generat
   expect(errors).toEqual([]);
 });
 
+/* Gen's connected-account takes (a lost submit reply read back; a batch followed after leaving Gen) went with Gen's
+   catalogue source on 28 September 2026: Gen offers Studio engines only, so there is no account take to follow. */
+
 test("Gen: a batch's shot saved while other saves land before and on top of it — its lost save reply is checked, never made twice", async ({ page }) => {
   const { project, errors, read, elsewhere, scope } = await setup(page, (p) => { p.nodes = [scene("n1", { title: "Opening" })]; });
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });

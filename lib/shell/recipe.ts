@@ -279,7 +279,8 @@ export function recipeChips(input: {
   const sameModel = !lostAccount && model.id === preset.model;
   if (sameModel) chips.push({ key: "model", label: "Model", value: model.label, state: "kept" });
   else {
-    const why = lostAccount ? "Made on the Higgsfield account; recreated on Studio engines"
+    /* Gen offers no signed-in account's catalogue (28 September 2026): an account take recreates on Studio engines, for everyone. */
+    const why = lostAccount ? "Gen runs on Studio engines only"
       : input.type !== preset.type || input.billing !== preset.billing || input.models.some((m) => m.id === preset.model) ? "Changed here"
       : "Not offered here now";
     const now = model.label === wanted ? (input.billing === "connected" ? "account" : "Studio engine") : model.label;

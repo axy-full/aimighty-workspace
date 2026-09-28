@@ -68,7 +68,7 @@ test("the owner's account history still reads on the real routes — running job
     expect(response.status(), `${route} ${String(body.action)}`).toBe(410);
     expect(await response.json()).toEqual({ code: "retired", error: RETIRED });
   }
-  for (const [method, path] of [["POST", "/api/higgsfield/consumer/connect"], ["GET", "/api/higgsfield/consumer/client"], ["POST", "/api/higgsfield/consumer/capabilities"], ["POST", "/api/higgsfield/consumer/qualification"], ["GET", "/api/atomik/recipes"]] as const) {
+  for (const [method, path] of [["POST", "/api/higgsfield/consumer/connect"], ["GET", "/api/higgsfield/consumer/client"], ["POST", "/api/higgsfield/consumer/capabilities"], ["POST", "/api/higgsfield/consumer/qualification"]] as const) {
     const response = method === "GET" ? await page.request.get(path, { headers }) : await page.request.post(path, { headers, data: {} });
     expect(response.status(), path).toBe(410);
   }

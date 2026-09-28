@@ -7,17 +7,18 @@ import { MARKETING_TEMPLATE_TOOLS } from "../../lib/higgsfield-consumer/marketin
 import { VOICE_TOOLS } from "../../lib/higgsfield-consumer/voice-tools";
 import { TOOLS } from "../../lib/mcp";
 import { shellPage } from "../../lib/shell/ia";
-import { SKILL_PACKS } from "../../lib/shell/skills";
 import {
-  CLIENTS, CONNECTED_OPEN, DEFAULT_CEILING, MCP_TOOL_LINES, PARTICL_REACH, STATUS_LABEL, ceilingShare, mcpTools, parseTokens, reachRows, reachStateFrom, reachSummary,
-  readCeiling, setupGuide, tokenBody, tokenFacts, usable, type ApiToken, type ReachOpen, type ReachStatus,
+  CLIENTS, DEFAULT_CEILING, MCP_TOOL_LINES, PARTICL_REACH, STATUS_LABEL, ceilingShare, mcpTools, parseTokens, reachRows,
+  readCeiling, setupGuide, tokenBody, tokenFacts, type ApiToken, type ReachOpen,
 } from "../../lib/shell/tools-connections";
 
 /**
  * Atomik › Tools & connections (idea 20). Every row is backed by code that
- * runs and opens the page where it runs; the connected rows are checked
- * against the names Particl's own workflows call; the assistant side is
- * Particl's own MCP server and tokens, in the workspace's unit.
+ * runs and opens the page where it runs; since 28 September 2026 every row is
+ * Particl's own (Atomik reaches no signed-in account); the assistant side is
+ * Particl's own MCP server and tokens, in the workspace's unit. The connected
+ * account's reach check (lib/higgsfield-consumer/reach.ts) is still read by
+ * its own route, so its contract stays tested here.
  */
 const fixture = (file: string) => (JSON.parse(readFileSync(`tests/fixtures/${file}`, "utf8")) as { tools: { name: string }[] }).tools.map((t) => t.name);
 const need = (id: ConnectedReachId) => CONNECTED_REACH.find((row) => row.id === id)!.needs.map((group) => [...group]);
@@ -47,24 +48,19 @@ test("every connected row names the tools Particl's own code calls for it", () =
   expect(new Set(CONNECTED_REACH.map((row) => row.id)).size).toBe(CONNECTED_REACH.length);
 });
 
-test("every row opens a Suites page that exists, and only where it can be used now", () => {
+test("every row is Particl's own and opens a Suites page that exists; none reaches a signed-in account", () => {
   const exists = (open: ReachOpen) => {
     if ("gen" in open || "tab" in open) return true;
     const page = shellPage(open.suite, open.page);
     return Boolean(page && !page.phoneOnly);
   };
   for (const row of PARTICL_REACH) expect(row.open && exists(row.open), row.id).toBe(true);
-  for (const row of CONNECTED_REACH) expect(exists(CONNECTED_OPEN[row.id]), row.id).toBe(true);
-  /* Where the WIP pointed wrong: 3D and batches have no Suites page; follow-ups land in Takes, not Runs;
-     Social cuts live in Deliver; the connected catalogue is Gen's, not Atomik › Models (thinking models). */
-  expect(CONNECTED_OPEN.follow).toMatchObject({ suite: "studio", page: "takes" });
-  expect(CONNECTED_OPEN.reframe).toMatchObject({ suite: "studio", page: "deliver" });
-  expect(CONNECTED_OPEN.templates).toMatchObject({ suite: "business", page: "dtc" });
-  expect(CONNECTED_OPEN.models).toMatchObject({ gen: true });
+  const rows = reachRows();
+  expect(rows.map((row) => row.id)).toEqual(PARTICL_REACH.map((row) => row.id));
+  expect(rows.every((row) => row.group === "particl" && row.status === "built-in")).toBe(true);
   expect(PARTICL_REACH.find((row) => row.id === "thinking")?.open).toMatchObject({ suite: "atomik", page: "models" });
-  const statuses: ReachStatus[] = ["built-in", "available", "missing", "off", "owner-only", "connect", "checking", "error"];
-  expect(statuses.filter(usable)).toEqual(["built-in", "available"]);
-  for (const status of statuses) expect(STATUS_LABEL[status].length).toBeGreaterThan(3);
+  expect(STATUS_LABEL["built-in"]).toBe("Built in");
+  for (const row of rows) expect(`${row.label} ${row.line}`, row.id).not.toMatch(/connected account|higgsfield|supercomputer|catalogue/i);
 });
 
 test("the live check reads the account's own tools: our client, another client, and a platform switch", () => {
@@ -96,29 +92,11 @@ test("the reach check reads the same video-analysis switch as the voice tools, w
   expect(route).not.toContain("voice-tool-service");
 });
 
-test("a reach reply is read defensively and becomes one state, each with a next step", () => {
+test("a reach reply is read defensively", () => {
   const full = reachFromTools(fixture("connected-tools-91.json"));
   expect(parseReach(full)).toEqual(full);
   for (const bad of [null, {}, [{ id: "websites", available: true }], [{ id: "image", available: "yes" }], [{ id: "image", available: true }, { id: "image", available: false }], [{ id: "image", available: false, off: false }], [...full, full[0]]])
     expect(parseReach(bad), JSON.stringify(bad).slice(0, 60)).toBeNull();
-  expect(reachStateFrom(200, { reach: full, checkedAt: 5 })).toEqual({ kind: "checked", checks: full, checkedAt: 5 });
-  expect(reachStateFrom(200, { reach: full.slice(1) }).kind).toBe("error");
-  expect(reachStateFrom(409, { code: "not_connected" })).toEqual({ kind: "connect" });
-  expect(reachStateFrom(401, { code: "reconnect_required" })).toEqual({ kind: "connect", reconnect: true });
-  expect(reachStateFrom(403, { error: "Only the owner" })).toEqual({ kind: "owner-only" });
-  expect(reachStateFrom(429, null)).toMatchObject({ kind: "error", message: expect.stringContaining("Try again in a minute") });
-  expect(reachStateFrom(503, "<html>")).toMatchObject({ kind: "error", message: expect.stringContaining("Workspace › Engines") });
-
-  const checked = reachRows({ kind: "checked", checks: reachFromTools(fixture("connected-tools-91.json"), { off: ["analysis"] }), checkedAt: 1 });
-  expect(checked.filter((r) => r.group === "particl").every((r) => r.status === "built-in")).toBe(true);
-  expect(checked.find((r) => r.id === "templates")?.status).toBe("missing");
-  expect(checked.find((r) => r.id === "analysis")?.status).toBe("off");
-  expect(reachSummary({ kind: "checked", checks: reachFromTools(fixture("connected-tools-91.json"), { off: ["analysis"] }), checkedAt: 1 })).toBe(`12 of ${CONNECTED_REACH.length} available`);
-  for (const kind of ["owner-only", "checking"] as const)
-    expect(reachRows({ kind }).filter((r) => r.group === "connected").every((r) => r.status === kind)).toBe(true);
-  expect(reachSummary({ kind: "owner-only" })).toBe("Only the workspace owner uses the connected account");
-  expect(reachSummary({ kind: "connect" })).toContain("Workspace › Engines");
-  expect(reachSummary({ kind: "connect", reconnect: true })).toContain("Sign the account in again");
 });
 
 test("Particl's own MCP tools are all described, and the writing ones need a token that can generate", () => {
@@ -179,14 +157,11 @@ test("tokens read in the workspace's unit: credits never show a dollar, a blank 
   expect(tokenBody("Reader", "read", "credits", 500)).toEqual({ name: "Reader", scope: "read" });
 });
 
-test("the skill packs went with the Higgsfield sign-in (they taught an assistant to use the account); the page keeps its place and its two tabs", () => {
-  /* The list itself stays in lib/shell/skills.ts until the account code is removed; nothing shows it. */
-  expect(SKILL_PACKS).toHaveLength(8);
+test("the page lists no skill packs for a signed-in account and no connected-account card", () => {
   const view = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
   expect(view).not.toContain("SKILL_PACKS");
   expect(view).not.toContain('data-testid="skill-row"');
-  expect(view).not.toContain('data-testid="skill-packs"');
-  expect(view).toContain('{ id: "reach", label: "What Atomik can do" }');
-  expect(view).toContain('{ id: "connect", label: "Claude & ChatGPT" }');
+  expect(view).not.toContain('data-testid="reach-connected"');
+  expect(view).not.toMatch(/higgsfield-ai\/skills|connected account/i);
   expect(shellPage("atomik", "skills")).toMatchObject({ label: "Tools", title: "Tools & connections", own: true });
 });

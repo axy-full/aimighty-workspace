@@ -165,12 +165,11 @@ test("the card's chips: kept where Gen holds the take's value, changed with a re
 test("a connected recipe: named by the account's list, recreated on Studio engines with that reason for everyone, and a vanished identity is never sent", () => {
   const preset = recreatePreset(take({ provider: "higgsfield", kind: "image", model: "soul_cinematic", params: { task: "connected-generation", settings: { aspect_ratio: "3:4", soul_id: "soul_abc" } } }), { name: "Pier" });
   const studio: ComposerModel = { id: "gpt-image-2", label: "GPT Image 2", type: "image", ratios: ["1:1", "3:4"] };
-  /* The Higgsfield sign-in is retired: everyone recreates an account take on Studio engines, and the chip says so.
-     Its catalogue id is not a name, so it is not dressed up as one. */
+  /* Gen runs on Studio engines only, for a member and the owner alike. The account's catalogue id is not a name, so it is not dressed up as one. */
   const member = chipsFor({ preset, model: studio, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "Made on the Higgsfield account; recreated on Studio engines" });
+  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "Gen runs on Studio engines only" });
   const ownerOnStudio = chipsFor({ preset, model: studio, owner: true, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(ownerOnStudio[0]).toMatchObject({ why: "Made on the Higgsfield account; recreated on Studio engines" });
+  expect(ownerOnStudio[0]).toMatchObject({ why: "Gen runs on Studio engines only" });
   /* The owner whose account is not connected sees why, once. */
   const unconnected = "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
   expect(chipsFor({ preset, billing: "connected", owner: true, model: null, settings: composerSettings(null), blocked: unconnected })).toEqual([

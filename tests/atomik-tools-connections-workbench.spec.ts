@@ -1,18 +1,20 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
+import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { randomBytes } from "node:crypto";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
 
 /**
  * Atomik › Tools & connections (idea 20), which replaced Atomik › Skills.
  * What Atomik can do: Particl's own rows, each with an Open that goes where
- * it runs. The connected Higgsfield account's rows and the skill packs (which
- * taught an assistant to use that account through a sign-in) went with the
- * Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): nothing here asks
- * the account anything. Claude & ChatGPT: real tokens on the real routes —
- * made with a ceiling in the workspace's unit, shown once, filled into the
- * setup, revoked (disabled, never erased) — and the setup for five clients.
+ * it runs. Since 28 September 2026 Atomik reaches no signed-in account, so
+ * the page checks none (the account's capability route is watched and must
+ * never be asked). Claude & ChatGPT: real tokens on the real routes — made with a
+ * ceiling in the workspace's unit, shown once, filled into the setup, revoked
+ * (disabled, never erased) — and the setup for five clients; the account's
+ * skill packs are gone.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -20,21 +22,19 @@ const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.TOOLS_SHOTS;
 const PATH = "/suites?suite=atomik&page=skills&sp=skills";
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-tools", productionProjectId: "prod-tools", shotMappings: {} });
-/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
-const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 
-/* `armed` names #392's development-only crash probes (lib/shell/fault.ts): each named boundary throws as it renders. */
+/* `armed` names #392's development-only crash probes (lib/shell/fault.ts): each named boundary throws as it renders.
+   The account's capability check (the reach read this page used to make) is watched: this page must never ask it. */
 async function open(page: Page, armed: string[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [], generations: [] });
-  /* Every account route this page asks, for the check that it asks none (the collector's list aside). */
   const asked: string[] = [];
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith("/api/higgsfield/consumer/") && `${request.method()} ${path}` !== COLLECTOR_LIST) asked.push(`${request.method()} ${path}`);
+  await page.route("**/api/higgsfield/consumer/capabilities", async (route: Route) => {
+    asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return route.fulfill({ status: 409, json: { error: "Atomik reaches no signed-in account." } });
   });
   if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = list; }, armed);
   const errors: string[] = [];
@@ -121,7 +121,7 @@ async function checkLayout(page: Page, phone: boolean) {
   expect(problems).toEqual([]);
 }
 
-test("What Atomik can do: Particl's own rows, each with an Open that goes where it runs; no connected-account rows, and nothing asks the account", async ({ page }, info) => {
+test("What Atomik can do: Particl's own rows only, each with an Open that goes where it runs; no connected account is checked", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { asked, errors } = await open(page);
   await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
@@ -131,13 +131,12 @@ test("What Atomik can do: Particl's own rows, each with an Open that goes where 
   const built = page.getByTestId("reach-particl").getByTestId("reach-row");
   await expect(built).toHaveCount(6);
   for (const pill of await built.getByTestId("reach-status").all()) await expect(pill).toHaveText("Built in");
-  await expect(page.getByTestId("reach-particl").getByTestId("reach-open")).toHaveCount(6);
-  /* The connected account's section, its status and its check are gone. */
+  await expect(built.getByTestId("reach-open")).toHaveCount(6);
+  /* Nothing of the signed-in account: no card, no summary, no check. */
   await expect(page.getByTestId("reach-connected")).toHaveCount(0);
   await expect(page.getByTestId("reach-summary")).toHaveCount(0);
   await expect(page.getByTestId("reach-check")).toHaveCount(0);
-  await expect(page.getByTestId("reach-engines")).toHaveCount(0);
-  await expect(page.getByTestId("tools-view")).not.toContainText(/connected account|Higgsfield/i);
+  await expect(page.getByTestId("tools-view")).not.toContainText(/connected account|higgsfield/i);
   await checkLayout(page, PHONES.includes(info.project.name));
   await shot(page, "reach-particl");
 
@@ -156,7 +155,7 @@ test("What Atomik can do: Particl's own rows, each with an Open that goes where 
   await expect(library).toContainText("This page has no tools of its own.");
   if (openedLibrary) await page.getByTestId("close-library").click();
 
-  /* Open goes where the capability runs. */
+  /* Open goes where the capability runs: thinking models are Atomik › Models. */
   await built.and(page.locator('[data-id="thinking"]')).getByTestId("reach-open").click();
   await expect(page).toHaveURL(/[?&]sp=models(&|$)/);
   await page.goBack();
@@ -167,7 +166,7 @@ test("What Atomik can do: Particl's own rows, each with an Open that goes where 
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("tools-tab-reach")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("tools-tab-reach")).toBeFocused();
-  expect(asked, "nothing asks the account").toEqual([]);
+  expect(asked).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -190,7 +189,7 @@ test("inside the shell's panel boundaries: the page fails on its own card, and T
   if (opened) await page.getByTestId("close-inspector").click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
 
-  /* Fixed underneath: Try again renders the page again. */
+  /* Fixed underneath: Try again renders the page, with Particl's own rows. */
   await withinOneLoad(page, async () => {
     await page.evaluate(() => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = []; });
     await fault.getByTestId("fault-retry").click();
@@ -198,6 +197,7 @@ test("inside the shell's panel boundaries: the page fails on its own card, and T
   });
   await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
   await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
+  await expect(page.getByTestId("reach-connected")).toHaveCount(0);
   await checkLayout(page, PHONES.includes(info.project.name));
   expect(asked).toEqual([]);
   expect(errors, "a caught throw never reaches the window").toEqual([]);
@@ -209,12 +209,47 @@ test("inside the shell's panel boundaries: a failing Atomik gate keeps its own r
   await expect(page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]')).toContainText("The Atomik gate stopped");
   await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]')).toHaveCount(0);
   await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
+  expect(asked).toEqual([]);
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
   await page.getByTestId("tools-tab-connect").click();
   await expect(page.getByTestId("tokens-empty")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
-  expect(asked).toEqual([]);
   expect(errors, "a caught throw never reaches the window").toEqual([]);
+});
+
+test("a member sees the same Particl rows, and the page never asks an account on their behalf", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await signInLocally(page.request);
+  const owner = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };
+  await signInLocally(page.request);
+  const member = await page.request.get("/api/me").then((r) => r.json()) as { email: string };
+  const code = randomBytes(18).toString("base64url");
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await platform.execute({
+      sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+      args: [code, owner.workspace.id, member.email, "Tools member", "member", owner.id, Date.now(), Date.now() + 3_600_000],
+    });
+  } finally { platform.close(); }
+  expect((await page.request.post("/api/auth/accept", { data: { code } })).ok()).toBe(true);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await mockProjects(page, { current: fixture() });
+  await mockLibrary(page, { uploads: [], generations: [] });
+  let asked = 0;
+  await page.route("**/api/higgsfield/consumer/capabilities", (route) => { asked++; return route.fulfill({ status: 403, json: { error: "Only the owner" } }); });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(PATH);
+  await expect(page.getByTestId("tools-view")).toBeVisible();
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-open")).toHaveCount(6);
+  await expect(page.getByTestId("reach-connected")).toHaveCount(0);
+  await expect(page.getByTestId("reach-summary")).toHaveCount(0);
+  await expect(page.getByTestId("reach-check")).toHaveCount(0);
+  await checkLayout(page, PHONES.includes(info.project.name));
+  await shot(page, "reach-member-particl");
+  expect(asked).toBe(0);
+  expect(errors).toEqual([]);
 });
 
 test("a token is made with a ceiling in the workspace's unit, shown once, filled into the setup, and revoked by disabling it", async ({ page, playwright }, info) => {
@@ -326,19 +361,16 @@ test("the token list recovers from a failed read, and the setup covers five clie
   expect(errors).toEqual([]);
 });
 
-test("Claude & ChatGPT no longer lists the Higgsfield skill packs: they taught an assistant to use the account through a sign-in", async ({ page }, info) => {
+test("Claude & ChatGPT lists Particl's own server and tokens only: no skill packs for a signed-in account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { asked, errors } = await open(page);
   await page.getByTestId("tools-tab-connect").click();
-  await expect(page.getByTestId("connect-tokens")).toBeVisible();
-  await expect(page.getByTestId("connect-setup")).toBeVisible();
-  await expect(page.getByTestId("connect-tools")).toBeVisible();
+  await expect(page.getByTestId("tokens-empty")).toBeVisible();
+  await expect(page.getByTestId("mcp-tool")).toHaveCount(7);
   await expect(page.getByTestId("skill-packs")).toHaveCount(0);
   await expect(page.getByTestId("skill-row")).toHaveCount(0);
-  await expect(page.getByText(/Skill packs|higgsfield-ai\/skills|npx skills add/)).toHaveCount(0);
-  await expect(page.locator('a[href*="github.com/higgsfield-ai"]')).toHaveCount(0);
+  await expect(page.getByTestId("tools-view")).not.toContainText(/higgsfield|connected account/i);
   await checkLayout(page, PHONES.includes(info.project.name));
-  await shot(page, "connect-no-packs");
   expect(asked).toEqual([]);
   expect(errors).toEqual([]);
 });

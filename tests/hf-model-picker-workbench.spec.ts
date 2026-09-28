@@ -346,6 +346,9 @@ test(`${member ? "a member" : "the owner"} sees only this workspace's engines: n
   await expect(sheet.getByRole("option").first()).toBeVisible();
   await expect(sheet.getByRole("tablist", { name: "Catalogue" })).toHaveCount(0);
   await expect(sheet.getByRole("tab")).toHaveCount(0);
+  /* One source, named, not offered as a switch. */
+  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
+  await expect(sheet).not.toContainText(/Higgsfield|connected cr/);
   await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeVisible();
   await expect(sheet.getByTestId("gen-sheet-price").first()).toHaveAttribute("data-kind", "rate");
   await expect(page.getByTestId("gen-model").locator(".gx-model-sub")).toHaveText("Studio engine");

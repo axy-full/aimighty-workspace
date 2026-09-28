@@ -214,7 +214,7 @@ test("a mocked image generation shows its price, runs to completion and files a 
      label written in the composer — so a renaming PR renames it here too. */
   const defaultLabel = await composer(page).getByTestId("composer-model").locator("option[value='" + IMAGE_ENGINE + "']").textContent();
   expect(defaultLabel).toBe(displayModelName(IMAGE_ENGINE));
-  /* This workspace's credits are the only way to pay (the connected account's switch went with the Higgsfield sign-in), and the composer says so. */
+  /* This workspace's credits, and the composer says so: no account switch (28 September 2026). */
   await expect(composer(page).getByRole("group", { name: "Credits used" })).toHaveCount(0);
   await expect(composer(page).getByTestId("composer-billing")).toContainText("credits");
 
@@ -307,6 +307,30 @@ test("a moved price blocks the send and spends nothing", async ({ page }, info) 
   await generateButton(page).click();
   await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 30_000 }).toBe(1);
   expect(sent.find((s) => s.path === "/api/generate")!.body.maxCredits).toBe(before + 7);
+});
+
+test("the composer offers this workspace's engines only: no account switch, and the account's catalogue is never read", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  const { project } = await seeded(page);
+  /* Every account request the composer makes, bar the shell collector's lists of saved jobs (ledger reads). */
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const address = new URL(request.url());
+    if (!address.pathname.startsWith("/api/higgsfield/consumer/")) return;
+    if (request.method() === "GET" && address.searchParams.has("draftId")) return;
+    asked.push(`${request.method()} ${address.pathname}`);
+  });
+  const sent = watchPaid(page);
+  await page.goto(url(project.id));
+  await page.getByTestId("topbar-generate").click();
+  await composer(page).getByTestId("composer-prompt").fill("A red lighthouse under a flat grey sky.");
+  await expect(composer(page).getByTestId("composer-model")).toHaveValue(IMAGE_ENGINE);
+  await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
+  await expect(composer(page).getByRole("group", { name: "Credits used" })).toHaveCount(0);
+  await expect(composer(page).getByRole("button", { name: "Connected account" })).toHaveCount(0);
+  await expect(composer(page)).not.toContainText(/Higgsfield|connected cr/i);
+  expect(asked, "the account's catalogue is never read").toEqual([]);
+  expect(sent.filter((s) => s.path === "/api/generate")).toEqual([]);
 });
 
 test("with no project open the composer starts one called Untitled and says so", async ({ page }, info) => {

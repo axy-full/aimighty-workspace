@@ -4,7 +4,6 @@ import LazyMedia from "@/components/LazyMedia";
 import { useDraft } from "@/lib/useDraft";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { GenjutsuVariant } from "@/lib/genjutsuTypes";
-import { usePlanRequest } from "@/lib/workspace/atomik-host";
 import { mediaBands } from "@/lib/workspace/format";
 import { useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import {
@@ -49,15 +48,13 @@ import "@/app/workspace-assets.css";
  * changed, expired or already-submitted quote blocks submission and the pinned
  * primary says which.
  *
- * The phone does NOT hold a second copy of the paid path. What it composes is
- * published as the page's plan request — exactly as
- * components/workspace/spec/tools/SubatomikTool.tsx publishes it on the desktop
- * — so the dispatch is the plan's, at its own approval gate, with the exact
- * figure on the button.
+ * The phone does NOT hold a second copy of the paid path, and what it composes
+ * is the connected account's form: it is no longer published as the page's
+ * Atomik plan request, because Atomik runs Motion Transfer and Object Swap on
+ * the API-key transform engines only (lib/workspace/plans.ts).
  */
 
 const VARIANT: Partial<Record<PageId, GenjutsuVariant>> = { motion: "motion-transfer", swap: "object-swap" };
-const KEY: Partial<Record<PageId, "motion" | "swap">> = { motion: "motion", swap: "swap" };
 const ENDPOINT = "/api/higgsfield/consumer/genjutsu";
 
 type Connection = { connected: boolean } | null;
@@ -204,17 +201,6 @@ export function FormPage({ page, project, scope }: MobilePageProps) {
   const connected = transform.connection?.connected === true;
   const action = estimateAction({ request, quote, stored: estimate.stored, jobs: transform.jobs });
   const blocked = formBlocked({ projectOpen: !!project, connected: transform.connection ? transform.connection.connected : null, creative, request, quote });
-
-  /* What the page's plan prices at its gate: the form's own body, and only
-     once the form could send it — the desktop publishes exactly this. */
-  const planKey = KEY[page] ?? "motion";
-  const published = useMemo(() => {
-    if (!request || quote.state !== "ready") return undefined;
-    const { variant: _variant, ...rest } = request;
-    void _variant;
-    return rest as Record<string, unknown>;
-  }, [request, quote.state]);
-  usePlanRequest(planKey, published);
 
   const change = (next: Parameters<typeof writeFormCreative>[0]) => draft.set(writeFormCreative(next));
 

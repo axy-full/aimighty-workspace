@@ -291,7 +291,7 @@ test("the Studio alternative takes a fresh credit quote before explicit Generate
   } finally { release(); }
 });
 
-test("the previous workspace Atomik panel never offers an account approval, the owner's included", async ({ page }, info) => {
+test("the previous workspace Atomik panel never offers an account approval, the owner's included: Motion Transfer's plan runs on the API-key engine and waits for the page's request", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { project: film } = await asOwner(page);
   const writes: string[] = [];
@@ -302,9 +302,11 @@ test("the previous workspace Atomik panel never offers an account approval, the 
   await page.goto(`/workspace?suite=subatomik&page=motion&project=${film.id}`);
   if (WIDE.includes(info.project.name)) await page.getByTestId("atomik-button").click();
   else await page.getByTestId("mobile-ask-atomik").click();
-  await expect(page.getByTestId("atomik-owner-run")).toHaveText(`${TITLE}.`);
+  /* Atomik no longer runs anything on the account, so the plan is no account's to refuse. */
+  await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
+  await expect(page.getByTestId("atomik-reason").or(page.getByTestId("mobile-atomik-reason")).first()).toHaveText("Needs Motion Transfer data");
   await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Run this page/ })).toHaveCount(0);
+  for (const run of await page.getByRole("button", { name: /Run this page/ }).all()) await expect(run).toBeDisabled();
   expect(writes).toEqual([]);
   await noSideScroll(page);
 });

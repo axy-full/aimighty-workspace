@@ -29,7 +29,6 @@ import {
 } from "@/lib/pipeline/editor";
 import type { PublicPipelineRun } from "@/lib/pipeline/public";
 import type { Project } from "@/lib/workbench/studio";
-import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { createMovieHandoff } from "@/lib/workbench/movie-handoff";
 import {
   atomikPage,
@@ -46,7 +45,6 @@ import {
 import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
 import { providerDisplayName } from "@/lib/vendorNames";
-import { ACCOUNT_RETIRED, HISTORY_KEPT } from "@/lib/shell/connected-capability";
 
 type Drafts = {
   project: Project | null;
@@ -73,8 +71,6 @@ type Props = {
   embedded?: boolean;
   /** A host that routes its own pages opens another Atomik page through this instead of `?page=`. */
   onPage?: (page: AtomikPage) => void;
-  /** Generate's connected-account request, when that page ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
-  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 };
 const providerNames: Record<string, string> = {
   byteplus: providerDisplayName("byteplus"),
@@ -99,6 +95,8 @@ function provider(model: string) {
       ? providerDisplayName("elevenlabs")
       : "Provider unavailable";
 }
+/** Atomik no longer generates on a signed-in account: single generations are Gen's, on Particl's own engines. */
+const GENERATE_MOVED = "Single generations run in Gen, on Particl’s own engines, each priced before it runs.";
 const amount = (value: number | null, unit: string = "cr") =>
   value === null
     ? "Not available"
@@ -113,7 +111,6 @@ export default function AtomikSuite({
   pageTitle,
   embedded = false,
   onPage,
-  onGenerateInput,
 }: Props) {
   const session = useSession(),
     search = useSearchParams(),
@@ -184,10 +181,8 @@ export default function AtomikSuite({
       page={page}
       heading={heading}
       pageTitle={pageTitle}
-      refreshProject={drafts.refresh}
       embedded={embedded}
       onPage={onPage}
-      onGenerateInput={onGenerateInput}
     />
   );
 }
@@ -204,10 +199,8 @@ function MappedAtomik({
   page: AtomikPage;
   heading: string;
   pageTitle?: string;
-  refreshProject: () => Promise<void>;
   embedded?: boolean;
   onPage?: (page: AtomikPage) => void;
-  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 }) {
   const session = useSession(),
     money = useMoney(),
@@ -411,7 +404,7 @@ function MappedAtomik({
             {page === "runs"
               ? "Readable plans, approved stages, and recoverable production history."
               : page === "generate"
-                ? "This page ran on a signed-in Higgsfield account."
+                ? GENERATE_MOVED
               : page === "recipes"
                 ? "Reuse a saved plan with its exact context, models and checkpoints."
                 : page === "approvals"
@@ -528,10 +521,11 @@ function MappedAtomik({
           }
         />
       ) : page === "generate" ? (
-        <div className={styles.empty} data-testid="atomik-generate-retired">
-          <h2>Not offered</h2>
-          <p>{ACCOUNT_RETIRED}. {HISTORY_KEPT} Make images, video and sound in Gen, on Studio engines.</p>
-        </div>
+        <section className={styles.empty} aria-label="Generate" data-testid="atomik-generate-moved">
+          <h2>Generate in Gen</h2>
+          <p>{GENERATE_MOVED}</p>
+          <Link href="/suites?view=gen">Open Gen</Link>
+        </section>
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (

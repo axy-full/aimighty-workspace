@@ -12,8 +12,8 @@ import * as retired from "../../lib/higgsfield-consumer/retired";
  * The guard for the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts):
  * no feature may need a sign-in to a Higgsfield account. Every account route
  * that could price, start or build work, or read the account's catalogue,
- * presets, voices, recipes or diagnostics answers 410 before any rate
- * allowance or service is touched. What jobs already running need to finish
+ * presets, voices or diagnostics answers 410 before any rate allowance or
+ * service is touched. What jobs already running need to finish
  * (status reads, saved-job lists, a lost batch's check, set-aside), the
  * credit history and Disconnect still reach their code.
  *
@@ -31,10 +31,9 @@ const OFF: Record<string, { file: string; method: "GET" | "POST" }> = {
   capabilities: { file: `${ACCOUNT_ROUTES}/capabilities/route.ts`, method: "POST" },
   qualification: { file: `${ACCOUNT_ROUTES}/qualification/route.ts`, method: "POST" },
   "analysis-qualification": { file: `${ACCOUNT_ROUTES}/analysis-qualification/route.ts`, method: "POST" },
-  "atomik-recipes": { file: "app/api/atomik/recipes/route.ts", method: "GET" },
 };
 /** Routes that keep their reads: each retired action, and what stays with a request that reaches its service. */
-const MIXED: Record<string, { file: string; retired: string[]; stays: Record<string, Record<string, unknown>>; ctx?: boolean }> = {
+const MIXED: Record<string, { file: string; retired: string[]; stays: Record<string, Record<string, unknown>> }> = {
   generation: {
     file: `${ACCOUNT_ROUTES}/generation/route.ts`,
     retired: ["catalogue", "quote", "submit", "quote-batch", "submit-batch", "explainer-presets", "characters", "characters-plan", "characters-create", "elements", "elements-create"],
@@ -72,12 +71,6 @@ const MIXED: Record<string, { file: string; retired: string[]; stays: Record<str
     file: `${ACCOUNT_ROUTES}/connection/route.ts`,
     retired: ["developer-probe"],
     stays: { "set-aside": { action: "set-aside", id: "11111111-1111-4111-8111-111111111111" } },
-  },
-  "atomik-connected": {
-    file: "app/api/atomik/steps/[id]/connected/route.ts",
-    retired: ["approve", "approve-batch"],
-    stays: { status: { action: "status" } },
-    ctx: true,
   },
 };
 /** Every route under /api/higgsfield/consumer is classified here; a new one fails this guard until it is. */
@@ -138,7 +131,7 @@ async function loadRoute(file: string) {
     else if (id.startsWith("@/lib/")) deps[id] = recorder(id, await import(`../../${id.slice(2)}`) as Record<string, unknown>, touched);
     else throw new Error(`Unclassified route dependency ${id} in ${file}`);
   }
-  const output = { exports: {} as Record<string, (request: Request, ctx?: unknown) => Promise<Response>> };
+  const output = { exports: {} as Record<string, (request: Request) => Promise<Response>> };
   new Function("require", "module", "exports", compile(source))((name: string) => {
     if (!(name in deps)) throw new Error(`Unexpected route dependency ${name}`);
     return deps[name];
@@ -146,7 +139,7 @@ async function loadRoute(file: string) {
   return {
     touched, limits, handlers: output.exports,
     setStore: (value: tenant.TenantStore) => { store = value; },
-    call: async (method: string, body?: unknown, ctx?: unknown) => {
+    call: async (method: string, body?: unknown) => {
       const request = new Request(`https://particl.example/${file}`, {
         method, headers: { "X-Workbench-Scope": scope, "Content-Type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -156,7 +149,7 @@ async function loadRoute(file: string) {
       globalThis.fetch = async () => { network++; throw new Error("NO_NETWORK_IN_GUARD"); };
       try {
         /* A recorder thrown out of a route's own error handler still means the request reached the account code. */
-        const response = await output.exports[method](request, ctx).catch((error: unknown) => {
+        const response = await output.exports[method](request).catch((error: unknown) => {
           if (error instanceof Error && error.message.startsWith("ROUTE_REACHED:")) return new Response(null, { status: 599 });
           throw error;
         });
@@ -180,7 +173,7 @@ test("every route under /api/higgsfield/consumer is classified: off, mixed, the 
   expect(found).toHaveLength(14);
 });
 
-test("the sign-in, discovery, qualification and recipe routes answer 410 to anyone, and import nothing but the retirement", async () => {
+test("the sign-in, discovery and qualification routes answer 410 to anyone, and import nothing but the retirement", async () => {
   for (const [name, route] of Object.entries(OFF)) {
     expect(importSpecifiers(readFileSync(route.file, "utf8")), name).toEqual(["@/lib/higgsfield-consumer/retired"]);
     const loaded = await loadRoute(route.file);
@@ -207,11 +200,10 @@ test("a sign-in started before the retirement is never finished: its callback us
 test("every retired action on the mixed routes answers 410 before the rate allowance or any service, for any body", async () => {
   for (const [name, route] of Object.entries(MIXED)) {
     const loaded = await loadRoute(route.file);
-    const ctx = route.ctx ? { params: Promise.resolve({ id: "astp_1" }) } : undefined;
     for (const action of route.retired) {
       /* A stale tab's body need not match the schema any more: the action alone decides. */
       for (const body of [{ action }, { action, draftId: "../foreign", credits: -1, input: { url: "https://provider.invalid/x" } }]) {
-        const { response, network } = await loaded.call("POST", body, ctx);
+        const { response, network } = await loaded.call("POST", body);
         await expectRetired(response);
         expect(network, `${name} ${action}`).toBe(0);
       }
@@ -224,10 +216,9 @@ test("every retired action on the mixed routes answers 410 before the rate allow
 test("what running jobs need still reaches its code: status, a lost batch's check, set-aside, the saved lists and Disconnect", async () => {
   for (const [name, route] of Object.entries(MIXED)) {
     const loaded = await loadRoute(route.file);
-    const ctx = route.ctx ? { params: Promise.resolve({ id: "astp_1" }) } : undefined;
     for (const [action, body] of Object.entries(route.stays)) {
       const before = loaded.touched.length;
-      const { response } = await loaded.call("POST", body, ctx);
+      const { response } = await loaded.call("POST", body);
       expect(response.status, `${name} ${action}`).not.toBe(410);
       expect(loaded.touched.length, `${name} ${action} reaches its service`).toBeGreaterThan(before);
     }
@@ -275,10 +266,11 @@ test("each mixed route retires exactly its new-work actions, and checks before i
   }
 });
 
-test("the planner and the recipes never read the account, and the shell's capability answers member for everyone", () => {
+test("Atomik reads nothing of the account, and the shell's capability answers member for everyone", () => {
   expect(retired.SIGN_IN_RETIRED).toBe(true);
-  expect(readFileSync("lib/higgsfield-consumer/planner-service.ts", "utf8")).toContain("=> !SIGN_IN_RETIRED && Boolean(user?.owner && !token);");
-  expect(readFileSync("lib/higgsfield-consumer/recipes-service.ts", "utf8")).toContain("if (SIGN_IN_RETIRED || !user?.owner || token) return null;");
+  /* Atomik's account planner, recipes and connected step are gone (tests/unit/atomikNoAccount.spec.ts guards what replaced them). */
+  for (const gone of ["app/api/atomik/recipes/route.ts", "app/api/atomik/steps/[id]/connected/route.ts", "lib/higgsfield-consumer/planner-service.ts", "lib/higgsfield-consumer/recipes-service.ts"])
+    expect(existsSync(gone), gone).toBe(false);
   expect(readFileSync("lib/shell/use-connected-capability.ts", "utf8")).toContain("const owner = !SIGN_IN_RETIRED && ");
 });
 

@@ -231,7 +231,7 @@ test("the docked composer runs the desktop machinery: one live quote, re-quoted,
   const sheet = page.getByTestId("mobile-composer-sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("Charged to");
-  /* This workspace's credits are the only way to pay: the connected account's switch went with the Higgsfield sign-in, for the owner too. */
+  /* This workspace's credits: no account switch (28 September 2026). */
   await expect(page.getByTestId("mobile-composer-billing-workspace")).toHaveCount(0);
   await expect(page.getByTestId("mobile-composer-billing-connected")).toHaveCount(0);
   /* Video, so the render lands as a take with a duration. */

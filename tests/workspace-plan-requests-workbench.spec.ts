@@ -6,10 +6,11 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../lib/wo
 
 /**
  * The remaining page-supplied plan requests (workspace redesign follow-up):
- * Marketing Studio publishes the body its existing paid flow sends, so its
+ * Marketing Studio publishes the bodies its existing paid flow sends, so its
  * Atomik plan reaches its gate with a live quote; Boards has no such body and
  * stays refused; Shorts ran on the Higgsfield account, whose sign-in is
- * retired, so its page and its plan say so.
+ * retired, so its page says so, and its plan refuses: no API-key engine makes
+ * a set of shorts.
  *
  * Every test here proves the same two things: the plan becomes runnable only
  * from real page state, and NOTHING is dispatched before the approval. The
@@ -293,8 +294,11 @@ test("Shorts ran on the Higgsfield account: its page says the sign-in is retired
 
   await openAtomik(page);
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Make a set of shorts");
-  await expect(page.getByTestId("atomik-owner-run")).toHaveText("Particl no longer signs in to Higgsfield.");
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toHaveCount(0);
+  /* Atomik no longer runs anything on the account: no API-key engine makes a set of shorts, so nothing is quoted or sent. */
+  await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
+  await expect(page.getByTestId("atomik-reason")).toContainText("no API-key engine makes a set of shorts");
+  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
+  await expect(page.getByTestId("atomik-gate")).toHaveCount(0);
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);
   expect(state.external).toEqual([]);

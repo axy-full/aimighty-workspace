@@ -223,7 +223,7 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
   expect(errors).toEqual([]);
 });
 
-test("Generate ran on the Higgsfield account: the page says the sign-in is retired, its plan refuses, and nothing asks the account", async ({ page }, info) => {
+test("Generate points to Gen: no account form, its Atomik plan refuses with the reason, and nothing reaches the account", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signInLocally(page.request);
   const project = { ...primary, id: "ws-spec-generate" };
@@ -248,13 +248,16 @@ test("Generate ran on the Higgsfield account: the page says the sign-in is retir
   });
   await page.goto(`/workspace?project=${project.id}&suite=atomik&page=generate`);
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
-  await expect(page.getByTestId("atomik-generate-retired")).toContainText("Particl no longer signs in to Higgsfield. Past results stay in your Library. Make images, video and sound in Gen, on Studio engines.", { timeout: 30_000 });
+  const moved = page.getByTestId("atomik-generate-moved");
+  await expect(moved).toContainText("Single generations run in Gen, on Particl’s own engines", { timeout: 30_000 });
+  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?view=gen");
   await expect(page.getByRole("region", { name: "Generate on the connected account", exact: true })).toHaveCount(0);
 
   const nav = page.getByRole("navigation", { name: "Pages" });
   await nav.getByRole("button", { name: /Atomik/ }).click();
-  await expect(page.getByTestId("atomik-owner-run")).toHaveText("Particl no longer signs in to Higgsfield.");
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toHaveCount(0);
+  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Generate one take");
+  await expect(page.getByTestId("atomik-reason")).toContainText("single generations run in Gen, on Particl's own engines");
+  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   await page.keyboard.press("Escape");
   expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);

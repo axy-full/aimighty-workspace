@@ -38,7 +38,6 @@ export const PLAN_REQUEST_NEEDS: Partial<Record<WorkspacePageId, { key: RequestK
   astra: { key: "astra", page: "astra" },
   rig: { key: "shots", page: "rig" },
   edit: { key: "stems", page: "edit" },
-  generate: { key: "generation", page: "generate" },
   models: { key: "shots", page: "rig" },
   marketing: { key: "variants", page: "marketing" },
   motion: { key: "motion", page: "motion" },

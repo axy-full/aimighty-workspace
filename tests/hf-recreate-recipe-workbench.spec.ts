@@ -435,7 +435,7 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
   await expect(model).toHaveAttribute("data-state", "changed");
   /* The account's catalogue id is not a name: it is not dressed up as one. */
   await expect(model).toHaveText("Account model → Seedance 2.5");
-  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Made on the Higgsfield account; recreated on Studio engines");
+  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
   /* The settings the account was asked for still carry over where this engine offers them. */
   await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("6");
@@ -469,7 +469,7 @@ test("the owner's Soul take is recreated on Studio engines: its identity is not 
   await expect(page.getByTestId("gen-prompt")).toHaveValue("a keeper on the pier at first light");
   await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Account model → /);
-  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Made on the Higgsfield account; recreated on Studio engines");
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Gen runs on Studio engines only");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveText("Identity → none");
   await expect(page.getByTestId("gen-blocked")).not.toHaveText("Reading the account’s identities…");
   expect(priced).toEqual([]);

@@ -91,8 +91,8 @@ test("length is every second the engine allows, the sheet lists Studio engines o
 
   await page.getByTestId("gen-model").click();
   const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  /* The Higgsfield catalogue went with the Higgsfield sign-in, for the workspace owner too. */
-  await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
+  /* One source since 28 September 2026: no signed-in account's catalogue, so no switch. */
+  await expect(sheet.getByRole("tab")).toHaveCount(0);
   await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
   await expect(sheet.getByRole("option").first()).toBeVisible();
   /* With a pointer the search holds focus, so Escape alone closes it; elsewhere Close does. */

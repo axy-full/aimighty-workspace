@@ -95,7 +95,6 @@ import {
   type StatusExpectation,
 } from "./toolset";
 import { PLANNER_READ_TOOLS, type PlannerRead, type PlannerReadResult } from "./planner-reads";
-import { BUNDLE_PATH, WORKFLOW_NAME } from "./workflows";
 import {
   SHORTS_LIMITS,
   SHORTS_TOOLS,
@@ -307,8 +306,6 @@ type ConsumerSession = {
   jobsWait: (jobId: string) => Promise<Record<string, unknown>>;
   /** One paid batch call; the tool is fixed by the output type. */
   generationBatch: (type: ConnectedOutputType, requests: { index: number; params: ConsumerGenerationParams }[], sending: () => void) => Promise<Record<string, unknown>>;
-  /** get_workflow_instructions / get_workflow_bundle_file only (read-only). */
-  workflowRead: (tool: "get_workflow_instructions" | "get_workflow_bundle_file", args: Record<string, unknown>) => Promise<Record<string, unknown>>;
   /** Only the fixed free reads of planner-reads.ts. */
   plannerRead: (read: PlannerRead) => Promise<Record<string, unknown>>;
   /** Only the fixed Shorts Studio list/create/status tools. */
@@ -781,10 +778,6 @@ async function withConsumerSession<T>(
         const tool = GENERATION_BATCH_TOOLS[type];
         if (!tool) fail("unsupported_protocol");
         return (await post("tools/call", { name: tool, arguments: { requests } }, sending))!;
-      },
-      workflowRead: async (tool, args) => {
-        if (tool !== "get_workflow_instructions" && tool !== "get_workflow_bundle_file") fail("unsupported_protocol");
-        return (await post("tools/call", { name: tool, arguments: args }))!;
       },
       plannerRead: async (read) => {
         if (!PLANNER_READ_TOOLS.includes(read.tool)) fail("unsupported_protocol");
@@ -2481,32 +2474,6 @@ export async function submitConsumerGenerationBatch(
   } catch (error) {
     if (error instanceof ConsumerAdmissionStopped) throw error.original;
     if (attempted) return unsure();
-    return videoPreflightError(error);
-  }
-}
-
-/* ── Workflow bundles as recipes (slices A5 + A6) ─────────────────────── */
-export type ConnectedWorkflowRead =
-  | { kind: "catalog" }
-  | { kind: "instructions"; workflow: string }
-  | { kind: "file"; workflow: string; path: string };
-/** Read-only: the workflow catalogue, one workflow's instructions, or one of
- * its bundle files. Each checked against our connection's surface first. The
- * text returned is provider data for workflows.ts to bound; never executed. */
-export async function readConnectedWorkflow(accessToken: string, read: ConnectedWorkflowRead, options: Options = {}): Promise<QualificationValue> {
-  const call: ToolCall =
-    read.kind === "catalog" ? { name: "get_workflow_instructions", args: {} }
-    : read.kind === "instructions" ? { name: "get_workflow_instructions", args: { workflow: read.workflow } }
-    : { name: "get_workflow_bundle_file", args: { workflow: read.workflow, path: read.path } };
-  if (read.kind !== "catalog" && !WORKFLOW_NAME.test(read.workflow)) throw new ConsumerVideoError("invalid_input");
-  if (read.kind === "file" && (!BUNDLE_PATH.test(read.path) || !/\.(md|txt)$/i.test(read.path))) throw new ConsumerVideoError("invalid_input");
-  try {
-    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
-      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
-      await requireConnectedTools(session, [call]);
-      return videoReadResult(session, await session.workflowRead(call.name as "get_workflow_instructions" | "get_workflow_bundle_file", call.args));
-    });
-  } catch (error) {
     return videoPreflightError(error);
   }
 }

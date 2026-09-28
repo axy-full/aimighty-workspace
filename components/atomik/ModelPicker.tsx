@@ -12,7 +12,8 @@ export type ThinkingModel = {
   description?: string; owner?: string; band?: string; released?: number;
 };
 
-const PROVIDERS = ["Claude", "Grok", "OpenAI", "Gemini"] as const;
+/* Atomik plans with these three families (lib/atomikModelPolicy › ATOMIK_FAMILIES). */
+const PROVIDERS = ["Claude", "Grok", "OpenAI"] as const;
 const DEFAULT_EFFORT: EffortOption = { value: "auto", label: "Provider default", description: "Use this model’s standard reasoning settings." };
 
 /** The model line a thinking model belongs to, which is also its group
@@ -20,7 +21,6 @@ const DEFAULT_EFFORT: EffortOption = { value: "auto", label: "Provider default",
 function providerOf(model: ThinkingModel) {
   if (model.id.startsWith("anthropic/")) return "Claude";
   if (model.id.startsWith("openai/")) return "OpenAI";
-  if (model.id.startsWith("google/")) return "Gemini";
   if (model.id.startsWith("spacexai/")) return "Grok";
   return "Other models";
 }
