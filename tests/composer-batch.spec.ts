@@ -301,6 +301,6 @@ test("a batch take that never arrived is not re-sent at a price nobody was shown
   await expect(prompt).toBeEnabled();
   expect({ sent: server.sent.slice(mark).map((s) => s.path), billed: server.charges }).toEqual({ sent: [], billed: [perTake] });
   expect(server.checks).toEqual([{ key: lost.key, endpoint: "/api/generate" }]);
-  await expect(page.getByText(`The price is now ${perTake - 1} cr a take`).first()).toBeVisible();
+  await expect(page.getByText(`The estimate is now about ${perTake - 1} cr a take`).first()).toBeVisible();
   expect(errors).toEqual([]);
 });

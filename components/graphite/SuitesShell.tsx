@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
+import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useAssetLink, useLinkView } from "@/lib/shell/use-asset-link";
+import { AssetLinkCard } from "./AssetLinkCard";
 import { tileAspect, uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
 import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -26,6 +29,9 @@ import { GenView } from "./GenView";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
+import { INSPECTOR_SURFACE, endBindings, galleryItems, pickGallery, publishedGallery, setPreviewBinder, type BoundAction } from "@/lib/shell/preview-bridge";
+import { stillCurrent } from "@/lib/shell/asset-link";
+import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
 import { Header } from "./Header";
@@ -73,7 +79,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const { state, dispatch, selectProject, toast } = ws;
   const session = useSession();
   const account = useAccount(initialAccount);
-  const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }));
+  /* A link to a take holds project resolution until it can open in a project of this person's (lib/shell/use-asset-link.ts). */
+  const scopedFetch = useScopedFetch();
+  const linkControl = useAssetLink({ scope, workspace: session.workspace, workspaces: session.workspaces, projectId: state.projectId, selectProject, fetch: scopedFetch });
+  const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }), linkControl.hold);
+  const linkView = useLinkView(linkControl, data);
+  const linkCard = linkView.phase === "none" ? null : <AssetLinkCard link={linkControl} view={linkView} />;
   const project = data.project;
   const library = useProjectLibrary(scope, project?.id ?? null);
   const items = library.items;
@@ -124,7 +135,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       case "use-as-reference": actions.useAsReference(target.id); return;
       case "retry": actions.retry(target.id); return;
       case "open-in-inspector":
-        dispatch({ type: "patch", patch: { selKind: "take", selId: target.id } });
+        shell.selectAsset(target.id, { reason: "pick" });
         shell.openInspector();
         return;
       case "move": {
@@ -144,6 +155,53 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
+
+  /* The site's previewer binds to this shell (lib/shell/preview-bridge): a preview opened from the Library, the Takes desk or
+     the Inspector walks that surface's whole list, its arrows move this selection, and its buttons are this shell's commands.
+     Everything is read when it is used, and checked against the scope and project the preview was opened in. */
+  const bridge = useRef({ scope, projectId: project?.id ?? null, items, production: project?.productionProjectId ?? null, workspace: session.workspace?.id ?? null });
+  useEffect(() => { bridge.current = { scope, projectId: project?.id ?? null, items, production: project?.productionProjectId ?? null, workspace: session.workspace?.id ?? null }; });
+  const { live: liveShell } = shell;
+  useEffect(() => setPreviewBinder(({ surface, asset }) => {
+    const at = bridge.current;
+    let list = pickGallery(surface, asset, { takes: publishedGallery("takes") ?? undefined, library: publishedGallery("library") ?? undefined }, at.projectId);
+    /* The Inspector with neither list on show (a phone, another page): the project's whole library, newest first. */
+    if (!list && surface === INSPECTOR_SURFACE && asset && at.projectId) {
+      const all = galleryItems(at.items), index = all.findIndex((item) => item.id === asset);
+      if (index >= 0) list = { surface: "library", items: all, index };
+    }
+    if (!list) return null;
+    const captured = { scope: at.scope, projectId: at.projectId };
+    const current = () => stillCurrent(captured, { scope: bridge.current.scope, projectId: bridge.current.projectId });
+    const entryOf = (id: string) => bridge.current.items.find((entry) => entry.take.id === id) ?? null;
+    return {
+      items: list.items,
+      index: list.index,
+      step: (id) => { if (current() && entryOf(id)) liveShell().selectAsset(id, { reason: "step" }); },
+      actions: (id) => {
+        const entry = entryOf(id);
+        if (!entry || !current()) return {};
+        const caps = assetCapabilities({ asset: assetRef(entry), clip: null, projectId: bridge.current.projectId, otherProjects: 0, canUndo: false });
+        return {
+          ...(entry.asset.origin === "generation" ? { recreate: { enabled: Boolean(caps.can.retry), why: caps.why.retry } } : {}),
+          reference: { enabled: Boolean(caps.can["use-as-reference"]), why: caps.why["use-as-reference"] },
+          ...(bridge.current.production && bridge.current.workspace ? { link: { enabled: true } } : {}),
+        };
+      },
+      act: async (action: BoundAction, id: string) => {
+        /* Checked again when pressed: a take gone from this project, or a project left, does nothing. */
+        if (!current()) return { close: true };
+        if (!entryOf(id)) return { said: "This take is no longer in this project." };
+        if (action === "link") return { said: await copyAssetLink({ workspace: bridge.current.workspace, production: bridge.current.production, asset: id }) };
+        /* Recreate hands the recipe to Gen and Use as reference sends the take there: no request is made, Gen prices on its button. */
+        liveShell().runCommand?.(action === "recreate" ? "retry" : "use-as-reference", { kind: "asset", id });
+        return { close: true };
+      },
+    };
+  }), [liveShell]);
+  /* Leaving this scope or project ends every preview bound to it. */
+  const boundProject = project?.id ?? null;
+  useEffect(() => endBindings, [scope, boundProject]);
 
   /* A file dropped where no target took it (components/DragLayer) is kept in this project's Library. */
   const projectId = project?.id ?? null;
@@ -226,7 +284,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (held) prefillAgentRequest(requestScope, "atomik", openProjectId, held);
   }, [openProjectId, requestScope]);
   /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
-  const pickProject = (id: string) => { try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  /* Choosing a project leaves a link that has not opened yet: that project, not the link's, is what opens. */
+  const pickProject = (id: string) => { if (linkControl.link) linkControl.dismiss(); try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
   const createProject = async (name: string) => {
     const created = newProject(name.slice(0, PROJECT_NAME_MAX));
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
@@ -307,7 +366,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
               {/* Keep Gen's draft editable while generation waits for the project list to recover.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
               {shell.view === "gen" && projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
-              {shell.view === "gen" ? (
+              {linkCard ? (
+                <div className="gx-stage gx-scroll" data-testid="content">{linkCard}</div>
+              ) : shell.view === "gen" ? (
                 <>
                   <div className="gx-pagehead" data-row="page">
                     <h1 className="gx-h1" data-testid="page-title">Generate</h1>
@@ -387,7 +448,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             {showInspector ? (
               <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
                 fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
-                <Inspector scope={scope} project={project} overlay={overlay} />
+                <Inspector scope={scope} project={project} overlay={overlay} held={Boolean(linkCard)} />
               </Boundary>
             ) : null}
           </div>

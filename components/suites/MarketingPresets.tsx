@@ -317,7 +317,8 @@ export function MarketingPresets({
               include a person.{" "}
               {alpha
                 ? "On 2.0 Alpha, presets use high quality."
-                : "On 2.5, presets keep the quality you choose."}
+                : "On 2.5, presets keep the quality you choose."}{" "}
+              Review the estimate before generating.
             </p>
             {settings.presetId && !preset && (
               <p role="status">

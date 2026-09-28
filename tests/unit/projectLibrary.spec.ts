@@ -113,3 +113,55 @@ test('project library validates bounded paging and requires explicit project and
     expect((await api.get(params)).status,params).toBe(400);
   expect((await api.post({projectId:'draft-one',uploadId:'draft-upload',productionProjectId:'p2'})).status).toBe(400);
 });
+
+test('a lookup by id answers one asset of this project under the same membership, and nothing about anything else',async()=>{
+  const ws=workspace('lookup'),other=workspace('lookup-other');await seed(ws);await seed(other);const api=await routes(ws);
+  const one=async(source:'uploads'|'generations',id:string)=>{
+    const response=await api.get(`projectId=draft-one&source=${source}&id=${encodeURIComponent(id)}`);
+    expect(response.status,`${source} ${id}`).toBe(200);expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const body=await response.json();expect(JSON.stringify(body)).not.toContain('private.invalid');
+    expect(body[source==='uploads'?'nextCursor':'nextPageCursor']).toBeNull();
+    return (body[source] as {id:string}[]).map(item=>item.id);
+  };
+  /* Filed to the production, linked from a filed take's params, and referenced by this person's own draft. */
+  expect(await one('generations','project-take')).toEqual(['project-take']);
+  expect(await one('generations','reference-take')).toEqual(['reference-take']);
+  expect(await one('generations','draft-take')).toEqual(['draft-take']);
+  /* Published shared context counts; a collaborator's private draft, another project and a missing id do not. */
+  expect(await one('uploads','shared-upload')).toEqual(['shared-upload']);
+  expect(await one('uploads','edit-source')).toEqual(['edit-source']);
+  expect(await one('uploads','private-collaborator')).toEqual([]);
+  expect(await one('uploads','other-upload')).toEqual([]);
+  expect(await one('generations','other-take')).toEqual([]);
+  expect(await one('generations','not-a-take')).toEqual([]);
+  expect(await one('uploads','project-take')).toEqual([]);
+  /* A hidden (trashed) take is not answered. */
+  const {runInTenant}=await import('../../lib/tenant'),{db}=await import('../../lib/db');
+  await runInTenant(ws,()=>db().execute("UPDATE generations SET deleted=1 WHERE id='draft-take'"));
+  expect(await one('generations','draft-take')).toEqual([]);
+  /* Another person's private draft, another tenant and a stale scope answer nothing either. */
+  expect((await api.get('projectId=private-draft&source=uploads&id=private-collaborator')).status).toBe(404);
+  api.user('collaborator');expect((await api.get('projectId=draft-one&source=generations&id=project-take')).status).toBe(404);
+  api.user('member');expect((await api.get('projectId=draft-one&source=generations&id=project-take',{})).status).toBe(409);
+  api.workspace(other);expect((await api.get('projectId=draft-one&source=generations&id=project-take',{'X-Workbench-Scope':`particl-active-${ws.id}-member`})).status).toBe(409);
+});
+
+test('a lookup takes exactly one plain id, without a cursor or a search',async()=>{
+  const ws=workspace('lookup-validation');await seed(ws);const api=await routes(ws);
+  for(const params of ['id=a%2Fb','id=../x','id=a%20b','id=','id='+'x'.repeat(161),'id=a&id=b','id=project-take&cursor=abc','id=project-take&q=take'])
+    expect((await api.get(`projectId=draft-one&source=generations&${params}`)).status,params).toBe(400);
+});
+
+test('a lookup finds a take older than twenty pages without paging to it',async()=>{
+  const ws=workspace('lookup-old');await seed(ws);const api=await routes(ws);
+  const {runInTenant}=await import('../../lib/tenant'),{db}=await import('../../lib/db');
+  await runInTenant(ws,async()=>{
+    await db().execute("INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES('ancient-take','p1','fixture','ancient','{}','succeeded',1,1,'image')");
+    const rows=Array.from({length:1300},(_,i)=>({sql:"INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,'p1','fixture','newer','{}','succeeded',?,?,'image')",args:[`newer-${String(i).padStart(4,'0')}`,1000+i,1000+i]}));
+    for(let i=0;i<rows.length;i+=200)await db().batch(rows.slice(i,i+200),'write');
+  });
+  const first=await(await api.get('projectId=draft-one&source=generations')).json();
+  expect(first.generations).toHaveLength(60);expect(first.generations.map((g:{id:string})=>g.id)).not.toContain('ancient-take');
+  const found=await(await api.get('projectId=draft-one&source=generations&id=ancient-take')).json();
+  expect(found.generations.map((g:{id:string})=>g.id)).toEqual(['ancient-take']);expect(found.nextPageCursor).toBeNull();
+});
