@@ -1,48 +1,49 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
+import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { previewAttrs } from "@/lib/preview";
 import { StudioRequestError, studioRequest } from "@/components/workbench/GenerationDialog";
+import { trailLine } from "@/lib/approval";
+import { timeAgo } from "@/lib/format";
 import { BOARD_MODELS, stillShape, type BoardModel } from "@/lib/production/boards";
 import { getModel } from "@/lib/models";
 import { addTakeToCut, entryAsset } from "@/lib/production/sequence";
 import { sendToRig } from "@/lib/production/rig-build";
 import { movedOn, poll } from "@/lib/poll";
+import { activeMediaJob } from "@/lib/workbench/job-recovery";
+import { isVariation, takeLabel } from "@/lib/variations";
+import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import { useShell } from "@/lib/shell/state";
+import { useHandedTake } from "@/lib/shell/take-handover";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
-import { entryBatch, entryFace, findProjectTake, libraryView, projectLibraryState, refreshProjectLibrary, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
-import { groupSiblings, isVariation, stripLabel, takeLabel } from "@/lib/variations";
-import { TakeStrip } from "../TakeStrip";
-import { activeMediaJob } from "@/lib/workbench/job-recovery";
+import { entryBatch, entryFace, findProjectTake, libraryView, projectLibraryState, refreshProjectLibrary, reviewProjectTake, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { DESK_FILTERS, nextReview, reviewSaid, takeChip, type DeskFilter, type ReviewState } from "@/lib/workspace/takes";
+import { DESK_KINDS, countLabel, decidedBatches, deskCounts, deskEmpty, deskItems, deskTakes, inDesk, openable, reviewable, rigShotOrder, stepTake, type DeskItem, type DeskKind } from "@/lib/workspace/takes-desk";
 import { LibraryMore } from "../LibraryMore";
 import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
-import { LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
+import { Chip, LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
+import { KIND_DOT } from "../icons";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
-import type { Project } from "@/lib/workbench/studio";
 
 const EDIT_LIMIT = 4000;
-const CATEGORY_GROUP: Record<string, string> = { Character: "Characters", Element: "Elements", Environment: "Elements", Prop: "Elements", Look: "Elements", Storyboard: "Storyboard frames", "Line drawing": "Line drawings", Sketch: "Line drawings", Astra: "3D (Astra)", Screenplay: "Scripts", "Ad-film script": "Scripts" };
-const MEDIA_GROUP: Record<string, string> = { video: "Videos", image: "Images", audio: "Audio" };
-const GROUP_ORDER = ["Videos", "Images", "Audio", "Characters", "Elements", "Storyboard frames", "Line drawings", "3D (Astra)", "Scripts", "Documents & other files"];
-
-/** Every library entry in one group: the category the project filed it under, else its kind. */
-export function assetGroups(items: readonly LibraryEntry[], project: Project | null): { label: string; items: LibraryEntry[] }[] {
-  const category = new Map<string, string>();
-  for (const a of project?.assets ?? []) for (const id of [a.id, a.generationId, a.uploadId]) if (id && CATEGORY_GROUP[a.category]) category.set(id, CATEGORY_GROUP[a.category]);
-  const out = new Map<string, LibraryEntry[]>();
-  for (const e of items) {
-    const label = category.get(e.take.sourceId) ?? (e.media ? MEDIA_GROUP[e.media] : undefined) ?? "Documents & other files";
-    out.set(label, [...(out.get(label) ?? []), e]);
-  }
-  return GROUP_ORDER.filter((g) => out.has(g)).map((label) => ({ label, items: out.get(label)! }));
-}
 type Generation = { id: string; status: string; error?: string | null };
+
+/** The status chips' dots: the tile chips' own tones. */
+const STATUS_DOT: Record<DeskFilter, string> = { all: "", review: "rgba(235, 235, 245, .6)", picked: "var(--gx-accent)", approved: "var(--gx-done)", changes: "var(--gx-waiting)", held: "var(--gx-waiting)", failed: "var(--gx-failed)" };
+const KIND_CHIP_DOT: Record<DeskKind, string> = { video: KIND_DOT.Video, image: KIND_DOT.Images, audio: KIND_DOT.Audio, upload: KIND_DOT.Uploads };
+/** The review buttons, and what each says once it is the take's state (pressed again, it clears). */
+const REVIEWS = [
+  { state: "picked", press: "Pick", done: "Picked" },
+  { state: "approved", press: "Approve", done: "Approved" },
+  { state: "changes", press: "Request changes", done: "Changes requested" },
+] as const;
 
 /** The re-edit request for a still: the take as the reference, the instruction, and the order to change nothing else. */
 export function reEditRequest(entry: LibraryEntry, instruction: string, model: BoardModel, productionProjectId: string, ratio: string, extras: ({ genId: string } | { uploadId: string })[] = []): GenerationBodyInput {
@@ -54,11 +55,39 @@ export function reEditRequest(entry: LibraryEntry, instruction: string, model: B
   };
 }
 
+/** Why a take cannot open in the editor yet, and what happens next (the card says the same). */
+export function notOpenWords(entry: LibraryEntry): string {
+  const { take } = entry;
+  const face = entryFace(entry);
+  return face === "failed" || face === "stopped" ? `${take.name} did not render${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.`
+    : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}. It starts on its own when credits arrive.`
+    : face === "live" ? `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`
+    : face === "unavailable" ? `${take.name} rendered, but its stored copy is not here yet. Refresh on its card reads it again.`
+    : "This file has no picture or sound to edit.";
+}
+
+/** Who picked, approved or sent a take back, and when; nothing for a take waiting for review. */
+export function reviewTrail(entry: LibraryEntry): string | null {
+  if (entry.asset.origin !== "generation" || entry.take.status === "review") return null;
+  const g = entry.asset.value;
+  const back = entry.take.status === "changes" && g.reviewBy ? `Changes requested by ${g.reviewBy}` : "";
+  const text = [back, trailLine({ pickedBy: g.pickedBy, pickedAt: g.pickedAt, approvedBy: g.approvedBy, approvedAt: g.approvedAt }, timeAgo)].filter(Boolean).join(" · ");
+  return text ? text[0].toUpperCase() + text.slice(1) : null;
+}
+
+const isHeading = (item: DeskItem) => item.type !== "take";
+const runOf = (item: DeskItem) => (item.type === "take" ? item.run : item.key);
+
 /**
- * Production › Edit (owner's brief, 23 September): every take of the project;
- * a video take opens in Seedance Edit (2.5, or 2.0) on that clip; a still is
- * re-edited from an instruction with the take as its reference, priced before
- * it renders; any take goes to the Timeline in one press.
+ * Studio › Takes, the review desk every "Filed in Takes for review" points
+ * at: every take of the project once, with a status filter (All / Needs
+ * review / Picked / Approved / Changes / Held / Failed), kind chips and a
+ * search; grouped by shot, then by the batch it was rendered in; a long
+ * project is windowed and reads its next page as the list's end comes into
+ * view. The selected take is picked, approved or sent back through the
+ * existing review route, which records who; a video take opens in Seedance
+ * Edit, a still is re-edited from an instruction priced before it renders, a
+ * sound gets its transcript (priced first), and any take goes to the Timeline.
  */
 /** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
 const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.";
@@ -71,22 +100,31 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const shell = useShell();
   const project = draft.project;
   useStageFacts("takes", project);
-  /* Every generation first; then every asset, each in one group — its production category, else its kind. */
-  const generations = useMemo(() => items.filter((e) => e.asset.origin === "generation"), [items]);
-  /* Takes 2–4 of one Generate sit together as one strip, in take order (lib/variations.ts). */
-  const generationCells = useMemo(() => groupSiblings(generations, entryBatch), [generations]);
-  const groups = useMemo(() => assetGroups(items, project), [items, project]);
+
+  /* The desk: a status, a kind and a search, over every take grouped by shot and batch. */
+  const [filter, setFilter] = useState<DeskFilter>("all");
+  const [kind, setKind] = useState<DeskKind | null>(null);
+  const [typed, setTyped] = useState("");
+  const query = useDeferredValue(typed);
+  const shots = useMemo(() => rigShotOrder(project), [project]);
+  const desk = { filter, kind, query };
+  const decided = useMemo(() => decidedBatches(items), [items]);
+  const all = useMemo(() => deskTakes(deskItems(items, shots, decided)), [items, shots, decided]);
+  const rows = useMemo(() => deskItems(items.filter((e) => inDesk(e, { filter, kind, query })), shots, decided), [items, shots, decided, filter, kind, query]);
+  const shownIds = useMemo(() => new Set(deskTakes(rows).map((e) => e.take.id)), [rows]);
+  const counts = useMemo(() => deskCounts(items, kind, query), [items, kind, query]);
+  const narrowed = filter !== "all" || kind != null || Boolean(query.trim());
+  const clear = () => { setFilter("all"); setKind(null); setTyped(""); };
+
   /* A take sent here (Viral's Send to Edit, the Library) opens first — that take and no other: until it is loaded the page says so. */
   const [picked, setPicked] = useState<string | null>(() => (state.selKind === "take" ? state.selId : null));
-  const editable = (e: LibraryEntry) => (e.media === "video" || e.media === "image") && Boolean(e.url);
-  /* Sound is picked for its transcript only; the cut and the re-edits are for pictures. */
-  const pickable = (e: LibraryEntry) => editable(e) || (e.media === "audio" && Boolean(e.url));
   const chosen = picked ? items.find((e) => e.take.id === picked) ?? null : null;
   const [lost, setLost] = useState<string | null>(null);
   /* A library that did not load is not an answer: its banner says so, and Try again searches again. */
   const readFailed = library.state.status === "error";
   const finding = Boolean(picked) && !chosen && lost !== picked && !readFailed;
-  const entry = chosen ? (pickable(chosen) ? chosen : generations.find(editable) ?? null) : picked ? null : generations.find(editable) ?? null;
+  /* Nothing opens by itself: the desk shows the takes first, and the editor opens on the one chosen. */
+  const entry = chosen && openable(chosen) ? chosen : null;
   /* Not in the loaded range yet: older pages come in until it is found, or it is not in the project. */
   useEffect(() => {
     if (!finding || !picked) return;
@@ -110,23 +148,75 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     });
     return () => cancelAnimationFrame(frame);
   }, [focusOn]);
-  const pick = (e: LibraryEntry) => {
-    if (!pickable(e)) {
-      const { take } = e;
-      const face = entryFace(e);
-      toast(face === "failed" || face === "stopped" ? `${take.name} did not render${take.reason ? ` · ${take.reason.replace(/\.$/, "")}` : ""}.`
-        : face === "held" ? `${take.name} is held${take.reason ? ` · ${take.reason}` : ""}. It starts on its own when credits arrive.`
-        : face === "live" ? `${take.name} is still ${take.stage === "queued" ? "queued" : "rendering"}; it opens here when it lands.`
-        : face === "unavailable" ? `${take.name} rendered, but its stored copy is not here yet. Refresh on its card reads it again.`
-        : "This file has no picture or sound to edit.");
-      return;
-    }
-    setPicked(e.take.id); setQuote(null); setError("");
-    requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  };
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<BoardModel>(BOARD_MODELS[0].id);
   const [quote, setQuote] = useState<{ key: string; credits: number } | null>(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const open = useCallback((e: LibraryEntry, scroll = true) => {
+    if (!openable(e)) { toast(notOpenWords(e)); return; }
+    setPicked(e.take.id); setQuote(null); setError("");
+    if (scroll) requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [toast]);
+  const step = (dir: 1 | -1) => {
+    const next = stepTake(all, shownIds, entry?.take.id ?? null, dir);
+    if (next) open(next, false);
+  };
+  const prev = entry ? stepTake(all, shownIds, entry.take.id, -1) : null;
+  const next = entry ? stepTake(all, shownIds, entry.take.id, 1) : null;
+  /* Back to the takes: the take closes and its card comes into view — its tile if it is on the page, else the
+     windowed grid brings its row in (centred, clear of the phone's tab bar). A reveal is dropped once it has
+     been applied, so a grid that is windowed again later does not jump back to it. */
+  const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    const timer = setTimeout(() => setReveal(null), 500);
+    return () => clearTimeout(timer);
+  }, [reveal]);
+  const backToGrid = (id: string) => {
+    setPicked(null); setFocus(null);
+    requestAnimationFrame(() => {
+      const tile = document.querySelector(`[data-testid="takes-grid"] [data-take="${CSS.escape(id)}"]`);
+      if (tile) tile.scrollIntoView({ block: "center" });
+      else if (shownIds.has(id)) setReveal((r) => ({ key: id, n: (r?.n ?? 0) + 1 }));
+      else document.querySelector("[data-section='takes']")?.scrollIntoView({ block: "start" });
+    });
+  };
+
+  /* The Library's tools: Needs review narrows the desk to it; Seedance Edit and Re-edit open the newest take they work on. */
+  useEffect(() => {
+    const onSection = (event: Event) => {
+      const section = (event as CustomEvent<string>).detail;
+      if (section === "review") { setFilter("review"); return; }
+      const media = section === "video" ? "video" : section === "image" ? "image" : null;
+      if (!media || entry?.media === media) return;
+      const newest = all.find((e) => e.media === media && openable(e));
+      if (newest) open(newest, false);
+    };
+    window.addEventListener(SECTION_EVENT, onSection);
+    return () => window.removeEventListener(SECTION_EVENT, onSection);
+  }, [all, entry, open]);
+
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+
+  /* Review: the existing route records who picked, approved or sent it back; every grid shows it at once. */
+  const [reviewing, setReviewing] = useState<{ id: string; state: Exclude<ReviewState, ""> } | null>(null);
+  const [reviewError, setReviewError] = useState<{ id: string; message: string } | null>(null);
+  const review = async (target: LibraryEntry, pressed: Exclude<ReviewState, "">) => {
+    if (!reviewable(target) || reviewing) return;
+    const to = nextReview(target.take.status, pressed);
+    setReviewing({ id: target.take.id, state: pressed }); setReviewError(null);
+    try {
+      await reviewProjectTake(scope, projectId, target.take.sourceId, to);
+      toast(reviewSaid(target.take.name, to));
+    } catch (cause) {
+      if (alive.current) setReviewError({ id: target.take.id, message: cause instanceof Error ? cause.message : "The review was not saved." });
+    } finally {
+      if (alive.current) setReviewing(null);
+    }
+  };
+
   /* Pictures attached to the instruction ride as further references: what to bring into the still. */
   const [extras, setExtras] = useState<{ id: string; name: string; ref: { genId: string } | { uploadId: string } }[]>([]);
   const attachToEdit = async (attached: Attached) => {
@@ -136,14 +226,12 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
     setQuote(null);
     return [pictures.length ? `${pictures.map((m) => m.name).join(", ")} ${pictures.length === 1 ? "goes" : "go"} with the edit as ${pictures.length === 1 ? "a reference" : "references"}.` : "", keptNote([...unreadable, ...media.filter((m) => !pictures.includes(m)).map((m) => m.name)], "an edit takes up to three reference pictures.") ?? ""].filter(Boolean).join(" ") || null;
   };
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
   const [pending, setPending] = useState<{ jobId: string; from: string } | null>(null);
   /** The last status read of the re-edit in flight failed; cleared by the next good one. */
   const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
-  const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): picked and brought into view like one handed over on the way in. */
+  useHandedTake((id) => { setPicked(id); setFocus(id); setLost(null); setQuote(null); setError(""); });
 
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {
@@ -211,46 +299,61 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
   const selectedBatch = entry ? entryBatch(entry) : undefined;
   const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
-  /* One generation to pick — the card contract's (TakeTile); inside a strip it is named by its take number, the strip carries the prompt. */
-  const takeButton = (e: LibraryEntry, label?: string) => (
-    <TakeTile key={e.take.id} entry={e} variant="take" label={label} checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={library.refresh} />
-  );
   const blocked = !entry ? "Choose a take." : !project.productionProjectId ? "Save the project first." : !instruction.trim() ? "Write what should change." : null;
+  const more = library.hasMore;
+  const total = `${items.length.toLocaleString("en-US")}${more ? "+" : ""}`;
+  const hint = view.skeletons ? "Reading this project…" : failed ? `${project.shots.length} in the cut`
+    : narrowed ? `${shownIds.size.toLocaleString("en-US")} of ${total} · ${project.shots.length} in the cut`
+    : `${total} in this project · ${project.shots.length} in the cut`;
+  const chip = entry ? takeChip(entry.take) : null;
+  const trail = entry ? reviewTrail(entry) : null;
+  const judging = entry && reviewing?.id === entry.take.id ? reviewing : null;
+  const reviewProblem = entry && reviewError?.id === entry.take.id ? reviewError.message : null;
 
   return (
     <div className="pd-stage gx-enter" data-testid="edit-stage">
       {failed ? <LoadBanner banner={failed} onRetry={library.refresh} testId="takes-error" /> : null}
-      <section className="gx-gen-card" aria-label="Generations" data-testid="edit-takes" data-section="takes">
-        <div className="pd-row-head">
-          <span className="gx-eyebrow" data-functional-label="">Generations</span>
-          <span className="gx-spacer" />
-          <span className="gx-hint">{view.skeletons ? "Reading this project…" : failed ? `${project.shots.length} in the cut` : `${generations.length}${library.hasMore ? "+" : ""} made in this project · ${project.shots.length} in the cut`}</span>
-        </div>
-        {generations.length ? (
-          <div className="pd-take-grid" role="radiogroup" aria-label="Generations">
-            {generationCells.map((cell) => cell.kind === "one" ? takeButton(cell.take) : (
-              <TakeStrip key={`batch:${cell.batchId}`} batchId={cell.batchId} testId="takes-batch" state="done" plain name={cell.takes[0].take.name}
-                label={stripLabel(cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return isVariation(v) ? v : i + 1; }))}>
-                {cell.takes.map((e, i) => { const v = entryBatch(e)?.variation; return takeButton(e, takeLabel(isVariation(v) ? v : i + 1)); })}
-              </TakeStrip>
-            ))}
-          </div>
-        ) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
-          : failed ? null
-          : <p className="gx-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
-      </section>
 
       {entry ? (
         <>
-          <div className="pd-row-head" data-section="edit-panel"><span className="gx-eyebrow" data-functional-label="">Selected · {selectedTake ? `${takeLabel(selectedTake)} · ` : ""}{entry.take.name}</span></div>
-          <div className="gx-gen-enhance">
-            {entry.media === "audio" ? null : <>
-              <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
-              <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
-            </>}
-            <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
-          </div>
+          <section className="gx-gen-card pd-selected" aria-label={`Selected take: ${entry.take.name}`} data-section="edit-panel" data-testid="takes-selected">
+            <div className="pd-row-head pd-selected-head">
+              <span className="gx-eyebrow pd-selected-name" data-functional-label="" title={entry.take.name}>Selected · {selectedTake ? `${takeLabel(selectedTake)} · ` : ""}{entry.take.name}</span>
+              {chip ? <span className="pd-selected-chip"><Chip {...chip} /></span> : null}
+              <span className="gx-spacer" />
+              <span className="pd-selected-step">
+                <button type="button" className="gx-hbtn" disabled={!prev} onClick={() => step(-1)} aria-label="Previous take" data-testid="takes-prev">‹ Previous</button>
+                <button type="button" className="gx-hbtn" disabled={!next} onClick={() => step(1)} aria-label="Next take" data-testid="takes-next">Next ›</button>
+              </span>
+            </div>
+            {reviewable(entry) ? (
+              <div className="pd-review" role="group" aria-label={`Review ${entry.take.name}`} data-testid="takes-review" aria-busy={judging ? true : undefined}>
+                {REVIEWS.map((r) => {
+                  const on = entry.take.status === r.state;
+                  return (
+                    <button key={r.state} type="button" className="gx-hbtn pd-review-btn" data-review={r.state} aria-pressed={on} disabled={Boolean(reviewing)}
+                      title={on ? "Press again to take it back to Needs review" : undefined} onClick={() => void review(entry, r.state)} data-testid={`review-${r.state}`}>
+                      {on ? r.done : r.press}
+                    </button>
+                  );
+                })}
+                {trail ? <span className="gx-hint pd-review-trail" data-testid="review-trail">{trail}</span> : null}
+              </div>
+            ) : (
+              <p className="gx-hint pd-review-none" data-testid="review-none">{entry.asset.origin === "upload" ? "An upload is a source: it is used, not reviewed." : "Picked and approved once its picture is here."}</p>
+            )}
+            {reviewProblem ? <p className="gx-reason" role="alert" data-testid="review-error">{reviewProblem}</p> : null}
+            <div className="gx-gen-enhance">
+              {entry.media === "audio" ? null : <>
+                <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>
+                <button type="button" className="gx-hbtn" onClick={() => { sendToRig({ projectId: project.id, asset: entryAsset(entry) }); shell.goSuite("studio", "rig"); }} data-testid="edit-to-rig">Build a rig from this take</button>
+              </>}
+              <button type="button" className="gx-hbtn" onClick={onTimeline}>Open Edit & Sound ›</button>
+              <button type="button" className="gx-hbtn" onClick={() => backToGrid(entry.take.id)} data-testid="takes-back">Back to the takes</button>
+            </div>
+          </section>
           {entry.media === "video" || entry.media === "audio" ? (
+            /* Paid (xAI): priced first, then run at exactly that price — TranscribePanel's own approval. */
             <TranscribePanel key={entry.take.id} scope={scope} name={entry.take.name} projectId={project.productionProjectId}
               source={entry.asset.origin === "generation" ? { genId: entry.take.sourceId } : { uploadId: entry.take.sourceId }} />
           ) : null}
@@ -292,32 +395,76 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             </section>
           )}
         </>
+      ) : chosen && !readFailed ? (
+        /* Handed a take that cannot open (it did not render, waits, or its copy has not landed): what it is doing, and what happens next. */
+        <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-waiting">
+          <span className="gx-hint">{notOpenWords(chosen)}</span>
+        </div>
       ) : picked && !chosen && !readFailed ? (
         <div className="pd-row-head" data-section="edit-panel" role="status" data-testid="edit-finding">
           <span className="gx-eyebrow" data-functional-label="">{finding ? "Finding the take…" : "That take is not in this project"}</span>
-          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => setPicked(null)}>Show the newest take</button>}
+          {finding ? null : <button type="button" className="gx-hbtn" onClick={() => setPicked(null)}>Show every take</button>}
         </div>
       ) : null}
-      <section className="gx-gen-card" aria-label="All assets" data-testid="takes-assets" data-section="assets">
+
+      <section className="gx-gen-card pd-desk" aria-label="Takes" data-testid="edit-takes" data-section="takes">
         <div className="pd-row-head">
-          <span className="gx-eyebrow" data-functional-label="">All assets</span>
+          <span className="gx-eyebrow" data-functional-label="">Takes</span>
           <span className="gx-spacer" />
-          {failed ? null : <span className="gx-hint">{view.skeletons ? "Reading this project…" : `${items.length}${library.hasMore ? "+" : ""} in this project`}</span>}
+          <span className="gx-hint" data-testid="takes-count">{hint}</span>
         </div>
-        {groups.length ? groups.map((group) => (
-          <div key={group.label} className="pd-asset-group" data-testid="asset-group" data-group={group.label}>
-            <div className="pd-row-head"><span className="pd-asset-group-name">{group.label}</span><span className="gx-hint">{group.items.length}</span></div>
-            <div className="pd-take-grid" role="radiogroup" aria-label={group.label}>
-              {group.items.map((e: LibraryEntry) => (
-                <TakeTile key={e.take.id} entry={e} variant="take" checked={entry?.take.id === e.take.id} onOpen={() => pick(e)} onRefresh={library.refresh} />
-              ))}
+        {failed ? null : (
+          <div className="pd-desk-filters" data-testid="takes-filters">
+            <div className="gx-chips" role="group" aria-label="Review status" data-section="review">
+              {DESK_FILTERS.map((f) => {
+                const n = countLabel(counts[f.id], more);
+                return (
+                  <button key={f.id} type="button" className="gx-chip pd-desk-chip" data-status={f.id} {...(f.id === "all" ? { "data-kind": "All" } : { style: { "--dot": STATUS_DOT[f.id] } as React.CSSProperties })}
+                    aria-pressed={filter === f.id} onClick={() => setFilter(f.id)} data-testid="takes-filter">
+                    {f.label}{n && !view.skeletons ? <span className="pd-desk-n">{n}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="pd-desk-find">
+              <input type="search" className="gx-field pd-desk-search" aria-label="Search takes" placeholder="Search names, prompts, shots" value={typed} onChange={(e) => setTyped(e.target.value)} data-testid="takes-search" />
+              <div className="gx-chips" role="group" aria-label="Kind">
+                {DESK_KINDS.map((k) => (
+                  <button key={k.id} type="button" className="gx-chip pd-desk-chip" data-kind={k.label} style={{ "--kind": KIND_CHIP_DOT[k.id] } as React.CSSProperties}
+                    aria-pressed={kind === k.id} onClick={() => setKind(kind === k.id ? null : k.id)} data-testid="takes-kind">{k.label}</button>
+                ))}
+              </div>
             </div>
           </div>
-        )) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
+        )}
+        {rows.length ? (
+          <VirtualItems
+            className="pd-take-grid pd-desk-grid" attrs={{ role: "radiogroup", "aria-label": "Takes", "data-testid": "takes-grid" }}
+            items={rows} getKey={(item) => item.key} layout={{ minColumnWidth: 150 }} gap={10} estimateRowHeight={150} estimateWholeRow={28} scroll="ancestor"
+            wholeRow={isHeading} runOf={runOf} revealKey={reveal?.key ?? null} revealNonce={reveal?.n} revealAlign="center"
+            renderItem={(item) => item.type === "take" ? (
+              <TakeTile entry={item.entry} variant="take" checked={entry?.take.id === item.entry.take.id} rowStart={item.first} onOpen={() => open(item.entry)} onRefresh={library.refresh} />
+            ) : (
+              <div className={item.type === "shot" ? "pd-desk-head" : "pd-desk-head pd-desk-head--strip"} role="heading" aria-level={item.type === "shot" ? 3 : 4} data-testid={item.type === "shot" ? "takes-shot" : "takes-strip"}>
+                <span className="pd-desk-head-name">{item.label}</span>
+                {item.type === "shot" ? <span className="gx-hint">{item.count.toLocaleString("en-US")}</span> : null}
+              </div>
+            )}
+            after={failed ? null : <LibraryMore library={library} testId="takes-more" auto countWord="loaded" />}
+          />
+        ) : view.skeletons ? <div className="pd-take-grid"><TakeSkeletons count={4} variant="take" /></div>
           : failed ? null
-          : <p className="gx-empty">No assets yet.</p>}
-        {/* A first read that failed is the banner at the top; a later one is said here, beside Load more. */}
-        {failed ? null : <LibraryMore library={library} testId="takes-more" />}
+          : (
+            <>
+              {items.length && narrowed ? (
+                <div className="pd-desk-empty" role="status" data-testid="takes-empty">
+                  <p className="gx-empty">{deskEmpty(desk, items.length, more)}</p>
+                  <button type="button" className="gx-hbtn" onClick={clear} data-testid="takes-clear">Show every take</button>
+                </div>
+              ) : <p className="gx-empty" data-testid="takes-empty">Nothing generated yet. Frames from Storyboards, builds from Cast and shots from the Rig all land here.</p>}
+              <LibraryMore library={library} testId="takes-more" auto countWord="loaded" />
+            </>
+          )}
       </section>
     </div>
   );

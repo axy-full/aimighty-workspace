@@ -282,3 +282,44 @@
 .gx .pd-graph-note { margin: 0; }
 .gx .pd-import { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
 .gx .pd-import-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Takes as the review desk (components/graphite/production/EditStage.tsx): the selected take with its
+   review, then one grid of every take — status chips, kind chips and a search above it, grouped by shot
+   and by batch. The grid may be windowed (components/workspace/VirtualItems.tsx): a heading takes its row,
+   and a shot's or a batch's first take starts one. */
+.gx .pd-selected { gap: 10px; }
+.gx .pd-selected-head { flex-wrap: wrap; row-gap: 6px; }
+.gx .pd-selected-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pd-selected-chip { position: relative; display: inline-flex; flex: none; }
+.gx .pd-selected-chip .gx-tile-chip { position: static; max-width: none; }
+.gx .pd-selected-step { display: inline-flex; gap: 6px; flex: none; }
+.gx .pd-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.gx .pd-review-btn[aria-pressed="true"] { color: var(--gx-text); font-weight: 600; }
+.gx .pd-review-btn[data-review="picked"][aria-pressed="true"] { border-color: var(--gx-accent); background: rgba(10, 132, 255, .18); }
+.gx .pd-review-btn[data-review="approved"][aria-pressed="true"] { border-color: var(--gx-done); background: rgba(48, 209, 88, .16); }
+.gx .pd-review-btn[data-review="changes"][aria-pressed="true"] { border-color: var(--gx-waiting); background: rgba(255, 159, 10, .16); }
+.gx .pd-review-trail { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.gx .pd-review-none { margin: 0; }
+.gx .pd-desk { gap: 12px; }
+.gx .pd-desk-filters { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx .pd-desk-find { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.gx .pd-desk-search { flex: 1 1 220px; width: auto; min-width: 0; max-width: 360px; }
+.gx .pd-desk-chip[data-status]:not([data-status="all"])::before { content: ""; width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; background: var(--dot); }
+.gx .pd-desk-n { margin-left: 6px; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
+.gx .pd-desk-grid .pd-desk-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
+.gx .pd-desk-grid .pd-desk-head--strip { padding-top: 0; border-top: 0; }
+.gx .pd-desk-head-name { min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx .pd-desk-head--strip .pd-desk-head-name { font-weight: 500; font-size: 12px; color: var(--gx-text-2); }
+.gx .pd-desk-grid [data-row-start] { grid-column-start: 1; }
+.gx .pd-desk-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx .pd-desk-empty .gx-empty { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .pd-desk-n { font-size: 12px; }
+  .gx .pd-desk-head-name { font-size: 13px; }
+  .gx .pd-desk-head--strip .pd-desk-head-name { font-size: 12px; }
+}
+@media (max-width: 759px) {
+  .gx .pd-desk-search { flex-basis: 100%; max-width: none; }
+  .gx .pd-selected-step { width: 100%; }
+  .gx .pd-selected-step .gx-hbtn { flex: 1; }
+}
