@@ -547,6 +547,18 @@ export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
       (knownTask(prior) || params.producedOutcome || params.paidClaim != null)
     )
       return submitVideoJob(job);
+    /* A draft's final sends nothing but the draft's task id (lib/ark.ts › buildFinalRequestBody): there
+       are no files to read, and nothing to send once the draft's seven days are up — a held final
+       released late is let go, unsent and uncharged, rather than refused by the vendor. */
+    if (typeof params.draftTaskId === "string" && params.draftTaskId) {
+      const expiresAt = Number((params as { draftExpiresAt?: unknown }).draftExpiresAt);
+      if (!(Number.isFinite(expiresAt) && Date.now() < expiresAt)) {
+        const message = "The draft expired before this final could be sent. No request was sent, so nothing is charged.";
+        await failVideoDispatch(genId, message);
+        return { ok: false, error: message, cls: "fatal" };
+      }
+      return submitVideoJob(job);
+    }
     try {
       job.references = await hydrateRefs(params.references ?? []);
       job.source = row.source_gen_id

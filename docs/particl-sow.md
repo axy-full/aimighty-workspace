@@ -744,3 +744,7 @@ Private productions now retain named asset bins and immutable named cuts. The ed
 Failed generations retain an additive `provider_outcome` record on the tenant's generation row and the platform meter event. Connected jobs retain the same optional record in their tenant database. Existing rows remain valid without one. This is reporting only: admission, reservations and settlement rules are unchanged.
 
 Customer takes show the recorded Particl credit charge when available. Provider diagnostics for platform-funded work remain restricted to the platform administrator. Missing provider evidence remains unknown; token usage is not treated as a billing receipt. Connected-account transaction reconciliation awaits a verified response contract and is not enabled. Failed takes retain their reason and can be reviewed without triggering another generation.
+
+### September 27 — separately approved draft and final takes
+
+Gen gains a watermarked draft and separately quoted final through the existing video admission, worker and ledger. The final inherits its original draft context; a transactional claim, expiry check and settle-first recovery prevent duplicate or stale submissions. Gen, Takes, Library and the inspector retain the pair. No pricing rule changes. See [draft-to-final behavior](seedance-draft-final.md) for boundaries and validation.

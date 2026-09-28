@@ -4,6 +4,7 @@ import { failureKind } from "../jobState";
 import type { TakeFailure } from "../providerOutcome";
 import { engineLabel } from "./engines";
 import { heldNeeds } from "./release";
+import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFinal";
 
 /**
  * The Takes page: the project library (GET /api/workbench/library →
@@ -60,6 +61,8 @@ export type Take = {
   reason?: string;
   /** The row's own words behind `reason`, for a tooltip; only when they say more. */
   detail?: string;
+  /** Draft mode (lib/draftFinal.ts): a 480p draft, or the 1080p final made from the draft `of`. */
+  pair?: { role: "draft" } | { role: "final"; of: string };
   sha256: string | null;
   createdAt: number;
 };
@@ -106,15 +109,17 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const stage = status === "rendering" ? takeStage(g) : null;
     const needs = heldForCredits ? heldNeeds(g.params) : null;
     const why = failed ? failureReason(g) : heldForCredits ? heldBlock(g) ?? heldReason(g.params) : stage === "queued" && g.status === "held" ? heldReason(g.params) : null;
+    const of = finalOf(g.params);
+    const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
-      meta: [label, detail].filter(Boolean).join(" · "),
+      meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
       usd: !settled ? null : g.costUsd ?? null,
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
       ...(failure ? { failure, failureLine: failureLine(failure, { cancelled: g.status === "cancelled" }).text } : {}),
       ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
-      sha256: sha, createdAt: g.createdAt,
+      ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt,
     };
   });
 }
