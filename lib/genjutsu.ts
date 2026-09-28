@@ -30,7 +30,7 @@ export async function genjutsuInput(model: string, prompt: string, resolution: s
   if (!engineMock() && !usingBlob()) throw new HiggsfieldHttpError(422, "Transform requires deployed private media storage for original references.");
   const urls = await Promise.all(refs.map(r => {
     const path = r.fromGeneration ? (r.kind === "video" ? videoPath(r.id) : imagePath(r.id)) : uploadPath(r.id, r.ext);
-    return engineMock() ? `https://fixtures.particl.invalid/${path}` : presignedReadUrl(path);
+    return engineMock() ? `https://fixtures.particl.invalid/${path}` : presignedReadUrl(path, 0.25, r.storedUrl);
   }));
   return { prompt, video_url: urls[0], image_urls: urls.slice(1), resolution: resolution as "480p" | "720p" };
 }

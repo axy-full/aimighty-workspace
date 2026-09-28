@@ -134,7 +134,7 @@ export async function resolveConsumerGenerationSources(input: ConsumerGeneration
         ? source.kind === "video" ? videoPath(source.id) : source.kind === "audio" ? audioPath(source.id) : imagePath(source.id)
         : uploadPath(source.id, source.ext);
       return {
-        url: engineMock() ? `https://fixtures.particl.invalid/${path}` : await presignedReadUrl(path),
+        url: engineMock() ? `https://fixtures.particl.invalid/${path}` : await presignedReadUrl(path, 0.25, source.storedUrl),
         type: source.kind,
         role: source.role,
       };

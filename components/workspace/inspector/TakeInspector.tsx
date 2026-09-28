@@ -17,7 +17,7 @@ export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
         <Kicker>Output</Kicker>
         <div className="pxw-preview" style={{ marginTop: 10 }} aria-hidden="true" />
         <p className="pxw-inspector-note">
-          {library.state.status === "ready" ? "Select an upload or a generation to see its details." : "Loading the project library…"}
+          {library.state.status === "ready" ? "Select an upload or a generation to see its details." : library.state.status === "error" ? "The project library did not load." : "Loading the project library…"}
         </p>
       </div>
     );
@@ -30,7 +30,7 @@ export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
     ...(take.meta ? [{ label: "Detail", value: take.meta }] : []),
     ...(upload
       ? take.sha256 ? [{ label: "Integrity", value: "sha256 ✓", tone: "green" as const, title: take.sha256 }] : []
-      : [{ label: "Settled cost", value: take.status === "rendering" ? "Not settled" : take.failedUnbilled ? "Not billed" : takeCost(take), tone: "blue" as const }]),
+      : [{ label: "Settled cost", value: take.status === "rendering" || take.status === "held" ? "Not settled" : take.failedUnbilled ? "Not billed" : takeCost(take), tone: "blue" as const }]),
     { label: "Status", value: takeStatus(take).label },
     ...(take.failureLine ? [{ label: "Why", value: take.failureLine }] : []),
   ];

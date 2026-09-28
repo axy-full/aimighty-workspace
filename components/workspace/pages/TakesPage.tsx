@@ -17,14 +17,15 @@ import { VirtualItems } from "../VirtualItems";
  * Status dot + label under each card. A failed take says "not billed" only
  * when the ledger (or, on the workspace's own keys, its provider) confirms it.
  */
-export function takeStatus(take: Pick<Take, "status" | "failedUnbilled" | "failure">): { label: string; dot: string } {
+export function takeStatus(take: Pick<Take, "status" | "failedUnbilled" | "failure" | "needs"> & Partial<Pick<Take, "cancelled">>): { label: string; dot: string } {
   switch (take.status) {
     case "approved": return { label: "Approved", dot: "var(--pxw-green)" };
     case "picked": return { label: "Picked", dot: "var(--pxw-blue)" };
     case "changes": return { label: "Changes requested", dot: "var(--pxw-amber)" };
     case "review": return { label: "Review", dot: "var(--pxw-amber)" };
     case "rendering": return { label: "Rendering", dot: "var(--pxw-blue)" };
-    case "failed": return { label: take.failure ? failedChip(take.failure) : take.failedUnbilled ? "Failed · not billed" : "Failed", dot: "var(--pxw-red)" };
+    case "held": return { label: take.needs != null ? `Held · needs ${take.needs.toLocaleString("en-US")} cr` : "Held · needs credits", dot: "var(--pxw-amber)" };
+    case "failed": return { label: take.failure ? failedChip(take.failure, take.cancelled === true) : `${take.cancelled ? "Cancelled" : "Failed"}${take.failedUnbilled ? " · not billed" : ""}`, dot: "var(--pxw-red)" };
     default: return { label: "Source", dot: "var(--pxw-neutral-state)" };
   }
 }

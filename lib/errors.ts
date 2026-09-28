@@ -4,11 +4,13 @@
  *
  *   what happened · what the provider did with the charge · the next step
  *
- * "Blocked by the content filter · Higgsfield refunded 12 credits · Change the
- * prompt or reference". The charge part is the provider's own outcome
- * (lib/providerOutcome.ts) in its own unit — or, where the workspace pays
- * Particl in credits, what Particl's ledger holds for the take. It says
- * "didn't say" whenever the provider did not; it never infers a refund.
+ * "Refused by the content filter · Higgsfield refunded 12 credits · Change the
+ * prompt or reference", in the card contract's words (lib/workspace/takes.ts
+ * failureReason): one vocabulary for a take that failed. The charge part is
+ * the provider's own outcome (lib/providerOutcome.ts) in its own unit — or,
+ * where the workspace pays Particl in credits, what Particl's ledger holds
+ * for the take. It says "didn't say" whenever the provider did not; it never
+ * infers a refund.
  *
  * Pure and client-safe.
  */
@@ -18,8 +20,8 @@ export type FailurePayer = TakeFailure["payer"];
 type Copy = { what: string; next: string };
 
 const COPY: Record<FailureKind, Copy> = {
-  content_filter: { what: "Blocked by the content filter", next: "Change the prompt or reference" },
-  rights: { what: "Blocked as protected content", next: "Change the prompt or reference" },
+  content_filter: { what: "Refused by the content filter", next: "Change the prompt or reference" },
+  rights: { what: "Refused as protected content", next: "Change the prompt or reference" },
   invalid_request: { what: "The engine refused these settings", next: "Check the settings" },
   auth: { what: "The engine refused the connection", next: "Reconnect in Workspace › Engines" },
   provider_quota: { what: "The engine account is out of credits", next: "Top up the engine account" },

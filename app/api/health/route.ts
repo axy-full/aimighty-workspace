@@ -1,4 +1,3 @@
-import { withRecoveryActivity } from "@/lib/recovery";
 import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
@@ -9,7 +8,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { vendorKey } from "@/lib/vendorKeys";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
-import { presignedReadUrl } from "@/lib/storage";
+import { backendKind, cloudBackend } from "@/lib/storage/backend";
 import { mailConfigured, mailFrom } from "@/lib/mail";
 import { engineMock } from "@/lib/mock";
 import { dispatchMode } from "@/lib/dispatch";
@@ -73,31 +72,22 @@ export const GET = recoveryRoute(async function GET(req: Request) {
 
   // Public checks are read-only. Writing a storage probe requires a platform
   // administrator; ordinary workspace accounts cannot trigger Blob probes.
-  let storage = process.env.BLOB_READ_WRITE_TOKEN
-    ? "blob-configured"
-    : process.env.NODE_ENV === "production"
-      ? "missing"
-      : "local-disk";
+  const selected = backendKind();
+  let storage = selected !== "local" ? `${selected}-configured` : process.env.NODE_ENV === "production" ? "missing" : "local-disk";
   let storageError: string | null = null;
   /* Deep probe (?deep=1): the playback path itself. Media is served by
      redirecting to a presigned private-blob URL, so what actually matters is
      whether THAT url answers a Range request the way iOS Safari demands —
      a 206 with a Content-Range. Presign, ask for two bytes, report, clean up. */
   let presignRange: string | null = null;
-  if (deep && process.env.BLOB_READ_WRITE_TOKEN) {
-    const probePath = `health/${randomUUID()}/range-probe.bin`;
+  if (deep && selected !== "local") {
+    const probePath = `platform/health/${randomUUID()}/range-probe.bin`;
     let probeUrl: string | null = null;
     try {
-      const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-      const probe = await put(probePath, Buffer.from("0123456789"), {
-        access: "private",
-        contentType: "application/octet-stream",
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
-      probeUrl = probe.url;
-      const signed = await presignedReadUrl(probePath, 1);
+      const backend = cloudBackend();
+      await backend.put(probePath, Buffer.from("0123456789"), { contentType: "application/octet-stream", overwrite: false });
+      probeUrl = probePath;
+      const signed = await backend.presignGet(probePath, Date.now() + 900_000);
       const r = await fetch(signed, {
         headers: { Range: "bytes=0-1" },
         cache: "no-store",
@@ -108,16 +98,15 @@ export const GET = recoveryRoute(async function GET(req: Request) {
         `accept-ranges=${r.headers.get("accept-ranges") ?? "-"}`;
       const bytes = new Uint8Array(await r.arrayBuffer());
       if (r.status !== 206 || r.headers.get("content-range") !== "bytes 0-1/10" || bytes.length !== 2 || bytes[0] !== 48 || bytes[1] !== 49) {
-        storage = "blob-BROKEN";
-      } else { storage = "blob-private"; }
+        storage = `${selected}-BROKEN`;
+      } else { storage = `${selected}-private`; }
     } catch {
       presignRange = "ERROR: Private media range probe failed";
-      storage = "blob-BROKEN";
+      storage = `${selected}-BROKEN`;
     } finally {
       if (probeUrl) {
-        try { const { del: rawDel } = await import("@vercel/blob");
-    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true }); await del(probeUrl); }
-        catch { storage = "blob-BROKEN"; storageError = "Storage probe cleanup failed"; }
+        try { await cloudBackend().del([probeUrl]); }
+        catch { storage = `${selected}-BROKEN`; storageError = "Storage probe cleanup failed"; }
       }
     }
   }
@@ -126,7 +115,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
      A monitor needs exactly this and nothing more. */
   const ok =
     database !== "unreachable" &&
-    storage !== "blob-BROKEN" &&
+    !storage.endsWith("-BROKEN") &&
     storage !== "missing";
   if (!full) {
     return NextResponse.json(
@@ -138,7 +127,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
         dispatch: { mode: dispatchMode() },
         database: database === "unreachable" ? "unreachable" : "ok",
         storage:
-          storage === "blob-BROKEN"
+          storage.endsWith("-BROKEN")
             ? "broken"
             : storage === "missing"
               ? "missing"

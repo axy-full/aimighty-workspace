@@ -8,6 +8,7 @@ import type { Asset, CanvasNode, Project } from "../workbench/studio";
 import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
+import { heldNeeds } from "./release";
 
 /**
  * Pure helpers behind the workspace Rig: adding a shot, what feeds it, its
@@ -100,9 +101,11 @@ export type VersionRow = {
   note?: string;
 };
 
-/** Held takes wait for credits or for a slot — never for an approval. */
+/** Held takes wait for credits or for a slot — never for an approval. The credits are the figure it was held at. */
 function heldLabel(job: Pick<MediaJob, "params">): string {
-  return job.params?.held?.why === "slots" ? "Held · waiting for a slot" : "Held · needs credits";
+  if (job.params?.held?.why === "slots") return "Held · waiting for a slot";
+  const needs = heldNeeds(job.params);
+  return needs != null ? `Held · needs ${needs.toLocaleString("en-US")} cr` : "Held · needs credits";
 }
 /**
  * A take that ended without a clip: failed, or cancelled (a discarded held

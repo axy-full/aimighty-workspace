@@ -35,6 +35,8 @@ export type Session = {
   requestScope?: string | null;
   name: string | null;
   email: string | null;
+  /** The signed-in account's own id — what a take's author is compared with (lib/workspace/release.ts). */
+  userId?: string | null;
   /** The workspace this session is in, and the account's standing there. */
   workspace: SessionWorkspace | null;
   role: "owner" | "admin" | "member" | null;
