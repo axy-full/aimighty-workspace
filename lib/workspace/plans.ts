@@ -560,7 +560,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
               ) ?? job,
             (item) => TERMINAL.has(item.status),
           );
-          if (value.status === "failed") throw new Error(value.error || "Development failed. Failed runs are not billed.");
+          if (value.status === "failed") throw new Error(value.error || "Development failed.");
           return { detail: value.status, io: { development: value } };
         }),
       ),
@@ -885,7 +885,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
               )).jobs.find((item) => item.requestId === job.requestId) ?? job,
             (item) => TERMINAL.has(item.status),
           );
-          if (value.status === "failed") throw new Error(value.error || "Planning failed. Failed runs are not billed.");
+          if (value.status === "failed") throw new Error(value.error || "Planning failed.");
           return { detail: `${plural(count(value.plan?.steps), "step")}`, io: { agentJob: value } };
         }),
       ),

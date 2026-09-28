@@ -10,7 +10,8 @@
  *
  * The money rules are the ones lib/workspace/takes.ts already states, kept
  * identical so the wall and Takes can never disagree: a failed or cancelled
- * render is not billed and says so, a render in flight carries no figure, and
+ * render says "not billed" only when a receipt or its provider confirms it
+ * (lib/errors.ts failureChargeWord), a render in flight carries no figure, and
  * a generation paid for by a connected account is not counted in this
  * workspace's credits.
  */
