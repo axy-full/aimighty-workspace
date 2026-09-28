@@ -9,9 +9,9 @@
  * because a "standard panel" is not a unit this product has; a plan
  * differentiates on credits, and on the two counted ceilings Invite carries.
  *
- * **Invite's "50 cr once" is NOT an inclusion, and that is the whole reason
+ * **Invite's welcome credits are NOT an inclusion, and that is the whole reason
  * `includedCredits` is 0 for it.** Guardrail 1: "Free grant is one-time,
- * never recurring." The 50 is the welcome grant, already written once at
+ * never recurring." They are the welcome grant (SIGNUP_CREDITS), already written once at
  * sign-up by `createWorkspace` and already marked `welcome` in the ledger.
  * Putting it here would grant it again every cycle and turn a signup gift
  * into a monthly stipend for every free workspace on the platform.
@@ -38,11 +38,13 @@ export type PlanDef = {
 export const PLAN_IDS: readonly PlanId[] = ["invite", "studio", "agency", "production"];
 
 export const DEFAULT_PLANS: PlanDef[] = [
-  /* Invite includes no credits: its 50 are the one-time welcome grant. */
+  /* Invite includes no credits: its welcome credits are the one-time grant.
+     Inclusions at US$0.80 a credit (owner decision, 28 September 2026): the
+     US$0.10-era 400 / 1,600 / 9,000, divided by eight. One line per plan. */
   { id: "invite", label: "Invite", priceUsd: 0, includedCredits: 0, maxProductions: 1, maxMembers: 3 },
-  { id: "studio", label: "Studio", priceUsd: 49, includedCredits: 400, maxProductions: null, maxMembers: null },
-  { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 1600, maxProductions: null, maxMembers: null },
-  { id: "production", label: "Production", priceUsd: 999, includedCredits: 9000, maxProductions: null, maxMembers: null },
+  { id: "studio", label: "Studio", priceUsd: 49, includedCredits: 50, maxProductions: null, maxMembers: null },
+  { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 200, maxProductions: null, maxMembers: null },
+  { id: "production", label: "Production", priceUsd: 999, includedCredits: 1125, maxProductions: null, maxMembers: null },
 ];
 
 export const isPlanId = (v: unknown): v is PlanId => (PLAN_IDS as readonly string[]).includes(String(v));
