@@ -252,6 +252,8 @@ export async function listGenerations(opts: {
   projectId?: string | null;
   /** Server-resolved project library: filed takes plus explicitly linked draft references. */
   projectLibrary?: { productionProjectId: string; generationIds: string[] };
+  /** One take by id, still under every other condition (a project library's own membership above): a deep link's lookup. */
+  id?: string | null;
   createdBy?: string | null;
   limit?: number;
   search?: string;
@@ -287,6 +289,10 @@ export async function listGenerations(opts: {
     args.push(opts.projectLibrary.productionProjectId, JSON.stringify(opts.projectLibrary.generationIds), opts.projectLibrary.productionProjectId);
   }
 
+  if (opts.id) {
+    where.push("g.id = ?");
+    args.push(opts.id);
+  }
   if (opts.projectId !== undefined && opts.projectId !== null) {
     where.push("g.project_id = ?");
     args.push(opts.projectId);
