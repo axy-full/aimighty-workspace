@@ -8,7 +8,7 @@ export const metadata = { title: { absolute: "particl studio · the studio's own
 
 const COMPOSER_TILES: [string, string, string][] = [
   ["01 Direction", "One prompt, cited", "@Image1 and @name point at references. A raw: prefix sends your exact words past the enhancer."],
-  ["02 Model", "Model sheet", "Studio engines and the connected catalogue: tag, best-for and roles on every row."],
+  ["02 Model", "Model sheet", "Studio engines: tag, best-for and roles on every row."],
   ["03 References", "Drop well", "Roles cycle per model: Start frame, End frame, Reference, Video, Audio. Drag anything in from the Library."],
   ["04 Settings", "Clamped to the engine", "Aspect, resolution, length by the second, audio on or off, one to four takes."],
   ["05 Results", "Progress rings", "Running jobs as rings, then finished takes, filtered All · Images · Video · Audio."],
@@ -65,7 +65,7 @@ export default async function GenHome() {
 
       <Section id="gen-engines" label="Engines">
         <Head eyebrow="Engines" title="Pick the engine per shot."
-          lead="Studio engines in the model sheet, and the connected catalogue beside them. Settings clamp to what the engine accepts." />
+          lead="Studio engines in the model sheet. Settings clamp to what the engine accepts." />
         <Grid col={250}>
           {ENGINES.map(({ id, kind, role, body }) => {
             const e = engine(id);
