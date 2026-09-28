@@ -38,7 +38,7 @@ export function HooksTool({ scope, editor, onOpen }: { scope: string; editor: Ow
     void editor.ensureSaved();
     toast(merged.added ? `${merged.added} ${merged.added === 1 ? "hook" : "hooks"} added${merged.skipped ? ` · ${merged.skipped} did not fit in twelve` : ""}` : merged.skipped ? "The list already holds twelve hooks." : "Those hooks are on the list already.");
   };
-  const blocked = !saved ? "Save the project first: the agent reads its saved brief." : !agent.data ? (agent.error ? null : "Reading the agent’s runs…")
+  const blocked = !saved ? "Save the project first: the agent reads its saved brief." : !agent.data ? (agent.error ? "The agent’s runs could not be read. Try again below." : "Reading the agent’s runs…")
     : !configured ? "No priced thinking model is set up for this workspace. Ask an admin to add one in Workspace › Engines." : agent.working ? "The agent is working." : asked.trim().length < 3 ? "Say what the hooks should do." : null;
 
   return (

@@ -175,6 +175,7 @@ export function DesignTool({ scope, editor, items }: { scope: string; editor: Ow
             </ol>
             {selected ? (
               <fieldset className="bo-inspector" disabled={selected.locked} data-testid="design-inspector">
+                {selected.locked ? <p className="gx-hint" data-testid="design-locked">{selected.name || "This layer"} is locked. Unlock it in the layers to change it.</p> : null}
                 <Field label="Layer name"><input className="gx-field" value={selected.name} maxLength={120} onChange={(e) => edit({ ...selected, name: e.target.value })} /></Field>
                 {selected.kind === "text" ? (<>
                   <Field label="Text"><textarea className="gx-textarea bo-short" value={selected.text} maxLength={2000} onChange={(e) => edit({ ...selected, text: e.target.value })} data-testid="design-text" /></Field>

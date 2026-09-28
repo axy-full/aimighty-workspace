@@ -4,6 +4,7 @@ import { useShell } from "@/lib/shell/state";
 import { OWN_PAGE_LABEL, type OwnPage } from "@/lib/shell/business-own";
 import { useProjectLibrary } from "@/lib/workspace/library";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
+import { useStageFacts } from "../production/use-stage-facts";
 import { BrandTool } from "./BrandTool";
 import { DesignTool } from "./DesignTool";
 import { FormatTool } from "./FormatTool";
@@ -32,6 +33,8 @@ function OwnPageBody({ scope, projectId, page }: { scope: string; projectId: str
   const shell = useShell();
   const editor = useDraftEditor(scope, projectId);
   const library = useProjectLibrary(scope, projectId);
+  /* The Inspector's Marketing specification counts the draft on screen (products, hooks), not the last saved copy. */
+  useStageFacts("marketing", editor.project);
   if (editor.status !== "ready" || !editor.project) {
     /* A read that failed says so and reads again on Try again ("Retry" is a render's own word). */
     return (

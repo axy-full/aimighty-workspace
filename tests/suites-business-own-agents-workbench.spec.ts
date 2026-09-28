@@ -20,10 +20,10 @@ const MODEL = "anthropic/claude-sonnet-4.6";
 const MODELS = [{ id: MODEL, name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "high", label: "High" }, { value: "low", label: "Low" }] }];
 const VIDEO = readFileSync("tests/fixtures/astra-source.mp4");
 
-type Agent = { jobs: Record<string, unknown>[]; quotes: Record<string, unknown>[]; paid: Record<string, unknown>[]; frames: string[] };
-/** The existing Atomik route, as it answers: priced models, a quote for exactly the request, then the run with its plan. */
-async function mockAgent(page: Page, estimate: number): Promise<Agent> {
-  const agent: Agent = { jobs: [], quotes: [], paid: [], frames: [] };
+type Agent = { jobs: Record<string, unknown>[]; quotes: Record<string, unknown>[]; paid: Record<string, unknown>[]; frames: string[]; failing: boolean };
+/** The existing Atomik route, as it answers: priced models, a quote for exactly the request, then the run with its plan. While `failing`, every read of the runs fails. */
+async function mockAgent(page: Page, estimate: number, failing = false): Promise<Agent> {
+  const agent: Agent = { jobs: [], quotes: [], paid: [], frames: [], failing };
   await page.route(/\/api\/workbench\/atomik\/frames(\?.*)?$/, (route) => {
     const id = `review-frame-${agent.frames.length}`;
     agent.frames.push(id);
@@ -33,6 +33,7 @@ async function mockAgent(page: Page, estimate: number): Promise<Agent> {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "GET") {
+      if (agent.failing) return route.fulfill({ status: 503, json: { error: "Atomik could not read this project’s runs." } });
       const requestId = url.searchParams.get("requestId");
       return route.fulfill({ json: requestId ? { jobs: agent.jobs.filter((job) => job.requestId === requestId) } : { configured: true, models: MODELS, defaultModel: MODEL, jobs: agent.jobs } });
     }
@@ -71,8 +72,16 @@ test("Hooks: twelve lines kept by hand; the Campaign agent is priced at about N 
   test.setTimeout(150_000);
   let agent: Agent | null = null;
   const brief = { ...EMPTY_MOLECULR, productName: "Salt bottle", productDescription: "Hand-blown glass, 500 ml.", hooks: ["Stop scrolling"], brandKit: { ...EMPTY_BRAND_KIT, name: "Northline" } };
-  const seen = await openBusiness(page, "hooks", fixture({ moleculr: brief }), { routes: async () => { agent = await mockAgent(page, 3); } });
+  const seen = await openBusiness(page, "hooks", fixture({ moleculr: brief }), { routes: async () => { agent = await mockAgent(page, 3, true); } });
   await expect(page.getByTestId("page-title")).toHaveText("Hooks");
+  /* The agent's runs could not be read: nothing can be priced until they are, and Try again reads them once more. */
+  await expect(page.getByTestId("hooks-blocked")).toHaveText("The agent’s runs could not be read. Try again below.");
+  await expect(page.getByTestId("hooks-agent").getByRole("alert")).toContainText("Atomik could not read this project’s runs.");
+  await expect(page.getByTestId("hooks-price")).toBeDisabled();
+  agent!.failing = false;
+  await page.getByTestId("hooks-agent").getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("hooks-blocked")).toHaveCount(0);
+  await expect(page.getByTestId("hooks-price")).toBeEnabled();
   await expect(page.getByTestId("hooks-list")).toContainText("Hooks · 1 of 12");
   await page.getByTestId("hooks-add").click();
   await page.getByTestId("hooks-line").nth(1).fill("Harvested by hand.");
@@ -181,6 +190,7 @@ test("Design: a poster of editable text, shape and image layers is saved with th
   await page.getByRole("button", { name: "Lock Headline", exact: true }).click();
   await page.getByTestId("design-layers").getByRole("button", { name: "Headline", exact: true }).click();
   await expect(page.getByTestId("design-inspector")).toHaveAttribute("disabled", "");
+  await expect(page.getByTestId("design-locked")).toHaveText("Headline is locked. Unlock it in the layers to change it.");
   await expect.poll(() => seen.store.project.moleculr?.poster?.layers.length, { timeout: 15_000 }).toBe(5);
   await expect.poll(() => seen.store.project.moleculr?.poster?.aspect, { timeout: 15_000 }).toBe("9:16");
   const layers = seen.store.project.moleculr!.poster!.layers;

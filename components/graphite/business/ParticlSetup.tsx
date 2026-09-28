@@ -9,12 +9,12 @@ import { OWN_PAGE_LABEL, PARTICL_SETUP_TYPES, chooseProduct, particlItemActions,
 import { briefOf, changeBrief } from "./own-kit";
 
 /**
- * Business › Setup, first: the setup items Particl made in this project — its
- * saved products, its brand kit and its reference ad — for every member, with
- * or without a connected account. They are Particl's own records in the
- * project draft (lib/shell/business-own.ts › particlSetupItems), used by
- * Particl's own tools (Format, Hooks, Design); none is ever sent to a
- * connected account. The account's own setup lists follow, as before.
+ * Business › Setup: the setup items Particl made in this project — its saved
+ * products, its brand kit and its reference ad — for every member, with or
+ * without a connected account. They are Particl's own records in the project
+ * draft (lib/shell/business-own.ts › particlSetupItems), used by Particl's
+ * own tools (Format, Hooks, Design); none is ever sent to a connected
+ * account. They follow the account's own lists, which keep their place.
  */
 export function ParticlSetup({ scope, project }: { scope: string; project: Project | null }) {
   if (!project) return null;

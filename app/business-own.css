@@ -111,14 +111,15 @@
 .bo-layer[data-selected] { background: var(--gx-tint); }
 .bo-layer-name { flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 0 6px; font-size: 13px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bo-inspector { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.bo-inspector:disabled { opacity: .5; }
+/* A locked layer: its controls step back; its labels stay at the floor and say what they hold. */
+.bo-inspector:disabled :is(input, textarea, select, button) { opacity: .45; }
 .bo-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .bo-range { width: 100%; height: 32px; accent-color: var(--gx-accent); }
 @media (max-width: 900px) { .bo-design { grid-template-columns: minmax(0, 1fr); } }
 
-/* ── Setup: what Particl made, above the connected account's lists. ── */
+/* ── Setup: what Particl made, after the connected account's lists. ── */
 .bo-setup-stack { display: flex; flex-direction: column; min-width: 0; }
-.gx .bo-setup { padding: 20px 20px 0; max-width: 1060px; gap: 0; }
+.gx .bo-setup { padding: 0 20px 20px; max-width: 1060px; gap: 0; }
 .bo-setup-type { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .gx .bo-setup-row { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 10px; }
 .bo-setup-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -129,7 +130,7 @@
 /* The thumb's floors, on any phone in either orientation: 44px targets, 12px text. */
 @media (max-width: 767px), (pointer: coarse) {
   .bo { padding: 12px; }
-  .gx .bo-setup { padding: 12px 12px 0; }
+  .gx .bo-setup { padding: 0 12px 12px; }
   .bo .gx-hbtn, .bo-setup .gx-hbtn, .bo .gx-primary, .bo-setup .gx-primary { min-width: 44px; }
   .bo-swatch input[type="color"] { width: 44px; height: 44px; }
   .bo-layer-name, .bo-summary { min-height: 44px; }

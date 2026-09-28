@@ -91,7 +91,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
       toast("The reviewed direction is on the reference. Video briefs in Format carry it.");
     } catch (cause) { work.setError(cause instanceof Error ? cause.message : "The direction could not be applied."); }
   };
-  const blocked = !selected ? "Choose the reference video first." : !saved ? "Save the project first: the review reads its saved brief." : !agent.data ? (agent.error ? null : "Reading the agent’s runs…")
+  const blocked = !selected ? "Choose the reference video first." : !saved ? "Save the project first: the review reads its saved brief." : !agent.data ? (agent.error ? "The agent’s runs could not be read. Try again below." : "Reading the agent’s runs…")
     : !agent.data.configured || !models.length ? "No priced thinking model that reads images is set up for this workspace. Ask an admin to add one in Workspace › Engines." : reviewing ? "A review is running." : null;
 
   return (

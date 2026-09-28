@@ -118,7 +118,7 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await fingerSized(business, project);
   await shot(page, "business-member", project);
 
-  /* Business's pages are listed; Setup is the same card, with what Particl made in the project above it. */
+  /* Business's pages are listed; Setup is the same card, with what Particl made in the project below it. */
   await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
