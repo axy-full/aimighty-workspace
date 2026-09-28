@@ -213,8 +213,9 @@ export function takeReasonLine(take: Pick<Take, "reason" | "needs"> & Partial<Pi
 /**
  * The desk's status filters. They read the same fields as the chips above
  * (`status` and `stage`), so a filter and a card never disagree: Held is the
- * card that says Held, Failed is everything filed under failed (a take
- * stopped before it rendered wears Cancelled, and is here too).
+ * card that says Held (a take held for credits, its own status, or one built
+ * with the in-flight `held` stage), Failed is everything filed under failed
+ * (a take stopped before it rendered wears Cancelled, and is here too).
  */
 export const DESK_FILTERS = [
   { id: "all", label: "All" },
@@ -230,7 +231,6 @@ export type DeskFilter = (typeof DESK_FILTERS)[number]["id"];
 export function inDeskFilter(take: Pick<Take, "status" | "stage">, filter: DeskFilter): boolean {
   switch (filter) {
     case "all": return true;
-    /* Held for credits is its own status (the chip that says Held); an older in-flight row may still carry the held stage. */
     case "held": return take.status === "held" || (take.status === "rendering" && take.stage === "held");
     default: return take.status === filter;
   }
