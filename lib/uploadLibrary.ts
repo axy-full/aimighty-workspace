@@ -27,11 +27,16 @@ function uploadMetadata(row: Row): LibraryUpload {
 
 /** db() is selected by the authenticated tenant, so all studio members see
  * their workspace's uploads while another workspace's originals stay private. */
-export async function listLibraryUploads(params: URLSearchParams, project?: { productionProjectId: string; uploadIds: string[] }) {
+export async function listLibraryUploads(params: URLSearchParams, project?: { productionProjectId: string; uploadIds: string[] }, only?: { id: string }) {
   const { limit, search, cursor } = assetPageQuery(params, 200);
   await ready();
   const where: string[] = [];
   const args: (string | number)[] = [];
+  /* One upload by id (a deep link's lookup), still inside the project's own membership below. */
+  if (only) {
+    where.push("id = ?");
+    args.push(only.id);
+  }
   if (project) {
     where.push(`(id IN (SELECT value FROM json_each(?)) OR id IN (SELECT upload_id FROM project_library_uploads WHERE project_id=?)
       OR id IN (SELECT j.atom FROM generations g,json_tree(g.params) j WHERE g.project_id=? AND g.deleted=0 AND j.key IN ('uploadId','sourceUploadId','coverUploadId')))`);
