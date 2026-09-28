@@ -6,6 +6,8 @@ import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import { atomikSheetRuns } from "@/lib/shell/atomik-sheet";
 import { useShell } from "@/lib/shell/state";
+import { runsOnOwnerAccount } from "@/lib/shell/connected-capability";
+import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
  * The page's Atomik plan in the Suites shell: what the page head's "Run
@@ -19,18 +21,20 @@ export function AtomikSheet() {
   const { state, dispatch } = useWorkspace();
   const shell = useShell();
   const atomik = useAtomik();
+  const capability = useConnectedCapability(undefined, { read: false });
   if (!state.agentOpen) return null;
   const close = () => dispatch({ type: "patch", patch: { agentOpen: false } });
 
   const plan = atomik.plan(state.page);
+  const ownerRun = !capability.owner && runsOnOwnerAccount(plan);
   const run = atomik.runFor(state.page);
   const runnable = atomik.runnable(state.page);
   const button = runButton(run, runnable);
-  const rows = plan ? stepRows(plan, run, atomik.ctx) : [];
+  const rows = plan && !ownerRun ? stepRows(plan, run, atomik.ctx) : [];
   /* A run held on another page stays reachable: its page opens it, or its gate is here. */
   const { elsewhere, gate: gateRun } = atomikSheetRuns(run, atomik.state.run);
   const openElsewhere = elsewhere?.open ?? null;
-  const waiting = Boolean(gateRun);
+  const waiting = Boolean(gateRun) && (capability.owner || !runsOnOwnerAccount(gateRun ? atomik.plan(gateRun.page) : null));
   const quote = gateRun?.quote ?? null;
   const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
 
@@ -84,7 +88,7 @@ export function AtomikSheet() {
           {run?.status === "failed" && run.error ? <p className="gx-gen-error" role="alert">{run.error}</p> : null}
           {atomik.state.notice && !run ? <p className="gx-gen-error" role="alert" data-testid="atomik-notice">{atomik.state.notice}</p> : null}
         </div>
-        {plan ? (
+        {plan && !ownerRun ? (
           <div className="gx-atomik-foot">
             <span className="gx-atomik-meta" data-testid="atomik-price">{priceText(plan, run)}</span>
             <span className="gx-spacer" />

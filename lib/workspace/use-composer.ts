@@ -21,6 +21,9 @@ import {
   type ConnectedJob,
 } from "../higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
+import { useSession } from "../session";
+import { CAPABILITY_UNREADABLE } from "../shell/connected-capability";
+import { useConnectedCapability } from "../shell/use-connected-capability";
 import {
   activeModel,
   audioSeconds,
@@ -341,6 +344,8 @@ export type ComposerHost = {
   generate: () => void;
   /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
   retryEngines: () => void;
+  /** Read the connected account again after the owner's read of it failed (`capability.unreadable` › Try again). */
+  retryConnection: () => void;
   scope: string;
   /** Batches of takes 2–4 still being followed, newest last: Gen's Results show each as one strip. */
   batches: BatchView[];
@@ -353,6 +358,8 @@ export function useComposer(options: {
   open: boolean;
   /** The project the shell has open. */
   project: Project | null;
+  /** The shell must finish reading its projects before this composer may generate. */
+  projects?: "loading" | "ready" | "error";
   /** Adopt a project the composer created, so the shell opens it. */
   onProject: (projectId: string) => void;
   /** The workspace's own name, for the billing line. */
@@ -381,9 +388,8 @@ export function useComposer(options: {
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
-  const [capability, setCapability] = useState<ConnectedCapability | null>(null);
-  const [catalogue, setCatalogue] = useState<{ rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
-  const [quote, setQuote] = useState<ComposerQuote | null>(null);
+  const [catalogueAnswer, setCatalogue] = useState<{ scope: string; revision: number; rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
+  const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; revision: number; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   /** Every connected take submitted here: each is followed and filed, not only the last. */
@@ -403,7 +409,7 @@ export function useComposer(options: {
   const [projectNotice, setProjectNotice] = useState<string | null>(null);
   const [created, setCreated] = useState<Project | null>(null);
   /** The connected wallet the last quote named, for the billing line. */
-  const [walletName, setWalletName] = useState<string | null>(null);
+  const [walletAnswer, setWalletAnswer] = useState<{ scope: string; revision: number; name: string | null } | null>(null);
 
   /* The project the composer files into: the shell's, or the one it created
      before the shell's own read has caught up. */
@@ -432,26 +438,30 @@ export function useComposer(options: {
     return () => controller.abort();
   }, [open, scope]);
 
-  /* The connected account is only read when the switch is used. */
+  /* The connected account is only read when the switch is used, through the shell's one shared read
+     (lib/shell/use-connected-capability): who owns the workspace and whether it is suspended come from
+     the session; the connection is read once per scope for every surface, and a failed read is the
+     owner's error to retry, never a demotion to member. */
   const wantsConnected = open && state.billing === "connected";
-  useEffect(() => {
-    if (!wantsConnected || capability) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const me = await studioRequest<{ owner?: boolean; workspace?: { suspended?: boolean } }>("/api/me", { signal: controller.signal, cache: "no-store" });
-        const connection = me.owner === true
-          ? await studioRequest<{ connected?: boolean; requiresReconnect?: boolean }>("/api/higgsfield/consumer/connection", { signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store" })
-          : { connected: false, requiresReconnect: false };
-        if (controller.signal.aborted) return;
-        setCapability({ owner: me.owner === true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace?.suspended === true });
-      } catch {
-        if (!controller.signal.aborted) setCapability({ owner: false, connected: false, suspended: false });
-      }
-    })();
-    return () => controller.abort();
-  }, [wantsConnected, capability, scope]);
+  const session = useSession();
+  const suspended = session.workspace?.suspended === true;
+  const shared = useConnectedCapability(scope, { read: wantsConnected });
+  // A recalled connected preset must not strand a member behind a hidden switch.
+  // Workspace settings receive a fresh quote before Generate can enable.
+  useEffect(() => { if (!shared.owner && state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [shared.owner, state.billing]);
+  const capability = useMemo<ConnectedCapability | null>(() => {
+    if (!shared.owner) return { owner: false, connected: false, suspended };
+    if (shared.status === "loading") return null;
+    return { owner: true, connected: shared.status === "ready" && shared.connected, suspended, unreadable: shared.status === "error" ? shared.error ?? CAPABILITY_UNREADABLE : null };
+  }, [shared.owner, shared.status, shared.connected, shared.error, suspended]);
 
+  const revision = shared.revision;
+  const walletName = walletAnswer?.scope === scope && walletAnswer.revision === revision ? walletAnswer.name : null;
+  // Keep the persistent recovery key unchanged. Only the transient displayed
+  // quote is invalidated when the connection changes.
+  const quote = quoteAnswer?.scope === scope && (state.billing !== "connected" || quoteAnswer.revision === revision) ? quoteAnswer.quote : null;
+  const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, revision, quote: value }), [scope, revision]);
+  const catalogue = catalogueAnswer?.scope === scope && catalogueAnswer.revision === revision ? catalogueAnswer : null;
   const canReadCatalogue = wantsConnected && capability?.owner === true && capability.connected && !catalogue;
   useEffect(() => {
     if (!canReadCatalogue) return;
@@ -461,13 +471,13 @@ export function useComposer(options: {
       headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
       body: JSON.stringify({ action: "catalogue" }),
     })
-      .then((data) => { if (!controller.signal.aborted) setCatalogue({ rows: data.catalogue?.models ?? [], error: null }); })
+      .then((data) => { if (!controller.signal.aborted) setCatalogue({ scope, revision, rows: data.catalogue?.models ?? [], error: null }); })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setCatalogue({ rows: [], error: neutralCopy(error instanceof Error ? error.message : "The connected catalogue could not be read.", "The connected catalogue could not be read.") });
+        setCatalogue({ scope, revision, rows: [], error: neutralCopy(error instanceof Error ? error.message : "The connected catalogue could not be read.", "The connected catalogue could not be read.") });
       });
     return () => controller.abort();
-  }, [canReadCatalogue, scope]);
+  }, [canReadCatalogue, scope, revision]);
 
   const models = useMemo(
     () => (state.billing === "connected" ? connectedModels(catalogue?.rows ?? []) : workspaceModels(engines.rows, audio)),
@@ -522,13 +532,14 @@ export function useComposer(options: {
     } as ConsumerGenerationInput;
   }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
-  const blockedForQuote = !open || !model || !state.prompt.trim()
+  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready")
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
   const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
   /* A connected quote is a call to the account. One is asked per project and exact body and held
      until it expires, so coming back to the same body (the model sheet's catalogue switched away
      and back) shows the figure already given instead of asking again. Generate re-quotes anyway. */
-  const heldQuotes = useRef(new Map<string, { credits: number; expiresAt: number }>());
+  const heldQuotes = useRef(new Map<string, { credits: number; expiresAt: number; revision: number }>());
+  useEffect(() => { heldQuotes.current.clear(); }, [scope, revision]);
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -540,15 +551,15 @@ export function useComposer(options: {
           if (!connectedInput || !target) throw new Error("Open or create a project before pricing this generation.");
           const heldKey = `${target.id}\n${connectedKey}`;
           const held = heldQuotes.current.get(heldKey);
-          if (held && held.expiresAt > Date.now()) return { key: quoteKey, credits: held.credits, state: "ready", reason: null };
+          if (held && held.revision === revision && held.expiresAt > Date.now()) return { key: quoteKey, credits: held.credits, state: "ready", reason: null };
           const result = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
             method: "POST", signal: controller.signal,
             headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify(connectedQuoteRequest(target.id, connectedInput)),
           });
           const job = parseConnectedJob(result.job, target.id);
-          heldQuotes.current.set(heldKey, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
-          setWalletName(job.workspaceName);
+          heldQuotes.current.set(heldKey, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt, revision });
+          setWalletAnswer({ scope, revision, name: job.workspaceName });
           return { key: quoteKey, credits: job.quoteCredits, state: "ready", reason: null };
         }
         if (audioBody) {
@@ -582,7 +593,7 @@ export function useComposer(options: {
     return () => { clearTimeout(timer); controller.abort(); };
     /* `quoteKey` names every input the figure prices; `connectedKey` the exact connected body. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockedForQuote, quoteKey, connectedKey, scope, target?.id]);
+  }, [blockedForQuote, quoteKey, connectedKey, scope, target?.id, revision]);
 
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
@@ -593,6 +604,7 @@ export function useComposer(options: {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
   const blocked = composerBlock({
+    projects: options.projects,
     state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
@@ -601,8 +613,8 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent, revision });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent, revision }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -710,7 +722,7 @@ export function useComposer(options: {
               /* The figure this press was given is the one held for this body from now on. */
               onQuoted: (jobs) => {
                 if (jobs.every((job) => job.quoteCredits === jobs[0].quoteCredits))
-                  heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: jobs[0].quoteCredits, expiresAt: Math.min(...jobs.map((job) => job.quoteExpiresAt)) });
+                  heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: jobs[0].quoteCredits, expiresAt: Math.min(...jobs.map((job) => job.quoteExpiresAt)), revision: now.revision });
               },
             });
             if (outcome.state === "repriced") {
@@ -861,7 +873,7 @@ export function useComposer(options: {
             });
             job = parseConnectedJob(quoted.job, project.id);
             /* The figure this click was given is the one held for this body from now on. */
-            heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt });
+            heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt, revision: now.revision });
             if (shown === null || job.quoteCredits !== shown) {
               setQuote({ key: now.quoteKey, credits: job.quoteCredits, state: "ready", reason: null });
               dispatch({ type: "notice", value: `${before}The price is now ${job.quoteCredits.toLocaleString("en-US")} connected cr. Press Generate again to approve it.` });
@@ -999,7 +1011,7 @@ export function useComposer(options: {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, ensureProject, followBatch, settleEarlier, settings.ratio, settings.resolution, settings.duration]);
+  }, [scope, ensureProject, followBatch, settleEarlier, settings.ratio, settings.resolution, settings.duration, setQuote]);
 
   /* ── Progress, from the real job ────────────────────────────────────── */
   const [read, setRead] = useState<{ id: string; job: MediaJob } | null>(null);
@@ -1164,7 +1176,7 @@ export function useComposer(options: {
     buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, scope,
+    audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, retryConnection: shared.refresh, scope,
     batches: batchViews,
     batchJobIds: batches.flatMap((run) => (run.source === "connected" ? run.takes.flatMap((take) => (take.jobId ? [take.jobId] : [])) : [])),
   };
