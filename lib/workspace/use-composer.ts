@@ -358,6 +358,8 @@ export function useComposer(options: {
   open: boolean;
   /** The project the shell has open. */
   project: Project | null;
+  /** The shell must finish reading its projects before this composer may generate. */
+  projects?: "loading" | "ready" | "error";
   /** Adopt a project the composer created, so the shell opens it. */
   onProject: (projectId: string) => void;
   /** The workspace's own name, for the billing line. */
@@ -530,7 +532,7 @@ export function useComposer(options: {
     } as ConsumerGenerationInput;
   }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
 
-  const blockedForQuote = !open || !model || !state.prompt.trim()
+  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready")
     || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
   const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
   /* A connected quote is a call to the account. One is asked per project and exact body and held
@@ -596,11 +598,13 @@ export function useComposer(options: {
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
      (lib/workspace/last-quote.ts): recorded, never asked for. */
-  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, Math.max(1, state.count)) : null;
+  /* A draft goes one take at a time (lib/draftFinal.ts), whatever the takes stepper held before it was switched on. */
+  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, settings.draft ? 1 : Math.max(1, state.count)) : null;
   useEffect(() => {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
   const blocked = composerBlock({
+    projects: options.projects,
     state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
     catalogue: state.billing === "connected"
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
@@ -690,7 +694,8 @@ export function useComposer(options: {
     if (!now.model) return;
     const model = now.model, composer = now.state;
     /* Two to four takes go as ONE batch at the total on the button (lib/workspace/take-batch.ts). */
-    const count = Math.max(1, composer.count);
+    /* A draft goes one at a time (lib/draftFinal.ts): its final is made from it, take by take. */
+    const count = now.settings.draft ? 1 : Math.max(1, composer.count);
     /* What the button shows is what this press approves: one take's price, or the batch's total. */
     const shown = count > 1 ? shownTotal(now.quote, now.quoteKey, count) : now.credits;
     busy.current = true;
@@ -978,6 +983,7 @@ export function useComposer(options: {
                   references,
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
+                  ...(settings.draft ? { draft: true } : {}),
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),
@@ -1166,8 +1172,8 @@ export function useComposer(options: {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     /** What the account says it rendered for the last connected take, once it completed. */
     connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
-    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count }),
+    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
     wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
     audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, retryConnection: shared.refresh, scope,
