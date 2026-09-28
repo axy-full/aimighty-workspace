@@ -8,7 +8,7 @@ import { charged, estimateVideo } from "@/lib/rateTable";
 import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes, takeOf } from "@/lib/rigApply";
 import { useSession } from "@/lib/session";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
-import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
+import { NO_CONFIRMED_PRICE, sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import { estimateTokens, costUsd, getModel } from "@/lib/models";
 import { Mono } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
@@ -43,7 +43,8 @@ type Slot = { nodeId: string; slotId: string };
 type Subset = "approved" | "draft" | "all";
 
 export default function PhoneBoard({ board, fmt, priceOf, running, selected, onSelect, onRun, slot, onSlot, shots, elements, engineOf, rates, projectId, onRebind, toast }: {
-  board: Board; fmt: (n: number) => string; priceOf: (n: BoardNode) => number; running: Set<string>;
+  /** `priceOf`: the price on a node's Run, or null when there is no confirmed one. */
+  board: Board; fmt: (n: number) => string; priceOf: (n: BoardNode) => number | null; running: Set<string>;
   selected: string | null; onSelect: (id: string | null) => void; onRun: (n: BoardNode) => void;
   slot: Slot | null; onSlot: (s: Slot | null) => void;
   shots: ShotLike[]; elements: ElementFull[]; engineOf: (n: BoardNode) => string; rates: RateTable; projectId: string | null;
@@ -127,6 +128,10 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
             const busy = running.has(n.id);
             /* Edit, upscale, audio, voice and compare have no runner and no price on a board (components/rig/nodes.ts). */
             const runnable = isRunnable(n.kind);
+            /* No confirmed price: no figure (never "0 cr"), no Run, and why. */
+            const price = runnable ? priceOf(n) : null;
+            const unpriced = runnable && price === null;
+            const shown = done ? n.credits : price;
             const on = selected === n.id;
             const secs = Number(n.settings.seconds ?? 5);
             const filedTo = n.output?.filedTo ? board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot" : null;
@@ -158,11 +163,12 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     ) : <Mono>{n.state === "stale" ? "Stale · upstream changed" : "Not run"}</Mono>}
                   </div>
                 )}
-                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy || !runnable}
-                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable ? "text-ink-body" : "text-ink"}`}>
+                <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy || !runnable || unpriced}
+                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable || unpriced ? "text-ink-body" : "text-ink"}`}>
                   <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
-                  {runnable && <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>}
+                  {runnable && <Mono cost tone={unpriced ? "body" : "muted"} className="whitespace-nowrap">{unpriced || shown === null ? "No price" : fmt(shown)}</Mono>}
                 </button>
+                {unpriced && <span className="mx-[10px] -mt-[2px] mb-[10px] block text-[13px] leading-[1.4] text-ink-body">{NO_CONFIRMED_PRICE}</span>}
                 {!last && dot("bottom")}
               </div>
             );

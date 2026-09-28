@@ -11,6 +11,8 @@ export const GET = withTenant(async (req: Request) => {
   const listed = (at: RateAt, refs: ReferencePrices | null) => configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations, untestedResolutions: model.untestedResolutions,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined,
+    /* Draft mode (lib/draftFinal.ts): Gen offers a 480p draft first on these. */
+    draft: model.supportsDraft || undefined,
     /* The model sheet's row: what the engine is for in Gen, whether its takes carry sound, and its price (credits only, nothing reserved). */
     use: workbenchUse(model), audio: rendersSound(model) || undefined, rate: refs ? workbenchRate(model, at, refs) : null }));
   const headers = { 'Cache-Control': 'no-store' };
@@ -20,7 +22,7 @@ export const GET = withTenant(async (req: Request) => {
        and uploadId/genId/imageRefs its references — each engine then resolves them as composerSettings does. */
     const text = (name: string) => { const v = q.get(name); return v && v.length <= 24 ? v : undefined; };
     const pickDuration = Number(q.get('pickDuration'));
-    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}) } };
+    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}), ...(q.get('pickDraft') === '1' ? { draft: true } : {}) } };
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
     const imageRefs = Number(q.get('imageRefs') || 0);
     /* References that cannot be priced leave every rate empty: Generate then says why. */

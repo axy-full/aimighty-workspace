@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
  * (a batch rendering now, and the ones in the library) and Studio › Takes draw
  * it; each passes its own take cards as children.
  */
-export function TakeStrip({ label, name, meta, state, batchId, testId, plain = false, children }: {
+export function TakeStrip({ label, name, meta, state, batchId, testId, plain = false, foot, children }: {
   /** "take 1–4". */
   label: string;
   /** The prompt, shortened. */
@@ -21,6 +21,8 @@ export function TakeStrip({ label, name, meta, state, batchId, testId, plain = f
   testId: string;
   /** The takes are choices of the list around the strip (Studio › Takes' radios): no list of their own. */
   plain?: boolean;
+  /** Under the takes: what the strip offers next (a draft's final, components/graphite/DraftFinal.tsx). */
+  foot?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -31,6 +33,7 @@ export function TakeStrip({ label, name, meta, state, batchId, testId, plain = f
         {meta ? <span className="gx-batch-meta">{meta}</span> : null}
       </div>
       <div className="gx-batch-takes" role={plain ? undefined : "list"}>{children}</div>
+      {foot}
     </section>
   );
 }
