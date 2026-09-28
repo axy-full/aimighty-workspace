@@ -348,7 +348,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       if ("error" in again) { setError(again.error); return; }
       if (quoteMoved(quote!, again.quote)) {
         setStepQuote({ key: quoteRequest, quote: again.quote });
-        setError(`The price changed to ${money.price(again.quote.price)}. Continue runs at that price.`);
+        setError(`The estimate is now about ${money.price(again.quote.price)}. Press Continue again to approve it.`);
         return;
       }
       const claim = await fetch(`/api/atomik/steps/${proposed.id}/claim`, { method: "POST" });
