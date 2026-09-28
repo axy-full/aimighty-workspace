@@ -6,6 +6,7 @@ import { DEFAULT_BOARDS } from "../lib/production/boards";
 import { DEFAULT_ENVIRONMENT, newEnvironmentEntry } from "../lib/production/environment";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, upload } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The owner's UI floors, held where the floors audit of the Suites pages
@@ -184,6 +185,8 @@ test("Environment: a long file name never widens the page, and the library picke
 test("⌘K: the field is a 44px target on touch; its groups, hints and keys read at the floor", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?suite=studio&page=takes&sp=takes", "edit-stage");
+  /* On a phone, Search waits behind the header's context badge. */
+  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   await expect(page.locator(".gx-palette")).toBeVisible();
   for (const selector of [".gx-palette-group", ".gx-palette-hint", ".gx-palette .gx-key"]) expect(await dimLabels(page, selector), `${selector}: under #7C7C84`).toEqual([]);
@@ -209,7 +212,9 @@ test("a draft that could not be read says Try again, never Retry (Deliver's tool
   const { errors } = await open(page, "/suites?view=workspace&tab=general", "workspace-view");
   let down = true;
   await page.route(/\/api\/workbench\/projects\?id=/, (route) => (down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
+  await openSuitesMenu(page);
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Studio" }).click();
+  await closeSuitesMenu(page);
   const strip = page.getByRole("navigation", { name: "Pages" });
   for (const [tab, alert] of [[/Deliver/, "[data-testid='stage-work'] [role='alert']"], [/Edit & Sound/, ".pxw-edit [role='alert']"]] as const) {
     await strip.getByRole("button", { name: tab }).click();
@@ -219,9 +224,7 @@ test("a draft that could not be read says Try again, never Retry (Deliver's tool
     await expect(failed.getByRole("button", { name: /Retry/ })).toHaveCount(0);
   }
   down = false;
-  /* Pressed from the keyboard: on a portrait phone a legacy page body's last row can still end under the tab bar (the
-     stage's clearance for it is the phone chrome's work); this test is about the word, and that the read comes back. */
-  await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).press("Enter");
+  await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByTestId("assembly")).toBeVisible();
   expect(errors).toEqual([]);
 });
