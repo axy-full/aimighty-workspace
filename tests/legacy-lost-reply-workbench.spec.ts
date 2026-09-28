@@ -368,9 +368,22 @@ test("Edit & Sound's recovery follows a sound effect that reached the server wit
   const panel = await soundPanel(page, project);
   const recover = panel.locator("[data-sound-generate]");
   await expect(recover).toHaveText(/^Recover submitted sound effect/, { timeout: 30_000 });
+  /* The effect finished long before Recover is pressed (the mock renders it in well under a second), so the page's job
+     feed files it in the project first: the order a person meets after a lost reply. Waited for, it is the same every
+     run. The followed take then lands at once, with no "Sound in progress" row in between to catch. */
+  const filed = page.getByRole("region", { name: "Sound mix" }).getByRole("combobox", { name: "Audio source" }).locator("option", { hasText: "Sound effects · v1" });
+  await expect(filed).toHaveCount(1, { timeout: 30_000 });
   const mark = sent.length;
   await recover.click();
-  await expect(panel.getByRole("list", { name: "Sound in progress" })).toContainText("Sound effect", { timeout: 60_000 });
+  /* Followed, and nothing sent but the check. This cut is empty, so the take stays in the library and says so; the
+     fresh price, read a moment later, leaves that line in place. */
+  await expect(panel.getByRole("status")).toContainText("Your last sound effect reached the server; nothing new was sent.", { timeout: 60_000 });
+  const landed = panel.getByRole("alert");
+  const stays = "Sound effect is in the library, not on the timeline: the cut is empty. Add it from Sound mix once the cut has shots.";
+  await expect(landed).toHaveText(stays, { timeout: 60_000 });
+  await expect(recover).toHaveText(/^Generate sound effect · \d+ cr$/, { timeout: 60_000 });
+  await expect(landed).toHaveText(stays);
+  await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
   expect(sent.slice(mark).map((s) => s.path)).toEqual(["/api/generate/check"]);
   expect(sent[mark].body.key).toBe(first.key);
   await expect.poll(() => claimOf(page, project.id, nodeId)).toBeNull();

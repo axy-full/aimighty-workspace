@@ -5,12 +5,16 @@ import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { POLL, pollDelay, presentTimeout, type PollRate } from "@/lib/poll";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "./use-connected-capability";
 import { ESTIMATE_LIFETIME_MS, mergeRuns, pendingJobIds, runAfterStatus, runCannotSettle, runInFlight, viralFailure, type ViralRun } from "./viral";
+import { announceJob } from "./jobs-bus";
 
 /**
  * The Genjutsu pages' one line to the connected account
  * (`/api/higgsfield/consumer/genjutsu`, the existing route): the connection
- * and capabilities, this project's runs a page at a time (its `view=runs`:
+ * (shared with the shell, lib/shell/use-connected-capability — a member is
+ * known from the session and nothing is read for them) and capabilities,
+ * this project's runs a page at a time (its `view=runs`:
  * estimates are not runs and never listed; beside a composer, only that
  * page's variant), a read-only quote for exactly the current input (the
  * *live estimate* the primary requires), submit at that exact price, and
@@ -62,7 +66,10 @@ const phaseFor = (job: GenjutsuJob): RunPhase =>
 export function useViral(scope: string, draftId: string | null, variant: ConsumerGenjutsuInput["variant"] | null = null) {
   const ready = Boolean(scope);
   const scoped = useScopedFetch();
-  const [connection, setConnection] = useState<{ connected: boolean; owner: boolean } | null>(null);
+  /* Only whether this person owns the workspace: the runs reply below carries the connection, and settles the shared answer. */
+  const shared = useConnectedCapability(scope || null, { read: false });
+  const { owner } = shared;
+  const connection = shared.status === "loading" ? null : { owner, connected: shared.connected };
   const [capabilities, setCapabilities] = useState<ViralCapabilities | null>(null);
   const [runs, setRuns] = useState<Runs | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
@@ -96,14 +103,13 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
     const mine = () => draft.current === draftId;
     setRuns((prev) => (mine() && prev?.draftId === draftId && prev.status === "error" ? { ...prev, status: "loading", error: null } : prev));
     try {
-      const me = await scoped("/api/me", { cache: "no-store" }).then((r) => r.json()) as { owner?: boolean };
-      if (me.owner !== true) {
-        setConnection({ connected: false, owner: false });
+      if (!owner) {
         setRuns((prev) => (mine() ? { draftId, jobs: [], status: "ready", error: null, nextCursor: null, pages: 1, more: "idle" } : prev));
         return;
       }
+      const since = markConnectedCapability(scope);
       const json = await readPage(draftId, null);
-      setConnection({ connected: json?.connection?.connected === true && json?.connection?.requiresReconnect !== true, owner: true });
+      settleConnectedCapability(scope, json?.connection, since);
       if (json?.capabilities) setCapabilities(json.capabilities);
       setRuns((prev) => {
         if (!mine()) return prev;
@@ -122,7 +128,7 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
         return { draftId, jobs: [], status: "error", error: message, nextCursor: null, pages: 0, more: "idle" };
       });
     }
-  }, [scoped, draftId, readPage]);
+  }, [owner, scope, draftId, readPage]);
   useEffect(() => { if (!ready) return; const timer = setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [ready, refresh]);
 
   /** The next older page, by the cursor the last page ended on. */
@@ -155,12 +161,18 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
 
   /* A run the account answered for: into the list in place, onto the primary if it is the one just sent (or one whose submit reply was lost, which the account took after all), and — once it lands — into the Library. */
   const landed = useRef(new Set<string>());
+  const announced = useRef(new Set<string>());
   const land = useCallback((job: GenjutsuJob) => {
     setRuns((prev) => (prev?.draftId === job.draftId ? { ...prev, jobs: mergeRuns([job], prev.jobs) } : prev));
     setRun((prev) => (prev.phase === "submitting" && prev.job.id === job.id ? phaseFor(job) : runAfterStatus(prev, job)));
     if (job.status === "completed" && !landed.current.has(job.id)) {
       landed.current.add(job.id);
       if (scope) void refreshProjectLibrary(scope, job.draftId);
+    }
+    /* Settled: the header's jobs tray reads it now, not on its next turn. */
+    if ((job.status === "completed" || job.status === "failed") && !announced.current.has(`${job.id}:${job.status}`)) {
+      announced.current.add(`${job.id}:${job.status}`);
+      announceJob(job.id);
     }
   }, [scope]);
 
@@ -173,6 +185,7 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
     setRun({ phase: "submitting", job: current.job });
     try {
       const job = await call({ action: "submit", draftId, id: current.job.id, workspaceId: current.job.workspaceId, credits: current.credits });
+      announceJob(job.id);
       setEstimate(null);
       land(job);
     } catch (error) {
@@ -288,6 +301,8 @@ export function useViral(scope: string, draftId: string | null, variant: Consume
 
   const list: ViralRuns = { status: !draftId ? "idle" : current?.status ?? "loading", nextCursor: current?.nextCursor ?? null, more: current?.more ?? "idle" };
   return {
+    /* A member is known from the session on the first paint, before any read. */
+    member: !owner,
     connection, capabilities, jobs, list, listError: current?.error ?? null, estimate, run, stalledAs, problemOf,
     quote, submit, refresh, loadMore, recheck, reset: () => setRun({ phase: "idle" }),
   };

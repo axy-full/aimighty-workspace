@@ -2,7 +2,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
-import { VirtualItems } from "@/components/workspace/VirtualItems";
+import { VirtualItems, smoothScrollIntoView } from "@/components/workspace/VirtualItems";
 import { previewAttrs } from "@/lib/preview";
 import { StudioRequestError, studioRequest } from "@/components/workbench/GenerationDialog";
 import { trailLine } from "@/lib/approval";
@@ -16,6 +16,7 @@ import { activeMediaJob } from "@/lib/workbench/job-recovery";
 import { isVariation, takeLabel } from "@/lib/variations";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
 import { useShell } from "@/lib/shell/state";
+import { useHandedTake } from "@/lib/shell/take-handover";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
@@ -155,7 +156,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const open = useCallback((e: LibraryEntry, scroll = true) => {
     if (!openable(e)) { toast(notOpenWords(e)); return; }
     setPicked(e.take.id); setError("");
-    if (scroll) requestAnimationFrame(() => document.querySelector("[data-section='edit-panel']")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    /* Smoothly, from wherever the desk is: from the end of a windowed grid the grid holds its corrections until the editor is in view. */
+    if (scroll) requestAnimationFrame(() => smoothScrollIntoView(document.querySelector("[data-section='edit-panel']")));
   }, [toast]);
   const step = (dir: 1 | -1) => {
     const next = stepTake(all, shownIds, entry?.take.id ?? null, dir);
@@ -229,6 +231,9 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /** The last status read of the re-edit in flight failed; cleared by the next good one. */
   const [checking, setChecking] = useState("");
   const [made, setMade] = useState<{ genId: string; from: string } | null>(null);
+  /* A take handed over while Takes is already open (the jobs tray's Open in Takes): picked and brought into view like one handed over on the way in.
+     Its re-edit price follows the picked take on its own (useStageQuotes is keyed on the request), so there is no quote to clear. */
+  useHandedTake((id) => { setPicked(id); setFocus(id); setLost(null); setError(""); });
 
   /* A re-edit in flight: read at lib/poll's pace until it lands, then the Library shows it. */
   useEffect(() => {

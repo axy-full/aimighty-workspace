@@ -466,8 +466,12 @@ export type ComposerQuote = {
   takes?: number[];
 };
 
-/** The connected account's readiness, as /api/me and the connection route report it. */
-export type ConnectedCapability = { owner: boolean; connected: boolean; suspended: boolean };
+/**
+ * The connected account's readiness: ownership and suspension from the session,
+ * the connection from the shell's shared read (lib/shell/use-connected-capability).
+ * `unreadable` is the owner's failed read, said as it is — never taken for "not connected".
+ */
+export type ConnectedCapability = { owner: boolean; connected: boolean; suspended: boolean; unreadable?: string | null };
 
 /**
  * The exact inputs a price belongs to. Anything a person can change that moves
@@ -537,6 +541,8 @@ export function composerBlock(input: {
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
+  /** A failed project list is not evidence that this workspace has no project. */
+  projects?: "loading" | "ready" | "error";
   capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
@@ -545,9 +551,12 @@ export function composerBlock(input: {
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
+  if (input.projects === "loading") return "Reading the projects…";
+  if (input.projects === "error") return "Projects didn’t load. Use Try again above before generating.";
   if (state.billing === "connected") {
     if (!input.capability) return READING_ACCOUNT;
     if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
+    if (input.capability.unreadable) return input.capability.unreadable;
     if (!input.capability.connected) return "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
     if (input.capability.suspended) return "Rendering is paused for this workspace.";
   }
