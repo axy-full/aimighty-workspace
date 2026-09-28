@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { dispatchGeneration, sendClaimedGeneration, settlePendingGeneration, settleStoredRequest } from "../../lib/workspace/generate-submit";
+import { checkQuote, dispatchGeneration, sendClaimedGeneration, settlePendingGeneration, settleStoredRequest, type QuoteCheck } from "../../lib/workspace/generate-submit";
 import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
 
@@ -282,6 +282,29 @@ test("a stored request whose fate or price cannot be read sends nothing", async 
   for (const routes of cases)
     await withServer(routes, async () => {
       expect((await settleStoredRequest({ scope: SCOPE, ...STORED, endpoint: "/api/generate", approved: { price: 3, unit: "cr" } })).state).toBe("unknown");
+    });
+});
+
+test("the quote route's word on a body its caller prices itself: only its own \"no confirmed price\" answer is unpriced", async () => {
+  /* The rate-table Rig's Run node: the body it would send, less its ceiling. Asking sends nothing and claims nothing. */
+  const body = { prompt: "Wide. Hold still.", model: ENGINE, projectId: "prod_1", resolution: "720p", ratio: "adaptive", duration: 5 };
+  const answers: [Answer, QuoteCheck][] = [
+    [{ json: { estimatedCredits: 21, price: 21, unit: "cr", fingerprint: "f".repeat(64) } }, "priced"],
+    [{ status: 400, json: { error: "This model has no confirmed price." } }, "unpriced"],
+    [{ status: 503, json: { error: "Identity rendering has no confirmed price for this size." } }, "unpriced"],
+    /* Any other refusal is the paid route's to give, the same way. */
+    [{ status: 400, json: { error: "Prompt is required" } }, "refused"],
+    [{ status: 403, json: { error: "A current workspace member must approve this generation." } }, "refused"],
+    [{ status: 429, json: { error: "This workspace has started 60 renders in the last hour, its limit." } }, "refused"],
+    /* No answer to go on. */
+    [{ status: 500, json: { error: "The database is busy." } }, "failed"],
+    [{ json: { estimatedCredits: "21" } }, "failed"],
+    ["network", "failed"],
+  ];
+  for (const [answer, verdict] of answers)
+    await withServer({ "/api/generate/quote": () => answer }, async (calls) => {
+      expect(await checkQuote(SCOPE, body)).toBe(verdict);
+      expect(calls).toEqual([{ path: "/api/generate/quote", key: null, body }]);
     });
 });
 

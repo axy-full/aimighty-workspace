@@ -237,7 +237,8 @@
 .gx-project-new .gx-reason { grid-column: 1 / -1; margin: 0; }
 .gx-asset-add { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; background: var(--gx-input); font-size: 15px; line-height: 1; position: relative; }
 .gx-asset-add:hover { color: var(--gx-accent-text); }
-.gx-lib-foot { flex: none; color: var(--gx-text-3); font-size: 12px; padding: 0 4px; }
+/* text-2, not text-3: text-3 composites under the #7C7C84 label floor on the panel. */
+.gx-lib-foot { flex: none; color: var(--gx-text-2); font-size: 12px; padding: 0 4px; }
 /* The end of an asset list: Load more while the project has more, or a failed read with Try again. */
 .gx-lib-more, .gx-retry { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; min-width: 0; }
 .gx-lib-more .gx-gen-error, .gx-retry .gx-gen-error { flex: 1 1 100%; overflow-wrap: anywhere; }
@@ -548,8 +549,26 @@
 /* The danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
 .gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: #FF6961; }
 .gx-batch .gx-batch-take[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
+/* A draft's next step under its strip (components/graphite/DraftFinal.tsx): its facts, the priced final and the
+   final's approval. Words on --gx-text-2 or a tone, never dimmer; the red is the danger text colour, as above. */
+.gx-draft-bar { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.gx-draft-facts, .gx-draft-status { margin: 0; font-size: 12.5px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-draft-status[data-tone="red"] { color: #FF6961; }
+.gx-draft-status[data-tone="green"] { color: var(--gx-done); }
+.gx .gx-gen-go.gx-draft-go { width: auto; align-self: flex-start; max-width: 100%; padding-left: 14px; padding-right: 14px; }
+.gx-draft-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+/* The approval rises clear of the phone's tab bar when it opens (scrollIntoView honours the margin). */
+.gx-draft-approve { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-tint-border); background: var(--gx-tint); scroll-margin-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+.gx-draft-approve-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--gx-text); }
+.gx-draft-approve-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--gx-text-2); }
+.gx-draft-option { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.gx-draft-option .gx-hint { flex: 1 1 200px; min-width: 0; margin: 0; }
+@media (max-width: 767px) { .gx .gx-gen-go.gx-draft-go { align-self: stretch; } }
 .gx-running { display: grid; place-items: center; }
 .gx-ring { width: 44px; height: 44px; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); animation: gx-pulse 1.6s ease-in-out infinite; }
+/* A run that is over (Complete, or failed) holds still, as a settled batch take does; with reduced motion no ring pulses. */
+.gx-tile[data-done="true"] .gx-ring { animation: none; }
+@media (prefers-reduced-motion: reduce) { .gx-ring { animation: none; } }
 .gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(6px); }
 .gx-sheet { width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: gx-pop .2s var(--gx-ease) both; }
 .gx-sheet-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; }
@@ -637,7 +656,8 @@
 .gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
 .gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
 .gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
-.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: rgba(255, 69, 58, .45); }
+/* The mark in the danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: #FF6961; border-color: rgba(255, 69, 58, .45); }
 .gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); }
 /* Paused, not stopped: two bars drawn, so no font turns them into a square. */
 .gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
@@ -703,6 +723,8 @@
 .gx-banner[data-compact] { flex-wrap: wrap; }
 .gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
 .gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
+/* "Trying…" is the banner's status while its read is out, not a spent control: it keeps the #7C7C84 label floor. */
+.gx-banner .gx-hbtn:disabled { opacity: 1; color: var(--gx-text-2); }
 .gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
 /* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
 .gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
