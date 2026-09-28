@@ -20,6 +20,8 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
+import { AssetNextActions, revealNext } from "./AssetNextActions";
+import type { NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
 
 /**
@@ -101,6 +103,16 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
   const preview = entryPreview(entry);
   const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
+  /* Next opens the tool on this take: the take is selected first, so Takes opens on it (a page change is the history entry;
+     already on Takes, opening it is). Nothing is quoted or sent here. */
+  const openNext = (next: NextActionId) => {
+    if (next === "edit-sound") { shell.goSuite("studio", "edit"); return; }
+    const onTakes = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "takes";
+    shell.selectAsset(take.id, { reason: onTakes ? "open" : "pick" });
+    if (!onTakes) shell.goSuite("studio", "takes");
+    else if (!shell.wide) shell.closePanels();
+    revealNext(next);
+  };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
       <div className="gx-insp-row"><span className="gx-eyebrow">Output</span><span className="gx-eyebrow">{take.version}</span></div>
@@ -118,6 +130,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
           <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
         </>
       ) : null}
+      <AssetNextActions entry={entry} saved={Boolean(project?.productionProjectId)} onAction={openNext} />
       <span className="gx-eyebrow">Actions</span>
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
