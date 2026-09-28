@@ -577,12 +577,12 @@ export function useComposer(options: {
         }
         const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration) });
         const references = state.references.length ? mediaQuoteReferences(state.references.map(referenceAsset)) : "";
-        const result = await studioRequest<{ credits: number | null }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
+        const result = await studioRequest<{ credits: number | null; approximate?: boolean }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
           signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store",
         });
         if (typeof result.credits !== "number" || !Number.isFinite(result.credits))
           return { key: quoteKey, credits: null, state: "unavailable", reason: "This model cannot be priced with these settings." };
-        return { key: quoteKey, credits: result.credits, state: "ready", reason: null };
+        return { key: quoteKey, credits: result.credits, state: "ready", reason: null, ...(result.approximate === true ? { approximate: true } : {}) };
       };
       void ask()
         .then((value) => { if (!controller.signal.aborted) setQuote(value); })

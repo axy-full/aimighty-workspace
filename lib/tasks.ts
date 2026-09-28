@@ -20,6 +20,8 @@
  * decoration; a prompt without them is a different request.
  */
 
+import { GENJUTSU_LIMITS } from "./genjutsuTypes";
+
 export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe" | "genjutsu";
 /** The tasks that work on an existing clip. */
 export type LockedTaskId = Exclude<TaskId, "generate">;
@@ -237,7 +239,8 @@ export function sourceProblem(
   if (!task.locked || !source) return null;
   const res = String(source.resolution ?? "").toLowerCase();
   const seconds = typeof source.duration === "number" ? source.duration : null;
-  if (task.id === "genjutsu") return seconds != null && (seconds < 1 || seconds > 30) ? "Transform requires an original video between 1 and 30 seconds." : null;
+  if (task.id === "genjutsu") return seconds != null && (seconds < GENJUTSU_LIMITS.minSeconds || seconds > GENJUTSU_LIMITS.maxSeconds)
+    ? `Transform requires an original video between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds.` : null;
   if (task.id === "upscale") {
     if (seconds != null && seconds > 300) return `Topaz takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
     return null;

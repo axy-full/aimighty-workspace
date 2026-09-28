@@ -46,6 +46,9 @@ export type VideoParams = {
   fps60?: boolean;
   /** The source clip's resolution, for tasks that follow it. */
   sourceResolution?: string;
+  /** Saved by admission: whether a clip is sent in, and its measured seconds, as quoted. */
+  hasVideoInput?: boolean;
+  inputSeconds?: number;
   /** Seedance 2.5 draft mode: a 480p watermarked preview whose task can render the final (lib/draftFinal.ts). */
   draft?: boolean;
   /** A draft's final: the draft's task id at the vendor. Nothing else about the render is sent (buildFinalRequestBody). */

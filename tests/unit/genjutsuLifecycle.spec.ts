@@ -59,7 +59,8 @@ test("Genjutsu sends exact original paths, preserves image order and never uses 
   const refs=[{id:"still",kind:"image" as const,mime:"image/png",ext:"png",storedUrl:"/api/uploads/still",deliveryUrl:"https://wrong.example/derivative",role:"reference_image" as const},{id:"generated",kind:"image" as const,mime:"image/png",ext:"png",storedUrl:"/api/media/generated",role:"reference_image" as const,fromGeneration:true}];
   const body=await genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"", "480p",source,refs);
   expect(body.video_url).toMatch(/generations\/video\.mp4$/);expect(body.image_urls[0]).toMatch(/uploads\/still\.png$/);expect(body.image_urls[1]).toMatch(/generations\/generated\.png$/);
-  await expect(genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"", "1080p",source,refs)).rejects.toThrow();
+  expect((await genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"", "1080p",source,refs)).resolution).toBe("1080p");
+  for(const resolution of ["2160p","4k","1440p",""]) await expect(genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"",resolution,source,refs)).rejects.toThrow(/480p, 720p or 1080p/);
 });
 
 test("Genjutsu requires a still reference before signing media or making requests",async()=>{
@@ -124,6 +125,29 @@ test("fresh estimate and credential checks precede the sole paid POST; status an
     await expect(higgsfield.cancel!({...accepted,cancelUrl:"https://evil.example/cancel"})).rejects.toThrow(/verified cancellation URL/);
     globalThis.fetch=async(url,init)=>{expect(String(url)).toBe(cancelUrl);expect(init?.method).toBe("POST");expect(new Headers(init?.headers).get("authorization")).toBe("Key fixture:key");return new Response(null,{status:202});};
     await higgsfield.cancel!(accepted);
+  },actor);
+});
+
+test("dispatch refuses a saved source under the documented floors before any estimate or paid POST",async()=>{
+  const {runInTenant}=await import("../../lib/tenant");
+  await runInTenant({...workspace("genjutsu_floors"),usesPlatformKeys:true},async()=>{
+    const value=await job("gen_floors"); process.env.ENGINE_MOCK="0";
+    const contract=await import("../../lib/genjutsu"),{higgsfieldCredentialFingerprint}=await import("../../lib/higgsfield"),{getModel}=await import("../../lib/models");
+    const {higgsfield}=load<typeof import("../../lib/engines/higgsfield")>("lib/engines/higgsfield.ts",{"../genjutsu":{...contract,genjutsuInput:async()=>input}});
+    const calls:string[]=[];
+    globalThis.fetch=async(url)=>{calls.push(String(url));return String(url).includes("/estimate/")?Response.json({usd:"0.75"}):Response.json({request_id:requestId,status_url:statusUrl,cancel_url:cancelUrl});};
+    const base:VideoRenderRequest={kind:"video",...value,params:{...value.params,higgsfieldCredentialFingerprint:higgsfieldCredentialFingerprint()}};
+    const swap:VideoRenderRequest={...base,model:getModel(GENJUTSU_MODELS["object-swap"])};
+    // Held or queued before the floor existed: re-checked at dispatch, never sent.
+    for(const req of [
+      {...base,params:{...base.params,genjutsuSource:{width:1280,height:720,seconds:3.5,firstTimestamp:0}}},
+      {...swap,params:{...swap.params,genjutsuSource:{width:640,height:360,seconds:6,firstTimestamp:0}}},
+    ]) await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);
+    expect(calls).toEqual([]);
+    // Motion Transfer has no pixel floor; Object Swap at the floor is sent.
+    await higgsfield.render({...base,params:{...base.params,genjutsuSource:{width:640,height:360,seconds:4,firstTimestamp:0}}});
+    await higgsfield.render({...swap,params:{...swap.params,genjutsuSource:{width:640,height:640,seconds:4,firstTimestamp:0}}});
+    expect(calls.filter(url=>!url.includes("/estimate/"))).toEqual(["https://api.higgsfield.ai/higgsfield/genjutsu/motion-transfer/v1.0","https://api.higgsfield.ai/higgsfield/genjutsu/object-swap/v1.0"]);
   },actor);
 });
 
