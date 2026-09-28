@@ -11,9 +11,16 @@
  * so a thumbnail that can be previewed can also be dragged.
  */
 export type PreviewKind = "image" | "video" | "audio" | "document" | "file";
-export type PreviewItem = { url: string; kind: PreviewKind; name?: string; mime?: string };
+/** `asset` is the Library id it shows (`generation:<id>` / `upload:<id>`), when a surface knows it: the shell's preview bridge reads it. */
+export type PreviewItem = { url: string; kind: PreviewKind; name?: string; mime?: string; asset?: string };
 
 const ID = "[A-Za-z0-9_-]{1,160}";
+const ASSET_ID = new RegExp(`^(generation|upload):${ID}$`);
+
+/** A Library id exactly as the app writes it — `generation:<id>` or `upload:<id>`, a plain id — or null. Links and URLs pass through this. */
+export function validAssetId(value: unknown): string | null {
+  return typeof value === "string" && ASSET_ID.test(value) ? value : null;
+}
 const PATTERNS: [RegExp, "generation" | "upload"][] = [
   [new RegExp(`^/api/media/(${ID})(?:[/?#]|$)`), "generation"],
   [new RegExp(`^/api/workbench/preview/generation/(${ID})(?:[/?#]|$)`), "generation"],
@@ -70,9 +77,11 @@ export function previewKindOf(kind: string | null | undefined, mime?: string | n
 /** The data attributes the preview layer reads; spread onto any element that shows an asset. */
 export function previewAttrs(item: PreviewItem | null | undefined): Record<string, string> {
   if (!item?.url) return {};
+  const asset = validAssetId(item.asset);
   return {
     "data-preview-url": item.url, "data-preview-kind": item.kind,
     ...(item.name ? { "data-preview-name": item.name } : {}), ...(item.mime ? { "data-preview-mime": item.mime } : {}),
+    ...(asset ? { "data-preview-asset": asset } : {}),
   };
 }
 
@@ -90,7 +99,8 @@ export function readPreview(el: Element): PreviewItem | null {
   if (!url) return null;
   const kind = (el.getAttribute("data-preview-kind") as PreviewKind | null) ?? "image";
   const name = el.getAttribute("data-preview-name") ?? undefined, mime = el.getAttribute("data-preview-mime") ?? undefined;
-  return { url, kind, ...(name ? { name } : {}), ...(mime ? { mime } : {}) };
+  const asset = validAssetId(el.getAttribute("data-preview-asset"));
+  return { url, kind, ...(name ? { name } : {}), ...(mime ? { mime } : {}), ...(asset ? { asset } : {}) };
 }
 
 /**
@@ -123,8 +133,10 @@ export function galleryOf(el: Element, root: ParentNode = document): { items: Pr
 export function entryPreview(entry: { url: string | null; media: "image" | "video" | "audio" | null; take: { id: string; name: string }; asset: { origin: "generation" | "upload"; value: { mime?: string | null; status?: string } } } | null | undefined): PreviewItem | null {
   if (!entry) return null;
   const mime = entry.asset.value.mime ?? undefined;
-  if (entry.url && entry.media) return { url: entry.url, kind: entry.media, name: entry.take.name, ...(mime ? { mime } : {}) };
+  const asset = validAssetId(entry.take.id);
+  const own = { ...(mime ? { mime } : {}), ...(asset ? { asset } : {}) };
+  if (entry.url && entry.media) return { url: entry.url, kind: entry.media, name: entry.take.name, ...own };
   const id = /^upload:(.+)$/.exec(entry.take.id)?.[1];
   if (!id || entry.asset.origin !== "upload") return null;
-  return { url: `/api/uploads/${id}`, kind: previewKindOf(null, mime, entry.take.name), name: entry.take.name, ...(mime ? { mime } : {}) };
+  return { url: `/api/uploads/${id}`, kind: previewKindOf(null, mime, entry.take.name), name: entry.take.name, ...own };
 }
