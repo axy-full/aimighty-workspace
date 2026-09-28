@@ -163,6 +163,11 @@ test("the source's own tools: a frame saved to the project joins the references,
   /* Object Swap prices its own model: whatever the route answers, it was asked for exactly this. */
   await expect.poll(() => s.quotes.at(-1)?.model, { timeout: 60_000 }).toBe("higgsfield-genjutsu-object-swap");
   expect((s.quotes.at(-1)!.references as unknown[]).length).toBe(8);
+  /* This clip is under Object Swap's pixel floor: admission refuses it before any estimate, and the button says why. */
+  await expect(page.getByTestId("viral-reason")).toContainText("Object Swap needs a source video of at least 409,600 pixels per frame", { timeout: 60_000 });
+  await expect(page.getByTestId("viral-generate")).toBeDisabled();
+  await expect(page.getByTestId("viral-generate")).toHaveText("Swap object");
+  expect(s.sends).toEqual([]);
   await noSideScroll(page);
   expect(viralAsked(s.consumer)).toEqual([]);
   expect(s.errors).toEqual([]);
