@@ -57,7 +57,10 @@ BytePlus advertises a public promo — 1080p on Seedance 2.5 at 72% of list to
 17 Sep 2026 — which is **not** applied, since it's unconfirmed on this
 account. If it does apply, add it with its expiry so it lapses on its own.
 
-Failed generations are not billed, and only succeeded clips enter the ledger.
+ModelArk's pricing says only successfully generated videos are charged, so a
+failed Seedance task is recorded as not charged by the provider
+(`lib/providerOutcome.ts`). What the workspace was charged for it is its own
+receipt, shown on the take; a failure no evidence settles stays unknown.
 
 The pre-flight estimate uses the official token formula, verified against the
 published price examples:
