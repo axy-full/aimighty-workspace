@@ -8,8 +8,10 @@ import { settledFact } from "@/lib/usageLedgerTerms";
 import { useLedgerEntry } from "./UsageLedger";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
-import { entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
+import { entryDraft, entryFace, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { takeStatusWord } from "@/lib/workspace/takes";
+import type { Generation } from "@/lib/jobs";
+import { DraftFinalBar } from "./DraftFinal";
 import { useWorkspace } from "@/lib/workspace/state";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { openPreview } from "@/components/PreviewLayer";
@@ -49,7 +51,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const generation = asset.origin === "generation" ? asset.value : null;
   const upload = asset.origin === "upload" ? asset.value : null;
   const role = referenceRole(entry.media);
+  /* Draft mode (lib/draftFinal.ts): a draft offers its final here too; a final names the draft it was made from. */
+  const pair = generation ? entryDraft(entry) : null;
+  const finals = pair?.draft ? library.items.filter((item) => entryDraft(item)?.finalOf === pair.id).map((item) => item.asset.value as Generation) : [];
+  const madeFrom = pair?.finalOf ? library.items.find((item) => item.asset.origin === "generation" && item.asset.value.id === pair.finalOf)?.take.name ?? "Its draft" : null;
   const facts: [string, string][] = [
+    ...(madeFrom ? [["Made from", `${madeFrom} · draft`] as [string, string]] : []),
     ["Kind", generation ? "Generation" : "Upload"],
     /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
     ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
@@ -80,6 +87,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
+      {pair?.draft && generation ? (
+        <>
+          <span className="gx-eyebrow">Draft</span>
+          <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
+        </>
+      ) : null}
       <span className="gx-eyebrow">Actions</span>
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
