@@ -39,7 +39,7 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
   { tag: "06 Tools", name: "Tools & connections",
     body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
   { tag: "07 Models", name: "Models",
-    body: "Claude, OpenAI and Gemini planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
+    body: "Claude, OpenAI and Grok planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
 ];
 
 const WINDOWS: [string, string, string][] = [

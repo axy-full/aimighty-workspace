@@ -252,8 +252,8 @@ test("a mocked image generation shows its price, runs to completion and files a 
      label written in the composer — so a renaming PR renames it here too. */
   const defaultLabel = await composer(page).getByTestId("composer-model").locator("option[value='" + IMAGE_ENGINE + "']").textContent();
   expect(defaultLabel).toBe(displayModelName(IMAGE_ENGINE));
-  /* This workspace's credits are the default, and the composer says so. */
-  await expect(composer(page).getByRole("group", { name: "Credits used" }).getByRole("button", { name: "This workspace’s credits" })).toHaveAttribute("aria-pressed", "true");
+  /* This workspace's credits, and the composer says so: no account switch (28 September 2026). */
+  await expect(composer(page).getByRole("group", { name: "Credits used" })).toHaveCount(0);
   await expect(composer(page).getByTestId("composer-billing")).toContainText("credits");
 
   /* Nothing written: blocked, with a reason. */
@@ -347,7 +347,7 @@ test("a moved price blocks the send and spends nothing", async ({ page }, info) 
   expect(sent.find((s) => s.path === "/api/generate")!.body.maxCredits).toBe(before + 7);
 });
 
-test("the connected switch changes the model list and the credit wording", async ({ page }, info) => {
+test("the composer offers this workspace's engines only: no account switch, and the account's catalogue is never read", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { project } = await seeded(page);
   const posts = await mockConnected(page);
@@ -355,33 +355,12 @@ test("the connected switch changes the model list and the credit wording", async
   await page.goto(url(project.id));
   await page.getByTestId("topbar-generate").click();
   await composer(page).getByTestId("composer-prompt").fill("A red lighthouse under a flat grey sky.");
-
-  const models = composer(page).getByTestId("composer-model");
-  await expect(models).toHaveValue(IMAGE_ENGINE);
-  const workspaceOptions = await models.locator("option").allTextContents();
-  const workspaceWording = await composer(page).getByTestId("composer-billing").textContent();
+  await expect(composer(page).getByTestId("composer-model")).toHaveValue(IMAGE_ENGINE);
   await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
-
-  await composer(page).getByRole("group", { name: "Credits used" }).getByRole("button", { name: "Connected account" }).click();
-
-  /* A different catalogue, and a different price source. */
-  await expect(models).toHaveValue("connected-still", { timeout: 30_000 });
-  const connectedOptions = await models.locator("option").allTextContents();
-  expect(connectedOptions).toEqual(["Still 1", "Still 1 Pro"]);
-  expect(connectedOptions).not.toEqual(workspaceOptions);
-  await expect(generateButton(page)).toHaveText("Generate · 9 connected cr", { timeout: 30_000 });
-  const connectedWording = await composer(page).getByTestId("composer-billing").textContent();
-  expect(connectedWording).not.toBe(workspaceWording);
-  expect(connectedWording).toContain("connected account");
-  expect(connectedWording).toContain("Studio wallet");
-  /* Neutral throughout: the provider is never named. */
-  await expect(composer(page)).not.toContainText(/Higgsfield/i);
-  expect(posts.map((post) => post.action)).toContain("catalogue");
-  /* Switching back restores the workspace list and its wording. */
-  await composer(page).getByRole("group", { name: "Credits used" }).getByRole("button", { name: "This workspace’s credits" }).click();
-  await expect(models).toHaveValue(IMAGE_ENGINE, { timeout: 30_000 });
-  await expect(generateButton(page)).toHaveText(priced, { timeout: 30_000 });
-  /* Looking at the other source spends nothing on this one. */
+  await expect(composer(page).getByRole("group", { name: "Credits used" })).toHaveCount(0);
+  await expect(composer(page).getByRole("button", { name: "Connected account" })).toHaveCount(0);
+  await expect(composer(page)).not.toContainText(/Higgsfield|connected cr/i);
+  expect(posts.map((post) => post.action)).not.toContain("catalogue");
   expect(sent.filter((s) => s.path === "/api/generate")).toEqual([]);
 });
 

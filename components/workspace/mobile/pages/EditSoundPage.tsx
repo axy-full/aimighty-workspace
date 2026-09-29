@@ -61,7 +61,7 @@ export function EditSoundPage({ project: shellProject, scope }: MobilePageProps)
         <div className="pxm-pad-x pxm-pad-top" data-template="edit">
           <p className="pxm-note" role="alert">{draft.state.error || "This project could not be opened."}</p>
           <div className="pxm-pair">
-            <button type="button" className="pxm-control" onClick={() => void draft.reload()} data-testid="mobile-edit-retry">Retry</button>
+            <button type="button" className="pxm-control" onClick={() => void draft.reload()} data-testid="mobile-edit-retry">Try again</button>
           </div>
         </div>
       );

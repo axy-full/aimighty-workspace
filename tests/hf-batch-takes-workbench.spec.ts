@@ -12,29 +12,22 @@ import { moreTakes } from "./helpers/genTakes";
  * (idea 3). The button shows the batch's total; Generate quotes every take
  * fresh and sends none of them if the sum moved; this workspace's takes carry
  * one batch id and their take numbers, and a take admission refuses stops the
- * batch with the takes that were made and charged named; the connected
- * account gets one paid call for the whole batch, and a lost reply is checked
- * (and fenced), never sent again. Every paid route is a mock that counts the
- * charges per take; nothing is billed.
+ * batch with the takes that were made and charged named. (Gen no longer
+ * offers a signed-in account's catalogue, so every batch is this workspace's.)
+ * Every paid route is a mock that counts the charges per take; nothing is
+ * billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const PRICE = 18;
-const WALLET = "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 const DRAFT = "ws-batch";
 const PROMPT = "A slow dolly push across the wet harbour at blue hour";
 const fixture = (): Project => ({ ...newProject("Harbour batch study"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
-const uuid = (n: number) => `9d2b3c4e-5f60-4a7b-8c9d-${String(n).padStart(12, "0")}`;
-const original = (n: number) => `gen_hfc_${String(n % 10).repeat(40)}`;
 /* Test fixtures: one Studio video engine and one still engine, as GET /api/workbench/engines lists them. */
 const ENGINES = [
   { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion from a prompt or references.", rate: { credits: PRICE, resolution: "480p", ratio: "16:9", duration: 5 } },
   { id: "gemini-3.1-flash-image", kind: "image", resolutions: ["1K", "2K"], ratios: ["1:1", "16:9", "9:16"], durations: [], use: "Stills and quick frames.", rate: { credits: 1, resolution: "1K", ratio: "1:1", duration: null } },
 ];
-const CATALOGUE = [
-  { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", aspectRatios: ["16:9", "9:16"], durationRange: { min: 4, max: 12 }, medias: [{ name: "medias", roles: ["start_image", "image_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }] },
-];
-
 async function open(page: Page, options: { owner?: boolean; library?: LibraryRoute } = {}) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -385,158 +378,5 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${3 * PRICE} cr`);
   expect(routes.quotes).toEqual([]);
   expect(routes.charges).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-/* ── The connected account ────────────────────────────────────────────── */
-
-type Job = Record<string, unknown> & { id: string; status: string };
-function connectedJob(n: number, variation: number, batchId: string, credits: number, status = "quoted"): Job {
-  return {
-    id: uuid(n), draftId: DRAFT, status, composer: "gen", batch: { id: batchId, variation },
-    input: { type: "video", model: "seedance_2_5", prompt: PROMPT, parameters: { aspect_ratio: "16:9", duration: 5, resolution: "480p" }, medias: [] },
-    model: { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video" }, tool: null, sources: [],
-    workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: credits, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000,
-    providerJobId: status === "quoted" ? null : uuid(900 + n), result: null, originalAvailable: false, createdAt: Date.now(),
-  };
-}
-const completed = (job: Job): Job => {
-  const id = original(Number(job.id.slice(-2)));
-  return {
-    ...job, status: "completed", originalAvailable: true, originalAvailability: "available",
-    result: { original: { generationId: id, providerJobId: job.providerJobId, creditUnit: "higgsfield_credits", credits: job.quoteCredits, sha256: "d".repeat(64), bytes: 2048, asset: { generationId: id, url: `/api/media/${id}`, kind: "video", mime: "video/mp4" } } },
-  };
-};
-
-/** The connected route: the catalogue, one take's live quote, the batch quote/submit/check, and status reads — every paid call counted. */
-async function connectedRoutes(page: Page, answer: { single?: number; price?: (variation: number, round: number) => number; submit?: (round: number) => "ok" | "lost"; check?: () => "landed" | "absent" } = {}) {
-  const posts: Record<string, unknown>[] = [], paid: Record<string, unknown>[] = [];
-  const jobs = new Map<string, Job>();
-  let round = 0, n = 0;
-  await page.route(/\/api\/higgsfield\/consumer\/generation(\?.*)?$/, async (route) => {
-    const request = route.request();
-    if (request.method() === "GET") return route.fulfill({ json: { connection: { connected: true }, capabilities: {}, jobs: [] } });
-    const body = request.postDataJSON() as Record<string, unknown>;
-    posts.push(body);
-    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: CATALOGUE, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-    if (body.action === "quote") return route.fulfill({ json: { job: connectedJob(99, 1, "b_single01", answer.single ?? PRICE) } });
-    if (body.action === "quote-batch") {
-      round++;
-      const keys = body.idempotencyKeys as string[];
-      const quoted = keys.map((_, i) => connectedJob(++n, i + 1, String(body.batchId), answer.price?.(i + 1, round) ?? answer.single ?? PRICE));
-      for (const job of quoted) jobs.set(job.id, job);
-      return route.fulfill({ json: { jobs: quoted } });
-    }
-    if (body.action === "submit-batch") {
-      paid.push(body);
-      const ids = body.ids as string[];
-      for (const id of ids) jobs.set(id, { ...jobs.get(id)!, status: "accepted", providerJobId: uuid(900 + Number(id.slice(-2))) });
-      if (answer.submit?.(round) === "lost") return route.abort("connectionreset");
-      return route.fulfill({ json: { jobs: ids.map((id) => jobs.get(id)) } });
-    }
-    if (body.action === "check-batch") {
-      const ids = body.ids as string[];
-      const state = answer.check?.() ?? "landed";
-      return route.fulfill({ json: { state, jobs: ids.map((id) => jobs.get(id)) } });
-    }
-    if (body.action === "status") return route.fulfill({ json: { job: jobs.get(String(body.id)), pollAfterSeconds: 15 } });
-    return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
-  });
-  return { posts, paid, jobs };
-}
-
-async function connectedGen(page: Page, single = PRICE) {
-  await gen(page);
-  await page.getByTestId("gen-model").click();
-  const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  await sheet.getByRole("tab", { name: "Higgsfield catalogue" }).click();
-  await sheet.getByRole("option", { name: /Seedance 2\.5/ }).first().click();
-  await expect(sheet).toHaveCount(0);
-  await page.getByTestId("gen-prompt").fill(PROMPT);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${single.toLocaleString("en-US")} connected cr`, { timeout: 60_000 });
-}
-
-test("the connected account: one quote per take, ONE paid call for their exact sum, every take followed and filed into one strip", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, library } = await open(page, { owner: true });
-  const routes = await connectedRoutes(page, { price: (variation, round) => (round === 1 && variation === 4 ? PRICE + 2 : PRICE) });
-  await page.clock.install();
-  await connectedGen(page);
-  await takes(page, 4);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 72 connected cr");
-  await floors(page, info);
-
-  /* A moved price: four fresh quotes, NOTHING sent, and the new sum on the button. */
-  await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "The price is now 74 connected cr for 4 takes. Nothing was sent; press Generate again to approve it." })).toBeVisible();
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 74 connected cr");
-  expect(routes.paid).toEqual([]);
-
-  /* The next press approves 74, but the account now says 72 again: still nothing sent. Then 72 is approved and sent. */
-  await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "The price is now 72 connected cr for 4 takes." })).toBeVisible();
-  expect(routes.paid).toEqual([]);
-  await page.getByTestId("gen-generate").click();
-  await expect.poll(() => routes.paid.length).toBe(1);
-  const batch = routes.posts.filter((p) => p.action === "quote-batch").at(-1)!;
-  expect((batch.idempotencyKeys as string[]).length).toBe(4);
-  expect(routes.paid[0]).toMatchObject({ action: "submit-batch", draftId: DRAFT, workspaceId: WALLET, credits: 72 });
-  expect((routes.paid[0].ids as string[]).length).toBe(4);
-  /* Never a single submit, never a second batch call. */
-  expect(routes.posts.filter((p) => p.action === "submit")).toEqual([]);
-  await expect(page.getByRole("status").filter({ hasText: "4 takes sent at 72 connected cr. They file into Takes as one strip as they land." })).toBeVisible();
-
-  const strip = page.getByTestId("gen-batch");
-  await expect(strip.getByTestId("gen-batch-take").locator(".gx-asset-name")).toHaveText(["take 1", "take 2", "take 3", "take 4"]);
-  await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Rendering", "Rendering", "Rendering"]);
-  await floors(page, info);
-  await shot(page, info, "connected-rendering");
-
-  /* Every take is read until it lands (not only the last one sent); each finished original is filed. */
-  const ids = routes.paid[0].ids as string[];
-  for (const id of ids) routes.jobs.set(id, completed(routes.jobs.get(id)!));
-  library.generations = ids.map((id, i) => generation({ id: original(Number(id.slice(-2))), kind: "video", title: PROMPT, prompt: PROMPT, provider: "higgsfield", params: { task: "connected-generation", batchId: String(batch.batchId), variation: i + 1 } }));
-  const landedToast = page.getByTestId("toast").filter({ hasText: "4 takes rendered. They are one strip in Takes." });
-  await until(page, async () => (await landedToast.count()) > 0, "the batch is announced once every take has landed");
-  expect(new Set(routes.posts.filter((p) => p.action === "status").map((p) => p.id)).size).toBe(4);
-  await page.clock.fastForward("00:03");
-  await expect(page.getByTestId("gen-batch")).toHaveAttribute("data-state", "done");
-  await expect(page.getByTestId("gen-batch").getByTestId("gen-batch-take").locator(".gx-asset-thumb")).toHaveCount(4);
-  await floors(page, info);
-  await clearOfTabBar(page);
-  await shot(page, info, "connected-landed");
-  expect(routes.paid).toHaveLength(1);
-  expect(errors).toEqual([]);
-});
-
-test("the connected account: a lost reply is checked before anything else, followed where it landed, and never sent again", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, { owner: true });
-  let answer: "landed" | "absent" = "absent";
-  /* A dear model: the longest total the button carries still fits the smallest phone. */
-  const routes = await connectedRoutes(page, { single: 1234.5, submit: () => "lost", check: () => answer });
-  await connectedGen(page, 1234.5);
-  await takes(page, 4);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 4,938 connected cr");
-  await floors(page, info);
-
-  /* The reply never comes back: the batch is checked (and fenced) at once. It had not arrived: nothing charged, said so. */
-  await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "The batch never reached the connected account. Nothing was charged; press Generate to send it again." })).toBeVisible();
-  expect(routes.posts.map((p) => p.action).filter((a) => a !== "catalogue" && a !== "quote")).toEqual(["quote-batch", "submit-batch", "check-batch"]);
-  expect(routes.posts.at(-1)!.ids).toEqual(routes.paid[0].ids);
-  await expect(page.getByTestId("gen-batch")).toHaveCount(0);
-
-  /* Again, and this time it had landed: followed as a strip, and no second paid call is ever made for it. */
-  answer = "landed";
-  await page.getByTestId("gen-generate").click();
-  await expect(page.getByRole("status").filter({ hasText: "The answer was lost on the way back, so the batch was checked: it had reached the connected account." })).toBeVisible();
-  await expect(page.getByTestId("gen-batch").getByTestId("gen-batch-take").locator(".gx-asset-name")).toHaveText(["take 1", "take 2", "take 3", "take 4"]);
-  expect(routes.paid).toHaveLength(2);
-  expect(routes.posts.filter((p) => p.action === "check-batch").map((p) => p.ids)).toEqual(routes.paid.map((p) => p.ids));
-  /* Each batch was sent once: the check never re-sends. */
-  expect(new Set(routes.paid.map((p) => JSON.stringify(p.ids))).size).toBe(2);
-  await floors(page, info);
-  await shot(page, info, "connected-lost-reply");
   expect(errors).toEqual([]);
 });

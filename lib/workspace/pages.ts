@@ -66,7 +66,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
   atomik: [
     page("atomik", "agent", "Agent", "Agent", lead("agent")),
     page("atomik", "runs", "Runs", "Runs", lead("runs")),
-    page("atomik", "generate", "Generate", "Generate", "Image, video, sound and 3D workflows from the connected account’s catalogue, plus tools and voice."),
+    page("atomik", "generate", "Generate", "Generate", "Single generations run in Gen, on Particl’s own engines."),
     page("atomik", "recipes", "Recipes", "Recipes", lead("recipes")),
     page("atomik", "builds", "Builds", "Builds", lead("builds")),
     page("atomik", "skills", "Skills", "Skills", lead("skills")),

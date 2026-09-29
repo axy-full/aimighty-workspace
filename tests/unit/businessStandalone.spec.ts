@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
@@ -10,8 +10,6 @@ import {
 } from "../../lib/shell/business";
 import { accountOwnEntry, accountPresetEntry, sharedSetupIds, standaloneReads, standaloneSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 import { ConsumerSetupError, NO_PARTICL_SETUP, foreignSetupIds, setupIdsOfParameters, setupIdsOfVideoInput } from "../../lib/higgsfield-consumer/marketing-records";
-import { parseConnectedCatalogue } from "../../lib/higgsfield-consumer/catalogue";
-import { buildConnectedProposal, plannerModels } from "../../lib/higgsfield-consumer/planner-proposals";
 
 /**
  * Business is standalone (owner's rule, 23 September): only what Particl made
@@ -102,17 +100,6 @@ test("a quote naming a setup item Particl may not send is found before anything 
   const error = new ConsumerSetupError();
   expect([error.status, error.code, error.paidAttempted]).toEqual([409, "setup_not_particl", false]);
   expect(error.message).not.toMatch(/higgsfield|cli|--/i);
-});
-
-test("Atomik's connected planner builds requests the guard sees: an account avatar or product in a proposal is caught", () => {
-  const models = plannerModels(parseConnectedCatalogue(JSON.parse(readFileSync("tests/fixtures/connected-models.json", "utf8"))).models);
-  const built = buildConnectedProposal({ kind: "video", title: "Ad", prompt: "A bottle.", model: "connected:marketing_studio_video", settings: { mode: "ugc", avatar_ids: ["acct_avatar_1"], product_ids: ["acct_product_1"] } }, models);
-  expect(built.ok).toBe(true);
-  if (!built.ok) return;
-  const wanted = setupIdsOfParameters(built.input.parameters, built.input.model);
-  expect(foreignSetupIds(wanted, NO_PARTICL_SETUP, { avatar: new Set(["av_preset"]) })).toEqual([{ type: "avatar", id: "acct_avatar_1" }, { type: "product", id: "acct_product_1" }]);
-  const dtc = buildConnectedProposal({ kind: "image", title: "Still", prompt: "A bottle.", model: "connected:ms_image", settings: { style_id: "st_acct", brand_kit_id: "bk_acct" } }, models);
-  expect(dtc.ok && foreignSetupIds(setupIdsOfParameters(dtc.input.parameters, dtc.input.model), NO_PARTICL_SETUP).map((f) => f.type)).toEqual(["brand_kit", "image_style"]);
 });
 
 test("Setup's pick lands on the page it names once; a stale, foreign or malformed pick is spent, another page's fresh pick waits", () => {

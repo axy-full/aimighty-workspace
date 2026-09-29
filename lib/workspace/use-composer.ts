@@ -448,7 +448,9 @@ export function useComposer(options: {
   const shared = useConnectedCapability(scope, { read: wantsConnected });
   // A recalled connected preset must not strand a member behind a hidden switch.
   // Workspace settings receive a fresh quote before Generate can enable.
-  useEffect(() => { if (!shared.owner && state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [shared.owner, state.billing]);
+  /* Studio engines only: a signed-in account's catalogue is no longer offered to anyone (API-key and direct
+     engines only), so a composer that restores or is handed the account's source moves back to this workspace's. */
+  useEffect(() => { if (state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [state.billing]);
   const capability = useMemo<ConnectedCapability | null>(() => {
     if (!shared.owner) return { owner: false, connected: false, suspended };
     if (shared.status === "loading") return null;

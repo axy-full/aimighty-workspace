@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib/atomik";
-import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
+import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +23,11 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   if (got.response) return got.response;
   const { id } = await ctx.params;
 
-  /* A connected-account step is approved at its exact connected price through
-     its own route, which quotes, claims and submits in one place. */
+  /* A step planned on the connected account is never claimed: nothing here
+     runs on that account any more, so it stays exactly as it was. */
   const pending = await getStep(id);
-  if (pending && connectedMeta(pending.params))
-    return NextResponse.json({ error: "Approve this step at its connected-credit price.", step: stepForBrowser(pending) }, { status: 409 });
+  if (pending && isAccountStep(pending))
+    return NextResponse.json({ error: ACCOUNT_STEP_NOTE, step: stepForBrowser(pending) }, { status: 409 });
 
   let step = await claimStep(id, got.user.id);
   /* A step left running by an approval that never reached the renderer is
