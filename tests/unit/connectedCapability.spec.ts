@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import {
-  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, HISTORY_KEPT, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_SUITES,
-  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunSuite,
+  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, HISTORY_KEPT, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_PAGES, OWNER_RUN_SUITES,
+  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunPage, isOwnerRunSuite,
   ownerRunEyebrow, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
 import { SIGN_IN_RETIRED, SIGN_IN_RETIRED_MESSAGE } from "../../lib/higgsfield-consumer/retired";
+import { OWN_PAGES } from "../../lib/shell/business-own";
 import { SHELL_SUITES } from "../../lib/shell/ia";
 import { INITIAL_COMPOSER, activeModel, composerBlock, workspaceModels, type EngineRow } from "../../lib/workspace/composer";
 import { rowPrice } from "../../lib/workspace/model-picker";
@@ -249,11 +250,20 @@ test("the words everyone meets since the sign-in was retired: what ran on the ac
     expect(run.line).toMatch(/ ran on a signed-in Higgsfield account\.$/);
     for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b|\brun by\b|\bowner\b/i);
   }
-  expect(OWNER_RUN_SUITES).toEqual(["business", "viral"]);
-  expect(isOwnerRunSuite("business") && isOwnerRunSuite("viral")).toBe(true);
-  expect(isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
-  /* The state layer's suites behind them are exactly the shell's owner-run suites. */
-  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id)).map((suite) => suite.legacy).sort()).toEqual([...OWNER_RUN_LEGACY_SUITES].sort());
+  /* Viral ran on the account on every page; Business only on Ads, Image ads and Setup — its own tools are everyone's. */
+  expect(OWNER_RUN_SUITES).toEqual(["viral"]);
+  expect(isOwnerRunSuite("viral")).toBe(true);
+  expect(isOwnerRunSuite("business") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
+  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "dtc", "setup"] });
+  for (const page of ["ads", "dtc", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
+  for (const page of OWN_PAGES) expect(isOwnerRunPage("business", page), page).toBe(false);
+  /* A whole owner-run suite is its own rule: the page map names only the pages of a suite others use too. */
+  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunSuite("viral") && !isOwnerRunPage("viral", page), page).toBe(true);
+  expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
+  /* Every owner-run page names a page the suite really has. */
+  for (const [suite, pages] of Object.entries(OWNER_RUN_PAGES)) for (const page of pages) expect(SHELL_SUITES.find((s) => s.id === suite)?.pages.some((p) => p.id === page), `${suite}/${page}`).toBe(true);
+  /* The state layer's suites behind them are exactly the shell's suites with an owner-run page. */
+  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id) || OWNER_RUN_PAGES[suite.id]).map((suite) => suite.legacy).sort()).toEqual([...OWNER_RUN_LEGACY_SUITES].sort());
 });
 
 test("the alternative is priced exactly as Gen's sheet prices it: the composer's own default engine, at the project's aspect, whole credits", () => {

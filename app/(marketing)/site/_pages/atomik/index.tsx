@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AtomikMark } from "@/components/AtomikMark";
 import SitePage, { sitePrices } from "@/components/marketing/SitePage";
-import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile, Window } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile } from "@/components/marketing/ui";
+import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 import styles from "./atomik.module.css";
 
 export const metadata: Metadata = {
@@ -13,11 +13,10 @@ export const metadata: Metadata = {
 
 /* Copy from lib/workspace/spec-cards.ts (Atomik), lib/workbench/atomik-server.ts
    and atomik-references.ts (what the agent reads), lib/workbench/suite-agent-plan.ts
-   (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/higgsfield-consumer/{tools,
-   voice-tools}.ts (Generate), lib/shell/tools-connections.ts and
-   lib/higgsfield-consumer/reach.ts (Tools & connections), docs/atomik-models.md
-   (Models) and docs/durable-production-pipelines.md (Runs, Recipes). The public
-   site states no prices: the sample plan and the recipes list their steps only. */
+   (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/shell/tools-connections.ts
+   (Tools & connections: Particl's own rows), docs/atomik-models.md (Models) and
+   docs/durable-production-pipelines.md (Runs, Recipes). The public site states no
+   prices: the sample plan and the recipes list their steps only. */
 
 const AGENT_CHIPS = ["≤ 8 actions", "editable nodes", "≤ 6 visuals", "links not fetched", "each render approved"];
 
@@ -30,22 +29,14 @@ const TILES: { tag: string; name: string; body: string; badge?: string; gated?: 
     body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions." },
   { tag: "02 Runs", name: "Runs",
     body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place and its approved attempts, and recovery never re-dispatches." },
-  { tag: "03 Generate", name: "Generate", gated: "Analyse video gated",
-    body: "Image, video, sound and 3D workflows from the connected account’s catalogue. Tools: upscale image and video, remove background, extend canvas, reframe, deflicker, lip-sync. Voice: change voice and dub; Analyse video stays off." },
-  { tag: "04 Recipes", name: "Recipes",
+  { tag: "03 Recipes", name: "Recipes",
     body: "Every saved run keeps its plan: same stages, same inputs, same engines." },
-  { tag: "05 Builds", name: "Builds", badge: "Not yet runnable",
+  { tag: "04 Builds", name: "Builds", badge: "Not yet runnable",
     body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in. There is no build service yet." },
-  { tag: "06 Tools", name: "Tools & connections",
-    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D, then the connected account’s catalogue, characters, voice, dubbing, social cuts and ad templates, each checked live against the tools the account offers. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
-  { tag: "07 Models", name: "Models",
+  { tag: "05 Tools", name: "Tools & connections",
+    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
+  { tag: "06 Models", name: "Models",
     body: "Claude, OpenAI and Grok planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
-];
-
-const WINDOWS: [string, string, string][] = [
-  ["runs", "atomik-runs", "Atomik, Runs"],
-  ["approvals", "atomik-approvals", "Atomik, Approvals"],
-  ["tools", "atomik-tools", "Atomik, Tools & connections"],
 ];
 
 export default async function AtomikPage() {
@@ -122,11 +113,6 @@ export default async function AtomikPage() {
       </Section>
 
       <Section id="atomik-pages" label="Atomik pages" className={styles.pages}>
-        <Grid col={280} style={{ gap: 20 }}>
-          {WINDOWS.map(([path, name, alt]) => (
-            <Window key={name} path={`particl.app / atomik / ${path}`} src={shot(name)} alt={alt} width={924} height={540} />
-          ))}
-        </Grid>
         <Grid col={250}>
           {TILES.map(({ tag, name, body, badge, gated }) => (
             <Tile key={tag} tag={tag} badge={badge ? <Amber>{badge.toUpperCase()}</Amber> : undefined} name={name} body={body}>
@@ -137,7 +123,7 @@ export default async function AtomikPage() {
       </Section>
 
       <Section id="atomik-recipes" panel label="Recipes">
-        <Head eyebrow="04 · Recipes" title="Saved plans that rerun exactly."
+        <Head eyebrow="03 · Recipes" title="Saved plans that rerun exactly."
           lead="Every saved run keeps its plan. Save one as a file to keep it." />
         {/* 260, not the design's 280: this wrap is 1120 wide, so 280 would
             leave a 3 + 1 row at desktop; 260 keeps four across there and

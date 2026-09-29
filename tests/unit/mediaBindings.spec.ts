@@ -81,6 +81,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/push": {},
     "@/lib/cache": { invalidate: () => {} },
     "@/lib/held": await import("../../lib/held"),
+    "@/lib/usageLedger": { withLedgerCharges: async <G>(generations: G[]) => generations },
   };
   const file = path.resolve(`app/api/${kind}/[id]/route.ts`);
   const compiled = ts.transpileModule(readFileSync(file, "utf8"), {

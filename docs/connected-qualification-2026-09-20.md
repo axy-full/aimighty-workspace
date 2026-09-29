@@ -1,5 +1,7 @@
 # Connected-account qualification — 2026-09-20
 
+> **Historical (28 September 2026).** Particl no longer signs in to a Higgsfield account: it uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10). This report is kept unchanged as a record; nothing in it describes a current feature.
+
 > **Status as committed.** Findings 1 and 2 are FIXED in the pull request that
 > commits this document (`fix/connected-status-fallback`). This report is kept
 > verbatim as the record of the halted run and of what is still unproven; the

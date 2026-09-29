@@ -6,12 +6,13 @@ import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
   title: "Viral Studio",
-  description: "Recast motion and swap elements in footage you own: one 4–30 s source, up to 30 ordered references, 480p to 1080p.",
+  description: "Recast motion and swap elements in footage you own: one 4–30 s source, ordered references, 480p to 1080p.",
 };
 
 /* Copy and limits from lib/workspace/spec-cards.ts, lib/shell/viral.ts,
-   lib/higgsfield-consumer/{genjutsu-contract,shorts-studio}.ts and
-   components/suites/subatomik-directions.ts. The public site states no prices. */
+   lib/genjutsuTypes.ts and components/suites/subatomik-directions.ts. No
+   reference count is stated while Viral moves to the API's one to eight
+   (docs/subatomik-genjutsu.md). The public site states no prices. */
 const DIRECTIONS = ["Style", "Wardrobe", "Setting", "Product", "Recast"];
 
 const TILES: { tag: string; name: string; body: string }[] = [
@@ -19,19 +20,17 @@ const TILES: { tag: string; name: string; body: string }[] = [
     body: `Take the motion from a source video and recast it with your own cast, location and product. Anything you do not describe stays exactly as filmed. Five creative directions to start from: ${DIRECTIONS.join(", ")}.` },
   { tag: "02 Object Swap", name: "Swap one element",
     body: "A product, a garment, an object. Name what to replace; motion, lighting and framing stay as filmed." },
-  { tag: "03 Shorts", name: "One video, a set of clips",
-    body: "Restyle one video (4–120 s) into a set of short clips." },
-  { tag: "04 Sources", name: "Your own originals",
+  { tag: "03 Sources", name: "Your own originals",
     body: "Nothing is fetched from a URL at generation time and nothing is re-encoded on the way in. Header bytes are read; pixels are never touched. Pull the start or end frame as a PNG." },
-  { tag: "05 Compare", name: "Split or wipe, one clock",
+  { tag: "04 Compare", name: "Split or wipe, one clock",
     body: "Original and result side by side, locked to the same clock. Seek and speed apply to both sides; download the original bytes." },
-  { tag: "06 History", name: "Every result, kept",
+  { tag: "05 History", name: "Every result, kept",
     body: "Copied into private storage on completion. Recreate any take with the same inputs, or hand it to Edit & Sound or to upscale." },
 ];
 
 const FACTS: [string, string][] = [
   ["Source", "4–30 s"],
-  ["References", "Up to 30, ordered"],
+  ["References", "Ordered stills"],
   ["Resolution", "480p · 720p · 1080p"],
 ];
 
@@ -43,7 +42,7 @@ export default function ViralPage() {
       <SuiteHeader
         eyebrow="04 · Subatomik Viral Studio"
         title="Recast motion and swap elements in footage you own."
-        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 30 seconds, up to 30 ordered references, 480p to 1080p."
+        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 30 seconds, ordered references, 480p to 1080p."
         pages={viral.pages}
         cta={(
           <>
@@ -62,7 +61,6 @@ export default function ViralPage() {
             ))}
           </Grid>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <Window path="particl.app / viral / motion" src={shot("viral-motion-transfer")} alt="Viral, Motion Transfer" width={924} height={540} />
             <Window path="particl.app / viral / history" src={shot("viral-history")} alt="Viral, History" width={924} height={540} />
             <Grid col={140} style={{ gap: 10 }}>
               {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}

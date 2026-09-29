@@ -40,6 +40,10 @@
 /* Production integration follows the approved neutral controls. */
 .ps .generation-options{display:flex;gap:12px;flex-wrap:wrap}
 .ps .generation-options label{flex:1;min-width:90px;color:var(--graphite-body);font-size:12px}
+/* Cinema Studio's controls: a grid of named selects that never runs wider than the dialog, each a full-size target. */
+.ps .generation-options.cinema-controls{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px 12px}
+.ps .generation-options.cinema-controls label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ps .generation-options.cinema-controls select{min-width:0;min-height:44px;text-overflow:ellipsis}
 .ps select{width:100%;padding:10px 12px;color:var(--graphite-ink);background:var(--graphite-control);border:1px solid var(--graphite-edge);border-radius:6px;min-height:42px;font:inherit}
 .ps option{background:var(--graphite-control);color:var(--graphite-ink)}
 .ps .dialog-fields textarea{min-height:100px}

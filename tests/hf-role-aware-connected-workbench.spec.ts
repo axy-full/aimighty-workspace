@@ -11,13 +11,14 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
  * The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), in
  * the browser against a local ENGINE_MOCK server. Everyone — the workspace
  * owner included — meets one calm card wherever the connected account used to
- * run: Business, Viral, Cast. It says what ran there, that Particl no longer
- * signs in to Higgsfield and that past results stay in the Library, with the
- * way to make the same kind of thing in Gen on this workspace's credits. No
- * suite carries an "Owner" badge, Gen offers no connected catalogue or
- * Analysis, and nothing new is asked of the account: the only account route
- * the owner's pages call is the shell's own list of saved jobs (so jobs
- * already running are still collected). Nothing is generated or billed.
+ * run: Business's Ads, Image ads and Setup, and Viral. It says what ran there,
+ * that Particl no longer signs in to Higgsfield and that past results stay in
+ * the Library, with the way to make the same kind of thing in Gen on this
+ * workspace's credits. Business's own tools and Cast, on the platform's key,
+ * are everyone's. No suite carries an "Owner" badge, Gen offers no connected
+ * catalogue or Analysis, and nothing new is asked of the account: the only
+ * account route the owner's pages call is the shell's own list of saved jobs
+ * (so jobs already running are still collected). Nothing is generated or billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -111,12 +112,12 @@ async function noBadges(page: Page) {
   await closeSuitesMenu(page);
 }
 
-test("the owner meets one calm card where the Higgsfield account ran — Business, Viral, Cast — and makes the same kind of thing in Gen on this workspace's credits", async ({ page }, info) => {
+test("the owner meets one calm card where the Higgsfield account ran — Business's Ads, Image ads and Setup, and Viral — and makes the same kind of thing in Gen on this workspace's credits; Cast is on the platform's key", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const project = info.project.name;
   const { project: film, consumer, errors } = await asOwner(page);
 
-  /* Business: the card says what changed, on the first paint, and nothing else of the suite. */
+  /* Business › Ads: the card says what changed, on the first paint, and nothing else of that page. */
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
   const business = page.getByTestId("owner-run-business");
   await expect(business).toBeVisible();
@@ -132,10 +133,11 @@ test("the owner meets one calm card where the Higgsfield account ran — Busines
   await fingerSized(business, project);
   await shot(page, "business-owner", project);
 
-  /* Business's other pages are the same card. */
-  await expect(page.getByRole("navigation", { name: "Pages" })).toHaveCount(0);
+  /* Business's pages are listed; Setup is the same card, with what Particl made in the project below it. */
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
+  await expect(page.getByTestId("particl-setup")).toBeVisible();
   await expect(page.getByTestId("setup-view")).toHaveCount(0);
 
   /* Open Gen · Images: Gen on Images, Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
@@ -187,18 +189,22 @@ test("the owner meets one calm card where the Higgsfield account ran — Busines
   await toVideo.click();
   await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Video" })).toHaveAttribute("aria-selected", "true");
 
-  /* Cast: the list stays the owner's to shape; the card replaces the builds, and each entry's still is made in Gen. */
+  /* Cast runs on the platform's key (28 September): no retired card and no connect prompt. The list, Build identity and
+     each character's render are this workspace's, on its credits, and each entry's still can be made in Gen. */
   await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
-  const cast = page.getByTestId("owner-run-cast");
-  await expect(cast).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast-title")).toHaveText(TITLE);
+  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
   for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  const soul = page.getByTestId("soul-card");
+  await expect(soul).toBeVisible();
+  await expect(soul.getByRole("heading", { name: "Build identity" })).toBeVisible();
   const fox = page.getByTestId("cast-entry");
   await expect(fox).toHaveCount(1);
   await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
   await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
+  await expect(fox.getByTestId("cast-render-why")).toHaveText("Train a Soul ID below to render it.", { timeout: 30_000 });
   await noSideScroll(page);
-  await fingerSized(cast, project);
+  await fingerSized(soul.locator(".gx-gen-enhance"), project);
   await shot(page, "cast-owner", project);
   const still = fox.getByTestId("cast-still-gen");
   await still.scrollIntoViewIfNeeded();
@@ -212,14 +218,14 @@ test("the owner meets one calm card where the Higgsfield account ran — Busines
   await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
   await shot(page, "gen-owner-still", project);
 
-  /* The phone's Home says the suites' sign-in is retired, not who runs them. */
+  /* The phone's Home says Viral's sign-in is retired, not who runs it; Business is Particl's own tools. */
   if (PORTRAIT.includes(project)) {
     await page.getByTestId("tabbar-home").click();
     await expect(page.getByTestId("suite-home")).toBeVisible();
-    for (const suite of ["business", "viral"]) {
-      await expect(page.getByTestId(`home-fact-${suite}`)).toHaveText("Higgsfield sign-in retired");
-      await expect(page.getByTestId(`home-suite-${suite}`)).toHaveAttribute("data-retired", "true");
-    }
+    await expect(page.getByTestId("home-fact-viral")).toHaveText("Higgsfield sign-in retired");
+    await expect(page.getByTestId("home-suite-viral")).toHaveAttribute("data-retired", "true");
+    await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
+    await expect(page.getByTestId("home-suite-business")).not.toHaveAttribute("data-retired", "true");
     await expect(page.getByTestId("home-fact-studio")).not.toContainText(/Run by|retired/);
     await noSideScroll(page);
     await shot(page, "home-owner", project);
