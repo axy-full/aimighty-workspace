@@ -47,6 +47,44 @@ async function expectTile(tile: Locator, count: number, noun: string, t: Take) {
   await expect(tile.locator(".mr-sr")).toHaveText(`${count > 0 ? "About " : ""}${n(count)} ${noun}: ${spoken(t)}`);
 }
 
+/**
+ * Every figure and size on a rate card shows whole, at every width: nothing with a digit in it is clipped (a
+ * column head squeezed to a pixel included), cut with an ellipsis, or pushed past the card's edge.
+ */
+async function wholeFigures(page: Page, testId: string) {
+  const cut = await page.getByTestId(testId).evaluate((card) => {
+    const box = card.getBoundingClientRect();
+    const out: string[] = [];
+    for (const el of Array.from(card.querySelectorAll<HTMLElement>("*"))) {
+      const own = Array.from(el.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? "").join("").trim();
+      if (!/\d/.test(own) || !el.getClientRects().length) continue;
+      const style = getComputedStyle(el), rect = el.getBoundingClientRect();
+      const clipped = style.display !== "inline" && el.scrollWidth > el.clientWidth + 1;
+      const cutShort = style.textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 1;
+      const past = rect.left < box.left - 0.5 || rect.right > box.right + 0.5;
+      if (clipped || cutShort || past || style.clipPath !== "none") out.push(`“${own}” (${Math.round(el.scrollWidth)} > ${Math.round(el.clientWidth)})`);
+    }
+    return out;
+  });
+  expect(cut, `${testId}: every figure and size whole`).toEqual([]);
+}
+
+/** At the Workspace pane's end, its last row ends above the phone's tab bar (or the pane's bottom where none floats). */
+async function paneEnd(page: Page) {
+  return page.getByTestId("workspace-view").evaluate(async (pane) => {
+    pane.scrollTop = pane.scrollHeight;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const shown = Array.from(pane.querySelectorAll<HTMLElement>(".wsx *")).filter((el) => el.getClientRects().length && el.getBoundingClientRect().height > 0);
+    const last = shown.reduce<HTMLElement | null>((a, el) => (!a || el.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? el : a), null);
+    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
+    const fixed = Boolean(bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed");
+    return {
+      last: (last?.textContent ?? "").trim().slice(0, 40), bottom: last ? last.getBoundingClientRect().bottom : 0,
+      limit: fixed ? bar!.getBoundingClientRect().top : Math.min(innerHeight, pane.getBoundingClientRect().bottom),
+    };
+  });
+}
+
 async function shot(page: Page, info: TestInfo, name: string) {
   if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
@@ -190,6 +228,7 @@ test("Pricing: every plan says what a month of its credits makes, at the Generat
   await expect(kling.first().getByRole("cell").first()).toContainText("not offered");
 
   await floors(page, ".plan-grid .mr-reach, .commercial-rates");
+  await wholeFigures(page, "rate-card");
   if ((await card.boundingBox())!.width <= 520) {
     /* Narrow: each engine's prices sit under its name and name their own size. */
     await expect(videoRow.locator(".mr-cell-opt").first()).toBeVisible();
@@ -272,10 +311,14 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   await expect(card.locator(`[data-testid="rate-row"][data-engine="${GPT_IMAGE}"] .mr-cell[data-reference]`)).toHaveAttribute("data-option", "High");
   await expect(page.getByTestId("workspace-rate-card-legend")).toHaveText("Your balance is counted at the outlined prices.");
   await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
+  await wholeFigures(page, "workspace-rate-card");
   if (PHONES.includes(info.project.name)) {
     expect(await smallTargets(page, '[data-testid="ws-plans"]'), "targets under 44×44").toEqual([]);
     const summary = await rates.locator("summary").boundingBox();
     expect(Math.round(summary!.height * 100) / 100).toBeGreaterThanOrEqual(44);
+    /* The rate card open, the pane at its end: nothing is left under the tab bar. */
+    const end = await paneEnd(page);
+    expect(end.bottom, `the last row (“${end.last}”) ends above the tab bar`).toBeLessThanOrEqual(end.limit + 0.5);
   }
   await shot(page, info, "workspace-usual");
 });

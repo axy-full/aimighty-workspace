@@ -211,17 +211,11 @@
 
 /* Narrow (a phone, or a narrow panel): the engine takes its own line and
    its prices sit under it, each naming its size, so nothing scrolls
-   sideways. The column headers stay in the accessibility tree. */
+   sideways. Each cell then says its own size, aloud too, so the column
+   headers step out rather than sit clipped to a pixel. */
 @container mr-card (max-width: 520px) {
   .mr-group-head { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
-  .mr-col {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+  .mr-col { display: none; }
   .mr-row {
     grid-template-columns: repeat(var(--mr-narrow-cols, 4), minmax(0, 1fr));
     padding: 10px 12px;
