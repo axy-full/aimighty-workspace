@@ -13,8 +13,8 @@ import { developmentInput } from '../../lib/workbench/development-client';
 import type { DevelopmentRequest } from '../../lib/workbench/development-types';
 import { listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep, type DevelopmentCall, type DevelopmentDependencies } from '../../lib/workbench/development-server';
 import {
-  VERIFY_RUBRIC, VERIFY_THRESHOLDS, checkVerdict, framesKey, masterSetKey, mediaIdentity, overallVerdict, verificationFor, verificationStanding,
-  verifyCardFor, verifyKeyOf, verifyParts, verifySubject, withVerifyLast, type TakeVerification,
+  VERIFY_RUBRIC, VERIFY_THRESHOLDS, checkVerdict, framesKey, masterSetKey, mediaIdentity, overallVerdict, verdictLine, verificationFor, verificationStanding,
+  verifyCardFor, verifyFrameUrl, verifyKeyOf, verifyParts, verifySubject, withVerifyLast, type TakeVerification,
 } from '../../lib/workbench/verify';
 import { mockColourScore, readVerifyAnswer, verifyPrompt, type VerifySnapshot } from '../../lib/workbench/verify-judge';
 import { ALREADY_CHECKED, CHECK_RUNNING, listVerifications, mockVerifyReply, verifyKeyHashes } from '../../lib/workbench/verify-server';
@@ -106,6 +106,14 @@ test('the thresholds decide each verdict: pass and fail at their bounds, anythin
   expect(overallVerdict([{ verdict: 'pass' }, { verdict: 'unsure' }])).toBe('needs_you');
   expect(overallVerdict([{ verdict: 'unsure' }, { verdict: 'fail' }])).toBe('fail');
   expect(overallVerdict([])).toBe('needs_you');
+  const row = (check: 'identity' | 'props' | 'artifacts', verdict: 'pass' | 'fail' | 'unsure') => ({ check, verdict, score: null, reasons: [], frame: null });
+  expect(verdictLine([row('identity', 'fail'), row('props', 'unsure'), row('artifacts', 'pass')])).toBe('Identity failed · Props unsure');
+  expect(verdictLine([row('props', 'unsure')])).toBe('Props unsure');
+  expect(verdictLine([row('identity', 'pass'), row('artifacts', 'pass')])).toBe('2 checks passed');
+  expect(verifyFrameUrl({ t: 0.5, uploadId: 'still-1', sha256: 'x' }, 'upload:clip')).toBe('/api/workbench/preview/upload/still-1');
+  expect(verifyFrameUrl(null, 'generation:g1')).toBe('/api/workbench/preview/generation/g1');
+  expect(verifyFrameUrl(undefined, 'sample:/campaign/hero.webp')).toBe('/campaign/hero.webp');
+  expect(verifyFrameUrl(undefined, 'sample:https://example.test/x.png')).toBeNull();
 });
 
 test('the code reads the judge: a missing, unseen or out-of-range check is unsure, a claimed verdict is ignored, frames and reasons are bounded', () => {
