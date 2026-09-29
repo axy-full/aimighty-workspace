@@ -167,6 +167,39 @@ test("a library step's render is the transform or Marketing Studio request its f
   expect(readStepQuote({ estimatedCredits: 4, price: 4, unit: "cr" }, render)).toBeNull();
 });
 
+test("Marketing Studio 2.5: the planner names a build, each build keeps its own qualities, and 2.0 still enhances at high only", async () => {
+  const { extractTurn } = await import("../../lib/atomik");
+  const { keyStepInputsLine } = await import("../../lib/atomikKeySteps");
+  const { stepRender, readStepQuote } = await import("../../lib/atomikStepRender");
+  const { marketingSettings } = await import("../../lib/higgsfieldMarketing");
+  const turn = extractTurn(reply([
+    { title: "Flare hero", prompt: "The product, bold.", model: MARKETING, references: ["S1"], build: "flare", quality: "max", preset: "P1" },
+    { title: "Sunburst dusk", prompt: "The product at dusk.", model: MARKETING, references: ["S1", "S2"], build: "2.5 Sunburst", quality: "xhigh" },
+    { title: "Alpha max", prompt: "The product.", model: MARKETING, build: "alpha", quality: "max" },
+    { title: "Alpha preset", prompt: "The product.", model: MARKETING, references: ["S1"], preset: "P1", quality: "low" },
+    { title: "Future build", prompt: "The product.", model: MARKETING, build: "3.0" },
+  ]), OFFERED, { library: LIBRARY, presets: PRESETS })!;
+  expect(turn.propose.map((p) => p.params.marketing)).toEqual([
+    { variant: "flare", quality: "max", enhancePrompt: true, presetId: PRESET_ID },
+    { variant: "sunburst", quality: "xhigh", enhancePrompt: false },
+    /* 2.0 Alpha stops at high, and enhances only at high. */
+    { quality: "high", enhancePrompt: false },
+    { quality: "high", enhancePrompt: true, presetId: PRESET_ID },
+  ]);
+  /* Every one is a setting admission accepts, in the shape the Marketing Studio forms send. */
+  for (const p of turn.propose) expect(() => marketingSettings(p.params.marketing), p.title).not.toThrow();
+  expect(turn.say).toContain("Future build — it names a Marketing Studio build that is not offered");
+  expect(turn.propose[0].params.inputs).toEqual({ references: ["product.png"], preset: "Bold studio", build: "2.5 Flare" });
+  expect(keyStepInputsLine(turn.propose[0])).toBe("Uses 1 still from the library with the Bold studio preset, on 2.5 Flare.");
+  expect(keyStepInputsLine(turn.propose[2])).toBe("Made from the prompt alone.");
+  const render = stepRender({ ...turn.propose[1], refs: turn.propose[1].refs! }, "prod");
+  expect(render.body.marketing).toEqual({ variant: "sunburst", quality: "xhigh", enhancePrompt: false });
+  /* A 2.5 quote is approximate, and read as one. */
+  const fingerprint = "f".repeat(64);
+  expect(readStepQuote({ estimatedCredits: 4, price: 4, unit: "cr", fingerprint, approximate: true }, render)).toEqual({ estimatedCredits: 4, price: 4, fingerprint, approximate: true });
+  expect(readStepQuote({ estimatedCredits: 4, price: 4, unit: "cr", fingerprint }, render)).toEqual({ estimatedCredits: 4, price: 4, fingerprint });
+});
+
 test("the planner reads the library as fenced data by handle, with the library steps described only where they are offered", async () => {
   const { librarySection, keyStepsOffered, libraryName, handleOf, keyStepInputsLine, engineChoices, keyStepLabel } = await import("../../lib/atomikKeySteps");
   expect(keyStepsOffered([])).toEqual({ transform: false, marketing: true });
@@ -411,6 +444,29 @@ test("from a brief to priced library steps: each is priced on its admission quot
     expect(loaded.chat.status).toBe("waiting");
   })));
 
+test("a 2.5 campaign still is proposed at its approximate price, the figure its checkpoint quotes", async () =>
+  inWorkspace("keysteps_flare", async (s) => withCatalogue(async () => {
+    const atomik = await import("../../lib/atomik");
+    const { plannerInputs, priceKeyStep } = await import("../../lib/atomikLibrary");
+    const { prepareGeneration } = await import("../../lib/generationAdmission");
+    const { stepRender } = await import("../../lib/atomikStepRender");
+    await s.production("prod");
+    await s.upload("product", "image", "prod");
+    await s.draft("draft", "prod");
+    const inputs = await plannerInputs(actor.user.id, "prod");
+    const chatId = await atomik.createChat({ userId: actor.user.id, projectId: "prod", model: "auto", agentMode: "ask" });
+    await atomik.addUserMessage(chatId, "A marketing campaign still of the product on 2.5 Flare.");
+    const result = await atomik.runTurn(chatId, { library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
+      priceKeyStep: (body) => priceKeyStep(body, actor) });
+    expect(result.steps.map((step) => step.model)).toEqual([MARKETING]);
+    expect(result.steps[0].params).toMatchObject({ marketing: { variant: "flare", quality: "xhigh", enhancePrompt: false }, inputs: { build: "2.5 Flare" } });
+    expect(result.steps[0].estCostUsd).toBeGreaterThan(0);
+    const loaded = (await atomik.getChat(chatId))!;
+    const quote = await prepareGeneration(stepRender(loaded.steps[0], "prod", { workbenchProjectId: "draft" }).body, actor);
+    expect(quote.ok, JSON.stringify(quote)).toBe(true);
+    if (quote.ok) expect(quote.value.quote).toMatchObject({ estimatedCredits: loaded.steps[0].estCredits, approximate: true });
+  })));
+
 test("a library step nothing can price is not proposed, and says why; without a price source none is", async () =>
   inWorkspace("keysteps_unpriced", async (s) => withCatalogue(async () => {
     const atomik = await import("../../lib/atomik");
@@ -494,7 +550,8 @@ test("the quote's fingerprint binds an approval to the exact source, stills, set
       const prepared = await admission.prepareGeneration(render.body, actor);
       expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
       if (!prepared.ok) throw new Error("unpriced");
-      return { render, quote: { estimatedCredits: prepared.value.quote.estimatedCredits, price: prepared.value.quote.price, fingerprint: prepared.value.quote.fingerprint } };
+      return { render, quote: { estimatedCredits: prepared.value.quote.estimatedCredits, price: prepared.value.quote.price, fingerprint: prepared.value.quote.fingerprint,
+        ...(prepared.value.quote.approximate ? { approximate: true as const } : {}) } };
     };
     const base = await quote(transform);
     const otherStill = await quote({ ...transform, refs: [{ uploadId: "product", role: "reference_image" }] });
@@ -507,7 +564,11 @@ test("the quote's fingerprint binds an approval to the exact source, stills, set
     const wider = await quote({ ...still, params: { ...still.params, ratio: "4:3" } });
     const otherProduct = await quote({ ...still, refs: [{ uploadId: "wardrobe", role: "reference_image" }] });
     const preset = await quote({ ...still, params: { ...still.params, marketing: { quality: "high", enhancePrompt: true, presetId: PRESET_ID } } });
-    const prints = [base, otherStill, otherSource, smaller, otherStudio, otherWords, stillBase, medium, wider, otherProduct, preset].map((q) => q.quote.fingerprint);
+    const flare = await quote({ ...still, params: { ...still.params, marketing: { variant: "flare", quality: "xhigh", enhancePrompt: false } } });
+    /* A 2.5 build is quoted approximately; 2.0 Alpha is not. */
+    expect(flare.quote.approximate).toBe(true);
+    expect(stillBase.quote).not.toHaveProperty("approximate");
+    const prints = [base, otherStill, otherSource, smaller, otherStudio, otherWords, stillBase, medium, wider, otherProduct, preset, flare].map((q) => q.quote.fingerprint);
     expect(new Set(prints).size).toBe(prints.length);
 
     /* Approving a changed input with the quote of another is refused before anything is filed or charged. */
@@ -515,7 +576,7 @@ test("the quote's fingerprint binds an approval to the exact source, stills, set
     expect(stale.status, await stale.text()).toBe(409);
     for (const [changed, key] of [[otherSource, "source"], [smaller, "resolution"], [otherStudio, "studio"], [otherWords, "prompt"]] as const)
       expect((await post(approvedBody(changed.render, base.quote), `keysteps-stale-${key}`)).status, key).toBe(409);
-    for (const [changed, key] of [[medium, "quality"], [wider, "ratio"], [otherProduct, "product"], [preset, "preset"]] as const)
+    for (const [changed, key] of [[medium, "quality"], [wider, "ratio"], [otherProduct, "product"], [preset, "preset"], [flare, "build"]] as const)
       expect((await post(approvedBody(changed.render, stillBase.quote), `keysteps-stale-still-${key}`)).status, key).toBe(409);
     /* A library step approved without its quote, or without the quoted ceiling, is refused. */
     expect((await post(base.render.body, "keysteps-no-quote")).status).toBe(400);
@@ -532,11 +593,14 @@ test("the quote's fingerprint binds an approval to the exact source, stills, set
     expect((await replay.json()).id).toBe(job.id);
     const stillJob = await post(approvedBody(stillBase.render, stillBase.quote), "atomik-step:astp_keysteps_still");
     expect(stillJob.status, await stillJob.clone().text()).toBeLessThan(300);
+    const flareJob = await post(approvedBody(flare.render, flare.quote), "atomik-step:astp_keysteps_flare");
+    expect(flareJob.status, await flareJob.clone().text()).toBeLessThan(300);
     const rows = (await s.database.db().execute("SELECT id, model, project_id, params FROM generations ORDER BY created_at")).rows;
-    expect(rows.map((r) => [r.model, r.project_id])).toEqual([[MOTION, "prod"], [MARKETING, "prod"]]);
+    expect(rows.map((r) => [r.model, r.project_id])).toEqual([[MOTION, "prod"], [MARKETING, "prod"], [MARKETING, "prod"]]);
+    expect(JSON.parse(String(rows[2].params))).toMatchObject({ marketing: { variant: "flare", quality: "xhigh", enhancePrompt: false } });
     expect(JSON.parse(String(rows[0].params))).toMatchObject({ sourceUploadId: "ks_fp_clip", workbenchProjectId: "draft", references: [{ uploadId: "ks_fp_clip", role: "reference_video" }, { uploadId: "wardrobe", role: "reference_image", kind: "image" }] });
     expect(JSON.parse(String(rows[1].params))).toMatchObject({ marketing: { quality: "high", enhancePrompt: false }, references: [{ uploadId: "product", role: "reference_image" }] });
-    expect(dispatches).toHaveLength(2);
+    expect(dispatches).toHaveLength(3);
   }));
 
 test("a library step keeps its engine and inputs; its price comes only from its quote; it is never an engine to switch a shot to", async () =>

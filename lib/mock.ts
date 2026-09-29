@@ -63,7 +63,9 @@ function mockLibrarySteps(asked: string, preamble: string): Record<string, unkno
       model: transform, source: clip, references: [still], resolution: "720p" });
   if (/marketing|campaign/i.test(asked) && offered(MARKETING_IMAGE_MODEL_ID))
     out.push({ kind: "image", title: "Mocked campaign still", prompt: "The product on a clean studio sweep, soft key light from the left.",
-      model: MARKETING_IMAGE_MODEL_ID, references: still ? [still] : [], quality: "high", ratio: "1:1", resolution: "2k", ...(preset && still ? { preset } : {}) });
+      model: MARKETING_IMAGE_MODEL_ID, references: still ? [still] : [], quality: "high", ratio: "1:1", resolution: "2k", ...(preset && still ? { preset } : {}),
+      /* A brief that names a 2.5 build gets it, at extra-high quality. */
+      ...(/sunburst/i.test(asked) ? { build: "sunburst", quality: "xhigh" } : /flare|2\.5/i.test(asked) ? { build: "flare", quality: "xhigh" } : {}) });
   return out;
 }
 

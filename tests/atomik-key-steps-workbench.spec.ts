@@ -200,6 +200,47 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   expect(f.errors).toEqual([]);
 });
 
+test("a 2.5 campaign still reads about its price at Continue, and the approved still lands", async ({ page }) => {
+  test.setTimeout(300_000);
+  const f = await seeded(page);
+  await page.goto(await legacyShell(page, `/atomik?project=${encodeURIComponent(f.draft)}&page=generate`));
+  const surface = surfaceOf(page);
+  await expect(surface).toBeVisible({ timeout: 60_000 });
+  await ask(page, surface, "A marketing campaign still of the product on 2.5 Flare.", f.production);
+  const rows = await planRows(page, surface);
+  await expect(rows).toHaveCount(1, { timeout: 60_000 });
+  await expect(rows.first()).toHaveAttribute("data-library-step", "marketing");
+  /* A 2.5 build settles on its delivered image: its price reads as the estimate it is, at the checkpoint too. */
+  const card = checkpointOf(page);
+  const cont = card.getByRole("button", { name: /^Continue/ }).first();
+  await expect(cont).toContainText(/about \d+ cr/, { timeout: 60_000 });
+  await expect(cont).toBeEnabled();
+  await expect(rows.first()).toContainText(/about \d+ cr/);
+  await expect(card.getByText(/Uses 1 still from the library, on 2\.5 Flare\./).first()).toBeVisible();
+  const price = creditsIn(await cont.textContent());
+  expect(price).toBeGreaterThan(0);
+  const render = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/generate", { timeout: 60_000 });
+  await cont.click();
+  const sent = await render;
+  const job = await sent.json();
+  /* A still is accepted and starts at once (200, running), where a transform is queued (202). */
+  expect(sent.ok(), JSON.stringify(job)).toBe(true);
+  expect(["queued", "running"]).toContain(job.status);
+  expect(sent.request().postDataJSON()).toMatchObject({
+    model: "higgsfield/marketing-studio-image", projectId: f.production, ratio: "1:1", resolution: "2k",
+    marketing: { variant: "flare", quality: "xhigh", enhancePrompt: false }, references: [{ uploadId: f.still, role: "reference_image" }],
+    maxCredits: price, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${job.id}`, { headers: f.headers }).then((r) => r.json())).generation?.status, { timeout: 120_000, intervals: [1_000] }).toBe("succeeded");
+  /* Charged on its delivered image, within the band the 2.5 builds settle in around the quote. */
+  await expect.poll(async () => (await books(f.tenantUrl, f.workspaceId)).charges.find((c) => c.id === job.id)?.credits ?? null, { timeout: 60_000 }).not.toBeNull();
+  const billed = (await books(f.tenantUrl, f.workspaceId)).charges.find((c) => c.id === job.id)!.credits!;
+  expect(billed).toBeGreaterThan(0);
+  expect(billed).toBeLessThanOrEqual(price * 3);
+  expect(await noSideways(page)).toBeLessThanOrEqual(1);
+  expect(f.errors).toEqual([]);
+});
+
 test("a library step nothing can price is not proposed: the reply says why, and nothing is offered or charged", async ({ page }) => {
   test.setTimeout(240_000);
   const f = await seeded(page);

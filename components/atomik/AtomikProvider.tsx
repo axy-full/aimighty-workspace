@@ -67,6 +67,8 @@ export type AtomikLive = {
   priceLabel: (step: Step) => string;
   /** True once Continue can run this step at a price it shows: the checkpoint's live quote is in. */
   approvable: (step: Step) => boolean;
+  /** True when that live quote is approximate (a Marketing Studio 2.5 build settles on its delivered image): shown as "about". */
+  approximate: (step: Step) => boolean;
   /** Why the checkpoint could not be priced (the admission route's own refusal), if it could not. */
   stepQuoteError: string | null;
   /** True inside the app shell, which hosts the rail this conversation lives in; false where nothing does. */
@@ -228,15 +230,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const credits = useCallback((s: Step) => isAccountStep(s) ? null : stepPrice(s, money.inCredits, liveQuoted?.stepId === s.id ? liveQuoted.quote : null), [money, liveQuoted]);
   const isReadOnly = useCallback((s: Step) => isAccountStep(s), []);
   const approvable = useCallback((s: Step) => !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted]);
+  const approximate = useCallback((s: Step) => liveQuoted?.stepId === s.id && liveQuoted.quote.approximate === true, [liveQuoted]);
   const priceLabel = useCallback((s: Step) => {
     if (isAccountStep(s)) return "Read-only";
     const n = credits(s);
     /* A library step's plan-time figure is the provider's estimate when it was planned: about that,
        until its checkpoint quote (the ceiling Continue sends) or its bill replaces it. */
-    if (n !== null) return isKeyStep(s) && s.status === "proposed" && liveQuoted?.stepId !== s.id ? `about ${money.price(n)}` : money.price(n);
+    if (n !== null) return (isKeyStep(s) && s.status === "proposed" && liveQuoted?.stepId !== s.id) || approximate(s) ? `about ${money.price(n)}` : money.price(n);
     if (s.id === checkpointId) return stepQuoteError ? "no price" : "pricing…";
     return "priced at checkpoint";
-  }, [money, credits, checkpointId, stepQuoteError, liveQuoted]);
+  }, [money, credits, checkpointId, stepQuoteError, liveQuoted, approximate]);
 
   const spentCredits = live.filter((s) => s.status === "done").reduce((a, s) => a + (credits(s) ?? 0), 0);
   const current: Current = useMemo(() => {
@@ -385,7 +388,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
     busy, error:paid.error??error, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -393,7 +396,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 

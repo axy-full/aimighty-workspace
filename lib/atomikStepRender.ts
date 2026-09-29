@@ -81,8 +81,8 @@ export function stepRender(step: Renderable, projectId: string | null, context: 
   };
 }
 
-/** A quote the admission route answered for one exact body. */
-export type StepQuote = { estimatedCredits: number; price: number; fingerprint: string | null };
+/** A quote the admission route answered for one exact body; `approximate` when the take settles on its delivered output (a 2.5 build). */
+export type StepQuote = { estimatedCredits: number; price: number; fingerprint: string | null; approximate?: true };
 
 /** The answer of /api/audio (quoteOnly) or /api/generate/quote, checked; null when it is not a usable quote. */
 export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): StepQuote | null {
@@ -94,7 +94,7 @@ export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): 
   if (v.unit !== "cr" && v.unit !== "usd") return null;
   /* /api/generate checks the compiled request against the quote's fingerprint; audio has none. */
   if (render.url === "/api/generate" && (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint))) return null;
-  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null };
+  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null, ...(v.approximate === true ? { approximate: true as const } : {}) };
 }
 
 /** A quote, or why there is none and whether asking again later could help. */

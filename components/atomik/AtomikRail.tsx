@@ -126,7 +126,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
           </span>
         ) : (
           <>
-            <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(step)} onClick={() => a.approve(step)}>
+            <Button variant="primary" placement={placement} cost={cost} costPrefix={a.approximate(step) ? "about " : undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(step)} onClick={() => a.approve(step)}>
               {placement === "rail" ? `Continue · ${step.title}` : "Continue"}
             </Button>
             {a.stepQuoteError && <span role="alert" className={body}>{a.stepQuoteError}</span>}
@@ -215,7 +215,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
       </Mono>
       {checkpoint && (
-        <Button variant="primary" placement="rail" cost={a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
+        <Button variant="primary" placement="rail" cost={a.credits(checkpoint) ?? undefined} costPrefix={a.approximate(checkpoint) ? "about " : undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
           Continue · {checkpoint.title}
         </Button>
       )}
