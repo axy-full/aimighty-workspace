@@ -6,7 +6,7 @@ import type { GenerationBatch } from "../lib/useGenerationBatch";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 import { claimsServer } from "./helpers/claimsServer";
-import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
+import { creditsFigure, fromDeci, isCreditAmount, toDeci } from "../lib/creditTerms";
 
 test("an interrupted batch checks only the pending variant by its key after reload, follows it, and finishes the original ordered requests", async ({
   page,
@@ -138,7 +138,7 @@ test("an interrupted batch checks only the pending variant by its key after relo
   ).toEqual([1, 2, 3, 4]);
   expect(
     batch.variants.every((variant) =>
-      Number.isInteger(JSON.parse(variant.body).maxCredits),
+      isCreditAmount(JSON.parse(variant.body).maxCredits),
     ),
   ).toBeTruthy();
   await page.reload();

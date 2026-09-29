@@ -3,6 +3,10 @@ import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
+import { creditsFigure, isCreditAmount } from "../lib/creditTerms";
+
+/** A figure as the button writes it, for a pattern: "2.9", "1,234.5". */
+const written = (credits: number) => creditsFigure(credits).replace(/[.,]/g, "\\$&");
 
 test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid request and reuses its saved output", async ({
   page,
@@ -88,12 +92,13 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
     const reply = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.request().method() === "POST");
     await panel.getByRole("button", { name: /Review upscale cost/ }).click();
     const credits = (await (await reply).json()).estimatedCredits as number;
-    expect(Number.isInteger(credits) && credits > 0, `quote ${credits}`).toBe(true);
+    /* Credits to a tenth, never nothing. */
+    expect(isCreditAmount(credits) && credits > 0, `quote ${credits}`).toBe(true);
     return credits;
   };
   const atTwo = await quoted();
   await expect(
-    panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${atTwo} cr`) }),
+    panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${written(atTwo)} cr`) }),
   ).toBeEnabled();
   expect(submitted).toHaveLength(0);
   await panel.getByLabel("Image scale", { exact: true }).selectOption("4");
@@ -102,7 +107,7 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
   ).toBeEnabled();
   const atFour = await quoted();
   expect(atFour).toBeGreaterThanOrEqual(atTwo);
-  const primary = panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${atFour} cr`) });
+  const primary = panel.getByRole("button", { name: new RegExp(`Upscale image.*\\b${written(atFour)} cr`) });
   await expect(primary).toBeEnabled();
   await page.screenshot({ path: info.outputPath("topaz-image.png") });
   const box = await primary.boundingBox(),

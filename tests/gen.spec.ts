@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { askForLegacyShell } from "./helpers/legacyShell";
+import { isCreditAmount } from "../lib/creditTerms";
 
 test("Gen Seedance Edit recovers a lost submission after returning to Studio without buying a second edit", async ({
   page,
@@ -595,7 +596,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     expect(request.key).toBeTruthy();
     expect(request.workspace).toBe(account.workspace.id);
     expect(request.actor).toBe(me.email);
-    expect(Number.isInteger(request.body.maxCredits)).toBeTruthy();
+    expect(isCreditAmount(request.body.maxCredits)).toBeTruthy();
   }
   expect(new Set(submissions.map((item) => item.key)).size).toBe(5);
   expect(errors).toEqual([]);

@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
+import { creditsFigure, isCreditAmount } from "../lib/creditTerms";
+
+/** A figure as the button writes it, for a pattern: "2.9", "1,234.5". */
+const written = (credits: number) => creditsFigure(credits).replace(/[.,]/g, "\\$&");
 
 test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one request and reuses its output", async ({
   page,
@@ -82,12 +86,13 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     const reply = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.request().method() === "POST");
     await panel.getByRole("button", { name: /Review upscale cost/ }).click();
     const credits = (await (await reply).json()).estimatedCredits as number;
-    expect(Number.isInteger(credits) && credits > 0, `quote ${credits}`).toBe(true);
+    /* Credits to a tenth, never nothing. */
+    expect(isCreditAmount(credits) && credits > 0, `quote ${credits}`).toBe(true);
     return credits;
   };
   const atSource = await quoted();
   await expect(
-    panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${atSource} cr`) }),
+    panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${written(atSource)} cr`) }),
   ).toBeEnabled();
   expect(submitted).toHaveLength(0);
   await panel
@@ -98,7 +103,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   ).toBeEnabled();
   const atSixty = await quoted();
   expect(atSixty).toBeGreaterThan(atSource);
-  const primary = panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${atSixty} cr`) });
+  const primary = panel.getByRole("button", { name: new RegExp(`Upscale video.*\\b${written(atSixty)} cr`) });
   await expect(primary).toBeEnabled();
   await page.screenshot({ path: info.outputPath("astra-video.png") });
   const box = await primary.boundingBox(),
