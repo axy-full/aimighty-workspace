@@ -402,7 +402,7 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
   /* Image ads runs on Particl's API key: the quote, the one send and the take's read are the routes the composer uses (answered here, nothing billed). */
   const sent: Record<string, unknown>[] = [];
   const consumer: string[] = [];
-  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) consumer.push(request.url()); });
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) consumer.push(`${request.method()} ${path}`); });
   await page.route(/\/api\/generate\/quote$/, (route) => route.fulfill({ json: { estimatedCredits: 40, fingerprint: "f".repeat(64), price: 40, unit: "cr" } }));
   await page.route(/\/api\/generate$/, (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -431,6 +431,7 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
   await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Marble hero");
   expect(new URL(page.url()).searchParams.get("sel")).toBe(`take:generation:${TAKE}`);
   await noSideScroll(page);
-  expect(consumer, "Image ads reads nothing of the connected account").toEqual([]);
+  /* The shell's collector lists an owner's earlier account jobs on every page (the drain, not Image ads): that one read aside, nothing. */
+  expect(consumer.filter((call) => call !== "GET /api/higgsfield/consumer/generation"), "Image ads reads nothing of the connected account").toEqual([]);
   expect(errors).toEqual([]);
 });
