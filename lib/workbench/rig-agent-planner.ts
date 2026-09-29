@@ -35,7 +35,8 @@ export const plannerResultSchema = z.object({
 export type PlannerResult = z.infer<typeof plannerResultSchema>;
 
 export class PlannerError extends Error {
-  constructor(message: string) { super(message); this.name = "PlannerError"; }
+  /** What the turn used before it failed, when the model answered: recorded as the platform's cost, never billed. */
+  constructor(message: string, readonly stepUsage?: LanguageModelUsage[]) { super(message); this.name = "PlannerError"; }
 }
 
 export function plannerInstructions(): string {
@@ -159,15 +160,16 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
     abortSignal: options.abortSignal ?? AbortSignal.timeout(PLANNER_TIMEOUT_MS),
   });
   if (over) throw new PlannerError("Atomik's plan went past its limit. Ask for a smaller board.");
+  const stepUsage = generated.steps.map((step) => step.usage);
   let result: PlannerResult;
   try { result = plannerResultSchema.parse(generated.output); }
-  catch { throw new PlannerError("Atomik did not finish its proposal. Ask again."); }
+  catch { throw new PlannerError("Atomik did not finish its proposal. Ask again.", stepUsage); }
   const draft = board.draft();
-  if (!draft.cards.length && !draft.wires.length) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.");
+  if (!draft.cards.length && !draft.wires.length) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.", stepUsage);
   return {
     draft, result,
     usage: { inputTokens: generated.totalUsage.inputTokens ?? 0, outputTokens: generated.totalUsage.outputTokens ?? 0, steps: generated.steps.length },
-    stepUsage: generated.steps.map((step) => step.usage),
+    stepUsage,
   };
 }
 

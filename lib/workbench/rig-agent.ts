@@ -372,10 +372,10 @@ async function paidStepFor(runId: string, seq: number, tx: Parameters<typeof get
 
 /**
  * Render a paid step (the person who asked): its approval at the price the card shows (its
- * fingerprint), or "Try again" on one that paused. A step whose price is unknown or moved is priced
- * again first, and in Ask mode waits for another tap at the new price. The run's limit and the
- * balance are checked again before anything is sent. A lost reply to a tap that landed answers the
- * same, and approves nothing twice.
+ * fingerprint) — "Render", or "Retry" on one that paused — or "Price again" on one whose price is
+ * unknown or moved, which is priced afresh and, in Ask mode, waits for another tap at the new price.
+ * The run's limit and the balance are checked again before anything is sent. A lost reply to a tap
+ * that landed answers the same, and approves nothing twice.
  */
 export async function renderRigAgentStep(input: { productionId: string; runId: string; seq: number; fingerprint?: string | null; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
@@ -396,7 +396,7 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
     } else if (step.state === "paused") {
       const same = !!fingerprint && !!step.admission && fingerprint === step.admission.quote.fingerprint;
       const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint } : {};
-      /* Try again: its checks run again at the same price, or it is priced again. */
+      /* Retry: its checks run again at the same price; Price again: it is priced afresh. */
       await patchStep(tx, step.id, step.admission && step.pause !== "unpriced" && step.pause !== "record"
         ? { state: "waiting", reason: null, pause: null, ...approval }
         : { state: "next", admission: null, quote_credits: null, reason: null, pause: null }, ["paused"]);
@@ -582,12 +582,14 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   let outcome: PlannerOutcome & { model: string };
   try { outcome = await (deps.plan ?? defaultPlan)(snapshot, price.id); }
   catch (error) {
-    /* No proposal came back: the turn is not billed (what it may have used is the platform's). */
-    await settlePlanning(run, price, ceiling, null);
+    /* No proposal came back: the turn is not billed (what it used, when the model said, is recorded as the platform's). */
+    const used = error instanceof PlannerError ? plannerCostUsd(price.catalog, error.stepUsage, price.direct) : null;
+    await settlePlanning(run, price, ceiling, { billed: false, usedUsd: used });
     return failRun(run.id, error instanceof PlannerError ? error.message : "Atomik could not plan this board. Ask again.", ["planning"]);
   }
-  /* Settled at what it used (never above what was reserved); unpriceable usage is not billed. */
-  await settlePlanning(run, price, ceiling, plannerCostUsd(price.catalog, outcome.stepUsage, price.direct));
+  /* Settled at what it used (never above what was reserved); usage that cannot be priced is not billed. */
+  const used = plannerCostUsd(price.catalog, outcome.stepUsage, price.direct);
+  await settlePlanning(run, price, ceiling, { billed: used != null, usedUsd: used });
   const assets = new Map([...draft.project.assets, ...(draft.project.sharedAssets ?? []), ...canvasAssets].map((a) => [a.id, a]));
   const plan = compilePlan(outcome.draft, { runId: run.id, title: outcome.result.title, summary: outcome.result.summary, existing: nodes, assets });
   const fingerprint = createHash("sha256").update(planFingerprintText(plan)).digest("hex");
@@ -612,18 +614,29 @@ function planEvent(run: RunRow, price: PlannerPrice, status: "running" | "succee
 }
 
 /**
- * Settles the planning charge: at what the turn used, never above what was reserved; or, with no
- * priceable usage (it failed, or its usage could not be read), released unbilled — the model's cost
- * is recorded as the platform's. A meter write that fails leaves the charge reserved for the cron.
+ * Settles the planning charge: billed at what the turn used, never above what was reserved; or
+ * released unbilled (it failed, or its usage could not be priced), recording what it used — or,
+ * when that is not known, what was reserved — as the platform's cost. Its outcome is then settled,
+ * so the platform's recovery has nothing left to reconcile for it. A write that fails leaves the
+ * charge reserved for the cron to release.
  */
-async function settlePlanning(run: RunRow, price: PlannerPrice, ceilingUsd: number, usedUsd: number | null) {
+async function settlePlanning(run: RunRow, price: PlannerPrice, ceilingUsd: number, outcome: { billed: boolean; usedUsd: number | null }) {
   try {
-    if (usedUsd != null) await meter({ ...planEvent(run, price, "succeeded", Math.min(usedUsd, ceilingUsd)) }, { critical: true });
-    else await meter({ ...planEvent(run, price, "failed", ceilingUsd), unbilled: true }, { critical: true });
-    await patchRun(db(), run.id, { plan_charge: usedUsd != null ? "settled" : "released" });
+    const cost = Math.min(outcome.usedUsd ?? ceilingUsd, ceilingUsd);
+    if (outcome.billed) await meter({ ...planEvent(run, price, "succeeded", cost) }, { critical: true });
+    else await meter({ ...planEvent(run, price, "failed", cost), unbilled: true }, { critical: true });
+    await closePlanningIntent(run.id);
+    await patchRun(db(), run.id, { plan_charge: outcome.billed ? "settled" : "released" });
   } catch (error) {
     console.error("rig agent planning charge:", (error as Error).message);
   }
+}
+
+/** The planning event's outcome is settled (billed, or released unbilled): nothing for a recovery drain to reconcile. */
+async function closePlanningIntent(runId: string) {
+  const [{ billingTransaction }, { resolveRecoveryJobTx }] = await Promise.all([import("@/lib/billingLedger"), import("@/lib/recovery")]);
+  const workspaceId = requireTenant().id;
+  await billingTransaction((tx) => resolveRecoveryJobTx(tx, workspaceId, planEventId(runId)));
 }
 
 /**
@@ -641,6 +654,7 @@ async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner"
       id, kind: "text", engine: String(row.engine), model: String(row.model), status: "failed", unbilled: true,
       engineCostUsd: costUsd ?? Number(row.engine_cost_usd ?? 0), projectId: run.productionId, createdBy: run.owner,
     }, { critical: true });
+  if (row) await closePlanningIntent(run.id);
   await patchRun(db(), run.id, { plan_charge: "released" });
 }
 

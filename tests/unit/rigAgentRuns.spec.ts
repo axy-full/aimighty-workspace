@@ -348,6 +348,8 @@ test("planning is metered into the run's limit: reserved at its ceiling while it
     expect(after!.usd).toBeGreaterThan(0);
     expect(await balance(ws)).toBe(start - after!.credits);
     expect((await runCharges(runId)).map((c) => c.id)).toEqual([agent.planEventId(runId)]);
+    const { platformDb } = await import("../../lib/platform");
+    expect((await platformDb().execute({ sql: "SELECT state FROM recovery_intents WHERE id=?", args: [agent.planEventId(runId)] })).rows[0]?.state).toBe("resolved");
     const shown = await view();
     expect(shown.money).toMatchObject({ spent: after!.credits, inFlight: 0, planning: { state: "settled", credits: after!.credits } });
     expect(shown.credits).toBe(after!.credits);
@@ -375,14 +377,22 @@ test("a planning turn that fails is released unbilled; a planning charge a dead 
     expect(await meterRow(agent.planEventId(asked.id))).toMatchObject({ status: "failed", credits: 0 });
     expect((await view()).money!.planning).toMatchObject({ state: "released", credits: 0 });
     expect(await balance(ws)).toBe(start);
+    /* Its outcome is settled: nothing is left for the platform's recovery to reconcile. */
+    const intent = async (id: string) => {
+      const { platformDb } = await import("../../lib/platform");
+      return (await platformDb().execute({ sql: "SELECT state FROM recovery_intents WHERE id=?", args: [id] })).rows[0]?.state;
+    };
+    expect(await intent(agent.planEventId(asked.id))).toBe("resolved");
     /* A worker that died after reserving: the stop (nobody holding the run) releases it, unbilled. */
     const orphan = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "Two shots.", limit: 500 });
     await reserveGenerationSpend({ id: agent.planEventId(orphan.id), kind: "text", engine: "vercel", model: MOCK_PLANNER_MODEL, status: "running", engineCostUsd: 0.2, createdBy: OWNER },
       { run: { id: orphan.id, limitCredits: 500, band: 1 } });
     await db().execute({ sql: "UPDATE rig_agent_runs SET plan_charge='reserved',planning_started_at=? WHERE id=?", args: [Date.now(), orphan.id] });
     expect(await balance(ws)).toBeLessThan(start);
+    expect(await intent(agent.planEventId(orphan.id))).toBe("accepted");
     await agent.stopRigAgent({ productionId: "prod-1", runId: orphan.id, userId: TEAMMATE });
     expect(await meterRow(agent.planEventId(orphan.id))).toMatchObject({ status: "failed", credits: 0 });
+    expect(await intent(agent.planEventId(orphan.id))).toBe("resolved");
     expect(await balance(ws)).toBe(start);
     /* The cron finds one whose release did not happen (the run already ended, nobody holds it). */
     const late = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "Two shots.", limit: 500 });
@@ -391,6 +401,7 @@ test("a planning turn that fails is released unbilled; a planning charge a dead 
     await db().execute({ sql: "UPDATE rig_agent_runs SET plan_charge='reserved',state='stopped',updated_at=0 WHERE id=?", args: [late.id] });
     expect(await agent.drainRigAgentWakeups()).toMatchObject({ released: 1 });
     expect(await meterRow(agent.planEventId(late.id))).toMatchObject({ status: "failed", credits: 0 });
+    expect(await intent(agent.planEventId(late.id))).toBe("resolved");
     expect(await balance(ws)).toBe(start);
   });
 });

@@ -353,7 +353,9 @@ function Renders({ run, busy, onRender, onSkip }: { run: RigAgentRunView; busy: 
               <div className="pxw-agent-actions">
                 <button type="button" className="pxw-agent-quiet" data-testid="rig-agent-skip" disabled={!!busy} onClick={() => onSkip(p)}>Skip</button>
                 <button type="button" className="pxw-agent-primary" data-testid="rig-agent-render" disabled={!!busy} onClick={() => onRender(p)}>
-                  {busy === `agent.render:${p.seq}` ? "Sending…" : p.state === "paused" ? "Try again" : p.quote != null ? `Render · about ${cr(p.quote)}` : "Render"}
+                  {busy === `agent.render:${p.seq}` ? "Sending…"
+                    : p.state === "paused" && (p.pause === "unpriced" || p.pause === "record" || p.quote == null) ? "Price again"
+                    : p.quote != null ? `${p.state === "paused" ? "Retry" : "Render"} · about ${cr(p.quote)}` : "Render"}
                 </button>
               </div>
             ) : null}

@@ -194,7 +194,7 @@ async function creditsProblem(admission: PreparedAdmission): Promise<string | nu
   if (admission.quote.unit !== "cr") return null;
   const state = await creditState();
   if (!state || state.balance >= admission.quote.estimatedCredits) return null;
-  return `Not enough credits: the next render is about ${figure(admission.quote.estimatedCredits)} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Try again.`;
+  return `Not enough credits: the next render is about ${figure(admission.quote.estimatedCredits)} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
@@ -216,7 +216,7 @@ type Priced = { ok: true; admission: PreparedAdmission; quote: number; band: num
 export async function priceRender(run: RunRow, step: StepRow, deps: PaidDeps = {}): Promise<Priced> {
   try { return await priceRenderOnce(run, step, deps); }
   catch (error) {
-    /* Pricing is free and repeatable: a failure pauses the render (Try again prices it afresh), and nothing is sent. */
+    /* Pricing is free and repeatable: a failure pauses the render (Price again prices it afresh), and nothing is sent. */
     const said = error instanceof Error && "status" in error && typeof (error as { status: unknown }).status === "number" && error.message ? error.message : `${stepTitle(run, step)} could not be priced just now.`;
     return { ok: false, reason: said, pause: "unpriced" };
   }
@@ -232,19 +232,19 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
   if (!node || !isShotNode(node)) return fail(`${stepTitle(run, step)} is no longer on the board.`, "unpriced");
   const shot = rigShots(project).find((s) => s.id === node.id);
   const model = shot ? shotEngine(shot.engine) : null;
-  if (!shot || !model) return fail(`Choose an available engine for ${stepTitle(run, step)}, then press Try again.`, "unpriced");
+  if (!shot || !model) return fail(`Choose an available engine for ${stepTitle(run, step)}, then press Price again.`, "unpriced");
   const pictures = shotReferenceAssets(project, node);
   const references: GenerationReference[] = [];
   for (const asset of pictures) {
     const identity = mediaReferenceIdentity(asset);
-    if (!identity) return fail(`A picture wired into ${stepTitle(run, step)} is not saved yet. Generate the shot once from the Rig, then press Try again.`, "unpriced");
+    if (!identity) return fail(`A picture wired into ${stepTitle(run, step)} is not saved yet. Generate the shot once from the Rig, then press Price again.`, "unpriced");
     references.push({ ...identity, role: shotReferenceRole(node)(asset) });
   }
   let shotId: string;
   try { shotId = await mapNodeShot(run.owner, project, node.id); }
   catch (error) { return fail(error instanceof Error ? error.message : "This shot could not be saved to the production.", "refused"); }
   const input = shotRequestInput(project, node, shot, { shotId, productionProjectId: run.productionId }, references);
-  if (!input) return fail(`${stepTitle(run, step)} has no prompt its engine can take. Shorten or condense it, then press Try again.`, "unpriced");
+  if (!input) return fail(`${stepTitle(run, step)} has no prompt its engine can take. Shorten or condense it, then press Price again.`, "unpriced");
   /* A draft where the engine has one (a separately priced, watermarked take); finals stay a person's. */
   const drafting = model.kind === "video" && !!model.supportsDraft;
   const body = generationRequestBody({ ...input, ...(drafting ? { draft: true, resolution: DRAFT_RESOLUTION } : {}) });
@@ -373,7 +373,7 @@ async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps
   if (short) return pause(run, step, short, "credits", ["approved"]);
   const attempt = step.attempt + 1;
   if (attempt > MAX_SEND_ATTEMPTS)
-    return pause(run, step, `Atomik tried to send ${stepTitle(run, step)} ${MAX_SEND_ATTEMPTS} times and it was not accepted. Nothing more is sent. Press Try again, skip it, or stop.`, "refused", ["approved"]);
+    return pause(run, step, `Atomik tried to send ${stepTitle(run, step)} ${MAX_SEND_ATTEMPTS} times and it was not accepted. Nothing more is sent. Press Retry, skip it, or stop.`, "refused", ["approved"]);
   /* The durable key first, before anything is sent: a lost reply is asked about by it, and never replayed. */
   const key = requestKeyFor(run.id, step.nodeId, attempt);
   if (!(await patchStep(db(), step.id, { state: "sending", attempt, request_key: key, reason: null, pause: null }, ["approved"]))) return CONTINUE;
@@ -423,7 +423,7 @@ async function recordReply(run: RunRow, step: StepRow, reply: AdmissionReply): P
   if (body.needsAdmin === true)
     return pause(run, step, `${error ?? "This render needs an admin."} Ask an admin to render it, skip it, or stop.`, "admin", ["sending"]);
   if (reply.status === 402 || body.runHold === "credits")
-    return pause(run, step, `${error ?? "Not enough credits."} Top up, then press Try again.`, "credits", ["sending"]);
+    return pause(run, step, `${error ?? "Not enough credits."} Top up, then press Retry.`, "credits", ["sending"]);
   return pause(run, step, error ?? `This render was refused (${reply.status}). Nothing was charged.`, "refused", ["sending"]);
 }
 
@@ -451,7 +451,7 @@ async function landed(run: RunRow, step: StepRow, jobId: string, status: number 
 /** A request whose reply was lost (a crash, an exception, a pending answer): asked about by its durable key, never sent again. */
 async function recover(run: RunRow, step: StepRow): Promise<Moved> {
   if (!step.requestKey || !step.admission)
-    return pause(run, step, "This render's request record is incomplete, so nothing more is sent for it. Press Try again, skip it, or stop.", "record", ["sending"]);
+    return pause(run, step, "This render's request record is incomplete, so nothing more is sent for it. Press Price again, skip it, or stop.", "record", ["sending"]);
   const check = await checkGenerationRequest({ userId: run.owner, key: step.requestKey, fingerprint: preparedClaimFingerprint(step.admission) });
   const fresh = await getRun(db(), run.id);
   const live = fresh?.state === "running";
@@ -477,7 +477,7 @@ async function recover(run: RunRow, step: StepRow): Promise<Moved> {
       /* It was answered without a job: nothing was made or charged. */
       return pause(run, step, check.error, check.status === 402 ? "credits" : "refused", ["sending"]);
     case "mismatch":
-      return pause(run, step, "This render's record does not match what was approved, so nothing more is sent for it. Press Try again, skip it, or stop.", "record", ["sending"]);
+      return pause(run, step, "This render's record does not match what was approved, so nothing more is sent for it. Press Price again, skip it, or stop.", "record", ["sending"]);
   }
 }
 
