@@ -11,6 +11,7 @@ import "../glass.css";
 import "../production.css";
 import "../business.css";
 import "../viral.css";
+import "../phone-chrome.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };
