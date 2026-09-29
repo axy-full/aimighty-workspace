@@ -182,12 +182,17 @@ export function ownerBadgeNote(ownerName: string | null | undefined): string {
  * layer's suites behind them: none now. Viral runs on Particl's API key for
  * everyone, and so does Business › Image ads; the Business pages still on the
  * account (Ads, Setup) are the owner's page by page (the owner-run card), so
- * a member keeps the suite's tabs to reach Image ads.
+ * a member keeps the suite's tabs.
  */
 export const OWNER_RUN_SUITES: readonly string[] = [];
 export const OWNER_RUN_LEGACY_SUITES: readonly string[] = [];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
-/** The pages still run only on the owner's account, in a suite whose other pages everyone runs: a member meets the owner-run card there, and no Run stage. */
+/**
+ * The pages still run only on the owner's account, in a suite whose other pages everyone runs: a member meets the
+ * owner-run card there, and no Run stage. Business's Ads and Setup do; Image ads runs on Particl's API key, and its
+ * own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account,
+ * so a member keeps the suite's tabs.
+ */
 export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "setup"] };
 export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
   Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));

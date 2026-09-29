@@ -243,7 +243,7 @@ const audioGate: GateExecutor = {
       unit: "cr",
       parts,
       expiresAt: Date.now() + PARTICL_QUOTE_TTL_MS,
-      line: `${parts.map((part) => String(part.meta?.name ?? "Stem")).join(", ")}. Priced per generation; failed generations are not billed.`,
+      line: `${parts.map((part) => String(part.meta?.name ?? "Stem")).join(", ")}. Priced per generation.`,
     };
   },
 };
@@ -473,7 +473,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
               ) ?? job,
             (item) => TERMINAL.has(item.status),
           );
-          if (value.status === "failed") throw new Error(value.error || "Development failed. Failed runs are not billed.");
+          if (value.status === "failed") throw new Error(value.error || "Development failed.");
           return { detail: value.status, io: { development: value } };
         }),
       ),
@@ -501,7 +501,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         "Approval gate",
         "gate",
         "live quote",
-        generationGate(boards, (parts) => partsLine(parts, "board", "Settled on completion; failed renders are not billed.")),
+        generationGate(boards, (parts) => partsLine(parts, "board", "Settled on completion.")),
       ),
       step("Render the boards", "dispatch", (ctx) => plural(boards(ctx).length, "board"), generationDispatch("ws-boards", "board")),
       step("File to Boards", "file", "→ Boards", fileJobs("board")),
@@ -648,7 +648,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         "Approval gate",
         "gate",
         "live quote",
-        generationGate(shots, (parts) => partsLine(parts, "shot", "Failed renders are not billed.")),
+        generationGate(shots, (parts) => partsLine(parts, "shot", "Settled on completion.")),
       ),
       step("Render", "dispatch", (ctx) => plural(shots(ctx).length, "shot"), generationDispatch("ws-rig", "shot")),
       step("File the takes", "file", "→ Takes", fileJobs("take")),
@@ -798,7 +798,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
               )).jobs.find((item) => item.requestId === job.requestId) ?? job,
             (item) => TERMINAL.has(item.status),
           );
-          if (value.status === "failed") throw new Error(value.error || "Planning failed. Failed runs are not billed.");
+          if (value.status === "failed") throw new Error(value.error || "Planning failed.");
           return { detail: `${plural(count(value.plan?.steps), "step")}`, io: { agentJob: value } };
         }),
       ),

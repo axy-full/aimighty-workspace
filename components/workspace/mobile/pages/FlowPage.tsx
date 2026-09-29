@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
-import { NODE_DEFS, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
+import { nodeDef, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
+import { cardLabel } from "@/lib/workbench/ref-kind";
 import type { Asset, CanvasNode } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
 import { flowChain } from "@/lib/workspace/mobile-templates";
@@ -47,7 +48,7 @@ function footer(node: CanvasNode, shot: RigShot | undefined) {
   }
   const status = shot?.status ?? node.status;
   const dot = status === "approved" ? "var(--pxw-green)" : status === "ready" || status === "queued" ? "var(--pxw-atomik-gold)" : "var(--pxw-label-floor)";
-  return { dot, label: node.role || NODE_DEFS[node.type].role };
+  return { dot, label: node.role || nodeDef(node.type).role };
 }
 
 export function FlowPage() {
@@ -73,7 +74,8 @@ export function FlowPage() {
       {chain.map((step) => {
         const node = byId.get(step.id);
         if (!node) return null;
-        const def = NODE_DEFS[node.type];
+        /* A reference reads as its kind (Cast, Environment, Element or Ref); any other card, as its type. */
+        const label = cardLabel(node, project);
         const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
         const asset = resolveAsset(node, nodes, assets);
         const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
@@ -83,9 +85,9 @@ export function FlowPage() {
           <div className="pxm-flow-step" key={step.id} data-node-id={step.id} data-scene={step.scene ? "" : undefined}>
             {step.wire ? <span className="pxm-flow-wire" data-wire={step.wire} aria-hidden="true" /> : null}
             <span className="pxm-flow-pin" data-scene={step.scene ? "" : undefined} aria-hidden="true" />
-            <div className="pxm-flow-card" role="group" aria-label={`${def.label}: ${node.title}`}>
+            <div className="pxm-flow-card" role="group" aria-label={`${label}: ${node.title}`}>
               <div className="pxm-flow-kicker">
-                <span data-functional-label="">{def.label.toUpperCase()}</span>
+                <span data-functional-label="">{label.toUpperCase()}</span>
                 <span data-functional-label="">{version}</span>
               </div>
               <div className="pxm-flow-body">

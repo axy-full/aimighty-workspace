@@ -22,6 +22,7 @@ Everything a new Claude account needs to pick this work up from exactly where it
 - Don't handle secret values: keys stay sealed and are never returned to the browser. The owner never types passwords for you.
 - **Never delete team data.** Deletes hide or archive only (`lib/archive.ts`), and data is kept indefinitely.
 - Particl is standalone: never list or reuse the higgsfield.ai site's own characters, media or generations. The connected account is an engine, not a library.
+- **Provider APIs and loginless MCP only (28 Sep 2026).** Nothing may need a Higgsfield sign-in (the account's OAuth MCP, its CLI or a website account); the connected account is retired. `CLAUDE.md` ground rule 10.
 - Browsing the owner's Higgsfield account is read-only: no generations, no spend, no edits. Never solve CAPTCHAs.
 
 **Code and tests**

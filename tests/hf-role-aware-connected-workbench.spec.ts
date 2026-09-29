@@ -11,14 +11,14 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
  * Idea 19 — role-aware connected-account surfaces, in the browser against a
  * local ENGINE_MOCK server. A member (a real invitation, accepted) meets one
  * calm card wherever the owner's Higgsfield account still runs — Business ›
- * Ads and Setup, Cast — naming this workspace's owner, with the way to make
- * the same kind of thing in Gen on this workspace's credits; Viral and
- * Business › Image ads run on Particl's API key for them like for anyone, so
- * no suite carries the owner's key; Gen offers no connected tab to anyone
- * (Studio engines only since 28 September 2026); and nothing of the account
- * is read for them. The owner's connection is read once and shared across
- * Business's account pages, and a failed read is an error to retry, never a
- * member's card. Nothing is generated or billed.
+ * Ads and Setup — naming this workspace's owner, with the way to make the
+ * same kind of thing in Gen on this workspace's credits; Viral, Business ›
+ * Image ads and Business's own tools (Brand … Design) run for them like for
+ * anyone, so no suite carries the owner's key; Gen offers no connected tab to
+ * anyone (Studio engines only since 28 September 2026); and nothing of the
+ * account is read for them. The owner's connection is read once and shared
+ * across Business's account pages, and a failed read is an error to retry,
+ * never a member's card. Nothing is generated or billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -102,8 +102,9 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(page.getByText(/Connect the account|Only the workspace owner/)).toHaveCount(0);
   /* The page is the owner's to run: no Run stage for a member. */
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
-  /* No suite is the owner's as a whole any more: no key badge, no "run by" on any tab. A phone keeps the Suites
-     behind its context badge (app/phone-chrome.css), one tap away. */
+  /* No suite is the owner's as a whole any more — Viral and Business › Image ads run on Particl's API key, and
+     Business's own tools are every member's — so no tab carries the key or says who runs it. A phone keeps the
+     Suites behind its context badge (app/phone-chrome.css), one tap away. */
   await openSuitesMenu(page);
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
   for (const suite of ["business", "viral", "atomik"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
@@ -112,11 +113,12 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await fingerSized(business, project);
   await shot(page, "business-member", project);
 
-  /* Business's strip is the member's too: Setup is the same card; Image ads is theirs to run, on Particl's API key. */
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip).toBeVisible();
+  /* Business's pages are listed: Setup is the same card, with what Particl made in the project below it; Image ads
+     is theirs to run, on Particl's API key. */
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
+  await expect(page.getByTestId("particl-setup")).toBeVisible();
   await expect(page.getByTestId("setup-view")).toHaveCount(0);
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
@@ -166,18 +168,22 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await noSideScroll(page);
   await shot(page, "viral-member", project);
 
-  /* Cast: the list stays the member's to shape; the card replaces the connect prompt, and each entry's still is made in Gen. */
+  /* Cast runs on the platform's key (28 September): no owner card and no connect prompt. The list, Build identity and each
+     character's render are the member's, on this workspace's credits, and each entry's still can be made in Gen. */
   await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
-  const cast = page.getByTestId("owner-run-cast");
-  await expect(cast).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
+  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
   for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  const soul = page.getByTestId("soul-card");
+  await expect(soul).toBeVisible();
+  await expect(soul.getByRole("heading", { name: "Build identity" })).toBeVisible();
   const fox = page.getByTestId("cast-entry");
   await expect(fox).toHaveCount(1);
   await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
   await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
+  await expect(fox.getByTestId("cast-render-why")).toHaveText("Train a Soul ID below to render it.", { timeout: 30_000 });
   await noSideScroll(page);
-  await fingerSized(cast, project);
+  await fingerSized(soul.locator(".gx-gen-enhance"), project);
   await shot(page, "cast-member", project);
   const still = fox.getByTestId("cast-still-gen");
   await still.scrollIntoViewIfNeeded();
@@ -192,10 +198,11 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
   await shot(page, "gen-member-still", project);
 
-  /* The phone's Home: no suite is the owner's as a whole, so none says who runs it. */
+  /* The phone's Home: no suite is the owner's as a whole, so none says who runs it; a member's Business is its own tools. */
   if (PORTRAIT.includes(project)) {
     await page.getByTestId("tabbar-home").click();
     await expect(page.getByTestId("suite-home")).toBeVisible();
+    await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
     for (const suite of ["business", "viral", "studio"]) {
       await expect(page.getByTestId(`home-fact-${suite}`)).not.toContainText("Run by");
       await expect(page.getByTestId(`home-suite-${suite}`)).not.toHaveAttribute("data-owner-run", "true");

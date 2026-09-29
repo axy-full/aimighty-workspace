@@ -9,7 +9,8 @@ import { smallTargets } from "./phoneFloors";
 /**
  * Viral's Recent and History show real runs only (idea 17), read from the
  * project's Library alone: the transform takes on Particl's API key, in words
- * (Queued · Rendering · Held · Failed · not billed · Done), and the runs made
+ * (Queued · Rendering · Held · Failed · not billed · Done), a failed take's
+ * line saying what became of its charge (lib/errors.ts failureLine), and the runs made
  * earlier on the owner's connected account, which the Library keeps once
  * collected (read-only). A take in flight lands without a reload, older takes
  * page in by the Library's own cursor, Recent lists its own page's variant,
@@ -78,13 +79,16 @@ test("History lists the project's transform takes from the Library, each state i
     take("t_render", "running", 2),
     take("t_queue", "queued", 3),
     take("t_held", "held", 4, { params: keyParams("720p", { held: { why: "credits", needs: 22 } }) }),
-    take("t_failed", "failed", 5, { creditsBilled: 0, costUsd: 0, error: "The connected account could not complete this generation." }),
+    /* Failed, and Particl's own ledger settled it at nothing: the only case that says "not billed". */
+    take("t_failed", "failed", 5, { creditsBilled: 0, costUsd: 0, error: "The render failed.", failure: { provider: "higgsfield", stage: "run", code: "failed", kind: "provider_error", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } }),
     earlier("t_earlier", 60),
   ]);
   await expect(page.getByTestId("history-view")).toBeVisible();
   const running = page.getByTestId("history-take");
   await expect(running).toHaveCount(4);
   await expect(running.getByTestId("history-take-status")).toHaveText(["Rendering", "Queued", "Held · needs 22 cr", "Failed · not billed"]);
+  /* Its line says what happened, what became of the charge, and what to do next. */
+  await expect(running.nth(3).getByTestId("history-take-failure")).toContainText(/not billed/i);
   const done = page.getByTestId("history-result");
   await expect(done).toHaveCount(2);
   await expect(done.first()).toContainText("Motion Transfer · 720p");

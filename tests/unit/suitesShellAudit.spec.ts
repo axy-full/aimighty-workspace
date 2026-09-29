@@ -89,7 +89,7 @@ test("a Business job is remembered per project and composer, and a status read s
   expect(settledState(job("accepted")).phase).toBe("running");
   expect(settledState(job("uncertain")).phase).toBe("running");
   expect(settledState(job("completed")).phase).toBe("done");
-  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
+  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("didn't say if it charged") });
   /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
   expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
   expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();

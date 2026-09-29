@@ -234,14 +234,14 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   expect(download.suggestedFilename()).toBe(`usage-${workspace.slug}-${seed.month}.csv`);
   const csv = readFileSync((await download.path())!, "utf8");
   const lines = csv.split("\r\n").filter(Boolean);
-  expect(lines[0]).toBe("date,time_utc,who,engine,kind,status,credits");
+  expect(lines[0]).toBe("date,time_utc,who,engine,kind,status,credits,failure");
   expect(lines).toHaveLength(1 + 6);
   expect(csv).toContain("Held");
   expect(csv).toContain("Failed · not billed");
   if (WIDE.includes(info.project.name)) {
     const [file] = await Promise.all([page.waitForEvent("download"), connected.getByTestId("ws-ledger-connected-export").click()]);
     const quoted = readFileSync((await file.path())!, "utf8");
-    expect(quoted.split("\r\n")[0]).toBe("date,time_utc,workflow,project,status,connected_credits_quoted");
+    expect(quoted.split("\r\n")[0]).toBe("date,time_utc,workflow,project,status,connected_credits_quoted,failure,provider_charge");
     expect(quoted).not.toContain("500");
     expect(quoted).not.toMatch(/\$|usd/i);
   }
@@ -345,13 +345,14 @@ test("a workspace that pays its vendors reads its takes in dollars, and the conn
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("$1.30");
   await expect(rows.first()).toContainText("Charged");
-  await expect(rows.nth(1)).toContainText("Failed · not billed");
-  await expect(page.getByTestId("ws-ledger-summary")).toHaveText("All months · $1.30 charged · 1 not billed");
+  await expect(rows.nth(1)).toContainText("Failed · charge unknown");
+  /* The failed take recorded no cost: its charge is unknown, so the summary counts nothing as not billed. */
+  await expect(page.getByTestId("ws-ledger-summary")).toHaveText("All months · $1.30 charged");
   const body = await (await page.request.get("/api/usage?rows=1")).json();
   expect(body.unit).toBe("usd");
   expect(JSON.stringify(body)).not.toContain("credits");
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("ws-ledger-export").click()]);
-  expect(readFileSync((await download.path())!, "utf8").split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd");
+  expect(readFileSync((await download.path())!, "utf8").split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd,failure,provider_charge");
   await shot(page, info, "dollars");
 });
 

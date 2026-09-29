@@ -20,7 +20,8 @@ export type View = "home" | "studio";
 export type MobileLevel = "projects" | "suite" | "page" | "make" | "settings";
 /** The four bottom sheets; every desktop right rail is one of these. */
 export type MobileSheetId = "search" | "inspector" | "atomik" | "library";
-export type SelKind = "shot" | "take" | "cast" | "page";
+/** `node`: a Rig card that is not a shot (a reference, a note, a look board), shown in the Card Inspector. */
+export type SelKind = "shot" | "take" | "cast" | "node" | "page";
 export type RunStatus = "running" | "waiting" | "paused" | "done" | "failed";
 export type RigView = "list" | "graph";
 export type LibFilter = "All" | "Uploads" | "Generations";

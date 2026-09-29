@@ -5,18 +5,34 @@ import { higgsfieldCredentials, HiggsfieldHttpError } from "./higgsfield";
 import { withRecoveryActivity } from "./recovery";
 import { imagePath, uploadPath, presignedReadUrl, usingBlob } from "./storage";
 import { engineMock } from "./mock";
+import { paidByPlatform } from "./platformSpend";
+import { MARKETING_IMAGE_25_TOKEN_USD } from "./vendorRates";
+import type { PricingWatch } from "./higgsfieldPricingWatch";
 
 export const MARKETING_PATH = "marketing-studio/image";
 export const MARKETING_ORIGIN = "https://api.higgsfield.ai";
+/** The builds of Marketing Studio Image: 2.0 Alpha (priced by its live estimate) and the 2.5 builds (token-metered). */
+export const MARKETING_VARIANTS = ["alpha", "flare", "sunburst"] as const;
+export type MarketingVariant = (typeof MARKETING_VARIANTS)[number];
+export const MARKETING_VARIANT_PATHS: Record<MarketingVariant, string> = {
+  alpha: MARKETING_PATH,
+  flare: `${MARKETING_PATH}/flare`,
+  sunburst: `${MARKETING_PATH}/sunburst`,
+};
 export const MARKETING_CAPABILITIES = {
+  variants: MARKETING_VARIANTS,
+  /** 2.0 Alpha's qualities; the 2.5 builds add xhigh and max. */
   qualities: ["low", "medium", "high"],
+  qualities25: ["low", "medium", "high", "xhigh", "max"],
   resolutions: ["1k", "2k", "4k"],
   ratios: ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"],
   maxImages: 16,
 } as const;
 const settingsSchema = z
   .object({
-    quality: z.enum(MARKETING_CAPABILITIES.qualities).default("high"),
+    /** Absent on every take made before the 2.5 builds: 2.0 Alpha. */
+    variant: z.enum(MARKETING_VARIANTS).optional(),
+    quality: z.enum(MARKETING_CAPABILITIES.qualities25).default("high"),
     enhancePrompt: z.boolean().default(false),
     presetId: z.string().uuid().optional(),
   })
@@ -40,16 +56,31 @@ export function marketingSettings(value: unknown): MarketingSettings {
       400,
       "invalid_settings",
     );
+  const alpha = (parsed.data.variant ?? "alpha") === "alpha";
+  if (alpha && !(MARKETING_CAPABILITIES.qualities as readonly string[]).includes(parsed.data.quality))
+    throw new MarketingError(
+      "Extra-high and maximum quality are 2.5 builds only. Choose a 2.5 build or a lower quality.",
+      400,
+      "invalid_settings",
+    );
+  // 2.0 enhancement runs at high quality only; the 2.5 builds keep quality selectable.
   if (
     parsed.data.enhancePrompt !== Boolean(parsed.data.presetId) ||
-    (parsed.data.enhancePrompt && parsed.data.quality !== "high")
+    (alpha && parsed.data.enhancePrompt && parsed.data.quality !== "high")
   )
     throw new MarketingError(
-      "Preset enhancement requires a preset and high quality. Turn enhancement off to use your own prompt.",
+      alpha
+        ? "Preset enhancement requires a preset and high quality. Turn enhancement off to use your own prompt."
+        : "Preset enhancement requires a preset. Turn enhancement off to use your own prompt.",
       400,
       "invalid_settings",
     );
   return parsed.data;
+}
+
+/** The provider route a take's build is sent to, and estimated at. */
+export function marketingPath(settings: Pick<MarketingSettings, "variant">): string {
+  return MARKETING_VARIANT_PATHS[settings.variant ?? "alpha"];
 }
 export function marketingInput(
   prompt: string,
@@ -166,8 +197,9 @@ async function readCall(url: string, body?: unknown) {
       if (!response.ok) {
         await response.body?.cancel();
         const status = response.status;
+        if (status === 403) throw marketingBalanceError();
         throw new MarketingError(
-          status === 401 || status === 403
+          status === 401
             ? "This connected account cannot access Marketing Studio."
             : status === 404
               ? "Marketing Studio is unavailable for this connection."
@@ -175,7 +207,7 @@ async function readCall(url: string, body?: unknown) {
                 ? "The connected account is rate limiting requests. Try again shortly."
                 : "Marketing pricing or presets are temporarily unavailable.",
           status === 429 ? 429 : 503,
-          status === 401 || status === 403
+          status === 401
             ? "authentication_rejected"
             : status === 404
               ? "model_unavailable"
@@ -402,9 +434,17 @@ export async function marketingReferenceUrls(
     }),
   );
 }
+/**
+ * The price a take is quoted at. 2.0 Alpha: the provider's live estimate for
+ * exactly this input. The 2.5 builds: their estimate states the published
+ * per-token rates but returns no figure, so the quote is APPROXIMATE, from
+ * those rates and marketing25Tokens; the take settles on the delivered image.
+ */
 export async function estimateMarketingInput(
   input: ReturnType<typeof marketingInput>,
+  variant: MarketingVariant = "alpha",
 ): Promise<number> {
+  if (variant !== "alpha") return marketing25Usd(input);
   if (engineMock()) return 0.25; // Synthetic fixture price, never a live fallback.
   const result = await readCall(
     `${MARKETING_ORIGIN}/estimate/${MARKETING_PATH}`,
@@ -429,3 +469,76 @@ export function marketingPreflightError(): HiggsfieldHttpError {
     "The Marketing Studio quote or connection changed or could not be verified. Nothing was submitted; review a fresh quote.",
   );
 }
+
+/**
+ * HTTP 403 is the provider's documented "insufficient credits" reply, never a
+ * missing grant. On the platform's shared key that balance is the platform's
+ * own: the workspace sees neutral copy and the platform log gets the reason.
+ * A workspace on its own key is told plainly, since the account is its own.
+ */
+export function marketingBalanceError(): MarketingError {
+  const refusal = higgsfieldBalanceRefusal("marketing-studio");
+  return new MarketingError(`${refusal.message} Nothing was submitted.`, 503, refusal.platform ? "provider_unavailable" : "insufficient_balance");
+}
+
+/** The same 403 for any paid request on the commercial key (lib/engines/higgsfield.ts). */
+export function higgsfieldBalanceRefusal(surface: string): { message: string; platform: boolean } {
+  if (paidByPlatform("higgsfield")) {
+    console.warn(JSON.stringify({ level: "warn", event: "higgsfield.insufficient_balance", surface }));
+    return { message: "This engine is unavailable right now; try again shortly.", platform: true };
+  }
+  return { message: "The connected account's API balance is too low for this request. Top it up, then try again.", platform: false };
+}
+
+/* ── The 2.5 builds: an approximate price from the published per-token rates ──
+ * The provider bills text in and out, image in and image out by the token and
+ * reconciles on completion, and publishes neither a per-request figure nor the
+ * tokens an image of each size and quality produces. These counts are the
+ * assumptions the quote is built from: GPT Image's token table as lib/vendorRates.ts
+ * already prices GPT Image 2.5 (about 1.5 megapixels), per megapixel of output;
+ * extra-high and maximum quality, which that table lacks, extrapolated from high;
+ * a reference image counted like GPT Image's reference ceiling; and a fixed
+ * allowance for the provider's own prompt rewrite when a preset enhances it. */
+const OUTPUT_TOKENS_PER_MEGAPIXEL: Record<string, number> = { low: 400, medium: 1_512, high: 6_000, xhigh: 9_000, max: 12_000 };
+/** Megapixels of each resolution tier's square frame; exact dimensions follow the aspect. */
+const TIER_MEGAPIXELS: Record<string, number> = { "1k": 1.048576, "2k": 4.194304, "4k": 16.777216 };
+const REFERENCE_IMAGE_TOKENS = 2_000;
+const ENHANCEMENT_TEXT_TOKENS = 1_000;
+
+/** Approximate provider USD for a 2.5 request; `outputMegapixels`, when known, is the delivered image's. */
+export function marketing25Usd(
+  input: Pick<ReturnType<typeof marketingInput>, "prompt" | "image_urls" | "quality" | "resolution" | "enhance_prompt">,
+  outputMegapixels?: number,
+): number {
+  const rate = MARKETING_IMAGE_25_TOKEN_USD;
+  const megapixels = outputMegapixels ?? TIER_MEGAPIXELS[input.resolution] ?? TIER_MEGAPIXELS["2k"];
+  const perMegapixel = OUTPUT_TOKENS_PER_MEGAPIXEL[input.quality] ?? OUTPUT_TOKENS_PER_MEGAPIXEL.high;
+  const textIn = Math.ceil(input.prompt.length / 4) + (input.enhance_prompt ? ENHANCEMENT_TEXT_TOKENS : 0);
+  const textOut = input.enhance_prompt ? ENHANCEMENT_TEXT_TOKENS : 0;
+  const imageIn = REFERENCE_IMAGE_TOKENS * input.image_urls.length;
+  const imageOut = Math.ceil(perMegapixel * megapixels);
+  return textIn * rate.textIn + textOut * rate.textOut + imageIn * rate.imageIn + imageOut * rate.imageOut;
+}
+
+/**
+ * The settled cost of a 2.5 take: the provider's own charge when it states one
+ * per job, else the approximate figure for the delivered image. Either is used
+ * only within half to three times the quote; outside that band a unit or
+ * measurement mistake is assumed and the quote stands.
+ */
+export function marketing25SettlementUsd(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): number {
+  const sane = (value: number | null | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5 && value <= quoteUsd * 3;
+  if (sane(reportedUsd)) return reportedUsd;
+  if (sane(deliveredUsd)) return deliveredUsd;
+  return quoteUsd;
+}
+
+/** The published 2.5 pricing the approximation is built from, watched for change (lib/higgsfieldPricingWatch.ts). */
+const WATCH_2_5_SHA256 = "3e0d7e037ba52b2716e1b00a191137728b93cd73d32c49e8146e4e9797a2b503";
+export const MARKETING_25_PRICING_WATCH: Record<Exclude<MarketingVariant, "alpha">, PricingWatch> = {
+  flare: { model: "higgsfield/marketing-studio-image:flare", path: MARKETING_VARIANT_PATHS.flare,
+    body: { prompt: "a bottle of juice on a white table" }, expectedSha256: WATCH_2_5_SHA256 },
+  sunburst: { model: "higgsfield/marketing-studio-image:sunburst", path: MARKETING_VARIANT_PATHS.sunburst,
+    body: { prompt: "a bottle of juice on a white table" }, expectedSha256: WATCH_2_5_SHA256 },
+};
