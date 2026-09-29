@@ -21,7 +21,7 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
   const outsider = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551" });
   try {
     await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Local mock Verify test", "admin", "test", Date.now()] });
-    const square = () => sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 30, g: 160, b: 90 } } }).png().toBuffer();
+    const square = () => sharp({ create: { width: 512, height: 512, channels: 3, background: { r: 30, g: 160, b: 90 } } }).png().toBuffer();
     const upload = async (name: string) => {
       const response = await request.post("/api/uploads", { headers, multipart: { file: { name, mimeType: "image/png", buffer: await square() } } });
       expect(response.ok(), await response.text()).toBe(true);

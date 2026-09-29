@@ -44,7 +44,7 @@ async function setup(page: Page, info: TestInfo, take: Rgb | "video", withCard =
     expect(response.ok(), await response.text()).toBe(true);
     return response.json();
   };
-  const square = (rgb: Rgb) => sharp({ create: { width: 64, height: 64, channels: 3, background: rgb } }).png().toBuffer();
+  const square = (rgb: Rgb) => sharp({ create: { width: 512, height: 512, channels: 3, background: rgb } }).png().toBuffer();
   const master = await upload("mira-master.png", await square(RED), "image/png");
   const takeReceipt = take === "video" ? await upload("opening-take.mp4", await readFile("public/fixtures/clip.mp4"), "video/mp4") : await upload("opening-take.png", await square(take), "image/png");
   const project: Project = {
