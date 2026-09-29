@@ -65,7 +65,7 @@ export async function submitXaiVideo(model: ModelDef, prompt: string, params: Vi
   if (!res.ok) {
     let message = text.slice(0, 400);
     try { const parsed = JSON.parse(text); message = parsed?.error?.message ?? parsed?.error ?? parsed?.message ?? message; } catch { /* raw */ }
-    throw new XaiHttpError(res.status, `Grok Imagine Video refused the request (${res.status}): ${message}`);
+    throw new XaiHttpError(res.status, `Grok Imagine Video refused the request (${res.status}): ${message}`, text.slice(0, 8192));
   }
   const id = (JSON.parse(text) as { request_id?: string }).request_id;
   if (!id) throw new Error("Grok Imagine Video returned no request id.");

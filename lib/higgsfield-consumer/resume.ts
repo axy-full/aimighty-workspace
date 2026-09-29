@@ -9,10 +9,12 @@
  * its status — the same leased read the page made before — never re-sent.
  */
 import { SET_ASIDE_LABEL } from "./job-state";
+import { failedChip } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 
 export type ResumeStatus = "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
 /** The saved-job fields this file reads (every workflow's job view has them). */
-export type ResumeJob = { status: string; providerReceipt?: unknown; setAside?: boolean; failureCode?: string | null };
+export type ResumeJob = { status: string; providerReceipt?: unknown; setAside?: boolean; failureCode?: string | null; failure?: TakeFailure | null };
 
 /** Sent, or maybe sent, and not settled: it may be on the account, so the page lists it. */
 export const isOpen = (status: string) => status === "dispatching" || status === "accepted" || status === "uncertain";
@@ -36,8 +38,9 @@ export function resumePhase(job: ResumeJob, following = canProgress(job)): Resum
   switch (job.status) {
     case "completed": return { label: "Complete", tone: "green" };
     case "failed":
-      /* The account finished it but Particl could not keep the result: it may have been billed. */
-      return job.failureCode === "invalid_result" ? { label: "Not kept · receipt saved", tone: "red" } : { label: "Failed · not billed", tone: "red" };
+      /* The account finished it but Particl could not keep the result: it may have been billed.
+         Otherwise the charge is the account's ledger's to confirm: refunded, charged, or just "Failed". */
+      return job.failureCode === "invalid_result" ? { label: "Not kept · receipt saved", tone: "red" } : { label: failedChip(job.failure), tone: "red" };
     case "accepted": return following ? { label: "Rendering", tone: "blue" } : { label: "Can't be checked", tone: "amber" };
     case "uncertain":
     case "dispatching":

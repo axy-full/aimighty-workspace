@@ -19,7 +19,9 @@ import type { ComposerType } from "./composer";
 export type FilmSetup = Record<string, string>;
 
 export type FilmChipKey = "shot" | "angle" | "camera" | "lens" | "light" | "look";
-export type FilmChip = { key: FilmChipKey; label: string; /** The bank rows the chip writes. */ rows: readonly string[] };
+/** A chip of any bank: the film vocabulary's six, or an engine's own controls (lib/workspace/cinema-vocabulary.ts). */
+export type VocabChip = { key: string; label: string; /** The rows the chip writes. */ rows: readonly string[] };
+export type FilmChip = VocabChip & { key: FilmChipKey };
 
 export const FILM_CHIPS: readonly FilmChip[] = [
   { key: "shot", label: "Shot", rows: ["shot"] },
@@ -45,16 +47,18 @@ export type FilmOption = {
   row: string; value: string; label: string; phrase: string; aka?: string;
   /** The platform's neutral loop for it (lib/previews.ts), where the bank makes one: moves and techniques. */
   previewKey: string | null;
+  /** A name alone, with no drawing: an entry nothing can honestly be drawn for (a genre, an era, a named palette). */
+  plain?: true;
 };
 
-const option = (row: string, o: (typeof CATEGORIES)[number]["options"][number]): FilmOption => ({
+const option =(row: string, o: (typeof CATEGORIES)[number]["options"][number]): FilmOption => ({
   row, value: o.value, label: o.label, phrase: o.phrase,
   ...(o.aka ? { aka: o.aka } : {}),
   previewKey: row === "move" || row === "technique" ? previewKey(row, o.value) : null,
 });
 
 /** Every entry a chip offers, in the bank's order (Camera: the moves, then the named techniques). */
-export function chipOptions(chip: FilmChip): FilmOption[] {
+export function chipOptions(chip: VocabChip): FilmOption[] {
   return chip.rows.flatMap((row) => (CATEGORIES.find((c) => c.key === row)?.options ?? []).map((o) => option(row, o)));
 }
 
@@ -66,7 +70,7 @@ const labelOf = (row: string, value: string | undefined) =>
  * replaces the move (lib/studio.ts › cameraModule drops it), so the face names
  * the technique alone; one that does not ("One-shot") rides with the move.
  */
-export function chipValue(chip: FilmChip, setup: FilmSetup): { text: string; set: boolean } {
+export function chipValue(chip: VocabChip, setup: FilmSetup): { text: string; set: boolean } {
   if (chip.key === "camera") {
     const technique = labelOf("technique", setup.technique);
     const move = MOVEMENT_TECHNIQUES.has(setup.technique ?? "") ? "" : labelOf("move", setup.move);
@@ -89,7 +93,7 @@ const HOLDS_STILL: ReadonlySet<string> = new Set(["rackfocus"]);
  * travels, or one that holds the frame, exclude each other, so the camera
  * block never asks for two things at once.
  */
-export function pickOption(setup: FilmSetup, chip: FilmChip, picked: Pick<FilmOption, "row" | "value"> | null): FilmSetup {
+export function pickOption(setup: FilmSetup, chip: VocabChip, picked: Pick<FilmOption, "row" | "value"> | null): FilmSetup {
   const next = { ...setup };
   if (!picked) { for (const row of chip.rows) delete next[row]; return next; }
   if (next[picked.row] === picked.value) { delete next[picked.row]; return next; }
@@ -308,7 +312,7 @@ export function dropToken(text: string, token: HashToken): { text: string; caret
   return { text: `${before}${joiner}${after}`, caret: before.length + joiner.length };
 }
 
-export type FilmHit = FilmOption & { chip: FilmChipKey; chipLabel: string };
+export type FilmHit = FilmOption & { chip: string; chipLabel: string };
 
 const norm = (s: string) => s.toLowerCase().replace(/[-_]+/g, " ").trim();
 
@@ -329,7 +333,11 @@ export function optionMatches(o: Pick<FilmOption, "label" | "aka" | "phrase">, q
 export function vocabularyMatches(query: string, type: ComposerType, limit = 8): FilmHit[] {
   const chips = chipsFor(type);
   const ordered = [...chips.filter((c) => c.key === "camera"), ...chips.filter((c) => c.key !== "camera")];
-  const all = ordered.flatMap((chip) => chipOptions(chip).map((o) => ({ ...o, chip: chip.key, chipLabel: chip.label })));
+  return rankHits(ordered.flatMap((chip) => chipOptions(chip).map((o) => ({ ...o, chip: chip.key, chipLabel: chip.label }))), query, limit);
+}
+
+/** `vocabularyMatches` for any bank's entries, in the order given: a name's start first, then a word's, never a fragment inside a word. */
+export function rankHits(all: readonly FilmHit[], query: string, limit = 8): FilmHit[] {
   const q = norm(query);
   if (!q) return all.slice(0, limit);
   const words = (s: string) => norm(s).split(/[\s,/]+/).filter(Boolean);
@@ -359,4 +367,47 @@ const startsName = (o: Pick<FilmOption, "label" | "aka">, q: string) =>
 export function hashDefault(query: string, hits: readonly FilmHit[]): number {
   const q = norm(query);
   return hits.length && (q.match(/[a-z]/g) ?? []).length >= 2 && startsName(hits[0], q) ? 0 : -1;
+}
+
+/* ── A bank: what the chips, their grids and `#` read ───────────────────── */
+
+/**
+ * One vocabulary as the chips under Direction show it
+ * (components/graphite/FilmVocabulary.tsx): the camera bank, written into the
+ * words (this file), or an engine's own documented controls, sent as its
+ * parameters (lib/workspace/cinema-vocabulary.ts). Either way a chip is Auto
+ * until picked, and its grid and `#` offer the same entries.
+ */
+export type VocabularyBank = {
+  /** The chips' accessible name. */
+  label: string;
+  chips: readonly VocabChip[];
+  options: (chip: VocabChip) => FilmOption[];
+  value: (chip: VocabChip, setup: FilmSetup) => { text: string; set: boolean };
+  pick: (setup: FilmSetup, chip: VocabChip, picked: Pick<FilmOption, "row" | "value"> | null) => FilmSetup;
+  /** Rows held that no chip shows. */
+  extras: (setup: FilmSetup) => { row: string; label: string; value: string }[];
+  /** `#` in the words. */
+  matches: (query: string) => FilmHit[];
+  /** How a chip's grid is grouped; one group when absent. */
+  groups?: (chip: VocabChip, shown: FilmOption[]) => { key: string; label: string | null; items: FilmOption[] }[];
+  /** The chip whose grid plays the platform's loops, if any. */
+  loops?: string;
+};
+
+/** The film vocabulary as a bank, for an output (a still has no Camera chip; sound has none). */
+export function filmBank(type: ComposerType): VocabularyBank {
+  return {
+    label: "Film vocabulary",
+    chips: chipsFor(type),
+    options: chipOptions,
+    value: chipValue,
+    pick: pickOption,
+    extras: (setup) => extraRows(setup, type),
+    matches: (query) => vocabularyMatches(query, type),
+    groups: (chip, shown) => chip.key === "camera"
+      ? [{ key: "move", label: "Moves", items: shown.filter((o) => o.row === "move") }, { key: "technique", label: "Techniques", items: shown.filter((o) => o.row === "technique") }]
+      : [{ key: chip.rows[0], label: null, items: shown }],
+    loops: "camera",
+  };
 }

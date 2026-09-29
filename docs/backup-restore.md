@@ -376,6 +376,8 @@ by rewriting it.
 
 ### Higgsfield consumer jobs
 
+> **Sign-in retired 28 September 2026.** Particl uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10), so it no longer connects to a Higgsfield account. `higgsfield_consumer_jobs` stays in every snapshot as history and the dispositions below still describe restored rows, but a disposition that needs the old connection is reconciled from the saved receipt and the provider's own records, never by signing in again.
+
 Every tenant snapshot includes `higgsfield_consumer_jobs`, its immutable payload
 and quote fingerprints, original asset IDs, OAuth connection generation,
 idempotency key, dispatch claim, provider UUID and saved result/acknowledgement.

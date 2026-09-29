@@ -74,6 +74,7 @@ test("status: approved, queued, failed (not billed), ready only when resolved an
   expect(shots.map((s) => s.status)).toEqual(["approved", "queued", "failed", "failed", "failed", "draft"]);
   expect(shots[2]).toMatchObject({ failedUnbilled: true, lastJobId: "j3b" });
   expect(shots[3]).not.toHaveProperty("failedUnbilled");
+  expect(shots[4]).not.toHaveProperty("failedUnbilled");
   expect(shots[1].lastJobId).toBe("j2b");
   // A retry that succeeds clears the failure.
   expect(rigShots(p, [...jobs, { id: "j3c", status: "succeeded", shotId: "ps3", createdAt: 10 }], { quotes })[2].status).toBe("ready");

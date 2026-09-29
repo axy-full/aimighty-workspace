@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import LazyMedia from "@/components/LazyMedia";
 import { VirtualItems, smoothScrollIntoView } from "@/components/workspace/VirtualItems";
@@ -38,7 +40,7 @@ import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
 
 const EDIT_LIMIT = 4000;
-type Generation = { id: string; status: string; error?: string | null };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 
 /** The status chips' dots: the tile chips' own tones. */
 const STATUS_DOT: Record<DeskFilter, string> = { all: "", review: "rgba(235, 235, 245, .6)", picked: "var(--gx-accent)", approved: "var(--gx-done)", changes: "var(--gx-waiting)", held: "var(--gx-waiting)", failed: "var(--gx-failed)" };
@@ -103,8 +105,8 @@ const runOf = (item: DeskItem) => (item.type === "take" ? item.run : item.key);
  * Edit, a still is re-edited from an instruction priced before it renders, a
  * sound gets its transcript (priced first), and any take goes to the Timeline.
  */
-/** A re-edit the page can no longer read: where it goes if it renders, and that a failed one costs nothing. */
-const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.";
+/** A re-edit the page can no longer read: its result still belongs in the library if it finishes. */
+const REEDIT_LOST = "This re-edit can no longer be checked from here. If it renders, it lands in the library.";
 
 export function EditStage({ scope, projectId, items, onTimeline }: { scope: string; projectId: string; items: LibraryEntry[]; onTimeline: () => void }) {
   const draft = useDraftEditor(scope, projectId);
@@ -274,7 +276,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
         if (activeMediaJob(generation)) return;
         setPending(null);
         if (generation.status === "succeeded") { setMade({ genId: generation.id, from: pending.from }); void refreshProjectLibrary(scope, projectId); toast("The re-edit is in the library"); }
-        else setError(generation.error || "The re-edit did not render. A failed render is not billed.");
+        else setError(generation.failure ? failureLine(generation.failure).text : generation.error || "The re-edit did not render.");
       },
       /* No longer on record for this person: asking again cannot help, and whether it was billed follows
          from whether it rendered. Anything else is said while it is asked again, later. */

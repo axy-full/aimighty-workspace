@@ -1,5 +1,7 @@
 import { PROJECT_LIMITS } from "../workbench/project-limits";
 import type { MediaJob } from "../workbench/job-recovery";
+import { failedChip } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
 import { createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
 import { cardLabel, refKindOf } from "../workbench/ref-kind";
@@ -83,8 +85,8 @@ export function dispatchQuoteQuery(settings: ShotSettings, refs: Asset[]): strin
   return query.toString() + (references ? "&" + references : "");
 }
 
-/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). */
-export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : "reference_image");
+/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). A sound is Cinema Studio's reference_audio (admission refuses it anywhere else). */
+export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : asset.kind === "audio" ? "reference_audio" : "reference_image");
 /** A shot's role for one input: its marked first frame (an image), else a reference by kind. */
 export const shotReferenceRole = (node: Pick<CanvasNode, "firstFrameId"> | null | undefined) => (asset: Pick<Asset, "kind" | "id">) =>
   node?.firstFrameId && asset.id === node.firstFrameId && asset.kind === "image" ? "first_frame" : referenceRole(asset);
@@ -183,8 +185,13 @@ function heldLabel(job: Pick<MediaJob, "params">): string {
   const needs = heldNeeds(job.params);
   return needs != null ? `Held · needs ${needs.toLocaleString("en-US")} cr` : "Held · needs credits";
 }
-/** A take that ended without a clip: failed, or cancelled (a discarded held take is one). */
-function endedLabel(job: Pick<MediaJob, "id" | "status" | "creditsBilled">): string {
+/**
+ * A take that ended without a clip: failed, or cancelled (a discarded held
+ * take is one). "not billed", "refunded" or "not charged" only when the
+ * ledger or the provider confirms it (lib/errors.ts failedChip).
+ */
+function endedLabel(job: Pick<MediaJob, "id" | "status" | "creditsBilled"> & { failure?: TakeFailure | null }): string {
+  if (job.failure) return failedChip(job.failure, job.status === "cancelled");
   return `${job.status === "cancelled" ? "Cancelled" : "Failed"}${jobUnbilled(job) ? " · not billed" : ""}`;
 }
 
@@ -245,12 +252,12 @@ export type GenerationPhase = { label: string; pct: number; tone: GenerationTone
  * → complete, or failed (not billed when nothing was charged). The bar marks
  * the stage reached; engines report no percentage, so none is invented.
  */
-export function generationPhase(job: Pick<MediaJob, "status" | "creditsBilled" | "params"> | null): GenerationPhase {
+export function generationPhase(job: (Pick<MediaJob, "status" | "creditsBilled" | "params"> & { failure?: TakeFailure | null }) | null): GenerationPhase {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   switch (job.status) {
     case "succeeded": return { label: "Complete", pct: 100, tone: "green", done: true };
     case "failed":
-    case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled }), pct: 100, tone: "red", done: true };
+    case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled, failure: job.failure }), pct: 100, tone: "red", done: true };
     case "running": return { label: "Rendering", pct: 50, tone: "blue", done: false };
     case "held": return { label: heldLabel(job), pct: 10, tone: "blue", done: false };
     default: return { label: "Queued", pct: 10, tone: "blue", done: false };
@@ -289,6 +296,6 @@ export function dispatchGate(shown: number | null, fresh: number): DispatchGate 
  * the vocabulary that is never printed — the connected account, its brands and
  * the provider companies — forces the neutral fallback.
  */
-export function neutralCopy(message: string, fallback = "The engine could not take this request. Nothing was charged."): string {
+export function neutralCopy(message: string, fallback = "The engine could not take this request."): string {
   return vendorNameIn(message) ? fallback : message;
 }

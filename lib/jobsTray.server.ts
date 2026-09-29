@@ -7,6 +7,7 @@ import { CONSUMER_CAPACITY_WINDOW_MS, consumerJobsReady } from "./higgsfield-con
 import { mediaKindForRole } from "./higgsfield-consumer/catalogue";
 import { shortName } from "./higgsfield-consumer/resume";
 import { recreateBlock, recreatePreset, type GenPreset, type RecipeSource } from "./shell/recipe";
+import { parseOutcome } from "./providerOutcome";
 import {
   ENGINE_ACTIVE, ENGINE_SETTLED, TRAY_ACTIVE_POLL_S, TRAY_IDLE_POLL_S, TRAY_WINDOW_MS,
   accountTrayJob, changing, engineTrayJob, trayOrder, type AccountRow, type EngineMoney, type EngineRecreate, type TrayReply,
@@ -169,7 +170,8 @@ function accountRecipe(row: AccountRecord): GenPreset | null {
  * slot, and anything that moved inside the window (a settled job's
  * updated_at is when it settled: nothing writes it after). Only the columns the tray
  * needs are read — never the receipt or the grant; of the payload, only the
- * request a failed Generate is made again from.
+ * request a failed Generate is made again from; of a failed job, what the
+ * account said (lib/providerOutcome.ts), which the tray reads as a reason only.
  */
 async function accountRows(userId: string, since: number, now: number): Promise<AccountRecord[]> {
   await consumerJobsReady();
@@ -181,6 +183,7 @@ async function accountRows(userId: string, since: number, now: number): Promise<
         json_extract(j.payload_json,'$.model.outputType') AS output_type,
         json_extract(j.payload_json,'$.tool.label') AS tool_label,
         CASE WHEN j.status='failed' AND j.workflow='generation' THEN json_extract(j.payload_json,'$.input') END AS input,
+        CASE WHEN j.status='failed' THEN j.provider_outcome END AS provider_outcome,
         json_extract(j.result_manifest,'$.original.generationId') AS original_id,
         json_extract(j.result_manifest,'$.original.kind') AS original_kind,
         SUBSTR(p.name,1,200) AS project_name
@@ -203,6 +206,7 @@ async function accountRows(userId: string, since: number, now: number): Promise<
       setAside: ["dispatching", "accepted", "uncertain"].includes(status) && (row.released_at != null || createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS),
       prompt: text(row.prompt), modelId: text(row.model_id), outputType: text(row.output_type), toolLabel: text(row.tool_label),
       originalId: text(row.original_id), originalKind: text(row.original_kind), projectName: text(row.project_name), input: text(row.input),
+      outcome: row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome)),
     };
   });
 }
