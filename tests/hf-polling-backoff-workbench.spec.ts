@@ -25,11 +25,10 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
  * read that did not happen is known at once, with no waiting) and at the
  * route mocks, which see it go out. Every account reply is a route mock.
  *
- * The Business and Viral pages that showed the connected account's jobs went
- * with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts); the
- * collector still finishing jobs already running is covered on Gen
- * (tests/hf-connected-jobs-finish-workbench.spec.ts). What is here is a
- * Production re-edit's own reads.
+ * The Business and Viral pages that showed the connected account's jobs, and
+ * the shell's collector that finished them, went with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts). What is here is a Production
+ * re-edit's own reads.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const SHOTS: Record<string, string> = Object.fromEntries(SIZES.map((name) => [name, name.replace("workbench-", "")]));

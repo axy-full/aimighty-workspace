@@ -23,9 +23,7 @@ import { MobileSheet } from "./MobileSheet";
  * machine the global Generate composer runs on — `lib/workspace/use-composer.ts`
  * — so the phone gets the same model catalogue, the same debounced live quote,
  * the same quote-then-approve dispatch through
- * `lib/workspace/generate-submit.ts`, the same connected-account path through
- * `lib/higgsfield-consumer/generation-client.ts`, and the same billing switch
- * (this workspace's credits by default). The desktop overlay
+ * `lib/workspace/generate-submit.ts`, on this workspace's credits. The desktop overlay
  * (components/workspace/GenerateComposer.tsx) is a different skin over the
  * same host; neither owns the machine.
  *
@@ -56,8 +54,8 @@ export function MakeComposerProvider({
 }) {
   const ws = useWorkspace();
   const onMake = ws.state.mobile === "make";
-  /* The composer only reads models, quotes and the connected account while the
-     wall it belongs to is on screen; its state outlives the visit. */
+  /* The composer only reads models and quotes while the wall it belongs to is on
+     screen; its state outlives the visit. */
   /* The wall opens on Video (05-mobile M4); the type is one control for both. */
   const host = useComposer({ scope, open: onMake, project, onProject, workspaceName, initialType: "video" });
   const [open, setOpen] = useState(false);

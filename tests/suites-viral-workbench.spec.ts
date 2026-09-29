@@ -26,12 +26,11 @@ async function open(page: Page) {
     uploads: [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" })],
     generations: [generation({ id: GEN, title: "Swapped bottle", kind: "video", model: "genjutsu", provider: "higgsfield", params: { task: "connected-generation", workflow: "genjutsu", consumerCreditUnit: "higgsfield_credits" } })],
   });
-  /* Every account request the page makes, bar the shell collector's list of saved jobs (a ledger read). */
+  /* Every account request the page makes: none, not even a list of saved jobs (the shell's collector went with the sign-in). */
   const asked: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/higgsfield/consumer/")) return;
-    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation") return;
     asked.push(`${request.method()} ${url.pathname}`);
   });
   const errors: string[] = [];

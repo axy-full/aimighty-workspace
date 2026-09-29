@@ -35,8 +35,6 @@ import { PLANS, planFor } from "./plans";
 import { AtomikRunEngine, formatCredits, type ActivityEntry, type EngineState, type RunView } from "./run-engine";
 import { useWorkspace } from "./state";
 import type { PageId, Run } from "./types";
-import { ownerAccountPlans } from "../shell/connected-capability";
-import { useConnectedCapability } from "../shell/use-connected-capability";
 
 /* ── The plan-source bridge ─────────────────────────────────────────────
    WorkspaceProvider takes a PlanSource before any project is loaded; the
@@ -138,7 +136,6 @@ export function AtomikHost({
   children: ReactNode;
 }) {
   const { state: ws, dispatch, toast } = useWorkspace();
-  const { owner } = useConnectedCapability(scope, { read: false });
   const projectId = ws.projectId;
   const productionId = project && project.id === projectId ? project.productionProjectId ?? null : null;
 
@@ -199,7 +196,7 @@ export function AtomikHost({
     [projectId, productionId, request, fetcher, project?.name, project?.script, ws.lists.shots, ws.lists.takes],
   );
 
-  const plans = useMemo(() => ownerAccountPlans(withRequestGate(PLANS, providedKeys.get), owner), [providedKeys, owner]);
+  const plans = useMemo(() => withRequestGate(PLANS, providedKeys.get), [providedKeys]);
   /* One engine per project: a run never outlives its project into another one's context. */
   const engine = useMemo(
     () => new AtomikRunEngine({ plans, context: () => ({ projectId: null, data: {}, fetch: fetcher }) }),

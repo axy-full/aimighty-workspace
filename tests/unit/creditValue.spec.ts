@@ -141,10 +141,8 @@ test("a list mixing our credits and a connected quote keeps the two units apart"
 test("no connected surface imports the credit rate, so none of them can apply it", () => {
   /* The rule stated as the only thing that can enforce it: a file that never
      sees creditUsd cannot multiply a provider's credits by ten cents. */
+  /* The account's composers themselves went with its sign-in; these still show what it made. */
   const connected = [
-    "components/suites/ConsumerGenjutsu.tsx",
-    "components/suites/ConsumerShorts.tsx",
-    "components/suites/ConsumerMarketingVideo.tsx",
     "components/suites/MarketingTemplates.tsx",
     "components/suites/SubatomikWorkspace.tsx",
     "components/suites/AtomikSuite.tsx",

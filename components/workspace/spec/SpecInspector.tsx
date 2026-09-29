@@ -1,5 +1,4 @@
 "use client";
-import { ACCOUNT_RETIRED, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { runChip } from "@/lib/workspace/atomik-view";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
@@ -14,8 +13,6 @@ import { Button, Kicker } from "../ui";
  * on the shell's Atomik host — the same engine, gate and panel every other
  * surface uses. A plan with no backend, or missing what it needs, is disabled
  * and says why; a paid plan stops at the panel's gate with the live quote.
- * A plan with a step on the connected Higgsfield account cannot run since
- * the sign-in was retired: it says so instead of offering the button.
  */
 export function SpecInspector({ state }: InspectorBodyProps) {
   const page = state.page;
@@ -23,8 +20,6 @@ export function SpecInspector({ state }: InspectorBodyProps) {
   const def = pageDef(page);
   const atomik = useAtomik();
   const plan = atomik.plan(page);
-  /* A plan with a step on the connected account; plans on Particl's own engines run here as before. */
-  const ownerRun = runsOnOwnerAccount(plan);
   const facts = useSpecFacts(page) ?? { ...EMPTY_FACTS, planPrice: plan?.priceLabel ?? null };
   if (!spec) return null;
 
@@ -57,27 +52,23 @@ export function SpecInspector({ state }: InspectorBodyProps) {
           <Kicker className="pxw-insp-kicker">Atomik plan</Kicker>
           <div className="pxw-insp-plan-title">{plan.title}</div>
           <p className="pxw-insp-plan-line">{plan.line}</p>
-          {!ownerRun ? <div className="pxw-insp-plan-price">{plan.priceLabel}</div> : null}
-          {ownerRun ? (
-            <p className="pxw-insp-reason" data-testid="spec-plan-owner">{ACCOUNT_RETIRED}.</p>
-          ) : (<>
-            <Button
-              variant={chip.tone === "waiting" ? "amber" : "primary"}
-              className="pxw-insp-run"
-              disabled={disabled || Boolean(run?.quoting)}
-              aria-describedby={reason && disabled ? "pxw-plan-reason" : undefined}
-              onClick={() => (chip.tone === "waiting" ? void atomik.approve() : atomik.start(page))}
-            >
-              <span>{chip.label}</span>
+          <div className="pxw-insp-plan-price">{plan.priceLabel}</div>
+          <Button
+            variant={chip.tone === "waiting" ? "amber" : "primary"}
+            className="pxw-insp-run"
+            disabled={disabled || Boolean(run?.quoting)}
+            aria-describedby={reason && disabled ? "pxw-plan-reason" : undefined}
+            onClick={() => (chip.tone === "waiting" ? void atomik.approve() : atomik.start(page))}
+          >
+            <span>{chip.label}</span>
+          </Button>
+          {/* "Approve 18 cr" approves (never starts); the gate always has a way out. */}
+          {chip.tone === "waiting" ? (
+            <Button variant="control" className="pxw-insp-run" disabled={run?.approved} onClick={atomik.decline} data-testid="spec-plan-decline">
+              <span>Not now</span>
             </Button>
-            {/* "Approve 18 cr" approves (never starts); the gate always has a way out. */}
-            {chip.tone === "waiting" ? (
-              <Button variant="control" className="pxw-insp-run" disabled={run?.approved} onClick={atomik.decline} data-testid="spec-plan-decline">
-                <span>Not now</span>
-              </Button>
-            ) : null}
-          </>)}
-          {reason && disabled && !ownerRun ? (
+          ) : null}
+          {reason && disabled ? (
             <p className="pxw-insp-reason" id="pxw-plan-reason" data-testid="spec-plan-reason">{reason}</p>
           ) : null}
           {run?.error ? <p className="pxw-insp-error" role="alert">{run.error}</p> : null}

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
 import { MOLECULR_SECTIONS } from "../../lib/suites";
 import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { SOUND_TASKS, SOUND_TOOLS } from "../../lib/workbench/sound-generate";
@@ -14,30 +15,6 @@ import {
   toggleSection,
   type MobileTemplate,
 } from "../../lib/workspace/mobile-templates";
-import {
-  EMPTY_CREATIVE,
-  FORM_BLOCKED,
-  FORM_QUOTE_NOTE,
-  estimateAction,
-  formBlocked,
-  formDraftKey,
-  formInput,
-  formQuote,
-  formQuoteAttemptKey,
-  formQuoteBody,
-  formQuoteLabel,
-  readQuoteAttempt,
-  ESTIMATE_NEEDS_STORAGE,
-  takeEstimate,
-  type QuoteAttempt,
-  formSummary,
-  readFormCreative,
-  withReference,
-  withoutReference,
-  writeFormCreative,
-  type FormCreative,
-  type FormJob,
-} from "../../lib/workspace/mobile-form";
 import { ALL_PAGES } from "../../lib/workspace/pages";
 import { EMPTY_FACTS, SPEC_PAGES, cardChips, cardState, specFor, type SpecFacts } from "../../lib/workspace/spec-cards";
 import { stemRows } from "../../lib/workspace/stems";
@@ -181,146 +158,15 @@ test("one section opens at a time", () => {
 
 /* ── Form ────────────────────────────────────────────────────────────────── */
 
-const ref = (id: string, kind: "image" | "video" = "image") => ({ id, origin: "upload" as const, name: id, kind, seconds: null });
-const creative: FormCreative = { source: ref("v1", "video"), references: [ref("i1"), ref("i2")], prompt: "Hold the wind", resolution: "1080p" };
-const request = formInput("motion-transfer", creative)!;
-const job = (extra: Partial<FormJob> = {}): FormJob => ({ id: "j1", status: "quoted", input: request, quoteCredits: 142, quoteExpiresAt: 2_000, ...extra });
-
-test("the form reads and writes the same composition the desktop form holds", () => {
-  expect(formDraftKey("p1", "object-swap")).toBe("subatomik-consumer:p1:object-swap");
-  expect(readFormCreative(writeFormCreative(creative))).toEqual(creative);
-  /* Junk, a wrong kind and a repeat are all dropped, as the desktop drops them. */
-  expect(readFormCreative({ source: { id: "v1", origin: "upload", kind: "image" }, references: [ref("i1"), ref("i1")], resolution: "9000p" })).toEqual({
-    ...EMPTY_CREATIVE,
-    references: [ref("i1")],
-  });
-  expect(readFormCreative(null)).toEqual(EMPTY_CREATIVE);
-});
-
-test("the request is only built once the engine could take it", () => {
-  expect(formInput("motion-transfer", EMPTY_CREATIVE)).toBeNull();
-  expect(request).toEqual({
-    variant: "motion-transfer",
-    resolution: "1080p",
-    prompt: "Hold the wind",
-    source: { uploadId: "v1" },
-    references: [{ uploadId: "i1" }, { uploadId: "i2" }],
-  });
-  /* Distinct originals only: the schema refuses the same media twice. */
-  expect(withReference(creative, ref("i1")).references).toHaveLength(2);
-  expect(withReference(creative, ref("v1")).references).toHaveLength(2);
-  expect(withReference(creative, ref("i3")).references.map((item) => item.id)).toEqual(["i1", "i2", "i3"]);
-  expect(withoutReference(creative, "i1").references.map((item) => item.id)).toEqual(["i2"]);
-  expect(formSummary(creative)).toBe("1080p · 2 ordered references");
-});
-
-test("a quote counts only while it is the connected account's own, live and unspent", () => {
-  expect(formQuote([job()], request, 1_000)).toEqual({ state: "ready", credits: 142, expiresAt: 2_000 });
-  expect(formQuoteLabel(formQuote([job()], request, 1_000))).toBe("142 cr");
-  /* Stale, in each of the ways it can be stale. */
-  expect(formQuote([], request, 1_000).state).toBe("none");
-  expect(formQuote([job()], null, 1_000).state).toBe("none");
-  expect(formQuote([job({ status: "accepted" })], request, 1_000).state).toBe("none");
-  expect(formQuote([job()], formInput("motion-transfer", { ...creative, prompt: "different" })!, 1_000).state).toBe("changed");
-  expect(formQuote([job()], request, 9_000).state).toBe("expired");
-  expect(formQuote([job({ quoteExpired: true })], request, 1_000).state).toBe("expired");
-  expect(formQuote([job()], request, 1_000, ["j1"]).state).toBe("attempted");
-  /* No stale state ever carries a figure, so none can reach a button. */
-  for (const state of ["none", "changed", "expired", "attempted"] as const) {
-    const quote = { state, credits: null, expiresAt: null };
-    expect(formQuoteLabel(quote)).toBe("—");
-    expect(FORM_QUOTE_NOTE[state]).toMatch(/estimate|submitted|price/i);
-  }
-});
-
-test("a missing or stale quote blocks submission, and the reason is the honest one", () => {
-  const ready = formQuote([job()], request, 1_000);
-  expect(formBlocked({ projectOpen: true, connected: true, creative, request, quote: ready })).toBeNull();
-  expect(formBlocked({ projectOpen: false, connected: true, creative, request, quote: ready })).toMatch(/Open a project/);
-  expect(formBlocked({ projectOpen: true, connected: null, creative, request, quote: ready })).toMatch(/Checking/);
-  expect(formBlocked({ projectOpen: true, connected: false, creative, request, quote: ready })).toMatch(/connected account/);
-  expect(formBlocked({ projectOpen: true, connected: true, creative: EMPTY_CREATIVE, request: null, quote: ready })).toMatch(/source video/);
-  /* The card explains the price, the button says what to do: two lines of
-     different work, never the same sentence twice. */
-  for (const state of ["none", "changed", "expired", "attempted"] as const) {
-    expect(formBlocked({ projectOpen: true, connected: true, creative, request, quote: { state, credits: null, expiresAt: null } })).toBe(FORM_BLOCKED[state]);
-    expect(FORM_BLOCKED[state]).not.toBe(FORM_QUOTE_NOTE[state]);
-    expect(FORM_BLOCKED[state]).toMatch(/estimate/i);
-  }
-});
-
-test("the phone takes its own estimate: a new one only when none is usable, an unfinished one finished with its own key", () => {
-  const none = formQuote([], request, 1_000);
-  const ready = formQuote([job()], request, 1_000);
-  /* No usable quote: take one for exactly this composition. */
-  expect(estimateAction({ request, quote: none, stored: null, jobs: [] })).toEqual({ kind: "take", input: request });
-  expect(estimateAction({ request, quote: { state: "expired", credits: null, expiresAt: 1 }, stored: null, jobs: [] }).kind).toBe("take");
-  /* A usable quote, or nothing the engine accepts yet: nothing to take. */
-  expect(estimateAction({ request, quote: ready, stored: null, jobs: [job()] })).toEqual({ kind: "none" });
-  expect(estimateAction({ request: null, quote: none, stored: null, jobs: [] })).toEqual({ kind: "none" });
-  /* Something still being confirmed blocks a new estimate, as it does on the desktop. */
-  expect(estimateAction({ request, quote: none, stored: null, jobs: [job({ status: "uncertain" })] }).kind).toBe("blocked");
-  /* An unfinished attempt (the answer was lost) is finished first, with its own key and input. */
-  const attempt = { key: "0b7c7c6e-1f7d-4c8e-9a51-6f1f2b9f6a10", input: request };
-  expect(readQuoteAttempt(JSON.stringify(attempt))).toEqual(attempt);
-  expect(estimateAction({ request: null, quote: none, stored: attempt, jobs: [] })).toEqual({ kind: "recover", attempt });
-  /* A record that cannot be read is never overwritten: it may name originals already copied. */
-  expect(readQuoteAttempt("{")).toBe("unreadable");
-  expect(readQuoteAttempt(JSON.stringify({ key: "not-a-uuid", input: request }))).toBe("unreadable");
-  expect(readQuoteAttempt(null)).toBeNull();
-  expect(estimateAction({ request, quote: none, stored: "unreadable", jobs: [] })).toEqual({ kind: "unreadable" });
-  expect(estimateAction({ request: null, quote: ready, stored: "unreadable", jobs: [] })).toEqual({ kind: "unreadable" });
-  /* A browser that keeps no site data is not an unreadable record: it only stops a new estimate, and says why. */
-  expect(estimateAction({ request, quote: none, stored: "unavailable", jobs: [] })).toEqual({ kind: "blocked", reason: ESTIMATE_NEEDS_STORAGE });
-  expect(estimateAction({ request, quote: ready, stored: "unavailable", jobs: [job()] })).toEqual({ kind: "none" });
-  /* The route's strict quote body, and the desktop's own recovery record. */
-  expect(formQuoteBody("ws-1", attempt)).toEqual({ action: "quote", draftId: "ws-1", input: request, idempotencyKey: attempt.key });
-  expect(formQuoteAttemptKey("u:w", "ws 1")).toBe("particl-consumer-genjutsu:u%3Aw:ws%201:attempts:quote");
-});
-
-test("the phone's estimate record goes only once an estimate is in: a refusal keeps it, so the next press reuses the key", async () => {
-  const attempt: QuoteAttempt = { key: "0b7c7c6e-1f7d-4c8e-9a51-6f1f2b9f6a10", input: request };
-  const none = formQuote([], request, 1_000);
-  const run = async (answer: () => Promise<{ ok: boolean; error: string | null }>) => {
-    let record: QuoteAttempt | null = null;
-    const sent: unknown[] = [];
-    const result = await takeEstimate("ws-1", attempt, {
-      save: (value) => { record = value; },
-      post: async (body) => { sent.push(body); return answer(); },
-    });
-    return { result, record: record as QuoteAttempt | null, sent };
-  };
-
-  /* The route's 409 "import_uncertain": originals may already be copied. The record survives,
-     and what the control offers next is the SAME request, never a new key. */
-  const uncertain = await run(async () => ({ ok: false, error: "An earlier media transfer could not be confirmed. It will not be retried automatically. No video was submitted." }));
-  expect(uncertain.result).toEqual({ ok: false, error: expect.stringContaining("could not be confirmed") });
-  expect(uncertain.record).toEqual(attempt);
-  expect(estimateAction({ request, quote: none, stored: uncertain.record, jobs: [] })).toEqual({ kind: "recover", attempt });
-  expect(uncertain.sent).toEqual([formQuoteBody("ws-1", attempt)]);
-
-  /* A busy original, a 5xx, a 400: every refusal keeps it. Only the person's discard lets it go. */
-  for (const error of ["The original is busy.", "Studio could not reach the connected account.", "Check the request."])
-    expect((await run(async () => ({ ok: false, error }))).record).toEqual(attempt);
-  /* No answer at all (the connection dropped): kept, and the message says to finish it. */
-  const lost = await run(async () => { throw new TypeError("Failed to fetch"); });
-  expect(lost.record).toEqual(attempt);
-  expect(lost.result.ok).toBe(false);
-  if (!lost.result.ok) expect(lost.result.error).toMatch(/Finish the last estimate/);
-
-  /* The estimate is in: the record goes. */
-  const done = await run(async () => ({ ok: true, error: null }));
-  expect(done.result).toEqual({ ok: true });
-  expect(done.record).toBeNull();
-
-  /* A browser that will not keep the record never sends: the originals are not copied without a way to finish. */
-  const sent: unknown[] = [];
-  const refused = await takeEstimate("ws-1", attempt, {
-    save: () => { throw new DOMException("blocked", "SecurityError"); },
-    post: async (body) => { sent.push(body); return { ok: true, error: null }; },
-  });
-  expect(refused).toEqual({ ok: false, error: ESTIMATE_NEEDS_STORAGE });
-  expect(sent).toEqual([]);
+/* The form template (Motion and Swap) priced and ran its transform on the Higgsfield account. That sign-in is
+   retired: the page says so (components/workspace/mobile/screens/registry.tsx), and its form code is gone. */
+test("the phone's form pages say the sign-in is retired and read nothing: the account form's code is gone", () => {
+  expect(templateFor("motion")).toBe("form");
+  expect(templateFor("swap")).toBe("form");
+  const registry = readFileSync("components/workspace/mobile/screens/registry.tsx", "utf8");
+  expect(registry).toContain("form: RetiredFormPage");
+  expect(registry).not.toMatch(/from "[^"]*(mobile-form|pages\/FormPage)"|fetch\(|\/api\//);
+  for (const gone of ["lib/workspace/mobile-form.ts", "components/workspace/mobile/pages/FormPage.tsx"]) expect(existsSync(gone), gone).toBe(false);
 });
 
 /* ── Edit & Sound, and the primary's reason ──────────────────────────────── */

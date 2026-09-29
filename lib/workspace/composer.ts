@@ -1,7 +1,6 @@
 import { displayModelName } from "../models";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
-import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -13,11 +12,19 @@ import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
  * Nothing here fetches, and nothing here writes a model name: every label
  * comes from the catalogue the account offers, through `displayModelName`
  * (lib/models.ts), so a renamed engine renames itself here too.
+ *
+ * Every render is paid in this workspace's credits, on Studio engines: the
+ * catalogue of a signed-in Higgsfield account went with that sign-in.
  */
 
 export type ComposerType = "image" | "video" | "audio";
-/** Which credits pay for the render. The workspace's own are the default. */
-export type BillingSource = "workspace" | "connected";
+/**
+ * The one credit source, as it has always been written into the composer's
+ * keys (a quote's key, a model chosen per type, the model sheet's recent
+ * list): kept word for word, so a take left unconfirmed is still found by the
+ * key it was stored under.
+ */
+export const WORKSPACE_SOURCE = "workspace";
 
 export const COMPOSER_TYPES: readonly ComposerType[] = ["image", "video", "audio"];
 export const TYPE_LABELS: Record<ComposerType, string> = { image: "Image", video: "Video", audio: "Audio" };
@@ -29,30 +36,16 @@ export type ComposerModel = {
   type: ComposerType;
   /** One line of what it is for (the catalogue's description). */
   description?: string;
-  /** Workspace image/video engines: the engine's own allowed settings.
-      Connected models: read from the live catalogue entry (FINAL_SPEC §3) —
-      `durations` is every second of a range, or exactly the closed list. */
+  /** Workspace image/video engines: the engine's own allowed settings. */
   ratios?: string[];
   resolutions?: string[];
   durations?: number[];
   /** Workspace sound engines: which audio task this capability is. */
   audioTask?: NodeAudioTask;
-  /** Connected models: the reference roles the model accepts, if any. */
-  referenceRoles?: string[];
-  /** Connected models: served through the connected account. */
-  connected?: true;
-  /** Connected models: declares no media slot at all — the well is hidden. */
-  promptOnly?: boolean;
-  /** Connected models: the schema declares `enhance_prompt` (FINAL_SPEC §4). */
-  enhanceable?: boolean;
-  /** Connected Soul models: the schema declares `soul_id` (FINAL_SPEC §4 › Soul ID); a trained character can be carried. */
-  soulId?: boolean;
-  /** Connected models: the most references the smallest slot allows, when declared. */
-  mediaMax?: number;
   /** Workspace image/video engines: the most reference images and videos the engine takes. */
   maxImages?: number;
   maxVideos?: number;
-  /** Takes carry sound: a Studio engine that always renders it (engines route › audio), or a connected audio parameter that defaults on. */
+  /** Takes carry sound: a Studio engine that always renders it (engines route › audio). */
   audio?: boolean;
   /** Workspace image/video engines: the price at the composer's untouched settings (GET /api/workbench/engines › rate). */
   rate?: EngineRate | null;
@@ -70,14 +63,11 @@ export type ComposerReference = {
   kind: "image" | "video" | "audio";
   name: string;
   url: string;
-  /** Connected models: the role this reference takes (one of the model's). */
-  role?: string;
 };
 
 export type ComposerState = {
   type: ComposerType;
-  billing: BillingSource;
-  /** The model chosen per billing source and type, so switching back keeps it. */
+  /** The model chosen per type (chosenKey), so switching back keeps it. */
   chosen: Record<string, string>;
   prompt: string;
   references: ComposerReference[];
@@ -91,8 +81,6 @@ export type ComposerState = {
    * sent: composerSettings falls back to the engine's own default.
    */
   picks: ComposerPicks;
-  /** Gen's Auto: a connected model whose schema declares `enhance_prompt` is asked to enhance on the account. */
-  enhance: boolean;
   /** Takes per Generate (the stepper, 1–4). Two or more go as one batch at the total on the button (lib/workspace/take-batch.ts). */
   count: number;
   /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
@@ -103,11 +91,10 @@ export type ComposerState = {
 export const TAKES_MAX = 4;
 
 /** `draft`: "Draft first" (lib/draftFinal.ts), honoured only on an engine with draft mode: a 480p draft whose final is made after. */
-export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string; draft?: boolean };
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; draft?: boolean };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
-  billing: "workspace",
   chosen: {},
   prompt: "",
   references: [],
@@ -115,23 +102,21 @@ export const INITIAL_COMPOSER: ComposerState = {
   instrumental: true,
   voiceId: "",
   picks: {},
-  enhance: false,
   count: 1,
   shot: {},
   notice: null,
 };
 
-export const chosenKey = (billing: BillingSource, type: ComposerType) => `${billing}:${type}`;
+export const chosenKey = (type: ComposerType) => `${WORKSPACE_SOURCE}:${type}`;
 
 /**
  * A take's recipe applied in one step (Recreate, lib/shell/recipe.ts): the
- * output, the credits, the model and its settings replace the composer's; the
+ * output, the model and its settings replace the composer's; the
  * words and references do too unless they are left out (Use settings only).
  * One take — a recreate is one new take, priced again on the button.
  */
 export type ComposerRecipe = {
   type: ComposerType;
-  billing: BillingSource;
   model?: string;
   picks: ComposerPicks;
   prompt?: string;
@@ -143,7 +128,6 @@ export type ComposerRecipe = {
 
 export type ComposerAction =
   | { type: "type"; value: ComposerType }
-  | { type: "billing"; value: BillingSource }
   | { type: "model"; value: string }
   | { type: "prompt"; value: string }
   /** `task` is the current model's audio task: the length is held to what that task bills. */
@@ -151,8 +135,6 @@ export type ComposerAction =
   | { type: "instrumental"; value: boolean }
   | { type: "voice"; value: string }
   | { type: "pick"; value: ComposerPicks }
-  | { type: "referenceRole"; key: string; role: string }
-  | { type: "enhance"; value: boolean }
   | { type: "count"; value: number }
   | { type: "shot"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
@@ -220,14 +202,10 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         seconds: action.value === "audio" ? SOUND_SECONDS : state.seconds,
         notice: null,
       };
-    case "billing":
-      if (action.value === state.billing) return state;
-      /* The switch changes the model list and the price source. */
-      return { ...state, billing: action.value, notice: null };
     case "model":
       return {
         ...state,
-        chosen: { ...state.chosen, [chosenKey(state.billing, state.type)]: action.value },
+        chosen: { ...state.chosen, [chosenKey(state.type)]: action.value },
         seconds: audioSeconds(AUDIO_MODEL_TASK[action.value], state.seconds),
         notice: null,
       };
@@ -241,10 +219,6 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, voiceId: action.value, notice: null };
     case "pick":
       return { ...state, picks: { ...state.picks, ...action.value }, notice: null };
-    case "referenceRole":
-      return { ...state, references: state.references.map((r) => (r.key === action.key ? { ...r, role: action.role } : r)), notice: null };
-    case "enhance":
-      return { ...state, enhance: action.value };
     case "count":
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
     case "shot":
@@ -264,8 +238,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return {
         ...state,
         type: recipe.type,
-        billing: recipe.billing,
-        chosen: recipe.model ? { ...state.chosen, [chosenKey(recipe.billing, recipe.type)]: recipe.model } : state.chosen,
+        chosen: recipe.model ? { ...state.chosen, [chosenKey(recipe.type)]: recipe.model } : state.chosen,
         picks: { ...recipe.picks },
         prompt: recipe.prompt === undefined ? state.prompt : recipe.prompt.slice(0, 5000),
         references: references.slice(0, 10),
@@ -280,7 +253,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
     case "restore":
       return { ...action.value, notice: null };
     case "reset":
-      return { ...INITIAL_COMPOSER, billing: state.billing, chosen: state.chosen };
+      return { ...INITIAL_COMPOSER, chosen: state.chosen };
   }
 }
 
@@ -309,20 +282,6 @@ export type EngineRow = {
   /** The engine has draft mode (lib/models.ts › supportsDraft). */
   draft?: boolean;
 };
-
-/** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
-export type ConnectedRow = {
-  id: string; name: string; outputType: string; description?: string;
-  medias?: { name?: string; roles: string[]; max?: number }[];
-  aspectRatios?: string[]; durations?: number[]; durationRange?: { min: number; max: number };
-  parameters?: { name: string; type?: string; options?: (string | number)[]; min?: number; max?: number; default?: string | number | boolean | null }[];
-};
-/** Every whole second of a range, for engines whose `durations` is min/max (Seedance 2.5: 4–30 s). */
-export function secondsIn(range: { min: number; max: number }): number[] {
-  const min = Math.ceil(range.min), max = Math.floor(range.max);
-  if (!Number.isFinite(min) || !Number.isFinite(max) || max < min || max - min > 600) return [];
-  return Array.from({ length: max - min + 1 }, (_, i) => min + i);
-}
 
 /**
  * The image and sound models the composer offers on the workspace's own
@@ -370,57 +329,21 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
   return out;
 }
 
-/**
- * The connected account's standalone models of each type, catalogue order kept.
- *
- * A connected model's name is the catalogue's own, which the catalogue reader
- * has already stripped of the provider (#262: models we integrate directly read
- * under their real names, models served through the connected account stay
- * neutral). Nothing is renamed here.
- */
-export function connectedModels(rows: readonly ConnectedRow[]): ComposerModel[] {
-  return rows.flatMap((row) => {
-    const type = row.outputType === "image" || row.outputType === "video" || row.outputType === "audio" ? row.outputType : null;
-    if (!type) return [];
-    const resolution = row.parameters?.find((p) => p.name === "resolution")?.options?.map(String);
-    const slots = row.medias ?? [];
-    const maxes = slots.map((slot) => slot.max).filter((m): m is number => typeof m === "number");
-    return [{
-      id: row.id,
-      label: row.name,
-      type,
-      connected: true,
-      ...(row.description ? { description: row.description } : {}),
-      ...(row.aspectRatios?.length ? { ratios: [...row.aspectRatios] } : {}),
-      ...(resolution?.length ? { resolutions: resolution } : {}),
-      ...(row.durations?.length ? { durations: [...row.durations] } : row.durationRange ? { durations: secondsIn(row.durationRange) } : {}),
-      referenceRoles: [...new Set(slots.flatMap((slot) => slot.roles))],
-      promptOnly: slots.length === 0,
-      enhanceable: Boolean(row.parameters?.some((p) => p.name === "enhance_prompt")),
-      soulId: Boolean(row.parameters?.some((p) => p.name === "soul_id")),
-      ...(maxes.length ? { mediaMax: Math.min(...maxes) } : {}),
-      /* The composer never sends an audio switch, so a take carries sound only where the account's default is on. */
-      ...(type === "video" && row.parameters?.some((p) => /audio|sound/i.test(p.name) && p.default === true) ? { audio: true } : {}),
-    }];
-  });
-}
-
 /** The models of the composer's current type, in catalogue order. */
 export function offeredModels(state: Pick<ComposerState, "type">, models: readonly ComposerModel[]): ComposerModel[] {
   return models.filter((model) => model.type === state.type);
 }
 
 /**
- * The named defaults (FINAL_SPEC §3, from higgsfield-ai/skills › SKILL.md):
- * image → GPT Image 2.5, video → Seedance 2.5, audio → Seed Audio 1.0 — by
- * the catalogue's ids, first match wins; the workspace engines carry the
- * same families under the repo's ids. Never invented: a default that the
- * list does not offer is simply not the default.
+ * The named defaults (FINAL_SPEC §3): image → GPT Image 2.5, video →
+ * Seedance 2.5, audio → sound effects — by the Studio engines' ids, first
+ * match wins. Never invented: a default that the list does not offer is
+ * simply not the default.
  */
 export const DEFAULT_MODEL_PREFERENCE: Record<ComposerType, readonly string[]> = {
-  image: ["gpt_image_2_5", "gpt_image_2", "gpt-image-2.5-flare", "gpt-image-2"],
-  video: ["seedance_2_5", "dreamina-seedance-2-5-260628"],
-  audio: ["seed_audio", "eleven_sfx"],
+  image: ["gpt-image-2.5-flare", "gpt-image-2"],
+  video: ["dreamina-seedance-2-5-260628"],
+  audio: ["eleven_sfx"],
 };
 
 /**
@@ -429,11 +352,11 @@ export const DEFAULT_MODEL_PREFERENCE: Record<ComposerType, readonly string[]> =
  * first — which is why the composer works without anybody touching the model row.
  */
 export function activeModel(
-  state: Pick<ComposerState, "type" | "billing" | "chosen">,
+  state: Pick<ComposerState, "type" | "chosen">,
   models: readonly ComposerModel[],
 ): ComposerModel | null {
   const offered = offeredModels(state, models);
-  const picked = state.chosen[chosenKey(state.billing, state.type)];
+  const picked = state.chosen[chosenKey(state.type)];
   const preferred = DEFAULT_MODEL_PREFERENCE[state.type].map((id) => offered.find((model) => model.id === id)).find(Boolean);
   return offered.find((model) => model.id === picked) ?? preferred ?? offered[0] ?? null;
 }
@@ -442,7 +365,6 @@ export function activeModel(
 
 export type ComposerSettings = {
   ratio: string; resolution: string; duration: number;
-  /** A trained character, only where the model declares `soul_id`. */ soulId?: string;
   /** A draft first (lib/draftFinal.ts): 480p, watermarked, and made into its 1080p final after. */ draft?: true;
 };
 
@@ -467,7 +389,6 @@ export function composerSettings(model: ComposerModel | null, projectAspect?: st
     duration: picks.duration != null && model?.durations?.includes(picks.duration)
       ? picks.duration
       : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
-    ...(model?.soulId && picks.soulId ? { soulId: picks.soulId } : {}),
     ...(draft ? { draft: true as const } : {}),
   };
 }
@@ -488,33 +409,26 @@ export type ComposerQuote = {
 };
 
 /**
- * The connected account's readiness: ownership and suspension from the session,
- * the connection from the shell's shared read (lib/shell/use-connected-capability).
- * `unreadable` is the owner's failed read, said as it is — never taken for "not connected".
- */
-export type ConnectedCapability = { owner: boolean; connected: boolean; suspended: boolean; unreadable?: string | null };
-
-/**
  * The exact inputs a price belongs to. Anything a person can change that moves
  * the price is in here, so a stale figure can never be sent.
  */
 export function quoteKeyFor(input: {
-  billing: BillingSource;
   type: ComposerType;
   modelId: string;
   settings: ComposerSettings;
   references: readonly ComposerReference[];
-  /** Sound and connected models price the prompt itself. */
+  /** Sound prices the prompt itself. */
   prompt: string;
   /** Sound: the length billed, and the voice a line is read in (the one the picker shows, composerVoices). */
   seconds: number;
   instrumental: boolean;
   voiceId: string;
 }): string {
-  const priced = input.billing === "connected" || input.type === "audio" ? input.prompt : "";
+  const priced = input.type === "audio" ? input.prompt : "";
+  /* The credit source and the retired Soul identity slot ("") keep their places: the key reads as it always has. */
   return JSON.stringify([
-    input.billing, input.type, input.modelId,
-    input.settings.ratio, input.settings.resolution, input.settings.duration, input.settings.soulId ?? "",
+    WORKSPACE_SOURCE, input.type, input.modelId,
+    input.settings.ratio, input.settings.resolution, input.settings.duration, "",
     input.references.map((r) => `${r.origin}:${r.id}`),
     priced, input.seconds, input.instrumental, input.voiceId,
     // Keep existing recovery keys unchanged. Only the new draft body gets its own discriminator.
@@ -549,8 +463,7 @@ export function shownTotal(quote: ComposerQuote | null, quoteKey: string, count:
   return count > 1 ? batchTotal(credits, count, quote?.takes) : credits;
 }
 
-/** The two reasons that mean "still loading", not "refused" — the model sheet draws them as a loading list. */
-export const READING_ACCOUNT = "Reading the connected account…";
+/** The reason that means "still loading", not "refused" — the model sheet draws it as a loading list. */
 export const READING_MODELS = "Reading the available models…";
 
 /**
@@ -559,36 +472,24 @@ export const READING_MODELS = "Reading the available models…";
  */
 export function composerBlock(input: {
   /** `voiceId`: the voice the line will be read in (composerVoices › speechVoiceFor), not only one picked. */
-  state: Pick<ComposerState, "billing" | "type" | "prompt" | "voiceId">;
+  state: Pick<ComposerState, "type" | "prompt" | "voiceId">;
   model: ComposerModel | null;
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
   /** A failed project list is not evidence that this workspace has no project. */
   projects?: "loading" | "ready" | "error";
-  capability: ConnectedCapability | null;
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
-  /** The words as sent: with Gen's film vocabulary written in, they can run past what the connected account takes. */
-  sentPrompt?: string;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
   if (input.projects === "loading") return "Reading the projects…";
   if (input.projects === "error") return "Projects didn’t load. Use Try again above before generating.";
-  if (state.billing === "connected") {
-    if (!input.capability) return READING_ACCOUNT;
-    if (!input.capability.owner) return "The workspace owner uses the connected account. Switch to this workspace’s credits.";
-    if (input.capability.unreadable) return input.capability.unreadable;
-    if (!input.capability.connected) return "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
-    if (input.capability.suspended) return "Rendering is paused for this workspace.";
-  }
   if (input.catalogue.error) return input.catalogue.error;
   if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
-  if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
-    return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
   if (model.audioTask === "speech" && !state.voiceId) return `${model.label} has no voice to read in here. Choose another model.`;
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
@@ -597,7 +498,6 @@ export function composerBlock(input: {
 }
 
 type ButtonInput = {
-  billing: BillingSource;
   quote: ComposerQuote | null;
   quoteKey: string;
   submitting: boolean;
@@ -609,8 +509,8 @@ type ButtonInput = {
 
 /**
  * The button's label in its two parts: what it does ("Generate 4 takes") and
- * what it costs ("72 connected cr" — the live figure, whole, "about" where it
- * is approximate, or none).
+ * what it costs ("72 cr" — the live figure, whole, "about" where it is
+ * approximate, or none).
  * Gen draws them apart so the price can take its own line on a narrow button
  * rather than ever being cut.
  */
@@ -621,23 +521,16 @@ export function composerButtonParts(input: ButtonInput): { action: string; price
   const action = input.draft ? "Generate draft" : count > 1 ? `Generate ${count} takes` : "Generate";
   if (total === null) return { action, price: null };
   const about = input.quote?.approximate ? "about " : "";
-  return { action, price: `${about}${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+  return { action, price: `${about}${total.toLocaleString("en-US")} cr` };
 }
 
-/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" / "Generate · about 18 cr" — the live figure, or no figure at all. */
+/** "Generate · 18 cr" / "Generate 4 takes · 72 cr" / "Generate · about 18 cr" — the live figure, or no figure at all. */
 export function composerButtonLabel(input: ButtonInput): string {
   const { action, price } = composerButtonParts(input);
   return price ? `${action} · ${price}` : action;
 }
 
 /** Which credits pay, said plainly and without naming the provider. */
-export function billingWording(billing: BillingSource, input: { workspaceName?: string | null; walletName?: string | null }): string {
-  if (billing === "workspace")
-    return `Charged to ${input.workspaceName ? `${input.workspaceName}’s` : "this workspace’s"} credits.`;
-  return `Charged to the connected account’s credits${input.walletName ? ` · ${input.walletName}` : ""}. The output belongs to that account.`;
+export function billingWording(input: { workspaceName?: string | null }): string {
+  return `Charged to ${input.workspaceName ? `${input.workspaceName}’s` : "this workspace’s"} credits.`;
 }
-
-export const BILLING_LABELS: Record<BillingSource, string> = {
-  workspace: "This workspace’s credits",
-  connected: "Connected account",
-};

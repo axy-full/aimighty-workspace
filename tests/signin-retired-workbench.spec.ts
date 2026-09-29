@@ -11,8 +11,11 @@ import { workbenchScopeFor } from "../lib/workbench/request-scope";
  * is refused with one plain answer, whatever it carries. What the owner made
  * there still reads: the jobs still running hold their slots on Workspace ›
  * Engines, where a stuck one can be set aside; their approved quotes are in
- * Workspace › Usage and on the /usage Higgsfield tab. Nothing reaches the
- * account: this workspace holds no grant, and ENGINE_MOCK is on.
+ * Workspace › Usage (a job still open there was never collected, and says so)
+ * and on the /usage Higgsfield tab. The account's own UI is gone: Gen has no
+ * account catalogue, identities, Analysis or takes left on the account, and no
+ * page asks the account anything. Nothing reaches the account: this workspace
+ * holds no grant, and ENGINE_MOCK is on.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -114,6 +117,9 @@ test("the owner's account history still reads on the real routes — running job
   const connected = page.getByTestId("ws-ledger-connected");
   await expect(connected.getByTestId("ws-ledger-connected-row")).toHaveCount(3);
   await expect(connected).toContainText("3 jobs · 127.5 connected cr quoted");
+  /* A job still open in the ledger was never collected, and nothing collects it now: said so, and nothing more. */
+  await expect(connected.getByTestId("ws-ledger-connected-row").filter({ hasText: "Not collected" })).toHaveCount(2);
+  await expect(connected.getByTestId("ws-ledger-connected-row").filter({ hasText: "Completed" })).toHaveCount(1);
   await noSideScroll(page);
 
   /* The /usage Higgsfield tab: the approved quote commitments, from the same ledger. */
@@ -122,5 +128,40 @@ test("the owner's account history still reads on the real routes — running job
   const panel = page.getByRole("region", { name: "My connected-account activity", exact: true });
   for (const [label, credits] of [["Completed", 75], ["Pending", 40.5], ["Uncertain", 12]] as const)
     await expect(panel.locator(".management-stat").filter({ has: page.getByText(label, { exact: true }) })).toContainText(`${credits} connected credits`);
+  expect(errors).toEqual([]);
+});
+
+test("Gen and its model sheet show none of the account's UI and ask the account nothing, the owner's own included", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { workspace } = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; owner: boolean };
+  expect(me.owner, "the owner's own workspace").toBe(true);
+  /* Jobs the shell's collector used to follow are still open in the ledger: nothing reads them from a page now. */
+  await seedLedger(page, workspace.id, me.id);
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${url.pathname}`);
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/suites?view=gen");
+  await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
+  /* The outputs and Edit: no Analysis. */
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
+  for (const id of ["gen-tab-analysis", "gen-resumed", "gen-resumed-jump", "gen-identity", "gen-connection-retry", "gen-enhanced-on-account", "gen-ref-role", "gen-prompt-only"])
+    await expect(page.getByTestId(id), id).toHaveCount(0);
+  /* This workspace's credits, and its Studio engines only: no catalogue to switch to. */
+  await expect(page.getByText(/^Charged to .+’s credits\.$/)).toBeVisible();
+  await page.getByTestId("gen-model").click();
+  const sheet = page.getByRole("dialog", { name: "Choose a model" });
+  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
+  await expect(sheet.getByRole("tablist", { name: "Catalogue" })).toHaveCount(0);
+  await expect(sheet).not.toContainText(/connected cr|Higgsfield catalogue/);
+  await noSideScroll(page);
+  await page.keyboard.press("Escape");
+
+  expect(asked, "nothing asks the account, not even for a list of saved jobs").toEqual([]);
   expect(errors).toEqual([]);
 });

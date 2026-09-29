@@ -78,10 +78,16 @@ export const LEDGER_LABEL: Record<LedgerState, string> = {
   unpriced: "No cost recorded",
 };
 
+/**
+ * Particl no longer signs in to Higgsfield (lib/higgsfield-consumer/retired.ts)
+ * and its account jobs were drained before this screen changed: a job still
+ * open in the ledger was never collected, and nothing will collect it now. That
+ * is all it claims — the account's own record says what it billed.
+ */
 export const CONNECTED_LABEL: Record<ConnectedState, string> = {
   completed: "Completed",
-  pending: "Pending",
-  uncertain: "Uncertain",
+  pending: "Not collected",
+  uncertain: "Not collected",
   failed: "Failed",
 };
 

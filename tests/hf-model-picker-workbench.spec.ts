@@ -42,10 +42,7 @@ async function open(page: Page, options: Options = {}) {
   const quotes: Record<string, unknown>[] = [];
   await page.route("**/api/higgsfield/consumer/**", async (route) => {
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
-    /* The shell lists the open project's saved connected jobs (GET ?draftId=, lib/shell/connected-collector) whenever
-       a project opens, on any page, so a render left mid-way still reaches Takes: not the composer reading the account. */
-    const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
-    if (listing) return route.fulfill({ json: { jobs: [] } });
+    /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
     consumer.push({ url: route.request().url(), ...body });
     return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
   });

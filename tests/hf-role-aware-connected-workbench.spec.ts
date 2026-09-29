@@ -15,9 +15,9 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
  * signs in to Higgsfield and that past results stay in the Library, with the
  * way to make the same kind of thing in Gen on this workspace's credits. No
  * suite carries an "Owner" badge, Gen offers no connected catalogue or
- * Analysis, and nothing new is asked of the account: the only account route
- * the owner's pages call is the shell's own list of saved jobs (so jobs
- * already running are still collected). Nothing is generated or billed.
+ * Analysis, and nothing is asked of the account: the owner's pages call no
+ * account route at all (the shell's collector went with the sign-in, after
+ * the jobs already running were drained). Nothing is generated or billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -27,8 +27,6 @@ const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "wor
 const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
 const TITLE = "Particl no longer signs in to Higgsfield";
-/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
-const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 async function settle(page: Page) {
@@ -225,8 +223,8 @@ test("the owner meets one calm card where the Higgsfield account ran — Busines
     await shot(page, "home-owner", project);
   }
 
-  /* Nothing new was asked of the account on the way: the only account route called is the collector's list of saved jobs. */
-  expect(consumer.filter((request) => request !== COLLECTOR_LIST), "no new work, and no read of the account").toEqual([]);
+  /* Nothing was asked of the account on the way, not even a list of saved jobs: the shell's collector went with the sign-in. */
+  expect(consumer, "no new work, and no read of the account").toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -294,7 +292,7 @@ test("the Studio alternative takes a fresh credit quote before explicit Generate
     await generate.click();
     await expect.poll(() => submitted.length).toBe(1);
     expect(submitted[0]).toMatchObject({ maxCredits: credits });
-    expect(consumer.filter((request) => request !== COLLECTOR_LIST)).toEqual([]);
+    expect(consumer).toEqual([]);
   } finally { release(); }
 });
 

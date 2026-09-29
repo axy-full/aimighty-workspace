@@ -195,35 +195,6 @@ export default function MarketingStudioFlow({
     }
   }
 
-  async function attachConsumerVideo(asset: Asset, draftId: string) {
-    if (!draft.live() || !draft.owns(draftId))
-      throw new Error("Return to the original project and workspace before adding this video.");
-    if (asset.kind !== "video" || !asset.generationId || !/^gen_hfc_[a-f0-9]{40}$/.test(asset.generationId) || asset.url !== `/api/media/${asset.generationId}`)
-      throw new Error("A verified stored video original is required.");
-    await fileOriginal(asset, draftId);
-  }
-
-  async function attachTemplateOriginal(asset: Asset, draftId: string) {
-    if (!draft.live() || !draft.owns(draftId))
-      throw new Error("Return to the original project and workspace before saving this variant.");
-    if (!["image", "video"].includes(asset.kind) || !asset.generationId || !/^gen_hfc_[a-f0-9]{40}$/.test(asset.generationId) || asset.url !== `/api/media/${asset.generationId}`)
-      throw new Error("A verified stored original is required.");
-    await fileOriginal(asset, draftId);
-  }
-
-  /** The shared tail of both: file the original once, then save. */
-  async function fileOriginal(asset: Asset, draftId: string) {
-    const existing = draft.latest().assets.find((item) => item.generationId === asset.generationId);
-    if (!existing) {
-      if (draft.latest().assets.length >= PROJECT_LIMITS.assets) throw new Error(`This project has reached its ${limitText(PROJECT_LIMITS.assets)}-asset limit.`);
-      if (draft.latest().assets.some((item) => item.id === asset.id))
-        throw new Error("This original conflicts with an existing project asset.");
-      draft.change((old) => ({ ...old, assets: [...old.assets, asset] }));
-    }
-    if (!(await draft.ensureSaved(draftId)))
-      throw new Error("The original is in your local library, but the project is not saved yet. Keep it open and retry saving.");
-  }
-
   function buildStoryboard() {
     if (!draft.live()) return;
     try {
@@ -429,8 +400,6 @@ export default function MarketingStudioFlow({
         onBuildStoryboard={buildStoryboard}
         onReviewVariant={reviewVariant}
         onPrepareVariants={prepareVariants}
-        onConsumerVideoAsset={attachConsumerVideo}
-        onTemplateAsset={attachTemplateOriginal}
         onGenerate={configureGeneration}
         onSequence={onSequence}
         onAgent={onAgent}

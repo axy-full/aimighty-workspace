@@ -237,8 +237,7 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
     if (path === "/api/workbench/projects")
       return json({ project, projects: [{ id: project.id, name: project.name, revision: 1 }], revision: 1, productions: [], shared: null });
     if (path.startsWith("/api/higgsfield/consumer/")) {
-      /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
-      if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
+      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
       asked.push(`${request.method()} ${path}`);
       return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
     }
@@ -288,8 +287,7 @@ test("Compare's Atomik plan builds the comparison from the project's Library, fr
       return json({ generations: [take], nextPageCursor: null });
     }
     if (path.startsWith("/api/higgsfield/consumer/")) {
-      /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
-      if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
+      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
       asked.push(`${request.method()} ${path}`);
       return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
     }

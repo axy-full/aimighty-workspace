@@ -48,7 +48,6 @@ import { suiteHref } from "@/lib/suites";
 import type { Project, Plan } from "@/lib/workbench/studio";
 import type { Generation } from "@/lib/jobs";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
-import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { projectAssetFromLibrary } from "@/components/workbench/ProjectLibraryPage";
 import { ToastHost } from "@/components/ui/Toast";
@@ -158,8 +157,6 @@ export default function SubatomikWorkspace({
   variant?: GenjutsuVariant;
   /** Hosted inside another page's chrome: no page title or suite header of its own. */
   embedded?: boolean;
-  /** The connected-account form's quote input, when these pages ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
-  onConnectedInput?: (input: ConsumerGenjutsuInput | null) => void;
 } = {}) {
   usePageTitle(embedded ? null : "Subatomik Viral Studio");
   const session = useSession(),

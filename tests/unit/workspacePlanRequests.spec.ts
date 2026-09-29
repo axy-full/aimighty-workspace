@@ -178,15 +178,10 @@ test("Marketing Studio's plan runs on the page's bodies and refuses without them
   expect(plans.marketing.runnable({ ...ctx({ variants }), projectId: null }).ok).toBe(false);
 });
 
-test("Shorts' plan refuses whatever the form holds: no API-key engine makes a set of shorts", () => {
-  const plans = withRequestGate(PLANS, () => new Set<RequestKey>(["shorts"]));
-  const input = {
-    source: { uploadId: "clip-1" },
-    preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" as const, name: "Bold Urban" },
-    aspectRatio: "9:16" as const,
-  };
+test("Shorts' plan refuses whatever a page holds: no API-key engine makes a set of shorts, and no page publishes a request for it", () => {
+  const plans = withRequestGate(PLANS, () => new Set<RequestKey>());
   const reason = (request: PlanRequest) => (plans.shorts.runnable(ctx(request)) as { reason: string }).reason;
-  for (const request of [{}, { shorts: input }, { shorts: { preset: input.preset, aspectRatio: "9:16" } }] as PlanRequest[])
+  for (const request of [{}, { motion: [] }] as PlanRequest[])
     expect(reason(request)).toBe("Not runnable yet — no API-key engine makes a set of shorts.");
   /* Shorts owns its own reason, so the shared "Needs <page> data" never fires for it. */
   expect(missingRequest("shorts", new Set<RequestKey>())).toBeNull();

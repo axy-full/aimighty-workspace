@@ -272,7 +272,9 @@ test("Atomik reads nothing of the account, and the shell's capability answers me
   /* Atomik's account planner, recipes and connected step are gone (tests/unit/atomikNoAccount.spec.ts guards what replaced them). */
   for (const gone of ["app/api/atomik/recipes/route.ts", "app/api/atomik/steps/[id]/connected/route.ts", "lib/higgsfield-consumer/planner-service.ts", "lib/higgsfield-consumer/recipes-service.ts"])
     expect(existsSync(gone), gone).toBe(false);
-  expect(readFileSync("lib/shell/use-connected-capability.ts", "utf8")).toContain("const owner = !SIGN_IN_RETIRED && ");
+  const hook = readFileSync("lib/shell/use-connected-capability.ts", "utf8");
+  expect(hook).toContain('owner: false, status: "member" as const');
+  expect(hook).not.toMatch(/fetch\(|CONNECTION_ENDPOINT|session\.owner/);
   /* No workspace plan calls an account route, not even to read: Compare reads the project's Library (GET /api/workbench/library). */
   for (const [page, plan] of Object.entries(PLANS))
     for (const step of plan.steps) expect(step.executor.backend.path, `${page}: ${step.label}`).not.toMatch(/^\/api\/higgsfield\/consumer\//);
@@ -289,14 +291,77 @@ test("no page mounts a surface that starts account work: the sign-in card, the d
     }
   };
   for (const root of ["app", "components", "lib"]) walk(root);
-  const retiredSurfaces = ["HiggsfieldConsumerConnection", "ConsumerVideoVerification", "DeveloperApiRow", "AtomikGenerate", "ConsumerGenjutsu", "ConsumerShorts", "ConsumerMarketingVideo", "ShortsPage", "FormPage", "WorkflowHosts"];
-  /* The retired surfaces' own files (kept, unmounted, until the account code is removed) may import each other. */
-  const retiredFile = (file: string) => [...retiredSurfaces, "WorkflowHost"].some((surface) => file.endsWith(`/${surface}.tsx`));
+  const retiredSurfaces = ["HiggsfieldConsumerConnection", "ConsumerVideoVerification", "DeveloperApiRow", "AtomikGenerate", "ConsumerGenjutsu", "ConsumerShorts", "ConsumerMarketingVideo", "ShortsPage", "FormPage", "WorkflowHosts", "WorkflowHost", "AtomikVoiceTools"];
   for (const file of files) {
     const source = readFileSync(file, "utf8");
-    if (!retiredFile(file))
-      for (const surface of retiredSurfaces) expect(source, `${file} mounts ${surface}`).not.toMatch(new RegExp(`import[^;]*\\b${surface}\\b[^;]*from`));
-    /* Nothing starts a sign-in: the connect route is called from nowhere a page still shows. */
-    if (!file.endsWith("/HiggsfieldConsumerConnection.tsx")) expect(source, file).not.toContain("/api/higgsfield/consumer/connect\"");
+    for (const surface of retiredSurfaces) expect(source, `${file} mounts ${surface}`).not.toMatch(new RegExp(`import[^;]*\\b${surface}\\b[^;]*from`));
+    /* Nothing starts a sign-in: the connect route is called from nowhere, and no page builds the account's sign-in address
+       (the server's own sign-in code goes in its own step). */
+    expect(source, file).not.toContain("/api/higgsfield/consumer/connect\"");
+    if (!file.startsWith("lib/higgsfield-consumer/") && !file.startsWith("app/api/")) expect(source, file).not.toContain("clerk.higgsfield.ai");
+  }
+});
+
+/* ── What R3 took out: the account's UI and the shell's wiring to it (the server code goes in its own step) ── */
+
+const uiFiles = () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (/\.tsx?$/.test(entry.name)) files.push(path);
+    }
+  };
+  for (const root of ["components", "lib/shell", "lib/workspace"]) walk(root);
+  for (const entry of readdirSync("app", { withFileTypes: true, recursive: true })) {
+    const path = `${entry.parentPath}/${entry.name}`;
+    if (entry.isFile() && /(page|layout)\.tsx$/.test(entry.name) && !path.startsWith("app/api")) files.push(path);
+  }
+  return files;
+};
+
+test("the account's screens are deleted: its composers, forms, workflows, collector, diagnostics and connection card", () => {
+  for (const gone of [
+    "components/graphite/DeveloperApiRow.tsx", "components/graphite/tools/WorkflowHost.tsx",
+    "components/suites/ConsumerGenjutsu.tsx", "components/suites/ConsumerMarketingVideo.tsx", "components/suites/consumer-marketing-video.module.css",
+    "components/suites/ConsumerShorts.tsx", "components/suites/AtomikVoiceTools.tsx", "components/suites/atomik-generate.module.css",
+    "components/management/HiggsfieldConsumerConnection.tsx", "components/management/ConsumerVideoVerification.tsx",
+    "components/workspace/pages/ShortsPage.tsx", "components/workspace/mobile/pages/FormPage.tsx",
+    "lib/shell/workflows.ts", "lib/shell/use-connected-collector.ts", "lib/workspace/mobile-form.ts",
+  ]) expect(existsSync(gone), gone).toBe(false);
+});
+
+test("nothing a page renders reads the account's client: only the retired card pages kept for their replacements, and the history readers", () => {
+  /* The pages still on the retired card until their API-key or Particl versions land, the modules only they use,
+     and Workspace › Engines' retired row (the running jobs to set aside, and Disconnect). Nothing else. */
+  const KEPT = new Set([
+    "components/graphite/business/BusinessView.tsx", "components/graphite/viral/ViralView.tsx", "components/graphite/production/CastStage.tsx",
+    "components/graphite/tools/SoulIdHost.tsx", "components/graphite/OwnerRunCard.tsx", "components/graphite/ResumedJobs.tsx",
+    "components/suites/MarketingTemplates.tsx", "components/graphite/ConnectedAccountRow.tsx",
+    "lib/shell/business.ts", "lib/shell/use-business.ts", "lib/shell/viral.ts", "lib/shell/use-viral.ts",
+    "lib/shell/use-connected-job.ts", "lib/shell/use-resumed-jobs.ts", "lib/shell/connected-collector.ts",
+  ]);
+  /* History: a take the account made, read from Particl's own records (the Usage and /usage tabs, the tray's words). */
+  const HISTORY = /higgsfield-consumer\/(activity-types|job-state|resume|retired)"/;
+  for (const file of uiFiles()) {
+    if (KEPT.has(file)) continue;
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/from "[^"]*higgsfield-consumer\/[^"]+"/g)) expect(match[0], `${file} imports ${match[0]}`).toMatch(HISTORY);
+    expect(source, file).not.toMatch(/\/api\/higgsfield\/consumer\/(generation|genjutsu|video|shorts|audio-tools|marketing-templates|capabilities|qualification|analysis-qualification|client)\b/);
+  }
+});
+
+test("Gen, its composers and the shell's chrome carry no account source, catalogue, identity, resumed take, Analysis or owner gate", () => {
+  for (const file of [
+    "components/graphite/GenView.tsx", "components/graphite/ModelSheet.tsx", "components/workspace/GenerateComposer.tsx", "components/workspace/mobile/MakeComposer.tsx",
+    "lib/workspace/composer.ts", "lib/workspace/use-composer.ts", "lib/workspace/take-batch.ts", "lib/workspace/model-picker.ts",
+    "components/graphite/StageStrip.tsx", "components/graphite/PageHead.tsx", "components/graphite/AtomikSheet.tsx", "components/workspace/AtomikPanel.tsx",
+    "components/workspace/mobile/sheets/AtomikSheet.tsx", "components/workspace/spec/SpecInspector.tsx", "lib/workspace/atomik-host.tsx", "lib/shell/state.tsx",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).not.toMatch(/useConnectedCapability|useConnectedCollector|useResumedConnectedJobs|runsOnOwnerAccount|ownerAccountPlans|connected-collector|ResumedJobs|WorkflowHost/);
+    /* A take made on the account is still named as one when it is recreated (its recipe's `billing`), but the composer holds no such source. */
+    expect(source, file).not.toMatch(/state\.billing|type: "billing"|connected cr|gen-tab-analysis|gen-resumed|gen-identity|action: "characters"|action: "catalogue"/);
   }
 });

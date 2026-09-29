@@ -15,8 +15,6 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-flows", productionProjectId: "prod-flows", shotMappings: {} });
-/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
-const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 
 async function open(page: Page, path: string) {
   await signInLocally(page.request);
@@ -71,7 +69,7 @@ test("Studio pages carry no connected workflows: Edit keeps Particl's own Dub an
   await page.goto("/suites?suite=studio&page=astra");
   await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");
   await expect(page.getByTestId("workflow-draw-to-edit")).toHaveCount(0);
-  expect(consumer.filter((request) => request !== COLLECTOR_LIST), "nothing asks the account").toEqual([]);
+  expect(consumer, "nothing asks the account, not even for a list of saved jobs").toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -88,6 +86,6 @@ test("Gen has no Analysis tab, for the owner too: its four output tabs keep one 
   expect(new Set(tops.map((y) => Math.round(y))).size, "one row of tabs").toBe(1);
   if (PHONES.includes(info.project.name)) for (const tab of tabs) expect((await tab.boundingBox())!.width).toBeGreaterThanOrEqual(44);
   await noSideScroll(page);
-  expect(consumer.filter((request) => request !== COLLECTOR_LIST)).toEqual([]);
+  expect(consumer).toEqual([]);
   expect(errors).toEqual([]);
 });

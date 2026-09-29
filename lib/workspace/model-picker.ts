@@ -1,4 +1,4 @@
-import { composerSettings, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerReference, type ComposerSettings, type ComposerType, type EngineRate } from "./composer";
+import { composerSettings, WORKSPACE_SOURCE, type ComposerModel, type ComposerPicks, type ComposerReference, type ComposerSettings, type ComposerType, type EngineRate } from "./composer";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
 import type { Asset } from "../workbench/studio";
 
@@ -6,22 +6,18 @@ import type { Asset } from "../workbench/studio";
  * Gen's model sheet, as pure data: the spec chips on every row, the price
  * beside it, the search, and the Recent group.
  *
- * Where a price comes from, one line per catalogue:
- *  - Studio engines are priced on the server (GET /api/workbench/engines) at
- *    the settings the composer would render each one with — its picks, the
- *    project's aspect, its references — so the ticked row is the figure
- *    Generate shows for one take. A figure is only shown when the settings it
- *    names are that engine's composerSettings; otherwise the row waits;
- *  - connected models are never priced from here — a quote on the connected
- *    account is a job row there — so a row shows the last figure this browser
- *    was actually quoted for it, and nothing when there is none.
+ * Where a price comes from: Studio engines are priced on the server (GET
+ * /api/workbench/engines) at the settings the composer would render each one
+ * with — its picks, the project's aspect, its references — so the ticked row
+ * is the figure Generate shows for one take. A figure is only shown when the
+ * settings it names are that engine's composerSettings; otherwise the row
+ * waits.
  *
- * What this browser remembers (recent picks, last quotes) is kept per
- * workspace scope, and cleared with the rest of the private keys at sign-out
- * (lib/session.tsx).
+ * What this browser remembers (recent picks) is kept per workspace scope, and
+ * cleared with the rest of the private keys at sign-out (lib/session.tsx).
  */
 
-export type SpecChip = { key: "resolution" | "length" | "refs" | "audio" | "enhance"; text: string; title: string };
+export type SpecChip = { key: "resolution" | "length" | "refs" | "audio"; text: string; title: string };
 
 /** A size label's rank inside one engine's list; null when the label names no size ("adaptive", "High"). */
 export function resolutionRank(label: string): number | null {
@@ -60,18 +56,6 @@ export function lengthSpan(durations?: readonly number[]): string | null {
 function refsChip(m: ComposerModel): SpecChip | null {
   if (m.type === "audio") return null;
   const none: SpecChip = { key: "refs", text: "Prompt only", title: "Takes no reference media" };
-  if (m.connected) {
-    if (m.promptOnly) return none;
-    const roles = m.referenceRoles ?? [];
-    if (!roles.length) return null;
-    const video = roles.some((r) => /video/i.test(r));
-    const image = roles.some((r) => !/video|audio/i.test(r));
-    const text = image && video ? "Image + video refs"
-      : video ? "Video refs"
-      : m.mediaMax ? `${m.mediaMax} image ref${m.mediaMax === 1 ? "" : "s"}`
-      : "Image refs";
-    return { key: "refs", text, title: `Reference roles: ${roles.join(", ")}` };
-  }
   if (m.maxImages === undefined && m.maxVideos === undefined) return null;
   const images = m.maxImages ?? 0;
   const videos = m.maxVideos ?? 0;
@@ -80,7 +64,7 @@ function refsChip(m: ComposerModel): SpecChip | null {
   return { key: "refs", text, title: `Up to ${[images ? `${images} reference images` : null, videos ? `${videos} reference videos` : null].filter(Boolean).join(" and ")}` };
 }
 
-/** The row's chips, in one order everywhere: size, length, references, sound, enhance. */
+/** The row's chips, in one order everywhere: size, length, references, sound. */
 export function modelChips(m: ComposerModel): SpecChip[] {
   const out: SpecChip[] = [];
   /* The headline size is one that has been rendered here; a listed, untested tier is named in the title only. */
@@ -92,23 +76,21 @@ export function modelChips(m: ComposerModel): SpecChip[] {
   if (length) out.push({ key: "length", text: length, title: `Length ${length}` });
   const refs = refsChip(m);
   if (refs) out.push(refs);
-  if (m.audio) out.push({ key: "audio", text: "Audio", title: m.connected ? "Renders sound on the account" : "Takes carry sound" });
-  if (m.enhanceable) out.push({ key: "enhance", text: "Enhance", title: "Can enhance the prompt on the account" });
+  if (m.audio) out.push({ key: "audio", text: "Audio", title: "Takes carry sound" });
   return out;
 }
 
 /* ── The price beside a row ───────────────────────────────────────────── */
 
-export type Quoted = { credits: number; at: number; detail?: string };
 export type RowPrice = {
   credits: number | null;
-  /** The figure's unit, as Generate writes it: connected credits are the account's, not this workspace's. */
-  unit: "cr" | "connected cr";
+  /** The figure's unit, as Generate writes it: this workspace's credits. */
+  unit: "cr";
   detail: string;
   /** Takes per Generate is above one: the row is one take, the button multiplies. */
   perTake: boolean;
   title: string;
-  kind: "rate" | "last" | "loading" | "none";
+  kind: "rate" | "loading" | "none";
   /** An approximate figure (the engine settles on what it delivers): shown as "about". */
   approximate?: boolean;
 };
@@ -150,10 +132,10 @@ function fits(rate: EngineRate, m: ComposerModel, want: ComposerSettings): boole
  * sheet then asks the engines route for the list priced there.
  */
 export function needsPricedRead(offered: readonly ComposerModel[], at: PriceAt): boolean {
-  return offered.some((m) => !m.connected && (
+  return offered.some((m) =>
     m.audioTask === "sound" || m.audioTask === "music"
-    || (m.type !== "audio" && (at.references.length > 0 || !m.rate || !fits(m.rate, m, composerSettings(m, at.aspect, at.picks))))
-  ));
+    || (m.type !== "audio" && (at.references.length > 0 || !m.rate || !fits(m.rate, m, composerSettings(m, at.aspect, at.picks)))),
+  );
 }
 
 /** The priced read's reply, kept by the key it was asked for. */
@@ -172,17 +154,10 @@ const LOADING: Omit<RowPrice, "perTake"> = { credits: null, unit: "cr", detail: 
 /**
  * The figure beside a row, never a guess: a Studio engine priced where the
  * composer stands (the sheet's priced read, or the list's own rate when that
- * is already at those settings), a sound engine's rate, a connected model's
- * last quote in this browser, or nothing.
+ * is already at those settings), a sound engine's rate, or nothing.
  */
-export function rowPrice(m: ComposerModel, quoted: Readonly<Record<string, Quoted>>, at: PriceAt = UNTOUCHED, sheet: SheetRates | null = null, reading = false): RowPrice {
+export function rowPrice(m: ComposerModel, at: PriceAt = UNTOUCHED, sheet: SheetRates | null = null, reading = false): RowPrice {
   const perTake = at.takes > 1;
-  if (m.connected) {
-    const last = quoted[m.id];
-    if (!last) return { ...NONE, perTake: false };
-    return { credits: last.credits, unit: "connected cr", detail: "last quote", kind: "last", perTake,
-      title: `Last quoted in this browser: ${last.credits.toLocaleString("en-US")} connected cr${last.detail ? ` at ${last.detail}` : ""}` };
-  }
   if (m.type === "audio") {
     const rate = m.audioTask === "sound" ? sheet?.audio?.sound : m.audioTask === "music" ? sheet?.audio?.music : undefined;
     if (rate) {
@@ -227,17 +202,18 @@ const RECENT_KEPT = 12;
 /** Below this many models the whole list is already short: no Recent group. */
 export const RECENT_FROM = RECENT_SHOWN + 2;
 
-export const recentKey = (billing: BillingSource, type: ComposerType, id: string) => `${billing}:${type}:${id}`;
+/* Written under the credit source as it always was, so the Recent a browser already keeps still reads. */
+export const recentKey = (type: ComposerType, id: string) => `${WORKSPACE_SOURCE}:${type}:${id}`;
 
 /** Most recent first, no repeats, a short tail kept for the other types. */
 export function pushRecent(list: readonly string[], key: string): string[] {
   return [key, ...list.filter((k) => k !== key)].slice(0, RECENT_KEPT);
 }
 
-/** The last models used for this catalogue and type that the list still offers. */
-export function recentModels(list: readonly string[], billing: BillingSource, type: ComposerType, offered: readonly ComposerModel[]): ComposerModel[] {
+/** The last models used for this type that the list still offers. */
+export function recentModels(list: readonly string[], type: ComposerType, offered: readonly ComposerModel[]): ComposerModel[] {
   const out: ComposerModel[] = [];
-  const prefix = `${billing}:${type}:`;
+  const prefix = recentKey(type, "");
   for (const key of list) {
     if (!key.startsWith(prefix)) continue;
     const model = offered.find((m) => m.id === key.slice(prefix.length));
@@ -260,30 +236,25 @@ export function pickerSections(offered: readonly ComposerModel[], recent: readon
 
 /* ── What this browser remembers ──────────────────────────────────────── */
 
-export type PickerMemory = { recent: string[]; quoted: Record<string, Quoted> };
-export const EMPTY_MEMORY: PickerMemory = { recent: [], quoted: {} };
+export type PickerMemory = { recent: string[] };
+export const EMPTY_MEMORY: PickerMemory = { recent: [] };
 /** Cleared with the private keys at sign-out (lib/session.tsx › PRIVATE_PREFIXES). */
 export const PICKER_PREFIX = "particl-picker:";
-const QUOTED_KEPT = 40;
 type Store = Pick<Storage, "getItem" | "setItem">;
 
 const pickerKey = (scope: string) => `${PICKER_PREFIX}${scope}`;
 
-/** Parsed defensively: anything malformed is dropped, never trusted. */
+/**
+ * Parsed defensively: anything malformed is dropped, never trusted. The
+ * retired account catalogue's last quotes (`quoted`) a browser may still hold
+ * are left unread, and dropped at the next write.
+ */
 export function parsePickerMemory(raw: string | null): PickerMemory {
   if (!raw) return EMPTY_MEMORY;
   try {
-    const value = JSON.parse(raw) as { recent?: unknown; quoted?: unknown };
+    const value = JSON.parse(raw) as { recent?: unknown };
     const recent = Array.isArray(value.recent) ? value.recent.filter((k): k is string => typeof k === "string" && k.length <= 240).slice(0, RECENT_KEPT) : [];
-    const quoted: Record<string, Quoted> = {};
-    if (value.quoted && typeof value.quoted === "object") {
-      for (const [id, q] of Object.entries(value.quoted as Record<string, unknown>).slice(0, QUOTED_KEPT)) {
-        const v = q as Partial<Quoted> | null;
-        if (!v || typeof v.credits !== "number" || !Number.isFinite(v.credits) || v.credits < 0 || typeof v.at !== "number") continue;
-        quoted[id] = { credits: v.credits, at: v.at, ...(typeof v.detail === "string" ? { detail: v.detail.slice(0, 80) } : {}) };
-      }
-    }
-    return { recent, quoted };
+    return { recent };
   } catch {
     return EMPTY_MEMORY;
   }
@@ -297,14 +268,6 @@ export function readPickerMemory(scope: string, store?: Store): PickerMemory {
 export function writePickerMemory(scope: string, memory: PickerMemory, store?: Store): void {
   try { (store ?? window.localStorage).setItem(pickerKey(scope), JSON.stringify(memory)); }
   catch { /* Private mode or full storage: the sheet still works, it only forgets. */ }
-}
-
-/** A connected quote the composer was actually given, kept as that model's last figure. */
-export function rememberQuote(memory: PickerMemory, id: string, quote: Quoted): PickerMemory {
-  const same = memory.quoted[id];
-  if (same && same.credits === quote.credits && same.detail === quote.detail) return memory;
-  const entries = Object.entries({ ...memory.quoted, [id]: quote }).sort((a, b) => b[1].at - a[1].at).slice(0, QUOTED_KEPT);
-  return { ...memory, quoted: Object.fromEntries(entries) };
 }
 
 export function rememberRecent(memory: PickerMemory, key: string): PickerMemory {

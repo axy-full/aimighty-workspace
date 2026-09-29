@@ -192,9 +192,9 @@ test("the composer holds the setup: picked, carried by a recipe (none is Auto), 
   const picked = composerReducer({ ...INITIAL_COMPOSER, notice: "old" }, { type: "shot", value: { move: "push" } });
   expect(picked.shot).toEqual({ move: "push" });
   expect(picked.notice).toBeNull();
-  const recreated = composerReducer(picked, { type: "recipe", value: { type: "video", billing: "workspace", picks: {}, shot: { shot: "cu" } } });
+  const recreated = composerReducer(picked, { type: "recipe", value: { type: "video", picks: {}, shot: { shot: "cu" } } });
   expect(recreated.shot).toEqual({ shot: "cu" });
-  expect(composerReducer(picked, { type: "recipe", value: { type: "video", billing: "workspace", picks: {} } }).shot).toEqual({});
+  expect(composerReducer(picked, { type: "recipe", value: { type: "video", picks: {} } }).shot).toEqual({});
   expect(composerReducer(picked, { type: "reset" }).shot).toEqual({});
   expect(composerReducer(recreated, { type: "restore", value: picked }).shot).toEqual({ move: "push" });
 
@@ -205,14 +205,10 @@ test("the composer holds the setup: picked, carried by a recipe (none is Auto), 
   expect(generationRequestBody(input)).not.toHaveProperty("shotSpec");
 });
 
-test("on the connected account, words the setup takes past its limit say so and name the chips", () => {
-  const model = { id: "seedance_2_5", label: "Seedance 2.5", type: "video" as const, connected: true as const };
-  const block = (sentPrompt: string, billing: "connected" | "workspace" = "connected") => composerBlock({
-    state: { billing, type: "video", prompt: "a boat", voiceId: "" }, model, quote: null, quoteKey: "k", submitting: false,
-    capability: { owner: true, connected: true, requiresReconnect: false, suspended: false } as never, catalogue: { loading: false, error: null }, sentPrompt,
-  });
-  expect(block("x".repeat(5001))).toBe("With the setup written in, the words run past 5,000 characters. Shorten them or set fewer chips.");
-  expect(block("x".repeat(5000))).toBe("Getting the live price…");
-  /* This workspace's own engines take the longer words. */
-  expect(block("x".repeat(5001), "workspace")).toBe("Getting the live price…");
+test("this workspace's own engines take the words however long the setup makes them: nothing blocks on the retired account's limit", () => {
+  const model = { id: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", type: "video" as const };
+  expect(composerBlock({
+    state: { type: "video", prompt: `a boat ${"x".repeat(5001)}`, voiceId: "" }, model, quote: null, quoteKey: "k", submitting: false,
+    catalogue: { loading: false, error: null },
+  })).toBe("Getting the live price…");
 });

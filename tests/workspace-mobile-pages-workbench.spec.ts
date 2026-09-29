@@ -72,30 +72,10 @@ const CLIP = upload({ id: "up_clip", filename: "wind-test.mp4", mime: "video/mp4
 const STILL = upload({ id: "up_still", filename: "plate.webp" });
 const RENDER = generation({ id: "gen_one", kind: "video", model: "seedance-2-5", creditsBilled: 18, durationS: 5, reviewState: "", shotId: "shot_s1" });
 
-/** The stale quote the Form must refuse: this exact composition, aged out. */
-const STALE_INPUT = { variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: CLIP.id }, references: [] };
-const staleJob = () => ({
-  id: "00000000-0000-4000-8000-000000000001",
-  draftId: PROJECT,
-  status: "quoted",
-  input: STALE_INPUT,
-  workspaceId: "w1",
-  workspaceName: "Workspace",
-  quoteCredits: 142,
-  creditUnit: "higgsfield_credits",
-  quoteExpiresAt: Date.now() - 60_000,
-  providerJobId: null,
-  createdAt: Date.now() - 120_000,
-});
+type State = { paid: string[]; project: Project; revision: number };
 
-type State = { paid: string[]; project: Project; revision: number; quotes: Record<string, unknown>[]; jobs: ReturnType<typeof staleJob>[] };
-
-/**
- * `quotes`: the transform endpoint answers its `quote` action (it prices, it never submits);
- * "uncertain" answers it as the route does when an earlier original copy cannot be confirmed.
- */
-async function open(page: Page, options: { quotes?: boolean | "uncertain" } = {}): Promise<State> {
-  const state: State = { paid: [], project: fixture(), revision: 1, quotes: [], jobs: [] };
+async function open(page: Page): Promise<State> {
+  const state: State = { paid: [], project: fixture(), revision: 1 };
   await signInLocally(page.request);
   await page.route("**/api/**", async (route: Route) => {
     const request = route.request();
@@ -139,26 +119,6 @@ async function open(page: Page, options: { quotes?: boolean | "uncertain" } = {}
     if (path === "/api/workbench/engines") return json({ credits: 18, models: [] });
     if (path === "/api/soul/identities" && method === "GET")
       return json({ identities: [identity], terms: { minPhotos: 4, trainingCredits: 54 }, configured: true });
-    if (path === "/api/higgsfield/consumer/genjutsu") {
-      if (method !== "GET") {
-        const body = request.postDataJSON() as Record<string, unknown> | null;
-        if (options.quotes === "uncertain" && body?.action === "quote") {
-          state.quotes.push(body);
-          /* ConsumerGenjutsuError("import_uncertain"), as app/api/higgsfield/consumer/genjutsu/route.ts answers it. */
-          return json({ code: "import_uncertain", error: "An earlier media transfer could not be confirmed. It will not be retried automatically. No video was submitted." }, 409);
-        }
-        if (options.quotes && body?.action === "quote") {
-          state.quotes.push(body);
-          const job = { ...staleJob(), id: "00000000-0000-4000-8000-000000000002", input: body.input as typeof STALE_INPUT, quoteCredits: 150, quoteExpiresAt: Date.now() + 10 * 60_000 };
-          state.jobs.push(job);
-          return json({ job });
-        }
-        /* A paid transform must never be reachable from this screen. */
-        state.paid.push(`${method} ${path} ${String(body?.action)}`);
-        return json({ error: "No transform dispatch is permitted in this test." }, 409);
-      }
-      return json({ jobs: [staleJob(), ...state.jobs], connection: { connected: true, requiresReconnect: false } });
-    }
     /* The shot and node thumbs read the workbench's own preview route. */
     if (path.startsWith("/api/workbench/preview/"))
       return route.fulfill({ body: readFileSync("public/campaign/environment.webp"), contentType: "image/webp" });
@@ -375,7 +335,7 @@ test("the form pages (Motion Transfer, Object Swap) ran on the Higgsfield accoun
   const asked: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname.startsWith("/api/higgsfield/consumer/") && !(request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation")) asked.push(`${request.method()} ${url.pathname}`);
+    if (url.pathname.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${url.pathname}`);
   });
   for (const [pageId, title] of [["motion", "Motion Transfer"], ["swap", "Object Swap"]] as const) {
     await goTo(page, pageId, "subatomik");

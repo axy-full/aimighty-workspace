@@ -312,12 +312,11 @@ test("a moved price blocks the send and spends nothing", async ({ page }, info) 
 test("the composer offers this workspace's engines only: no account switch, and the account's catalogue is never read", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { project } = await seeded(page);
-  /* Every account request the composer makes, bar the shell collector's lists of saved jobs (ledger reads). */
+  /* Every account request the composer makes: none, not even a list of saved jobs (the shell's collector went with the sign-in). */
   const asked: string[] = [];
   page.on("request", (request) => {
     const address = new URL(request.url());
     if (!address.pathname.startsWith("/api/higgsfield/consumer/")) return;
-    if (request.method() === "GET" && address.searchParams.has("draftId")) return;
     asked.push(`${request.method()} ${address.pathname}`);
   });
   const sent = watchPaid(page);

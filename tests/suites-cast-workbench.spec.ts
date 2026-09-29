@@ -38,12 +38,11 @@ async function setup(page: Page, scene: { characters?: string[]; props?: string[
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
 
-  /* Every account request the page makes, bar the shell collector's list of saved jobs (a ledger read). */
+  /* Every account request the page makes: none, not even a list of saved jobs (the shell's collector went with the sign-in). */
   const asked: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/higgsfield/consumer/")) return;
-    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation") return;
     asked.push(`${request.method()} ${url.pathname}`);
   });
   const errors: string[] = [];

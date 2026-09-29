@@ -1,10 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { randomUUID } from "node:crypto";
 import {
-  batchGate, batchNotice, batchPhase, batchSettledText, readPendingBatch, sendConnectedBatch, sendWorkspaceBatch,
-  settleConnectedBatch, settleWorkspaceBatch, takesPhrase, takeView, rememberWorkspaceBatch, type BatchTake,
+  batchGate, batchNotice, batchPhase, batchSettledText, sendWorkspaceBatch,
+  settleWorkspaceBatch, takesPhrase, takeView, rememberWorkspaceBatch, type BatchTake,
 } from "../../lib/workspace/take-batch";
-import { batchTotal, composerButtonLabel, composerButtonParts, shownTotal, type ComposerQuote } from "../../lib/workspace/composer";
+import { batchTotal, composerButtonLabel, composerButtonParts, type ComposerQuote } from "../../lib/workspace/composer";
 import { pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import { groupSiblings, stripLabel, takeLabel } from "../../lib/variations";
 import { consumerVideoIdentity } from "../../lib/higgsfield-consumer/original-identity";
@@ -15,14 +14,12 @@ import type { GenerationBodyInput } from "../../lib/workbench/generation-request
  * Takes 2–4 of one Generate as ONE priced batch (lib/workspace/take-batch.ts),
  * against a stubbed server that counts every paid call. The money rules:
  * the sum of N fresh quotes is exactly what the button showed or nothing is
- * sent; the connected account gets one paid call for the batch; a lost reply
- * is checked (and fenced), never sent again; a workspace take refused part way
- * stops the batch and says which takes were made and which were not.
+ * sent; a lost reply is checked (and fenced), never sent again; a take refused
+ * part way stops the batch and says which takes were made and which were not.
  */
 
 const SCOPE = "particl-active-ws_unit-u_unit";
 const DRAFT = "draft-1";
-const WALLET = "22222222-2222-4222-8222-222222222222";
 const ENGINE = "dreamina-seedance-2-5-260628";
 
 function memory() {
@@ -48,180 +45,6 @@ async function withServer(route: (path: string, body: Record<string, unknown>, c
   }) as typeof fetch;
   try { await run(calls); } finally { globalThis.fetch = original; }
 }
-
-/* ── The connected account ────────────────────────────────────────────── */
-
-const input = { type: "image" as const, model: "nano_banana_2", prompt: "A plain bottle.", parameters: { resolution: "2k" }, medias: [] };
-function job(id: string, variation: number, credits: number, overrides: Record<string, unknown> = {}) {
-  return {
-    id, draftId: DRAFT, status: "quoted", input, model: { id: "nano_banana_2", name: "Nano Banana 2", outputType: "image" },
-    workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: credits, creditUnit: "higgsfield_credits",
-    quoteExpiresAt: Date.now() + 300_000, providerJobId: null, createdAt: Date.now(), composer: "gen",
-    batch: { id: "b_unit0001", variation }, ...overrides,
-  };
-}
-/** A connected route for one test: quotes at `prices`, and counts every paid batch call. */
-function connected(prices: number[], submit: (ids: string[], body: Record<string, unknown>) => Answer, check?: (ids: string[]) => Answer) {
-  const paid: Record<string, unknown>[] = [];
-  let quoted: ReturnType<typeof job>[] = [];
-  const route = (path: string, body: Record<string, unknown>): Answer => {
-    if (path !== "/api/higgsfield/consumer/generation") throw new Error(`Unexpected request: ${path}`);
-    if (body.action === "quote-batch") {
-      const keys = body.idempotencyKeys as string[];
-      quoted = keys.map((_, i) => job(randomUUID(), i + 1, prices[i]));
-      expect(body.batchId).toBe("b_unit0001");
-      return { json: { jobs: quoted } };
-    }
-    if (body.action === "submit-batch") { paid.push(body); return submit(body.ids as string[], body); }
-    if (body.action === "check-batch") return check ? check(body.ids as string[]) : { status: 500, json: {} };
-    throw new Error(`Unexpected action ${String(body.action)}`);
-  };
-  return { route, paid, quoted: () => quoted };
-}
-
-test("connected: the sum of N fresh quotes is the one approval, sent in ONE paid batch call with every take's id", async () => {
-  const storage = memory();
-  const server = connected([18, 18, 18, 18], (ids) => ({ json: { jobs: ids.map((id, i) => job(id, i + 1, 18, { status: "accepted", providerJobId: randomUUID() })) } }));
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 4, shown: 72, batchId: "b_unit0001", composer: "gen", storage });
-    expect(outcome.state).toBe("sent");
-    /* One quote request for four takes, then exactly one paid call carrying all four ids and their exact sum. */
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch"]);
-    expect(server.paid).toEqual([{ action: "submit-batch", draftId: DRAFT, ids: server.quoted().map((j) => j.id), workspaceId: WALLET, credits: 72 }]);
-    expect((calls[0].body.idempotencyKeys as string[]).length).toBe(4);
-    if (outcome.state === "sent") expect(outcome.jobs.map((j) => [j.status, j.batch?.variation])).toEqual([["accepted", 1], ["accepted", 2], ["accepted", 3], ["accepted", 4]]);
-    /* Answered: nothing is left waiting to be checked. */
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-  });
-});
-
-test("connected: a price that moved sends NONE of the takes and puts the new sum on the button", async () => {
-  const storage = memory();
-  const server = connected([18, 18, 21, 18], () => { throw new Error("nothing may be sent"); });
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 4, shown: 72, batchId: "b_unit0001", storage });
-    expect(outcome).toMatchObject({ state: "repriced", total: 75, takes: [18, 18, 21, 18] });
-    expect(server.paid).toEqual([]);
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch"]);
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-    /* The button now shows exactly that sum; the next press approves it. */
-    const quote: ComposerQuote = { key: "k", credits: 18, state: "ready", reason: null, takes: [18, 18, 21, 18] };
-    expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 75 connected cr");
-    expect(shownTotal(quote, "k", 4)).toBe(75);
-  });
-  /* No figure at all is never an approval. */
-  const again = connected([18, 18], () => { throw new Error("nothing may be sent"); });
-  await withServer(again.route, async () => {
-    expect((await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: null, batchId: "b_unit0001", storage })).state).toBe("repriced");
-    expect(again.paid).toEqual([]);
-  });
-});
-
-test("connected: quotes that do not match what was asked (another wallet, a missing take) are never sent", async () => {
-  const storage = memory();
-  const wrongWallet = (path: string, body: Record<string, unknown>): Answer => {
-    if (body.action === "quote-batch") return { json: { jobs: [job(randomUUID(), 1, 9), job(randomUUID(), 2, 9, { workspaceId: "33333333-3333-4333-8333-333333333333" })] } };
-    throw new Error(`nothing may be sent: ${path}`);
-  };
-  await withServer(wrongWallet, async (calls) => {
-    expect((await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage })).state).toBe("refused");
-    expect(calls).toHaveLength(1);
-  });
-  const short = (path: string, body: Record<string, unknown>): Answer => {
-    if (body.action === "quote-batch") return { json: { jobs: [job(randomUUID(), 1, 9)] } };
-    throw new Error(`nothing may be sent: ${path}`);
-  };
-  await withServer(short, async (calls) => {
-    expect((await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage })).state).toBe("refused");
-    expect(calls).toHaveLength(1);
-  });
-});
-
-test("connected: a refusal the server answered (no free slots) sent nothing and says so; nothing is left to check", async () => {
-  const storage = memory();
-  const server = connected([9, 9], () => ({ status: 429, json: { code: "capacity", error: "All four connected-account slots are in use." } }));
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(outcome.state).toBe("refused");
-    if (outcome.state === "refused") expect(outcome.reason).toMatch(/^Nothing was sent or charged: the connected account already has jobs running; a batch of 2 needs 2 free slots\.$/);
-    expect(server.paid).toHaveLength(1);
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch"]);
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-  });
-});
-
-test("connected: a lost reply is checked, never sent again — landed is followed, never-arrived is fenced, unknown blocks the next send", async () => {
-  /* Landed: the batch had reached the account; its takes come back to follow, and there is no second paid call. */
-  let storage = memory();
-  let server = connected([9, 9], () => "network", (ids) => ({ json: { state: "landed", jobs: ids.map((id, i) => job(id, i + 1, 9, { status: "accepted", providerJobId: randomUUID() })) } }));
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(outcome).toMatchObject({ state: "sent" });
-    if (outcome.state === "sent") expect(outcome.jobs.map((j) => j.status)).toEqual(["accepted", "accepted"]);
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch", "check-batch"]);
-    expect(calls[2].body.ids).toEqual(server.quoted().map((j) => j.id));
-    expect(server.paid).toHaveLength(1);
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-  });
-  /* Never arrived: the check fenced it on the server, so it never can arrive; nothing was charged. */
-  storage = memory();
-  server = connected([9, 9], () => ({ status: 503, json: { error: "The connected account could not complete this request." } }), () => ({ json: { state: "absent", jobs: [] } }));
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(outcome).toEqual({ state: "refused", reason: "The batch never reached the connected account. Nothing was charged; press Generate to send it again." });
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch", "check-batch"]);
-    expect(server.paid).toHaveLength(1);
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-  });
-  /* A take already claimed by another submit is not a refusal: it is checked like a lost reply. */
-  storage = memory();
-  server = connected([9, 9], () => ({ status: 409, json: { code: "already_submitted", error: "A step in this batch already has a submission." } }),
-    (ids) => ({ json: { state: "landed", jobs: ids.map((id, i) => job(id, i + 1, 9, { status: "dispatching" })) } }));
-  await withServer(server.route, async (calls) => {
-    expect((await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage })).state).toBe("sent");
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch", "check-batch"]);
-  });
-  /* An answer that does not name every take is no answer: checked like a lost reply, never taken as sent. */
-  storage = memory();
-  server = connected([9, 9], (ids) => ({ json: { jobs: [job(ids[0], 1, 9, { status: "accepted", providerJobId: randomUUID() })] } }),
-    (ids) => ({ json: { state: "landed", jobs: ids.map((id, i) => job(id, i + 1, 9, { status: "accepted", providerJobId: randomUUID() })) } }));
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(outcome.state).toBe("sent");
-    if (outcome.state === "sent") expect(outcome.jobs).toHaveLength(2);
-    expect(calls.map((call) => call.body.action)).toEqual(["quote-batch", "submit-batch", "check-batch"]);
-    expect(server.paid).toHaveLength(1);
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-  });
-  /* Not known (the check itself got no answer): the batch stays remembered and the next Generate asks first, sending nothing. */
-  storage = memory();
-  let checks = 0;
-  server = connected([9, 9], () => "network", () => { checks++; return "network"; });
-  await withServer(server.route, async (calls) => {
-    const outcome = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(outcome.state).toBe("unknown");
-    const pending = readPendingBatch(storage, SCOPE, DRAFT);
-    expect(pending).toMatchObject({ draftId: DRAFT, batchId: "b_unit0001", ids: server.quoted().map((j) => j.id), workspaceId: WALLET, credits: 18 });
-    expect((await settleConnectedBatch({ scope: SCOPE, draftId: DRAFT, storage })).state).toBe("unknown");
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).not.toBeNull();
-    /* While it is not known, another batch on the project is refused before anything is sent. */
-    const blocked = await sendConnectedBatch({ scope: SCOPE, draftId: DRAFT, input, count: 2, shown: 18, batchId: "b_unit0001", storage });
-    expect(blocked).toMatchObject({ state: "refused", reason: "Another batch on this project is still waiting for its answer. Nothing new was sent." });
-    expect(server.paid).toHaveLength(1);
-    expect(checks).toBe(2);
-    expect(calls.filter((call) => call.body.action === "submit-batch")).toHaveLength(1);
-  });
-  /* Once the check is answered, the record is let go and the answer is final. */
-  await withServer((_, body) => {
-    if (body.action === "check-batch") return { json: { state: "absent", jobs: [] } };
-    throw new Error("nothing may be sent");
-  }, async (calls) => {
-    expect((await settleConnectedBatch({ scope: SCOPE, draftId: DRAFT, storage })).state).toBe("lost");
-    expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
-    expect((await settleConnectedBatch({ scope: SCOPE, draftId: DRAFT, storage })).state).toBe("none");
-    expect(calls).toHaveLength(1);
-  });
-});
 
 /* ── This workspace's credits ─────────────────────────────────────────── */
 
@@ -267,7 +90,7 @@ test("workspace: every take is quoted exactly as it will be sent, then each goes
     if (outcome.state === "sent") expect(outcome.takes.map((t) => [t.state, t.jobId])).toEqual([1, 2, 3, 4].map((v) => ["queued", `gen_take${v}`]));
     expect(server.charged).toHaveLength(4);
     for (const v of [1, 2, 3, 4]) expect(readPendingGeneration(storage, storageId(v))).toBeNull();
-    if (outcome.state === "sent") expect(batchNotice(outcome.takes, "cr")).toBe("4 takes sent at 72 cr. They file into Takes as one strip as they land.");
+    if (outcome.state === "sent") expect(batchNotice(outcome.takes)).toBe("4 takes sent at 72 cr. They file into Takes as one strip as they land.");
   });
 });
 
@@ -302,7 +125,7 @@ test("workspace: admission refusing take 3 (credits ran out) stops the batch the
     /* Take 4 was never asked for; only takes 1 and 2 were admitted (charged). */
     expect(calls.filter((call) => call.path === "/api/generate").map((call) => call.body.variation)).toEqual([1, 2, 3]);
     expect(server.charged.map((c) => c.variation)).toEqual([1, 2]);
-    expect(batchNotice(outcome.takes, "cr")).toBe("Takes 1–2 were sent at 36 cr. Takes 3–4 were not made (Not enough credits for this take). Nothing was charged for them.");
+    expect(batchNotice(outcome.takes)).toBe("Takes 1–2 were sent at 36 cr. Takes 3–4 were not made (Not enough credits for this take). Nothing was charged for them.");
     /* A durable refusal is let go: nothing waits to be recovered for it. */
     expect(readPendingGeneration(storage, storageId(3))).toBeNull();
   });
@@ -318,14 +141,14 @@ test("workspace: when the credits run out admission holds takes 3–4: said so, 
     if (outcome.state !== "sent") throw new Error(outcome.state);
     expect(outcome.takes.map((t) => [t.state, t.jobId])).toEqual([["queued", "gen_take1"], ["queued", "gen_take2"], ["held", "gen_take3"], ["held", "gen_take4"]]);
     expect(calls.filter((call) => call.path === "/api/generate")).toHaveLength(4);
-    expect(batchNotice(outcome.takes, "cr")).toBe("Takes 1–2 were sent at 36 cr. Takes 3–4 are held, not charged until they run: top up to release them at the same price.");
+    expect(batchNotice(outcome.takes)).toBe("Takes 1–2 were sent at 36 cr. Takes 3–4 are held, not charged until they run: top up to release them at the same price.");
     /* A held take reads as held (waiting for the person), and the batch is over for the strip. */
-    const held = takeView(outcome.takes[2], "workspace", { media: { id: "gen_take3", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "credits" } } } });
+    const held = takeView(outcome.takes[2], { media: { id: "gen_take3", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "credits" } } } });
     expect([held.status, held.tone, held.done]).toEqual(["Held · needs credits", "amber", true]);
-    const slot = takeView(outcome.takes[3], "workspace", { media: { id: "gen_take4", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "slots" } } } });
+    const slot = takeView(outcome.takes[3], { media: { id: "gen_take4", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "slots" } } } });
     expect([slot.status, slot.done]).toEqual(["Held · waiting for a slot", false]);
-    const made = (i: number) => takeView(outcome.takes[i], "workspace", { media: { id: `gen_take${i + 1}`, status: "succeeded", kind: "video", prompt: "", model: ENGINE } });
-    const held4 = takeView(outcome.takes[3], "workspace", { media: { id: "gen_take4", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "credits" } } } });
+    const made = (i: number) => takeView(outcome.takes[i], { media: { id: `gen_take${i + 1}`, status: "succeeded", kind: "video", prompt: "", model: ENGINE } });
+    const held4 = takeView(outcome.takes[3], { media: { id: "gen_take4", status: "held", kind: "video", prompt: "", model: ENGINE, params: { held: { why: "credits" } } } });
     expect(batchSettledText("Harbour", [made(0), made(1), held, held4])).toBe("Harbour: 2 of 4 takes rendered, one strip in Takes. Takes 3–4 are held, not charged until they run.");
     expect(batchPhase([made(0), made(1), held, held4])).toMatchObject({ label: "2 of 4 rendered", done: true });
   });
@@ -345,7 +168,7 @@ for (const found of ["landed", "absent"] as const)
       const outcome = await sendWorkspaceBatch({ scope: SCOPE, shown: 54, count: 3, storageId, storage, request: (v) => ({ endpoint: "/api/generate", input: body(v) }) });
       if (outcome.state !== "sent") throw new Error(outcome.state);
       expect(outcome.takes.map((t) => t.state)).toEqual(["queued", "unconfirmed", "not-sent"]);
-      expect(batchNotice(outcome.takes, "cr")).toBe("Take 1 was sent at 18 cr. Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice. Take 3 was not made. Nothing was charged for it.");
+      expect(batchNotice(outcome.takes)).toBe("Take 1 was sent at 18 cr. Take 2: the reply never came back. It is checked before anything else is sent, and never sent twice. Take 3 was not made. Nothing was charged for it.");
       /* Its claim is kept for the check. */
       const claimed = readPendingGeneration(storage, storageId(2));
       expect(claimed).not.toBeNull();
@@ -384,14 +207,14 @@ test("workspace: a lost take whose check gets no answer stays unconfirmed, and n
 
 test("the button's total is the take's price summed per take, and a batch of one keeps the single label", () => {
   const quote: ComposerQuote = { key: "k", credits: 18, state: "ready", reason: null };
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 72 cr");
-  expect(composerButtonLabel({ billing: "connected", quote: { ...quote, credits: 6.5 }, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · 19.5 connected cr");
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 18 cr");
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 2 })).toBe("Generate 2 takes");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 72 cr");
+  expect(composerButtonLabel({ quote: { ...quote, credits: 6.5 }, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · 19.5 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 18 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "stale", submitting: false, count: 2 })).toBe("Generate 2 takes");
   /* The same label in two parts, so a narrow button can put the whole price on its own line: never a cut figure. */
-  expect(composerButtonParts({ billing: "connected", quote: { ...quote, credits: 1234.5 }, quoteKey: "k", submitting: false, count: 4 })).toEqual({ action: "Generate 4 takes", price: "4,938 connected cr" });
-  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 1 })).toEqual({ action: "Generate", price: null });
-  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "k", submitting: true, count: 3 })).toEqual({ action: "Submitting…", price: null });
+  expect(composerButtonParts({ quote: { ...quote, credits: 1234.5 }, quoteKey: "k", submitting: false, count: 4 })).toEqual({ action: "Generate 4 takes", price: "4,938 cr" });
+  expect(composerButtonParts({ quote, quoteKey: "stale", submitting: false, count: 1 })).toEqual({ action: "Generate", price: null });
+  expect(composerButtonParts({ quote, quoteKey: "k", submitting: true, count: 3 })).toEqual({ action: "Submitting…", price: null });
   /* A batch's own figures only count for exactly that many takes. */
   expect(batchTotal(18, 3, [18, 19])).toBe(54);
   expect(batchTotal(18, 2, [18, 19])).toBe(37);
@@ -403,10 +226,10 @@ test("the button's total is the take's price summed per take, and a batch of one
 test("each take says what became of it, the strip says how far the batch is, and the toast says what it cost", () => {
   const take = (variation: number, state: BatchTake["state"], jobId: string | null = `gen_${variation}`): BatchTake => ({ variation, state, jobId, credits: 18 });
   const views = [
-    takeView(take(1, "queued"), "workspace", { media: { id: "gen_1", status: "succeeded", kind: "video", prompt: "", model: ENGINE } }),
-    takeView(take(2, "queued"), "workspace", { media: { id: "gen_2", status: "failed", kind: "video", prompt: "", model: ENGINE, creditsBilled: 0 } }),
-    takeView(take(3, "refused", null), "workspace", undefined),
-    takeView(take(4, "not-sent", null), "workspace", undefined),
+    takeView(take(1, "queued"), { media: { id: "gen_1", status: "succeeded", kind: "video", prompt: "", model: ENGINE } }),
+    takeView(take(2, "queued"), { media: { id: "gen_2", status: "failed", kind: "video", prompt: "", model: ENGINE, creditsBilled: 0 } }),
+    takeView(take(3, "refused", null), undefined),
+    takeView(take(4, "not-sent", null), undefined),
   ];
   expect(views.map((v) => [v.label, v.status, v.tone, v.done])).toEqual([
     ["take 1", "Complete", "green", true], ["take 2", "Failed · not billed", "red", true],
@@ -415,8 +238,9 @@ test("each take says what became of it, the strip says how far the batch is, and
   expect(views[0].generationId).toBe("gen_1");
   expect(batchPhase(views)).toMatchObject({ label: "1 of 4 rendered", tone: "green", done: true });
   expect(batchSettledText("Harbour at dusk", views)).toBe("Harbour at dusk: 1 of 4 takes rendered, one strip in Takes. Takes 2–4 did not and cost nothing.");
-  const rendering = takeView(take(1, "queued"), "connected", undefined);
-  expect([rendering.status, rendering.done]).toEqual(["Checking with the account", false]);
+  /* Sent, and not read yet: queued, still to come. */
+  const rendering = takeView(take(1, "queued"), undefined);
+  expect([rendering.status, rendering.done]).toEqual(["Queued", false]);
   expect(batchPhase([rendering, views[0]])).toMatchObject({ label: "1 of 2 rendered", tone: "blue", done: false });
   expect(takesPhrase([1, 3])).toBe("takes 1 and 3");
   expect(takesPhrase([4])).toBe("take 4");
@@ -433,7 +257,8 @@ test("a batch's takes gather into one strip in take order whatever order the lib
   expect(takeLabel(3)).toBe("take 3");
 });
 
-test("a connected take's kept original carries its batch and take number, so Takes can draw the strip", () => {
+test("a take the connected account made carries its batch and take number in its kept original, so Takes can draw the strip", () => {
+  const input = { type: "image" as const, model: "nano_banana_2", prompt: "A plain bottle.", parameters: { resolution: "2k" }, medias: [] };
   const payload = {
     input: { ...input, medias: [] }, params: { model: "nano_banana_2" }, workspaceName: "Fixture wallet",
     model: { id: "nano_banana_2", name: "Nano Banana 2", outputType: "image" }, batch: { id: "b_strip001", variation: 2 },

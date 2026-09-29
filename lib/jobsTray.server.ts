@@ -4,7 +4,6 @@ import { creditsApply } from "./credits";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant } from "./tenant";
 import { CONSUMER_CAPACITY_WINDOW_MS, consumerJobsReady } from "./higgsfield-consumer/jobs";
-import { mediaKindForRole } from "./higgsfield-consumer/catalogue";
 import { shortName } from "./higgsfield-consumer/resume";
 import { recreateBlock, recreatePreset, type GenPreset, type RecipeSource } from "./shell/recipe";
 import {
@@ -131,12 +130,16 @@ async function draftsFor(userId: string, rows: Generation[]): Promise<Map<string
 
 type AccountRecord = AccountRow & { input: string | null };
 
+/** A reference role's kind, as the account's catalogue named its roles ("video_references", "start_image"…). */
+const roleKind = (role: string): "image" | "video" | "audio" => (/video/.test(role) ? "video" : /audio/.test(role) ? "audio" : "image");
+
 /**
- * A failed connected Generate made again: the words, model and settings it was
- * sent with, and its references, as the account's own filed originals carry
- * them (lib/higgsfield-consumer/original-identity) — so Gen's recipe card says
- * the same thing for it as for a finished one. Other connected tools are made
- * again where they were made.
+ * A failed Generate on the Higgsfield account, made again on this workspace's
+ * Studio engines (its sign-in is retired): the words, the settings it was sent
+ * with and its references, as the account's own filed originals carry them
+ * (lib/higgsfield-consumer/original-identity) — so Gen's recipe card says the
+ * same thing for it as for a finished one, and names the engine that stands
+ * in. The account's other tools have no Recreate.
  */
 function accountRecipe(row: AccountRecord): GenPreset | null {
   if (row.status !== "failed" || row.workflow !== "generation" || !row.modelId || !row.input) return null;
@@ -150,7 +153,7 @@ function accountRecipe(row: AccountRecord): GenPreset | null {
   const references = medias.flatMap((m) => {
     const media = m as { role?: unknown; source?: unknown };
     return typeof media.role === "string" && media.source && typeof media.source === "object"
-      ? [{ ...(media.source as Record<string, unknown>), role: media.role, kind: mediaKindForRole(media.role) }] : [];
+      ? [{ ...(media.source as Record<string, unknown>), role: media.role, kind: roleKind(media.role) }] : [];
   });
   const source: RecipeSource = {
     id: row.id, kind, model: row.modelId, prompt, provider: "higgsfield", task: "generate",

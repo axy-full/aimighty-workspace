@@ -3,7 +3,7 @@ import { cleanRule } from "../../lib/approvalRule";
 import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { withoutVendorCost } from "../../lib/analyticsRedact";
 import {
-  auditEntries, checkoutUrl, connectionOutcome, consumerAuthorizeUrl, keyStatus, packLine, planLine, sessionRows,
+  auditEntries, checkoutUrl, keyStatus, packLine, planLine, sessionRows,
   statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
 } from "../../lib/shell/workspace-view";
 
@@ -117,15 +117,6 @@ test("engine keys say whose key a render uses, by the workspace's mode", () => {
   /* The studio's own workspace runs on the deployment; its keys route refuses a Connect. */
   expect(keyStatus("legacy", false)).toEqual({ label: "deployment key", canConnect: false });
   expect(keyStatus("legacy", true)).toEqual({ label: "deployment key", canConnect: false });
-});
-
-test("the account connection opens only the account's own authorize page, and its outcome is said", () => {
-  expect(consumerAuthorizeUrl("https://clerk.higgsfield.ai/oauth/authorize?state=x")).toBe("https://clerk.higgsfield.ai/oauth/authorize?state=x");
-  for (const bad of ["https://evil.example/oauth/authorize", "https://clerk.higgsfield.ai/other", "https://u:p@clerk.higgsfield.ai/oauth/authorize", "javascript:alert(1)", 42]) expect(consumerAuthorizeUrl(bad)).toBeNull();
-  expect(connectionOutcome(null)).toBeNull();
-  expect(connectionOutcome("connected")).toEqual({ ok: true, line: "Account connected." });
-  expect(connectionOutcome("authorization_denied")?.ok).toBe(false);
-  expect(connectionOutcome("invalid_state")).toEqual({ ok: false, line: "The connection was not completed. Connect again from this workspace." });
 });
 
 test("security reads readAccountSecurity's fields: enabled, requiredWorkspaces and each session's label", () => {

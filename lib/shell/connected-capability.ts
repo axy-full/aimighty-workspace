@@ -1,14 +1,13 @@
 /**
- * Who could run the connected Higgsfield account in this workspace, and
- * whether it answered (idea 19). Since the Higgsfield sign-in was retired
- * (lib/higgsfield-consumer/retired.ts) nobody runs it — the hook
- * (./use-connected-capability) answers "member" for everyone — and the
- * surfaces that ran there meet one calm card saying so, with the way to make
- * the same kind of thing on this workspace's credits. Pure: the capability,
- * the one read per scope the surfaces shared, and the card's words.
+ * The words of the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts).
+ * Nobody runs the connected account any more — the hook
+ * (./use-connected-capability) answers "member" for everyone and reads
+ * nothing — and the pages that ran there (Business, Viral and Cast, until
+ * their API-key and Particl versions replace them) meet one calm card saying
+ * so, with the way to make the same kind of thing on this workspace's credits.
+ * Workspace › Engines keeps its Disconnect and Set aside. Pure: the answer's
+ * shape and the card's words.
  */
-
-import type { Plan, Runnable } from "../workspace/plan-types";
 
 export type CapabilityStatus = "member" | "loading" | "ready" | "error";
 export type ConnectedCapability = {
@@ -27,90 +26,9 @@ export type ConnectedCapability = {
 /** What the connection route (and the routes that carry a `connection`) answers. */
 export type ConnectionReply = { connected?: unknown; requiresReconnect?: unknown } | null | undefined;
 
+/** Workspace › Engines' retired row: the running jobs (Set aside) and Disconnect. */
 export const CONNECTION_ENDPOINT = "/api/higgsfield/consumer/connection";
 export const CAPABILITY_UNREADABLE = "The connected account could not be read.";
-/** How long one answer serves every surface before the next surface to open reads it again, behind it. */
-export const CAPABILITY_FRESH_MS = 60_000;
-
-export function connectionFrom(reply: ConnectionReply): { connected: boolean; reconnect: boolean } {
-  const reconnect = reply?.requiresReconnect === true;
-  return { connected: reply?.connected === true && !reconnect, reconnect };
-}
-
-/** One scope's answer, as the store keeps it. */
-export type CapabilityEntry = { status: "loading" | "ready" | "error"; connected: boolean; reconnect: boolean; error: string | null; at: number };
-
-export function capabilityOf(owner: boolean, entry: CapabilityEntry | undefined, ownerName: string | null = null): ConnectedCapability {
-  if (!owner) return { owner: false, status: "member", connected: false, reconnect: false, error: null, ownerName: ownerName?.trim() || null };
-  if (!entry) return { owner: true, status: "loading", connected: false, reconnect: false, error: null, ownerName: null };
-  return { owner: true, status: entry.status, connected: entry.connected, reconnect: entry.reconnect, error: entry.error, ownerName: null };
-}
-
-/**
- * The shared answers, one per scope (a workspace and a person): at most one
- * read in flight per scope, an answer younger than CAPABILITY_FRESH_MS reused,
- * an older one kept on screen while it is read again, and a surface that got
- * the connection in its own reply shares it. A failed first read is an error
- * to retry, never a demotion to member. A member is never read — the hook
- * does not ask.
- *
- * Connecting, reconnecting or disconnecting busts the scope (`bust`): its
- * answer is dropped, so the next surface reads afresh, and every answer that
- * was already on its way — the store's own read, or a surface's reply that
- * set out before the change (`mark` says when it set out) — is dropped when
- * it lands rather than putting the old connection back.
- */
-export function createCapabilityStore(read: (scope: string) => Promise<ConnectionReply>, clock: () => number = Date.now) {
-  const entries = new Map<string, CapabilityEntry>();
-  const inflight = new Map<string, { job: Promise<void>; epoch: number }>();
-  const epochs = new Map<string, number>();
-  const listeners = new Set<() => void>();
-  const epochOf = (scope: string) => epochs.get(scope) ?? 0;
-  const put = (scope: string, entry: CapabilityEntry) => { entries.set(scope, entry); listeners.forEach((listener) => listener()); };
-  return {
-    get: (scope: string): CapabilityEntry | undefined => entries.get(scope),
-    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    /** Where the scope stands now: a surface takes it before its own read and hands it to `settle`. */
-    mark: (scope: string): number => epochOf(scope),
-    ensure(scope: string, force = false): Promise<void> {
-      const epoch = epochOf(scope);
-      const running = inflight.get(scope);
-      if (running && running.epoch === epoch) return running.job;
-      const have = entries.get(scope);
-      if (!force && have?.status === "ready" && clock() - have.at < CAPABILITY_FRESH_MS) return Promise.resolve();
-      /* Only a first read (or a retry after a failed one) shows as loading; an answer on screen stays there. */
-      if (!have || have.status === "error") put(scope, { status: "loading", connected: false, reconnect: false, error: null, at: 0 });
-      /* The read starts on the next tick, so the job is registered before anything it does can finish. */
-      const job: Promise<void> = Promise.resolve()
-        .then(() => read(scope))
-        .then(
-          (reply) => { if (epochOf(scope) === epoch && inflight.get(scope)?.job === job) put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() }); },
-          (error: unknown) => {
-            if (epochOf(scope) !== epoch || inflight.get(scope)?.job !== job) return;
-            put(scope, { status: "error", connected: false, reconnect: false, error: error instanceof Error && error.message ? error.message : CAPABILITY_UNREADABLE, at: clock() });
-          },
-        )
-        .finally(() => { if (inflight.get(scope)?.job === job) inflight.delete(scope); });
-      inflight.set(scope, { job, epoch });
-      return job;
-    },
-    /** A reply that carried the connection; dropped when the scope was busted after `since` (a `mark`). */
-    settle(scope: string, reply: ConnectionReply, since?: number) {
-      if (since !== undefined && since !== epochOf(scope)) return false;
-      // This answer supersedes any earlier connection read still in flight.
-      inflight.delete(scope);
-      put(scope, { status: "ready", ...connectionFrom(reply), error: null, at: clock() });
-      return true;
-    },
-    /** The account was connected, reconnected or disconnected: nothing read before now is the answer any more. */
-    bust(scope: string) {
-      epochs.set(scope, epochOf(scope) + 1);
-      inflight.delete(scope);
-      if (entries.delete(scope)) listeners.forEach((listener) => listener());
-    },
-  };
-}
-export type CapabilityStore = ReturnType<typeof createCapabilityStore>;
 
 /* ── What everyone meets now ─────────────────────────────────────────── */
 
@@ -179,25 +97,9 @@ export function alternativePrice(label: string, price: { credits: number | null;
   return [label, `${price.credits.toLocaleString("en-US")} ${price.unit}`, price.detail || null].filter(Boolean).join(" · ");
 }
 
-/** The shell's suites that ran only on the connected account (their page is the card), and the state layer's suites behind them. */
+/** The shell's suites that ran only on the connected account: their page is the card, with no tabs and no stage to run. */
 export const OWNER_RUN_SUITES: readonly string[] = ["business", "viral"];
-export const OWNER_RUN_LEGACY_SUITES: readonly string[] = ["moleculr", "subatomik"];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
-
-/** The connected account's routes: whatever called one ran on the connected account. */
-export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
-/** An Atomik plan with any step on the connected account (Viral's Motion, Swap and History, say). */
-export function runsOnOwnerAccount(plan: { steps: readonly { executor: { backend: { path: string } } }[] } | null | undefined): boolean {
-  return Boolean(plan?.steps.some((step) => step.executor.backend.path.startsWith(CONNECTED_ROUTE_PREFIX)));
-}
-
-/** The run engine applies the same boundary as its panel, including keyboard and legacy entry points: a plan on the connected account says why it cannot run. */
-export function ownerAccountPlans(plans: Record<string, Plan>, owner: boolean): Record<string, Plan> {
-  if (owner) return plans;
-  return Object.fromEntries(Object.entries(plans).map(([page, plan]) => [page,
-    runsOnOwnerAccount(plan) ? { ...plan, runnable: (): Runnable => ({ ok: false, reason: `${ACCOUNT_RETIRED}.` }) } : plan,
-  ]));
-}
 
 /** A cast entry's words for a reference still: its prompt, else its description, else its name. */
 export function castStillPrompt(entry: { name: string; description: string; prompt: string }): string {

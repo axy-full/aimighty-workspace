@@ -1,13 +1,14 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
-import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
+import { AUDIO_SECONDS, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
 
 /**
  * Recreate (README › Interactions, the asset's "Retry"): a take's whole
- * recipe handed back to Gen — the words as typed, which credits paid, the
- * model, its settings, the references it was made with, the Soul identity and
- * the shot setup. Pure: what a take carries, why one cannot be recreated in
- * Gen, and how what Gen now holds differs from what the take was made with.
+ * recipe handed back to Gen — the words as typed, the model, its settings, the
+ * references it was made with and the shot setup. Pure: what a take carries,
+ * why one cannot be recreated in Gen, and how what Gen now holds differs from
+ * what the take was made with. A take made on the Higgsfield account (history:
+ * the sign-in is retired) recreates on this workspace's Studio engines.
  *
  * Nothing here runs anything: Gen prices the recipe again, on the button,
  * before a credit moves.
@@ -17,6 +18,18 @@ import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPic
 export type RecipeReference = { origin: "upload" | "generation"; id: string; role?: string; kind?: "image" | "video" | "audio" };
 /** Sound takes: the length, the instrumental switch and the voice. */
 export type RecipeSound = { seconds?: number; instrumental?: boolean; voiceId?: string };
+/** A take's settings; `soulId` is an identity it was made with on the retired Higgsfield account: shown, never sent. */
+export type RecipePicks = ComposerPicks & { soulId?: string };
+/** The settings Gen's composer takes from a recipe: an account identity stays behind. */
+export function composerPicksOf(picks: RecipePicks | undefined): ComposerPicks {
+  if (!picks) return {};
+  return {
+    ...(picks.ratio !== undefined ? { ratio: picks.ratio } : {}),
+    ...(picks.resolution !== undefined ? { resolution: picks.resolution } : {}),
+    ...(picks.duration !== undefined ? { duration: picks.duration } : {}),
+    ...(picks.draft !== undefined ? { draft: picks.draft } : {}),
+  };
+}
 
 /**
  * What the shell hands Gen, through its one letterbox (lib/shell/gen-preset.ts).
@@ -29,13 +42,16 @@ export type GenPreset = {
   model?: string;
   type?: ComposerType;
   note?: string;
-  billing?: BillingSource;
-  picks?: ComposerPicks;
+  /**
+   * Which credits paid for the take: "connected" marks one made on the
+   * Higgsfield account before its sign-in was retired (history). Gen recreates
+   * every take on this workspace's Studio engines.
+   */
+  billing?: "workspace" | "connected";
+  picks?: RecipePicks;
   references?: RecipeReference[];
   shotSpec?: Record<string, string>;
   sound?: RecipeSound;
-  /** A connected take: whether the account was asked to enhance the words (settings.enhance_prompt). */
-  enhance?: boolean;
   /** The take this recipe came from. */
   from?: { id: string; name: string };
   /** Use settings only: the model and its settings; the words and references in Gen stay. */
@@ -105,12 +121,11 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
   const connected = madeOnAccount(g);
   /* The account's own settings are what the catalogue was asked for; the top-level `duration` is the measured file. */
   const asked = connected && record(params.settings) ? params.settings : null;
-  const picks: ComposerPicks = {};
+  const picks: RecipePicks = {};
   const ratio = asked ? text(asked.aspect_ratio) : text(params.ratio) ?? text(params.aspectRatio);
   const resolution = asked ? text(asked.resolution) : text(params.resolution);
   const duration = type === "video" ? positive(asked ? asked.duration : params.duration) : undefined;
   const soulId = asked ? text(asked.soul_id) : undefined;
-  const enhance = asked && typeof asked.enhance_prompt === "boolean" ? asked.enhance_prompt : undefined;
   if (ratio) picks.ratio = ratio;
   if (resolution) picks.resolution = resolution;
   if (duration) picks.duration = duration;
@@ -153,7 +168,6 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
     ...(references.length ? { references } : {}),
     ...(Object.keys(shotSpec).length ? { shotSpec } : {}),
     ...(Object.keys(sound).length ? { sound } : {}),
-    ...(enhance !== undefined ? { enhance } : {}),
     from: { id: g.id, name: options.name },
     ...(options.settingsOnly ? { settingsOnly: true } : {}),
     note: `${options.settingsOnly ? "Settings" : "Recreate"} · ${options.name}`,
@@ -244,26 +258,21 @@ export type RecipeChip = {
   why?: string;
 };
 
-/** A connected take's model when Gen cannot read the account's list: its catalogue id is not a name. */
+/** An account take's model: its catalogue id on the Higgsfield account is not a name. */
 export const ACCOUNT_MODEL = "Account model";
 
 export function recipeChips(input: {
   preset: GenPreset;
-  /** The output and the credits Gen is on now. */
+  /** The output Gen is on now. */
   type: ComposerType;
-  billing: BillingSource;
   /** The model Gen will send, the list it chose from, and the settings it will send with it. */
   model: ComposerModel | null;
   models: readonly ComposerModel[];
   settings: ComposerSettings;
   /** The model list is still being read. */
   reading: boolean;
-  /** Why the composer has no model, when it has none (a failed read, no connected account). */
+  /** Why the composer has no model, when it has none (a failed read). */
   blocked: string | null;
-  /** The person is the workspace owner (the connected account is theirs). */
-  owner: boolean;
-  /** The account's identities, once read (null until then). */
-  identities: readonly { soulId: string; name: string; status: string | null }[] | null;
   /** Sound as Gen holds it now: the length billed, the Instrumental switch, the voice a line is read in and the model's voices. */
   sound?: { seconds: number; instrumental: boolean; voice: { id: string; name: string } | null; voices: readonly { id: string; name: string }[] };
 }): RecipeChip[] {
@@ -275,15 +284,15 @@ export function recipeChips(input: {
   /* No model at all: one line with the composer's own reason; settings have nothing to be compared against. */
   if (!model) return [{ key: "model", label: "Model", value: `${wanted} → none`, state: "changed", why: input.blocked ?? "No model is offered here" }];
   const chips: RecipeChip[] = [];
-  const lostAccount = preset.billing === "connected" && input.billing !== "connected";
+  /* Gen offers no signed-in account's catalogue (28 September 2026): an account take recreates on Studio engines, for everyone. */
+  const lostAccount = preset.billing === "connected";
   const sameModel = !lostAccount && model.id === preset.model;
   if (sameModel) chips.push({ key: "model", label: "Model", value: model.label, state: "kept" });
   else {
-    /* Gen offers no signed-in account's catalogue (28 September 2026): an account take recreates on Studio engines, for everyone. */
     const why = lostAccount ? "Gen runs on Studio engines only"
-      : input.type !== preset.type || input.billing !== preset.billing || input.models.some((m) => m.id === preset.model) ? "Changed here"
+      : input.type !== preset.type || input.models.some((m) => m.id === preset.model) ? "Changed here"
       : "Not offered here now";
-    const now = model.label === wanted ? (input.billing === "connected" ? "account" : "Studio engine") : model.label;
+    const now = model.label === wanted ? "Studio engine" : model.label;
     chips.push({ key: "model", label: "Model", value: `${wanted} → ${now}`, state: "changed", why });
   }
 
@@ -304,14 +313,8 @@ export function recipeChips(input: {
     chips.push(settings.draft ? { key: "draft", label: "Draft", value: "Draft first", state: "kept" }
       : { key: "draft", label: "Draft", value: "Draft → full take", state: "changed", why: `${model.label} has no draft mode` });
 
-  if (picks.soulId) {
-    const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");
-    if (!model.soulId) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: `${model.label} takes no identity` });
-    else if (!input.identities) chips.push({ key: "identity", label: "Identity", value: "Identity", state: "reading" });
-    else if (!found) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
-    else if (settings.soulId === picks.soulId) chips.push({ key: "identity", label: "Identity", value: found.name, state: "kept" });
-    else chips.push({ key: "identity", label: "Identity", value: `${found.name} → none`, state: "changed", why: "Changed here" });
-  }
+  /* An identity built on the Higgsfield account travels with no Studio engine. */
+  if (picks.soulId) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
   /* Sound: what the take was made with against what Gen's length, Instrumental and voice now hold. */
   const task = model.audioTask, sound = input.sound;
   if (preset.sound?.seconds && (task === "sound" || task === "music")) {

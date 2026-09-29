@@ -7,6 +7,11 @@ import { POLL, pollAfter, pollDelay, presentTimeout, type PollRate } from "@/lib
 /**
  * Connected-account renders finish even when nobody is looking.
  *
+ * Not mounted any more: the Higgsfield sign-in is retired and its jobs were
+ * drained (the scheduled sweep still collects any the account finishes). The
+ * module stays only for the pages still on the retired card (Business, until
+ * its Particl version replaces it), which import its types; it goes with them.
+ *
  * A job submitted from Gen or a Business composer is polled by that view
  * while it is on screen; the poll (the route's `status` action) is also what
  * collects the finished original into Particl. Leave the view mid-render and
@@ -436,7 +441,7 @@ export class ConnectedCollector {
   }
 }
 
-/* The shell's one collector (useConnectedCollector mounts it); views reach it through these. */
+/* The shell's one collector, when one is mounted (none is now); views reach it through these. */
 let shared: ConnectedCollector | null = null;
 const listeners = new Set<() => void>();
 const NONE: readonly CollectedJob[] = [];

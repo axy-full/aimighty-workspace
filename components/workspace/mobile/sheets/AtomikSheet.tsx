@@ -6,8 +6,6 @@ import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import type { MobileSheetBodyProps } from "./registry";
-import { ACCOUNT_RETIRED, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
-import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
  * The Atomik sheet (05-mobile "Sheets": plan, steps, gate, activity).
@@ -27,14 +25,12 @@ import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 export function AtomikSheet({}: MobileSheetBodyProps) {
   const { state, go } = useWorkspace();
   const atomik = useAtomik();
-  const capability = useConnectedCapability(undefined, { read: false });
   const def = pageDef(state.page);
   const plan = atomik.plan(state.page);
-  const ownerRun = !capability.owner && runsOnOwnerAccount(plan);
   const run = atomik.runFor(state.page);
   const runnable = atomik.runnable(state.page);
   const button = runButton(run, runnable);
-  const rows = plan && !ownerRun ? stepRows(plan, run, atomik.ctx) : [];
+  const rows = plan ? stepRows(plan, run, atomik.ctx) : [];
   const waiting = run?.status === "waiting";
   const quote = run?.quote ?? null;
   const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
@@ -76,7 +72,7 @@ export function AtomikSheet({}: MobileSheetBodyProps) {
         </ol>
       ) : null}
 
-      {waiting && !ownerRun ? (
+      {waiting ? (
         <div className="pxm-gate" role="group" aria-label="Approval required" data-testid="mobile-atomik-gate">
           <div className="pxm-gate-head">
             <span className="pxm-gate-title">Approval required</span>
@@ -106,7 +102,7 @@ export function AtomikSheet({}: MobileSheetBodyProps) {
       {run?.status === "failed" && run.error ? <p className="pxm-problem" role="alert">{run.error}</p> : null}
       {atomik.state.notice && !run ? <p className="pxm-problem" role="alert">{atomik.state.notice}</p> : null}
 
-      {ownerRun ? <p className="pxm-plan-reason" data-testid="atomik-owner-run">{ACCOUNT_RETIRED}.</p> : plan ? (
+      {plan ? (
         <div className="pxm-plan-foot">
           <span className="pxm-plan-price" data-paid={plan.paid || undefined} data-testid="mobile-atomik-price">{priceText(plan, run)}</span>
           <span className="pxm-grow" />

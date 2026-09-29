@@ -26,12 +26,11 @@ async function open(page: Page) {
     uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" })],
     generations: [generation({ id: AD, title: "Bottle ad", kind: "image", model: "marketing_studio_image", provider: "higgsfield", params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits" } })],
   });
-  /* Every account request the page makes, bar the shell collector's list of saved jobs (a ledger read). */
+  /* Every account request the page makes: none, not even a list of saved jobs (the shell's collector went with the sign-in). */
   const asked: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/higgsfield/consumer/")) return;
-    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation") return;
     asked.push(`${request.method()} ${url.pathname}`);
   });
   const errors: string[] = [];

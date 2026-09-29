@@ -37,7 +37,7 @@ export type BackendRef = {
   path: string;
 };
 
-/** Credits as the customer sees them: Particl credits, or the connected account's own credits. */
+/** Credits as the customer sees them: Particl credits ("cr"); any other unit is said as plain credits. */
 export type CreditUnit = "cr" | "connected";
 
 /** One priced request inside a quote. Dispatch sends exactly these fields back. */
@@ -46,11 +46,11 @@ export type QuotePart = {
   credits: number;
   /** Route-issued proof of the priced inputs (fingerprint, quoteDigest, quote id...). */
   fingerprint: string;
-  /** The route's own quote id where it issues one (pipelines, connected account). */
+  /** The route's own quote id where it issues one (pipelines). */
   quoteId?: string;
   /** The exact request body that was priced; dispatch re-sends it unchanged. */
   body: Record<string, unknown>;
-  /** Free-form route data the dispatch needs (e.g. connected wallet id, pipeline revision). */
+  /** Free-form route data the dispatch needs (e.g. the audio route, a pipeline revision). */
   meta?: Record<string, unknown>;
 };
 
@@ -106,8 +106,6 @@ export type PlanData = {
   takes?: number;
   /** Settled Particl credits across the project's jobs. */
   settledCredits?: number;
-  /** Connected-account sources the user selected on a Subatomik page. */
-  sources?: number;
   /** Pipeline runs visible to the user. */
   runs?: number;
   /** Whether the project has a saved script / brief (Brief & Script picks its mode). */
@@ -158,8 +156,6 @@ export type PlanRequest = {
    *  still references (`role: "reference_image"`), resolution, prompt, `projectId` and `workbenchProjectId`. */
   motion?: NamedBody[];
   swap?: NamedBody[];
-  /** Subatomik Shorts: the Shorts input (source, preset, aspectRatio) as /api/higgsfield/consumer/shorts takes it. */
-  shorts?: Record<string, unknown>;
   /** Astra: the saved scene's digest (astraSceneDigest) and source. */
   astra?: { sourceDigest: string; source?: "scene" | "native" };
   /** Brief & Script: development options. */

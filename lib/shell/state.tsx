@@ -6,12 +6,10 @@ import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo"
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
-import { useSession } from "@/lib/session";
 import { projectChanged } from "@/lib/workspace/data";
 import { pageKind } from "@/lib/workspace/pages";
 import { validAssetId } from "@/lib/preview";
 import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, withAsset, withoutLink, type AssetLink, type SelectReason } from "./asset-link";
-import { useConnectedCollector } from "./use-connected-collector";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
@@ -227,16 +225,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Leaving a page is when a composer that polled its own connected job lets go of it, and when an
-     editor that is not a stage (the Rig) has saved: the collector lists the project's jobs, and the
-     shell's copy of the project is read again. */
-  const session = useSession();
+  /* Leaving a page is when an editor that is not a stage (the Rig) has saved: the shell's copy of the
+     project is read again. */
   const place = `${params.view}:${page.id}`;
-  const strip = ws.state.gen;
-  useConnectedCollector({
-    scope: session.requestScope ?? null, owner: session.owner, projectId: ws.state.projectId, place, toast: ws.toast,
-    strip: strip ? { id: strip.id, done: strip.tone === "green" || strip.tone === "red" } : null,
-  });
   const placed = useRef(place);
   useEffect(() => {
     if (placed.current === place) return;

@@ -1,66 +1,31 @@
 "use client";
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import { useSession } from "@/lib/session";
-import { SIGN_IN_RETIRED } from "@/lib/higgsfield-consumer/retired";
-import {
-  CAPABILITY_UNREADABLE, CONNECTION_ENDPOINT, capabilityOf, createCapabilityStore,
-  type ConnectedCapability, type ConnectionReply,
-} from "./connected-capability";
+import type { ConnectedCapability, ConnectionReply } from "./connected-capability";
 
-/** The page's one set of answers: every surface reads through it, so the account is read once per scope. */
-const store = createCapabilityStore(async (scope) => {
-  const response = await fetch(CONNECTION_ENDPOINT, { headers: { "X-Workbench-Scope": scope }, cache: "no-store" });
-  const json = await response.json().catch(() => null) as (ConnectionReply & { error?: unknown }) | null;
-  if (!response.ok) throw new Error(typeof json?.error === "string" && json.error ? json.error : CAPABILITY_UNREADABLE);
-  return json;
-});
+type Capability = ConnectedCapability & { scope: string; revision: number; refresh: () => void };
+const refresh = () => {};
 
 /**
- * Who runs the connected account here, and whether it answers
- * (lib/shell/connected-capability.ts). Whether this person is the owner — and,
- * for a member, the owner's name — comes from the server-rendered session (the
- * shell's own /api/me answer, lib/session), so a member's surfaces render their
- * card on the first paint and nothing is read for them. For the owner the
- * connection is read once per scope and shared; `read: false` only listens (a
- * surface whose own reply carries the connection settles it instead, and the
- * shell's chrome needs only `owner`). `scope` is the scope the answer is for
- * ("" when there is none: signed out, or not the session's scope), and
- * `revision` moves only when the account is connected, reconnected or
- * disconnected there — never on an ordinary read — so a surface can tie what
- * it read to the connection it read it under.
+ * Who runs the connected Higgsfield account here: nobody. The sign-in is
+ * retired (lib/higgsfield-consumer/retired.ts), so every surface takes the
+ * path a member always took — the workspace owner's included — and nothing is
+ * read from the account. The answer keeps its shape (`scope`, `revision`,
+ * `refresh`) for the pages still on the retired card (Business, Viral and
+ * Cast), which go with it once their API-key and Particl versions replace
+ * them. Workspace › Engines keeps the owner's grant to Disconnect and the
+ * running jobs to Set aside; it never read through here.
  */
-export function useConnectedCapability(scope?: string | null, options: { read?: boolean } = {}): ConnectedCapability & { scope: string; revision: number; refresh: () => void } {
+export const useConnectedCapability: (scope?: string | null, options?: { read?: boolean }) => Capability = (scope) => {
   const session = useSession();
-  /* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts): nobody runs the connected
-     account now, the workspace owner included, so every surface takes the path a member always took and
-     nothing is read from the account. Workspace › Engines still shows the owner's grant (to Disconnect it)
-     and the shell's collector still finishes jobs already running; neither reads through this hook. */
-  const owner = !SIGN_IN_RETIRED && session.signedIn && session.owner === true;
-  const ownerName = session.workspace?.ownerName ?? null;
+  const ownerName = session.workspace?.ownerName?.trim() || null;
   const requested = scope === undefined ? session.requestScope : scope;
   const key = session.signedIn && requested === session.requestScope ? requested ?? "" : "";
-  const read = options.read !== false;
-  const entry = useSyncExternalStore(store.subscribe, () => (key ? store.get(key) : undefined), () => undefined);
-  const revision = useSyncExternalStore(store.subscribe, () => key ? store.mark(key) : 0, () => 0);
-  /* A bust drops the entry: a surface still on screen reads again. A failed read is not read again on
-     its own (that would loop against a refusing route); Try again (`refresh`) or the next surface does. */
-  const missing = !entry;
-  useEffect(() => { if (owner && read && key) void store.ensure(key); }, [owner, read, key, missing]);
-  const refresh = useCallback(() => { if (owner && key) void store.ensure(key, true); }, [owner, key]);
-  return useMemo(() => ({ ...capabilityOf(owner, entry, ownerName), scope: key, revision, refresh }), [owner, entry, ownerName, key, revision, refresh]);
-}
+  return useMemo(() => ({ owner: false, status: "member" as const, connected: false, reconnect: false, error: null, ownerName, scope: key, revision: 0, refresh }), [ownerName, key]);
+};
 
-/** Where the scope stands before a surface's own read that carries the connection (Viral's runs, Cast's jobs, Engines). */
-export function markConnectedCapability(scope: string | null | undefined): number | undefined {
-  return scope ? store.mark(scope) : undefined;
-}
+/** Nothing is read, so there is no answer for a surface's own read to be tied to. */
+export const markConnectedCapability: (scope: string | null | undefined) => number | undefined = () => undefined;
 
-/** A surface that read the connection in its own reply shares it with the rest — unless the account changed since `since`. */
-export function settleConnectedCapability(scope: string | null | undefined, reply: ConnectionReply, since?: number) {
-  return Boolean(scope && reply && typeof reply === "object" && store.settle(scope, reply, since));
-}
-
-/** Connecting, reconnecting or disconnecting: every surface reads the account afresh (Workspace › Engines). */
-export function bustConnectedCapability(scope: string | null | undefined) {
-  if (scope) store.bust(scope);
-}
+/** Nothing is kept, so a surface's own reply settles nothing. */
+export const settleConnectedCapability: (scope: string | null | undefined, reply: ConnectionReply, since?: number) => boolean = () => false;

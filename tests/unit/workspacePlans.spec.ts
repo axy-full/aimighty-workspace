@@ -137,8 +137,6 @@ function fullRequest(): PlanRequest {
       sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }, { uploadId: "r2", role: "reference_image" }] } }],
     swap: [{ name: "Swap 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-object-swap", prompt: "swap it", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
       sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }] } }],
-    /* What the connected account's Shorts form still publishes: no plan reads it any more. */
-    shorts: { source: { uploadId: "u1" }, preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" }, aspectRatio: "9:16" },
     astra: { sourceDigest: "c".repeat(64) },
     development: { kind: "screenplay" },
   };

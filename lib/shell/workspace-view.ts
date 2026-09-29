@@ -128,23 +128,6 @@ export function keyStatus(mode: KeyMode | undefined, set: boolean): { label: str
   return mode === "own" ? { label: "not connected", canConnect: true } : { label: "platform key", canConnect: true };
 }
 
-/** The connected account's sign-in address, accepted only when it is the account's own authorize page. */
-export function consumerAuthorizeUrl(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  try {
-    const url = new URL(raw);
-    return url.origin === "https://clerk.higgsfield.ai" && url.pathname === "/oauth/authorize" && !url.username && !url.password ? url.href : null;
-  } catch { return null; }
-}
-/** What the callback's `?higgsfield=` code means (lib/higgsfield-consumer/oauth.ts consumerCallbackLocation). */
-export function connectionOutcome(code: string | null): { ok: boolean; line: string } | null {
-  if (!code) return null;
-  if (code === "connected") return { ok: true, line: "Account connected." };
-  if (code === "authorization_denied") return { ok: false, line: "Authorization was not approved." };
-  if (code === "configuration") return { ok: false, line: "The account connection is not configured on this deployment." };
-  return { ok: false, line: "The connection was not completed. Connect again from this workspace." };
-}
-
 /* ── Security ────────────────────────────────────────────────────────── */
 
 /** GET /api/account/security: lib/accountSecurity.ts readAccountSecurity. */

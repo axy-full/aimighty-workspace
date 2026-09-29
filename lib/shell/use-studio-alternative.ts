@@ -65,7 +65,7 @@ export function useStudioAlternative(scope: string | null | undefined, type: "im
     const mine = answer && answer.key === key ? answer : null;
     if (!type || !mine) return { status: "loading", model: null, price: null, retry };
     if (mine.failed || !mine.rows) return { status: "error", model: null, price: null, retry };
-    const model = activeModel({ type, billing: "workspace", chosen: {} }, workspaceModels(mine.rows, null));
-    return { status: "ready", model: model ? { id: model.id, label: model.label } : null, price: model ? rowPrice(model, {}, at) : null, retry };
+    const model = activeModel({ type, chosen: {} }, workspaceModels(mine.rows, null));
+    return { status: "ready", model: model ? { id: model.id, label: model.label } : null, price: model ? rowPrice(model, at) : null, retry };
   }, [answer, key, type, at, retry]);
 }

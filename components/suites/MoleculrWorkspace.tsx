@@ -90,10 +90,6 @@ export function MoleculrWorkspace({
   onBuildStoryboard?: () => void;
   onReviewVariant?: (nodeId: string) => void;
   onPrepareVariants?: (kind: "image" | "video") => void;
-  /** Filed a collected marketing video (the account's; retired with the Higgsfield sign-in, nothing calls it now). */
-  onConsumerVideoAsset?: (asset: Asset, draftId: string) => Promise<void>;
-  /** Filed a collected template original as a variant result (retired with the Higgsfield sign-in; nothing calls it now). */
-  onTemplateAsset?: (asset: Asset, draftId: string) => Promise<void>;
 }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const [hookIndex, setHookIndex] = useState(0);

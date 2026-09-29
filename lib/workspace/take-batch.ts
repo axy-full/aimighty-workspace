@@ -1,14 +1,3 @@
-import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
-import {
-  CONNECTED_GENERATION_ENDPOINT,
-  connectedBatchCheckRequest,
-  connectedBatchQuoteRequest,
-  connectedBatchSubmitRequest,
-  connectedBatchTotal,
-  parseConnectedJob,
-  type ConnectedJob,
-} from "../higgsfield-consumer/generation-client";
-import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
 import { readPendingGeneration } from "../workbench/pending-generation";
 import { formatCredits } from "./cost";
 import { dispatchGeneration, quoteDispatch, settlePendingGeneration, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
@@ -24,12 +13,6 @@ import type { MediaJob } from "../workbench/job-recovery";
  *    equal the total on the button. If it does not, nothing is sent: the new
  *    total goes on the button for a second, deliberate Generate. A batch is
  *    never left half sent because a price moved.
- *  - The connected account: N quoted jobs, then ONE approval of their exact
- *    sum and ONE paid batch call (the route's `submit-batch`, through
- *    submitConsumerGenerationBatchJobs). Its credits are the account's own
- *    currency, never converted at this workspace's rate. A lost reply is
- *    checked, never replayed: the server fences a batch that never arrived
- *    (`check-batch`), so the answer is final and nothing is paid twice.
  *  - This workspace's credits: every take carries the same batch id and its
  *    take number. Takes are sent in order, each at the ceiling it was quoted
  *    at. If admission refuses take k (a cap, a limit), takes k+1… are not
@@ -78,8 +61,8 @@ const upper = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
  * what they were approved at), which were refused or never sent (and that
  * nothing was charged for them), and which are still being checked.
  */
-export function batchNotice(takes: readonly BatchTake[], unit: "cr" | "connected cr"): string {
-  const money = (n: number) => (unit === "cr" ? formatCredits(n) : `${n.toLocaleString("en-US")} connected cr`);
+export function batchNotice(takes: readonly BatchTake[]): string {
+  const money = formatCredits;
   const sent = takes.filter((t) => t.state === "queued");
   const held = takes.filter((t) => t.state === "held");
   const unsure = takes.filter((t) => t.state === "unconfirmed");
@@ -184,164 +167,6 @@ export async function settleWorkspaceTake(options: { scope: string; storageId: s
   return { state: "lost" };
 }
 
-/* ── The connected account ────────────────────────────────────────────── */
-
-export type ConnectedBatchOutcome =
-  | { state: "repriced"; total: number; takes: number[]; reason: string }
-  /** Refused before anything was sent or charged. */
-  | { state: "refused"; reason: string }
-  /** The account's admission took the batch: every take is followed (a take it refused is failed, unbilled). */
-  | { state: "sent"; jobs: ConnectedJob[]; note?: string }
-  /** The reply was lost and could not be checked yet: nothing new is sent until it is. */
-  | { state: "unknown"; reason: string };
-
-type PendingBatch = { draftId: string; batchId: string; ids: string[]; workspaceId: string; credits: number; at: number };
-const PENDING_PREFIX = "particl:connected-batch:v1:";
-const pendingKey = (scope: string, draftId: string) => `${PENDING_PREFIX}${JSON.stringify([scope, draftId])}`;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** A batch sent but not yet answered, remembered before it is sent. Unreadable storage is never a reason to send more. */
-export function readPendingBatch(storage: Storage, scope: string, draftId: string): PendingBatch | null {
-  const raw = storage.getItem(pendingKey(scope, draftId));
-  if (!raw) return null;
-  const value = JSON.parse(raw) as PendingBatch;
-  if (!value || value.draftId !== draftId || typeof value.batchId !== "string" || !Array.isArray(value.ids) || value.ids.length < 2 || value.ids.length > 4 ||
-      !value.ids.every((id) => typeof id === "string" && UUID.test(id)) || typeof value.workspaceId !== "string" || !Number.isFinite(value.credits) || typeof value.at !== "number")
-    throw new Error("The saved batch cannot be read. Check Takes before starting another.");
-  return value;
-}
-function claimPendingBatch(storage: Storage, scope: string, value: PendingBatch) {
-  const key = pendingKey(scope, value.draftId);
-  if (storage.getItem(key)) throw new Error("Another batch on this project is still waiting for its answer. Nothing new was sent.");
-  const raw = JSON.stringify(value);
-  storage.setItem(key, raw);
-  if (storage.getItem(key) !== raw) throw new Error("Enable local storage to send a batch safely. Nothing was sent.");
-}
-function clearPendingBatch(storage: Storage, scope: string, draftId: string, batchId: string) {
-  try {
-    const saved = readPendingBatch(storage, scope, draftId);
-    if (saved?.batchId === batchId) storage.removeItem(pendingKey(scope, draftId));
-  } catch { /* unreadable: left for the person to see */ }
-}
-
-const headers = (scope: string) => ({ "Content-Type": "application/json", "X-Workbench-Scope": scope });
-
-/** What a connected batch that was checked after a lost reply became. */
-export type SettledBatch =
-  | { state: "none" }
-  | { state: "landed"; jobs: ConnectedJob[] }
-  | { state: "lost" }
-  | { state: "unknown"; reason: string };
-
-const UNCHECKED_BATCH = "Your last batch could not be checked yet, so nothing new was sent. Try again in a moment.";
-
-/** Ask the server what became of these takes; one that never arrived is fenced there in the same step. */
-async function checkBatch(scope: string, draftId: string, ids: readonly string[]): Promise<Exclude<SettledBatch, { state: "none" }>> {
-  try {
-    const found = await studioRequest<{ state?: unknown; jobs?: unknown[] }>(CONNECTED_GENERATION_ENDPOINT, {
-      method: "POST", headers: headers(scope), body: JSON.stringify(connectedBatchCheckRequest(draftId, ids)),
-    });
-    if (found.state === "landed") return { state: "landed", jobs: (found.jobs ?? []).map((job) => parseConnectedJob(job, draftId)) };
-    return found.state === "absent" ? { state: "lost" } : { state: "unknown", reason: UNCHECKED_BATCH };
-  } catch (error) {
-    /* The takes are not this project's any more (deleted with it): there is nothing to follow or to fence. */
-    if (error instanceof StudioRequestError && error.status === 404) return { state: "lost" };
-    return { state: "unknown", reason: UNCHECKED_BATCH };
-  }
-}
-
-/**
- * Check, then fence: before anything else is sent for this project, a batch
- * whose reply was lost is asked about by its takes' ids. Landed: its takes are
- * followed and nothing is sent again. Never arrived: the server has fenced it,
- * so it never can, and nothing was charged. Not known (the question got no
- * answer): the record stays and nothing new is sent.
- */
-export async function settleConnectedBatch(options: { scope: string; draftId: string; storage?: Storage }): Promise<SettledBatch> {
-  const storage = options.storage ?? window.localStorage;
-  let pending: PendingBatch | null;
-  try { pending = readPendingBatch(storage, options.scope, options.draftId); } catch (error) {
-    return { state: "unknown", reason: error instanceof Error ? error.message : "The saved batch cannot be read." };
-  }
-  if (!pending) return { state: "none" };
-  const checked = await checkBatch(options.scope, pending.draftId, pending.ids);
-  if (checked.state !== "unknown") clearPendingBatch(storage, options.scope, pending.draftId, pending.batchId);
-  return checked;
-}
-
-/**
- * Quote every take fresh, gate the exact sum against the total on the button,
- * remember the batch, then ONE submit for all of it. A lost reply is checked
- * (and fenced) at once; it is never sent again.
- */
-export async function sendConnectedBatch(options: {
-  scope: string;
-  draftId: string;
-  input: ConsumerGenerationInput;
-  count: number;
-  /** The total on the button, in the account's credits. */
-  shown: number | null;
-  batchId: string;
-  composer?: "gen";
-  /** Every fresh quote, the moment it is known (the composer holds the figure for the button). */
-  onQuoted?: (jobs: ConnectedJob[]) => void;
-  storage?: Storage;
-  now?: () => number;
-}): Promise<ConnectedBatchOutcome> {
-  const { scope, draftId, count, batchId } = options;
-  const storage = options.storage ?? window.localStorage;
-  const now = options.now ?? Date.now;
-  let jobs: ConnectedJob[];
-  try {
-    const quoted = await studioRequest<{ jobs?: unknown[] }>(CONNECTED_GENERATION_ENDPOINT, {
-      method: "POST", headers: headers(scope),
-      body: JSON.stringify(connectedBatchQuoteRequest(draftId, options.input, count, batchId, options.composer ? { composer: options.composer } : {})),
-    });
-    jobs = (quoted.jobs ?? []).map((job) => parseConnectedJob(job, draftId));
-  } catch (error) {
-    return { state: "refused", reason: neutralCopy(error instanceof Error ? error.message : "The batch could not be priced. Nothing was sent.", "The batch could not be priced. Nothing was sent.") };
-  }
-  /* Exactly the takes asked for, in take order, one wallet, all still quoted: anything else is never sent. */
-  if (jobs.length !== count || jobs.some((job, i) => job.status !== "quoted" || job.batch?.id !== batchId || job.batch.variation !== i + 1 || job.workspaceId !== jobs[0].workspaceId))
-    return { state: "refused", reason: "The batch's quotes did not match what was asked. Nothing was sent." };
-  options.onQuoted?.(jobs);
-  const gate = batchGate(options.shown, jobs.map((job) => job.quoteCredits));
-  if (!gate.ok)
-    return { state: "repriced", total: gate.total, takes: jobs.map((job) => job.quoteCredits),
-      reason: `The price is now ${gate.total.toLocaleString("en-US")} connected cr for ${count} takes. Nothing was sent; press Generate again to approve it.` };
-  if (jobs.some((job) => job.quoteExpiresAt <= now())) return { state: "refused", reason: "That price expired. Press Generate again for a fresh one." };
-  const pending: PendingBatch = { draftId, batchId, ids: jobs.map((job) => job.id), workspaceId: jobs[0].workspaceId, credits: connectedBatchTotal(jobs), at: now() };
-  try { claimPendingBatch(storage, scope, pending); } catch (error) {
-    return { state: "refused", reason: error instanceof Error ? error.message : "The batch could not be remembered. Nothing was sent." };
-  }
-  try {
-    const sent = await studioRequest<{ jobs?: unknown[] }>(CONNECTED_GENERATION_ENDPOINT, {
-      method: "POST", headers: headers(scope), body: JSON.stringify(connectedBatchSubmitRequest(draftId, jobs)),
-    });
-    /* An answer that does not name every take it was sent is no answer: it is checked like a lost reply (below). */
-    const views = (sent.jobs ?? []).map((job) => parseConnectedJob(job, draftId));
-    if (views.length !== count || views.some((view, i) => view.id !== pending.ids[i])) throw new Error("unreadable batch answer");
-    clearPendingBatch(storage, scope, draftId, batchId);
-    return { state: "sent", jobs: views };
-  } catch (error) {
-    /* Answered, and refused before any take was claimed: nothing was sent or charged. A take already claimed by
-       another submit, or no answer at all, is the one case that is not known: it is checked before anything else. */
-    const code = error instanceof StudioRequestError ? String(error.data?.code ?? "") : "";
-    if (error instanceof StudioRequestError && error.status >= 400 && error.status < 500 && code !== "already_submitted") {
-      clearPendingBatch(storage, scope, draftId, batchId);
-      const reason = code === "capacity"
-        ? `The connected account already has jobs running; a batch of ${count} needs ${count} free slots.`
-        : neutralCopy(error.message, "The connected account refused this batch.");
-      return { state: "refused", reason: `Nothing was sent or charged: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.?$/, ".")}` };
-    }
-    const checked = await checkBatch(scope, draftId, pending.ids);
-    if (checked.state !== "unknown") clearPendingBatch(storage, scope, draftId, batchId);
-    if (checked.state === "landed") return { state: "sent", jobs: checked.jobs, note: "The answer was lost on the way back, so the batch was checked: it had reached the connected account." };
-    if (checked.state === "lost") return { state: "refused", reason: "The batch never reached the connected account. Nothing was charged; press Generate to send it again." };
-    return { state: "unknown", reason: checked.reason };
-  }
-}
-
 /* ── A workspace batch whose reply was lost ───────────────────────────── */
 
 /** The takes of a workspace batch left unconfirmed, remembered until the next Generate on the project asks about them. */
@@ -401,7 +226,7 @@ export async function settleWorkspaceBatch(options: { scope: string; projectId: 
 
 /* ── Progress: one reading of each take for the strip, Gen's Results and the toast ── */
 
-export type TakeRead = { media?: MediaJob; connected?: ConnectedJob };
+export type TakeRead = { media?: MediaJob };
 export type TakeView = {
   variation: number;
   /** "take 2". */
@@ -411,7 +236,7 @@ export type TakeView = {
   tone: "blue" | "green" | "red" | "amber" | "idle";
   /** Nothing more will happen to it here. */
   done: boolean;
-  /** The job to follow (a generation id, or the connected job id). */
+  /** The job to follow (a generation id). */
   jobId: string | null;
   /** The generation its output was filed as, once known: the Library card to show. */
   generationId: string | null;
@@ -419,27 +244,15 @@ export type TakeView = {
 };
 
 /** One take, from what the batch did with it and the latest read of its job. */
-export function takeView(take: BatchTake, source: "workspace" | "connected", read: TakeRead | undefined): TakeView {
+export function takeView(take: BatchTake, read: TakeRead | undefined): TakeView {
   const base = { variation: take.variation, label: `take ${take.variation}`, jobId: take.jobId, generationId: null as string | null, credits: take.credits };
   if (take.state === "refused") return { ...base, status: "Not made · not charged", tone: "red", done: true };
   if (take.state === "not-sent") return { ...base, status: "Not sent · not charged", tone: "idle", done: true };
   if (take.state === "unconfirmed") return { ...base, status: "Reply lost · checked next Generate", tone: "amber", done: true };
   /* Held (credits ran out, or no slot yet): not charged until it runs. One waiting for credits waits for the person; one waiting for a slot starts by itself. */
-  if (source === "workspace" && (take.state === "held" || read?.media?.status === "held")) {
+  if (take.state === "held" || read?.media?.status === "held") {
     const why = read?.media?.params?.held?.why;
     return { ...base, status: why === "slots" ? "Held · waiting for a slot" : "Held · needs credits", tone: "amber", done: Boolean(read?.media) && why !== "slots" };
-  }
-  if (source === "connected") {
-    const job = read?.connected;
-    if (!job) return { ...base, status: "Checking with the account", tone: "blue", done: false };
-    if (job.status === "completed") {
-      const original = job.result && typeof job.result === "object" ? (job.result as { original?: { generationId?: unknown } }).original : undefined;
-      return { ...base, status: "Complete", tone: "green", done: true, generationId: typeof original?.generationId === "string" ? original.generationId : null };
-    }
-    if (job.status === "failed") return { ...base, status: job.failureCode === "invalid_result" ? "Finished · not kept" : "Failed · not billed", tone: "red", done: true };
-    if (job.status === "accepted") return { ...base, status: "Rendering", tone: "blue", done: false };
-    if (job.status === "quoted") return { ...base, status: "Not sent · not charged", tone: "idle", done: true };
-    return { ...base, status: "Checking with the account", tone: "blue", done: false };
   }
   /* The Rig's own reading of a job (held, failed · not billed …), so a take says here what it says there. */
   const phase = generationPhase(read?.media ?? { status: "queued" });
