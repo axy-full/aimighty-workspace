@@ -4,6 +4,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
 import type { AppState, SelKind } from "@/lib/workspace/types";
 import { RigInspector } from "../rig/RigInspector";
+import { RigCardInspector } from "../rig/RigCardInspector";
 import { specFor } from "@/lib/workspace/spec-cards";
 import { SpecInspector } from "../spec/SpecInspector";
 import { Kicker } from "../ui";
@@ -12,12 +13,13 @@ import { TakeInspector } from "./TakeInspector";
 
 export type InspectorBodyProps = { state: AppState; scope: string; project: Project | null };
 
-export const KIND_LABEL: Record<SelKind, string> = { shot: "Scene", take: "Asset", cast: "Identity", page: "Stage" };
+export const KIND_LABEL: Record<SelKind, string> = { shot: "Scene", take: "Asset", cast: "Identity", node: "Card", page: "Stage" };
 
 const NOTE: Record<Exclude<SelKind, "page">, string> = {
   shot: "Shot controls, inputs and versions appear here when a shot is selected.",
   take: "Asset details, settled cost or integrity, and versions appear here.",
   cast: "The locked identity, its consistency and its references appear here.",
+  node: "A card's kind, source and versions appear here when one is selected.",
 };
 
 function Placeholder({ state }: InspectorBodyProps) {
@@ -44,5 +46,6 @@ export const INSPECTOR_BODIES: Record<SelKind, ComponentType<InspectorBodyProps>
   shot: RigInspector,
   take: TakeInspector,
   cast: CastInspector,
+  node: RigCardInspector,
   page: PageInspector,
 };

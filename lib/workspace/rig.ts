@@ -1,8 +1,11 @@
 import { PROJECT_LIMITS } from "../workbench/project-limits";
 import type { MediaJob } from "../workbench/job-recovery";
+import { failedChip } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
-import { NODE_DEFS, createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
-import type { Asset, CanvasNode, Project } from "../workbench/studio";
+import { createNode, generationReferenceIds, nodeHeight, resolveAsset } from "../workbench/node-graph";
+import { cardLabel, refKindOf } from "../workbench/ref-kind";
+import type { Asset, CanvasNode, Project, RefKind } from "../workbench/studio";
 import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
@@ -43,7 +46,8 @@ const allNodes = (project: Project) => {
 };
 const allAssets = (project: Project) => [...project.assets, ...(project.sharedAssets ?? [])];
 
-export type InputRow = { id: string; name: string; kind: string; version: string; asset: Asset | null };
+/** `kind`: the word the input is shown under (a reference's kind, else its node type); `refKind`: the reference kind, or null. */
+export type InputRow = { id: string; name: string; kind: string; refKind: RefKind | null; version: string; asset: Asset | null };
 
 /** The shot's connected inputs, resolved through the graph (the Inspector's Inputs tab). */
 export function shotInputs(project: Project, shotId: string): InputRow[] {
@@ -54,8 +58,16 @@ export function shotInputs(project: Project, shotId: string): InputRow[] {
     const input = nodes.find((n) => n.id === id);
     if (!input) return [];
     const asset = resolveAsset(input, nodes, assets) ?? null;
-    return [{ id: input.id, name: input.title, kind: NODE_DEFS[input.type].label, version: asset ? `v${asset.version}` : "—", asset }];
+    return [{ id: input.id, name: input.title, kind: cardLabel(input, project), refKind: refKindOf(input, project), version: asset ? `v${asset.version}` : "—", asset }];
   });
+}
+
+/** What an input row says under its name: the first frame, a kind with its medium ("Cast · image"), or a plain reference. */
+export function inputKindText(row: Pick<InputRow, "kind" | "refKind" | "asset">, firstFrame: boolean): string {
+  if (firstFrame) return "First frame";
+  if (!row.asset) return row.kind;
+  const medium = row.asset.kind === "video" ? "video" : "image";
+  return row.refKind && row.refKind !== "ref" ? `${row.kind} · ${medium}` : `Reference ${medium}`;
 }
 
 /** Image and video references bound to the shot, exactly as the Rig's Generate take collects them. */
@@ -73,11 +85,77 @@ export function dispatchQuoteQuery(settings: ShotSettings, refs: Asset[]): strin
   return query.toString() + (references ? "&" + references : "");
 }
 
-/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). */
-export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : "reference_image");
+/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). A sound is Cinema Studio's reference_audio (admission refuses it anywhere else). */
+export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : asset.kind === "audio" ? "reference_audio" : "reference_image");
 /** A shot's role for one input: its marked first frame (an image), else a reference by kind. */
 export const shotReferenceRole = (node: Pick<CanvasNode, "firstFrameId"> | null | undefined) => (asset: Pick<Asset, "kind" | "id">) =>
   node?.firstFrameId && asset.id === node.firstFrameId && asset.kind === "image" ? "first_frame" : referenceRole(asset);
+
+/* ── A card that is not a shot (the Card Inspector) ───────────────────── */
+
+const ASSET_KIND_WORD: Record<Asset["kind"], string> = { image: "Image", video: "Video", audio: "Audio", document: "Document", link: "Link" };
+
+/** Where a source came from, in one word. */
+export function assetOrigin(asset: Pick<Asset, "generationId" | "uploadId" | "url">): string {
+  if (asset.generationId) return "Generated";
+  if (asset.uploadId) return "Uploaded";
+  if (asset.url.startsWith("/campaign/")) return "Sample";
+  return "Linked";
+}
+
+export type CardSource = { asset: Asset; kind: string; origin: string; /** False when the picture reaches the card through its input. */ own: boolean };
+
+/** The picture a card holds: its own source, else what its input feeds it (a finishing card); null when it has none. */
+export function cardSource(project: Project, node: CanvasNode): CardSource | null {
+  const assets = allAssets(project);
+  const own = node.assetId ? assets.find((a) => a.id === node.assetId) : undefined;
+  const asset = own ?? resolveAsset(node, allNodes(project), assets);
+  return asset ? { asset, kind: ASSET_KIND_WORD[asset.kind] ?? "File", origin: assetOrigin(asset), own: asset === own } : null;
+}
+
+export type CardVersionRow = { id: string; v: string; label: string; meta: string; current: boolean; saved: boolean };
+
+/** Every asset in the source's line: what it was made from and what was made from those (by parentId), newest first, each once. */
+function sourceLine(all: Asset[], source: Asset): Asset[] {
+  /* The draft's own copy of an asset it also shares is the one listed. */
+  const seen = new Set<string>();
+  const assets = all.filter((a) => !seen.has(a.id) && !!seen.add(a.id));
+  const byId = new Map(assets.map((a) => [a.id, a] as const));
+  const line = new Set([source.id]);
+  for (let at: Asset | undefined = source; at?.parentId && !line.has(at.parentId); ) {
+    at = byId.get(at.parentId);
+    if (at) line.add(at.id);
+  }
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const a of assets) if (a.parentId && line.has(a.parentId) && !line.has(a.id)) { line.add(a.id); grew = true; }
+  }
+  return assets.filter((a) => line.has(a.id)).map((a, i) => ({ a, i })).sort((x, y) => y.a.version - x.a.version || x.i - y.i).map(({ a }) => a);
+}
+
+function savedDay(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+/**
+ * A card's versions: its source's line, newest first, the one the card shows
+ * marked current; then the versions saved on the card itself, newest first.
+ */
+export function cardVersions(project: Project, node: CanvasNode): CardVersionRow[] {
+  const assets = allAssets(project);
+  const source = node.assetId ? assets.find((a) => a.id === node.assetId) : undefined;
+  const rows: CardVersionRow[] = source
+    ? sourceLine(assets, source).map((a) => ({ id: a.id, v: `v${a.version}`, label: a.id === source.id ? `Current · ${a.name}` : a.name, meta: ASSET_KIND_WORD[a.kind] ?? "File", current: a.id === source.id, saved: false }))
+    : [];
+  for (const saved of [...(node.versions ?? [])].reverse()) rows.push({ id: saved.id, v: "Saved", label: saved.label, meta: savedDay(saved.savedAt), current: false, saved: true });
+  return rows;
+}
+
+/** The cards this card feeds, in canvas order. */
+export function cardUsers(project: Project, nodeId: string): { id: string; name: string }[] {
+  return project.nodes.filter((n) => n.linked.includes(nodeId)).map((n) => ({ id: n.id, name: n.title }));
+}
 
 /* ── Takes and versions ──────────────────────────────────────────────── */
 
@@ -105,8 +183,13 @@ function heldLabel(job: Pick<MediaJob, "params">): string {
   const needs = heldNeeds(job.params);
   return needs != null ? `Held · needs ${needs.toLocaleString("en-US")} cr` : "Held · needs credits";
 }
-/** A take that ended without a clip: failed, or cancelled (a discarded held take is one). */
-function endedLabel(job: Pick<MediaJob, "id" | "status" | "creditsBilled">): string {
+/**
+ * A take that ended without a clip: failed, or cancelled (a discarded held
+ * take is one). "not billed", "refunded" or "not charged" only when the
+ * ledger or the provider confirms it (lib/errors.ts failedChip).
+ */
+function endedLabel(job: Pick<MediaJob, "id" | "status" | "creditsBilled"> & { failure?: TakeFailure | null }): string {
+  if (job.failure) return failedChip(job.failure, job.status === "cancelled");
   return `${job.status === "cancelled" ? "Cancelled" : "Failed"}${jobUnbilled(job) ? " · not billed" : ""}`;
 }
 
@@ -167,12 +250,12 @@ export type GenerationPhase = { label: string; pct: number; tone: GenerationTone
  * → complete, or failed (not billed when nothing was charged). The bar marks
  * the stage reached; engines report no percentage, so none is invented.
  */
-export function generationPhase(job: Pick<MediaJob, "status" | "creditsBilled" | "params"> | null): GenerationPhase {
+export function generationPhase(job: (Pick<MediaJob, "status" | "creditsBilled" | "params"> & { failure?: TakeFailure | null }) | null): GenerationPhase {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   switch (job.status) {
     case "succeeded": return { label: "Complete", pct: 100, tone: "green", done: true };
     case "failed":
-    case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled }), pct: 100, tone: "red", done: true };
+    case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled, failure: job.failure }), pct: 100, tone: "red", done: true };
     case "running": return { label: "Rendering", pct: 50, tone: "blue", done: false };
     case "held": return { label: heldLabel(job), pct: 10, tone: "blue", done: false };
     default: return { label: "Queued", pct: 10, tone: "blue", done: false };
@@ -211,6 +294,6 @@ export function dispatchGate(shown: number | null, fresh: number): DispatchGate 
  * the vocabulary that is never printed — the connected account, its brands and
  * the provider companies — forces the neutral fallback.
  */
-export function neutralCopy(message: string, fallback = "The engine could not take this request. Nothing was charged."): string {
+export function neutralCopy(message: string, fallback = "The engine could not take this request."): string {
   return vendorNameIn(message) ? fallback : message;
 }

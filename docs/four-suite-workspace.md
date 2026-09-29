@@ -9,7 +9,7 @@ The September 2026 four-suite design brief reorganizes the existing application.
 | Particl Production Studio | Brief & Script, Boards, Cast & Elements, Astra blender, Rig, Takes, Edit & Sound, Deliver | The workbench stages, with their original stage IDs and project save/recovery behavior. Eight visible stages since the 19 September restructure (PR A); see the alias table below. |
 | Atomik Super Agent | Runs, Recipes, Approvals, Budget, Models | Durable pipelines, exact saved-plan cloning, per-stage priced approvals, settled job accounting, project caps, existing thinking model and effort controls. |
 | Moleculr Business Suite | Marketing Studio (one page with the sections Product, Brand, Cast, Format, Variants, Design, Publish) | Project references, Soul identities, Marketing Studio, the existing generation dialog, original takes, edit and delivery tools. |
-| Subatomik Viral Studio | Motion Transfer, Object Swap, Creative Directions, History | Genjutsu through Cloud and connected-account routes, shared originals, reviewed quotes, frame extraction, comparison, recreation and editorial handoffs. See [the Genjutsu contract](subatomik-genjutsu.md). |
+| Subatomik Viral Studio | Motion Transfer, Object Swap, Creative Directions, History | Genjutsu through the Cloud route (the connected-account route is retired, 28 September 2026), shared originals, reviewed quotes, frame extraction, comparison, recreation and editorial handoffs. See [the Genjutsu contract](subatomik-genjutsu.md). |
 
 ### Particl stage order and retired stage IDs (PR A, 19 September 2026)
 

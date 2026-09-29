@@ -10,8 +10,8 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
 /**
  * Idea 19 — role-aware connected-account surfaces, in the browser against a
  * local ENGINE_MOCK server. A member (a real invitation, accepted) meets one
- * calm card wherever the owner's Higgsfield account runs — Business, Viral,
- * Cast — naming this workspace's owner, with the way to make the same kind of
+ * calm card wherever the owner's Higgsfield account runs — Business, Viral —
+ * naming this workspace's owner, with the way to make the same kind of
  * thing in Gen on this workspace's credits; the suites the owner runs carry
  * the key; Gen offers no connected tab to anyone (Studio engines only since
  * 28 September 2026); and nothing of the account is read for them. The owner's connection is read once and shared across
@@ -100,24 +100,25 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await expect(page.getByText(/Connect the account|Only the workspace owner/)).toHaveCount(0);
   /* The stage is the owner's to run: no Run stage for a member. */
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
-  /* The suites the owner runs carry the key, and say who runs them; the rest do not. A phone keeps the Suites
-     behind its context badge (app/phone-chrome.css), one tap away. */
+  /* A suite the owner runs on every page carries the key and says who runs it. Business does not any more: its own
+     tools (Brand … Design) are every member's, so only its Ads, Image ads and Setup pages are the owner's card.
+     A phone keeps the Suites behind its context badge (app/phone-chrome.css), one tap away. */
   await openSuitesMenu(page);
-  await expect(page.getByTestId("owner-badge-business")).toBeVisible();
   await expect(page.getByTestId("owner-badge-viral")).toBeVisible();
-  for (const other of ["studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${other}`)).toHaveCount(0);
-  await expect(page.locator('[data-suite-tab="business"]')).toHaveAccessibleDescription(`Run by ${ownerName} on the Higgsfield account`);
+  for (const other of ["business", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${other}`)).toHaveCount(0);
   await expect(page.locator('[data-suite-tab="viral"]')).toHaveAccessibleDescription(`Run by ${ownerName} on the Higgsfield account`);
+  expect(await page.locator('[data-suite-tab="business"]').getAttribute("aria-describedby")).toBeNull();
   expect(await page.locator('[data-suite-tab="atomik"]').getAttribute("aria-describedby")).toBeNull();
   await closeSuitesMenu(page);
   await noSideScroll(page);
   await fingerSized(business, project);
   await shot(page, "business-member", project);
 
-  /* Business's other pages are the same card. */
-  await expect(page.getByRole("navigation", { name: "Pages" })).toHaveCount(0);
+  /* Business's pages are listed; Setup is the same card, with what Particl made in the project below it. */
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
+  await expect(page.getByTestId("particl-setup")).toBeVisible();
   await expect(page.getByTestId("setup-view")).toHaveCount(0);
 
   /* Open Gen · Images: Gen on Images, Studio engines only — no Higgsfield catalogue, no Analysis. */
@@ -166,18 +167,22 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await toVideo.click();
   await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Video" })).toHaveAttribute("aria-selected", "true");
 
-  /* Cast: the list stays the member's to shape; the card replaces the connect prompt, and each entry's still is made in Gen. */
+  /* Cast runs on the platform's key (28 September): no owner card and no connect prompt. The list, Build identity and each
+     character's render are the member's, on this workspace's credits, and each entry's still can be made in Gen. */
   await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
-  const cast = page.getByTestId("owner-run-cast");
-  await expect(cast).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
+  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
   for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  const soul = page.getByTestId("soul-card");
+  await expect(soul).toBeVisible();
+  await expect(soul.getByRole("heading", { name: "Build identity" })).toBeVisible();
   const fox = page.getByTestId("cast-entry");
   await expect(fox).toHaveCount(1);
   await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
   await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
+  await expect(fox.getByTestId("cast-render-why")).toHaveText("Train a Soul ID below to render it.", { timeout: 30_000 });
   await noSideScroll(page);
-  await fingerSized(cast, project);
+  await fingerSized(soul.locator(".gx-gen-enhance"), project);
   await shot(page, "cast-member", project);
   const still = fox.getByTestId("cast-still-gen");
   await still.scrollIntoViewIfNeeded();
@@ -192,14 +197,14 @@ test("a member meets one calm card where the owner's account runs, and makes the
   await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
   await shot(page, "gen-member-still", project);
 
-  /* The phone's Home says who runs the owner's suites. */
+  /* The phone's Home says who runs the owner's suite; a member's Business is its own tools. */
   if (PORTRAIT.includes(project)) {
     await page.getByTestId("tabbar-home").click();
     await expect(page.getByTestId("suite-home")).toBeVisible();
-    for (const suite of ["business", "viral"]) {
-      await expect(page.getByTestId(`home-fact-${suite}`)).toHaveText(`Run by ${ownerName}`);
-      await expect(page.getByTestId(`home-suite-${suite}`)).toHaveAttribute("data-owner-run", "true");
-    }
+    await expect(page.getByTestId("home-fact-viral")).toHaveText(`Run by ${ownerName}`);
+    await expect(page.getByTestId("home-suite-viral")).toHaveAttribute("data-owner-run", "true");
+    await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
+    await expect(page.getByTestId("home-suite-business")).not.toHaveAttribute("data-owner-run", "true");
     await expect(page.getByTestId("home-fact-studio")).not.toContainText("Run by");
     await noSideScroll(page);
     await shot(page, "home-member", project);

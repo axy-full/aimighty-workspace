@@ -124,9 +124,19 @@ type Gen = {
   params?: Record<string, unknown>;
   costUsd?: number | null; refineCostUsd?: number | null; creditsBilled?: number | null;
   authorName?: string | null; error?: string | null;
+  /** A failed take's receipt, when Particl's ledger holds one (lib/usageLedger.ts withLedgerCharges). */
+  failure?: { charge?: { credits: number; settled: boolean } | null } | null;
 };
-const takeCost = (g: Gen): string | null =>
-  g.creditsBilled != null ? cr(g.creditsBilled) : g.costUsd != null ? usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0)) : null;
+const takeCost = (g: Gen): string | null => {
+  /* A failed take's figure is its receipt: a hold is said as a hold, and without one nothing is claimed —
+     a take that failed is not "0 cr" until the ledger settles it there. */
+  if (g.status === "failed" || g.status === "cancelled") {
+    const charge = g.failure?.charge;
+    if (charge) return charge.settled ? cr(charge.credits) : `${cr(charge.credits)} held`;
+    return g.creditsBilled == null && g.costUsd != null ? usd(g.costUsd + (g.refineCostUsd ?? 0)) : null;
+  }
+  return g.creditsBilled != null ? cr(g.creditsBilled) : g.costUsd != null ? usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0)) : null;
+};
 
 function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };

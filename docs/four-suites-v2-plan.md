@@ -2,6 +2,8 @@
 
 Owner brief, 19 September 2026. Home opens on a project selector, then four suites: **Particl Production Studio · Atomik Super Agent · Moleculr Business Suite · Subatomik Viral Studio**. Top-right controls unchanged. Provider names never appear in the product.
 
+> **28 September 2026.** The connected-account items in this plan (Subatomik's connected default, the account's Marketing Studio templates, Atomik's Generate page and account planning, 30 references on the account) are retired: Particl uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10). The plan is kept as the record.
+
 | Suite | Target |
 | --- | --- |
 | Particl Production Studio | Brief & Script (one agentic stage) → Boards → Cast & Elements (identity features only, our naming) → Astra blender → Rig (bugs fixed) → Takes (whole project library: uploads + generations) → Edit & Sound (ElevenLabs wired in) → Deliver |

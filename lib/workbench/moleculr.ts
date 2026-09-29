@@ -89,6 +89,8 @@ export type MoleculrGenerationOptions = {
   firstFrameAssetId?: string;
   soulIdentityId?: string;
   soulStrength?: number;
+  /** Cinema Studio 4.0's creative controls the node's take was made with (lib/cinemaStudioTypes.ts); absent is every control on Auto. */
+  cinema?: Partial<Record<string, string>>;
 };
 export type MoleculrBrief = {
   referenceAd?: ReferenceAdConfig;

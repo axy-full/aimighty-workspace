@@ -21,7 +21,7 @@ import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type Thinkin
 export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 type Quote = { estimateCredits: number; model: string; effort?: string; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
 
-export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
+export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued, approximate = false }: {
   target: AtomikRunTarget;
   project: Project;
   /** Authenticated workspace + user identity; never a guest/default scope. */
@@ -30,6 +30,8 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   onClose: () => void;
   onSave: () => Promise<boolean>;
   onQueued: (id: string) => void;
+  /** Word the estimate as approximate ("Run · about 7 cr"): the Suites pages that open this dialog never state an exact price. */
+  approximate?: boolean;
 }) {
   const [astraBlender, setAstraBlender] = useState(target.astraBlender);
   const [suite, setSuite] = useState(target.suite);
@@ -222,7 +224,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
           </label>}
         </div>
         <p className="muted small-copy">{astraBlender ? (astraBlender.mode === 'native' ? 'Includes the saved scene, native 3D source, project brief and selected image references. Review the Python revision before applying it. Native execution has a separate render quote.' : 'Includes the saved 3D scene and project brief. Review and apply the scene proposal before export. No 3D runtime render is started by this request.') : referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
-        {shownQuote && !pending && <p className="small-copy">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · up to {shownQuote.estimateCredits} cr reserved</p>}
+        {shownQuote && !pending && <p className="small-copy" data-testid="atomik-run-estimate">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · {approximate ? `about ${shownQuote.estimateCredits} cr · ` : ''}up to {shownQuote.estimateCredits} cr reserved</p>}
         {shownQuote?.screenplay?.truncated && !pending && <p className="small-copy" role="status">Reads the first {shownQuote.screenplay.includedChars.toLocaleString()} of {shownQuote.screenplay.chars.toLocaleString()} screenplay characters at this depth; the rest is not seen. Use Development in Script &amp; breakdown for the whole screenplay.</p>}
         {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}
@@ -231,7 +233,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         {pending && error && !terminal && <p className="muted small-copy">Recovery uses the saved request ID, including after closing this dialog or reloading.</p>}
         {terminal ? <Button className="btn" onClick={onClose}>Close and review Activity</Button> :
           <Button className="btn primary" disabled={busy || !loaded || (!shownQuote && !pending) || (!pending && !readyFrames) || request.trim().length < 3} onClick={() => void submit()}>
-            {busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? `Run · ${shownQuote.estimateCredits} cr estimated` : error ? 'Estimate unavailable' : 'Loading estimate…'}
+            {busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? (approximate ? `Run · about ${shownQuote.estimateCredits} cr` : `Run · ${shownQuote.estimateCredits} cr estimated`) : error ? 'Estimate unavailable' : 'Loading estimate…'}
           </Button>}
       </div>
     </DialogContent>
