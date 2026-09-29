@@ -54,7 +54,6 @@ export default async function WorkspacePage() {
 
         <Grid col={300} style={{ gap: 20 }}>
           <Window path="particl.app / workspace / plans" src={shot("workspace-plans-credits")} alt="Workspace, Plans and credits: the balance, the plan, credit packs and monthly statements" width={924} height={540} />
-          <Window path="particl.app / workspace / engines" src={shot("workspace-engines")} alt="Workspace, Engines: each engine connection and its state" width={924} height={540} />
         </Grid>
 
         <Grid col={270} style={{ alignItems: "start" }}>
