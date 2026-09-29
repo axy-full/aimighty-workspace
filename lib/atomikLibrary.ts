@@ -73,34 +73,38 @@ export async function plannerLibrary(p: { owner: string; projectId: string | nul
       if (linked.productionProjectId === p.projectId) scope = linked;
     } catch { /* the production's own media still counts */ }
   }
-  const limit = LIBRARY_LIMITS.videos + LIBRARY_LIMITS.stills;
-  const [uploads, takes] = await Promise.all([
-    db().execute({
-      sql: `SELECT id, filename, kind, width, height, duration_s, created_at FROM uploads
-            WHERE kind IN ('image','video') AND (
-              id IN (SELECT value FROM json_each(?))
-              OR id IN (SELECT upload_id FROM project_library_uploads WHERE project_id=?)
-              OR id IN (SELECT j.atom FROM generations g, json_tree(g.params) j
-                        WHERE g.project_id=? AND g.deleted=0 AND j.key IN ('uploadId','sourceUploadId','coverUploadId')))
-            ORDER BY created_at DESC, id DESC LIMIT ?`,
-      args: [JSON.stringify(scope.uploadIds), scope.productionProjectId, scope.productionProjectId, limit],
-    }),
-    db().execute({
-      sql: `SELECT g.id, g.kind, g.title, g.prompt, g.params, g.duration_s, g.created_at FROM generations g
-            WHERE g.deleted=0 AND g.status='succeeded' AND COALESCE(g.stored_url,'')<>'' AND g.kind IN ('image','video')
-              AND (g.project_id=? OR g.id IN (SELECT value FROM json_each(?)))
-              AND ${OWN_TAKE}
-            ORDER BY g.created_at DESC, g.id DESC LIMIT ?`,
-      args: [scope.productionProjectId, JSON.stringify(scope.generationIds), limit],
-    }),
+  /* Each kind on its own cap, so a run of recent stills never hides the one clip a transform needs. */
+  const uploadsOf = (kind: "image" | "video", limit: number) => db().execute({
+    sql: `SELECT id, filename, kind, width, height, duration_s, created_at FROM uploads
+          WHERE kind=? AND (
+            id IN (SELECT value FROM json_each(?))
+            OR id IN (SELECT upload_id FROM project_library_uploads WHERE project_id=?)
+            OR id IN (SELECT j.atom FROM generations g, json_tree(g.params) j
+                      WHERE g.project_id=? AND g.deleted=0 AND j.key IN ('uploadId','sourceUploadId','coverUploadId')))
+          ORDER BY created_at DESC, id DESC LIMIT ?`,
+    args: [kind, JSON.stringify(scope.uploadIds), scope.productionProjectId, scope.productionProjectId, limit],
+  });
+  const takesOf = (kind: "image" | "video", limit: number) => db().execute({
+    sql: `SELECT g.id, g.kind, g.title, g.prompt, g.params, g.duration_s, g.created_at FROM generations g
+          WHERE g.deleted=0 AND g.status='succeeded' AND COALESCE(g.stored_url,'')<>'' AND g.kind=?
+            AND (g.project_id=? OR g.id IN (SELECT value FROM json_each(?)))
+            AND ${OWN_TAKE}
+          ORDER BY g.created_at DESC, g.id DESC LIMIT ?`,
+    args: [kind, scope.productionProjectId, JSON.stringify(scope.generationIds), limit],
+  });
+  const [uploadClips, uploadStills, takeClips, takeStills] = await Promise.all([
+    uploadsOf("video", LIBRARY_LIMITS.videos), uploadsOf("image", LIBRARY_LIMITS.stills),
+    takesOf("video", LIBRARY_LIMITS.videos), takesOf("image", LIBRARY_LIMITS.stills),
   ]);
+  const uploads = [...uploadClips.rows, ...uploadStills.rows];
+  const takes = [...takeClips.rows, ...takeStills.rows];
   type Found = Omit<LibraryItem, "handle"> & { at: number };
   const found: Found[] = [
-    ...uploads.rows.map((r: Row): Found => ({
+    ...uploads.map((r: Row): Found => ({
       kind: r.kind === "video" ? "video" : "image", origin: "upload", id: String(r.id), name: libraryName(r.filename),
       seconds: positive(r.duration_s), width: positive(r.width), height: positive(r.height), at: Number(r.created_at ?? 0),
     })),
-    ...takes.rows.map((r: Row): Found => {
+    ...takes.map((r: Row): Found => {
       const params = jsonOf(r.params);
       const size = [params.resolution, params.ratio].filter((v) => typeof v === "string" && v).join(" ");
       return {

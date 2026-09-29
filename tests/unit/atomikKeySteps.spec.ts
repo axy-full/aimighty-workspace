@@ -345,6 +345,15 @@ test("the library the planner is shown is this workspace's and this project's ow
     expect((await plannerLibrary({ owner: actor.user.id, projectId: "prod_b" })).map((i) => i.id)).toEqual(["b_take", "b_still"]);
     expect(await plannerLibrary({ owner: actor.user.id, projectId: null })).toEqual([]);
 
+    /* Each kind is capped on its own: a run of newer stills never hides the clip a transform needs. */
+    await s.production("prod_c");
+    await s.upload("ks_scope_old_clip", "video", "prod_c");
+    for (let i = 0; i < 30; i++) await s.upload(`c_still_${i}`, "image", "prod_c");
+    const crowded = await plannerLibrary({ owner: actor.user.id, projectId: "prod_c" });
+    expect(crowded.filter((i) => i.kind === "video").map((i) => [i.handle, i.id])).toEqual([["V1", "ks_scope_old_clip"]]);
+    expect(crowded.filter((i) => i.kind === "image")).toHaveLength(16);
+    expect(crowded.filter((i) => i.kind === "image")[0]).toMatchObject({ handle: "S1", id: "c_still_29" });
+
     /* The planner can only cite what it was shown: another project's still has no handle, and an id is not a handle. */
     const turn = extractTurn(reply([
       { title: "Recast", prompt: "Recast it.", model: MOTION, source: "V2", references: ["S9"] },
