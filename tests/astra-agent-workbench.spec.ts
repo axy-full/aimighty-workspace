@@ -11,7 +11,8 @@ import { legacyShell } from "./helpers/legacyShell";
 type Request = AtomikSubmission & { quoteOnly?: boolean };
 const EFFORTS = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'Extra high' }, { value: 'max', label: 'Maximum' }];
 
-async function fixture(page: Page, loseResponse = false, nativeAssets = false, failNativeSave = false) {
+/** `hold` sees each saved draft once the server has it and may keep its reply on the way until it resolves. */
+async function fixture(page: Page, loseResponse = false, nativeAssets = false, failNativeSave = false, hold?: (saved: Project) => Promise<void> | void) {
   await signInLocally(page.request);
   const me = await page.request.get('/api/me').then((response) => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -37,7 +38,9 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
         headers.push(request.headers()['x-workbench-scope']);
         if (failNativeSave && request.postDataJSON().project.astraNative) return route.fulfill({ status: 409, json: { error: 'Fixture native source save failed.' } });
         project = projectSchema.parse(request.postDataJSON().project) as Project;
-        return json({ revision: ++revision, productionProjectId: project.productionProjectId, shotMappings: {} });
+        const reply = { revision: ++revision, productionProjectId: project.productionProjectId, shotMappings: {} };
+        await hold?.(project);
+        return json(reply);
       }
       return json({ project, projects: [{ id: project.id, name: project.name }], productions: [], revision });
     }
@@ -124,6 +127,43 @@ test('Astra quote fixes the model, preserves effort, reviews a proposal, applies
   expect(state.forbidden).toEqual([]);
   expect(errors).toEqual([]);
   await page.screenshot({ path: info.outputPath('astra-assistant-applied.png') });
+});
+
+test('a redo pressed while the undo is still saving is saved after it, not left behind by the save in flight', async ({ page }) => {
+  /* The test above once failed on CI at 360×640: Redo was pressed after the server had the undo but before its reply
+     reached the page. The page took the redone scene for the version the server already held, queued no save, and the
+     server kept the undo while the page showed the redo. Here the undo's reply is held until Redo has been pressed. */
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  let holding = false, release: (() => void) | undefined;
+  const state = await fixture(page, false, false, false, (saved) => {
+    if (!holding || saved.astraBlender?.name !== 'Product study') return;
+    holding = false;
+    return new Promise<void>((resolve) => { release = resolve; });
+  });
+  const dialog = await quote(page, state.assistant);
+  await dialog.getByRole('button', { name: 'Run · 7 cr estimated', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await state.assistant.getByRole('button', { name: 'Apply scene proposal', exact: true }).click();
+  await expect.poll(() => state.project.astraBlender?.name).toBe(state.proposed.name);
+  await expect(state.assistant.getByRole('button', { name: 'Applied to scene', exact: true })).toBeDisabled();
+  holding = true;
+  await state.workspace.getByRole('button', { name: 'Undo scene change', exact: true }).click();
+  await expect.poll(() => release !== undefined, { message: 'the server has the undo and its reply is held' }).toBe(true);
+  expect(state.project.astraBlender?.name).toBe('Product study');
+  await state.workspace.getByRole('button', { name: 'Redo scene change', exact: true }).click();
+  release!();
+  await expect.poll(() => state.project.astraBlender?.name, { message: 'the redo reaches the server after the undo' }).toBe(state.proposed.name);
+  expect(state.project.astraBlender).toEqual(state.proposed);
+  await expect(page.locator('.save-label, .phone-save').filter({ visible: true }).first()).toHaveAccessibleName('Saved');
+  await page.reload();
+  await panel(state.workspace, 'Astra');
+  await expect(state.assistant.getByRole('button', { name: 'Applied to scene', exact: true })).toBeDisabled();
+  await expect(state.workspace.getByRole('button', { name: 'Redo scene change', exact: true })).toBeDisabled();
+  expect(state.project.astraBlender).toEqual(state.proposed);
+  expect(state.submissions).toHaveLength(1);
+  expect(state.forbidden).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test('editing a scene after requesting a proposal blocks stale apply and preserves the user edit', async ({ page }) => {
