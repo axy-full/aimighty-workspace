@@ -60,14 +60,15 @@ test("a state-layer page finds its shell page; a shared backing page follows the
   expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("ads");
 });
 
-test("suite names and marks are the design's, verbatim", () => {
+test("suite names and marks are the design's, verbatim, with Atomik renamed by the owner", () => {
   /* Owner decision, 21 September 2026: the Suites surface follows the design
-     README's names; the never-name rule covers the legacy screens only. */
+     README's names; the never-name rule covers the legacy screens only.
+     Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
     ["STUDIO", "Particl Production Studio"],
     ["BUSINESS", "Moleculr Business Suite · Marketing Studio"],
     ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
-    ["SUPERCOMPUTER", "Atomik Supercomputer"],
+    ["AGENT", "Atomik Agent"],
   ]);
   for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
 });

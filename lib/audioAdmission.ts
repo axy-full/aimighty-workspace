@@ -38,6 +38,7 @@ import {
   HELD_LIMIT,
 } from "@/lib/held";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
+import { currentBillingTerms } from "@/lib/billingTerms";
 import { requireTenant } from "@/lib/tenant";
 import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
@@ -133,7 +134,9 @@ export async function executeAudioAdmission(
   const requestClaim = options.requestClaim;
   /* Grok Voice (xAI's text to speech) is the one audio model another vendor
      voices; everything else here is ElevenLabs'. The vendor is every engine
-     field below: allowance, cap, reservation, meter, provider, billed_to. */
+     field below: allowance, cap, reservation, meter, provider, billed_to. The
+     credits those checks count are read at the terms the reservation charges
+     (`terms`, below), which are an audio job's whoever voices it. */
   const vendor = String(body.task) === "speech" ? audioVendor(String(body.modelId ?? "")) : "elevenlabs";
   await ready();
   const allowance = await allowanceCheck(vendor);
@@ -327,8 +330,11 @@ export async function executeAudioAdmission(
   }
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
+  /* The terms the reservation and the settlement charge this job at: the quote, its ceiling, the credit wall
+     and the production's cap read the same, so the price approved is what is reserved for this estimate. */
+  const terms = currentBillingTerms("audio", modelId);
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
-  const estimatedCredits = quotedCredits(vendorUsd, vendor);
+  const estimatedCredits = quotedCredits(vendorUsd, terms);
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,
@@ -352,7 +358,7 @@ export async function executeAudioAdmission(
   const wall = await allowanceCheck(
     vendor,
     vendorUsd,
-    vendor,
+    terms,
   );
   if (!wall.ok && wall.status !== 402)
     return admissionReply({ error: wall.error }, { status: wall.status });
@@ -362,7 +368,7 @@ export async function executeAudioAdmission(
   const capV = await checkCap(
     projectId,
     vendorUsd,
-    vendor,
+    terms,
   );
   if (!capV.allow)
     return admissionReply({ error: capV.error }, { status: 409 });
@@ -380,7 +386,7 @@ export async function executeAudioAdmission(
     got,
     "audio",
     vendorUsd,
-    vendor,
+    terms,
     {
       task,
       text,

@@ -7,8 +7,6 @@ import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, type CatalogModel } from "@/lib/catalog";
-import { connectedEngineModels, connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
-import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 
 export const dynamic = "force-dynamic";
@@ -55,9 +53,8 @@ export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
 
-  const [chats, menu, eng] = await Promise.all([
-    listChats(), menuFor("planner"), connectedEngineModels(got.user, got.token).then(engines),
-  ]);
+  /* Particl's own engines only: Atomik never plans on a signed-in account. */
+  const [chats, menu, eng] = await Promise.all([listChats(), menuFor("planner"), engines()]);
   return NextResponse.json({
     chats,
     engines: eng,
@@ -80,9 +77,7 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     const projectId = typeof body.projectId === "string" ? body.projectId : null;
-    const connected = await connectedPlannerFor(auth.user, auth.token, projectId);
-    const recipe = await recipeForMessage(auth.user, auth.token, text);
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, connected, recipe,
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
@@ -98,7 +93,6 @@ export const POST = withTenant(async function POST(req: NextRequest) {
   });
   return NextResponse.json({ id });
   } catch (error) {
-    if (error instanceof RecipeError) return NextResponse.json({ error: error.message }, { status: error.status });
     return paidTextFailure(error);
   }
 });

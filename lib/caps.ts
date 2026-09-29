@@ -1,7 +1,8 @@
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, creditsFigure, marginFor, marginKeyOf } from "./creditTerms";
+import { creditsFigure, marginFor, marginKeyOf } from "./creditTerms";
+import { creditsFor, type EstimateTerms } from "./billingTerms";
 import { getSetting } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
@@ -154,14 +155,15 @@ export async function projectCapSpent(projectId: string): Promise<ProjectCap | n
 /**
  * The cost check against the production's cap. `needsUsd` is the job's
  * estimate at the vendor; in a credits workspace it is billed in tenths of
- * a credit at the engine's margin, like everything else.
+ * a credit at the engine's margin, like everything else — or, given the exact
+ * terms the job's reservation will charge (currentBillingTerms), at those.
  */
-export async function checkCap(projectId: string | null, needsUsd: number, engine: string | null): Promise<CapVerdict> {
+export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms): Promise<CapVerdict> {
   if (!projectId) return { allow: true, pct: null, warned: false };
   const row = await projectCap(projectId);
   if (!row || row.cap == null) return { allow: true, pct: null, warned: false };
   const pc = await withSpent(projectId, row);
-  const needs = pc.unit === "cr" ? billCredits(needsUsd, engine) : needsUsd;
+  const needs = pc.unit === "cr" ? creditsFor(needsUsd, engine) : needsUsd;
   const ruleRaw = await getSetting("atCap");
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const warnPct = Math.max(1, Math.min(100, Number(await getSetting("capWarnPct")) || 80));

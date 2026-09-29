@@ -10,7 +10,7 @@ import { runSuiteAgent, checkSuiteProposal, suiteAgentInstructions, suiteAgentBo
 import { suiteAgentResultSchema } from './suite-agent-plan';
 import { REFERENCE_AD_FRAMES, referenceAnalysisWireSchema, referenceAnalysisSourceSchema, referenceAnalysisResultSchema, referenceAnalysisEvidenceSchema, referenceAnalysisInstructions, referenceAdAnalysisSchema } from './reference-ad-analysis';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
-import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
+import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel, isRetiredAtomikModel } from "../atomikModelPolicy";
 import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -273,6 +273,7 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
   if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra uses GPT-6 Astra and the saved 3D scene. Start this request from Astra.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
+  if (input.model !== 'auto' && isRetiredAtomikModel(input.model)) throw new AtomikError('That thinking model is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);

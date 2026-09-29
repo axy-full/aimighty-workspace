@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { TranscriptionDeps } from "../../lib/transcription";
 import { pinCreditUsd } from "../helpers/creditRate";
+import type { SendLocks } from "../../lib/workbench/transcription-request";
 
 /**
  * Paid transcription under a durable request identity — lib/transcription.ts
@@ -93,10 +94,16 @@ async function meterRows(workspaceId: string) {
     .map((r) => ({ id: String(r.id), status: String(r.status), credits: Number(r.billed_credits), costUsd: Number(r.engine_cost_usd) }));
 }
 
+/** Credits at the terms a transcription's reservation and settlement charge, which its quote reads too (lib/transcription.ts TRANSCRIPTION_JOB). */
+async function atTerms(usd: number) {
+  const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
+  const { GROK_STT_MODEL } = await import("../../lib/xaiVoice");
+  return creditsAtTerms(usd, currentBillingTerms("audio", GROK_STT_MODEL));
+}
+
 async function estimate(seconds: number) {
-  const { billCredits } = await import("../../lib/creditTerms");
   const { grokTranscriptionUsd } = await import("../../lib/xaiVoice");
-  return billCredits(grokTranscriptionUsd(seconds), "xai");
+  return atTerms(grokTranscriptionUsd(seconds));
 }
 
 /** Makes a claim `byMs` old — by default older than any transcription request can live, as a function killed mid-transcription leaves it. */
@@ -142,12 +149,11 @@ test("a transcript longer than its source is charged by its own length: the pric
   const ws = await setup("longer", 3000);
   const { runInTenant } = await import("../../lib/tenant");
   const { grokTranscriptionUsd } = await import("../../lib/xaiVoice");
-  const { billCredits } = await import("../../lib/creditTerms");
   const { creditsUsed } = await import("../../lib/meter");
   await runInTenant(ws, async () => {
     const shown = await estimate(3000);
     /* Twice the measured length, inside the limit: its own count is what it costs, above the price shown. */
-    const charged = billCredits(grokTranscriptionUsd(6000), "xai");
+    const charged = await atTerms(grokTranscriptionUsd(6000));
     expect(charged).toBeGreaterThan(shown);
     const { deps } = await provider(6000);
     const response = await send({ sourceUploadId: "up_line", diarize: true, maxCredits: shown }, "stt-longer-001", deps);
@@ -164,15 +170,15 @@ test("a runaway provider count is held to three times the estimate", async () =>
   const ws = await setup("runaway", 3000);
   const { runInTenant } = await import("../../lib/tenant");
   const { grokTranscriptionUsd } = await import("../../lib/xaiVoice");
-  const { billCredits } = await import("../../lib/creditTerms");
   await runInTenant(ws, async () => {
     const shown = await estimate(3000);
     const limit = grokTranscriptionUsd(3000) * 3;
+    const capped = await atTerms(limit);
     const { deps } = await provider(30000);
     const response = await send({ sourceUploadId: "up_line", diarize: true, maxCredits: shown }, "stt-runaway-01", deps);
-    expect((await response.json()).credits).toBe(billCredits(limit, "xai"));
+    expect((await response.json()).credits).toBe(capped);
     const [row] = await meterRows(ws.id);
-    expect(row).toMatchObject({ status: "succeeded", credits: billCredits(limit, "xai") });
+    expect(row).toMatchObject({ status: "succeeded", credits: capped });
     expect(row.costUsd).toBeCloseTo(limit, 9);
   });
 });
@@ -918,6 +924,90 @@ test("a completed refusal is final and lets go; one the server has not settled k
       expect(await sendTranscription({ scope: SCOPE, slot, body, credits: 3, storage })).toEqual(outcome);
       expect(calls).toHaveLength(1);
       expect(readPendingGeneration(storage, slot)?.key ?? null).toBe(kept ? calls[0].key : null);
+    });
+  }
+});
+
+/* ── A request on its way is never asked about: the slot's send lock, or the claim's stamp without Web Locks ── */
+
+const ON_ITS_WAY = "Another transcription of this is already on its way. Nothing new was sent.";
+
+test("a window sending a transcription holds its slot's lock until its reply is in: another window's check waits for it, and a press there sends nothing", async () => {
+  test.skip(!globalThis.navigator?.locks, "needs Web Locks (navigator.locks)");
+  const { sendTranscription, sendingElsewhere, transcriptionSendLock, transcriptionSlot } = await import("../../lib/workbench/transcription-request");
+  const { readPendingGeneration } = await import("../../lib/workbench/pending-generation");
+  const storage = memory();
+  const slot = transcriptionSlot(SCOPE, "prod", { genId: "gen_lock" }, { diarize: true });
+  const body = { sourceGenId: "gen_lock", projectId: "prod", diarize: true, maxCredits: 3 };
+  let onItsWay!: () => void, letThrough!: () => void;
+  const sent = new Promise<void>((resolve) => { onItsWay = resolve; });
+  const through = new Promise<void>((resolve) => { letThrough = resolve; });
+  const calls: string[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    calls.push(String(url));
+    if (String(url) !== "/api/audio/transcribe") throw new Error(`Unexpected request: ${url}`);
+    onItsWay();
+    await through;
+    return new Response(JSON.stringify(TRANSCRIPT), { status: 200, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
+  }) as typeof fetch;
+  try {
+    const told: string[] = [];
+    const pressed = sendTranscription({ scope: SCOPE, slot, body, credits: 3, storage, onSent: (key) => told.push(key) });
+    await sent;
+    const claim = readPendingGeneration(storage, slot)!;
+    expect(claim).toMatchObject({ body: JSON.stringify(body), credits: 3, endpoint: "/api/audio/transcribe" });
+    expect(claim.claimedAt).toEqual(expect.any(Number));
+    /* Its POST is on its way: another window that sees the claim leaves it alone and tries again shortly. */
+    expect(await sendingElsewhere(slot, claim)).toEqual({ state: "unknown", reason: ON_ITS_WAY, waiting: true, retryInMs: 1000 });
+    /* A press in another window meanwhile sends nothing: the lock says this slot is being sent from. */
+    expect(await sendTranscription({ scope: SCOPE, slot, body, credits: 3, storage: memory() })).toEqual({ state: "unknown", reason: ON_ITS_WAY, waiting: true });
+    expect(told).toEqual([]);
+    letThrough();
+    expect(await pressed).toEqual({ state: "done", result: TRANSCRIPT, recovered: false, note: "" });
+    expect(told).toEqual([claim.key]);
+    expect(calls).toEqual(["/api/audio/transcribe"]);
+    /* Its reply is in and the lock is let go: a check may ask now, however fresh the claim. */
+    expect(await sendingElsewhere(slot, claim)).toBeNull();
+    expect(await navigator.locks.request(transcriptionSendLock(slot), { ifAvailable: true }, (lock) => lock !== null)).toBe(true);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("without Web Locks a fresh claim is left to its window for ten seconds; an older or unstamped one is asked about at once; a page refused the lock uses the stamp", async () => {
+  const { FRESH_CLAIM_MS, sendingElsewhere, transcriptionSlot } = await import("../../lib/workbench/transcription-request");
+  const slot = transcriptionSlot(SCOPE, "prod", { genId: "gen_stamp" }, { diarize: true });
+  const claim = { key: "stamped-transcript-1", body: JSON.stringify({ sourceGenId: "gen_stamp", diarize: true, maxCredits: 3 }), credits: 3, endpoint: "/api/audio/transcribe" as const };
+  const now = 5_000_000;
+  expect(FRESH_CLAIM_MS).toBe(10_000);
+  expect(await sendingElsewhere(slot, { ...claim, claimedAt: now - 3_000 }, { locks: null, now })).toEqual({ state: "unknown", reason: ON_ITS_WAY, waiting: true, retryInMs: 7_000 });
+  expect(await sendingElsewhere(slot, { ...claim, claimedAt: now - FRESH_CLAIM_MS }, { locks: null, now })).toBeNull();
+  expect(await sendingElsewhere(slot, claim, { locks: null, now })).toBeNull();
+  expect(await sendingElsewhere(slot, { ...claim, claimedAt: now + 60_000 }, { locks: null, now })).toBeNull();
+  const refused = { request: async () => { throw new DOMException("Locks are not available here.", "SecurityError"); } } as unknown as SendLocks;
+  expect(await sendingElsewhere(slot, { ...claim, claimedAt: now - 1_000 }, { locks: refused, now })).toEqual({ state: "unknown", reason: ON_ITS_WAY, waiting: true, retryInMs: 9_000 });
+  expect(await sendingElsewhere(slot, { ...claim, claimedAt: now - 20_000 }, { locks: refused, now })).toBeNull();
+});
+
+test("a press where Web Locks are missing or refused is still claimed, stamped and sent once, and its sender is told the key it sent", async () => {
+  const { sendTranscription, transcriptionSlot } = await import("../../lib/workbench/transcription-request");
+  const { readPendingGeneration } = await import("../../lib/workbench/pending-generation");
+  const slot = transcriptionSlot(SCOPE, "prod", { genId: "gen_nolock" }, { diarize: true });
+  const body = { sourceGenId: "gen_nolock", projectId: "prod", diarize: true, maxCredits: 3 };
+  const refused = { request: async () => { throw new DOMException("Locks are not available here.", "SecurityError"); } } as unknown as SendLocks;
+  for (const locks of [null, refused]) {
+    const storage = memory();
+    await withServer({ "/api/audio/transcribe": () => "network" }, async (calls) => {
+      const told: string[] = [];
+      const before = Date.now();
+      const outcome = await sendTranscription({ scope: SCOPE, slot, body, credits: 3, storage, locks, onSent: (key) => told.push(key) });
+      expect(outcome).toEqual({ state: "unknown", reason: "The connection dropped before the server answered. Asking what became of it; it is never sent twice.", waiting: false });
+      expect(calls).toHaveLength(1);
+      const claim = readPendingGeneration(storage, slot)!;
+      expect(claim.key).toBe(calls[0].key);
+      expect(claim.claimedAt).toBeGreaterThanOrEqual(before);
+      expect(told).toEqual([claim.key]);
     });
   }
 });

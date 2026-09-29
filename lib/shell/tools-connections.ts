@@ -2,21 +2,17 @@
  * Atomik › Tools & connections: what Atomik can reach, and how an assistant
  * elsewhere reaches Particl.
  *
- * It replaced a list of skill packs that said "the agent's tool reach is
- * these packs" while nothing in Particl read them. Every row here is backed
- * by code that runs, and opens the place in Suites where it runs:
+ * Every row here is backed by code that runs, and opens the place in Suites
+ * where it runs:
  *  - Particl's own reach is built in (the agent, Particl's engines, sound,
- *    Astra, and Particl's own MCP tools);
- *  - the connected account's reach is checked live against its tools/list
- *    (lib/higgsfield-consumer/reach.ts, owner only, free);
+ *    Astra, and Particl's own MCP tools). Atomik works with API-key and direct
+ *    engines only: nothing here reaches a signed-in account;
  *  - the assistant side is Particl's own MCP server (/api/mcp, lib/mcp.ts
- *    TOOLS), the workspace's API tokens (/api/tokens) and, for anyone who
- *    used them from the old page, the public skill packs (lib/shell/skills.ts).
+ *    TOOLS) and the workspace's API tokens (/api/tokens).
  *
  * Pure (no network, no React) so the unit specs read the same rules the page
  * renders.
  */
-import { CONNECTED_REACH, parseReach, type ConnectedReachId, type ReachCheck } from "@/lib/higgsfield-consumer/reach";
 import { TOOLS } from "@/lib/mcp";
 import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
 import type { ShellSuiteId } from "./ia";
@@ -30,27 +26,14 @@ export type ReachOpen =
   | { gen: true; label: string }
   | { tab: ToolsTab; label: string };
 
-export type ReachStatus =
-  /** Particl's own; nothing to check. */
-  | "built-in"
-  | "available"
-  /** The account does not advertise a tool this needs. */
-  | "missing"
-  /** The platform has the feature switched off. */
-  | "off"
-  /** Only the workspace owner holds the connected account, so only they use and check it. */
-  | "owner-only"
-  /** No connected account, or it needs signing in again. */
-  | "connect"
-  | "checking"
-  | "error";
+/** Particl's own; nothing to check. */
+export type ReachStatus = "built-in";
 
-export type ReachRow = { id: string; label: string; line: string; group: "particl" | "connected"; status: ReachStatus; open?: ReachOpen };
+export type ReachRow = { id: string; label: string; line: string; group: "particl"; status: ReachStatus; open?: ReachOpen };
 
 const AGENT: ReachOpen = { suite: "atomik", page: "agent", label: "Agent" };
 const GEN: ReachOpen = { gen: true, label: "Gen" };
 const SOUND: ReachOpen = { suite: "studio", page: "edit", label: "Edit & Sound" };
-const CAST: ReachOpen = { suite: "studio", page: "cast", label: "Cast" };
 
 export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Object.freeze([
   { id: "plan", label: "Plan & price", line: "Plans against the project; every request is priced before it runs", open: AGENT },
@@ -61,145 +44,14 @@ export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Obje
   { id: "assistant", label: "Your own assistant", line: `Particl’s ${TOOLS.length} tools in Claude or ChatGPT, with a token you control`, open: { tab: "connect", label: "Claude & ChatGPT" } },
 ]);
 
-/** Where each connected capability runs in Suites (lib/higgsfield-consumer/reach.ts lists what each needs). */
-export const CONNECTED_OPEN: Readonly<Record<ConnectedReachId, ReachOpen>> = Object.freeze({
-  models: GEN, image: GEN, video: GEN, audio: GEN, files: GEN, analysis: GEN,
-  follow: { suite: "studio", page: "takes", label: "Takes" },
-  characters: CAST, elements: CAST,
-  voice: SOUND, dub: SOUND,
-  reframe: { suite: "studio", page: "deliver", label: "Deliver" },
-  templates: { suite: "business", page: "dtc", label: "Image ads" },
-  motion: { suite: "viral", page: "motion", label: "Motion Transfer" },
-});
-
-/** What the page knows about the connected account right now. */
-export type ReachState =
-  | { kind: "owner-only" }
-  | { kind: "checking" }
-  | { kind: "connect"; reconnect?: boolean }
-  | { kind: "error"; message: string }
-  | { kind: "checked"; checks: ReachCheck[]; checkedAt: number };
-
-/** Every row with its status: Particl's own first, then the connected account's. */
-export function reachRows(state: ReachState): ReachRow[] {
-  const checks = state.kind === "checked" ? new Map(state.checks.map((c) => [c.id, c])) : null;
-  const connectedStatus = (id: ConnectedReachId): ReachStatus => {
-    if (state.kind !== "checked") return state.kind;
-    const check = checks?.get(id);
-    return check?.off ? "off" : check?.available ? "available" : "missing";
-  };
-  return [
-    ...PARTICL_REACH.map((row): ReachRow => ({ ...row, group: "particl", status: "built-in" })),
-    ...CONNECTED_REACH.map((row): ReachRow => ({ id: row.id, label: row.label, line: row.line, group: "connected", status: connectedStatus(row.id), open: CONNECTED_OPEN[row.id] })),
-  ];
+/** Every row, all of them Particl's own. */
+export function reachRows(): ReachRow[] {
+  return PARTICL_REACH.map((row): ReachRow => ({ ...row, group: "particl", status: "built-in" }));
 }
-
-/** A row's Open button shows only where the capability can be used now. */
-export const usable = (status: ReachStatus) => status === "built-in" || status === "available";
 
 export const STATUS_LABEL: Record<ReachStatus, string> = {
   "built-in": "Built in",
-  available: "Available",
-  missing: "Not offered",
-  off: "Switched off",
-  "owner-only": "Owner only",
-  connect: "Connect first",
-  checking: "Checking…",
-  error: "Not checked",
 };
-
-/** "9 of 14 available", or what stands in the way and what to do. */
-export function reachSummary(state: ReachState): string {
-  if (state.kind === "checked") {
-    const on = state.checks.filter((c) => c.available).length;
-    return `${on} of ${CONNECTED_REACH.length} available`;
-  }
-  if (state.kind === "owner-only") return "Only the workspace owner uses the connected account";
-  if (state.kind === "connect") return state.reconnect ? "Sign the account in again in Workspace › Engines" : "Connect the account in Workspace › Engines";
-  if (state.kind === "checking") return "Checking the connected account…";
-  return state.message;
-}
-
-/** Reads the capabilities route's reply (view "reach") into what the page shows. */
-export function reachStateFrom(status: number, json: unknown, now = Date.now()): ReachState {
-  const body = (json && typeof json === "object" ? json : {}) as { reach?: unknown; checkedAt?: unknown; code?: unknown; error?: unknown };
-  if (status >= 200 && status < 300) {
-    const checks = parseReach(body.reach);
-    if (checks && checks.length === CONNECTED_REACH.length)
-      return { kind: "checked", checks, checkedAt: typeof body.checkedAt === "number" && Number.isFinite(body.checkedAt) ? body.checkedAt : now };
-    return { kind: "error", message: "The account’s answer could not be read. Try again." };
-  }
-  if (body.code === "not_connected") return { kind: "connect" };
-  if (body.code === "reconnect_required") return { kind: "connect", reconnect: true };
-  if (status === 403) return { kind: "owner-only" };
-  if (status === 429) return { kind: "error", message: "Checked too often. Try again in a minute." };
-  return { kind: "error", message: "The connected account could not be checked. Try again, or open Workspace › Engines." };
-}
-
-/**
- * What a reply says of the connection itself, for the connected capability
- * every surface shares (lib/shell/use-connected-capability › settle): a
- * checked answer came through a working connection; "connect first" is none,
- * or one to sign in again. Owner only, too often, or a failed check says
- * nothing about the connection, and is not shared.
- */
-export function reachConnection(state: ReachState): { connected: boolean; requiresReconnect: boolean } | null {
-  if (state.kind === "checked") return { connected: true, requiresReconnect: false };
-  if (state.kind === "connect") return { connected: false, requiresReconnect: state.reconnect === true };
-  return null;
-}
-
-/** How long a checked answer serves the page again: the owner's discovery allowance is six a minute, shared with Workspace › Engines. */
-export const REACH_REUSE_MS = 60_000;
-
-/**
- * One check of the connected account, as it set out: the workspace scope, the
- * connection's revision then (lib/shell/connected-capability › mark, which
- * moves on connect, reconnect or disconnect, never on an ordinary read), and
- * which check it is.
- */
-export type ReachTicket = { scope: string; revision: number; id: number };
-
-/**
- * The page's answers, one per workspace scope, kept a minute so moving
- * between pages does not spend the owner's allowance — and only while the
- * connection they were read under stands. A check that set out before a
- * connect, reconnect or disconnect, or before a newer check of its scope, is
- * dropped when it lands: it is neither shown nor kept, and the newer check
- * still in flight stays the one that answers. Only a checked answer is kept;
- * a newer answer of any other kind drops it ("connect first" must not outlive
- * connecting in Engines, nor a checked answer the account going away).
- */
-export function createReachMemory(clock: () => number = Date.now) {
-  const answers = new Map<string, { revision: number; at: number; state: ReachState }>();
-  const latest = new Map<string, number>();
-  let checks = 0;
-  return {
-    /** A checked answer under a minute old, read under the connection as it stands now (`revision`); otherwise null. */
-    recall(scope: string, revision: number): ReachState | null {
-      const kept = answers.get(scope);
-      return kept && kept.revision === revision && clock() - kept.at < REACH_REUSE_MS ? kept.state : null;
-    },
-    /** A check setting out under `revision`, taken before its request: it supersedes any check of the scope still in flight. */
-    begin(scope: string, revision: number): ReachTicket {
-      const id = ++checks;
-      latest.set(scope, id);
-      return { scope, revision, id };
-    },
-    /**
-     * A check's reply, with the connection's revision as it stands now. False,
-     * and nothing kept, when a newer check of the scope set out since or the
-     * connection changed since this one set out.
-     */
-    land(ticket: ReachTicket, revision: number, state: ReachState): boolean {
-      if (latest.get(ticket.scope) !== ticket.id || ticket.revision !== revision) return false;
-      latest.delete(ticket.scope);
-      if (state.kind === "checked") answers.set(ticket.scope, { revision, at: clock(), state });
-      else answers.delete(ticket.scope);
-      return true;
-    },
-  };
-}
 
 /* ── Particl as an MCP server ─────────────────────────────────────────── */
 

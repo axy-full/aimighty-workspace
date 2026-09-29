@@ -1,8 +1,8 @@
 # Atomik model catalogue and reasoning
 
-The model picker offers the Claude, OpenAI and Gemini text/planning models verified in the public AI Gateway catalogue on 15 September 2026 (83 IDs). Runtime availability and token prices still come from the connected Gateway. Model names are searchable and grouped by provider. Image generators, audio services, embeddings, Gemma and safeguard classifiers belong to other tools and are excluded from this planner.
+The model picker offers the Claude, OpenAI and Grok text/planning models verified in the public AI Gateway catalogue (Grok is listed there under `spacexai/`). Since 28 September 2026 Atomik's agentic workflow runs on those three families only, through the same Gateway routing and live-catalogue pricing; the Gemini models stay in the verified text catalogue for the prompt enhancer but are no longer offered to Atomik. Runtime availability and token prices still come from the connected Gateway. Model names are searchable and grouped by provider. Image generators, audio services, embeddings, Gemma and safeguard classifiers belong to other tools and are excluded from this planner.
 
-The previous Higgsfield-only product restriction has been removed at the owner's request. `lib/atomikModelPolicy.ts` holds the verified set; explicit unavailable choices never silently switch to another model. Auto retains its established production model shortlist before considering other available planners.
+`lib/atomikModelPolicy.ts` holds the verified set (`VERIFIED_TEXT_MODEL_IDS`) and Atomik's part of it (`ATOMIK_MODEL_IDS`, the default first); explicit unavailable choices never silently switch to another model. A chat saved on a model Atomik no longer offers reads as Auto and says so beside the composer; a new request naming one is refused with that reason. Auto retains its established production model shortlist before considering other available planners.
 
 Reasoning effort is separate from response detail (Quick, Considered, Deep). The model's capability metadata determines its choices; older models with fixed thinking budgets show token counts. Provider default leaves reasoning controls unset. Models without adjustable reasoning expose only the default. Unsupported combinations are rejected before a claim or credit reservation.
 
@@ -18,6 +18,5 @@ Sources:
 - [Gateway provider options](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options)
 - [OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model)
 - [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort)
-- [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking)
 
 Verification must distinguish catalogue/contract checks and mocked execution from real provider qualification. This release does not certify that every model has completed a paid production test.

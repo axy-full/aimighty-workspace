@@ -49,7 +49,8 @@ const PLACEHOLDER: Record<ComposerType, string> = {
   image: "Describe the frame: subject, setting, medium. # picks a setup; @name cites a reference; raw: nothing is rewritten.",
   audio: "Describe the sound, the voice or the music: source, setting, pace, texture.",
 };
-const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }, { id: "connected", label: "Higgsfield catalogue" }];
+/* Studio engines only: Gen no longer offers a signed-in account's catalogue (API-key and direct engines only). */
+const GROUPS: { id: BillingSource; label: string }[] = [{ id: "workspace", label: "Studio engines" }];
 const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
@@ -86,9 +87,9 @@ type RecipeCard = {
 
 /**
  * Gen (README › Gen): one composer on the left, this project's results on the
- * right. The Higgsfield catalogue and Analysis run on the owner's connected
- * account, so a member is offered neither: Studio engines on this
- * workspace's credits are the whole of Gen for them (idea 19).
+ * right. Its models are Studio engines on this workspace's credits: the
+ * signed-in account's catalogue is no longer offered. Analysis runs on the
+ * owner's connected account, so a member is not offered it (idea 19).
  */
 export function GenView({ scope, project, items, library, projects = "ready", workspaceName, onProject }: {
   scope: string; project: Project | null; items: LibraryEntry[];
@@ -143,8 +144,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     return () => { live = false; };
   }, [wantsCharacters, characters.list, scopedFetch]);
   const [sheet, setSheet] = useState(false);
-  /* The connected catalogue is the owner's (composerBlock refuses anyone else): members are not shown the switch at all. */
-  const groups = owner ? GROUPS : GROUPS.filter((g) => g.id === "workspace");
+  const groups = GROUPS;
   /* What this browser remembers for the sheet (recent picks, last connected quotes), read fresh each time it opens. */
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
   const modelButton = useRef<HTMLButtonElement>(null);
@@ -218,9 +218,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const recipeEpoch = useRef(0);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; });
-  const { dismiss: dismissEnhanced, auto: autoNow, setAuto } = enhancer;
-  const autoWas = useRef(autoNow);
-  useEffect(() => { autoWas.current = autoNow; });
+  const { dismiss: dismissEnhanced, setAuto } = enhancer;
   const applyPreset = useCallback((next: GenPreset) => {
     setMode("compose");
     setWellError(null);
@@ -228,7 +226,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
       /* New words replace the old, an enhancement of them and any recipe that brought them. A model or
          settings alone are a change made here: a recipe's card stays, says so, and still waits for its references. */
       if (next.prompt) { recipeEpoch.current++; dismissEnhanced(); setRecipe(null); }
-      if (next.billing) dispatchComposer({ type: "billing", value: next.billing });
+      /* Only Studio engines: a preset naming the account's catalogue keeps this workspace's engines. */
+      if (next.billing === "workspace") dispatchComposer({ type: "billing", value: next.billing });
       if (next.type) dispatchComposer({ type: "type", value: next.type });
       if (next.model) dispatchComposer({ type: "model", value: next.model });
       if (next.prompt) dispatchComposer({ type: "prompt", value: next.prompt });
@@ -246,9 +245,10 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
     const settingsOnly = Boolean(next.settingsOnly);
     const type = next.type ?? previous.type;
     const refs = settingsOnly || type === "audio" ? [] : next.references ?? [];
-    /* The connected account is the owner's; anyone else recreates on this workspace's engines, and their own engine choice stands. */
-    const billing: BillingSource = next.billing === "connected" && owner ? "connected" : "workspace";
-    const lost = next.billing === "connected" && billing !== "connected";
+    /* Every take recreates on this workspace's engines: one made on the account's catalogue keeps
+       its words and settings, and the engine choice here stands. */
+    const billing: BillingSource = "workspace";
+    const lost = next.billing === "connected";
     /* The shot setup lands on the chips, and comes back out of the words it was written into. A take that keeps
        none as data (the connected account stores only words) is read for one written in the bank's way. */
     const kept = cleanSetup(next.shotSpec);
@@ -263,12 +263,8 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         ...(settingsOnly ? {} : { prompt: found ? found.words : withoutSetup(next.prompt, shot), references: [] }),
       },
     });
-    /* A take made raw on the account is recreated raw, one enhanced there is enhanced there again. */
-    const autoBefore = autoWas.current;
-    const autoMoved = billing === "connected" && next.enhance !== undefined && next.enhance !== autoBefore;
-    if (autoMoved) setAuto(next.enhance!);
     setPreset(null);
-    setRecipe({ preset: taken, previous, autoBefore: autoMoved ? autoBefore : null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
+    setRecipe({ preset: taken, previous, autoBefore: null, epoch, refs: { total: refs.length, reading: refs.length > 0, missing: [], renumbered: [], frames: false } });
     if (!refs.length) return;
     /* Every reference is read again in this workspace. The ones still here keep the take's order; the words
        are renumbered to match them, and the ones that are gone keep citations of their own (recipe › retagRecipe). */
@@ -297,7 +293,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
       const frames = billing === "workspace" && usable.some((asset, i) => asset && /first_frame|last_frame/.test(refs[i].role ?? ""));
       setRecipe((now) => (now?.epoch === epoch ? { ...now, refs: { total: refs.length, reading: false, missing, renumbered, frames } } : now));
     });
-  }, [scope, owner, dispatchComposer, dismissEnhanced, setAuto]);
+  }, [scope, dispatchComposer, dismissEnhanced]);
   useGenPresetInbox(applyPreset);
   /* The engine a preset named may not be on offer here any more: say which one stands in (a recipe's card says it for Recreate). */
   const presetNote = !preset?.note ? null
@@ -597,7 +593,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             <span className="gx-tool-tag" aria-hidden="true">{(model?.label ?? "—").slice(0, 2).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span className="gx-model-name">{model?.label ?? "Choose a model"}</span>
-              <span className="gx-model-sub">{state.billing === "connected" ? "Higgsfield catalogue" : "Studio engine"}</span>
+              <span className="gx-model-sub">Studio engine</span>
             </span>
             <span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>▾</span>
           </button>
@@ -828,12 +824,9 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           <ModelSheet label={`${TYPE_TAB[state.type]} models`} groups={groups} billing={state.billing} onBilling={(value) => composer.dispatch({ type: "billing", value })}
             offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
             loading={blocked === READING_MODELS || blocked === READING_ACCOUNT}
-            empty={!offered.length && blocked ? blocked : state.billing === "connected" ? "No Higgsfield models for this output. Connect the account in Workspace › Engines, or choose a Studio engine." : "No Studio engine is connected for this output."}
-            emptyActions={state.billing === "connected"
-              ? [{ label: "Use Studio engines", onClick: () => composer.dispatch({ type: "billing", value: "workspace" }), testId: "gen-model-use-studio" },
-                 ...(owner ? [{ label: "Open Workspace › Engines", onClick: () => { setSheet(false); shell.goWorkspace("engines"); }, testId: "gen-model-open-engines" }] : [])]
-              /* The engine list itself is missing (a failed read): read it again. */
-              : composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
+            empty={!offered.length && blocked ? blocked : "No Studio engine is connected for this output."}
+            /* The engine list itself is missing (a failed read): read it again. */
+            emptyActions={composer.models.some((m) => m.type !== "audio") ? [] : [{ label: "Try again", onClick: composer.retryEngines, testId: "gen-model-retry" }]}
             onPick={pickModel} onClose={closeSheet} />
         </div>,
         document.querySelector(".gx") ?? document.body,
