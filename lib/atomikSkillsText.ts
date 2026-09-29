@@ -479,7 +479,8 @@ export type SavableRun = { chatId: string; title: string; projectId: string | nu
 /** The Save as skill form, filled from a run: what can be kept, and what looks like the person's input. */
 export type SkillDraft = {
   chatId: string; name: string; slug: string;
-  steps: { id: string; kind: string; title: string; prompt: string; model: string; label: string; settings: SkillSettings; keep: boolean; why: string | null }[];
+  /** `latest`: the step is in the chat's latest plan (the one on screen); earlier plans' steps start unticked. */
+  steps: { id: string; kind: string; title: string; prompt: string; model: string; label: string; settings: SkillSettings; keep: boolean; latest: boolean; why: string | null }[];
   parameters: ParameterDraft[];
 };
 
@@ -504,4 +505,23 @@ export function engineSummary(template: SkillTemplate, label: (id: string) => st
 /** A step's settings in a line: `5s · 1080p · 16:9`. */
 export function settingsLine(params: SkillSettings): string {
   return [params.task ? params.task : null, params.seconds ? `${params.seconds}s` : null, params.resolution ?? null, params.ratio ?? null].filter(Boolean).join(" · ");
+}
+
+/**
+ * Values typed after a command, in the form a run records them:
+ * `/wave-runner-spot product: Red High-Tops · setting: a rooftop at dusk`.
+ * Each `name: words` pair is matched to a parameter by its key or its label;
+ * anything else is left for the form, which shows every value before a run.
+ */
+export function commandValues(rest: string, parameters: readonly SkillParameter[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of rest.split(/\s*[·;]\s*/)) {
+    const m = /^([^:]{1,40}):\s*(.+)$/.exec(part.trim());
+    if (!m) continue;
+    const name = m[1].trim().toLowerCase();
+    const p = parameters.find((x) => x.key === name || x.label.toLowerCase() === name);
+    const value = cleanLine(m[2], SKILL_LIMITS.value);
+    if (p && value) out[p.key] = value;
+  }
+  return out;
 }

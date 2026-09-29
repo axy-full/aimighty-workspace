@@ -262,7 +262,7 @@ function VersionView({ id, version, api, engines, onBack }: { id: string; versio
   }, [api, id, version, key]);
   const current = state?.key === key ? state : null;
   return (
-    <div className={styles.form} data-testid="skill-version">
+    <div className={styles.form} data-testid="skill-old-version">
       <div className={styles.actions}><button type="button" className="gx-hbtn" onClick={onBack} data-testid="skill-version-back">Back to the version in use</button></div>
       {current?.error ? <LoadBanner banner={{ tone: "error", message: current.error }} onRetry={() => setAttempt((n) => n + 1)} testId="skill-version-error" />
         : current?.value?.template ? (<>

@@ -188,6 +188,13 @@ export async function savableRuns(projectId: unknown): Promise<SavableRun[]> {
   return rs.rows.map((r) => ({ chatId: String(r.id), title: String(r.title ?? "New chat"), projectId: text(r.project_id), steps: Number(r.n ?? 0), updatedAt: Number(r.updated_at ?? 0) }));
 }
 
+/** The steps of the chat's latest plan: the one the conversation shows (the last reply that proposed any). */
+function latestPlan(loaded: { messages: { id: string; role: string }[]; steps: Step[] }): Set<string> {
+  const planned = new Set(loaded.steps.map((s) => s.messageId));
+  const last = [...loaded.messages].reverse().find((m) => m.role === "assistant" && planned.has(m.id));
+  return new Set(loaded.steps.filter((s) => !last || s.messageId === last.id).map((s) => s.id));
+}
+
 async function runOf(chatId: unknown) {
   if (typeof chatId !== "string" || !/^ach_[A-Za-z0-9]{4,60}$/.test(chatId)) throw new SkillError("That run is gone.", 404);
   const loaded = await getChat(chatId);
@@ -205,14 +212,16 @@ export async function draftFromRun(chatId: unknown): Promise<SkillDraft> {
   const loaded = await runOf(chatId);
   const allowed = await engines();
   const steps = loaded.steps.filter((s) => s.status !== "rejected");
-  const kept = steps.filter((s) => !unkeptReason(s));
+  const latest = latestPlan(loaded);
+  const kept = steps.filter((s) => !unkeptReason(s) && latest.has(s.id));
   const name = loaded.chat.title && loaded.chat.title !== "New chat" ? cleanLine(loaded.chat.title, SKILL_LIMITS.name) : "";
   return {
     chatId: loaded.chat.id, name, slug: name ? slugOf(name) : "",
     steps: steps.map((s) => {
       const why = unkeptReason(s);
       const kind = s.kind === "image" || s.kind === "audio" ? s.kind : "video";
-      return { id: s.id, kind: s.kind, title: s.title, prompt: s.prompt, model: s.model, label: engineLabel(s.model, allowed), settings: settingsOf(kind, s.params), keep: !why, why };
+      return { id: s.id, kind: s.kind, title: s.title, prompt: s.prompt, model: s.model, label: engineLabel(s.model, allowed), settings: settingsOf(kind, s.params),
+        keep: !why && latest.has(s.id), latest: latest.has(s.id), why };
     }),
     parameters: suggestParameters(loaded.messages.filter((m) => m.role === "user").map((m) => m.text), kept),
   };
@@ -249,8 +258,8 @@ async function activeCount(workspaceId: string): Promise<number> {
 const FULL = `A workspace keeps ${SKILL_LIMITS.activeSkills} skills. Archive some you no longer use, then save this again.`;
 
 /**
- * Save a run as a skill: the chosen steps (by default every step a skill can
- * keep) with the chosen phrases as parameters, as version 1. Its maker and
+ * Save a run as a skill: the chosen steps (by default the latest plan's, each
+ * that a skill can keep) with the chosen phrases as parameters, as version 1. Its maker and
  * the run it came from are kept with it.
  */
 export async function saveSkillFromRun(input: {
@@ -263,7 +272,10 @@ export async function saveSkillFromRun(input: {
     chosen = ids.map((id) => loaded.steps.find((s) => s.id === id)).filter((s): s is Step => Boolean(s));
     if (chosen.length !== ids.length) throw new SkillError("A step you chose is no longer in that run. Reload it and try again.", 409);
     chosen.sort((a, b) => loaded.steps.indexOf(a) - loaded.steps.indexOf(b));
-  } else chosen = loaded.steps.filter((s) => s.status !== "rejected" && !unkeptReason(s));
+  } else {
+    const latest = latestPlan(loaded);
+    chosen = loaded.steps.filter((s) => s.status !== "rejected" && !unkeptReason(s) && latest.has(s.id));
+  }
   const drafts: ParameterDraft[] = (Array.isArray(input.parameters) ? input.parameters : []).map((p) => {
     const o = p && typeof p === "object" ? p as Record<string, unknown> : {};
     return { key: String(o.key ?? ""), label: String(o.label ?? ""), phrase: String(o.phrase ?? "") };

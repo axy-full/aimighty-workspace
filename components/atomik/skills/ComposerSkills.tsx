@@ -62,7 +62,7 @@ export { SkillHints };
  * composer's form, never inside it, so no submit here reaches its Send.
  */
 export function ComposerSkillDialogs({ api, running, saving, chat, onClose, onSaved }: {
-  api: SkillsApi; running: SkillView | null; saving: string | null;
+  api: SkillsApi; running: { skill: SkillView; values: Record<string, string> } | null; saving: string | null;
   /** The conversation on screen, whose plan a run joins; none, and the run starts one for this production. */
   chat: { id: string; projectId: string | null } | null;
   onClose: () => void; onSaved: (said: string) => void;
@@ -75,7 +75,7 @@ export function ComposerSkillDialogs({ api, running, saving, chat, onClose, onSa
     onSaved("Planned. Each step waits for its price and your Continue.");
     onClose();
   }, [projectId, onClose, onSaved]);
-  if (running) return <RunSkillDialog api={api} skill={running} chatId={chat?.id ?? null} projectId={chat ? null : projectId} onPlanned={planned} onClose={onClose} />;
+  if (running) return <RunSkillDialog api={api} skill={running.skill} values={running.values} chatId={chat?.id ?? null} projectId={chat ? null : projectId} onPlanned={planned} onClose={onClose} />;
   if (saving) return <SaveSkillDialog api={api} chatId={saving} onSaved={(skill) => { onSaved(`Saved as /${skill.slug}. Type / to run it again.`); onClose(); }} onClose={onClose} />;
   return null;
 }

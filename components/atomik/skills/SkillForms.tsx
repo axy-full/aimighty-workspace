@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useMoney } from "@/lib/price";
 import {
   SKILL_LIMITS, SKILL_SCOPE_LABEL, SKILL_SLUG, SkillTextError,
-  engineProblemText, keyOf, settingsLine, slugOf, templateFromRun,
+  commandValues, engineProblemText, keyOf, settingsLine, slugOf, templateFromRun,
   type ParameterDraft, type SkillDraft, type SkillRunPreview, type SkillRunStep, type SkillScope, type SkillView,
 } from "@/lib/atomikSkillsText";
 import { SkillRequestError, failed, type PlannedRun, type SkillsApi } from "@/lib/shell/use-skills";
@@ -65,10 +65,14 @@ function DialogHead({ children, onClose }: { children: ReactNode; onClose: () =>
 
 /** True while a person is typing a command: `/`, `/wave`, `/wave-runner-spot`. */
 export const typingCommand = (text: string) => /^\/[a-z0-9-]*$/.test(text);
-/** The skill a draft names exactly (`/wave-runner-spot`, with or without a trailing space), if any. */
-export function commandIn(text: string, skills: readonly SkillView[]): SkillView | null {
-  const m = /^\/([a-z][a-z0-9-]{1,39})\s*$/.exec(text);
-  return m ? skills.find((s) => s.slug === m[1]) ?? null : null;
+/**
+ * The skill a draft starts with (`/wave-runner-spot`, alone or with values after it), and the values:
+ * sending it opens that skill's run form, never a planning turn.
+ */
+export function commandIn(text: string, skills: readonly SkillView[]): { skill: SkillView; values: Record<string, string> } | null {
+  const m = /^\/([a-z][a-z0-9-]{1,39})(?:\s+([\s\S]*))?$/.exec(text.trim());
+  const skill = m ? skills.find((s) => s.slug === m[1]) ?? null : null;
+  return skill ? { skill, values: commandValues(m?.[2] ?? "", skill.template.parameters) } : null;
 }
 
 /** The skills a typed command matches, best first: the start of a command, then anywhere in it or the name. */
@@ -117,17 +121,20 @@ function useEstimate() {
  * in Atomik as proposals, for nothing; each then waits for its own quote and
  * a person's Continue.
  */
-export function SkillRunForm({ api, skill, chatId = null, projectId, onPlanned, onCancel, heading = true, planLabel = "Plan these steps" }: {
+export function SkillRunForm({ api, skill, chatId = null, projectId, onPlanned, onCancel, heading = true, planLabel = "Plan these steps", initialValues = {} }: {
   api: SkillsApi; skill: SkillView; chatId?: string | null; projectId: string | null;
   onPlanned: (run: PlannedRun) => void; onCancel?: () => void; heading?: boolean; planLabel?: string;
+  /** Values typed after the command; every other parameter starts at its default. */
+  initialValues?: Record<string, string>;
 }) {
   const money = useMoney();
   const estimate = useEstimate();
   const parameters = skill.template.parameters;
-  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(parameters.map((p) => [p.key, p.default])));
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(parameters.map((p) => [p.key, initialValues[p.key] ?? p.default])));
   const [engines, setEngines] = useState<Record<string, string>>({});
   const key = JSON.stringify([values, engines]);
-  const [preview, setPreview] = useState<{ key: string; value: SkillRunPreview | null; error: string | null } | null>(null);
+  const enginesKey = JSON.stringify(engines);
+  const [preview, setPreview] = useState<{ key: string; engines: string; value: SkillRunPreview | null; error: string | null } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -139,21 +146,23 @@ export function SkillRunForm({ api, skill, chatId = null, projectId, onPlanned, 
     const timer = setTimeout(async () => {
       try {
         const value = await api.preview(skill.id, { values, engines });
-        if (live) setPreview({ key, value, error: null });
+        if (live) setPreview({ key, engines: enginesKey, value, error: null });
       } catch (error) {
-        if (live) setPreview({ key, value: null, error: failed(error, "The skill could not be previewed. Try again.") });
+        if (live) setPreview({ key, engines: enginesKey, value: null, error: failed(error, "The skill could not be previewed. Try again.") });
       }
     }, 250);
     return () => { live = false; clearTimeout(timer); };
-  }, [api, skill.id, parameters, values, engines, key, attempt]);
+  }, [api, skill.id, parameters, values, engines, key, enginesKey, attempt]);
 
+  /* The preview for exactly these words and engines; while the next one is asked for, the last one with the same
+     engines stays on screen (its prices do not depend on the words), and Plan waits for the fresh one. */
   const current = preview?.key === key ? preview : null;
-  const shown = current?.value ?? null;
+  const shown = current?.value ?? (!empty.length && preview?.engines === enginesKey ? preview.value : null);
   const problems = shown?.problems ?? [];
   const priced = (shown?.steps ?? []).map(estimate);
   const total = priced.reduce((sum, p) => sum + (p.value ?? 0), 0);
   const unpriced = priced.filter((p) => p.value === null).length;
-  const ready = Boolean(shown) && !problems.length && !empty.length && !busy;
+  const ready = Boolean(current?.value) && !problems.length && !empty.length && !busy;
 
   const plan = async () => {
     if (!ready) return;
@@ -162,7 +171,7 @@ export function SkillRunForm({ api, skill, chatId = null, projectId, onPlanned, 
       onPlanned(await api.run(skill.id, { values, engines, chatId, projectId }));
     } catch (error) {
       /* An engine switched off since the preview: show the choice again, never swap it. */
-      if (error instanceof SkillRequestError && error.problems.length) setPreview({ key, value: shown ? { ...shown, problems: error.problems } : null, error: null });
+      if (error instanceof SkillRequestError && error.problems.length) setPreview({ key, engines: enginesKey, value: shown ? { ...shown, problems: error.problems } : null, error: null });
       setProblem(failed(error, "The skill could not be planned. Try again."));
     } finally { setBusy(false); }
   };
@@ -361,13 +370,13 @@ export function SaveSkillForm({ api, chatId, onSaved, onCancel, heading = true }
       <fieldset className={styles.fieldset}>
         <legend className={styles.legend}>Steps to keep</legend>
         {value.steps.map((s, i) => (
-          <label key={s.id} className={styles.check} data-disabled={!s.keep} data-testid="skill-save-step">
-            <input type="checkbox" checked={kept.includes(s.id)} disabled={!s.keep || busy}
+          <label key={s.id} className={styles.check} data-disabled={Boolean(s.why)} data-testid="skill-save-step">
+            <input type="checkbox" checked={kept.includes(s.id)} disabled={Boolean(s.why) || busy}
               onChange={(e) => setKept(e.target.checked ? value.steps.filter((x) => x.id === s.id || kept.includes(x.id)).map((x) => x.id) : kept.filter((id) => id !== s.id))} />
             <span className={styles.stepBody}>
               <span className={styles.stepTitle}>{String(i + 1).padStart(2, "0")} · {s.title}</span>
               <span className={styles.stepMeta}>{[s.label, settingsLine(s.settings)].filter(Boolean).join(" · ")}</span>
-              {s.why ? <span className={styles.stepMeta}>Not kept: {s.why}.</span> : null}
+              {s.why ? <span className={styles.stepMeta}>Not kept: {s.why}.</span> : !s.latest ? <span className={styles.stepMeta}>From an earlier plan in this chat.</span> : null}
             </span>
           </label>
         ))}
@@ -432,8 +441,8 @@ export function SaveSkillDialog({ api, chatId, onSaved, onClose }: { api: Skills
   );
 }
 
-export function RunSkillDialog({ api, skill, chatId, projectId, onPlanned, onClose }: {
-  api: SkillsApi; skill: SkillView; chatId: string | null; projectId: string | null; onPlanned: (run: PlannedRun) => void; onClose: () => void;
+export function RunSkillDialog({ api, skill, values, chatId, projectId, onPlanned, onClose }: {
+  api: SkillsApi; skill: SkillView; values?: Record<string, string>; chatId: string | null; projectId: string | null; onPlanned: (run: PlannedRun) => void; onClose: () => void;
 }) {
   return (
     <SkillDialog label={`Run /${skill.slug}`} onClose={onClose}>
@@ -442,7 +451,7 @@ export function RunSkillDialog({ api, skill, chatId, projectId, onPlanned, onClo
         <span className={styles.command}>/{skill.slug} · version {skill.version}</span>
         <p className={styles.note}>{skill.description}</p>
       </DialogHead>
-      <SkillRunForm api={api} skill={skill} chatId={chatId} projectId={projectId} onPlanned={onPlanned} onCancel={onClose} heading={false} />
+      <SkillRunForm api={api} skill={skill} chatId={chatId} projectId={projectId} onPlanned={onPlanned} onCancel={onClose} heading={false} initialValues={values} />
     </SkillDialog>
   );
 }

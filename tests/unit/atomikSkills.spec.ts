@@ -351,3 +351,33 @@ test("a skill run files proposals that each wait at their checkpoint: nothing is
   }
   expect(calls).toEqual([]);
 });
+
+/* ── The latest plan, and values typed after a command ───────────────── */
+
+test("a save keeps the chat's latest plan by default, earlier plans start unticked, and values typed after a command are read back", async () => {
+  const s = await import("../../lib/atomikSkills");
+  const t = await import("../../lib/atomikSkillsText");
+  await inTenant(workspace(), async () => {
+    const chatId = await seedRun();
+    /* A later plan in the same chat: one more still. */
+    const at = Date.now();
+    await rows(`INSERT INTO atomik_messages (id, chat_id, role, text, activity, created_at) VALUES (?,?,?,?,?,?)`, [`${chatId}_m3`, chatId, "user", "One more still of the Wave Runner sneakers at night.", "[]", at]);
+    await rows(`INSERT INTO atomik_messages (id, chat_id, role, text, activity, cost_usd, model, created_at) VALUES (?,?,?,?,?,?,?,?)`, [`${chatId}_m4`, chatId, "assistant", "One still.", "[]", 0.01, "anthropic/claude-test", at + 1]);
+    await rows(`INSERT INTO atomik_steps (id, chat_id, message_id, position, kind, title, prompt, model, params, refs, status, created_at, updated_at)
+                VALUES (?,?,?,0,'image','Night still','Teal Wave Runner sneakers under a streetlight at night.',?,?,'[]','proposed',?,?)`,
+      [`${chatId}_s5`, chatId, `${chatId}_m4`, NANO_PRO, JSON.stringify({ ratio: "1:1", resolution: "2K" }), at + 2, at + 2]);
+    const draft = await s.draftFromRun(chatId);
+    expect(draft.steps.map((x) => [x.title, x.latest, x.keep])).toEqual([
+      ["Wave Runner hero still", false, false], ["Skate pass", false, false], ["Surf bed", false, false], ["Night still", true, true],
+    ]);
+    const saved = await s.saveSkillFromRun({ chatId, parameters: [{ key: "product", label: "Product", phrase: "Wave Runner sneakers" }], name: "Night still", description: "A still at night.", scope: "personal" }, "u1");
+    expect(saved.template.steps.map((x) => x.title)).toEqual(["Night still"]);
+    /* Earlier steps are kept when the person ticks them. */
+    const both = await s.saveSkillFromRun({ chatId, stepIds: [`${chatId}_s5`, `${chatId}_s1`], parameters: [], name: "Both stills", description: "Two stills.", scope: "personal" }, "u1");
+    expect(both.template.steps.map((x) => x.title)).toEqual(["Wave Runner hero still", "Night still"]);
+  });
+  const parameters = [{ key: "product", label: "Product", default: "sneakers" }, { key: "setting", label: "Setting", default: "beach" }];
+  expect(t.commandValues("product: Red High-Tops · setting: a rooftop at dusk", parameters)).toEqual({ product: "Red High-Tops", setting: "a rooftop at dusk" });
+  expect(t.commandValues("Setting: harbour; colour: red", parameters)).toEqual({ setting: "harbour" });
+  expect(t.commandValues("just some words", parameters)).toEqual({});
+});
