@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import type { LibraryAsset } from "../../lib/genLibrary";
 import type { Generation } from "../../lib/jobs";
 import { entryFace, entryKind, libraryEntries, libraryView, mergeNewest, pageMoved, settleWait, settling, tileAspect } from "../../lib/workspace/library";
-import { failureReason, heldReason, projectTakes, takeChip, takeReasonLine, takeStage, takeStatusWord } from "../../lib/workspace/takes";
+import { failureReason, heldReason, projectTakes, takeChargeLine, takeChip, takeReasonLine, takeStage, takeStatusWord } from "../../lib/workspace/takes";
+import type { TakeFailure } from "../../lib/providerOutcome";
 
 /**
  * One card contract for every grid of takes (Gen › Results, Library › Assets,
@@ -23,6 +24,8 @@ function gen(id: string, extra: Partial<Generation> = {}): Generation {
 }
 const asset = (value: Generation): LibraryAsset => ({ origin: "generation", value });
 const take = (value: Generation) => projectTakes([asset(value)])[0];
+/* Particl's own receipt for a failed take (lib/usageLedger.ts withLedgerCharges), with no provider word. */
+const receipt = (credits: number, settled = true): TakeFailure => ({ provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: null, charge: { credits, settled } });
 
 test("a render in flight is Queued, Rendering or Held — held for a slot is a place in the line", () => {
   expect(takeStage({ status: "queued", params: {} })).toBe("queued");
@@ -65,11 +68,42 @@ test("a failed take says why in one line; the row's own words ride along only wh
   expect(long.reason.length).toBeLessThanOrEqual(118);
   expect(long.reason.endsWith("…")).toBe(true);
 
-  const refused = take(gen("f", { status: "failed", creditsBilled: 0, error: "Refused: prompt flagged by moderation." }));
+  /* "Not billed" rides on a receipt, not on the row's own figure. */
+  const refused = take(gen("f", { status: "failed", creditsBilled: 0, error: "Refused: prompt flagged by moderation.", failure: receipt(0) }));
   expect(refused).toMatchObject({ status: "failed", failedUnbilled: true, reason: "Refused by the content filter", detail: "Refused: prompt flagged by moderation." });
   expect(refused).not.toHaveProperty("cancelled");
-  const discarded = take(gen("d", { status: "cancelled", creditsBilled: null, costUsd: 0, error: "Discarded before it started. Nothing was charged." }));
+  expect(take(gen("f2", { status: "failed", creditsBilled: 0, error: "Refused: prompt flagged by moderation." }))).not.toHaveProperty("failedUnbilled");
+  const discarded = take(gen("d", { status: "cancelled", creditsBilled: null, costUsd: 0, error: "Discarded before it started. Nothing was charged.", failure: receipt(0) }));
   expect(discarded).toMatchObject({ status: "failed", cancelled: true, failedUnbilled: true, reason: "Discarded before it started." });
+  expect(takeChargeLine(discarded)).toBe("Not billed");
+});
+
+test("a failure its provider answered for reads in the typed words; its charge is a line of its own, never assumed", () => {
+  const moderated: TakeFailure = { provider: "byteplus", stage: "run", code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null, billing: null, payer: "platform" };
+  /* A credit workspace: the row's words are already the typed ones; the provider's own stay private. */
+  const released = take(gen("p", { status: "failed", error: "Refused by the content filter", failure: { ...moderated, charge: { credits: 0, settled: true } } }));
+  expect(released).toMatchObject({ reason: "Refused by the content filter", failedUnbilled: true, credits: 0 });
+  expect(released).not.toHaveProperty("detail");
+  expect(takeChargeLine(released)).toBe("Not billed");
+  expect(takeChargeLine(take(gen("c", { status: "failed", failure: { ...moderated, charge: { credits: 12, settled: true } } })))).toBe("12 cr charged");
+  expect(takeChargeLine(take(gen("h", { status: "failed", failure: { ...moderated, charge: { credits: 12, settled: false } } })))).toBe("12 cr held");
+  /* Nothing on record: no charge line, a plain chip, and no "not billed" anywhere. */
+  const unknown = take(gen("x", { status: "failed", creditsBilled: 0, error: "Refused by the content filter", failure: moderated }));
+  expect(takeChargeLine(unknown)).toBeNull();
+  expect(takeChip(unknown)).toEqual({ label: "Failed", tone: "failed" });
+  expect(unknown).not.toHaveProperty("failedUnbilled");
+  expect(JSON.stringify(unknown)).not.toMatch(/not billed|not charged|refunded/i);
+  /* The typed kind outranks word-matching: refused settings are not the content filter, the engine's account is not the workspace's balance. */
+  expect(take(gen("s", { status: "failed", error: "The engine refused these settings", failure: { ...moderated, kind: "invalid_request" } })).reason).toBe("The engine refused these settings");
+  expect(take(gen("q", { status: "failed", error: "The engine account is out of credits", failure: { ...moderated, kind: "provider_quota" } })).reason).toBe("The engine account is out of credits");
+  /* A workspace on its own key: the provider's own words as the detail, and its own word on the charge. */
+  const own = take(gen("o", { status: "failed", failure: { provider: "xai", stage: "run", code: "respect_moderation_false", kind: "content_filter", message: "Video filtered by moderation", billing: { state: "unknown", basis: "silent" }, payer: "own" } }));
+  expect(own).toMatchObject({ reason: "Refused by the content filter", detail: "Video filtered by moderation" });
+  expect(takeChargeLine(own)).toBe("xAI didn't say if it charged");
+  expect(takeChargeLine(take(gen("r", { status: "failed", failure: { ...moderated, provider: "higgsfield", billing: { state: "refunded", basis: "hf-refund" }, payer: "own" } })))).toBe("Higgsfield refunded it");
+  /* A take still settling carries no charge line; neither does one that did not fail. */
+  expect(takeChargeLine({ status: "review" })).toBeNull();
+  expect(takeChargeLine({ status: "failed" })).toBeNull();
 });
 
 test("the chip names the status without inferring a billing outcome", () => {

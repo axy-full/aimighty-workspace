@@ -1,5 +1,7 @@
 import { SHOT_NODE_TYPES, type CanvasNode, type NodeOperation, type Project, type ShotFields } from "../workbench/studio";
 import { nodeDef, resolveAsset } from "../workbench/node-graph";
+import { failureUncharged } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import { shotEngine, clampShotSeconds, defaultShotRatio, defaultShotResolution, resolveShotSettings } from "./engines";
 import { shotEstimateKey } from "./cost";
 import { stableId } from "../workbench/stable-id";
@@ -28,6 +30,8 @@ export type RigJob = {
   createdAt?: number | null;
   creditsBilled?: number | null;
   costUsd?: number | null;
+  /** A failed job's outcome (lib/providerOutcome.ts): the ledger's charge, or its provider's word on its own key. */
+  failure?: TakeFailure | null;
 };
 
 export type RigShot = {
@@ -70,7 +74,15 @@ export type RigShotOptions = {
 const LIVE_DONE = new Set(["succeeded", "failed", "cancelled"]);
 /** Queued, running, held (awaiting approval) — anything not settled. */
 export const liveJob = (job: RigJob) => !LIVE_DONE.has(job.status);
-export const jobUnbilled = (job: RigJob) => !((job.creditsBilled ?? 0) > 0) && !((job.costUsd ?? 0) > 0);
+/**
+ * Confirmed unbilled: the ledger holds nothing for it, or its provider said
+ * it refunded or did not charge it. A job whose outcome is not confirmed is
+ * never called unbilled; one from before outcomes were recorded falls back
+ * to its own settled figure.
+ */
+export const jobUnbilled = (job: RigJob) =>
+  job.failure !== undefined ? failureUncharged(job.failure)
+    : (job.creditsBilled === 0 || job.costUsd === 0) && !((job.creditsBilled ?? 0) > 0) && !((job.costUsd ?? 0) > 0);
 
 export function isShotNode(node: CanvasNode): boolean {
   return (SHOT_NODE_TYPES as readonly string[]).includes(node.type);

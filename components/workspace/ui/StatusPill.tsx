@@ -8,16 +8,16 @@ export const STATUS: Record<Status, { label: string; dot: string; color: string;
   draft: { label: "Draft", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "rgba(255,255,255,.05)" },
   review: { label: "Review", dot: "var(--pxw-amber)", color: "var(--pxw-amber-ink)", bg: "rgba(255,159,10,.13)" },
   source: { label: "Source", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "rgba(255,255,255,.05)" },
-  /* Product rule: failed generations are not billed, and say so. */
-  failed: { label: "Failed · not billed", dot: "var(--pxw-red)", color: "var(--pxw-red-ink)", bg: "var(--pxw-red-tint)" },
+  /* "not billed" only when the ledger or the provider confirms it: the caller passes that label. */
+  failed: { label: "Failed", dot: "var(--pxw-red)", color: "var(--pxw-red-ink)", bg: "var(--pxw-red-tint)" },
 };
 
-export function StatusPill({ status }: { status: Status }) {
+export function StatusPill({ status, label }: { status: Status; label?: string }) {
   const s = STATUS[status];
   return (
     <span className="pxw-pill" style={{ background: s.bg }} data-status={status}>
       <span className="pxw-dot" style={{ background: s.dot }} />
-      <span className="pxw-pill-label" style={{ color: s.color }}>{s.label}</span>
+      <span className="pxw-pill-label" style={{ color: s.color }}>{label ?? s.label}</span>
     </span>
   );
 }

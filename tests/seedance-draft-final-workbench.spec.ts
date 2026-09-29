@@ -363,12 +363,15 @@ test("a final refused at moderation is not charged on the books, its card says w
   await strip.getByTestId("draft-final-approve-send").click();
 
   /* Refused by the (mocked) engine: the final's card says it failed and why (the card contract, components/graphite/TakeTile.tsx),
-     and the draft offers its final again. What it cost is the books' to say (below), never a guess on the page. */
+     and the draft offers its final again. What it cost is the books' to say (below): the card shows only that receipt —
+     the released reservation, "Not billed" — and nothing on the page guesses beyond it. */
   await expect(strip.locator('[data-pair="final"] [data-testid="take-chip"]')).toHaveText("Failed", { timeout: 120_000 });
   await expect(strip.locator('[data-pair="final"] [data-testid="take-reason"]')).toHaveText("Refused by the content filter");
+  await expect(strip.locator('[data-pair="final"] [data-testid="take-charge"]')).toHaveText("Not billed", { timeout: 60_000 });
   await expect(strip.getByTestId("draft-final-status")).toHaveText("The last final did not render.");
   await expect(strip.getByTestId("draft-final-make")).toHaveAttribute("aria-label", `Make the 1080p final · ${finalPrice.toLocaleString("en-US")} cr`, { timeout: 60_000 });
-  await expect(strip).not.toContainText(/not charged|not billed|nothing was charged|refunded/i);
+  await expect(strip).not.toContainText(/not charged|nothing was charged|refunded/i);
+  await expect(strip.getByText(/not billed/i)).toHaveCount(1);
   await floors(page, info, strip);
   await shot(page, info, strip, "final-refused");
 
