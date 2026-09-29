@@ -138,7 +138,7 @@ test("approve a run limit; Ask: each render waits for one tap, the takes land, a
   await openRig(page, draft.id, errors, paid);
   const terms = (await agentOf(page.request, headers, productionId, draft.id)).agent.ask!;
   expect(terms.planning).toBeGreaterThan(0);
-  /* The card suggests the workspace's own approval line as the run's limit. */
+  /* The card suggests the approval line (the most one job may cost without asking) as the run's limit. */
   await expect(page.getByTestId("rig-agent-limit")).toHaveValue(String(terms.limit));
   await expect(page.getByTestId("rig-agent-propose")).toHaveText(`Propose a board · up to about ${cr(terms.planning!)}`);
   const start = await balanceOf(page.request);
