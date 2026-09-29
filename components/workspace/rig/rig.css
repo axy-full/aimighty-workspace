@@ -44,6 +44,7 @@
 .pxw .pxw-graph-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
 .pxw .pxw-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
 .pxw .pxw-graph-zoom button:hover { background: rgba(255, 255, 255, .08); }
+.pxw .pxw-graph-zoom button:disabled { opacity: .6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-zoom button { min-width: 44px; height: 44px; } }
 .pxw .pxw-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .pxw .pxw-graph-node { position: absolute; display: flex; flex-direction: column; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); border-radius: 13px; padding: 12px; }

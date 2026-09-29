@@ -22,6 +22,7 @@ import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
+import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -123,6 +124,11 @@ export async function GET(req: Request) {
               const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
               deferred ||= report.deferred;
             });
+            // Server-made Rig canvas changes the live room has not taken yet
+            // (free; the room only ever gets what the saved canvas holds).
+            await stage("canvas_pushes", () =>
+              drainCanvasPushes(null, { limit: 4, deadlineAt }),
+            );
             await stage("storage_sizes", () => backfillSizes(8));
             await stage("expired_uploads", async () => {
               const report = await cleanupExpiredUploads(5);
