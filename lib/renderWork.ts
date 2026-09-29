@@ -21,6 +21,7 @@ import { fetchBytes } from "./mockFs";
 import type { Produced as EngineProduced, RenderHandle } from "./engines/types";
 import { engineFor } from "./engines";
 import { higgsfieldSubmissionRejected } from "./higgsfield";
+import { marketing25Usd, marketing25SettlementUsd } from "./higgsfieldMarketing";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 import { inspectAudioBuffer } from "./mediaSource.server";
@@ -445,6 +446,25 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
   return finishStill(job, out.produced, queueMs, now() - engineStart);
 }
 
+/**
+ * What a collected connected still settles at. Soul and Marketing Studio 2.0
+ * settle at their verified estimate. A 2.5 build was quoted approximately:
+ * it settles at the provider's own charge if it states one, else the same
+ * published-rate figure for the image actually delivered, within a sane band
+ * of the quote (lib/higgsfieldMarketing.ts › marketing25SettlementUsd).
+ */
+async function marketingSettledUsd(job: StillJob, bytes: Buffer, quoteUsd: number, reportedUsd: number | null): Promise<number> {
+  const settings = job.marketing;
+  if (job.modelId !== MARKETING_IMAGE_MODEL_ID || !settings || (settings.variant ?? "alpha") === "alpha") return quoteUsd;
+  const meta = await (await import("sharp")).default(bytes).metadata().catch(() => null);
+  const megapixels = meta?.width && meta?.height ? (meta.width * meta.height) / 1e6 : null;
+  const delivered = megapixels == null ? null : marketing25Usd({
+    prompt: job.prompt, image_urls: job.references.map((ref) => ref.id), quality: settings.quality,
+    resolution: job.size, enhance_prompt: settings.enhancePrompt,
+  }, megapixels);
+  return marketing25SettlementUsd(quoteUsd, delivered, reportedUsd);
+}
+
 /** Collect one acknowledged Soul request. This path never submits a generation. */
 export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
   return withRecoveryJob(requireTenant().id, genId, async () => {
@@ -491,7 +511,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       inHand = true;
       const out = await finishStill(job, {
         bytes, mime: "image/png",
-        costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
+        costUsd: await marketingSettledUsd(job, bytes, vendorCostUsd!, state.costUsd ?? null), totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
         args: [JSON.stringify(out), now(), genId] });
