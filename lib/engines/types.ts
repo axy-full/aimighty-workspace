@@ -36,7 +36,9 @@ export type AudioRenderRequest = {
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 
 /** An asynchronous job at the vendor: what to ask after, and where. */
-export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string };
+export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string;
+  /** Beside `ref` (the provider's request_id): the submission's correlation id, for the provider's support. Platform desk only. */
+  correlationId?: string };
 
 /** Bytes back from a synchronous engine, with what it charged. */
 export type Produced = {
