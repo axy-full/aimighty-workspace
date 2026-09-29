@@ -109,9 +109,10 @@ export const SHELL_SUITES: ShellSuite[] = [
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
      under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
      server and tokens. The page id stays `skills`, so every old link still lands here.
-     Memory is the shell's own view too (Supercomputer's memory): what Atomik keeps in mind. It shares
+     Memory is the shell's own view too: what Atomik keeps in mind. It shares
      Agent's backing page, as Beats shares Brief's, so `sp=memory` tells the two apart. */
-  own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
+  /* Owner, 28 September 2026: "Just Atomik agent". */
+  own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
@@ -128,7 +129,7 @@ export const HEADER_SEGMENT: { id: ShellSuiteId | "gen" | "crew"; label: string;
   { id: "gen", label: "Gen", title: "Generate" },
   { id: "business", label: "Business", title: "Moleculr Business Suite · Marketing Studio" },
   { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
-  { id: "atomik", label: "Atomik", title: "Atomik Supercomputer" },
+  { id: "atomik", label: "Atomik", title: "Atomik Agent" },
   /* Crew is a module with its own tables and pages, not a production suite (CREW_ADDENDUM.md). */
   { id: "crew", label: "Crew", title: "Crew" },
 ];

@@ -463,7 +463,8 @@ test("thinking model library groups and searches every provider, and effort surv
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", vision: true, efforts },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts },
     { id: "openai/gpt-5.5", name: "GPT-5.5", vision: true, efforts },
-    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", vision: true, efforts },
+    /* Atomik plans on Claude, OpenAI and Grok (28 September 2026). */
+    { id: "spacexai/grok-4.7", name: "Grok 4.7", vision: true, efforts },
     ...Array.from({length:24}, (_, i) => ({ id:`openai/test-${i}`, name:`OpenAI archived model ${i}`, vision:false, efforts:[] })),
   ];
   const quotes: Record<string, unknown>[] = [];
@@ -493,14 +494,15 @@ test("thinking model library groups and searches every provider, and effort surv
   await expect(picker).toBeVisible();
   await expect(picker.getByRole("group", {name:"Claude",exact:true})).toHaveCount(1);
   await expect(picker.getByRole("group", {name:"OpenAI",exact:true})).toHaveCount(1);
-  await expect(picker.getByRole("group", {name:"Gemini",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Grok",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Gemini",exact:true})).toHaveCount(0);
   await expect(picker.getByRole("option")).toHaveCount(models.length + 1);
   await expect.poll(async () => {
     const bounds = await picker.boundingBox(), viewport = page.viewportSize()!;
     return !!bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1;
   }).toBe(true);
   await page.screenshot({path:testInfo.outputPath("thinking-model-library.png")});
-  await picker.getByRole("button", {name:"Gemini",exact:true}).click();
+  await picker.getByRole("button", {name:"Grok",exact:true}).click();
   await expect(picker.getByRole("option")).toHaveCount(1);
   await picker.getByRole("button", {name:"All",exact:true}).click();
   const search = picker.getByRole("combobox", {name:"Search thinking models",exact:true});

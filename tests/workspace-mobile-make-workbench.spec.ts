@@ -231,9 +231,9 @@ test("the docked composer runs the desktop machinery: one live quote, re-quoted,
   const sheet = page.getByTestId("mobile-composer-sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("Charged to");
-  /* This workspace's credits are the default; the connected account is a switch. */
-  await expect(page.getByTestId("mobile-composer-billing-workspace")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("mobile-composer-billing-connected")).toHaveAttribute("aria-pressed", "false");
+  /* This workspace's credits: no account switch (28 September 2026). */
+  await expect(page.getByTestId("mobile-composer-billing-workspace")).toHaveCount(0);
+  await expect(page.getByTestId("mobile-composer-billing-connected")).toHaveCount(0);
   /* Video, so the render lands as a take with a duration. */
   await sheet.locator('.pxm-segment[data-kind="video"]').click();
   await page.getByTestId("mobile-composer-prompt").fill("A dune ridge at first light, no figure");
