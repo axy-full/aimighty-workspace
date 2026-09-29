@@ -1,5 +1,7 @@
 # Particl Suites — FINAL SPEC for Claude Code (v3, 21 Sep 2026)
 
+> **28 September 2026: superseded in part.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). The contracts here that run on the connected account, the CLI or the skill packs (Business Ads, Image ads' DTC engine and templates, Setup, Viral on the account, Gen's account catalogue, Soul ID and elements on the account, the skill packs) are retired. The shell and the visual layer still apply.
+
 **Repo:** `axy-full/aimighty-workspace` · **Reference API:** `higgsfield-ai/cli` (README.md, MODELS.md) + `higgsfield-ai/skills` (higgsfield-generate/SKILL.md + references/).
 **Supersedes:** `design/particl-suites/README.md`, `CLAUDE_CODE_PROMPT.md`, `CREW_ADDENDUM.md`, `MOBILE_ADDENDUM.md` where they disagree. Those files stay as detail; this one is the order of work.
 

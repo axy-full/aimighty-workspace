@@ -242,10 +242,10 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   /* The landed take is a result card (components/graphite/TakeTile.tsx), no longer a picked-up one. */
   await expect(page.getByTestId("gen-view").locator(".gx-gen-grid").getByTestId("take-tile")).toHaveCount(1);
   await readsTakenIn();
-  /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
+  /* Then the unconfirmed one settles as failed: said so — no billing claim until the account's ledger names one — dismissable. */
   confirmed = true;
   await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
-  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
 import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
+import { OWN_TOOLS_FACT } from "@/lib/shell/business-own";
 import { isOwnerRunSuite, ownerRunBy } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
@@ -78,7 +79,9 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
               <span className="gx-where-name">{t.label}</span>
               <span className="gx-where-line">{t.line}</span>
               <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>
-                {ownerRun ? <><Glyph name="key" size={12} className="gx-owner-badge-key" />Run by {ownerRunBy(capability.ownerName)}</> : t.fact}
+                {ownerRun ? <><Glyph name="key" size={12} className="gx-owner-badge-key" />Run by {ownerRunBy(capability.ownerName)}</>
+                  /* A member's Business is Particl's own tools: Ads, whose figures the fact names, is the owner's. */
+                  : t.id === "business" && !capability.owner ? OWN_TOOLS_FACT : t.fact}
               </span>
             </button>
           );

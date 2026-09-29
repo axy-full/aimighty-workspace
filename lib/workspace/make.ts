@@ -10,12 +10,15 @@
  *
  * The money rules are the ones lib/workspace/takes.ts already states, kept
  * identical so the wall and Takes can never disagree: a failed or cancelled
- * render is not billed and says so, a render in flight carries no figure, and
+ * render says "not billed" only when a receipt or its provider confirms it
+ * (lib/errors.ts failureChargeWord), a render in flight carries no figure, and
  * a generation paid for by a connected account is not counted in this
  * workspace's credits.
  */
 
 import { engineLabel } from "./engines";
+import { failureChargeWord } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 
 export type MakeKind = "video" | "images" | "audio";
 
@@ -68,6 +71,8 @@ export type MakeSource = {
   /** Present when a connected account paid: not this workspace's credits. */
   providerCreditQuote?: unknown;
   storedUrl: string | null;
+  /** A failed take's outcome: the ledger's charge, or its provider's word on the workspace's own key. */
+  failure?: TakeFailure | null;
 };
 
 /** Newest first. Unfiled means no shot; the tab decides the kind. */
@@ -175,7 +180,7 @@ export type MakeCard = {
   prompt: string;
   /** "You · 12 min", or just the age when the render has no recorded author. */
   by: string;
-  /** "19 cr", "not billed" on a failure, or null while nothing has settled. */
+  /** "19 cr"; on a failure what is confirmed ("not billed", "refunded", "12 cr"), else null; null while nothing has settled. */
   cost: string | null;
   /** The ring goes over this card's well. */
   rendering: boolean;
@@ -196,7 +201,7 @@ export function makeCard(item: MakeSource, now: number): MakeCard {
     spec: specChip(item),
     prompt: str(item.prompt),
     by: item.authorName ? `${item.authorName} · ${age}` : age,
-    cost: failed ? "not billed" : settled === null ? null : `${n(settled)} cr`,
+    cost: failed ? failureChargeWord(item.failure) : settled === null ? null : `${n(settled)} cr`,
     rendering,
     failed,
     kind,

@@ -1,5 +1,7 @@
 import { GENJUTSU_LIMITS, GENJUTSU_MODELS, GENJUTSU_RESOLUTIONS, genjutsuVariantForModel, type GenjutsuVariant } from "@/lib/genjutsuTypes";
 import type { Generation } from "@/lib/jobs";
+import { failedChip } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { MediaIdentity } from "@/lib/genjutsuRequest";
 import type { DispatchRequest } from "@/lib/workspace/generate-submit";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -154,6 +156,8 @@ export type ViralTake = {
   /** Made earlier on the owner's connected account (read-only history). */
   account: boolean;
   status: TakeStatus; stage: TakeStage | null; cancelled: boolean; failedUnbilled: boolean; needs: number | null; reason: string | null;
+  /** A failed take: what happened, what the provider did with the charge, and the next step (lib/errors.ts), when on record. */
+  failure: TakeFailure | null; failureLine: string | null;
   /** Billed credits once settled; null in flight (the ledger has not settled it) and for account runs. */
   credits: number | null;
   /** The stored result, once it can be shown. */
@@ -177,6 +181,7 @@ export function viralTakes(entries: readonly LibraryEntry[], variant: GenjutsuVa
       id: g.id, variant: kind, resolution: typeof params.resolution === "string" ? params.resolution : "", prompt: typeof params.rawPrompt === "string" ? params.rawPrompt : g.prompt ?? "",
       refs, account: !genjutsuVariantForModel(g.model),
       status: t.status, stage: t.stage ?? null, cancelled: Boolean(t.cancelled), failedUnbilled: Boolean(t.failedUnbilled), needs: t.needs ?? null, reason: t.reason ?? null,
+      failure: t.failure ?? null, failureLine: t.failureLine ?? null,
       credits: t.credits, url: entry.media === "video" ? entry.url : null, createdAt: g.createdAt, createdBy: g.createdBy, generation: g,
     });
   }
@@ -185,14 +190,15 @@ export function viralTakes(entries: readonly LibraryEntry[], variant: GenjutsuVa
 export const takeDone = (take: Pick<ViralTake, "status">) => take.status !== "rendering" && take.status !== "held" && take.status !== "failed";
 export const takeInFlight = (take: Pick<ViralTake, "status">) => take.status === "rendering" || take.status === "held";
 /**
- * A take's state in words. A failed take says "not billed" only when the
- * ledger settled it at nothing (lib/workspace/takes.ts › failedUnbilled): the
- * provider's own outcome, never a blanket promise.
+ * A take's state in words. A failed take's chip says what became of the
+ * charge only when that is on record — Particl's ledger, or the provider's
+ * own word (lib/errors.ts failedChip): "Failed · not billed", "Failed ·
+ * refunded", else just "Failed". Never a blanket promise.
  */
-export function takeWords(take: Pick<ViralTake, "status" | "stage" | "cancelled" | "failedUnbilled" | "needs">): { label: string; tone: RunTone } {
+export function takeWords(take: Pick<ViralTake, "status" | "stage" | "cancelled" | "needs" | "failure">): { label: string; tone: RunTone } {
   if (take.status === "held") return { label: take.needs != null ? `Held · needs ${take.needs.toLocaleString("en-US")} cr` : "Held · needs credits", tone: "waiting" };
   if (take.status === "rendering") return take.stage === "queued" ? { label: "Queued", tone: "waiting" } : take.stage === "held" ? { label: "Held", tone: "waiting" } : { label: "Rendering", tone: "active" };
-  if (take.status === "failed") return take.cancelled ? { label: take.failedUnbilled ? "Cancelled · not billed" : "Cancelled", tone: "idle" } : { label: take.failedUnbilled ? "Failed · not billed" : "Failed", tone: "failed" };
+  if (take.status === "failed") return { label: failedChip(take.failure, take.cancelled), tone: take.cancelled ? "idle" : "failed" };
   return { label: "Done", tone: "done" };
 }
 /** Still waiting its turn at the provider, so it can be cancelled: a key take, by the person who sent it or an admin (the route decides). */

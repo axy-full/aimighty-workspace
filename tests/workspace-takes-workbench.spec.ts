@@ -21,7 +21,7 @@ function library(): LibraryRoute {
     generations: [
       generation({ id: "gen_approved", title: "Harbour at dusk", reviewState: "approved", creditsBilled: 18, version: 2 }),
       generation({ id: "gen_review", title: "Harbour at dusk", creditsBilled: 18, version: 1 }),
-      generation({ id: "gen_failed", title: "Pier wide", status: "failed", storedUrl: null, creditsBilled: 0, error: "Engine timed out" }),
+      generation({ id: "gen_failed", title: "Pier wide", status: "failed", storedUrl: null, creditsBilled: 0, error: "Engine timed out", failure: { provider: null, stage: null, code: "timeout", kind: "timeout", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } }),
       generation({ id: "gen_running", title: "Lighthouse turn", kind: "video", model: "dreamina-seedance-2-5-260628", status: "running", storedUrl: null, params: { duration: 5 } }),
     ],
     uploads: [

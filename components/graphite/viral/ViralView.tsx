@@ -327,7 +327,9 @@ function TakeRow({ take, now, cancel, send }: { take: ViralTake; now: number; ca
       <span className="vr-job-name" title={take.prompt || undefined}>{takeBrief(take)}</span>
       <span className="vr-status" data-tone={words.tone} data-testid="viral-take-status">{words.label}</span>
       <span className="cw-dim vr-job-meta">{takeMeta(take, now)}</span>
-      {take.reason && !done ? <span className="cw-dim vr-job-note" data-testid="viral-take-note">{take.reason}</span> : null}
+      {/* A failed take: why, what the provider did with the charge, and what to do (lib/errors.ts failureLine). */}
+      {take.status === "failed" && take.failureLine ? <span className="vr-job-note vr-job-fail" data-testid="viral-take-failure">{take.failureLine}</span>
+        : take.reason && !done ? <span className="cw-dim vr-job-note" data-testid="viral-take-note">{take.reason}</span> : null}
       {done ? (
         <button type="button" className="gx-hbtn vr-job-act" disabled={!take.url || send.opening === take.id} onClick={() => void send.sendTake(take)} data-testid="viral-take-open">{send.opening === take.id ? "Opening…" : "Open in Takes"}</button>
       ) : cancel ? (
@@ -411,6 +413,7 @@ function TakeCard({ take, now, opening, cancel, onRecreate, onCompare, onSend }:
       <span className="gx-asset-name">{VARIANT_NAME[take.variant]} · {take.resolution}</span>
       <span className="gx-asset-meta" title={take.prompt || undefined}>{[refs(take.refs), take.prompt.trim()].filter(Boolean).join(" · ")}</span>
       <span className="gx-asset-meta" title={new Date(take.createdAt).toLocaleString()}>{[take.account ? "Earlier, on the connected account" : null, take.credits != null && take.credits > 0 ? cr(take.credits) : null, when(take.createdAt, now)].filter(Boolean).join(" · ")}</span>
+      {take.status === "failed" && take.failureLine ? <span className="gx-asset-fail" data-testid="history-take-failure">{take.failureLine}</span> : null}
       {done ? (
         <div className="cw-sol-actions">
           <button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Recreate</button>

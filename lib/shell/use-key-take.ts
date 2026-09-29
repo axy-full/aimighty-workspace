@@ -45,12 +45,16 @@ export type KeyRun =
 export const KEY_ESTIMATE_LIFETIME_MS = 5 * 60_000;
 const NO_ESTIMATE = "The estimate could not be read. Nothing was sent.";
 
-/** A settled take's words, the Takes page's own (lib/workspace/takes.ts): failed and not billed only when the ledger says so. */
+/**
+ * A settled take's words, the Takes page's own (lib/workspace/takes.ts): what happened, what the provider did with
+ * the charge and the next step when that is on record (lib/errors.ts failureLine), else just that it failed and why.
+ */
 export function settledWords(generation: Generation): string {
   const [take] = projectTakes([{ origin: "generation", value: generation }]);
-  if (generation.status === "cancelled") return take.failedUnbilled ? "Cancelled · not billed." : "Cancelled.";
+  if (take.failureLine) return take.failureLine.replace(/[.!?]?$/, ".");
+  if (generation.status === "cancelled") return "Cancelled.";
   const why = take.reason ? ` ${take.reason.replace(/[.!?]?$/, ".")}` : "";
-  return take.failedUnbilled ? `Failed · not billed.${why}` : `Failed.${why}`;
+  return `Failed.${why}`;
 }
 
 export function useKeyTake(scope: string, projectId: string | null, slot: string) {

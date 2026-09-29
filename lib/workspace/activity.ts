@@ -11,6 +11,8 @@
  */
 
 import type { Plan } from "./plan-types";
+import { failureChargeWord } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import { formatCredits, type ActivityEntry, type EngineState } from "./run-engine";
 import { planFor } from "./plans";
 
@@ -24,6 +26,8 @@ export type ActivityGeneration = {
   creditsBilled: number | null;
   createdAt: number;
   updatedAt: number;
+  /** A failed take's outcome: the ledger's charge, or its provider's word on the workspace's own key. */
+  failure?: TakeFailure | null;
 };
 
 export type ActivityPipelineRun = {
@@ -79,7 +83,8 @@ export function activityFromJobs(jobs: ActivityGeneration[], now: number): Activ
               : `Rendering ${name}`;
     const meta = [
       ago(job.updatedAt, now),
-      job.status === "failed" ? "not billed" : cost,
+      /* A failed take: only what the ledger or its provider confirmed. */
+      job.status === "failed" ? failureChargeWord(job.failure) : cost,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -121,7 +126,8 @@ export function activityFromAgentJobs(jobs: ActivityAgentJob[], now: number): Ac
     const meta = [
       ago(at, now),
       job.status === "succeeded" && job.credits != null ? formatCredits(job.credits, "cr") : null,
-      job.status === "failed" ? "not billed" : null,
+      /* A failed run that was charged says so; a zero here may be the workspace's own key, so no claim either way. */
+      job.status === "failed" && job.credits != null && job.credits > 0 ? formatCredits(job.credits, "cr") : null,
     ]
       .filter(Boolean)
       .join(" · ");

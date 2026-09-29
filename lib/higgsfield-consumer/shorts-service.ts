@@ -13,6 +13,7 @@
  * collected or reported failed.
  */
 import { createHash } from "node:crypto";
+import { accountFailure } from "@/lib/providerOutcome";
 import { db } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
@@ -139,6 +140,8 @@ async function presentShorts(job: ConsumerJob, observedAt: number, progress?: { 
     ...(progress ? { progress } : {}),
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    /* What the account said, and what its own ledger shows for the charge (its credits, never converted). */
+    failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };

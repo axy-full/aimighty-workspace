@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import {
-  ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_SUITES, isOwnerRunPage,
-  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunSuite, ownerBadgeNote, ownerRunBy,
+  ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_PAGES, OWNER_RUN_SUITES,
+  alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunPage, isOwnerRunSuite, ownerBadgeNote, ownerRunBy,
   ownerRunEyebrow, ownerRunTitle, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
+import { OWN_PAGES } from "../../lib/shell/business-own";
 import { SHELL_SUITES } from "../../lib/shell/ia";
 import { INITIAL_COMPOSER, activeModel, composerBlock, workspaceModels, type EngineRow } from "../../lib/workspace/composer";
 import { rowPrice } from "../../lib/workspace/model-picker";
@@ -252,14 +253,20 @@ test("a member's words: who runs the provider-account tools by name, what runs t
     for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b/i);
   }
   /* No suite is the owner's as a whole any more: Viral and Business › Image ads run on Particl's API key for every member,
-     and the Business pages still on the account (Ads, Setup) are the owner's page by page. */
+     Business's own tools are everyone's, and the Business pages still on the account (Ads, Setup) are the owner's page by page. */
   expect(OWNER_RUN_SUITES).toEqual([]);
-  expect(isOwnerRunSuite("business") || isOwnerRunSuite("viral")).toBe(false);
-  expect(isOwnerRunPage("business", "ads") && isOwnerRunPage("business", "setup")).toBe(true);
-  expect(isOwnerRunPage("business", "dtc") || isOwnerRunPage("viral", "motion") || isOwnerRunPage("viral", "history") || isOwnerRunPage(null, "ads")).toBe(false);
-  expect(isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
-  /* The state layer's suites behind them are exactly the shell's owner-run suites. */
+  expect(isOwnerRunSuite("business") || isOwnerRunSuite("viral") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
+  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "setup"] });
+  for (const page of ["ads", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
+  for (const page of ["dtc", ...OWN_PAGES]) expect(isOwnerRunPage("business", page), page).toBe(false);
+  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunPage("viral", page), page).toBe(false);
+  expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
+  /* Every owner-run page names a page the suite really has. */
+  for (const [suite, pages] of Object.entries(OWNER_RUN_PAGES)) for (const page of pages) expect(SHELL_SUITES.find((s) => s.id === suite)?.pages.some((p) => p.id === page), `${suite}/${page}`).toBe(true);
+  /* The state layer's suites behind whole owner-run suites: none. (The inspector marks every plan of such a suite the
+     owner's, so Business's state suite is not one: Image ads and its own tools are every member's.) */
   expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id)).map((suite) => suite.legacy).sort()).toEqual([...OWNER_RUN_LEGACY_SUITES].sort());
+  expect(OWNER_RUN_LEGACY_SUITES).toEqual([]);
 });
 
 test("the alternative is priced exactly as Gen's sheet prices it: the composer's own default engine, at the project's aspect, whole credits", () => {

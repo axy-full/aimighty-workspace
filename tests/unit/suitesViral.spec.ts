@@ -144,15 +144,24 @@ test("History is the project's transform takes from the Library — the key's an
   expect(transformVariant("marketing_studio_video", { task: "genjutsu" })).toBeNull();
 });
 
-test("a take's state is in words, and a failed one says not billed only when the ledger settled it at nothing", () => {
+test("a take's state is in words, and a failed one says what became of the charge only when that is on record", () => {
   const words = (g: Generation) => takeWords(viralTakes([entry(g)])[0]).label;
   expect(words(keyTake("q", { status: "queued" }))).toBe("Queued");
   expect(words(keyTake("r", { status: "running" }))).toBe("Rendering");
   expect(words(keyTake("h", { status: "held", params: keyParams({ held: { why: "credits", needs: 22 } }) }))).toBe("Held · needs 22 cr");
   expect(words(keyTake("d", { status: "succeeded", creditsBilled: 22 }))).toBe("Done");
-  expect(words(keyTake("f0", { status: "failed", creditsBilled: 0, costUsd: 0, error: "The connected account could not complete this generation." }))).toBe("Failed · not billed");
-  expect(words(keyTake("f1", { status: "failed", creditsBilled: 22, error: "Could not store the original." }))).toBe("Failed");
-  expect(words(keyTake("c", { status: "cancelled", creditsBilled: 0 }))).toBe("Cancelled · not billed");
+  /* Particl's own ledger (lib/errors.ts failedChip): settled at nothing, settled at a charge, or not read — then just "Failed". */
+  const failure = (charge: { credits: number; settled: boolean } | null) => ({ provider: "higgsfield" as const, stage: "run" as const, code: "failed", kind: "provider_error" as const, message: null, billing: null, payer: "platform" as const, charge });
+  const unbilled = keyTake("f0", { status: "failed", creditsBilled: 0, failure: failure({ credits: 0, settled: true }) });
+  expect(words(unbilled)).toBe("Failed · not billed");
+  expect(words(keyTake("f1", { status: "failed", creditsBilled: 22, failure: failure({ credits: 22, settled: true }) }))).toBe("Failed · charged");
+  /* A zero nobody confirmed is never called free. */
+  expect(words(keyTake("f2", { status: "failed", creditsBilled: 0, costUsd: 0, error: "Could not store the original." }))).toBe("Failed");
+  expect(words(keyTake("c", { status: "cancelled", creditsBilled: 0, failure: failure({ credits: 0, settled: true }) }))).toBe("Cancelled · not billed");
+  /* The failed take's line: what happened, the charge, and the next step (lib/errors.ts failureLine), as the Takes page reads it. */
+  const [take] = viralTakes([entry(unbilled)]);
+  expect(take.failureLine).toBe(projectTakes([{ origin: "generation", value: unbilled }])[0].failureLine);
+  expect(take.failureLine).toMatch(/not billed/i);
 });
 
 test("Cancel is offered only for a key take still waiting its turn, to the person who sent it or an admin", () => {

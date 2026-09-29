@@ -82,6 +82,14 @@ test("costs reach the assistant in the unit the workspace pays in, and a missing
   /* A connected take quoted in the account's own credits carries neither figure: no cost line at all. */
   expect(await runTool("wait_for_render", { id: "g1" }, jobs({ ...credits, creditsBilled: null }) as never, "")).not.toContain("Cost");
   expect(await runTool("wait_for_render", { id: "g1" }, jobs({ ...credits, costUsd: 1.25, creditsBilled: null }) as never, "")).toContain("Cost $1.25.");
+  /* A failed take's figure is its receipt: settled, held, or — with none — no figure at all, never a "0 cr" it was not billed. */
+  const failed = { ...credits, status: "failed", creditsBilled: 0 };
+  expect(await runTool("get_render", { id: "g1" }, jobs({ ...failed, failure: { charge: { credits: 0, settled: true } } }) as never, "")).toContain("· failed · 0 cr");
+  expect(await runTool("get_render", { id: "g1" }, jobs({ ...failed, failure: { charge: { credits: 12, settled: false } } }) as never, "")).toContain("· failed · 12 cr held");
+  expect(await runTool("get_render", { id: "g1" }, jobs({ ...failed, failure: { charge: { credits: 12, settled: true } } }) as never, "")).toContain("· failed · 12 cr");
+  const unconfirmed = await runTool("get_render", { id: "g1" }, jobs({ ...failed, failure: { charge: null } }) as never, "");
+  expect(unconfirmed).toContain("g1 · failed");
+  expect(unconfirmed).not.toMatch(/\d+ cr|\$/);
 
   const projects = [{ id: "p1", name: "Coastal light study", genCount: 2, spend: 3.1, credits: 90 }];
   const listed = caller(projects as never);
