@@ -411,7 +411,7 @@ test("a teammate sees the workspace's skill and runs it, but never another perso
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(240_000);
   const phone = PHONES.includes(info.project.name);
-  const owner = await browser.newContext({ baseURL: info.project.use.baseURL });
+  const owner = await browser.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551" });
   try {
     const joined = await joinLocallyAsMember(owner.request, page.request);
     const ownerPage = await owner.newPage();
