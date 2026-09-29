@@ -278,27 +278,39 @@ test("two reservations of one run that each fit but not together: exactly one la
 
 /* ── The per-job line: the workspace's own approval line ──────────────── */
 
-test("the per-job line is the workspace's cost approval line (the owner's seam unset); a line lowered today wins; the card suggests the same limit", async () => {
+test("the per-job line is the platform's approval line (SOW guardrail 4) at the price of a credit — the owner's seam unset, a workspace's own shot cap does not move it — and the card suggests the same limit", async () => {
   const limits = await import("../../lib/workbench/rig-agent-limits");
-  const { cleanShotCap } = await import("../../lib/approvalRule");
+  const { jobApprovalLineCredits, JOB_APPROVAL_LINE_USD } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
   expect(limits.RIG_AGENT_JOB_CEILING_CREDITS).toBeNull();
+  /* One line, a job's price, counted in credits at whatever a credit costs, in whole tenths rounded down. */
+  for (const perCredit of [0.1, 0.8, 0.125, 0.3]) {
+    const line = jobApprovalLineCredits(perCredit);
+    expect(line * perCredit).toBeLessThanOrEqual(JOB_APPROVAL_LINE_USD + 1e-9);
+    expect((line + 0.1) * perCredit).toBeGreaterThan(JOB_APPROVAL_LINE_USD);
+    expect(Math.round(line * 10)).toBe(line * 10);
+  }
+  expect(jobApprovalLineCredits(0.8)).toBe(JOB_APPROVAL_LINE_USD / 0.8);
+  expect(jobApprovalLineCredits(0)).toBe(0);
   expect(limits.effectiveJobCeiling(null, 17)).toBe(17);
   expect(limits.effectiveJobCeiling(30, 17)).toBe(17);
   expect(limits.effectiveJobCeiling(12, 17)).toBe(12);
   await inRun("line", async () => {
-    const { setSetting, getSetting } = await import("../../lib/settings");
+    const { setSetting } = await import("../../lib/settings");
     const agent = await import("../../lib/workbench/rig-agent");
-    /* Unset, the line is the approval rule's own default, read through the same cleaning. */
-    expect(await limits.rigJobCeiling()).toBe(cleanShotCap(await getSetting("shotCapCredits")));
+    const line = jobApprovalLineCredits(creditUsd());
+    expect(await limits.rigJobCeiling()).toBe(line);
+    expect(await limits.suggestedRunLimit()).toBe(line);
+    /* A workspace's per-shot cap is its own rule (enforced at admission): it does not move Atomik's line. */
     await setSetting("shotCapCredits", "17", OWNER);
-    expect(await limits.rigJobCeiling()).toBe(17);
-    expect(await limits.suggestedRunLimit()).toBe(17);
+    expect(await limits.rigJobCeiling()).toBe(line);
     const state = await agent.rigAgentState("prod-1", OWNER, "draft-1");
-    expect(state.ask).toMatchObject({ limit: 17, jobCeiling: 17 });
+    expect(state.ask).toMatchObject({ limit: line, jobCeiling: line });
     /* Planning's price is shown before asking, in credits. */
     expect(state.ask!.planning).toBeGreaterThan(0);
-    await setSetting("shotCapCredits", "nonsense", OWNER);
-    expect(await limits.rigJobCeiling()).toBe(cleanShotCap("nonsense"));
+    /* The run records the line in force when its limit was approved. */
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "Two shots.", limit: 500, mode: "auto" });
+    expect(asked.money).toMatchObject({ mode: "auto", jobCeiling: line });
   });
 });
 
@@ -480,40 +492,45 @@ test("the durable request key is saved on the step before anything is sent, and 
 test("Auto: a render at or under the per-job line runs without a tap; one over it asks; a line lowered mid-run makes the next render ask", async () => {
   await inRun("auto", async (ws) => {
     const agent = await import("../../lib/workbench/rig-agent");
-    const { setSetting } = await import("../../lib/settings");
-    const cheap = 0.3, dear = 2.4;
-    const line = await credits(cheap);
-    await setSetting("shotCapCredits", String(line), OWNER);
-    const r = renders(ws, (shot) => (shot === "2" ? dear : cheap));
-    const deps = await depsFor(ws, r);
-    const runId = await approvedRun(deps, { limit: 500, mode: "auto", shots: 3 });
+    const { rigJobCeiling } = await import("../../lib/workbench/rig-agent-limits");
+    const { creditUsd, marginFor } = await import("../../lib/creditTerms");
+    const line = await rigJobCeiling();
+    /* Shot 1 costs exactly the line; shot 2 half as much again; shot 3 the line once more. */
+    const atLine = (line * creditUsd()) / marginFor("mock"), over = atLine * 1.5;
+    expect(await credits(atLine)).toBe(line);
+    expect(await credits(over)).toBeGreaterThan(line);
+    const r = renders(ws, (shot) => (shot === "2" ? over : atLine));
+    let today = line;
+    const deps = await depsFor(ws, r, { ceiling: async () => today });
+    const runId = await approvedRun(deps, { limit: 5000, mode: "auto", shots: 3 });
     expect((await view()).money).toMatchObject({ mode: "auto", jobCeiling: line });
     /* Shot 1 costs exactly the line: it goes on its own. */
     const tick = await agent.advanceRigAgentRun(runId, deps);
     expect(tick.state).toBe("running");
     expect(r.calls).toHaveLength(1);
-    await settleTake((await renderRows())[0].id, "succeeded", cheap);
+    await settleTake((await renderRows())[0].id, "succeeded", atLine);
     /* Shot 2 costs more than the line: it asks, and nothing is sent. */
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
-    expect(run.reason).toBe(`02 — The turn is about ${creditFigure(await credits(dear))} cr, over the ${creditFigure(line)} cr a render may cost without asking. Render it, skip it, or stop.`);
+    expect(run.reason).toBe(`02 — The turn is about ${creditFigure(await credits(over))} cr, over the ${creditFigure(line)} cr a render may cost without asking. Render it, skip it, or stop.`);
     expect(run.paid[2]).toMatchObject({ state: "waiting", canRender: true });
     expect(r.calls).toHaveLength(1);
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[2].seq, fingerprint: run.paid[2].fingerprint, userId: OWNER });
     await agent.advanceRigAgentRun(runId, deps);
     expect(r.calls).toHaveLength(2);
-    await settleTake((await renderRows())[1].id, "succeeded", dear);
-    /* The workspace lowers its line mid-run: shot 3, under the old line, now asks too. */
-    await setSetting("shotCapCredits", String(Math.max(0.1, line - 1)), OWNER);
+    await settleTake((await renderRows())[1].id, "succeeded", over);
+    /* The line is lower today than when the limit was approved: shot 3, at the old line, now asks too. */
+    today = line - 0.1;
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     run = await view();
     expect(run.paid[4]).toMatchObject({ state: "waiting", canRender: true });
+    expect(run.money!.jobCeiling).toBe(line);
     expect(r.calls).toHaveLength(2);
     /* Skipped: nothing is charged, and the run finishes. */
     await agent.skipRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[4].seq, userId: OWNER });
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
     expect((await view()).paid[4]).toMatchObject({ state: "skipped", charged: null });
-  });
+  }, 20_000);
 });
 
 /* ── The limit: a render that would pass it pauses the run ────────────── */
