@@ -112,13 +112,11 @@ async function ask(page: Page, surface: Locator, brief: string, production: stri
 /** Where the checkpoint's Continue is: the rail's footer on a desktop, the checkpoint card on a phone. */
 const checkpointOf = (page: Page) => (phone(page) ? page.getByRole("group", { name: "Checkpoint", exact: true }) : surfaceOf(page));
 
-/** The plan's rows, listed on screen. A checkpoint arriving folds a phone's sheet to compact: it is opened again, as a person would. */
+/** The plan's rows, listed on screen. A checkpoint arriving folds the rail (and a phone's sheet) to compact, first: it is expanded again, as a person would. */
 async function planRows(page: Page, surface: Locator) {
-  if (phone(page)) {
-    await expect(checkpointOf(page).getByRole("button", { name: /^Continue/ })).toBeVisible({ timeout: 60_000 });
-    const expand = surface.getByRole("button", { name: /^Expand/ });
-    if (await expand.isVisible()) await expand.click();
-  }
+  await expect(checkpointOf(page).getByRole("button", { name: /^Continue/ }).first()).toBeVisible({ timeout: 60_000 });
+  const expand = surface.getByRole("button", { name: /^Expand/ });
+  if (await expand.isVisible()) await expand.click();
   return page.locator("[data-library-step]").filter({ visible: true });
 }
 
@@ -141,9 +139,16 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   /* Until its own checkpoint quote, the still reads as the estimate it is. */
   await expect(still).toContainText(/about \d+ cr/);
   await expect(page.getByText("priced at checkpoint", { exact: true }).filter({ visible: true })).toHaveCount(0);
-  /* A price is never clipped: it keeps its own column whatever the title does. */
-  for (const row of await rows.all())
+  /* Each row is really on screen once scrolled to (never squeezed or covered), and its price is never clipped. */
+  for (const row of await rows.all()) {
+    await row.scrollIntoViewIfNeeded();
+    expect(await row.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return box.height >= 40 && !!hit && el.contains(hit);
+    })).toBe(true);
     expect(await row.evaluate((el) => { const price = el.lastElementChild as HTMLElement; return price.scrollWidth - price.clientWidth; })).toBeLessThanOrEqual(1);
+  }
   expect(await noSideways(page)).toBeLessThanOrEqual(1);
 
   /* The checkpoint is the transform: priced by the route that will run it, and it says what it works from. */

@@ -72,7 +72,8 @@ export default function AtomikSheet() {
             </div>
           ))}
           {a.plan.length > 0 && (
-            <div className="overflow-hidden rounded-card border border-border-mid bg-card" role="list" aria-label="Plan">
+            /* shrink-0: clipped for its corners, the list would otherwise be squeezed to nothing once the conversation fills the sheet. */
+            <div className="shrink-0 overflow-hidden rounded-card border border-border-mid bg-card" role="list" aria-label="Plan">
               {a.plan.map((s, i) => {
                 const at = step?.id === s.id;
                 return (

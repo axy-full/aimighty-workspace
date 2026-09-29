@@ -214,7 +214,6 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
         {a.totals.underCap !== null && <> · {a.fmt(a.totals.underCap)} under cap</>}
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
       </Mono>
-      {inputs && <span className="text-[12.5px] leading-[1.45] text-ink-body">{inputs}</span>}
       {checkpoint && (
         <Button variant="primary" placement="rail" cost={a.credits(checkpoint) ?? undefined} busy={a.busy} busyLabel="Starting…" disabled={!a.approvable(checkpoint)} onClick={() => a.approve(checkpoint)}>
           Continue · {checkpoint.title}
@@ -239,6 +238,8 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
       {c.kind === "planning" && <CurrentCard placement="rail" />}
       {c.kind === "question" && <CurrentCard placement="rail" />}
       {a.plan.length > 0 && <PlanCard steps={a.plan} checkpoint={checkpoint} />}
+      {/* In the body, not the pinned footer: at a short height the footer already fills the rail. */}
+      {inputs && <span className="text-[12.5px] leading-[1.45] text-ink-body">{inputs}</span>}
       {a.error && <span className="text-[12.5px] leading-[1.45] text-ink-body">{a.error}</span>}
     </Rail>
   );
