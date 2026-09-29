@@ -6,6 +6,10 @@ import { randomUUID } from "node:crypto";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { TranscriptionDeps } from "../../lib/transcription";
+import { creditsFigure, fromDeci, toDeci } from "../../lib/creditTerms";
+
+/** A tenth of a credit less: the smallest step a charge, a ceiling or a balance takes. */
+const less = (credits: number) => fromDeci(toDeci(credits) - 1);
 
 /**
  * The price a person approves is what is reserved and charged for it. A Grok
@@ -134,11 +138,11 @@ test("a transcription is reserved and charged the credits its quote showed, its 
     const quote = await transcribe({ sourceUploadId: "up_line", diarize: true, quoteOnly: true }, USER);
     expect(quote.status).toBe(200);
     const shown = Number(quote.body.estimatedCredits);
-    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeGreaterThanOrEqual(0.2);
     const body = { sourceUploadId: "up_line", diarize: true, maxCredits: shown };
 
-    /* A ceiling a credit under the quote is refused before anything is reserved, with the quote. */
-    const under = await transcribeOnce({ ...body, maxCredits: shown - 1 }, "stt-terms-under-0001", await provider());
+    /* A ceiling a tenth under the quote (credits are charged in tenths) is refused before anything is reserved, with the quote. */
+    const under = await transcribeOnce({ ...body, maxCredits: less(shown) }, "stt-terms-under-0001", await provider());
     expect(under.status).toBe(409);
     expect(under.body.estimatedCredits).toBe(shown);
     expect(await meterRow(transcriptionEventId(ws.id, { userId: USER, key: "stt-terms-under-0001" }))).toBeNull();
@@ -155,7 +159,7 @@ test("a transcription is reserved and charged the credits its quote showed, its 
     return shown;
   });
 
-  /* The credit wall asks for the quote: exactly that balance is enough, and a credit less is refused, naming it. */
+  /* The credit wall asks for the quote: exactly that balance is enough, and a tenth less is refused, naming it. */
   const exact = await transcriptionWorkspace("stt-exact", shown);
   await runInTenant(exact, async () => {
     const paid = await transcribeOnce({ sourceUploadId: "up_line", diarize: true, maxCredits: shown }, "stt-terms-exact-0001", await provider());
@@ -163,14 +167,14 @@ test("a transcription is reserved and charged the credits its quote showed, its 
     expect(paid.body.credits).toBe(shown);
   });
   expect(await balance(exact.id)).toBe(0);
-  const short = await transcriptionWorkspace("stt-short", shown - 1);
+  const short = await transcriptionWorkspace("stt-short", less(shown));
   await runInTenant(short, async () => {
     const refused = await transcribeOnce({ sourceUploadId: "up_line", diarize: true, maxCredits: shown }, "stt-terms-short-0001", await provider());
     expect(refused.status).toBe(402);
-    expect(String(refused.body.error)).toContain(`this needs ${shown}, ${shown - 1} left`);
+    expect(String(refused.body.error)).toContain(`this needs ${creditsFigure(shown)}, ${creditsFigure(less(shown))} left`);
     expect(await meterRow(transcriptionEventId(short.id, { userId: USER, key: "stt-terms-short-0001" }))).toBeNull();
   });
-  expect(await balance(short.id)).toBe(shown - 1);
+  expect(await balance(short.id)).toBe(less(shown));
 });
 
 /* ── Grok Voice (lib/audioAdmission.ts, speech on grok-tts) ── */
@@ -198,11 +202,11 @@ test("a Grok Voice line is reserved the credits its quote and its prepared quote
     expect(quote.status).toBe(200);
     expect(quote.body.unit).toBe("cr");
     const shown = Number(quote.body.estimatedCredits);
-    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeGreaterThanOrEqual(0.2);
     expect(quote.body.price).toBe(shown);
 
-    /* A ceiling a credit under the quote is refused before anything is filed. */
-    const under = await executeAudioAdmission(speech({ maxCredits: shown - 1 }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-under-1" } });
+    /* A ceiling a tenth under the quote is refused before anything is filed. */
+    const under = await executeAudioAdmission(speech({ maxCredits: less(shown) }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-under-1" } });
     expect(under.status).toBe(409);
 
     /* At the quote: reserved at it. */
@@ -211,11 +215,11 @@ test("a Grok Voice line is reserved the credits its quote and its prepared quote
     expect(admitted.body).toMatchObject({ status: "running", estimatedCredits: shown });
     expect(await meterRow(String(admitted.body.id))).toEqual({ status: "running", credits: shown });
 
-    /* The production's cap asks for the quote: a cap of exactly it admits the line, a credit less refuses it before it is filed. */
-    await projects([["p_exact", shown], ["p_under", shown - 1]]);
+    /* The production's cap asks for the quote: a cap of exactly it admits the line, a tenth less refuses it before it is filed. */
+    await projects([["p_exact", shown], ["p_under", less(shown)]]);
     const capped = await executeAudioAdmission(speech({ maxCredits: shown, projectId: "p_under" }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-cap-under-1" } });
     expect(capped.status).toBe(409);
-    expect(String(capped.body.error)).toContain(`this needs ${shown.toLocaleString("en-US")} cr`);
+    expect(String(capped.body.error)).toContain(`this needs ${creditsFigure(shown)} cr`);
     const fits = await executeAudioAdmission(speech({ maxCredits: shown, projectId: "p_exact" }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-cap-exact-1" } });
     expect(fits.status).toBe(200);
     expect(await meterRow(String(fits.body.id))).toEqual({ status: "running", credits: shown });
@@ -235,7 +239,7 @@ test("a Grok Voice line is reserved the credits its quote and its prepared quote
     expect(await meterRow(String(admitted.body.id))).toEqual({ status: "running", credits: shown });
   }, { user: actor.user });
 
-  /* The credit wall asks for the quote: exactly that balance is reserved, a credit less is held for credits with nothing reserved. */
+  /* The credit wall asks for the quote: exactly that balance is reserved, a tenth less is held for credits with nothing reserved. */
   const exact = await workspace("voice-exact", shown);
   await runInTenant(exact, async () => {
     const admitted = await executeAudioAdmission(speech({ maxCredits: shown }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-exact-1" } });
@@ -244,12 +248,12 @@ test("a Grok Voice line is reserved the credits its quote and its prepared quote
     expect(await meterRow(String(admitted.body.id))).toEqual({ status: "running", credits: shown });
   }, { user: actor.user });
   expect(await balance(exact.id)).toBe(0);
-  const short = await workspace("voice-short", shown - 1);
+  const short = await workspace("voice-short", less(shown));
   await runInTenant(short, async () => {
     const held = await executeAudioAdmission(speech({ maxCredits: shown }), actor, { ...options, requestClaim: { userId: USER, key: "voice-terms-short-1" } });
     expect(held.status).toBe(202);
     expect(held.body).toMatchObject({ status: "held", held: true, needs: shown });
     expect(await meterRow(String(held.body.id))).toBeNull();
   }, { user: actor.user });
-  expect(await balance(short.id)).toBe(shown - 1);
+  expect(await balance(short.id)).toBe(less(shown));
 });
