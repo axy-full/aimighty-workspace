@@ -89,7 +89,7 @@ test("a Business job is remembered per project and composer, and a status read s
   expect(settledState(job("accepted")).phase).toBe("running");
   expect(settledState(job("uncertain")).phase).toBe("running");
   expect(settledState(job("completed")).phase).toBe("done");
-  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
+  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("didn't say if it charged") });
   /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
   expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
   expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();
@@ -162,7 +162,7 @@ test("a Viral submit whose reply was lost follows the account: listed as taken, 
   const lost: ViralRun<J> = { phase: "failed", job: { id: "j", status: "quoted" }, error: "The connected account could not complete this request." };
   expect(runAfterStatus(lost, { id: "j", status: "accepted" })).toEqual({ phase: "running", job: { id: "j", status: "accepted" } });
   expect(runAfterStatus({ phase: "running", job: { id: "j", status: "accepted" } }, { id: "j", status: "completed" }).phase).toBe("done");
-  expect(runAfterStatus({ phase: "running", job: { id: "j", status: "accepted" } }, { id: "j", status: "failed" })).toMatchObject({ phase: "failed", error: expect.stringContaining("not billed") });
+  expect(runAfterStatus({ phase: "running", job: { id: "j", status: "accepted" } }, { id: "j", status: "failed" })).toMatchObject({ phase: "failed", error: expect.stringContaining("didn't say if it charged") });
   /* Another listed job never takes over the composer, nor does anything replace a finished or idle one. */
   expect(runAfterStatus(lost, { id: "other", status: "completed" })).toBe(lost);
   const done: ViralRun<J> = { phase: "done", job: { id: "j", status: "completed" } };

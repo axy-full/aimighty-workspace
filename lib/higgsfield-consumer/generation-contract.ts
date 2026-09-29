@@ -209,6 +209,39 @@ export function consumerGenerationFailureResult(
   if (g.results != null) return null;
   return String(g.status);
 }
+/**
+ * The account's own words for a job it ended without a result, when the
+ * same qualified envelope carries any: `generation.error` (a string, or an
+ * object with a message) or `generation.message`. Inert text, bounded by
+ * the caller (lib/providerOutcome.ts providerText); never an instruction.
+ */
+export function consumerGenerationFailureWords(
+  value: unknown,
+  jobId: string,
+  params: ConsumerGenerationParams,
+  type: ConnectedOutputType,
+): unknown {
+  const g = evidence(value, jobId, params, type);
+  if (!g) return null;
+  if (typeof g.error === "string") return g.error;
+  if (record(g.error) && typeof g.error.message === "string") return g.error.message;
+  return typeof g.message === "string" ? g.message : null;
+}
+
+/**
+ * The account's reason for refusing one index of a batch (its entry's
+ * `error`: a string, or an object with a code and message), or null.
+ */
+export function consumerBatchRefusal(value: unknown, index: number): { code: string | null; message: unknown } | null {
+  if (!record(value)) return null;
+  const list = [value.jobs, value.results, value.requests].find(Array.isArray) as unknown[] | undefined;
+  const entry = list?.find((item) => record(item) && item.index === index);
+  if (!record(entry)) return null;
+  if (typeof entry.error === "string") return { code: null, message: entry.error };
+  if (record(entry.error)) return { code: typeof entry.error.code === "string" ? entry.error.code : null, message: entry.error.message ?? null };
+  return null;
+}
+
 /** What the collector must store for each output type. */
 export const GENERATION_OUTPUT_KIND: Record<ConnectedOutputType, "image" | "video" | "audio" | "model"> = {
   image: "image",

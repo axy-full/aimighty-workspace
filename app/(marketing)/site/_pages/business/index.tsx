@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import SitePage from "@/components/marketing/SitePage";
-import { Amber, Fact, Grid, Group, Note, Section, SuiteHeader, Window } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { Amber, Fact, Grid, Group, Note, Section, SuiteHeader } from "@/components/marketing/ui";
+import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
   title: "Business Suite",
@@ -35,16 +35,14 @@ const GROUPS: { tag: string; note?: string; rows: Row[] }[] = [
     { name: "Presenters", chip: "6 max", desc: "Up to six cast images, or a locked identity from Production." },
     { name: "Custom presenter", chip: "reusable", desc: "Describe a new presenter; the portrait goes through generation review and becomes a reusable cast reference." },
   ] },
-  { tag: "Message & format", note: "templates from the connected catalogue", rows: [
+  { tag: "Message & format", rows: [
     { name: "Hooks", chip: "12", desc: "Twelve opening lines per campaign, written against the brief." },
     { name: "Formats", chip: "9", desc: "Nine formats, from UGC review, tutorial and unboxing to CGI product, poster and motion graphic." },
     { name: "Presets", desc: "Ads presets for image variants, read live." },
-    { name: "Templates", desc: "The connected account’s template catalogue, cached for an hour per connection." },
     { name: "Aspect & quality", chip: "4k", desc: "1k, 2k or 4k across the documented ratios." },
   ] },
   { tag: "Variants & output", rows: [
     { name: "Variants", chip: "100 max", desc: "Up to a hundred bindings; each one is a generation node." },
-    { name: "Create with template", desc: "Approved before it runs, filed with the campaign takes." },
     { name: "Reference ad", chip: "reference", desc: "Start from a video ad you own and adapt its direction to the variant." },
     { name: "Design", chip: "layers", desc: "Editable text, image and shape layers, exported as a full-size PNG original." },
     { name: "Video ads", chip: "engine-backed", desc: "Campaign video through the project’s configured engines." },
@@ -70,12 +68,6 @@ export default function BusinessPage() {
       <Section id="business-studio" panel label="Marketing Studio">
         <Grid col={180} style={{ gap: 10 }}>
           {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
-        </Grid>
-        <Grid col={400} style={{ gap: 20 }}>
-          <Window path="particl.app / business / ads" src={shot("business-ads-marketing-studio")}
-            alt="Business, Ads: the Marketing Studio video ad composer" width={924} height={540} />
-          <Window path="particl.app / business / image ads" src={shot("business-dtc-image-ads")}
-            alt="Business, Image ads: the DTC Ads image composer" width={924} height={540} />
         </Grid>
         <Grid col={270} style={{ alignItems: "start" }}>
           {GROUPS.map((group) => (

@@ -154,7 +154,7 @@ test("a run cursor is one opaque value that round-trips and refuses anything els
 
 test("every status reads as words, never the raw code", () => {
   expect(Object.fromEntries(Object.entries(RUN_STATUS).map(([k, v]) => [k, v.label]))).toEqual({
-    quoted: "Estimate", dispatching: "Queued", accepted: "Rendering", uncertain: "Checking", failed: "Failed · not billed", completed: "Done",
+    quoted: "Estimate", dispatching: "Queued", accepted: "Rendering", uncertain: "Checking", failed: "Failed", completed: "Done",
   });
   expect(runStatus("accepted")).toEqual({ label: "Rendering", tone: "active" });
   expect(runStatus("completed").tone).toBe("done");
@@ -165,12 +165,17 @@ test("every status reads as words, never the raw code", () => {
   expect(["quoted", "failed", "completed"].some(runInFlight)).toBe(false);
 });
 
-test("a failed run says whether it was billed, as Gen and Business do", () => {
-  /* The account refused it: not billed. It finished, but its result could not be kept: it may have been, and its receipt is saved. */
-  expect(runStatus("failed", "provider_failed")).toEqual({ label: "Failed · not billed", tone: "failed" });
+test("a failed run says what the account's own ledger shows for its charge, as Gen and Business do", () => {
+  /* The account failed it: refunded or charged only once its ledger names the job. It finished, but its result could not be kept: it may have been billed, and its receipt is saved. */
+  expect(runStatus("failed", "provider_failed")).toEqual({ label: "Failed", tone: "failed" });
+  const refunded = { provider: "higgsfield_account" as const, stage: "run" as const, code: "nsfw", kind: "content_filter" as const, message: null, payer: "account" as const,
+    billing: { state: "refunded" as const, amount: 12, unit: "higgsfield_credits" as const, basis: "hf-ledger" as const } };
+  expect(runStatus("failed", "provider_failed", refunded)).toEqual({ label: "Failed · refunded", tone: "failed" });
   expect(runStatus("failed", "invalid_result")).toEqual({ label: "Not kept · receipt saved", tone: "failed" });
   expect(runStatus("completed", "invalid_result").label).toBe("Done");
-  expect(viralFailure({ failureCode: null })).toContain("not billed");
+  expect(viralFailure({ failureCode: null })).toContain("didn't say if it charged");
+  expect(viralFailure({ failureCode: null })).not.toContain("not billed");
+  expect(viralFailure({ failureCode: "provider_failed", failure: refunded })).toContain("Higgsfield refunded 12 credits");
   expect(viralFailure({ failureCode: "invalid_result" })).toContain("receipt is saved");
   expect(viralFailure({ failureCode: "invalid_result" })).not.toContain("not billed");
   const running: ViralRun<{ id: string; status: string; failureCode?: string | null }> = { phase: "running", job: { id: "r", status: "accepted" } };

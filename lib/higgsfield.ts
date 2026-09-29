@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
+import { SOUL_VERSIONS, type SoulVersion } from "./soulRenderTypes";
 
 /**
  * Where a custom reference (a trained identity) was accepted, as a versioned
@@ -18,9 +19,9 @@ export const SOUL_REFERENCE_ORIGINS = {
 export type SoulReferenceOrigin = keyof typeof SOUL_REFERENCE_ORIGINS;
 export const SOUL_REFERENCE_ORIGIN: SoulReferenceOrigin = "api-v1";
 export const LEGACY_SOUL_REFERENCE_ORIGIN: SoulReferenceOrigin = "dev-v1";
-/** The render family a reference is trained for. v1 keeps continuity with existing identity renders. */
-export const SOUL_MODEL_VERSIONS = ["v1", "v2", "cinema"] as const;
-export type SoulModelVersion = (typeof SOUL_MODEL_VERSIONS)[number];
+/** The render family a reference is trained for (lib/soulRenderTypes.ts). v1 is the default when none is chosen. */
+export const SOUL_MODEL_VERSIONS = SOUL_VERSIONS;
+export type SoulModelVersion = SoulVersion;
 export const SOUL_MODEL_VERSION: SoulModelVersion = "v1";
 
 /** A stored marker. A row saved before markers existed was accepted by the earlier host. */
@@ -91,10 +92,35 @@ export class HiggsfieldHttpError extends Error {
   constructor(
     public readonly status: number,
     message = `The identity account returned HTTP ${status}.`,
+    /** A bounded copy of the provider's own error body (a FastAPI `detail`), when it sent one. */
+    public readonly body: string | null = null,
   ) {
     super(message);
     this.name = "HiggsfieldHttpError";
   }
+}
+
+/** Up to `max` bytes of a response body as text; the rest is cancelled, never buffered. */
+export async function boundedBody(response: Response, max = 8192): Promise<string | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < max) {
+      const next = await reader.read();
+      if (next.done) break;
+      chunks.push(next.value);
+      total += next.value.byteLength;
+    }
+  } catch {
+    return null;
+  } finally {
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  const bytes = Buffer.concat(chunks.map((c) => Buffer.from(c)), Math.min(total, max));
+  return bytes.toString("utf8").slice(0, max) || null;
 }
 export function higgsfieldSubmissionRejected(error: unknown): boolean {
   return (
