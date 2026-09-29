@@ -69,10 +69,16 @@ async function wholeFigures(page: Page, testId: string) {
   expect(cut, `${testId}: every figure and size whole`).toEqual([]);
 }
 
-/** At the Workspace pane's end, its last row ends above the phone's tab bar (or the pane's bottom where none floats). */
+/**
+ * At the Workspace pane's end, its last row ends above the phone's tab bar (or the pane's bottom where none floats).
+ * Every element counts, screen-reader-only words included: one positioned outside the pane stays where the pane
+ * first put it, and at the pane's end sits under the bar.
+ */
 async function paneEnd(page: Page) {
   return page.getByTestId("workspace-view").evaluate(async (pane) => {
-    pane.scrollTop = pane.scrollHeight;
+    /* To the end of the pane, and of whatever scrolls around it. */
+    for (let el: Element | null = pane; el; el = el.parentElement) el.scrollTop = el.scrollHeight;
+    if (document.scrollingElement) document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const shown = Array.from(pane.querySelectorAll<HTMLElement>(".wsx *")).filter((el) => el.getClientRects().length && el.getBoundingClientRect().height > 0);
     const last = shown.reduce<HTMLElement | null>((a, el) => (!a || el.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? el : a), null);

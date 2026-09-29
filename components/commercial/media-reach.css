@@ -147,6 +147,9 @@
 }
 .mr-sound { color: var(--graphite-body); font-weight: 400; }
 .mr-cell {
+  /* Its screen-reader words ("not offered") are positioned inside it, so they scroll with the card rather than
+     sitting at their first place in the pane, where at the pane's end they read as content under the tab bar. */
+  position: relative;
   display: flex;
   align-items: baseline;
   justify-content: flex-end;
