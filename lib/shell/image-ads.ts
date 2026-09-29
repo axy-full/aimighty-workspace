@@ -1,4 +1,5 @@
 import { MARKETING_IMAGE_MODEL_ID, getModel } from "@/lib/models";
+import { MARKETING_BUILDS, marketingQualities, marketingQualityFor, type MarketingBuild, type MarketingQuality } from "@/lib/workbench/moleculr";
 import type { DispatchRequest } from "@/lib/workspace/generate-submit";
 import type { AdStill } from "./business";
 
@@ -7,8 +8,9 @@ import type { AdStill } from "./business";
  * member (FINAL_SPEC §2.2): Marketing Studio Image through the one
  * workspace-credit path (lib/workspace/generate-submit.ts → POST
  * /api/generate/quote, then POST /api/generate with the approved ceiling).
- * The price on the button is that quote — the provider's live estimate
- * through Particl's credit terms — said as an estimate.
+ * The price on the button is that quote, said as an estimate: on 2.0 Alpha
+ * the provider's live estimate, on the 2.5 builds an approximate price from
+ * the published rates that the delivered image settles (lib/higgsfieldMarketing.ts).
  *
  * Pure: the builds the page offers, the composer's state, the provider's
  * rules in words, the request, and the preset catalogue grouped for the
@@ -18,23 +20,40 @@ import type { AdStill } from "./business";
  */
 
 /**
- * The builds of Marketing Studio Image, extensible by data: the 2.5 builds
- * join this list as entries carrying their `variant` and their own qualities
- * (the request carries `variant` only for a build that names one).
+ * The builds of Marketing Studio Image, as Moleculr names them (lib/workbench/moleculr.ts ›
+ * MARKETING_BUILDS): 2.0 Alpha, and the 2.5 builds Flare and Sunburst. A 2.5 build carries its
+ * `variant` on the request (2.0 Alpha is left unnamed, as every take before 2.5 was), offers the
+ * 2.5 qualities, keeps the chosen quality with a preset, and is priced approximately.
  */
 export type ImageAdBuild = {
-  id: string;
+  id: MarketingBuild;
   label: string;
   model: string;
-  qualities: readonly string[];
+  qualities: readonly MarketingQuality[];
   /** The quality a preset (enhanced) take must run at on this build, when the build fixes one. */
-  presetQuality: string | null;
-  variant?: string;
+  presetQuality: MarketingQuality | null;
+  /** Priced approximately from the published rates; the delivered image settles it. */
+  approximate: boolean;
+  variant?: Exclude<MarketingBuild, "alpha">;
 };
-export const IMAGE_AD_BUILDS: readonly ImageAdBuild[] = [
-  { id: "alpha", label: "Image 2.0", model: MARKETING_IMAGE_MODEL_ID, qualities: ["low", "medium", "high"], presetQuality: "high" },
-];
+/** The quality a preset forces on a build, when it forces one (Moleculr's rule: 2.0 Alpha enhances at high only). */
+function presetForces(build: MarketingBuild): MarketingQuality | null {
+  const forced = marketingQualityFor({ variant: build, quality: "low", enhancePrompt: true });
+  return forced === "low" ? null : forced;
+}
+export const IMAGE_AD_BUILDS: readonly ImageAdBuild[] = MARKETING_BUILDS.map((b): ImageAdBuild => ({
+  id: b.id,
+  label: b.label,
+  model: MARKETING_IMAGE_MODEL_ID,
+  qualities: marketingQualities(b.id).map((q) => q.id),
+  presetQuality: presetForces(b.id),
+  approximate: b.id !== "alpha",
+  ...(b.id !== "alpha" ? { variant: b.id } : {}),
+}));
 export const imageAdBuild = (id: string): ImageAdBuild => IMAGE_AD_BUILDS.find((b) => b.id === id) ?? IMAGE_AD_BUILDS[0];
+/** A quality in words, as Moleculr's picker says it ("Extra high", "Max"). */
+const QUALITY_WORDS: Record<string, string> = Object.fromEntries(marketingQualities("flare").map((q) => [q.id, q.label]));
+export const qualityLabel = (quality: string) => QUALITY_WORDS[quality] ?? quality;
 
 const MODEL = getModel(MARKETING_IMAGE_MODEL_ID);
 /** The aspects and sizes the model takes (lib/models.ts), in the order a person reads them. */
@@ -47,11 +66,11 @@ export const IMAGE_AD_PROMPT_MAX = 5000;
 
 export type ImageAdPreset = { id: string; name: string };
 export type ImageAdState = {
-  build: string;
+  build: MarketingBuild;
   prompt: string;
   aspect: string;
   resolution: string;
-  quality: string;
+  quality: MarketingQuality;
   /** A preset from the catalogue: the provider writes the ad around it (enhancement), starting from the product still. */
   preset: ImageAdPreset | null;
   /** The product, a still from this project's Library: always the first image sent. */
@@ -77,13 +96,17 @@ export function withProductStill(state: ImageAdState, still: AdStill | null): Im
 }
 /** A preset picked (or cleared): on a build that fixes the quality for presets, the quality moves to it. */
 export function withPreset(state: ImageAdState, preset: ImageAdPreset | null): ImageAdState {
-  const fixed = imageAdBuild(state.build).presetQuality;
-  return { ...state, preset, quality: preset && fixed ? fixed : state.quality };
+  return { ...state, preset, quality: marketingQualityFor({ variant: state.build, quality: state.quality, enhancePrompt: Boolean(preset) }) };
+}
+/** Another build: the same draft at the quality that build takes (2.0 Alpha stops at high, and runs a preset at high). */
+export function withBuild(state: ImageAdState, build: MarketingBuild): ImageAdState {
+  const next = imageAdBuild(build).id;
+  return { ...state, build: next, quality: marketingQualityFor({ variant: next, quality: state.quality, enhancePrompt: Boolean(state.preset) }) };
 }
 /** Whether a quality chip is off, and why (never hidden). */
 export function qualityOff(state: Pick<ImageAdState, "build" | "preset">, quality: string): string | null {
-  const fixed = imageAdBuild(state.build).presetQuality;
-  return state.preset && fixed && quality !== fixed ? `A preset runs at ${fixed} quality on ${imageAdBuild(state.build).label}.` : null;
+  const build = imageAdBuild(state.build), fixed = build.presetQuality;
+  return state.preset && fixed && quality !== fixed ? `On ${build.label}, presets use ${qualityLabel(fixed).toLowerCase()} quality.` : null;
 }
 
 /** Why Generate image is off; null when it can run. */
@@ -106,7 +129,7 @@ export function imageAdSettings(state: ImageAdState): Record<string, unknown> {
   const build = imageAdBuild(state.build);
   return {
     ...(build.variant ? { variant: build.variant } : {}),
-    quality: state.preset && build.presetQuality ? build.presetQuality : state.quality,
+    quality: marketingQualityFor({ variant: build.id, quality: state.quality, enhancePrompt: Boolean(state.preset) }),
     enhancePrompt: Boolean(state.preset),
     ...(state.preset ? { presetId: state.preset.id } : {}),
   };
@@ -171,7 +194,8 @@ function stillOf(value: unknown): AdStill | null {
 export function restoreImageAd(value: unknown): ImageAdState | null {
   const v = obj(value);
   if (!v) return null;
-  const build = IMAGE_AD_BUILDS.some((b) => b.id === v.build) ? String(v.build) : INITIAL_IMAGE_AD.build;
+  const build = IMAGE_AD_BUILDS.find((b) => b.id === v.build)?.id ?? INITIAL_IMAGE_AD.build;
+  const qualities: readonly string[] = imageAdBuild(build).qualities;
   const presetValue = obj(v.preset);
   const preset = presetValue && typeof presetValue.id === "string" && PRESET_ID.test(presetValue.id) && typeof presetValue.name === "string"
     ? { id: presetValue.id, name: presetValue.name.slice(0, 300) } : null;
@@ -180,7 +204,7 @@ export function restoreImageAd(value: unknown): ImageAdState | null {
     prompt: typeof v.prompt === "string" ? v.prompt.slice(0, IMAGE_AD_PROMPT_MAX) : "",
     aspect: typeof v.aspect === "string" && IMAGE_AD_ASPECTS.includes(v.aspect) ? v.aspect : INITIAL_IMAGE_AD.aspect,
     resolution: typeof v.resolution === "string" && IMAGE_AD_RESOLUTIONS.includes(v.resolution) ? v.resolution : INITIAL_IMAGE_AD.resolution,
-    quality: typeof v.quality === "string" && imageAdBuild(build).qualities.includes(v.quality) ? v.quality : INITIAL_IMAGE_AD.quality,
+    quality: typeof v.quality === "string" && qualities.includes(v.quality) ? (v.quality as MarketingQuality) : INITIAL_IMAGE_AD.quality,
     preset: null,
     productStill: stillOf(v.productStill),
     medias: (Array.isArray(v.medias) ? v.medias : []).flatMap((m) => { const still = stillOf(m); return still ? [still] : []; }).slice(0, IMAGE_AD_MAX),

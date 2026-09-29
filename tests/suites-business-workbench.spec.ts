@@ -205,14 +205,17 @@ test("Image ads runs Marketing Studio Image on the API key: the product first, t
   const s = await openImageAds(page, playwright, "owner");
   await expect(page.getByTestId("page-title")).toHaveText("Image ads");
   /* Only the key's engine: no DTC engine, no account template library, no connect line. */
-  await expect(page.getByTestId("image-ad-build").getByRole("button")).toHaveText(["Image 2.0"]);
+  await expect(page.getByTestId("image-ad-build").getByRole("button")).toHaveText(["2.0 Alpha", "2.5 Flare", "2.5 Sunburst"]);
+  await expect(page.getByTestId("image-ad-build").getByRole("button", { name: "2.0 Alpha" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("image-ad-build")).toContainText("priced live before generating");
   for (const gone of ["dtc-engine", "ad-formats", "dtc-connect", "owner-run-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await uploadProduct(page);
   await page.getByTestId("image-ad-prompt").fill("Bold hero shot on marble");
   await page.getByTestId("image-ad-aspect").getByRole("button", { name: "3:4", exact: true }).click();
   await page.getByTestId("image-ad-resolution").getByRole("button", { name: "1k", exact: true }).click();
-  await page.getByTestId("image-ad-quality").getByRole("button", { name: "medium", exact: true }).click();
+  await expect(page.getByTestId("image-ad-quality").getByRole("button")).toHaveText(["Low", "Medium", "High"]);
+  await page.getByTestId("image-ad-quality").getByRole("button", { name: "Medium", exact: true }).click();
   await expect(page.getByTestId("image-ad-generate")).toHaveText(pricedImage, { timeout: 60_000 });
   await expect(page.getByTestId("image-ad-foot")).toHaveText("An estimate from the live price · filed to this project’s takes");
   const quote = s.quotes.at(-1)!;
@@ -229,6 +232,44 @@ test("Image ads runs Marketing Studio Image on the API key: the product first, t
   await expect(done.getByTestId("image-ad-done-take").locator("img")).toBeVisible();
   expect(s.sends).toHaveLength(1);
   expect(s.sends[0]).toMatchObject({ ...quote, maxCredits: shown, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  await noSideScroll(page);
+  expect(imageAdsAsked(s.consumer), "Image ads asks the connected account for nothing").toEqual([]);
+  expect(s.errors).toEqual([]);
+});
+
+test("Image ads on a 2.5 build: Flare at extra high names its variant, is priced approximately, is sent once at that figure, and the still lands", async ({ page, playwright }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.setTimeout(180_000);
+  const s = await openImageAds(page, playwright, "owner");
+  const build = page.getByTestId("image-ad-build");
+  await build.getByRole("button", { name: "2.5 Flare" }).click();
+  await expect(build.getByRole("button", { name: "2.5 Flare" })).toHaveAttribute("aria-pressed", "true");
+  /* Moleculr's words for the build's price, and the 2.5 qualities. */
+  await expect(build).toContainText("priced approximately; the delivered image settles it");
+  const quality = page.getByTestId("image-ad-quality");
+  await expect(quality.getByRole("button")).toHaveText(["Low", "Medium", "High", "Extra high", "Max"]);
+  await quality.getByRole("button", { name: "Extra high", exact: true }).click();
+  await uploadProduct(page);
+  await page.getByTestId("image-ad-prompt").fill("Bold hero shot on marble");
+  await expect(page.getByTestId("image-ad-generate")).toHaveText(pricedImage, { timeout: 60_000 });
+  await expect(page.getByTestId("image-ad-foot")).toHaveText("An approximate price · the delivered image settles it · filed to this project’s takes");
+  const quote = s.quotes.at(-1)!;
+  expect(quote).toMatchObject({ model: "higgsfield/marketing-studio-image", prompt: "Bold hero shot on marble", marketing: { variant: "flare", quality: "xhigh", enhancePrompt: false } });
+  if (["workbench-360x640", "workbench-390x844", "workbench-844x390"].includes(info.project.name))
+    expect(await smallTargets(page, '[data-testid="image-ads-view"]'), "44px targets").toEqual([]);
+  await noSideScroll(page);
+  const shown = Number((await page.getByTestId("image-ad-generate").innerText()).match(/about ([\d,]+) cr/)![1].replace(/,/g, ""));
+  await page.getByTestId("image-ad-generate").click();
+  const done = page.getByTestId("image-ad-done");
+  await expect(done).toContainText("Rendered and filed to this project.", { timeout: 90_000 });
+  await expect(done.getByTestId("image-ad-done-take").locator("img")).toBeVisible();
+  expect(s.sends).toHaveLength(1);
+  expect(s.sends[0]).toMatchObject({ ...quote, maxCredits: shown, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  /* Back on 2.0 Alpha, extra high is not offered: the quality falls to high, and the price is live again. */
+  await build.getByRole("button", { name: "2.0 Alpha" }).click();
+  await expect(quality.getByRole("button")).toHaveText(["Low", "Medium", "High"]);
+  await expect(quality.getByRole("button", { name: "High", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(build).toContainText("priced live before generating");
   await noSideScroll(page);
   expect(imageAdsAsked(s.consumer), "Image ads asks the connected account for nothing").toEqual([]);
   expect(s.errors).toEqual([]);
@@ -268,9 +309,9 @@ test("Image ads: the key's preset catalogue, searched, on its own shelves with c
   await expect(page.getByTestId("image-ad-preset-picked")).toContainText("Studio packshot");
   /* The build runs presets at high quality: the other qualities say why they are off. */
   const quality = page.getByTestId("image-ad-quality");
-  await expect(quality.getByRole("button", { name: "high", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(quality.getByRole("button", { name: "low", exact: true })).toHaveAttribute("aria-disabled", "true");
-  await expect(quality.getByRole("button", { name: "low", exact: true })).toHaveAttribute("title", "A preset runs at high quality on Image 2.0.");
+  await expect(quality.getByRole("button", { name: "High", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(quality.getByRole("button", { name: "Low", exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(quality.getByRole("button", { name: "Low", exact: true })).toHaveAttribute("title", "On 2.0 Alpha, presets use high quality.");
   await page.getByTestId("image-ad-prompt").fill("Clean studio packshot");
   await expect(page.getByTestId("image-ad-blocked")).toHaveText("A preset starts from the product still. Add the product.");
   /* The key listed this preset (as the catalogue read records it), so the route prices it. */
