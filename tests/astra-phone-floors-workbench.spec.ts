@@ -108,6 +108,9 @@ function measure(page: Page, root: string) {
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const el = node.parentElement;
       if (!el || !(node.textContent ?? "").trim() || el.closest("option, script, style") || !shown(el)) continue;
+      /* Text with no area is not on screen to read. */
+      const area = el.getBoundingClientRect();
+      if (area.width < 1 || area.height < 1) continue;
       if (!texts.includes(el)) texts.push(el);
     }
     const text = texts.flatMap((el) => { const size = Number.parseFloat(getComputedStyle(el).fontSize); return size < 12 ? [`${size}px: ${name(el)}`] : []; });
@@ -269,6 +272,9 @@ test("Astra 3D in the Studio suite: 44px targets and 12px text on touch, labels 
   page.on("pageerror", (error) => errors.push(error.message));
   await openSuites(page);
   await walk(page, SUITES, info.project.name);
+  /* The page's own card of the scene's renders and files, above the tool. */
+  await expect(page.getByTestId("astra-outputs").getByTestId("astra-output")).toHaveCount(1);
+  await expectFloors(page, { root: "[data-testid='astra-outputs']", pane: null }, `${info.project.name} Renders & files`, TOUCH.includes(info.project.name), false);
   await page.screenshot({ path: info.outputPath("astra-suites-output.png"), fullPage: true });
   expect(errors).toEqual([]);
 });
