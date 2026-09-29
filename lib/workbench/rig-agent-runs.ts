@@ -491,9 +491,11 @@ async function follow(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved
     job = await jobOf(jobId);
   }
   if (!job || LIVE_JOB.has(job.status)) return wakeIn(run, await lookAgainIn(jobId), { state: "running", more: false, waitFor: { genId: jobId } });
-  const ended = await recordTakeEnd(step, jobId, job);
-  if (!ended) return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false, waitFor: { genId: jobId } });
-  return CONTINUE;
+  if (await recordTakeEnd(step, jobId, job)) return CONTINUE;
+  /* Recorded already (the settlement got there first), or its charge is still settling. */
+  const recorded = (await db().execute({ sql: "SELECT state FROM rig_agent_steps WHERE id=?", args: [step.id] })).rows[0];
+  if (recorded && String(recorded.state) !== "rendering") return CONTINUE;
+  return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false, waitFor: { genId: jobId } });
 }
 
 /** A young take is looked at again soon (a draft can land in seconds), an older one every RENDER_CHECK_MS. */
