@@ -24,8 +24,9 @@ export function RigImport() {
   const rig = useRig();
   const { dispatch } = useWorkspace();
   const boardId = importParam(useSearchParams());
+  /* The draft's production: its team canvas is where the board comes across. Nothing waits for this window to have
+     opened that canvas: the cards reach it either way (read with it, or folded in by the live room or the check). */
   const production = rig.project?.productionProjectId ?? null;
-  const ready = !!boardId && !!production && rig.team.mode !== "off";
   const key = boardId && production ? `${production}:${boardId}` : null;
   const [run, setRun] = useState<{ key: string; view: ImportView } | null>(null);
   const view: ImportView | null = key && run?.key === key ? run.view : key ? { phase: "waiting" } : null;
@@ -64,18 +65,21 @@ export function RigImport() {
     }
   }, [importBoard]);
 
-  /* Once the canvas is open: the board comes across, onto the graph, where it can be seen arriving. */
+  /* Once the draft is open: the board comes across, onto the graph, where it can be seen arriving. */
   const started = useRef<string | null>(null);
   useEffect(() => {
-    if (!ready || !key || !boardId || started.current === key) return;
+    if (!key || !boardId || started.current === key) return;
     started.current = key;
     dispatch({ type: "patch", patch: { rigView: "graph" } });
     void go(key, boardId);
-  }, [ready, key, boardId, go, dispatch]);
+  }, [key, boardId, go, dispatch]);
 
+  /* Done: the line goes, and so does the board from the address. Coming back to that address (Back) asks again: free,
+     and it says what it finds rather than a line that never ends. */
   const done = useCallback(() => {
     const next = withoutImport(window.location.pathname + window.location.search + window.location.hash);
     if (next) window.history.replaceState(window.history.state, "", next);
+    started.current = null;
     setRun(null);
   }, []);
 

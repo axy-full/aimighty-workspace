@@ -556,12 +556,7 @@ function Canvas() {
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
         <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
-        <div className="flex flex-none border-b border-border px-[16px] py-[6px]">
-          <button type="button" onClick={() => void openInNewRig()} disabled={opening} data-testid="open-new-rig"
-            className="tap44 flex h-[44px] w-full items-center justify-center rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink disabled:text-ink-body">
-            {opening ? "Opening the new Rig…" : "Open in the new Rig"}
-          </button>
-        </div>
+        <NewRigRow opening={opening} onOpen={() => void openInNewRig()} />
         <PhoneBoard board={b} fmt={fmt} priceOf={(n) => costOf(b, n)} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
@@ -592,12 +587,11 @@ function Canvas() {
         mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
         right={<>
           <span className="flex pl-[6px] max-md:hidden"><Avatar name={myName} you /></span>
-          <Button placement="header" className="!h-[34px] !px-[12px] pointer-coarse:!h-[44px]" onClick={() => void openInNewRig()} disabled={opening} busy={opening} busyLabel="Opening…" data-testid="open-new-rig"
-            title="Open this board in the new Rig. It comes across onto the production’s shared canvas; this board stays as it is. Free.">Open in the new Rig</Button>
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={() => navigator.clipboard?.writeText(location.href).then(() => toast("Link copied"))}>Share</Button>
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={saveAsRecipe}>Save as recipe</Button>
         </>} />
       <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
+      <NewRigRow opening={opening} onOpen={() => void openInNewRig()} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
@@ -948,6 +942,22 @@ function Stuck({ line, onRetry }: { line: string; onRetry?: () => void }) {
     <div role="alert" className="flex flex-col items-start gap-[12px] p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>
       <span>{line}</span>
       {onRetry && <button type="button" onClick={onRetry} className="tap44 h-[44px] rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink">Try again</button>}
+    </div>
+  );
+}
+
+/* ── the way to the new Rig ─────────────────────────────────────────── */
+/** "Open in the new Rig": its own slim row under the bar (it never widens the bar), a thumb-sized button on a touch screen. */
+function NewRigRow({ opening, onOpen }: { opening: boolean; onOpen: () => void }) {
+  return (
+    <div className="flex flex-none flex-wrap items-center gap-x-[12px] gap-y-[6px] border-b border-border px-[16px] py-[6px]" data-new-rig="">
+      <span className="min-w-0 flex-1 text-[13px] leading-[1.4] text-ink-body max-md:hidden" style={{ textWrap: "pretty" }}>
+        The new Rig is the canvas your team shares live. This board opens there as it is, and stays here too. Free.
+      </span>
+      <button type="button" onClick={onOpen} disabled={opening} data-testid="open-new-rig"
+        className="flex h-[36px] items-center justify-center whitespace-nowrap rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink disabled:text-ink-body pointer-coarse:h-[44px] max-md:h-[44px] max-md:w-full">
+        {opening ? "Opening the new Rig…" : "Open in the new Rig"}
+      </button>
     </div>
   );
 }
