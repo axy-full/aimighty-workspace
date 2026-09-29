@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Studio's first run (idea 10). With no project open, a Studio stage used to
@@ -386,7 +387,9 @@ test("the card and the Studio home sit inside the stage's boundary: a throw in e
   const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
   await expect(fault).toBeVisible({ timeout: 60_000 });
   await expect(fault).toContainText("Brief & Script stopped");
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  await closeSuitesMenu(page);
   await expect(page.getByTestId("project-switcher")).toBeVisible();
   await page.goto("/suites?suite=studio&sp=stages");
   await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:stages"]')).toBeVisible();
