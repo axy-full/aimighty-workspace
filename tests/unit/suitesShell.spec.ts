@@ -19,7 +19,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
-    business: ["01 Ads", "02 Image ads", "|03 Setup"],
+    business: ["01 Ads", "02 Image ads", "|03 Setup", "|04 Brand", "05 Product", "06 Format", "07 Hooks", "08 Reference", "09 Design"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
     atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory"],
   });
