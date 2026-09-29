@@ -450,6 +450,45 @@ test("a lock never moves a version that shots elsewhere follow: that swap is pri
   });
 });
 
+test("a canvas operation (Tidy, Atomik's work) goes through the same guard: it never ties a card to a locked master, and what is recorded is what landed", async () => {
+  await tenant("canvas-ops", async () => {
+    const { db } = await import("../../lib/db");
+    const store = await import("../../lib/workbench/team-canvas");
+    const { applyCanvasOps } = await import("../../lib/workbench/canvas-ops");
+    const { findCanvasOp } = await import("../../lib/workbench/canvas-ops-log");
+    const { withoutHeld } = await import("../../lib/workbench/canvas-ops-model");
+    const { lockMaster } = await import("../../lib/masters");
+    const { uploadId } = await sources();
+    const photo = asset("photo", { uploadId, url: `/api/uploads/${uploadId}` });
+    await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("lamp", { title: "Brass lamp", assetId: "photo" })], made: ["lamp"], removeNodes: [], upsertAssets: [photo], order: ["lamp"] }, "ana");
+    const { element } = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: "lamp" } }, ana);
+    /* Atomik makes a card that claims the lamp's element, and moves the lamp: the claim is held, the move lands. */
+    const ops = [
+      { kind: "create" as const, node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: element.id }) },
+      { kind: "move" as const, nodeId: "lamp", x: 480, y: 120 },
+    ];
+    const result = await applyCanvasOps("prod-masters", { opId: "run-7:step-1", ops, author: "agent:run-7", runId: "run-7" }, { room: null });
+    expect(result.changed).toBe(2);
+    const canvas = (await store.readTeamCanvas("prod-masters"))!.canvas;
+    expect(canvas.nodes.copy).toBeDefined();
+    expect("elementId" in canvas.nodes.copy).toBe(false);
+    expect(canvas.nodes.lamp).toMatchObject({ x: 480, y: 120, elementId: element.id, assetId: "photo" });
+    const row = (await findCanvasOp(db(), "prod-masters", "run-7:step-1"))!;
+    expect(row.changes.find((c) => c.id === "copy")?.after).not.toHaveProperty("elementId");
+    /* The pure step: a held field leaves a change, and a change with nothing left goes. */
+    const changes = [
+      { id: "a", made: false, fields: ["x", "refKind"], before: { x: 0, refKind: "element" }, after: { x: 5, refKind: "cast" } },
+      { id: "b", made: false, fields: ["refKind"], before: { refKind: "element" }, after: { refKind: "cast" } },
+      { id: "c", made: true, fields: [], before: {}, after: { id: "c", elementId: "el_x", title: "C" } },
+    ];
+    expect(withoutHeld(changes, [{ nodeId: "a", fields: ["refKind"] }, { nodeId: "b", fields: ["refKind"] }, { nodeId: "c", fields: ["elementId"] }])).toEqual([
+      { id: "a", made: false, fields: ["x"], before: { x: 0 }, after: { x: 5 } },
+      { id: "c", made: true, fields: [], before: {}, after: { id: "c", title: "C" } },
+    ]);
+    expect(withoutHeld(changes, [])).toBe(changes);
+  });
+});
+
 test("the cut-out is priced by the server exactly as it is sent: about 1 cr for one still, refused without one", async () => {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
