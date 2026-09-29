@@ -10,6 +10,8 @@ import { useRecreate } from "@/lib/shell/use-asset-actions";
 import type { Project } from "@/lib/workbench/studio";
 import { entryDraft, entryFace, findProjectTake, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { takeStatusWord } from "@/lib/workspace/takes";
+import { billingSentence, failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { Generation } from "@/lib/jobs";
 import { DraftFinalBar } from "./DraftFinal";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -90,6 +92,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     ["Status", takeStatusWord(take)],
     /* Why it failed or waits, in the row's own words when they say more. */
     ...(take.reason ? [["Reason", take.detail ? `${take.reason} · ${take.detail}` : take.reason] as [string, string]] : []),
+    /* What its provider did with the charge, where it billed the workspace's own key or account (Particl's own charge is "Settled" above), and the next step. */
+    ...(take.failure ? failureFacts(take.failure, take.cancelled === true) : []),
   ];
   const download = generation ? `/api/media/${encodeURIComponent(generation.id)}?download=1` : `/api/uploads/${encodeURIComponent(upload!.id)}?download=1`;
   const downloadable = upload || (generation?.status === "succeeded" && generation.storedUrl);
@@ -155,6 +159,19 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       {remembering === take.id ? <RememberAsset key={`remember:${take.id}`} scope={scope} projectId={project?.productionProjectId ?? null} assetId={take.id} name={take.name} onDone={() => setRemembering(null)} /> : null}
     </div>
   );
+}
+
+/**
+ * A failed take's facts after its Reason: what the provider did with the
+ * charge (only where it billed the workspace's own key or account — Particl's
+ * own charge is "Settled" above), and the next step.
+ */
+function failureFacts(failure: TakeFailure, cancelled: boolean): [string, string][] {
+  const line = failureLine({ ...failure, charge: null }, { cancelled });
+  return [
+    ...(failure.billing ? [["Provider", billingSentence(failure.billing, failure.provider)] as [string, string]] : []),
+    ["Next", line.next],
+  ];
 }
 
 /** A fixed 180px card (an aspect-ratio box collapsed inside the flex column). Play/pause for anything with time. */

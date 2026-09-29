@@ -236,6 +236,8 @@
 /* In a result grid the name and meta are lines of their own: one line each, clipped to the card (they overflowed into the next card). */
 .gx-asset > .gx-asset-name, .gx-asset > .gx-asset-meta { display: block; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-asset > .gx-asset-meta { font-size: 12px; color: var(--gx-text-3); margin-top: 2px; }
+/* A failed take's line — what happened · what the provider did with the charge · the next step. It wraps; a charge is never cut. */
+.gx-asset > .gx-asset-fail { display: block; margin-top: 3px; font-size: 12px; line-height: 1.35; color: var(--gx-text-2); white-space: normal; overflow-wrap: anywhere; }
 .gx-project-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
 .gx-project-new .gx-reason { grid-column: 1 / -1; margin: 0; }
 .gx-asset-add { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; background: var(--gx-input); font-size: 15px; line-height: 1; position: relative; }
@@ -715,6 +717,8 @@
 /* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
 .gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
 .gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+/* A failed take's charge (a receipt, or its provider's own word): a line of its own that wraps whole — a charge is never cut. */
+.gx-tile .gx-tile-reason.gx-tile-charge { display: block; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; color: var(--gx-text-2); }
 /* Refresh is the tile's second action: a round button in its top-right corner, small enough that a press
    in the middle of the smallest tile (the 2-up Library on a 360 px phone) still opens the take. */
 .gx-tile-over { position: absolute; inset: 0; display: grid; place-items: start end; padding: 6px; pointer-events: none; }
@@ -981,6 +985,8 @@
 }
 .wsx-ledger-state[data-state="held"], .wsx-ledger-state[data-state="pending"], .wsx-ledger-state[data-state="uncertain"] { color: var(--gx-waiting); }
 .wsx-ledger-state[data-state="failed-charged"] { color: #FF6961; }
+/* A failed job's why, and what its provider did with the charge: a full-width line under the row. */
+.wsx-ledger-why { grid-column: 1 / -1; font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
 .wsx-ledger-more { align-self: flex-start; }
 @media (max-width: 767px) { .sk, .wsx { padding: 12px; } }
 

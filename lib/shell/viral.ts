@@ -1,5 +1,6 @@
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { connectedFailureText } from "@/lib/higgsfield-consumer/generation-client";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { canProgress, isOpen, resumePhase } from "@/lib/higgsfield-consumer/resume";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
@@ -113,17 +114,18 @@ export const RUN_STATUS: Record<RunStatus, { label: string; tone: RunTone }> = {
   dispatching: { label: "Queued", tone: "waiting" },
   accepted: { label: "Rendering", tone: "active" },
   uncertain: { label: "Checking", tone: "waiting" },
-  failed: { label: "Failed · not billed", tone: "failed" },
+  failed: { label: "Failed", tone: "failed" },
   completed: { label: "Done", tone: "done" },
 };
 /**
- * A run's state in words. A failed run says whether it was billed, as Gen and
- * Business do (lib/higgsfield-consumer/resume.ts): a render the account
- * refused was not; a result it finished that Particl could not keep may have
- * been, and its receipt is saved.
+ * A run's state in words. A failed run says what the account's own ledger
+ * shows for its charge, as Gen and Business do (lib/higgsfield-consumer/resume.ts):
+ * refunded or charged once the ledger names it, just "Failed" until then; a
+ * result it finished that Particl could not keep may have been billed, and
+ * its receipt is saved.
  */
-export function runStatus(status: string, failureCode?: string | null): { label: string; tone: RunTone } {
-  if (status === "failed") return { label: resumePhase({ status, failureCode }).label, tone: "failed" };
+export function runStatus(status: string, failureCode?: string | null, failure?: TakeFailure | null): { label: string; tone: RunTone } {
+  if (status === "failed") return { label: resumePhase({ status, failureCode, failure }).label, tone: "failed" };
   return RUN_STATUS[status as RunStatus] ?? RUN_STATUS.uncertain;
 }
 /** A job the account may still settle: never re-sent, only polled until it completes or fails. */
@@ -181,14 +183,14 @@ export function pendingJobIds(jobs: readonly Listed[], running: string | null): 
 
 /** The composer's run, as the page tracks it. */
 export type ViralRun<J extends Listed> = { phase: "idle" } | { phase: "submitting"; job: J } | { phase: "running"; job: J } | { phase: "done"; job: J } | { phase: "failed"; job: J | null; error: string };
-/** Why the account's run failed, in the Gen and Business composers' words: a refused render is not billed; a result it finished that could not be kept may have been. */
-export const viralFailure = (job: { failureCode?: string | null }) => connectedFailureText(job);
+/** Why the account's run failed, in the Gen and Business composers' words, and what its ledger shows for the charge. */
+export const viralFailure = (job: { failureCode?: string | null; failure?: TakeFailure | null }) => connectedFailureText(job);
 /**
  * Where a status read leaves the composer's run: the job submitted here, and
  * also one whose submit reply was lost (shown failed) that the list then
  * shows the account took — it is rendering after all.
  */
-export function runAfterStatus<J extends Listed & { failureCode?: string | null }>(current: ViralRun<J>, job: J): ViralRun<J> {
+export function runAfterStatus<J extends Listed & { failureCode?: string | null; failure?: TakeFailure | null }>(current: ViralRun<J>, job: J): ViralRun<J> {
   const mine = (current.phase === "running" || current.phase === "failed") && current.job?.id === job.id;
   if (!mine) return current;
   if (job.status === "completed") return { phase: "done", job };

@@ -225,6 +225,7 @@
 .gx .pd-take-media .gx-badge { top: 6px; left: 6px; }
 .gx .pd-take-cell > .gx-tile-over { inset: 7px 7px auto; aspect-ratio: var(--tile-aspect, 16 / 9); }
 .gx .pd-take .gx-tile-reason { margin-top: -2px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+.gx .pd-take .gx-tile-reason.gx-tile-charge { display: block; overflow: visible; }
 .gx .pd-take.gx-skel { border-color: transparent; }
 
 /* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */

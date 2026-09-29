@@ -92,10 +92,35 @@ export class HiggsfieldHttpError extends Error {
   constructor(
     public readonly status: number,
     message = `The identity account returned HTTP ${status}.`,
+    /** A bounded copy of the provider's own error body (a FastAPI `detail`), when it sent one. */
+    public readonly body: string | null = null,
   ) {
     super(message);
     this.name = "HiggsfieldHttpError";
   }
+}
+
+/** Up to `max` bytes of a response body as text; the rest is cancelled, never buffered. */
+export async function boundedBody(response: Response, max = 8192): Promise<string | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < max) {
+      const next = await reader.read();
+      if (next.done) break;
+      chunks.push(next.value);
+      total += next.value.byteLength;
+    }
+  } catch {
+    return null;
+  } finally {
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  const bytes = Buffer.concat(chunks.map((c) => Buffer.from(c)), Math.min(total, max));
+  return bytes.toString("utf8").slice(0, max) || null;
 }
 export function higgsfieldSubmissionRejected(error: unknown): boolean {
   return (

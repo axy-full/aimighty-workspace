@@ -33,7 +33,13 @@ test("each state has one short label; a job nobody is asking after says why inst
   expect(resumePhase(at("uncertain", { providerReceipt: RECEIPT }), false).label).toBe("Not confirmed · never sent twice");
   expect(resumePhase(at("accepted"), false)).toEqual({ label: "Can't be checked", tone: "amber" });
   expect(resumePhase(at("completed")).label).toBe("Complete");
-  expect(resumePhase(at("failed")).label).toBe("Failed · not billed");
+  /* A failure says "refunded" or "charged" only once the account's own ledger names the job. */
+  expect(resumePhase(at("failed")).label).toBe("Failed");
+  const account = (state: "refunded" | "billed" | "unknown") => ({ provider: "higgsfield_account", stage: "run", code: "nsfw", kind: "content_filter", message: null, payer: "account",
+    billing: state === "unknown" ? { state, basis: "hf-account-silent" } : { state, amount: 12, unit: "higgsfield_credits", basis: "hf-ledger" } });
+  expect(resumePhase(at("failed", { failure: account("unknown") })).label).toBe("Failed");
+  expect(resumePhase(at("failed", { failure: account("refunded") })).label).toBe("Failed · refunded");
+  expect(resumePhase(at("failed", { failure: account("billed") })).label).toBe("Failed · charged");
   expect(resumePhase(at("failed", { failureCode: "invalid_result" })).label).toBe("Not kept · receipt saved");
   // No percentages: the account reports none, so none is drawn.
   expect(Object.keys(resumePhase(at("accepted")))).toEqual(["label", "tone"]);
