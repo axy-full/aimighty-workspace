@@ -182,20 +182,20 @@ test("cards read at a glance: preview, kind or type (a shot its number), state a
   await expect(node(page, "mira").locator(".pxw-graph-kind")).toHaveText("CAST");
   await expect(node(page, "mira").locator(".pxw-graph-kicker")).toContainText("v1");
   await expect(node(page, "mira").locator(".pxw-graph-media img")).toHaveCount(1);
-  await expect(node(page, "mira").locator(".pxw-graph-status")).toHaveText("Ready");
+  await expect(node(page, "mira").locator(".pxw-graph-state")).toHaveText("Ready");
   await expect(node(page, "dunes").locator(".pxw-graph-kind")).toHaveText("ENVIRONMENT");
-  await expect(node(page, "empty").locator(".pxw-graph-status")).toHaveText("No source yet");
+  await expect(node(page, "empty").locator(".pxw-graph-state")).toHaveText("No source yet");
   /* A shot: its type and its number in the list, its state as the shot list reads it, its version. */
   await expect(node(page, "open").locator(".pxw-graph-kicker")).toContainText("SCENE");
   await expect(node(page, "open").locator(".pxw-graph-code")).toHaveText("01");
-  await expect(node(page, "open").locator(".pxw-graph-status")).toHaveText(/^(Draft|Ready|Rendering|Approved|Failed)$/);
+  await expect(node(page, "open").locator(".pxw-graph-state")).toHaveText(/^(Draft|Ready|Rendering|Approved|Failed)$/);
   await expect(node(page, "open").locator(".pxw-graph-foot")).toContainText("Director");
   /* A colour card: what it works on, and its tools. A note: its words, and the pencil that edits them. */
   await expect(node(page, "tone").locator(".pxw-graph-media")).toHaveCount(1);
   await expect(node(page, "tone").locator(".pxw-graph-foot")).toHaveText("1 active tool");
   await expect(node(page, "say").locator(".pxw-graph-note-text")).toHaveText("Hold the frame.\nLet the fabric move.");
   await expect(node(page, "say").getByRole("button", { name: "Edit note Director's note" })).toBeVisible();
-  await expect(node(page, "say").locator(".pxw-graph-status")).toHaveCount(0);
+  await expect(node(page, "say").locator(".pxw-graph-state")).toHaveCount(0);
 
   /* Every card is its shape's height (the server's Tidy lays out by it), and nothing in it spills out. */
   const shapes = await graph.locator(".pxw-graph-node").evaluateAll((els) => els.map((el) => {

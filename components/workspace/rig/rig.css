@@ -56,7 +56,8 @@
 .pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer):not(.pxw-graph-live) { pointer-events: none; position: relative; }
 .pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
-.pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
+/* A card's kicker and footer are labels people read (its type, version, state and role): at the label floor, never under it. */
+.pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-label-floor); }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
 /* A reference's kind (Cast, Environment, Element, Ref) is a label people read and act on: above the label floor. */
 .pxw .pxw-graph-kind { color: var(--pxw-muted); }
@@ -78,7 +79,7 @@
 .pxw .pxw-graph-readouts { display: flex; gap: 6px; margin-top: 10px; }
 .pxw .pxw-graph-readouts > span { flex: 1; display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 7px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
 .pxw .pxw-graph-readouts > span > span:last-child { color: var(--pxw-near-primary); }
-.pxw .pxw-graph-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-graph-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-graph-port { position: absolute; top: 50%; width: 11px; height: 11px; margin-top: -5.5px; border-radius: 50%; background: var(--pxw-ground); border: 1.5px solid var(--pxw-hover-border); z-index: 1; }
 .pxw .pxw-graph-port--in { left: -6px; }
 .pxw .pxw-graph-port--out { right: -6px; }
@@ -100,10 +101,10 @@
 .pxw .pxw-graph-kicker-label { display: inline-flex; gap: 7px; min-width: 0; }
 .pxw .pxw-graph-code { color: var(--pxw-muted); }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-code { color: #7fb6ff; }
-.pxw .pxw-graph-status { flex: none; color: var(--pxw-muted); font-weight: 560; }
-.pxw .pxw-graph-status[data-tone="red"] { color: var(--pxw-red-ink); }
+.pxw .pxw-graph-state { flex: none; color: var(--pxw-muted); font-weight: 560; }
+.pxw .pxw-graph-state[data-tone="red"] { color: var(--pxw-red-ink); }
 .pxw .pxw-graph-detail { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pxw .pxw-graph-status + .pxw-graph-detail::before { content: "·"; margin-right: 6px; }
+.pxw .pxw-graph-state + .pxw-graph-detail::before { content: "·"; margin-right: 6px; }
 /* A note is its words: more of them show, as written (line breaks kept). */
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-note-text { -webkit-line-clamp: 5; white-space: pre-line; overflow-wrap: anywhere; }
 .pxw .pxw-graph-placeholder { color: var(--pxw-label-floor); font-style: normal; }

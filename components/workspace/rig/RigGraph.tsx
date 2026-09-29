@@ -60,10 +60,10 @@ function Card({ node, kind, shot, asset, selected, wiring, editing, onSelect, on
       {/* A reference says what it is to the production (Cast, Environment, Element or Ref); a shot, its type and number; any other card, its type. */}
       <span className="pxw-graph-kicker">
         <span className="pxw-graph-kicker-label">
-          {kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span>{def.label.toUpperCase()}</span>}
+          {kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span data-functional-label="">{def.label.toUpperCase()}</span>}
           {shot ? <span className="pxw-graph-code" data-functional-label="">{String(shot.index).padStart(2, "0")}</span> : null}
         </span>
-        {note ? null : <span>{version}</span>}
+        {note ? null : <span data-functional-label="">{version}</span>}
       </span>
       {note && !editing && !node.locked ? <EditButton label={`Edit note ${node.title}`} onEdit={onEdit} /> : null}
       {well ? <Media id={node.id} asset={asset} height={well} badge={isShot && selected} /> : null}
@@ -80,8 +80,8 @@ function Card({ node, kind, shot, asset, selected, wiring, editing, onSelect, on
         : note ? <span className="pxw-graph-desc pxw-graph-note-text pxw-graph-placeholder">Nothing written yet.</span> : null}
       <span className="pxw-graph-foot">
         <span className="pxw-dot" style={{ width: 5, height: 5, background: TONE[status.tone] }} />
-        {status.word ? <span className="pxw-graph-status" data-tone={status.tone} data-functional-label="">{status.word}</span> : null}
-        {status.detail ? <span className="pxw-graph-detail">{status.detail}</span> : null}
+        {status.word ? <span className="pxw-graph-state" data-tone={status.tone} data-functional-label="">{status.word}</span> : null}
+        {status.detail ? <span className="pxw-graph-detail" data-functional-label="">{status.detail}</span> : null}
       </span>
       <button type="button" className="pxw-graph-port pxw-graph-port--in" aria-label={`Connect into ${node.title}`} data-armed={wiring || undefined} onClick={onWireInto} />
       <button type="button" className="pxw-graph-port pxw-graph-port--out" aria-label={`Connect from ${node.title}`} onClick={onWireFrom} />
