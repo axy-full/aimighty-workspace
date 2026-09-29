@@ -462,19 +462,19 @@ test("a canvas operation (Tidy, Atomik's work) goes through the same guard: it n
     const photo = asset("photo", { uploadId, url: `/api/uploads/${uploadId}` });
     await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("lamp", { title: "Brass lamp", assetId: "photo" })], made: ["lamp"], removeNodes: [], upsertAssets: [photo], order: ["lamp"] }, "ana");
     const { element } = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: "lamp" } }, ana);
-    /* Atomik makes a card that claims the lamp's element, and moves the lamp: the claim is held, the move lands. */
-    const ops = [
-      { kind: "create" as const, node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: element.id }) },
-      { kind: "move" as const, nodeId: "lamp", x: 480, y: 120 },
-    ];
-    const result = await applyCanvasOps("prod-masters", { opId: "run-7:step-1", ops, author: "agent:run-7", runId: "run-7" }, { room: null });
-    expect(result.changed).toBe(2);
-    const canvas = (await store.readTeamCanvas("prod-masters"))!.canvas;
-    expect(canvas.nodes.copy).toBeDefined();
+    /* Atomik makes a card that claims the lamp's element: the card is made, the claim is held, and the record says so. */
+    const made = await applyCanvasOps("prod-masters", { opId: "run-7:step-1", ops: [{ kind: "create", node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: element.id }) }], author: "agent:run-7", runId: "run-7" }, { room: null });
+    expect(made.changed).toBe(1);
+    let canvas = (await store.readTeamCanvas("prod-masters"))!.canvas;
+    expect(canvas.nodes.copy).toMatchObject({ title: "Lamp copy", assetId: "photo" });
     expect("elementId" in canvas.nodes.copy).toBe(false);
-    expect(canvas.nodes.lamp).toMatchObject({ x: 480, y: 120, elementId: element.id, assetId: "photo" });
     const row = (await findCanvasOp(db(), "prod-masters", "run-7:step-1"))!;
     expect(row.changes.find((c) => c.id === "copy")?.after).not.toHaveProperty("elementId");
+    /* A person's canvas operation moves the master (its place is not what makes it the master): it lands, the master stays one. */
+    const moved = await applyCanvasOps("prod-masters", { opId: "tidy-ana-000001", ops: [{ kind: "move", nodeId: "lamp", x: 480, y: 120 }], author: "ana" }, { room: null });
+    expect(moved.changed).toBe(1);
+    canvas = (await store.readTeamCanvas("prod-masters"))!.canvas;
+    expect(canvas.nodes.lamp).toMatchObject({ x: 480, y: 120, elementId: element.id, assetId: "photo" });
     /* The pure step: a held field leaves a change, and a change with nothing left goes. */
     const changes = [
       { id: "a", made: false, fields: ["x", "refKind"], before: { x: 0, refKind: "element" }, after: { x: 5, refKind: "cast" } },
