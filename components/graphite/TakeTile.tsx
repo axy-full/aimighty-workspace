@@ -4,7 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { dragAttrs } from "@/lib/drop";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { entryFace, entryKind, type EntryFace, type LibraryEntry, type LibraryView } from "@/lib/workspace/library";
-import { takeChip, takeReasonLine, type ChipTone } from "@/lib/workspace/takes";
+import { takeChargeLine, takeChip, takeReasonLine, type ChipTone } from "@/lib/workspace/takes";
 import { ReleaseTake } from "./ReleaseTake";
 
 /**
@@ -12,14 +12,16 @@ import { ReleaseTake } from "./ReleaseTake";
  * and Studio › Takes. The picture area says what the take is doing (media,
  * rendering, held, failed, stopped, or a finished take whose copy has not
  * landed), a chip names its status, and the line under the name says why a
- * take failed or waits. While the library is read, aspect-true skeletons hold
- * the grid; a failed read is a banner with Try again, never an empty grid.
+ * take failed or waits. A failed take's charge has a line of its own, only
+ * when a receipt or its provider confirms it — never cut, never assumed free.
+ * While the library is read, aspect-true skeletons hold the grid; a failed
+ * read is a banner with Try again, never an empty grid.
  *
  * A take held for credits carries Release at its exact price (ReleaseTake),
  * except on the 2-up Library tile, whose Inspector has it.
  *
- * The words come from lib/workspace/takes.ts (takeChip, takeReasonLine, the
- * Take's `stage`, `reason`, `detail`, `failedUnbilled`, `cancelled`) and the
+ * The words come from lib/workspace/takes.ts (takeChip, takeReasonLine,
+ * takeChargeLine, the Take's `stage`, `reason`, `detail`, `cancelled`) and the
  * states from lib/workspace/library.ts (entryFace, libraryView, tileAspect):
  * a new grid of takes renders TakeTile and reads those, never its own copy.
  */
@@ -91,6 +93,8 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   const needs = take.status === "held" && !compact && take.needs != null ? take.needs.toLocaleString("en-US") : null;
   /* A finished take whose copy is missing says so under its name; Refresh sits in the picture's corner. */
   const reason = face === "unavailable" ? "Preview unavailable" : takeReasonLine(take, compact);
+  /* What the failed take's charge came to: a receipt or its provider's own word, else nothing claimed. */
+  const charge = takeChargeLine(take);
   const kind = entryKind(entry);
   /* Draft mode (lib/draftFinal.ts): a draft or its final says so, unless its strip's label already does ("draft · 480p"). */
   const pair = take.pair && !label ? (take.pair.role === "draft" ? "Draft" : "Final") : null;
@@ -111,6 +115,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   const why = reason ? <span className="gx-tile-reason" data-tone={tone} title={face === "unavailable" ? "The stored copy did not load. Refresh reads the library again." : take.detail ?? reason} data-testid="take-reason">{reason}</span> : null;
   const refreshButton = face === "unavailable" ? <span className="gx-tile-over"><Refresh onRefresh={refresh} name={take.name} /></span> : null;
   const need = needs ? <span className="gx-tile-reason gx-tile-need" data-tone="waiting" data-testid="take-need">Needs {needs}{"\u00a0"}cr</span> : null;
+  const cost = charge ? <span className="gx-tile-reason gx-tile-charge" data-testid="take-charge">{charge}</span> : null;
   /* A take held for credits carries its way out: Release at the exact price (the 2-up Library tile leaves it to the Inspector). */
   const release = take.status === "held" && variant !== "library" ? <ReleaseTake entry={entry} onReleased={onRefresh} place="tile" /> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
@@ -131,6 +136,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
           <span className="gx-tile-media pd-take-media">{inner}</span>
           <span className="pd-take-name">{shownName}</span>
           {why}
+          {cost}
           {need}
         </button>
         {refreshButton}
@@ -160,6 +166,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
         </>
       )}
       {why}
+      {cost}
       {need}
       {release}
     </div>

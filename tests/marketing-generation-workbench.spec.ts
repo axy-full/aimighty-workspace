@@ -180,13 +180,16 @@ async function fixture(page: Page, brokenMapping = false, campaign = false, plai
       const fingerprint = createHash("sha256")
         .update(JSON.stringify(body))
         .digest("hex");
-      const credits = body.marketing.quality === "high" ? 5 : 3;
+      /* A 2.5 build is quoted approximately from its published rates. */
+      const approximate = Boolean(body.marketing.variant);
+      const credits = approximate ? 7 : body.marketing.quality === "high" ? 5 : 3;
       quotes.push({ body, fingerprint, credits });
       return json({
         fingerprint,
         estimatedCredits: credits,
         price: credits,
         unit: "cr",
+        ...(approximate ? { approximate: true } : {}),
       });
     }
     if (endpoint === "/api/generate/check") {
@@ -463,5 +466,39 @@ test("a preset whose engine is not connected here opens on a connected engine, s
   /* The variant stays set up for the Marketing Studio engine, for when it is connected. */
   await expect.poll(() => f.project().nodes.find((node) => node.id === "marketing-node")!.text).toBe(direction);
   expect(f.project().moleculr!.variants[0].generation).toEqual({ modelId, marketing: { quality: "high", enhancePrompt: false }, ratio: "3:4" });
+  expect(f.errors).toEqual([]);
+});
+
+test("a 2.5 build adds extra-high and max, reads about N cr on Generate, and sends its build with the approved ceiling", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone and one desktop");
+  const f = await fixture(page);
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&stage=canvas"));
+  const dialog = await openNode(page);
+  await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
+  const build = dialog.getByLabel("Marketing Studio build"), quality = dialog.getByLabel("Marketing image quality");
+  await expect(build).toHaveValue("alpha");
+  await expect(quality.locator("option")).toHaveText(["Low", "Medium", "High"]);
+  await build.selectOption("flare");
+  await expect(quality.locator("option")).toHaveText(["Low", "Medium", "High", "Extra high", "Max"]);
+  await quality.selectOption("max");
+  const generate = dialog.getByRole("button", { name: "Generate · about 7 cr", exact: true });
+  await expect(generate).toBeEnabled();
+  await expect(dialog.getByText("The price is approximate; the delivered image settles it.")).toBeVisible();
+  expect(f.quotes.at(-1)?.body.marketing).toEqual({ variant: "flare", quality: "max", enhancePrompt: false });
+  /* Back on 2.0 Alpha, a 2.5-only quality falls back to high and the live price returns. */
+  await build.selectOption("alpha");
+  await expect(quality).toHaveValue("high");
+  await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
+  expect(f.quotes.at(-1)?.body.marketing).toEqual({ quality: "high", enhancePrompt: false });
+  await build.selectOption("sunburst");
+  await quality.selectOption("xhigh");
+  await expect(generate).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath("marketing-25-approximate.png") });
+  const quote = f.quotes.at(-1)!;
+  await generate.click();
+  await expect.poll(() => f.submissions.length).toBe(1);
+  expect(JSON.parse(f.submissions[0].body)).toEqual({ ...quote.body, maxCredits: 7, quoteFingerprint: quote.fingerprint });
+  expect(JSON.parse(f.submissions[0].body).marketing).toEqual({ variant: "sunburst", quality: "xhigh", enhancePrompt: false });
   expect(f.errors).toEqual([]);
 });

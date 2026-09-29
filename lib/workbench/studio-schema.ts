@@ -15,6 +15,10 @@ import { validateColor } from "./color";
 import { validateAudio } from "./audio";
 import { REF_KINDS, type Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
+import { CINEMA_STUDIO_CONTROLS } from "../cinemaStudioTypes";
+/** A Cinema Studio 4.0 take's creative controls on its node: documented controls and values only (lib/cinemaStudioTypes.ts). */
+const cinemaControlsSchema = z.object(Object.fromEntries(CINEMA_STUDIO_CONTROLS.map((control) =>
+  [control.key, z.enum(control.options.map((o) => o.value) as [string, ...string[]]).optional()]))).strict();
 /** The most a reserved node field (master, verify, agent) may hold, as JSON. */
 export const RESERVED_NODE_FIELD_CHARS = 8000;
 const reservedFits = (value: unknown) => JSON.stringify(value).length <= RESERVED_NODE_FIELD_CHARS;
@@ -184,12 +188,12 @@ export const moleculrSchema = z.object({
   referenceAd:referenceAdSchema.optional(),
   brandKit:brandKitSchema.optional(),productDescription:z.string().max(4000).optional(),productBrand:z.string().max(200).optional(),productSource:productSourceSchema.optional(),
   products:z.array(productProfileSchema).max(24).refine(items=>new Set(items.map(item=>item.id)).size===items.length).optional(),activeProductId:z.string().min(1).max(100).optional(),creative:creativeSchema.optional(),poster:posterDocumentSchema.optional(),
-  marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional(),presetName:z.string().max(300).optional()}).strict().optional(),
+  marketing:z.object({variant:z.enum(["alpha","flare","sunburst"]).optional(),quality:z.enum(["low","medium","high","xhigh","max"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional(),presetName:z.string().max(300).optional()}).strict().optional(),
   productName:z.string().max(200),productUrl:z.string().max(2000),
   productAssetIds:z.array(z.string().max(100)).max(5),castAssetIds:z.array(z.string().max(100)).max(6),
   format:z.enum(['ugc-review','tutorial','unboxing','try-on','cgi','cinematic-demo','poster','marketplace','motion']),
   hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
-  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
+  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({variant:z.enum(["alpha","flare","sunburst"]).optional(),quality:z.enum(["low","medium","high","xhigh","max"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional(),cinema:cinemaControlsSchema.optional()}).strict().optional()}).strict()).max(100),
 }).strict();
 export const productionSchema = z.object({
   scriptApproval: z.object({
@@ -234,8 +238,15 @@ export const productionSchema = z.object({
       description: z.string().max(2000), prompt: z.string().max(5000), soulId: z.string().max(200).optional(), referenceAssetId: z.string().max(100).optional(),
       takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20), selected: z.string().max(100).optional(),
       job: z.object({ id: z.string().uuid(), status: z.enum(['quoted', 'submitted']) }).strict().optional(),
-      model: z.enum(['soul_cinematic', 'soul_2', 'soul_location', 'soul_cast']).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
+      /* The connected account's Soul model an entry was built with (soul_cinematic, soul_2, soul_location, soul_cast, …):
+         kept loading after Cast moved to the platform's key, so old projects stay whole (read-only where the model is gone). */
+      model: z.string().regex(/^soul_[a-z0-9_]{1,40}$/).optional(), quality: z.enum(['1.5k', '2k']).optional(), budget: z.number().int().min(10).max(500).optional(),
       category: z.enum(['character', 'environment', 'prop']).optional(), elementId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+      /* A character's Soul ID in this workspace and its render settings on the platform's key; its renders in flight. */
+      identityId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+      soulStrength: z.number().gt(0).max(1).optional(), soulBatch: z.union([z.literal(1), z.literal(4)]).optional(),
+      soulResolution: z.enum(['720p', '1080p']).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime(), batch: z.union([z.literal(1), z.literal(4)]) }).strict()).max(10).optional(),
     }).strict()).max(100),
     agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),

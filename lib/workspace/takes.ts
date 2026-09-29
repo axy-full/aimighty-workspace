@@ -1,5 +1,7 @@
 import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
+import { failureCopy, failureLine, failureUncharged } from "../errors";
 import { failureKind } from "../jobState";
+import type { TakeFailure } from "../providerOutcome";
 import { engineLabel } from "./engines";
 import { heldNeeds } from "./release";
 import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFinal";
@@ -9,11 +11,15 @@ import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFi
  * listProjectLibrary) as cards. Uploads and generations together.
  *
  * Money: `credits` is the ledger's billed figure (Generation.creditsBilled),
- * never an estimate. A failed or cancelled render is not billed and says so.
- * A render still in flight has not settled and carries no figure. Uploads
- * cost nothing and show none. A workspace on its own keys is billed in
- * dollars (Generation.costUsd); that figure is carried as `usd` and the
- * credits stay null — the subtitle counts credits only.
+ * never an estimate. A failed or cancelled render says "not billed" only when
+ * that is confirmed — Particl's own ledger holds nothing for it (credit
+ * workspaces), or its provider said it refunded or did not charge it (a
+ * workspace's own keys) — and otherwise just "failed", with why and what the
+ * provider said on its line (lib/errors.ts failureLine). A render still in
+ * flight has not settled and carries no figure. Uploads cost nothing and show
+ * none. A workspace on its own keys is billed in dollars (Generation.costUsd);
+ * that figure is carried as `usd` and the credits stay null — the subtitle
+ * counts credits only.
  *
  * Integrity: uploads always carry their stored sha256. A generation carries
  * one only when its original was stored byte-for-byte and hashed
@@ -35,12 +41,16 @@ export type Take = {
   version: string;
   /** "2.5 · 5s" or "4032×3024 · JPEG" / "1920×1080 · MP4 · 12s". */
   meta: string;
-  /** Billed credits once settled (failed → 0); null for uploads, renders in flight and non-credit billing. */
+  /** Billed credits once settled; null for uploads, renders in flight and non-credit billing. */
   credits: number | null;
   /** Billed dollars, only for a workspace billed in dollars. */
   usd: number | null;
   status: TakeStatus;
+  /** Confirmed: the ledger holds nothing for it, or its provider refunded or did not charge it. */
   failedUnbilled?: true;
+  /** A failed take: what happened, what the provider did with the charge, the next step (lib/errors.ts). */
+  failure?: TakeFailure;
+  failureLine?: string;
   /** A take stopped before it rendered (a held take discarded): filed under `failed`, but nothing went wrong. */
   cancelled?: true;
   /** Where a render in flight is: waiting its turn (or for a free slot), or on the engine. */
@@ -90,7 +100,11 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const heldForCredits = g.status === "held" && takeStage(g) === "held";
     const status: TakeStatus = failed ? "failed" : heldForCredits ? "held" : g.status !== "succeeded" ? "rendering"
       : g.reviewState === "approved" ? "approved" : g.reviewState === "picked" ? "picked" : g.reviewState === "changes" ? "changes" : "review";
-    const unbilled = failed && !((billedCredits ?? 0) > 0) && !((g.costUsd ?? 0) > 0);
+    /* "Not billed" only when confirmed: the ledger holds nothing for it, or its provider said so. */
+    const failure = failed ? g.failure ?? null : null;
+    const unbilled = failed && failureUncharged(failure);
+    /* What the ledger holds for a failed take, when the route read it; else the take's own settled figure. */
+    const charged = failure?.charge?.settled ? failure.charge.credits : null;
     const sha = typeof g.params.originalSha256 === "string" && SHA.test(g.params.originalSha256) ? g.params.originalSha256 : null;
     const stage = status === "rendering" ? takeStage(g) : null;
     const needs = heldForCredits ? heldNeeds(g.params) : null;
@@ -100,16 +114,19 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     return {
       id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
-      credits: !settled ? null : unbilled ? 0 : billedCredits ?? null,
-      usd: !settled ? null : unbilled ? (g.costUsd == null ? null : 0) : g.costUsd ?? null,
+      credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
+      /* A workspace on its own keys: a failed take's recorded zero is Particl's metering, not its provider's word, so
+         no dollar figure unless it recorded a charge or its provider confirmed none. */
+      usd: !settled ? null : failed && !unbilled && !((g.costUsd ?? 0) > 0) ? null : g.costUsd ?? null,
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
+      ...(failure ? { failure, failureLine: failureLine(failure, { cancelled: g.status === "cancelled" }).text } : {}),
       ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
       ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt,
     };
   });
 }
 
-type Row = { status: string; error?: string | null; params?: Record<string, unknown> | null };
+type Row = { status: string; error?: string | null; params?: Record<string, unknown> | null; failure?: TakeFailure | null };
 type HeldParams = { held?: { needs?: unknown; why?: unknown } };
 
 /** Held for slots is a place in the line (Queued); held for credits waits on a top-up (Held). */
@@ -149,16 +166,24 @@ function firstLine(message: string): string {
 }
 
 /**
- * Why a take failed, in one line a card can carry (lib/jobState.ts failureKind
- * reads the row's own words). The row's message rides along as `detail` when
- * it says more, for the tooltip. Failure state alone does not establish the
- * provider's billing outcome.
+ * Why a take failed, in one line a card can carry. A failure its provider
+ * answered for (lib/providerOutcome.ts) reads in the typed words of
+ * lib/errors.ts, with the provider's own words as `detail` only where the
+ * viewer may read them (its own key or account). Otherwise lib/jobState.ts
+ * failureKind reads the row's own words, which ride along as `detail` when
+ * they say more, for the tooltip. Failure state alone does not establish the
+ * provider's billing outcome: the charge is `takeChargeLine`'s.
  */
 export function failureReason(g: Row): { reason: string; detail?: string } {
   const raw = (g.error ?? "").trim();
   const detail = raw ? firstLine(raw) : "";
   const same = (a: string, b: string) => a.replace(/[.!?\s]+$/, "").toLowerCase() === b.replace(/[.!?\s]+$/, "").toLowerCase();
   const withDetail = (reason: string) => (detail && !same(detail, reason) ? { reason, detail } : { reason });
+  const typed = g.failure?.provider != null && !(g.status === "cancelled" && g.failure.kind === "unknown") ? g.failure : null;
+  if (typed) {
+    const { what } = failureCopy(typed.kind, typed.payer);
+    return typed.message && !same(typed.message, what) ? { reason: what, detail: typed.message } : { reason: what };
+  }
   /* Stopped on purpose (a held take discarded): its own words say so ("Discarded before it started."). */
   if (g.status === "cancelled") return { reason: detail || "Stopped before it rendered" };
   /* The row's own words first; why a take was parked only when they say nothing. */
@@ -203,8 +228,21 @@ export function takeStatusWord(take: Pick<Take, "status" | "stage" | "cancelled"
 }
 
 /**
+ * What a failed take's charge came to, on its own line under the reason:
+ * Particl's own ledger ("Not billed", "12 cr charged", "12 cr held"), or —
+ * where the money was the workspace's own key or account — its provider's own
+ * word ("Higgsfield refunded 12 credits", "Google didn't say if it charged").
+ * Null when nothing is on record: a charge nobody confirmed is never called
+ * free (lib/errors.ts failureLine).
+ */
+export function takeChargeLine(take: Pick<Take, "status"> & Partial<Pick<Take, "failure" | "cancelled">>): string | null {
+  if (take.status !== "failed" || !take.failure) return null;
+  return failureLine(take.failure, { cancelled: take.cancelled === true }).charge;
+}
+
+/**
  * The line under a card's name: the failure or hold reason, with its billing
- * outcome kept separately. A held take's need rides on its chip
+ * outcome kept separately (takeChargeLine). A held take's need rides on its chip
  * ("Held · needs 12 cr"), so the line says only what else stops it.
  */
 export function takeReasonLine(take: Pick<Take, "reason" | "needs"> & Partial<Pick<Take, "status">>, compact = false): string | null {
@@ -259,7 +297,7 @@ export function reviewSaid(name: string, state: ReviewState): string {
   }
 }
 
-/** "12 assets · 84 cr settled" — summed from billed credits only; failed renders count 0. */
+/** "12 assets · 84 cr settled" — summed from recorded billed credits only. */
 export function takesSubtitle(takes: readonly Pick<Take, "credits">[]): string {
   const settled = takes.reduce((sum, t) => sum + (t.credits ?? 0), 0);
   return `${takes.length.toLocaleString("en-US")} ${takes.length === 1 ? "asset" : "assets"} · ${settled.toLocaleString("en-US")} cr settled`;

@@ -401,6 +401,9 @@ export function platformReady(): Promise<void> {
       for (const col of [`accepted_policy_at INTEGER`]) {
         await addColumn("accounts", col);
       }
+      /* What the provider said about a failed job (lib/providerOutcome.ts),
+         for the platform admin desk only: no customer route selects it. */
+      await addColumn("meter_events", `provider_outcome TEXT`);
       // Existing grants are classified once, atomically with the new column.
       // Already-migrated databases skip the data scan on cold starts.
       await addColumn("credit_grants", GRANT_KIND_COLUMN, GRANT_KIND_BACKFILL);

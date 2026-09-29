@@ -30,7 +30,7 @@ export function failureCopy(kind: FailureKind): { why: string; action: FailureAc
     case "cap": return { why: "The production is at its cap.", action: "unlock", label: "Ask an admin to unlock" };
     case "balance": return { why: "The balance is at zero.", action: "topup", label: "Top up" };
     case "slots": return { why: "Every render slot was busy.", action: "retry", label: "Render again" };
-    case "vendor": return { why: "The engine hit an error; nothing was charged for a failure.", action: "retry", label: "Render again" };
+    case "vendor": return { why: "The engine hit an error.", action: "retry", label: "Render again" };
     default: return { why: "This render did not finish.", action: "retry", label: "Render again" };
   }
 }
