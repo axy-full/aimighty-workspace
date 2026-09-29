@@ -4,6 +4,7 @@ import type { CanvasOp, NodeChange } from "./canvas-ops-model";
 import { createNode, nodeHeight } from "./node-graph";
 import { REF_KIND_LABELS, REF_NODE_TYPES, cardLabel, isReferenceNode, isRefKind, withRefKind } from "./ref-kind";
 import { stableId } from "./stable-id";
+import { creditFigure } from "../runLimit";
 import type { Asset, CanvasNode, NodeType, Project, RefKind } from "./studio";
 import type { TeamCanvas } from "./team-canvas-model";
 
@@ -237,13 +238,17 @@ export class DryBoard {
 /* ── The plan, compiled into steps of canvas operations ───────────────── */
 
 export type CompiledCard = { key: string; kind: AgentKind; id: string; title: string };
-export type StepTool = "create" | "wire" | "tidy" | "render" | "lock";
+export type StepTool = "create" | "wire" | "tidy" | "render" | "verify" | "lock";
 export type CompiledStep = {
-  seq: number; tool: StepTool; purpose: "build" | "take" | "lock"; label: string;
+  seq: number; tool: StepTool; purpose: "build" | "take" | "verify" | "lock"; label: string;
   /** The card a next step is about. */
   nodeId: string | null;
   ops: CanvasOp[];
-  /** "proposed": part of the build, applied once approved; "next": shown, never run in this build. */
+  /**
+   * "proposed": part of the build, applied once approved. "next": after the build — a render
+   * (paid: priced, then run inside the run's approved limit, lib/workbench/rig-agent-runs.ts),
+   * the check of its take, or a master to lock (a person's).
+   */
   state: "proposed" | "next";
 };
 export type CompiledPlan = {
@@ -322,8 +327,12 @@ export function compilePlan(draft: PlanDraft, input: { runId: string; title: str
     steps.push({ seq: steps.length + 1, tool: "tidy", purpose: "build", label: "Tidy the new cards", nodeId: null, ops: [{ kind: "tidy", nodeIds: cards.map((c) => c.id) }], state: "proposed" });
   const titleOf = (ref: string) => draft.cards.find((c) => c.key === ref)?.title ?? input.existing.find((n) => n.id === ref)?.title ?? "a card";
   const next = draft.next.map((n) => ({ what: n.what, id: resolve(n.card), title: titleOf(n.card) }));
-  for (const n of next)
+  for (const n of next) {
     steps.push({ seq: steps.length + 1, tool: n.what, purpose: n.what === "render" ? "take" : "lock", label: n.what === "render" ? `Render ${n.title} · priced` : `Lock ${n.title} as a master`, nodeId: n.id, ops: [], state: "next" });
+    /* Each take is checked against its masters once it lands (plan §6): the check is its own step. */
+    if (n.what === "render")
+      steps.push({ seq: steps.length + 1, tool: "verify", purpose: "verify", label: `Check ${n.title} against its masters`, nodeId: n.id, ops: [], state: "next" });
+  }
   return { title: clip(input.title, 80) || "A board for this production", summary: clip(input.summary, PLAN_LIMITS.summary), cards, wires, tidy: draft.tidy && cards.length > 0, next, steps };
 }
 
@@ -368,10 +377,62 @@ export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author
 
 /* ── What the run card shows (never a model, a cost or a key) ─────────── */
 
-export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "done" | "stopped" | "failed";
-export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused"];
-export type RigAgentStepState = "proposed" | "queued" | "done" | "skipped" | "next";
+/** `needs_you`: the run waits for a person — a render to tap (Ask), one over the per-job line, the limit, or a refusal. */
+export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "needs_you" | "done" | "stopped" | "failed";
+export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused", "needs_you"];
+/**
+ * A build step: proposed → queued → done (or skipped). A paid step (a render) after the build:
+ * next → waiting (priced; waits for its approval) → approved → sending (its durable request key is
+ * saved; the reply may be lost) → rendering (a take in flight) → done or failed; or paused (refused:
+ * it waits for a person, with the reason), or skipped.
+ */
+export type RigAgentStepState =
+  | "proposed" | "queued" | "done" | "skipped" | "next"
+  | "waiting" | "approved" | "sending" | "rendering" | "failed" | "paused";
 export type RigAgentStepView = { seq: number; label: string; state: RigAgentStepState; held: string[] };
+export type RigAgentMode = "ask" | "auto";
+export const RIG_AGENT_MODES: readonly RigAgentMode[] = ["ask", "auto"];
+
+/** What the run may spend and what it has spent (credits only: never a vendor's cost). */
+export type RigAgentMoneyView = {
+  mode: RigAgentMode;
+  /** The limit the person approved for this run. */
+  limit: number;
+  /** In Auto, a render priced up to this runs without asking; anything more asks. */
+  jobCeiling: number;
+  /** Charged so far: finished work at its final charge. */
+  spent: number;
+  /** Reserved by work in flight, at its estimate. */
+  inFlight: number;
+  /** What the limit still leaves, with room kept for work in flight at its worst case. */
+  left: number;
+  /** The planning turn, metered into the limit: reserved while Atomik plans, then what it was charged. */
+  planning: { state: "reserved" | "settled" | "released"; credits: number | null } | null;
+};
+
+/** A render (or the check of its take) after the build, as the run card shows it. */
+export type RigAgentPaidStepView = {
+  seq: number;
+  tool: "render" | "verify";
+  title: string;
+  state: RigAgentStepState;
+  /** The approximate price before it runs ("about N cr"). */
+  quote: number | null;
+  /** The most it may settle at (its price times its band): what the run's limit keeps room for. */
+  worst: number | null;
+  /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
+  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
+  /** What it was charged, once the ledger has settled it. */
+  charged: number | null;
+  /** For a take that failed: what the ledger shows the provider did with the charge. */
+  outcome: "not_billed" | "charged" | "unknown" | null;
+  /** Why it waits, or why it stopped. */
+  reason: string | null;
+  /** The viewer may approve it now (the person who asked, while it waits or is paused). */
+  canRender: boolean;
+  /** The approval a tap gives: the price the card shows. */
+  fingerprint: string | null;
+};
 export type RigAgentProposalView = {
   title: string; summary: string;
   groups: { kind: AgentKind; label: string; titles: string[] }[];
@@ -390,17 +451,28 @@ export type RigAgentRunView = {
   held: string[];
   undo: { removed: number; kept: number; reasons: string[] } | null;
   canUndo: boolean;
-  /** Building is free: always 0. */
-  credits: 0;
+  /** Charged to this run so far, in credits (building is free; planning, renders and checks are not). */
+  credits: number;
+  /** The approved limit and what the run has spent inside it; null for a run asked without a limit. */
+  money: RigAgentMoneyView | null;
+  /** The renders after the build, and the checks of their takes. */
+  paid: RigAgentPaidStepView[];
   at: number;
 };
 
-/** The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next. */
-export function proposalView(plan: CompiledPlan, fingerprint: string): RigAgentProposalView {
+export { creditFigure };
+
+/**
+ * The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next.
+ * In Auto, the renders say how much one may cost without asking.
+ */
+export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pick<RigAgentMoneyView, "mode" | "jobCeiling"> | null): RigAgentProposalView {
   const groups = AGENT_KINDS.map((kind) => ({ kind, label: AGENT_KIND_LABELS[kind], titles: plan.cards.filter((c) => c.kind === kind).map((c) => c.title) })).filter((g) => g.titles.length);
   const renders = plan.next.filter((n) => n.what === "render").length, locks = plan.next.filter((n) => n.what === "lock").length;
   const next = [
-    ...(renders ? [`Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
+    ...(renders ? [money?.mode === "auto"
+      ? `Next: render ${plural(renders, "shot")} · priced; up to about ${creditFigure(money.jobCeiling)} cr each runs on its own`
+      : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];
   return { title: plan.title, summary: plan.summary, groups, cards: plan.cards.length, wires: plan.wires.length, tidy: plan.tidy, next, fingerprint };

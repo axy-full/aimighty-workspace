@@ -1367,7 +1367,7 @@ export async function executeGenerationAdmission(
               shotId: stillShot,
               createdBy: got.user.id,
             },
-            { token: got.token },
+            { token: got.token, run: options.run },
           );
         } catch (e) {
           await meter({
@@ -1472,6 +1472,13 @@ export async function executeGenerationAdmission(
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
+      /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
+         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+      if (holdStill && options.run)
+        return admissionReply(
+          { error: holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
+          { status: holdStill.why === "slots" ? 409 : 402 },
+        );
 
       // The claim is bound in the same write: a claim naming no job proves there is none.
       const stillBinding = await claimBinding(requestClaim, genId);
@@ -1552,7 +1559,7 @@ export async function executeGenerationAdmission(
             shotId: stillShot,
             createdBy: got.user.id,
           },
-          { token: got.token },
+          { token: got.token, run: options.run },
         );
       } catch (e) {
         await db().execute({
@@ -2040,6 +2047,13 @@ export async function executeGenerationAdmission(
       );
       if (stopped) return stopped;
     }
+    /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
+       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+    if (hold && options.run)
+      return admissionReply(
+        { error: hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
+        { status: hold.why === "slots" ? 409 : 402 },
+      );
 
     if (genjutsu && body.maxCredits == null)
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
@@ -2195,7 +2209,7 @@ export async function executeGenerationAdmission(
           shotId,
           createdBy: got.user.id,
         },
-        { token: got.token },
+        { token: got.token, run: options.run },
       );
     } catch (e) {
       await db().execute({
@@ -2246,7 +2260,7 @@ export function quoteGeneration(prepared: PreparedAdmission) {
 export function admitGeneration(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
 ): Promise<AdmissionReply> {
   return admitPrepared(
     prepared,

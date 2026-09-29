@@ -12,7 +12,8 @@ import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
-  approveRigAgent, askRigAgent, declineRigAgent, RigAgentError, rigAgentEnabled, rigAgentState, stopRigAgent, undoRigAgent,
+  approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
+  skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,9 @@ function failure(error: unknown) {
  * `server`: the newest change the server made to it (a Tidy, Atomik's work), so a window with no
  * live room folds the canvas in when it moves. `head=1` answers only the revision and `server`:
  * the light check those windows make every few seconds. `agent=1` answers Atomik's run card:
- * whether building is switched on, and the newest run on this production.
+ * whether building is switched on, the newest run on this production (its limit, what it has
+ * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
+ * progress, what asking would cost: the suggested limit, the per-job line, and planning's price.
  */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
@@ -44,8 +47,10 @@ export const GET = withTenant(async (req: Request) => {
   const url = new URL(req.url);
   const productionId = url.searchParams.get("productionId") ?? "";
   try {
-    if (url.searchParams.get("agent") === "1")
-      return Response.json({ agent: await rigAgentState(productionId, who.userId!) }, { headers: NO_STORE });
+    if (url.searchParams.get("agent") === "1") {
+      const draftId = url.searchParams.get("projectId");
+      return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null) }, { headers: NO_STORE });
+    }
     await requireProduction(productionId);
     /* Anything the live room has not taken yet goes out again, after this answer. */
     scheduleCanvasPush(productionId);
@@ -87,29 +92,41 @@ const PRODUCTION = z.string().max(100);
 const RUN_ID = z.string().regex(/^rar_[a-f0-9]{24}$/);
 const tidySchema = z.object({ action: z.literal("tidy"), productionId: PRODUCTION, opId: z.string().regex(ACTION_ID) });
 const runAction = <A extends string>(action: A) => z.object({ action: z.literal(action), productionId: PRODUCTION, runId: RUN_ID });
+const LIMIT = z.number().positive().max(MAX_RUN_LIMIT);
+const SEQ = z.number().int().min(1).max(10_000);
+const FINGERPRINT = z.string().regex(/^[a-f0-9]{64}$/);
 const actionSchema = z.discriminatedUnion("action", [
   tidySchema,
-  /* Ask Atomik to build: the project (draft) it is asked from, a request id (asking twice asks once), the request. */
+  /* Ask Atomik to build: the project (draft) it is asked from, a request id (asking twice asks once), the request,
+     and the limit the person approves for the run with its mode (Ask, the default, or Auto). */
   z.object({
     action: z.literal("agent.plan"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
     requestId: z.string().regex(ACTION_ID), goal: z.string().trim().min(3).max(2000), model: z.string().min(1).max(120).optional(),
+    limit: LIMIT, mode: z.enum(["ask", "auto"]).optional(),
   }),
-  runAction("agent.approve").extend({ fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }),
+  runAction("agent.approve").extend({ fingerprint: FINGERPRINT }),
   runAction("agent.decline"),
   runAction("agent.stop"),
   runAction("agent.undo"),
+  /* A render after the build: approve it at the price shown (or Try again), skip it, or raise the run's limit. */
+  runAction("agent.render").extend({ seq: SEQ, fingerprint: FINGERPRINT.optional() }),
+  runAction("agent.skip").extend({ seq: SEQ }),
+  runAction("agent.limit").extend({ limit: LIMIT }),
 ]);
 
 /**
- * A server action on the canvas. Free: nothing here is priced or charged.
+ * A server action on the canvas. None of these requests charges anything itself.
  *
  *  - `tidy` lays the whole board out (columns by input depth, rows in canvas
  *    order; locked cards stay where they are) for everyone at once. `opId`
- *    names the press, so a retry of the same press changes nothing twice.
- *  - `agent.*` is Atomik building the board (lib/workbench/rig-agent.ts): ask
- *    for a board (Atomik proposes the cards and wires), approve the proposal
- *    as shown or set it aside (only the person who asked), stop a build or
- *    undo one (anyone on the team). Each answers Atomik's run card.
+ *    names the press, so a retry of the same press changes nothing twice. Free.
+ *  - `agent.*` is Atomik on the board (lib/workbench/rig-agent.ts): ask for a
+ *    board with the limit approved for the run (Atomik proposes the cards and
+ *    wires; its planning is metered into that limit), approve the proposal as
+ *    shown or set it aside, render a paid step at the price shown, skip one, or
+ *    raise the limit (only the person who asked); stop a run or undo a build
+ *    (anyone on the team). What a run spends is spent by its worker, inside
+ *    the approved limit. Each answers Atomik's run card.
  */
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
@@ -129,11 +146,14 @@ export const POST = withTenant(async (req: Request) => {
     }
     const { productionId } = action;
     const run =
-      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model })
+      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode })
       : action.action === "agent.approve" ? await approveRigAgent({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
       : action.action === "agent.decline" ? await declineRigAgent({ productionId, runId: action.runId, userId })
       : action.action === "agent.stop" ? await stopRigAgent({ productionId, runId: action.runId, userId })
+      : action.action === "agent.render" ? await renderRigAgentStep({ productionId, runId: action.runId, seq: action.seq, fingerprint: action.fingerprint ?? null, userId })
+      : action.action === "agent.skip" ? await skipRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
+      : action.action === "agent.limit" ? await raiseRigAgentLimit({ productionId, runId: action.runId, limit: action.limit, userId })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
-    return Response.json({ agent: { enabled: rigAgentEnabled(), run }, credits: 0 }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
+    return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }
 });

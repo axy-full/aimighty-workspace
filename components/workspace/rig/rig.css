@@ -263,6 +263,29 @@
 .pxw .pxw-agent-kicker { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: .13em; color: var(--pxw-label-floor); }
 .pxw .pxw-agent-state { font-size: 13px; font-weight: 600; color: var(--pxw-primary); }
 .pxw .pxw-agent-free { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--pxw-green-ink); background: var(--pxw-green-tint); }
+/* What a run has spent of its limit: a price is never cut short, so the chip wraps to its own line instead. */
+.pxw .pxw-agent-spend { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--pxw-primary); background: rgba(255, 255, 255, .06); border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-agent-limit, .pxw .pxw-agent-raise { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.pxw .pxw-agent-limit-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--pxw-secondary); white-space: nowrap; }
+.pxw .pxw-agent-number { width: 96px; min-height: 34px; box-sizing: border-box; padding: 0 8px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.pxw .pxw-agent-mode { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pxw .pxw-agent-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pxw .pxw-agent-option { min-height: 34px; padding: 4px 12px; border-radius: 9px; border: 1px solid var(--pxw-control-border); background: transparent; color: var(--pxw-secondary); font: inherit; font-size: 13px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.pxw .pxw-agent-option[aria-checked="true"] { border-color: var(--pxw-blue); background: var(--pxw-blue-tint); color: var(--pxw-primary); font-weight: 600; }
+.pxw .pxw-agent-option:hover:not([aria-checked="true"]) { background: rgba(255, 255, 255, .06); }
+.pxw .pxw-agent-money { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-secondary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pxw .pxw-agent-money > span { white-space: nowrap; }
+.pxw .pxw-agent-mode-line { color: var(--pxw-muted); }
+.pxw .pxw-agent-needs { margin: 0; padding: 8px 10px; border-radius: 9px; font-size: 12.5px; line-height: 1.45; color: var(--pxw-amber-ink); background: var(--pxw-amber-tint); overflow-wrap: anywhere; }
+.pxw .pxw-agent-renders { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pxw .pxw-agent-render { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--pxw-card-border); min-width: 0; }
+.pxw .pxw-agent-render[data-state="paused"], .pxw .pxw-agent-render[data-state="waiting"] { border-color: var(--pxw-blue-tint-border); }
+.pxw .pxw-agent-render-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; min-width: 0; }
+.pxw .pxw-agent-render-title { font-size: 13px; font-weight: 600; color: var(--pxw-primary); overflow-wrap: anywhere; min-width: 0; }
+.pxw .pxw-agent-render-price { font-size: 12.5px; font-weight: 600; color: var(--pxw-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pxw .pxw-agent-render[data-state="done"] .pxw-agent-render-price { color: var(--pxw-green-ink); }
+.pxw .pxw-agent-render-state { margin: 0; font-size: 12.5px; color: var(--pxw-muted); overflow-wrap: anywhere; }
+.pxw .pxw-agent-render[data-state="failed"] .pxw-agent-render-state { color: var(--pxw-amber-ink); }
 .pxw .pxw-agent-body, .pxw .pxw-agent-last, .pxw .pxw-agent-proposal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pxw .pxw-agent-body { gap: 8px; }
 .pxw .pxw-agent-proposal { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--pxw-blue-tint-border); background: var(--pxw-blue-tint); }
@@ -299,5 +322,8 @@
 @media (max-width: 767px), (pointer: coarse) {
   .pxw .pxw-agent-primary, .pxw .pxw-agent-quiet { min-height: 44px; min-width: 44px; }
   /* 16px keeps a phone from zooming into the field. */
-  .pxw .pxw-agent-goal { font-size: 16px; }
+  .pxw .pxw-agent-goal, .pxw .pxw-agent-number { font-size: 16px; }
+  .pxw .pxw-agent-number { min-height: 44px; }
+  .pxw .pxw-agent-option { min-height: 44px; min-width: 44px; flex: 1 1 140px; }
+  .pxw .pxw-agent-primary { white-space: normal; text-align: center; }
 }
