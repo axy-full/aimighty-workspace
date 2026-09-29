@@ -63,8 +63,8 @@ async function mockTeamCanvas(page: Page, canvas: TeamCanvas) {
   return store;
 }
 
-/** A mocked production on its team canvas, the Rig's canvas on screen and fitted. */
-async function openMocked(page: Page, nodes?: CanvasNode[]) {
+/** A mocked production on its team canvas, the Rig's canvas on screen and fitted (or its shot list, `list`). */
+async function openMocked(page: Page, nodes?: CanvasNode[], options: { list?: boolean } = {}) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -79,7 +79,7 @@ async function openMocked(page: Page, nodes?: CanvasNode[]) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=rig");
   await expect(page.getByTestId("project-name")).toHaveText("Mirror study");
-  await showCanvas(page);
+  if (!options.list) await showCanvas(page);
   return { errors, store, team };
 }
 
@@ -144,6 +144,39 @@ const sideways = (page: Page) =>
       if (el.getClientRects().length && el.scrollWidth > el.clientWidth + 1) out.push(`${el.dataset.testid} ${el.scrollWidth} > ${el.clientWidth}`);
     return out;
   });
+
+/**
+ * Text under the #7C7C84 label floor for these classes as they are on screen: its colour after its own alpha and every
+ * ancestor's opacity, composited over the dark ground. A field's placeholder is read from its ::placeholder.
+ */
+const underFloor = (page: Page, selectors: readonly string[], placeholders: readonly string[] = []) =>
+  page.evaluate(({ selectors, placeholders }) => {
+    const floor = 0.2126 * 0x7c + 0.7152 * 0x7c + 0.0722 * 0x84 - 0.5;
+    const ink = (color: string, el: Element) => {
+      const [r, g, b, a = 1] = (color.match(/[\d.]+/g) ?? ["0", "0", "0"]).map(Number);
+      let opacity = a;
+      for (let n: Element | null = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) * opacity;
+    };
+    const out: string[] = [];
+    for (const sel of selectors) for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      if (!el.getClientRects().length || !(el.textContent ?? "").trim()) continue;
+      const color = getComputedStyle(el).color;
+      if (ink(color, el) < floor) out.push(`${sel} ${color}: “${(el.textContent ?? "").trim().slice(0, 24)}”`);
+    }
+    for (const sel of placeholders) for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      if (!el.getClientRects().length || !el.getAttribute("placeholder")) continue;
+      const color = getComputedStyle(el, "::placeholder").color;
+      if (ink(color, el) < floor) out.push(`${sel}::placeholder ${color}`);
+    }
+    return out;
+  }, { selectors, placeholders });
+/** Every label class the Rig draws: its list, its library strip, the shot Inspector, the canvas's cards and section titles. */
+const RIG_LABELS = [
+  ".pxw-rig-num", ".pxw-rig-note", ".pxw-rig-add", ".pxw-rig-library-hint",
+  ".pxw-insp-output-label", ".pxw-insp-owner", ".pxw-insp-estimate-meta", ".pxw-insp-row-kind", ".pxw-insp-version-meta", ".pxw-insp-add",
+  ".pxw-graph-kicker-label > *", ".pxw-graph-kicker > span:last-child", ".pxw-graph-foot > *", ".pxw-graph-desc", ".pxw-graph-note", ".pxw-graph-section-count",
+] as const;
 
 /** Real touch input: a finger drag from one point by (dx, dy) screen pixels. */
 const touch = (cdp: CDPSession, type: "touchStart" | "touchMove" | "touchEnd", points: { x: number; y: number; id: number }[]) =>
@@ -328,6 +361,47 @@ test("a card let go snaps to the 20 px grid (Alt places it exactly), and let go 
   /* A card let go is not a click: nothing got picked by the drag. */
   await expect(node(page, "empty")).not.toHaveAttribute("data-selected", /.*/);
   expect(await sideways(page), "sideways scroll").toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("the Rig keeps the floors at every size: its labels read at #7C7C84, and on touch its list, library strip, Inspector and canvas controls are 44 px", async ({ page }, info) => {
+  const touch = PHONES.includes(info.project.name);
+  const { errors } = await openMocked(page, [...fixture("Mirror study", "ws-board").nodes, section("sec-1", "Scene 1 · Harbour", 0, 640)], { list: true });
+  /* The shot list and the Rig library strip above it. */
+  const list = page.getByTestId("rig-list");
+  await expect(list.locator('.pxw-rig-row[data-shot-id="open"]')).toBeVisible();
+  const library = page.getByTestId("rig-library");
+  await expect(library.getByTestId("rig-library-item").first()).toBeVisible();
+  expect(await underFloor(page, RIG_LABELS), "list and library labels under #7C7C84").toEqual([]);
+  if (touch) {
+    expect(await smallTargets(page, '[data-testid="rig-list"]'), "shot list targets under 44×44").toEqual([]);
+    expect(await smallTargets(page, '[data-testid="rig-library"]'), "library strip targets under 44×44").toEqual([]);
+  }
+
+  /* The shot Inspector: its output label, the estimate's meta line, the prompt's placeholder. */
+  await closeOverlay(page);
+  await list.locator('.pxw-rig-row[data-shot-id="open"]').click();
+  if (!(await page.locator('[data-inspector-body="shot"]').isVisible())) await page.getByTestId("toggle-inspector").click();
+  const inspector = page.locator('[data-inspector-body="shot"][data-shot-id="open"]');
+  await expect(inspector).toBeVisible();
+  await expect(inspector.locator(".pxw-insp-output-label")).toBeVisible();
+  expect(await underFloor(page, RIG_LABELS, [".pxw-insp-fieldcard textarea"]), "Inspector labels under #7C7C84").toEqual([]);
+  if (touch) expect(await smallTargets(page, '[data-inspector-body="shot"]'), "Inspector targets under 44×44").toEqual([]);
+  await closeOverlay(page);
+
+  /* The canvas: every card's kicker, footer and words, a section title's count, the note under the board. */
+  await showCanvas(page);
+  await expect(page.getByTestId("rig-graph").locator(".pxw-graph-node[data-section]")).toHaveCount(1);
+  expect(await underFloor(page, RIG_LABELS), "canvas labels under #7C7C84").toEqual([]);
+  if (touch) {
+    expect(await smallTargets(page, ".pxw-graph-tools"), "add buttons under 44×44").toEqual([]);
+    expect(await smallTargets(page, ".pxw-graph-zoom"), "zoom cluster under 44×44").toEqual([]);
+    await page.getByTestId("rig-zoom-level").click();
+    const small = await page.getByTestId("rig-graph").locator(".pxw-graph-edit, .pxw-graph-port").evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return Math.min(r.width, r.height); }).filter((size) => size < 44 - 0.5));
+    expect(small, "pencils and ports at 100% under 44×44").toEqual([]);
+  }
+  expect(await sideways(page), "sideways scroll").toEqual([]);
+  if (info.project.name === "workbench-844x390") await page.screenshot({ path: info.outputPath("rig-floors-844x390.png"), animations: "disabled" });
   expect(errors).toEqual([]);
 });
 

@@ -6,7 +6,8 @@
 .pxw .pxw-rig-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 11px; margin-bottom: 3px; background: transparent; border: 1px solid transparent; }
 .pxw .pxw-rig-row:hover { background: var(--pxw-row-hover); }
 .pxw .pxw-rig-row[aria-pressed="true"] { background: var(--pxw-blue-selected-row); border-color: var(--pxw-selected); }
-.pxw .pxw-rig-num { width: 22px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-faintest); }
+/* Labels on the Rig (numbers, notes, metas, hints) read at the #7C7C84 floor: the brief's floor, never the design's fainter greys. */
+.pxw .pxw-rig-num { width: 22px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-label-floor); }
 .pxw .pxw-rig-head .pxw-rig-num { font-size: 9.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-rig-thumb-col { width: 58px; flex: none; }
 .pxw .pxw-rig-thumb { width: 58px; height: 33px; border-radius: 6px; overflow: hidden; position: relative; display: flex; flex-direction: column; flex: none; }
@@ -19,7 +20,7 @@
 .pxw .pxw-rig-row[aria-pressed="true"] .pxw-rig-name { color: var(--pxw-primary); }
 .pxw .pxw-rig-role-line { display: flex; align-items: center; gap: 7px; margin-top: 3px; min-width: 0; }
 .pxw .pxw-rig-role { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11.5px; white-space: nowrap; }
-.pxw .pxw-rig-note { flex: 1; min-width: 0; font-size: 12px; color: var(--pxw-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-rig-note { flex: 1; min-width: 0; font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-look { width: 130px; flex: none; font-size: 12px; color: var(--pxw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-engine { width: 96px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-dur { width: 44px; flex: none; text-align: right; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
@@ -73,8 +74,8 @@
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-title,
 .pxw .pxw-graph-node[data-shape="operator"] .pxw-graph-title { font-weight: 560; margin-top: 9px; }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-title { font-size: 13.5px; font-weight: 580; }
-.pxw .pxw-graph-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--pxw-faint); line-height: 1.4; margin-top: 4px; }
-.pxw .pxw-graph-node[data-selected] .pxw-graph-desc { color: var(--pxw-dimmer); }
+.pxw .pxw-graph-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--pxw-label-floor); line-height: 1.4; margin-top: 4px; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-desc { color: var(--pxw-muted); }
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-desc { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 6px; }
 .pxw .pxw-graph-readouts { display: flex; gap: 6px; margin-top: 10px; }
 .pxw .pxw-graph-readouts > span { flex: 1; display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 7px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
@@ -86,7 +87,7 @@
 .pxw .pxw-graph-port:hover,
 .pxw .pxw-graph-port[data-armed] { border-color: var(--pxw-blue); background: var(--pxw-blue-selected-row); }
 .pxw .pxw-graph-status { margin: 0 0 12px; font-size: 12px; color: var(--pxw-amber-ink); }
-.pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-faint); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
+.pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-label-floor); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
 
 /* ── The board: every card its shape's height, sections, notes, the add buttons (lib/workspace/rig-board.ts) ── */
 /* The height is set on the card (rig-graph CARD_HEIGHT, which the server's Tidy lays out by): the words give way, the footer keeps the bottom. */
@@ -129,10 +130,17 @@
 .pxw .pxw-graph-tools button:hover { background: rgba(255, 255, 255, 0.08); }
 .pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
+/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in app/production.css, whose 44 px rules stop at
+   759 px wide): on any touch screen, a landscape phone included, its head link, group chips and "+" are thumb-sized targets. */
+@media (pointer: coarse) {
+  .gx .pxw-rig-library .pxw-rig-library-head .pxw-link-button,
+  .gx .pxw-rig-library .pxw-rig-library-groups button { min-height: 44px; min-width: 44px; }
+  .gx .pxw-rig-library .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
+}
 
 /* ── Inspector: shot ──────────────────────────────────────────────────── */
 .pxw .pxw-insp-output { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
-.pxw .pxw-insp-output-label { font-size: 11.5px; color: var(--pxw-faint); }
+.pxw .pxw-insp-output-label { font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-preview { position: relative; aspect-ratio: 16 / 9; border-radius: 11px; overflow: hidden; display: flex; flex-direction: column; background: var(--pxw-control); }
 .pxw .pxw-insp-preview > span:not(.pxw-insp-playhead) { display: block; }
 .pxw .pxw-insp-preview > video,
@@ -146,20 +154,20 @@
 .pxw .pxw-insp-tabs .pxw-seg-item { padding: 6px; font-size: 12.5px; font-weight: 530; gap: 6px; }
 .pxw .pxw-insp-tab-count { font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-kicker-row { display: flex; align-items: baseline; justify-content: space-between; margin: 20px 0 10px; }
-.pxw .pxw-insp-owner { font-size: 11.5px; color: var(--pxw-faint); }
+.pxw .pxw-insp-owner { font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-section { display: block; margin: 20px 0 10px; }
 .pxw .pxw-insp-fieldcard { border-radius: 11px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); overflow: hidden; margin-bottom: 11px; }
 .pxw .pxw-insp-fieldcard-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--pxw-inner-rule); font-size: 12.5px; color: var(--pxw-muted); }
 .pxw .pxw-insp-fieldcard-head > span:last-child { color: var(--pxw-near-primary); }
 .pxw .pxw-insp-fieldcard textarea { width: 100%; display: block; padding: 11px 12px; background: transparent; border: none; font-size: 13px; line-height: 1.5; outline: none; color: var(--pxw-primary); }
-.pxw .pxw-insp-fieldcard textarea::placeholder { color: var(--pxw-faintest); }
+.pxw .pxw-insp-fieldcard textarea::placeholder { color: var(--pxw-label-floor); }
 .pxw .pxw-insp-field { margin-bottom: 11px; }
 .pxw .pxw-insp-pair { display: flex; gap: 9px; }
 .pxw .pxw-insp-pair > * { flex: 1; min-width: 0; }
 .pxw .pxw-insp-estimate { padding: 11px 12px; border-radius: 10px; background: #0a0e14; border: 1px solid #16212e; }
 .pxw .pxw-insp-estimate-row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--pxw-dimmer); }
 .pxw .pxw-insp-estimate-value { font-family: var(--pxw-mono); font-size: 15px; font-weight: 620; color: var(--pxw-blue-ink); }
-.pxw .pxw-insp-estimate-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faintest); margin-top: 6px; }
+.pxw .pxw-insp-estimate-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-label-floor); margin-top: 6px; }
 .pxw .pxw-insp-generate { width: 100%; text-align: center; margin-top: 11px; padding: 10px; border-radius: 10px; background: var(--pxw-blue); color: #fff; font-size: 13px; font-weight: 570; }
 .pxw .pxw-insp-generate:hover:not(:disabled) { background: var(--pxw-blue-hover); }
 .pxw .pxw-insp-generate:disabled { background: var(--pxw-control); color: var(--pxw-dimmer); border: 1px solid var(--pxw-control-border); }
@@ -170,9 +178,9 @@
 .pxw .pxw-insp-row-thumb > span { flex: 1; display: block; }
 .pxw .pxw-insp-row-text { flex: 1; min-width: 0; }
 .pxw .pxw-insp-row-name { display: block; font-size: 12.5px; font-weight: 530; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pxw .pxw-insp-row-kind { display: block; font-size: 11px; color: var(--pxw-faint); margin-top: 2px; }
+.pxw .pxw-insp-row-kind { display: block; font-size: 11px; color: var(--pxw-label-floor); margin-top: 2px; }
 .pxw .pxw-insp-row-v { font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-label-floor); flex: none; }
-.pxw .pxw-insp-add { border: 1px dashed var(--pxw-dashed); border-radius: 11px; padding: 16px; text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--pxw-faint); line-height: 1.5; text-wrap: pretty; }
+.pxw .pxw-insp-add { border: 1px dashed var(--pxw-dashed); border-radius: 11px; padding: 16px; text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--pxw-label-floor); line-height: 1.5; text-wrap: pretty; }
 .pxw .pxw-insp-add > a { display: inline-block; margin-top: 9px; font-size: 13px; font-weight: 570; color: var(--pxw-blue-ink); }
 .pxw .pxw-insp-version { display: flex; align-items: center; gap: 11px; padding: 10px 11px; border-radius: 10px; margin-bottom: 6px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); }
 .pxw .pxw-insp-version[data-current] { border-color: var(--pxw-selected); }
@@ -180,7 +188,7 @@
 .pxw .pxw-insp-version[data-current] .pxw-insp-version-v { color: var(--pxw-blue-ink); }
 .pxw .pxw-insp-version[data-state="failed"] .pxw-insp-version-label { color: var(--pxw-red-ink); }
 .pxw .pxw-insp-version-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faint); flex: none; }
+.pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-label-floor); flex: none; }
 @media (max-width: 759px) { .pxw .pxw-insp-version .pxw-link-button { min-height: 44px; } }
 
 /* ── Inspector: a card that is not a shot (a reference, a note, a look board) ── */
