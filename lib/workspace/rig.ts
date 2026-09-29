@@ -73,8 +73,8 @@ export function dispatchQuoteQuery(settings: ShotSettings, refs: Asset[]): strin
   return query.toString() + (references ? "&" + references : "");
 }
 
-/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). */
-export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : "reference_image");
+/** Role of a bound reference when no first frame is chosen (GenerationDialog's default). A sound is Cinema Studio's reference_audio (admission refuses it anywhere else). */
+export const referenceRole = (asset: Pick<Asset, "kind">) => (asset.kind === "video" ? "reference_video" : asset.kind === "audio" ? "reference_audio" : "reference_image");
 /** A shot's role for one input: its marked first frame (an image), else a reference by kind. */
 export const shotReferenceRole = (node: Pick<CanvasNode, "firstFrameId"> | null | undefined) => (asset: Pick<Asset, "kind" | "id">) =>
   node?.firstFrameId && asset.id === node.firstFrameId && asset.kind === "image" ? "first_frame" : referenceRole(asset);

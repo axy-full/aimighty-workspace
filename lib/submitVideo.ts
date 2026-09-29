@@ -433,10 +433,12 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       continue;
     }
     const u = r.uploadId ? byUpload.get(r.uploadId) : undefined;
+    /* A sound reference (Cinema Studio's, admitted as one) comes back only as the sound it was quoted as. */
+    const sound = r.kind === "audio";
     if (
       !u ||
       !u.stored_url ||
-      !["image", "video"].includes(u.kind) ||
+      !(sound ? ["audio"] : ["image", "video"]).includes(u.kind) ||
       (r.kind && r.kind !== u.kind)
     )
       throw new VideoSourceError(
@@ -450,8 +452,8 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       storedUrl: u.stored_url,
       role:
         (r.role as ImageRole) ??
-        (video ? "reference_video" : "reference_image"),
-      kind: video ? "video" : "image",
+        (sound ? "reference_audio" : video ? "reference_video" : "reference_image"),
+      kind: sound ? "audio" : video ? "video" : "image",
       deliveryUrl: u.derivative_url ?? null,
     });
   }

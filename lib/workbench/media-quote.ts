@@ -7,12 +7,20 @@ import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from '../vendorRa
 import { isSoulRenderModel } from '../soulRenderTypes';
 import { elevenConfigured, musicCredits, sfxCredits, usdForCredits } from '../elevenlabs';
 import { composerSettings, type ComposerPicks } from '../workspace/composer';
+import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime } from '../cinemaStudioTypes';
 
 export class MediaQuoteError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'MediaQuoteError'; }
 }
 export type QuoteReference = { uploadId?: string; genId?: string };
-export type ReferencePrices = { images: number; videos: number; inputSeconds: number; hasVideoInput: boolean };
+export type ReferencePrices = {
+  images: number; videos: number; inputSeconds: number; hasVideoInput: boolean;
+  /**
+   * Sound references, present only when some are attached: Cinema Studio's alone, and never priced (its
+   * published formula counts no audio input). `audioProblem` says why they cannot be sent, when they cannot.
+   */
+  audios?: number; audioSeconds?: number; audioProblem?: string;
+};
 function baselineCost(model: ModelDef) {
   const ratio = model.ratios.includes('16:9') ? '16:9' : model.ratios[0];
   const duration = model.durations.includes(5) ? 5 : model.durations[0];
@@ -41,17 +49,34 @@ export async function referencePrices(refs: QuoteReference[], extraImages = 0): 
   const byUpload = new Map(uploadRows.rows.map(row => [String(row.id), row]));
   const byGeneration = new Map(generationRows.rows.map(row => [String(row.id), row]));
   const resolved: { kind: string; durationS: number | null }[] = [];
+  let audios = 0, audioSeconds = 0, audioProblem: string | undefined;
   for (const ref of refs) {
     if (ref.uploadId) {
       const row = byUpload.get(ref.uploadId);
       if (!row) throw new MediaQuoteError('A selected upload is unavailable in this workspace.', 404);
-      const kind = row.kind === 'video' || String(row.mime).startsWith('video/') ? 'video' : String(row.mime).startsWith('image/') ? 'image' : String(row.kind);
+      const kind = row.kind === 'video' || String(row.mime).startsWith('video/') ? 'video' : String(row.mime).startsWith('image/') ? 'image'
+        : row.kind === 'audio' || String(row.mime).startsWith('audio/') ? 'audio' : String(row.kind);
+      if (kind === 'audio') {
+        /* A sound is counted, not priced; whether it can go at all is the engine's to say (quoteWorkbenchMedia). */
+        audios++;
+        const seconds = row.duration_s == null ? NaN : Number(row.duration_s);
+        if (!isCinemaStudioAudioMime(row.mime)) audioProblem ??= 'Cinema Studio takes sound references as WAV files. Upload the sound as a WAV.';
+        else if (!(Number.isFinite(seconds) && seconds > 0)) audioProblem ??= "A sound reference's length is unavailable. Upload it again before generating.";
+        else audioSeconds += seconds;
+        continue;
+      }
       if (!['image', 'video'].includes(kind)) throw new MediaQuoteError('Only images and video can be generation references.');
       resolved.push({ kind, durationS: row.duration_s == null ? null : Number(row.duration_s) });
     } else {
       const row = byGeneration.get(ref.genId!);
       if (!row || row.status !== 'succeeded' || !row.stored_url) throw new MediaQuoteError('A selected generation has not completed or is unavailable.', 404);
       const kind = String(row.kind || 'video');
+      if (kind === 'audio') {
+        /* Particl's generated sounds are MP3; the provider documents WAV. */
+        audios++;
+        audioProblem ??= 'Cinema Studio takes sound references as WAV files uploaded to this workspace. Generated sounds are MP3: upload a WAV instead.';
+        continue;
+      }
       if (!['image', 'video'].includes(kind)) throw new MediaQuoteError('Audio cannot be a visual generation reference.');
       resolved.push({ kind, durationS: kind === 'video' ? generatedReferenceSeconds(row.params) : null });
     }
@@ -59,7 +84,19 @@ export async function referencePrices(refs: QuoteReference[], extraImages = 0): 
   const inputSeconds = videoReferenceSeconds(resolved);
   if (inputSeconds == null) throw new MediaQuoteError('A reference video has no verified duration. Upload the clip again before estimating its cost.');
   const videos = resolved.filter(ref => ref.kind === 'video').length;
-  return { images: extraImages + resolved.filter(ref => ref.kind === 'image').length, videos, inputSeconds, hasVideoInput: videos > 0 };
+  return { images: extraImages + resolved.filter(ref => ref.kind === 'image').length, videos, inputSeconds, hasVideoInput: videos > 0,
+    ...(audios ? { audios, audioSeconds, ...(audioProblem ? { audioProblem } : {}) } : {}) };
+}
+
+/** Why these sound references cannot go with this engine, or null: only Cinema Studio takes sound, within its documented limits. */
+function soundProblem(model: ModelDef, refs: ReferencePrices): string | null {
+  if (!refs.audios) return null;
+  if (!model.cinemaStudio) return `${model.label} takes pictures and video as references, not sound. Remove the sound, or choose Cinema Studio 4.0.`;
+  if (refs.audioProblem) return refs.audioProblem;
+  if (refs.audios > CINEMA_STUDIO_LIMITS.maxAudios) return `Cinema Studio takes up to ${CINEMA_STUDIO_LIMITS.maxAudios} sound references.`;
+  if ((refs.audioSeconds ?? 0) > CINEMA_STUDIO_LIMITS.maxAudioSeconds)
+    return `Sound references total ${(refs.audioSeconds ?? 0).toFixed(1)} s. Cinema Studio takes ${CINEMA_STUDIO_LIMITS.maxAudioSeconds} s combined.`;
+  return null;
 }
 /** One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the take is silent. */
 export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean }, refs: ReferencePrices) {
@@ -67,6 +104,9 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
   if (refs.images > model.maxReferenceImages) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceImages} reference images.`);
   if (refs.videos > model.maxReferenceVideos || (model.kind === 'image' && refs.videos)) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceVideos} reference videos.`);
   if (refs.inputSeconds > model.maxVideoSecondsTotal) throw new MediaQuoteError(`Reference videos total ${refs.inputSeconds.toFixed(1)}s; ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`);
+  const sound = soundProblem(model, refs);
+  if (sound) throw new MediaQuoteError(sound);
+  /* Sound references never reach the estimate: the published formula counts no audio input. */
   const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
   return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,

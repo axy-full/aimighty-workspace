@@ -33,6 +33,8 @@ export type GenerationBodyInput = {
   batch?: { id: string; variation: number };
   /** Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p watermarked draft whose 1080p final is made after. */
   draft?: boolean;
+  /** Cinema Studio 4.0's creative controls (lib/cinemaStudioTypes.ts): only picked ones; none is every control on Auto. */
+  cinema?: Record<string, string> | null;
 };
 
 export function generationRequestBody(input: GenerationBodyInput): Record<string, unknown> {
@@ -54,6 +56,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
     ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
+    ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
   };
 }
 
