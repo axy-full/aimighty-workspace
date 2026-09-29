@@ -171,6 +171,8 @@ const underFloor = (page: Page, selectors: readonly string[], placeholders: read
     }
     return out;
   }, { selectors, placeholders });
+/** Nothing on the page is still moving (a panel sliding in, a fade): colours are read as they rest. */
+const settled = (page: Page) => expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity).length), { message: "animations still running" }).toBe(0);
 /** Every label class the Rig draws: its list, its library strip, the shot Inspector, the canvas's cards and section titles. */
 const RIG_LABELS = [
   ".pxw-rig-num", ".pxw-rig-note", ".pxw-rig-add", ".pxw-rig-library-hint",
@@ -372,26 +374,29 @@ test("the Rig keeps the floors at every size: its labels read at #7C7C84, and on
   await expect(list.locator('.pxw-rig-row[data-shot-id="open"]')).toBeVisible();
   const library = page.getByTestId("rig-library");
   await expect(library.getByTestId("rig-library-item").first()).toBeVisible();
+  await settled(page);
   expect(await underFloor(page, RIG_LABELS), "list and library labels under #7C7C84").toEqual([]);
   if (touch) {
     expect(await smallTargets(page, '[data-testid="rig-list"]'), "shot list targets under 44×44").toEqual([]);
     expect(await smallTargets(page, '[data-testid="rig-library"]'), "library strip targets under 44×44").toEqual([]);
   }
 
-  /* The shot Inspector: its output label, the estimate's meta line, the prompt's placeholder. */
+  /* The shot Inspector: its output label, the estimate's meta line, the prompt's placeholder. Picking the shot opens it (on a
+     phone, a panel over the page): it is opened by hand only if it did not, and read once its panel has finished moving in. */
   await closeOverlay(page);
   await list.locator('.pxw-rig-row[data-shot-id="open"]').click();
-  if (!(await page.locator('[data-inspector-body="shot"]').isVisible())) await page.getByTestId("toggle-inspector").click();
   const inspector = page.locator('[data-inspector-body="shot"][data-shot-id="open"]');
-  await expect(inspector).toBeVisible();
+  await expect(inspector).toBeVisible({ timeout: 3000 }).catch(() => page.getByTestId("toggle-inspector").click());
   await expect(inspector.locator(".pxw-insp-output-label")).toBeVisible();
-  expect(await underFloor(page, RIG_LABELS, [".pxw-insp-fieldcard textarea"]), "Inspector labels under #7C7C84").toEqual([]);
+  await settled(page);
+  await expect.poll(() => underFloor(page, RIG_LABELS, [".pxw-insp-fieldcard textarea"]), { message: "Inspector labels under #7C7C84" }).toEqual([]);
   if (touch) expect(await smallTargets(page, '[data-inspector-body="shot"]'), "Inspector targets under 44×44").toEqual([]);
   await closeOverlay(page);
 
   /* The canvas: every card's kicker, footer and words, a section title's count, the note under the board. */
   await showCanvas(page);
   await expect(page.getByTestId("rig-graph").locator(".pxw-graph-node[data-section]")).toHaveCount(1);
+  await settled(page);
   expect(await underFloor(page, RIG_LABELS), "canvas labels under #7C7C84").toEqual([]);
   if (touch) {
     expect(await smallTargets(page, ".pxw-graph-tools"), "add buttons under 44×44").toEqual([]);
