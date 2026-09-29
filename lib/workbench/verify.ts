@@ -25,6 +25,7 @@ export const VERIFY_RUBRIC = 1;
 export const VERIFY_CHECKS = ["identity", "wardrobe", "environment", "props", "artifacts"] as const;
 export type VerifyCheck = (typeof VERIFY_CHECKS)[number];
 export const VERIFY_CHECK_LABELS: Record<VerifyCheck, string> = { identity: "Identity", wardrobe: "Wardrobe", environment: "Environment", props: "Props", artifacts: "Artifacts" };
+/** Only Cast, Environment and Element cards are masters and scored; a Ref is context. (The locked-master step, #476, keeps the same list; one can import the other once both land.) */
 export type MasterKind = Exclude<RefKind, "ref">;
 export const MASTER_KINDS: readonly MasterKind[] = ["cast", "environment", "element"];
 /** Which master anchors which check. Artifacts (extra limbs, warped text, morphing, flicker) need none. */
@@ -80,7 +81,8 @@ export type VerifyCheckResult = {
 export type VerifyResult = { nodeId: string; takeId: string; verdict: Verdict; checks: VerifyCheckResult[]; summary: string };
 /** A take's frame the judge saw: its time in the clip (null for a still), the stored still, and the digest of the review copy sent. */
 export type VerifyFrame = { t: number | null; uploadId: string | null; sha256: string };
-export type VerifyMasterRecord = { kind: MasterKind; nodeId: string; title: string; identity: string; version: number };
+/** A master a check used. `elementId`: the element its card stands for, when it has one (what "N takes were checked against this master" counts). */
+export type VerifyMasterRecord = { kind: MasterKind; nodeId: string; title: string; identity: string; version: number; elementId?: string };
 /** A stored check (tenant table `take_verifications`), as the browser reads it. */
 export type TakeVerification = {
   id: string; takeId: string; verifyNodeId: string;
@@ -114,15 +116,23 @@ export function mediaIdentity(asset: Pick<Asset, "generationId" | "uploadId" | "
   return asset.kind === "image" && SAMPLE.test(asset.url) ? `sample:${asset.url}` : null;
 }
 
+/** What a master is checked against: the picture the judge is shown, and the identity its master set is hashed from. */
+export type MasterSource = { asset: Asset | null; identity: string | null };
+
 /**
- * THE SEAM for locked masters (plan PR 4, lane rig-lock). Until a master lock
- * lands, a master is its reference card's current source. When it does, return
- * the version the lock froze here, so a check compares against the master and
- * not a later edit to the card. Nothing else in this file needs to change.
+ * THE SEAM for locked masters (plan PR 4, #476). Today a master is its
+ * reference card's current source, identified by its immutable upload or
+ * render. When locked masters land, a card whose element is locked (the
+ * elements table's answer: masterCheck in lib/masters.ts on the server, the
+ * Rig's set of masters in the browser) returns here the version its lock froze
+ * and, as its identity, the lock snapshot's sha256 (`sha256:<hex>`). The
+ * master set, its hash in take_verifications and "checked against an older
+ * master" then follow the lock itself, and a source that drifted under the
+ * lock reads as a new master. Nothing else in this file needs to change.
  */
-export function preferLockedMaster(node: CanvasNode, current: Asset | null): Asset | null {
+export function preferLockedMaster(node: CanvasNode, current: Asset | null): MasterSource {
   void node;
-  return current;
+  return { asset: current, identity: mediaIdentity(current) };
 }
 
 export type VerifyMaster = { node: CanvasNode; kind: MasterKind; asset: Asset | null; identity: string | null };
@@ -147,10 +157,8 @@ export function verifySubject(project: Pick<Project, "nodes" | "assets"> & Parti
   for (const card of linked) {
     if (isShot(card)) continue;
     const kind = refKindOf(card, project);
-    if (kind && kind !== "ref") {
-      const asset = preferLockedMaster(card, cardSource(full, card)?.asset ?? null);
-      masters.push({ node: card, kind, asset, identity: mediaIdentity(asset) });
-    } else context.push(card);
+    if (kind && kind !== "ref") masters.push({ node: card, kind, ...preferLockedMaster(card, cardSource(full, card)?.asset ?? null) });
+    else context.push(card);
   }
   const shot = shots[0];
   const asset = shot ? shotPreviewAsset(full, shot.id) : null;

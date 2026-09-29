@@ -164,7 +164,7 @@ export async function compileVerify(project: Project, nodeId: string | undefined
     })),
     masters: subject.masters.map((m, i) => ({
       nodeId: m.node.id, kind: m.kind, title: m.node.title, assetId: m.asset!.id, name: m.asset!.name, version: m.asset!.version,
-      identity: m.identity!, sha256: masterImages[i].sha256, image: takeImages.length + i + 1,
+      identity: m.identity!, sha256: masterImages[i].sha256, image: takeImages.length + i + 1, ...(m.node.elementId ? { elementId: m.node.elementId } : {}),
     })),
     images: [...takeImages, ...masterImages].map((image) => ({ sha256: image.sha256, dataUrl: image.dataUrl })),
   };
@@ -184,7 +184,7 @@ export async function verificationStatements(row: Row, credits: number): Promise
   if (!snapshot || !result) return [];
   const request = JSON.parse(String(row.request_body)) as { model?: string; projectId?: string };
   const k = verifyKeyHashes(snapshot.key);
-  const masters = snapshot.masters.map((m) => ({ kind: m.kind, nodeId: m.nodeId, title: m.title, identity: m.identity, version: m.version }));
+  const masters = snapshot.masters.map((m) => ({ kind: m.kind, nodeId: m.nodeId, title: m.title, identity: m.identity, version: m.version, ...(m.elementId ? { elementId: m.elementId } : {}) }));
   const frames = snapshot.frames.map((f) => ({ t: f.t, uploadId: f.uploadId, sha256: f.sha256 }));
   return [{
     sql: `INSERT OR IGNORE INTO take_verifications(id,production_id,project_id,verify_node_id,take_id,master_set_hash,master_set,masters,rubric,frames_hash,frames_key,frames,checks,verdict,judge_model,meter_event_id,credits,funded_by_platform,created_by,created_at)

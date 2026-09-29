@@ -22,7 +22,7 @@ export type VerifySnapshot = {
   take: { assetId: string; title: string; name: string; kind: "image" | "video"; version: number; identity: string };
   /** The take's review copies: a still once, a video's three sampled frames. `image` is its number in the message. */
   frames: { t: number | null; uploadId: string | null; sha256: string; image: number }[];
-  masters: { nodeId: string; kind: MasterKind; title: string; assetId: string; name: string; version: number; identity: string; sha256: string; image: number }[];
+  masters: { nodeId: string; kind: MasterKind; title: string; assetId: string; name: string; version: number; identity: string; sha256: string; image: number; elementId?: string }[];
   /** Bounded review copies (512px JPEG data URLs, lib/workbench/atomik-references.ts), in message order. */
   images: { sha256: string; dataUrl: string }[];
 };

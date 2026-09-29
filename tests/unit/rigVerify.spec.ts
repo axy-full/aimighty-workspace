@@ -75,7 +75,7 @@ function fixture(): Project {
     sample('face2', 'Mira, new wardrobe', 'Character', 'hero'),
   ];
   project.nodes = [
-    card('mira', 'Mira', 'character', { assetId: 'face' }),
+    card('mira', 'Mira', 'character', { assetId: 'face', elementId: 'el-mira' }),
     card('dunes', 'The dunes', 'element', { assetId: 'plate' }),
     card('board', 'Harbour board', 'media', { assetId: 'frame' }),
     card('open', 'The opening', 'scene', { assetId: 'take', linked: ['mira', 'dunes', 'board'], width: 238 }),
@@ -256,6 +256,12 @@ test('a check is priced first, runs once, is stored under its key, and the same 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: job.id, meter_event_id: job.id, take_id: 'sample:/campaign/character.webp', rubric: 1, verdict: 'fail', production_id: project.productionProjectId, created_by: 'owner', funded_by_platform: 1 });
     expect(Number(rows[0].credits)).toBe(job.credits);
+    /* What "N takes were checked against this master" will count: each master's element, when its card has one. */
+    expect(JSON.parse(String(rows[0].masters))).toEqual([
+      { kind: 'cast', nodeId: 'mira', title: 'Mira', identity: 'sample:/campaign/character.webp', version: 1, elementId: 'el-mira' },
+      { kind: 'environment', nodeId: 'dunes', title: 'The dunes', identity: 'sample:/campaign/environment.webp', version: 1 },
+    ]);
+    expect(JSON.parse(String(rows[0].frames))).toEqual([{ t: null, uploadId: null, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
     expect(Number(rows[0].credits)).toBeGreaterThan(0);
 
     /* The same take against the same masters: the stored scorecard, free — nothing priced, reserved or called. */
