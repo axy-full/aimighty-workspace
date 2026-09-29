@@ -337,6 +337,20 @@ export function RigGraph() {
     return () => observer.disconnect();
   }, [measure, nodes]);
 
+  /* ── Tidy: the server lays the board out for everyone at once (free) ── */
+  const [tidying, setTidying] = useState(false);
+  const tidy = async () => {
+    if (tidying) return;
+    setTidying(true);
+    setWireFrom(null);
+    setMessage(null);
+    const outcome = await rig.team.tidy();
+    setTidying(false);
+    setMessage(!outcome.ok ? outcome.error : outcome.moved ? `Tidied for everyone · ${outcome.moved.toLocaleString("en-US")} ${outcome.moved === 1 ? "card" : "cards"} moved · free` : "Already tidy · nothing moved");
+    /* The tidied board, in view: once the moved cards have been laid out. */
+    if (outcome.ok && outcome.moved) requestAnimationFrame(() => requestAnimationFrame(fit));
+  };
+
   useEffect(() => {
     if (!wireFrom) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setWireFrom(null); setMessage(null); } };
@@ -468,6 +482,7 @@ export function RigGraph() {
           <button type="button" aria-label="Reset zoom to 100%" data-testid="rig-zoom-level" onClick={() => setView((v) => resetZoom(v, centre()))}>{Math.round(view.zoom * 100)}%</button>
           <button type="button" aria-label="Zoom in" data-testid="rig-zoom-in" onClick={() => setView((v) => stepZoom(v, 1, centre()))}>+</button>
           <button type="button" aria-label="Fit every node" data-testid="rig-zoom-fit" onClick={fit}>Fit</button>
+          <button type="button" aria-label="Tidy the board for everyone, free" title="Lay the board out for everyone · free" data-testid="rig-tidy" disabled={tidying || rig.team.mode === "off"} onClick={() => void tidy()}>{tidying ? "Tidying…" : "Tidy"}</button>
         </div>
         </div>
         <p className="pxw-graph-note">

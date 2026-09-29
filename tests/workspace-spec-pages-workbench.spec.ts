@@ -1,8 +1,7 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
-import { parseConnectedCatalogue } from "../lib/higgsfield-consumer/catalogue";
 import { SPEC_PAGES } from "../lib/workspace/spec-cards";
 import { pageDef, suiteOfPage } from "../lib/workspace/pages";
 import type { PageId } from "../lib/workspace/types";
@@ -224,64 +223,40 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
   expect(errors).toEqual([]);
 });
 
-test("Generate's own form is the request its Atomik plan prices; nothing is quoted before Run", async ({ page }, info) => {
+test("Generate points to Gen: no account form, its Atomik plan refuses with the reason, and nothing reaches the account", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const catalogue = parseConnectedCatalogue(JSON.parse(readFileSync("tests/fixtures/connected-models.json", "utf8")), 1_758_000_000_000);
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
   me.owner = true;
   const project = { ...primary, id: "ws-spec-generate" };
-  const posts: Record<string, unknown>[] = [];
+  const account: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  /* A published request that re-publishes itself on every render never settles (audit, 25 September). */
-  page.on("console", (message) => { if (message.type() === "error" && /Maximum update depth/.test(message.text())) errors.push(message.text()); });
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
     if (path === "/api/me") return json(me);
     if (path === "/api/workbench/projects")
       return json({ project, projects: [{ id: project.id, name: project.name, revision: 1 }], revision: 1, productions: [], shared: null });
-    if (path === "/api/higgsfield/consumer/connection") return json({ connected: true, requiresReconnect: false });
-    if (path === "/api/higgsfield/consumer/generation") {
-      if (request.method() === "GET")
-        return json({ connection: { connected: true, requiresReconnect: false }, capabilities: { types: ["image", "video", "audio", "3d"], promptLimit: 5000, maxMedias: 30, maxMediaBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false }, jobs: [] });
-      const body = request.postDataJSON();
-      posts.push(body);
-      if (body.action === "catalogue")
-        return json({ catalogue: { models: catalogue.models, unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: catalogue.fetchedAt } });
-      return json({ error: "No quote may be requested in this test." }, 409);
-    }
+    /* Atomik › Generate asks the account nothing: no catalogue, no quote. */
+    if (path === "/api/higgsfield/consumer/generation") { account.push(`${request.method()} ${path}`); return json({ error: "Atomik reaches no signed-in account." }, 409); }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);
     return route.continue();
   });
   await page.goto(`/workspace?project=${project.id}&suite=atomik&page=generate`);
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
-  const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
-  await expect(panel.getByRole("combobox", { name: "Generate model", exact: true })).toBeVisible({ timeout: 30_000 });
+  const moved = page.getByTestId("atomik-generate-moved");
+  await expect(moved).toContainText("Single generations run in Gen, on Particl’s own engines", { timeout: 30_000 });
+  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?view=gen");
+  await expect(page.getByRole("region", { name: "Generate on the connected account", exact: true })).toHaveCount(0);
 
   const nav = page.getByRole("navigation", { name: "Pages" });
   await nav.getByRole("button", { name: /Atomik/ }).click();
-  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Generate on the connected account");
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Generate data");
+  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Generate one take");
+  await expect(page.getByTestId("atomik-reason")).toContainText("single generations run in Gen, on Particl's own engines");
+  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   await page.keyboard.press("Escape");
-
-  await panel.getByRole("combobox", { name: "Generate model", exact: true }).selectOption("nano_banana_2");
-  const settings = panel.getByRole("group", { name: "Model settings", exact: true });
-  await settings.getByRole("combobox", { name: "resolution", exact: true }).selectOption("2k");
-  await settings.getByRole("combobox", { name: "aspect ratio", exact: true }).selectOption("1:1");
-  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("A plain bottle on a clean studio background.");
-
-  await nav.getByRole("button", { name: /Atomik/ }).click();
-  await expect(page.getByTestId("atomik-reason")).toHaveCount(0);
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeEnabled();
-  /* A complete form holds still: typing keeps up, and nothing re-renders on its own. */
-  await page.keyboard.press("Escape");
-  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).pressSequentially(" Soft light.");
-  await expect(panel.getByRole("textbox", { name: "Generate prompt", exact: true })).toHaveValue("A plain bottle on a clean studio background. Soft light.");
-  await page.waitForTimeout(1000);
-  /* Publishing the request sends nothing: only the catalogue read left the page. */
-  expect(posts).toEqual([{ action: "catalogue" }]);
+  expect(account).toEqual([]);
   expect(errors).toEqual([]);
 });

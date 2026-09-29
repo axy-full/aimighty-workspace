@@ -27,13 +27,14 @@ const STATE: Record<StemRow["state"], { label: string; dot: string }> = {
 export function EditPage({ project: shellProject, scope }: PageBodyProps) {
   const draft = useDraftEditor(scope, shellProject?.id ?? null);
   if (!draft.project) {
-    /* A failed read says so and offers it again; it never sits beside a loading line that will not change. */
+    /* A failed read says so and offers it again ("Try again": "Retry" is a take's paid re-render); it never sits beside a
+       loading line that will not change. */
     if (shellProject && draft.state.status === "error") {
       return (
         <div className="pxw-edit" data-page-body="edit">
           <p className="pxw-notice pxw-notice--error" role="alert">
             {draft.state.error || "This project could not be opened."}{" "}
-            <Button onClick={() => void draft.reload()} data-testid="edit-retry">Retry</Button>
+            <Button onClick={() => void draft.reload()} data-testid="edit-retry">Try again</Button>
           </p>
         </div>
       );

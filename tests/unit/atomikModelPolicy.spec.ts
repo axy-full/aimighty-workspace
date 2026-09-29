@@ -12,15 +12,27 @@ test("an explicit retired or unapproved thinking model cannot silently become a 
   const available = ["anthropic/claude-sonnet-4.6", "openai/gpt-5.5"];
   expect(selectAtomikModel("openai/gpt-5.5", available)).toBe("openai/gpt-5.5");
   expect(() => selectAtomikModel("google/gemini-3-pro-image", available)).toThrow("not offered");
+  /* A model Atomik used to offer is refused with the reason, never swapped for another paid model. */
+  expect(() => selectAtomikModel("google/gemini-3.1-pro-preview", [...available, "google/gemini-3.1-pro-preview"])).toThrow("no longer offered in Atomik");
   expect(() => selectAtomikModel("openai/gpt-5.5-pro", available)).toThrow("currently unavailable");
   expect(selectAtomikModel("anthropic/claude-sonnet-4.6", available)).toBe("anthropic/claude-sonnet-4.6");
 });
 
-test("the full planner catalogue includes all three requested model families and excludes media and classifiers", async () => {
-  const { ATOMIK_MODEL_IDS, isAtomikModel } = await import('../../lib/atomikModelPolicy');
-  expect(ATOMIK_MODEL_IDS.length).toBe(89);
-  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'google/gemini-3.8-flash', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
-  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model', 'spacexai/grok-imagine-image-2.0', 'spacexai/grok-tts']) expect(isAtomikModel(id)).toBe(false);
+test("the planner catalogue is the Claude, OpenAI and Grok part of the verified text catalogue, and excludes media and classifiers", async () => {
+  const { ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, isVerifiedTextModel, isRetiredAtomikModel } = await import('../../lib/atomikModelPolicy');
+  expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(89);
+  expect(ATOMIK_MODEL_IDS.length).toBe(78);
+  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
+  /* Gemini is verified text, used by the prompt enhancer, and no longer Atomik's. */
+  for (const id of ['google/gemini-3.8-flash', 'google/gemini-3.1-pro-preview']) {
+    expect(isAtomikModel(id), id).toBe(false);
+    expect(isVerifiedTextModel(id), id).toBe(true);
+    expect(isRetiredAtomikModel(id), id).toBe(true);
+  }
+  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model', 'spacexai/grok-imagine-image-2.0', 'spacexai/grok-tts']) {
+    expect(isAtomikModel(id), id).toBe(false);
+    expect(isRetiredAtomikModel(id), id).toBe(false);
+  }
 });
 
 test('Gateway reasoning metadata rejects malformed and unknown controls', async () => {

@@ -1,9 +1,12 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Json, LiveMap, Room } from "@liveblocks/client";
-import { draftBody, draftRequest } from "@/lib/workbench/draft-request";
+import { DraftRequestError, draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
-import { MASTER_NODE_FIELDS, catchUpForTeam, diffForTeam, guardMasters, joinTeamCanvas, landedRemoval, landedWrite, orderedIds, restoreHeld, withTeamCanvas, type MasterHold, type TeamPatch } from "@/lib/workbench/team-canvas-model";
+import {
+  MASTER_NODE_FIELDS, catchUpForTeam, diffForTeam, guardMasters, joinTeamCanvas, landedWrite, masterView, orderedIds, overlay, plainJson, restoreHeld, roomPeer, withTeamCanvas, writeRoom,
+  type MasterHold, type RoomDrag, type RoomPeer, type RoomPoint, type RoomStorage, type TeamCanvasView, type TeamPatch,
+} from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
 import { useWorkspace } from "@/lib/workspace/state";
 
@@ -19,7 +22,12 @@ import { useWorkspace } from "@/lib/workspace/state";
  *    also carries its node edits to the canvas, from any editor.)
  *  - When the owner's Liveblocks key is set, the same edits also travel
  *    through a live room and land in teammates' open windows at once, with
- *    their cursors, selections and drags shown on the graph.
+ *    their cursors, selections and drags shown on the graph. The server
+ *    writes changes it makes (a Tidy, Atomik's work) into the same room, by
+ *    the same rules (writeRoom), and shows Atomik there while it works.
+ *  - With no live room, a window checks every few seconds whether the server
+ *    changed the canvas, and folds it in when it did, this window's unsent
+ *    edits laid over it.
  *  - What another save brought into the draft (a merge) catches the canvas
  *    up only where it still holds what this window had (catchUpForTeam): a
  *    save the canvas missed reaches it, and a teammate's later edit stands.
@@ -27,24 +35,32 @@ import { useWorkspace } from "@/lib/workspace/state";
  *    goes there, whatever is open when it is sent.
  */
 
-export type Peer = { id: number; name: string; color: string; cursor: Point | null; selected: string | null; drag: Drag | null };
-export type Point = { x: number; y: number };
-export type Drag = { id: string; dx: number; dy: number };
+/** A teammate in the room, or Atomik (`agent`: the server's writer, shown with what it is doing). */
+export type Peer = RoomPeer;
+export type Point = RoomPoint;
+export type Drag = RoomDrag;
 type Presence = { cursor: Point | null; selected: string | null; drag: Drag | null };
-type Storage = { nodes: LiveMap<string, Json>; assets: LiveMap<string, Json>; order: string[] };
-type Canvas = { nodes: Record<string, CanvasNode>; assets: Record<string, Asset>; order: string[]; removedIds: string[] };
+type Storage = { nodes: LiveMap<string, Json>; assets: LiveMap<string, Json>; order: string[]; serverMade?: { [id: string]: string } };
+type Canvas = TeamCanvasView;
 type LiveRoom = Room<Presence, Storage>;
+/** The newest change the server made to the canvas (canvas-ops-log latestServerChange). */
+export type ServerChange = { seq: number; at: number; what: string; agent: boolean };
+export type TidyOutcome = { ok: true; moved: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
 
 export type TeamCanvasApi = {
   /** "live" once in the room; "saved" when only the server copy is shared; "off" before a project is saved. */
   mode: "off" | "saved" | "live";
   peers: Peer[];
+  /** A server change this window just folded in (no live room): shown to the person for a few seconds. */
+  server: ServerChange | null;
   publish: (before: Project, after: Project) => void;
   /** What another save brought in (before → after the merge): onto the canvas only where it still holds `before`'s values. */
   catchUp: (before: Project, after: Project) => void;
   presence: (patch: Partial<Presence>) => void;
   /** Sends any waiting canvas edit now. The draft save awaits it, so the canvas is never older than the saved draft. */
   flush: () => Promise<void>;
+  /** Lays the board out on the server, for everyone at once. Free. */
+  tidy: () => Promise<TidyOutcome>;
   /** The locked elements this window knows of (the masters): from the canvas's read, a lock or unlock here, and edits the server held. */
   locks: ReadonlySet<string>;
   /** A lock or unlock this window made (or learned of). */
@@ -55,33 +71,31 @@ export type TeamCanvasApi = {
 
 /** A held write as the route answers it: the card (or asset) as the canvas holds it comes with it. */
 type HeldAnswer = MasterHold & { node?: CanvasNode; asset?: Asset };
-
-/** A room or loaded canvas, shaped for the master guard (team-canvas-model guardMasters). */
-const guardView = (canvas: Pick<Canvas, "nodes" | "assets">) => ({ nodes: canvas.nodes, assets: canvas.assets, removed: {}, retired: {} });
+/** The masters a canvas read names (GET's `locks`: locked elements, from the elements table). */
+const locksOf = (answer: unknown): Set<string> => {
+  const locks = (answer as { locks?: unknown } | null)?.locks;
+  return new Set(Array.isArray(locks) ? locks.filter((id): id is string => typeof id === "string") : []);
+};
 
 const API = "/api/workbench/team-canvas";
 const SAVE_MS = 500;
 const RETRY_MS = 5000;
+/** With no live room: how often a window checks whether the server changed the canvas. */
+const POLL_MS = 5000;
+/** How long a server change folded in here stays named on screen. */
+const SHOWN_MS = 15_000;
 /** Browsers cap the bodies of keepalive requests in flight at 64 KB. */
 const KEEPALIVE_MAX = 60_000;
-const plain = <T,>(value: T): Json => JSON.parse(JSON.stringify(value)) as Json;
+const EMPTY: Canvas = { nodes: {}, assets: {}, order: [], removedIds: [] };
+const TIDY_FAILED = "The board could not be tidied. Try again.";
 
-/** The canvas with this window's not-yet-sent edits laid over it (never over a locked master: the server's own rule). */
-function overlay(canvas: Canvas, sent: TeamPatch | null, locks: ReadonlySet<string>): Canvas {
-  if (!sent) return canvas;
-  const patch = guardMasters(guardView(canvas), sent, { locks }).patch;
-  const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
-  const removedIds = new Set(canvas.removedIds);
-  for (const n of patch.upsertNodes) {
-    const next = landedWrite(nodes[n.id], removedIds.has(n.id) ? n : undefined, n, patch);
-    if (next) { nodes[n.id] = next; removedIds.delete(n.id); }
-  }
-  for (const id of patch.removeNodes) if (landedRemoval(nodes[id], id, patch)) { delete nodes[id]; removedIds.add(id); }
-  for (const a of patch.upsertAssets) assets[a.id] = a;
-  return { nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
+function isServerChange(value: unknown): value is ServerChange {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.seq === "number" && typeof v.at === "number" && typeof v.what === "string" && typeof v.agent === "boolean";
 }
 
-function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room: string | null; revision: number } {
+function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room: string | null; revision: number; server?: ServerChange | null } {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   if (typeof v.revision !== "number" || !("canvas" in v) || (v.room !== null && typeof v.room !== "string")) return false;
@@ -90,11 +104,31 @@ function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room:
   return !!c && typeof c === "object" && typeof c.nodes === "object" && typeof c.assets === "object" && Array.isArray(c.order) && Array.isArray(c.removedIds);
 }
 
+/** The light check's answer (GET ?head=1): the revision, and the newest server change. */
+function isHeadAnswer(value: unknown): value is { head: true; revision: number; server: ServerChange | null } {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return v.head === true && typeof v.revision === "number" && (v.server === null || isServerChange(v.server));
+}
+
 function readStorage(root: { get: <K extends keyof Storage>(key: K) => Storage[K] }): Canvas {
-  const nodes: Record<string, CanvasNode> = {}, assets: Record<string, Asset> = {};
-  root.get("nodes").forEach((value, id) => { nodes[id] = value as unknown as CanvasNode; });
-  root.get("assets").forEach((value, id) => { assets[id] = value as unknown as Asset; });
+  const nodes: Canvas["nodes"] = {}, assets: Canvas["assets"] = {};
+  root.get("nodes").forEach((value, id) => { nodes[id] = value as unknown as Canvas["nodes"][string]; });
+  root.get("assets").forEach((value, id) => { assets[id] = value as unknown as Canvas["assets"][string]; });
   return { nodes, assets, order: [...(root.get("order") ?? [])], removedIds: [] };
+}
+
+/** The live room as writeRoom writes it: the same writer the server's push uses (lib/workbench/canvas-push.ts). */
+function roomOf(root: { get: <K extends keyof Storage>(key: K) => Storage[K]; set: <K extends keyof Storage>(key: K, value: Storage[K]) => void }): RoomStorage {
+  const nodes = root.get("nodes"), assets = root.get("assets");
+  return {
+    nodes: { get: (id) => nodes.get(id), set: (id, value) => nodes.set(id, value as Json), delete: (id) => { nodes.delete(id); } },
+    assets: { get: (id) => assets.get(id), set: (id, value) => assets.set(id, value as Json) },
+    order: () => root.get("order") ?? [],
+    setOrder: (order) => root.set("order", order),
+    serverMade: () => root.get("serverMade") ?? {},
+    setServerMade: (made) => root.set("serverMade", made),
+  };
 }
 
 export function useTeamCanvas({ scope, productionId, current, fold }: {
@@ -109,12 +143,19 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const [joinedState, setJoinedState] = useState<{ pid: string; mode: "saved" | "live"; peers: Peer[] } | null>(null);
   const mode: TeamCanvasApi["mode"] = productionId && joinedState?.pid === productionId ? joinedState.mode : "off";
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
+  const [shown, setShown] = useState<{ pid: string; change: ServerChange } | null>(null);
+  const server = productionId && shown?.pid === productionId ? shown.change : null;
   const { toast } = useWorkspace();
   const retry = useRef<() => void>(() => {});
   /* Each waiting edit keeps the production it was made in: it is sent there and nowhere else. */
   const [outbox] = useState(() => new TeamOutbox());
   /* Catch-ups (what merges brought in), by production, in order: sent before this window's own edits, never folded into them. */
   const catchUps = useRef(new Map<string, TeamPatch[]>());
+  /* Edits on their way to the server now, by production: laid over a canvas read meanwhile, so the read never undoes them. */
+  const inflight = useRef(new Map<string, TeamPatch[]>());
+  /* The newest server change this window has folded in, by production. */
+  const serverSeen = useRef<{ pid: string; seq: number } | null>(null);
+  const shownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joined = useRef<string | null>(null);
   const room = useRef<LiveRoom | null>(null);
@@ -154,12 +195,21 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const send = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     const post = async (pid: string, patch: TeamPatch) => {
-      const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order, ...(patch.expect ? { expect: patch.expect } : {}) });
-      /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
-         (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
-      const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
-      const answer = await draftRequest<{ held?: unknown } | null>(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
-      if (answer && Array.isArray(answer.held) && answer.held.length) handleHeld(pid, answer.held as HeldAnswer[]);
+      const going = inflight.current.get(pid) ?? [];
+      going.push(patch);
+      inflight.current.set(pid, going);
+      try {
+        const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order, ...(patch.expect ? { expect: patch.expect } : {}) });
+        /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
+           (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
+        const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
+        const answer = await draftRequest<{ held?: unknown } | null>(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
+        if (answer && Array.isArray(answer.held) && answer.held.length) handleHeld(pid, answer.held as HeldAnswer[]);
+      } finally {
+        const left = (inflight.current.get(pid) ?? []).filter((p) => p !== patch);
+        if (left.length) inflight.current.set(pid, left);
+        else inflight.current.delete(pid);
+      }
     };
     const batch = outbox.take(), caught = [...catchUps.current.entries()];
     catchUps.current.clear();
@@ -213,6 +263,38 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     timer.current = setTimeout(() => void send(), SAVE_MS);
   }, [send, outbox]);
 
+  /** A server change seen here: remembered, and named on screen for a moment when it was folded in just now. */
+  const noteServer = useCallback((pid: string, change: ServerChange | null | undefined, show: boolean) => {
+    if (!change) return;
+    const seen = serverSeen.current?.pid === pid ? serverSeen.current.seq : 0;
+    if (change.seq <= seen) return;
+    serverSeen.current = { pid, seq: change.seq };
+    if (!show) return;
+    setShown({ pid, change });
+    if (shownTimer.current) clearTimeout(shownTimer.current);
+    shownTimer.current = setTimeout(() => setShown((s) => (s?.change === change ? null : s)), SHOWN_MS);
+  }, []);
+  useEffect(() => () => { if (shownTimer.current) clearTimeout(shownTimer.current); }, []);
+
+  /**
+   * No live room: the canvas as the server holds it now, folded in with this window's own edits
+   * (sent or not yet) laid over it — what the server changed arrives, and nothing made here is undone.
+   */
+  const foldServer = useCallback(async (pid: string) => {
+    let saved: unknown;
+    try { saved = await draftRequest(`${API}?productionId=${encodeURIComponent(pid)}`, scope); }
+    catch { return; }
+    /* Only while this window still shows that production with no live room: a room carries server changes itself. */
+    if (!isCanvasAnswer(saved) || joined.current !== pid || room.current) return;
+    /* The masters as the elements table has them now. */
+    const known = locksOf(saved);
+    setLocks(pid, known);
+    const pending: (TeamPatch | null)[] = [...(catchUps.current.get(pid) ?? []), ...(inflight.current.get(pid) ?? []), outbox.peek(pid)];
+    const canvas = pending.reduce<Canvas>((at, patch) => overlay(at, patch, known), saved.canvas ?? EMPTY);
+    fold((p) => withTeamCanvas(p, canvas));
+    noteServer(pid, isServerChange(saved.server) ? saved.server : null, true);
+  }, [scope, outbox, fold, noteServer, setLocks]);
+
   /* Open the production's canvas, fold it in, then join its live room if there is one. */
   useEffect(() => {
     if (!productionId) return;
@@ -220,7 +302,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     let leave: (() => void) | null = null;
     const unsubs: (() => void)[] = [];
     void (async () => {
-      let saved: { canvas: Canvas | null; room: string | null; revision: number };
+      let saved: { canvas: Canvas | null; room: string | null; revision: number; server?: ServerChange | null };
       try { saved = await draftRequest(`${API}?productionId=${encodeURIComponent(productionId)}`, scope); }
       catch { return; }
       if (cancelled) return;
@@ -229,18 +311,19 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       const draft = current();
       if (!draft) return;
       /* The masters on this canvas, as the elements table has them. */
-      const answered = (saved as { locks?: unknown }).locks;
-      const known = new Set(Array.isArray(answered) ? answered.filter((id): id is string => typeof id === "string") : []);
+      const known = locksOf(saved);
       setLocks(productionId, known);
       /* What this window changed while the canvas was loading is newer than the canvas: it wins (except on a locked
          master, which stays as the canvas holds it). What a merge brought in meanwhile lands where the canvas still
          holds what this window had. */
       const mine = early.current?.pid === productionId ? early.current.patch : null;
       early.current = null;
-      const canvas: Canvas = [...(catchUps.current.get(productionId) ?? []), mine].reduce<Canvas>((at, patch) => overlay(at, patch, known), saved.canvas ?? { nodes: {}, assets: {}, order: [], removedIds: [] });
+      const canvas: Canvas = [...(catchUps.current.get(productionId) ?? []), mine].reduce<Canvas>((at, patch) => overlay(at, patch, known), saved.canvas ?? EMPTY);
       const joinedCanvas = joinTeamCanvas(draft, canvas, Date.now());
       const outgoing = mine && joinedCanvas.patch ? mergePatches(mine, joinedCanvas.patch) : mine ?? joinedCanvas.patch;
       joined.current = productionId;
+      /* The server's changes up to now are in what was just read: only later ones are folded in. */
+      noteServer(productionId, isServerChange(saved.server) ? saved.server : null, false);
       fold((p) => joinTeamCanvas(p, canvas, Date.now()).project);
       if (outgoing) queue(productionId, outgoing);
       setJoinedState({ pid: productionId, mode: "saved", peers: [] });
@@ -270,31 +353,24 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       if (cancelled) { entered.leave(); return; }
       room.current = live;
 
+      /* The fields an edit changed, over the room's node: a teammate's edit to another field stands (and a catch-up lands
+         only where the room still holds what this window had). The server's own changes reach the room the same way. */
       const write = (sent: TeamPatch) => live.batch(() => {
-        const nodes = root.get("nodes"), assets = root.get("assets");
         /* Never onto a locked master this window knows of: the room holds what the server would. */
         const masters = locksFor(productionId);
-        const patch = masters.size ? guardMasters(guardView(readStorage(root)), sent, { locks: masters }).patch : sent;
-        /* The fields an edit changed, over the room's node: a teammate's edit to another field stands (and a catch-up lands only where the room still holds what this window had). */
-        for (const n of patch.upsertNodes) {
-          const next = landedWrite(nodes.get(n.id) as unknown as CanvasNode | undefined, undefined, n, patch);
-          if (next) nodes.set(n.id, plain(next));
-        }
-        for (const id of patch.removeNodes) if (landedRemoval(nodes.get(id) as unknown as CanvasNode | undefined, id, patch)) nodes.delete(id);
-        for (const a of patch.upsertAssets) assets.set(a.id, plain(a));
-        if (patch.order) root.set("order", patch.order);
+        writeRoom(roomOf(root), masters.size ? guardMasters(masterView(readStorage(root)), sent, { locks: masters }).patch : sent);
       });
       writeLive.current = write;
       /* A card as the server holds it (after a lock, or an edit it held): the fields named, or the card whole (`null`). */
       writeTrusted.current = (node, fields) => live.batch(() => {
         const nodes = root.get("nodes");
         const next = fields ? landedWrite(nodes.get(node.id) as unknown as CanvasNode | undefined, undefined, node, { fields: { [node.id]: fields } }) : node;
-        if (next) nodes.set(node.id, plain(next));
+        if (next) nodes.set(node.id, plainJson(next) as unknown as Json);
       });
 
       /* Alone in the room: the saved canvas is the truth, so the room starts from it.
          With teammates already editing: the room is ahead of the server; take it, then add what only this draft had. */
-      const safe = outgoing && known.size ? guardMasters(guardView(canvas), outgoing, { locks: known }).patch : outgoing;
+      const safe = outgoing && known.size ? guardMasters(masterView(canvas), outgoing, { locks: known }).patch : outgoing;
       const truth = { ...canvas, ...(safe ? {
         nodes: { ...canvas.nodes, ...Object.fromEntries(safe.upsertNodes.flatMap((n) => { const next = landedWrite(canvas.nodes[n.id], undefined, n, safe); return next ? [[n.id, next]] : []; })) },
         assets: { ...canvas.assets, ...Object.fromEntries(safe.upsertAssets.map((a) => [a.id, a])) },
@@ -304,9 +380,11 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
         live.batch(() => {
           const nodes = root.get("nodes"), assets = root.get("assets");
           nodes.forEach((_v, id) => { if (!truth.nodes[id]) nodes.delete(id); });
-          for (const [id, n] of Object.entries(truth.nodes)) nodes.set(id, plain(n));
-          for (const [id, a] of Object.entries(truth.assets)) assets.set(id, plain(a));
+          for (const [id, n] of Object.entries(truth.nodes)) nodes.set(id, plainJson(n) as unknown as Json);
+          for (const [id, a] of Object.entries(truth.assets)) assets.set(id, plainJson(a) as unknown as Json);
           root.set("order", orderedIds(truth));
+          /* The cards the server made, so a removal a save only implied never takes one off in the room either. */
+          if (truth.serverMade && Object.keys(truth.serverMade).length) root.set("serverMade", { ...(root.get("serverMade") ?? {}), ...truth.serverMade });
         });
       } else {
         fold((p) => withTeamCanvas(p, readStorage(root)));
@@ -315,11 +393,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
       unsubs.push(live.subscribe(root, () => fold((p) => withTeamCanvas(p, readStorage(root))), { isDeep: true }));
       unsubs.push(live.subscribe("others", (others) => {
-        const next = others.map((o) => {
-          const info = (o.info ?? {}) as { name?: string; color?: string };
-          return { id: o.connectionId, name: info.name ?? "Teammate", color: info.color ?? "#0A84FF", cursor: o.presence.cursor ?? null, selected: o.presence.selected ?? null, drag: o.presence.drag ?? null };
-        });
-        setJoinedState({ pid: productionId, mode: "live", peers: next });
+        setJoinedState({ pid: productionId, mode: "live", peers: others.map((o) => roomPeer(o)) });
       }));
       setJoinedState({ pid: productionId, mode: "live", peers: [] });
     })();
@@ -336,6 +410,25 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     /* current/fold are ref-stable readers; re-joining on their identity would re-open the room on every render. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productionId, scope]);
+
+  /* No live room: check every few seconds whether the server changed the canvas (a Tidy, Atomik's work), and fold it in
+     when it did. A light read (the revision and the newest server change); the canvas itself only when it moved. */
+  useEffect(() => {
+    if (!productionId || mode !== "saved") return;
+    let stopped = false, busy = false;
+    const tick = async () => {
+      if (stopped || busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        const head = await draftRequest<unknown>(`${API}?productionId=${encodeURIComponent(productionId)}&head=1`, scope).catch(() => null);
+        if (stopped || !isHeadAnswer(head) || !head.server) return;
+        const seen = serverSeen.current?.pid === productionId ? serverSeen.current.seq : 0;
+        if (head.server.seq > seen) await foldServer(productionId);
+      } finally { busy = false; }
+    };
+    const every = setInterval(() => void tick(), POLL_MS);
+    return () => { stopped = true; clearInterval(every); };
+  }, [productionId, mode, scope, foldServer]);
 
   const publish = useCallback((before: Project, after: Project) => {
     const pid = after.productionProjectId;
@@ -363,6 +456,30 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const presence = useCallback((patch: Partial<Presence>) => { room.current?.updatePresence(patch); }, []);
 
+  const tidy = useCallback(async (): Promise<TidyOutcome> => {
+    const pid = joined.current;
+    if (!pid) return { ok: false, error: "Save this project first: the board is tidied for your whole team." };
+    /* This window's waiting edits reach the canvas first, so the layout starts from them. */
+    await send();
+    let answer: unknown;
+    try {
+      answer = await draftRequest<unknown>(API, scope, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "tidy", productionId: pid, opId: crypto.randomUUID() }),
+      });
+    } catch (error) {
+      return { ok: false, error: error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 ? error.message : TIDY_FAILED };
+    }
+    const v = (answer ?? {}) as { moved?: unknown; live?: unknown };
+    if (typeof v.moved !== "number") return { ok: false, error: TIDY_FAILED };
+    const live = v.live === "sent" || v.live === "waiting" ? v.live : "off";
+    /* No live room: it is here now, and teammates' windows fold it in on their next check. With a room, the room brings it;
+       one the room could not take yet goes out again on the next read of the canvas. */
+    if (!room.current) await foldServer(pid);
+    else if (live === "waiting") setTimeout(() => void draftRequest(`${API}?productionId=${encodeURIComponent(pid)}&head=1`, scope).catch(() => null), 3000);
+    return { ok: true, moved: v.moved, live };
+  }, [scope, send, foldServer]);
+
   const learnLock = useCallback((elementId: string, locked: boolean) => {
     const pid = joined.current;
     if (!pid) return;
@@ -372,5 +489,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, publish, catchUp, presence, flush: send, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, locks, learnLock, writeServer };
 }

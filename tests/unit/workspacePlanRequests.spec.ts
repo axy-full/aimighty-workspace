@@ -178,20 +178,29 @@ test("Marketing Studio's plan runs on the page's bodies and refuses without them
   expect(plans.marketing.runnable({ ...ctx({ variants }), projectId: null }).ok).toBe(false);
 });
 
-test("Shorts' plan runs on the form's own input and refuses without a source or a style", () => {
+test("Shorts' plan refuses whatever the form holds: no API-key engine makes a set of shorts", () => {
   const plans = withRequestGate(PLANS, () => new Set<RequestKey>(["shorts"]));
   const input = {
     source: { uploadId: "clip-1" },
     preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" as const, name: "Bold Urban" },
     aspectRatio: "9:16" as const,
   };
-  expect(plans.shorts.runnable(ctx({ shorts: input }))).toEqual({ ok: true });
   const reason = (request: PlanRequest) => (plans.shorts.runnable(ctx(request)) as { reason: string }).reason;
-  expect(reason({})).toMatch(/choose a source video and a style on Shorts first/);
-  expect(reason({ shorts: { preset: input.preset, aspectRatio: "9:16" } })).toMatch(/choose a source video and a style/);
-  expect(reason({ shorts: { source: input.source, aspectRatio: "9:16" } })).toMatch(/choose a source video and a style/);
+  for (const request of [{}, { shorts: input }, { shorts: { preset: input.preset, aspectRatio: "9:16" } }] as PlanRequest[])
+    expect(reason(request)).toBe("Not runnable yet — no API-key engine makes a set of shorts.");
   /* Shorts owns its own reason, so the shared "Needs <page> data" never fires for it. */
   expect(missingRequest("shorts", new Set<RequestKey>())).toBeNull();
+});
+
+test("Motion Transfer and Object Swap run on the page's /api/generate bodies for the API-key engines, and need the page to publish them", () => {
+  const body = (model: string) => [{ name: "Take 1", body: { task: "genjutsu", model, prompt: "recast", resolution: "720p" } }];
+  const none = withRequestGate(PLANS, () => new Set<RequestKey>());
+  expect(none.motion.runnable(ctx())).toEqual({ ok: false, reason: "Needs Motion Transfer data" });
+  expect(none.swap.runnable(ctx())).toEqual({ ok: false, reason: "Needs Object Swap data" });
+  const both = withRequestGate(PLANS, () => new Set<RequestKey>(["motion", "swap"]));
+  expect(both.motion.runnable(ctx({ motion: body("higgsfield-genjutsu-motion-transfer") }))).toEqual({ ok: true });
+  expect(both.swap.runnable(ctx({ swap: body("higgsfield-genjutsu-object-swap") }))).toEqual({ ok: true });
+  expect((both.motion.runnable(ctx({ motion: [] })) as { reason: string }).reason).toMatch(/choose a source video on Motion Transfer first/);
 });
 
 test("Boards stays non-runnable: no page can supply a board generation body yet", () => {

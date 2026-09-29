@@ -6,8 +6,6 @@ import {
   ownerRunEyebrow, ownerRunTitle, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
 import { SHELL_SUITES } from "../../lib/shell/ia";
-import { REACH_REUSE_MS, createReachMemory, reachConnection, reachStateFrom, type ReachState } from "../../lib/shell/tools-connections";
-import { CONNECTED_REACH } from "../../lib/higgsfield-consumer/reach";
 import { INITIAL_COMPOSER, activeModel, composerBlock, workspaceModels, type EngineRow } from "../../lib/workspace/composer";
 import { rowPrice } from "../../lib/workspace/model-picker";
 import { PLANS } from "../../lib/workspace/plans";
@@ -286,9 +284,11 @@ test("a cast entry's still is made from its prompt, else its description, else i
   expect(castStillPrompt({ name: "", description: "", prompt: "" })).toBe("");
 });
 
-test("an Atomik plan that spends through the connected account is the owner's; plans on this workspace's credits are not", () => {
-  expect(runsOnOwnerAccount(PLANS.motion)).toBe(true);
-  expect(runsOnOwnerAccount(PLANS.swap)).toBe(true);
+test("an Atomik plan that reads the connected account's kept results is the owner's; no plan spends through the account any more", () => {
+  /* Compare reads results already kept on the project through the owner-only route; it quotes and sends nothing. */
+  expect(runsOnOwnerAccount(PLANS.compare)).toBe(true);
+  /* Motion Transfer and Object Swap run on the API-key engines; Generate, Shorts and History are not runnable. */
+  for (const page of ["motion", "swap", "generate", "shorts", "history"] as const) expect(runsOnOwnerAccount(PLANS[page]), page).toBe(false);
   expect(runsOnOwnerAccount(PLANS.marketing)).toBe(false);
   expect(runsOnOwnerAccount(PLANS.boards)).toBe(false);
   expect(runsOnOwnerAccount(null)).toBe(false);
@@ -298,12 +298,12 @@ test("the run engine refuses every member's connected plan before reading or pri
   let requests = 0;
   const plans = ownerAccountPlans(PLANS, false, "Workspace owner");
   const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("A member must not reach the connected account."); } }) });
-  for (const page of ["motion", "swap", "generate", "shorts"]) {
-    expect(engine.start(page)).toEqual({ ok: false, reason: "Run by Workspace owner on the Higgsfield account" });
-    expect(engine.getState().run).toBeNull();
-    expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
-  }
+  expect(engine.start("compare")).toEqual({ ok: false, reason: "Run by Workspace owner on the Higgsfield account" });
+  expect(engine.getState().run).toBeNull();
+  expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
   expect(requests).toBe(0);
+  /* Plans that no longer touch the account are the same for a member as for the owner. */
+  for (const page of ["motion", "swap", "generate", "shorts", "history"] as const) expect(plans[page], page).toBe(PLANS[page]);
   expect(plans.marketing).toBe(PLANS.marketing);
   expect(plans.boards).toBe(PLANS.boards);
   expect(ownerAccountPlans(PLANS, true, null)).toBe(PLANS);
@@ -333,132 +333,11 @@ test("Business, Viral, Gen's composer and the connected workflows no longer read
   expect(readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8")).toContain("bustConnectedCapability(scope)");
 });
 
-/* ── Atomik › Tools & connections: the reach check rides the same capability ── */
+/* ── Atomik › Tools & connections reaches no signed-in account ── */
 
-/** The account's answer to a reach check: every capability row offered. */
-const checkedReach = (): ReachState => ({ kind: "checked", checkedAt: 1, checks: CONNECTED_REACH.map((row) => ({ id: row.id, available: true })) });
-
-test("Tools: a reach check that set out before a disconnect lands on nothing — not kept, not shared — and the check after it still answers", () => {
-  let now = 1_000_000;
-  const { store } = harness();
-  const memory = createReachMemory(() => now);
-  const scope = "owner-a";
-  store.settle(scope, { connected: true });
-
-  /* Tools asks the account while it is connected, and the page is left before the reply… */
-  const left = memory.begin(scope, store.mark(scope));
-  /* …the owner disconnects in Engines, which reads the new state and shares it. */
-  store.bust(scope);
-  store.settle(scope, { connected: false }, store.mark(scope));
-  /* The late reply lands on nothing: back on the page, nothing of it is reused. */
-  expect(memory.land(left, store.mark(scope), checkedReach())).toBe(false);
-  expect(memory.recall(scope, store.mark(scope))).toBeNull();
-
-  /* Tools stays open this time: it checks again under the new connection, and an older reply lands meanwhile. */
-  const before = memory.begin(scope, store.mark(scope));
-  store.bust(scope);
-  store.settle(scope, { connected: false }, store.mark(scope));
-  const after = memory.begin(scope, store.mark(scope));
-  now += 1_000;
-  expect(memory.land(before, store.mark(scope), checkedReach())).toBe(false);
-  expect(memory.recall(scope, store.mark(scope))).toBeNull();
-  /* What the page would share of it is refused too: the account stays disconnected on every surface. */
-  expect(store.settle(scope, reachConnection(checkedReach())!, before.revision)).toBe(false);
-  expect(store.get(scope)).toMatchObject({ status: "ready", connected: false });
-
-  /* The check that set out after the disconnect is still the page's answer, and shares it. */
-  const answer = reachStateFrom(409, { code: "not_connected" });
-  expect(memory.land(after, store.mark(scope), answer)).toBe(true);
-  expect(store.settle(scope, reachConnection(answer)!, after.revision)).toBe(true);
-  expect(store.get(scope)).toMatchObject({ status: "ready", connected: false, reconnect: false });
-  /* "Connect first" is not kept: once connected, the next visit asks again. */
-  expect(memory.recall(scope, store.mark(scope))).toBeNull();
-});
-
-test("Tools: a newer check of the same workspace supersedes an older one still in flight; the older reply cannot overwrite it", () => {
-  const memory = createReachMemory(() => 1_000_000);
-  const first = memory.begin("s", 0);
-  const second = memory.begin("s", 0);
-  expect(memory.land(second, 0, checkedReach())).toBe(true);
-  expect(memory.land(first, 0, reachStateFrom(503, { code: "unavailable" }))).toBe(false);
-  expect(memory.recall("s", 0)).toMatchObject({ kind: "checked" });
-  /* A reply lands once: the same check cannot land again later. */
-  expect(memory.land(second, 0, reachStateFrom(409, { code: "not_connected" }))).toBe(false);
-  expect(memory.recall("s", 0)).toMatchObject({ kind: "checked" });
-  /* A newer answer of another kind drops what was kept: a checked answer does not outlive the account going away. */
-  const third = memory.begin("s", 0);
-  expect(memory.land(third, 0, reachStateFrom(409, { code: "reconnect_required" }))).toBe(true);
-  expect(memory.recall("s", 0)).toBeNull();
-});
-
-test("Tools: each workspace keeps its own reach answer for a minute under its own connection — returning from another workspace never shows that one's", () => {
-  let now = 1_000_000;
-  const { store } = harness();
-  const memory = createReachMemory(() => now);
-  const a = memory.begin("studio-a", store.mark("studio-a"));
-  /* A check of another workspace in flight does not make this one's reply stale. */
-  const b = memory.begin("studio-b", store.mark("studio-b"));
-  expect(memory.land(a, store.mark("studio-a"), checkedReach())).toBe(true);
-  /* Another workspace (or another person in it) is another scope: nothing of A's answer is there. */
-  expect(memory.recall("studio-b", store.mark("studio-b"))).toBeNull();
-  expect(memory.land(b, store.mark("studio-b"), reachStateFrom(409, { code: "not_connected" }))).toBe(true);
-  expect(memory.recall("studio-b", store.mark("studio-b"))).toBeNull();
-
-  /* Back in A within the minute, A's own answer is reused rather than asked again. */
-  now += REACH_REUSE_MS - 1;
-  expect(memory.recall("studio-a", store.mark("studio-a"))).toMatchObject({ kind: "checked" });
-  /* A disconnect in B leaves A's answer alone; one in A drops it. */
-  store.bust("studio-b");
-  expect(memory.recall("studio-a", store.mark("studio-a"))).toMatchObject({ kind: "checked" });
-  store.bust("studio-a");
-  expect(memory.recall("studio-a", store.mark("studio-a"))).toBeNull();
-  /* After the minute an answer is checked again, even under an unchanged connection. */
-  const again = memory.begin("studio-a", store.mark("studio-a"));
-  expect(memory.land(again, store.mark("studio-a"), checkedReach())).toBe(true);
-  now += REACH_REUSE_MS;
-  expect(memory.recall("studio-a", store.mark("studio-a"))).toBeNull();
-});
-
-test("Tools: other surfaces' ordinary reads and settles never move the revision the reach answer is kept under; a connect, reconnect or disconnect does", async () => {
-  const { store, pending, flush } = harness();
-  const memory = createReachMemory(() => 1_000_000);
-  const revision = store.mark("s");
-  expect(memory.land(memory.begin("s", revision), store.mark("s"), checkedReach())).toBe(true);
-  /* Viral's runs, Cast's jobs and the composer settle the connection as they poll; the store reads it again when stale. */
-  for (let i = 0; i < 5; i++) expect(store.settle("s", { connected: true }, store.mark("s"))).toBe(true);
-  const read = store.ensure("s", true);
-  await flush();
-  pending[0].resolve({ connected: true });
-  await read;
-  expect(store.mark("s")).toBe(revision);
-  expect(memory.recall("s", store.mark("s"))).toMatchObject({ kind: "checked" });
-  store.bust("s");
-  expect(store.mark("s")).not.toBe(revision);
-  expect(memory.recall("s", store.mark("s"))).toBeNull();
-});
-
-test("Tools: a reach reply shares only what it says of the connection, read as the connection route's own answer would be", () => {
-  const checked = reachConnection(checkedReach());
-  expect(checked).toEqual({ connected: true, requiresReconnect: false });
-  expect(connectionFrom(checked)).toEqual({ connected: true, reconnect: false });
-  const none = reachConnection(reachStateFrom(409, { code: "not_connected" }));
-  expect(none).toEqual({ connected: false, requiresReconnect: false });
-  expect(connectionFrom(none)).toEqual({ connected: false, reconnect: false });
-  const lapsed = reachConnection(reachStateFrom(401, { code: "reconnect_required" }));
-  expect(lapsed).toEqual({ connected: false, requiresReconnect: true });
-  expect(connectionFrom(lapsed)).toEqual({ connected: false, reconnect: true });
-  /* Owner only, too often, unavailable, or an answer that could not be read says nothing about the connection. */
-  for (const [status, body] of [[403, { error: "Only the owner" }], [429, { code: "rate_limited" }], [503, { code: "unavailable" }], [200, { reach: "garbled" }]] as const)
-    expect(reachConnection(reachStateFrom(status, body)), `${status}`).toBeNull();
-  expect(reachConnection({ kind: "checking" })).toBeNull();
-  expect(reachConnection({ kind: "owner-only" })).toBeNull();
-});
-
-test("Tools & connections takes owner, scope and revision from the shared capability, and reads no connection of its own", () => {
+test("Tools & connections checks no connected account: it reads no capability, reach or connection route", () => {
   const source = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(source).toContain("useConnectedCapability(undefined, { read: false })");
-  expect(source).toContain("markConnectedCapability(scope)");
-  expect(source).toContain("settleConnectedCapability(ticket.scope, connection, ticket.revision)");
-  expect(source).not.toContain("/api/higgsfield/consumer/connection");
+  expect(source).not.toContain("useConnectedCapability");
+  expect(source).not.toContain("/api/higgsfield/consumer/");
   expect(source).not.toMatch(/session\.(owner|requestScope)/);
 });

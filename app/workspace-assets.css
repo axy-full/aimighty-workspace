@@ -129,14 +129,14 @@
 .pxw .pxw-assembly-screen > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .pxw .pxw-assembly-text { min-width: 0; }
 .pxw .pxw-assembly-title { font-size: 13.5px; font-weight: 560; white-space: nowrap; }
-.pxw .pxw-assembly-sub { font-size: 12px; color: var(--pxw-faint); margin-top: 3px; }
+.pxw .pxw-assembly-sub { font-size: 12px; color: var(--pxw-label-floor); margin-top: 3px; }
 .pxw .pxw-stem-wrap { margin-bottom: 9px; }
 .pxw .pxw-stem { display: flex; align-items: center; gap: 14px; padding: 13px 15px; border-radius: 12px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); }
 .pxw .pxw-stem[data-state="scored"] { border-color: rgba(52, 199, 89, 0.28); }
 .pxw .pxw-stem-bar { width: 5px; height: 36px; border-radius: 3px; flex: none; }
 .pxw .pxw-stem-name { width: 132px; flex: none; min-width: 0; }
 .pxw .pxw-stem-name > span:first-child { display: block; font-size: 13.5px; font-weight: 550; letter-spacing: -0.01em; }
-.pxw .pxw-stem-name > span:last-child { display: block; font-size: 11.5px; color: var(--pxw-faint); margin-top: 2px; }
+.pxw .pxw-stem-name > span:last-child { display: block; font-size: 11.5px; color: var(--pxw-label-floor); margin-top: 2px; }
 .pxw .pxw-stem-desc { flex: 1; min-width: 0; }
 .pxw .pxw-stem-desc > span:first-child { display: block; font-size: 12.5px; color: var(--pxw-muted); line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pxw .pxw-stem-chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
@@ -144,7 +144,7 @@
 .pxw .pxw-stem-state { display: flex; align-items: center; gap: 6px; flex: none; font-size: 11.5px; color: var(--pxw-dimmer); white-space: nowrap; }
 .pxw .pxw-stem-state > .pxw-dot { width: 5px; height: 5px; }
 .pxw .pxw-stem-action { padding: 6px 13px; font-size: 12px; font-weight: 530; color: var(--pxw-body); }
-.pxw .pxw-stem-note { font-size: 12px; color: var(--pxw-faint); margin: 12px 0 0; }
+.pxw .pxw-stem-note { font-size: 12px; color: var(--pxw-label-floor); margin: 12px 0 0; }
 
 /* The existing sound panels (SoundGenerate, SoundMix) inside the workspace. */
 .pxw .pxw-sound-host { margin-top: 9px; border-radius: 12px; overflow: hidden; border: 1px solid var(--pxw-card-border); }
