@@ -8,7 +8,7 @@ import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
-import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
+import { costUsd, isSoulIdentityModel } from "./models";
 import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
@@ -803,7 +803,7 @@ export async function syncPending(
             const handle = Boolean(params.higgsfieldStillHandle);
             const since = Number(params.paidClaim) || gen.createdAt;
             if (handle ? collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
-              const price = gen.model === SOUL_CHARACTER_MODEL_ID ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
+              const price = isSoulIdentityModel(gen.model) ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
               const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
               await writeGenerationOutcome(
                 {

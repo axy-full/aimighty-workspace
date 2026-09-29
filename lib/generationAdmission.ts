@@ -16,6 +16,8 @@ import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
 import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
+import { isSoulRenderBatch, isSoulRenderModel } from "@/lib/soulRenderTypes";
+import { estimateSoulRender, soulRenderInput, SoulRenderError } from "@/lib/soulRender";
 
 import { allowanceCheck, paidByPlatform, renderKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
@@ -465,14 +467,29 @@ export async function executeGenerationAdmission(
     }))) return admissionReply({ error: "Choose up to 16 saved image uploads or generations; external URLs are not accepted." }, { status: 400 });
     let soulBinding: Awaited<ReturnType<typeof requireReadySoulIdentity>> | undefined;
     let soulStrength: number | undefined;
+    let soulBatch: number | undefined;
+    /* Soul Standard / Soul 2 / Soul Cinema on the platform's key: a live estimate of the exact request, 1 or 4 stills. */
+    const soulRender = isSoulRenderModel(modelId);
     if (model.soulIdentity) {
-      if (!soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
+      if (soulRender && !options.checkpoint)
+        return admissionReply({ error: "Review a live Soul render quote before submitting this take." }, { status: 400 });
+      if (!soulRender && !soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
       if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready identity before generating." }, { status: 400 });
       soulStrength = body.soulStrength ?? 1;
-      if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1) return admissionReply({ error: "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+      if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1 || (soulRender && soulStrength === 0))
+        return admissionReply({ error: soulRender ? "Likeness strength is above 0 and at most 1." : "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+      if (soulRender) {
+        soulBatch = body.soulBatch ?? 1;
+        if (!isSoulRenderBatch(soulBatch)) return admissionReply({ error: "A Soul render makes 1 or 4 stills." }, { status: 400 });
+      } else if (body.soulBatch != null) return admissionReply({ error: "Only Soul Standard, Soul 2 and Soul Cinema render a batch." }, { status: 400 });
       try { soulBinding = await requireReadySoulIdentity(body.soulIdentityId, body.projectId ? String(body.projectId) : undefined, body.workbenchProjectId ? String(body.workbenchProjectId) : undefined); }
       catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That identity is unavailable." }, { status: 400 }); }
-    } else if (body.soulIdentityId != null) {
+      /* An identity renders only with the family it was trained for, and only once trained on the production host. */
+      if (soulRender && soulBinding.renderModel !== modelId)
+        return admissionReply({ error: soulBinding.renderModel
+          ? `This Soul ID renders with ${getModel(soulBinding.renderModel).label}.`
+          : "This Soul ID was trained on the earlier host and cannot render here. It stays in the workspace, read-only." }, { status: 409 });
+    } else if (body.soulIdentityId != null || body.soulBatch != null) {
       return admissionReply({ error: "This engine cannot use a trained identity. Choose the identity engine or use the reference image." }, { status: 400 });
     }
     // No key, no row: better a 400 now than a "running" render that fails later.
@@ -1161,6 +1178,8 @@ export async function executeGenerationAdmission(
     if (model.kind === "image") {
       if (model.marketing && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
         return admissionReply({ error: "Choose a supported Marketing Studio size and aspect." }, { status: 400 });
+      if (soulRender && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
+        return admissionReply({ error: "Choose 720p or 1080p and a supported aspect ratio." }, { status: 400 });
       const ratio = model.ratios.includes(body.ratio)
         ? String(body.ratio)
         : model.ratios[0];
@@ -1253,7 +1272,12 @@ export async function executeGenerationAdmission(
         marketingFingerprint = higgsfieldCredentialFingerprint();
         marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
       }
-      const estStillUsd = marketingUsd ?? (trained
+      /* The provider's own estimate of exactly this request; no number, no render (SoulRenderError below). */
+      const soulRenderUsd = soulRender && soulBinding
+        ? await estimateSoulRender(modelId, soulRenderInput(modelId, { prompt: stillPrompt, referenceId: soulBinding.providerReferenceId,
+            strength: soulStrength!, batch: soulBatch!, resolution: size, ratio }))
+        : undefined;
+      const estStillUsd = marketingUsd ?? soulRenderUsd ?? (trained
         ? renderUsdForRatio(ratio)
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
@@ -1320,6 +1344,7 @@ export async function executeGenerationAdmission(
       if (
         !trained &&
         !model.marketing &&
+        !soulRender &&
         !estimateImageCostUsd(modelId, size, stillRefs.length) &&
         needsConfirmedPrice(options, model.provider)
       )
@@ -1408,6 +1433,7 @@ export async function executeGenerationAdmission(
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
+          ...(soulRender ? { soulBatch } : {}),
           workbenchProjectId: body.workbenchProjectId ? String(body.workbenchProjectId) : undefined } : {}),
         topaz,
         topazOutput,
@@ -1468,6 +1494,8 @@ export async function executeGenerationAdmission(
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
+      if (soulRender && body.maxCredits == null)
+        return admissionReply({ error: "Approve the quoted credit ceiling before rendering with a Soul ID." }, { status: 400 });
 
       // The claim is bound in the same write: a claim naming no job proves there is none.
       const stillBinding = await claimBinding(requestClaim, genId);
@@ -2217,6 +2245,7 @@ export async function executeGenerationAdmission(
     );
   } catch (error) {
     if (error instanceof MarketingError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
+    if (error instanceof SoulRenderError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof MediaSourceError)
       return admissionReply({ error: error.message }, { status: 409 });
     if (error instanceof DraftClaimedError)

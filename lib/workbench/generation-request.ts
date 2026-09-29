@@ -25,7 +25,8 @@ export type GenerationBodyInput = {
   /** The fingerprint of the quote being approved; POST /api/generate refuses a request whose price or inputs changed since. */
   quoteFingerprint?: string;
   firstFrameAssetId?: string;
-  soul?: { soulIdentityId: string; soulStrength: number; workbenchProjectId: string };
+  /** A trained identity (this workspace's own id), its likeness strength, and — for Soul Standard, Soul 2 and Soul Cinema — stills per request (1 or 4). */
+  soul?: { soulIdentityId: string; soulStrength: number; workbenchProjectId: string; soulBatch?: number };
   /** The shot setup picked from the camera bank (Gen's film vocabulary), kept on the take so Recreate brings it back. */
   shotSpec?: Record<string, string> | null;
   /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
