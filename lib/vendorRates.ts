@@ -215,6 +215,22 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
   },
 };
 
+/**
+ * Marketing Studio Image 2.5 (Flare and Sunburst) on the commercial API bill
+ * tokens, USD per token, from the provider's published pricing (read 28
+ * September 2026): text in and out, image in and out. Its estimate endpoint
+ * states these rates but returns no figure, so lib/higgsfieldMarketing.ts
+ * quotes approximately from them; lib/higgsfieldPricingWatch.ts flags a change
+ * to the published text. Kept out of `VENDOR_RATES`, whose Marketing entry is
+ * deliberately empty so the 2.0 build prices only from its live estimate.
+ */
+export const MARKETING_IMAGE_25_TOKEN_USD = {
+  textIn: 5e-6,
+  textOut: 10e-6,
+  imageIn: 8e-6,
+  imageOut: 30e-6,
+} as const;
+
 export function ratesFor(modelId: string): VendorRates | null {
   return VENDOR_RATES[modelId] ?? null;
 }
