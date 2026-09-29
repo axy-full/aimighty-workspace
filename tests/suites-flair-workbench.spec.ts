@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * FINAL_SPEC §6, the flair layer: the header aurora tinted per view, glyph
@@ -95,7 +96,10 @@ test("phone: the glass tab bar routes Home · Gen · Suites · Assets · More th
   await expect(bar.getByRole("button")).toHaveText(["Home", "Gen", "Suites", "Assets", "More"]);
   await expect(page.getByTestId("tabbar-home")).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".gx-header").first()).not.toHaveCSS("overflow", "hidden");
+  /* The six suites wait behind the context badge (app/phone-chrome.css), one tap away. */
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(6);
+  await closeSuitesMenu(page);
 
   await page.getByTestId("tabbar-gen").click();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
@@ -103,7 +107,10 @@ test("phone: the glass tab bar routes Home · Gen · Suites · Assets · More th
   await expect(page.getByTestId("tabbar-home")).not.toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("tabbar-suites").click();
+  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Business" })).toHaveAttribute("aria-selected", "true");
+  await closeSuitesMenu(page);
   await expect(page.getByTestId("tabbar-suites")).toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("tabbar-assets").click();

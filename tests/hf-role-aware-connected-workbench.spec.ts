@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { reachFromTools } from "../lib/higgsfield-consumer/reach";
 import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
@@ -108,9 +109,12 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(page.getByText(/Connect the account|Only the workspace owner/)).toHaveCount(0);
   /* The page is the owner's to run: no Run stage for a member. */
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
-  /* No suite is the owner's as a whole any more: no key badge, no "run by" on any tab. */
+  /* No suite is the owner's as a whole any more: no key badge, no "run by" on any tab. A phone keeps the Suites
+     behind its context badge (app/phone-chrome.css), one tap away. */
+  await openSuitesMenu(page);
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
   for (const suite of ["business", "viral", "atomik"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  await closeSuitesMenu(page);
   await noSideScroll(page);
   await fingerSized(business, project);
   await shot(page, "business-member", project);
@@ -263,6 +267,7 @@ test("the owner sees no badge and reads the connection once for Business's pages
   expect(reads, "one read of the connection for every Business page").toBe(1);
 
   /* The owner is offered the Higgsfield catalogue in Gen. */
+  await openSuitesMenu(page);
   await page.locator('[data-suite-tab="gen"]').click();
   await page.getByTestId("gen-model").click();
   await expect(page.getByRole("dialog", { name: "Choose a model" }).getByRole("tab")).toHaveText(["Studio engines", "Higgsfield catalogue"]);
@@ -270,6 +275,7 @@ test("the owner sees no badge and reads the connection once for Business's pages
   await expect(page.getByTestId("gen-tab-analysis")).toBeVisible();
 
   /* Engines is where the owner reconnects. */
+  await openSuitesMenu(page);
   await page.locator('[data-suite-tab="business"]').click();
   await page.getByTestId("ads-connect").getByRole("button", { name: "Open Engines" }).click();
   await expect(page.getByTestId("ws-engines")).toBeVisible();
@@ -436,10 +442,12 @@ test("Tools: a reach check that set out before the owner disconnects never comes
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
 
     /* Business is not told the account is connected: it says connect, from the answer Engines shared. */
+    await openSuitesMenu(page);
     await page.locator('[data-suite-tab="business"]').click();
     await expect(page.getByTestId("ads-connect")).toHaveText(/Connect the account in Workspace › Engines\./);
 
     /* Back on Tools within the minute: the late answer is not reused; the page checks again and says connect first. */
+    await openSuitesMenu(page);
     await page.locator('[data-suite-tab="atomik"]').click();
     await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Tools$/ }).click();
     await expect(page.getByTestId("reach-summary")).toHaveText("Connect the account in Workspace › Engines");

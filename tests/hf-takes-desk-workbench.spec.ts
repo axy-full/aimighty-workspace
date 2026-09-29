@@ -166,6 +166,11 @@ async function clearsTabBar(page: Page, el: Locator, what: string) {
   expect(box.y + box.height, `${what} ends above the tab bar`).toBeLessThanOrEqual(barBox.y);
 }
 
+/** virtual-core holds back its scroll corrections while an iOS page scrolls, and takes a Mac with touch points (the phone
+ *  projects on a Mac) for an iPad. CI's Linux browsers correct at once, which cuts a smooth move short across a windowed
+ *  list; this puts a local run on CI's path. */
+const asLinux = (page: Page) => page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Linux x86_64", configurable: true }));
+
 test("every take once, grouped by shot and batch; status and kind chips and a search narrow it", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page);
@@ -354,6 +359,7 @@ test("a sound take opens its transcript: priced first, then run at exactly that 
 
 test("a long project is windowed and reads on as its end comes into view; the last row and Load more end above the tab bar", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await asLinux(page);
   const shots = ["dusk", "storm"] as const;
   const store: Library = {
     uploads: [],
@@ -396,6 +402,27 @@ test("a long project is windowed and reads on as its end comes into view; the la
   await page.getByTestId("takes-back").click();
   await expect(page.getByTestId("takes-selected")).toHaveCount(0);
   await expect(last).toBeInViewport();
+  await noSideScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test("a Library tool brings its section into view from the end of a long, windowed desk", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await asLinux(page);
+  const store: Library = { uploads: [], generations: Array.from({ length: 300 }, (_, i) => row(i, { id: `gen_${i}`, title: `Take ${String(i + 1).padStart(3, "0")}` })) };
+  const { errors } = await open(page, store, { pageSize: 300 });
+  await expect(grid(page)).toHaveAttribute("data-virtual", "on");
+  await expect(page.getByTestId("takes-count")).toHaveText("300 in this project · 0 in the cut");
+  /* At the desk's end its head is far above. */
+  await toEnd(page);
+  await expect(tile(grid(page), "Take 300")).toBeVisible();
+  await expect(page.getByTestId("takes-count")).not.toBeInViewport();
+  /* Library › Tools › Takes: a smooth move up the whole windowed desk, which arrives at the desk's head. */
+  if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
+  const library = page.getByTestId("library");
+  await library.getByRole("tab", { name: /Tools/ }).click();
+  await library.locator('[data-tool="Takes"]').click();
+  await expect(page.getByTestId("takes-count")).toBeInViewport();
   await noSideScroll(page);
   expect(errors).toEqual([]);
 });

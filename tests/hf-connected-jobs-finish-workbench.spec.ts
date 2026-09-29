@@ -328,3 +328,25 @@ test("Ads shows an ad from an earlier visit until it lands, then points to Takes
 
 /* Viral's Motion Transfer and Object Swap run on Particl's API key now and read the project's Library, not the connected
    account: a take in flight landing without a reload is in tests/hf-viral-real-runs-workbench.spec.ts. */
+
+test("the jump to the takes still rendering reaches them past a long, windowed results grid", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "the jump is on narrow screens; wider, the results sit beside the composer");
+  /* virtual-core holds back its scroll corrections while an iOS page scrolls, and takes a Mac with touch points for an
+     iPad; CI's Linux browsers correct at once. This puts a local run on CI's path. */
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Linux x86_64", configurable: true }));
+  const library: LibraryRoute = { uploads: [], pageSize: 200, generations: Array.from({ length: 150 }, (_, i) => generation({ id: `gen_hfc_long_${i}`, title: `Still ${i + 1}` })) };
+  const errors = await base(page, library);
+  const rendering = connected(1, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A slow dolly push across the wet harbour at blue hour", ago: 12 * MIN, composer: "gen" });
+  await mockGeneration(page, [rendering], () => ({ json: { job: rendering, pollAfterSeconds: 60 } }));
+  await page.goto("/suites?view=gen");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour night shoot");
+  /* A long project: the results are windowed, and the take still out sits at their head, under the composer. */
+  await expect(page.locator(".gx-gen-grid")).toHaveAttribute("data-virtual", "on");
+  const card = page.getByTestId("gen-resumed");
+  await expect(card).toHaveCount(1);
+  await expect(card).not.toBeInViewport();
+  await page.getByTestId("gen-resumed-jump").click();
+  await expect(card).toBeInViewport();
+  await noOverflow(page);
+  expect(errors).toEqual([]);
+});

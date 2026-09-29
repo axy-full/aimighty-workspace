@@ -107,3 +107,22 @@ test("the Takes grid mounts a window of 1,500 renders; arrow keys still walk eve
   await expect(selected).toBeInViewport();
   expect(errors).toEqual([]);
 });
+
+test("Library › Tools on the Rig reach their sections across the 1,500-shot list: down to Build from Storyboards, back up to the Shots", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "one desktop");
+  /* On CI's Linux path: virtual-core corrects the scroll at once while a page scrolls, which cut a smooth move short. */
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Linux x86_64", configurable: true }));
+  const errors = await open(page, "/suites?suite=studio&page=rig");
+  const list = page.getByRole("list", { name: "Shots" });
+  await expect(list).toHaveAttribute("data-virtual", "on");
+  const build = page.locator('[data-section="rig-build"]');
+  await expect(build).not.toBeInViewport();
+  const library = page.getByTestId("library");
+  await library.getByRole("tab", { name: /Tools/ }).click();
+  /* Build from Storyboards sits under the whole list, which grows as its rows are measured on the way. */
+  await library.locator('[data-tool="Build from Storyboards"]').click();
+  await expect(build).toBeInViewport();
+  await library.locator('[data-tool="Shots"]').click();
+  await expect(page.getByTestId("rig-list").locator(".pxw-rig-head")).toBeInViewport();
+  expect(errors).toEqual([]);
+});
