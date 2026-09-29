@@ -146,7 +146,7 @@ export default function PlatformPage() {
                 <p className="mt-1 text-[13px] text-mute">
                   {p.billsFailures
                     ? "Failed generations ARE billed by this vendor."
-                    : "Failed generations are not billed, and a failed row records no cost."}
+                    : "What this vendor did with a failed take's charge is read from its own reply, and shown on the take."}
                 </p>
               </div>
             ))}

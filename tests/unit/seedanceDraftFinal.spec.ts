@@ -417,7 +417,9 @@ test("a final that failed uncharged frees its draft for one more; a failure that
     await aged(first);
     const refused = await syncGeneration((await getGeneration(first))!, { strict: true });
     expect(refused.status).toBe("failed");
-    expect(refused.error).toMatch(/sensitive/);
+    /* A credit workspace reads the typed reason; ModelArk's own code is the recorded outcome's (lib/providerOutcome.ts). */
+    expect(refused.error).toBe("Refused by the content filter");
+    expect(refused.failure).toMatchObject({ code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null });
     expect((await meters()).find((m) => m.id === first)).toMatchObject({ credits: 0 });
 
     /* So the draft may make one more, and it is the draft's final from now on. */

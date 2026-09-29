@@ -49,13 +49,16 @@ export type VideoParams = {
   /** Saved by admission: whether a clip is sent in, and its measured seconds, as quoted. */
   hasVideoInput?: boolean;
   inputSeconds?: number;
+  /** Cinema Studio 4.0's creative controls, as documented and checked by admission; absent is Auto (lib/cinemaStudioTypes.ts). */
+  cinema?: import("./cinemaStudioTypes").CinemaStudioControls;
   /** Seedance 2.5 draft mode: a 480p watermarked preview whose task can render the final (lib/draftFinal.ts). */
   draft?: boolean;
   /** A draft's final: the draft's task id at the vendor. Nothing else about the render is sent (buildFinalRequestBody). */
   draftTaskId?: string;
 };
 
-export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
+/** `reference_audio`: a sound reference, which only Cinema Studio takes (admission refuses one anywhere else). */
+export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio";
 
 export type Reference = {
   id: string;
@@ -63,7 +66,7 @@ export type Reference = {
   ext: string;
   storedUrl: string;
   role: ImageRole;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   /** Set when the master was too large or too extreme for this vendor and a
    *  delivery copy was derived at upload time. The master is never sent. */
   deliveryUrl?: string | null;
@@ -338,6 +341,14 @@ export function mockTokensFor(taskId: string): number {
   return estimateTokens(res, (ratio ?? "16x9").replace("x", ":"), Number(dur) || 0, Number(inp) || 0) ?? LEGACY_MOCK_TOKENS;
 }
 
+/** ModelArk answered the submit with an error: its status and a bounded copy of its body (`{error:{code,message}}`). */
+export class ArkHttpError extends Error {
+  constructor(public readonly status: number, message: string, public readonly body: string) {
+    super(message);
+    this.name = "ArkHttpError";
+  }
+}
+
 export async function submitTask(
   modelId: string,
   prompt: string,
@@ -378,7 +389,7 @@ export async function submitTask(
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Ark submit failed (${res.status}): ${text.slice(0, 600)}`);
+    throw new ArkHttpError(res.status, `Ark submit failed (${res.status}): ${text.slice(0, 600)}`, text.slice(0, 8192));
   }
   const json = parseArk<{ id?: string }>(text, "submit");
   if (!json.id) throw new Error(`Ark returned no task id: ${text.slice(0, 300)}`);

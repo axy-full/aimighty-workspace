@@ -70,7 +70,8 @@ function explain(status: number, json: unknown): string {
 }
 
 export class FalHttpError extends Error {
-  constructor(public readonly status: number, message: string) { super(message); this.name = "FalHttpError"; }
+  /** `body`: fal's own parsed error (`detail[]` with a machine `type`), when it sent one. */
+  constructor(public readonly status: number, message: string, public readonly body: unknown = null) { super(message); this.name = "FalHttpError"; }
 }
 
 export function falSubmissionRejected(error: unknown): boolean {
@@ -99,7 +100,7 @@ async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Prom
   const text = await res.text();
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
-  if (!res.ok) throw new FalHttpError(res.status, explain(res.status, json));
+  if (!res.ok) throw new FalHttpError(res.status, explain(res.status, json), text.length <= 16_384 ? json : { message: text.slice(0, 300) });
   return json as T;
 }
 

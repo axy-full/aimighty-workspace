@@ -15,6 +15,7 @@ import { audioTaskAvailable, nodeAudioBody, speechVoiceFor, speechVoicesFor, usa
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { referenceVideoModels } from "@/lib/workbench/reference-ad";
 import { displayModelName, type ModelDef } from "@/lib/models";
+import { CINEMA_STUDIO_CONTROLS, cleanCinemaControls, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { NumberDraftInput } from "./NumberDraftInput";
 import { MARKETING_BUILDS, marketingQualities, marketingQualityFor, type MarketingBuild, type MarketingQuality, type MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
@@ -155,6 +156,8 @@ function TakeDialog({
     [prompt, setPrompt] = useState(saved?.text || saved?.prompt || target.prompt),
     [soulIdentityId, setSoulIdentityId] = useState<string>(saved?.soulIdentityId || target.options?.soulIdentityId || ""),
     [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? target.options?.soulStrength ?? 1),
+    /* Cinema Studio 4.0's creative controls, as Gen offers them: documented values only, each Auto until picked. */
+    [cinema, setCinema] = useState<Record<string, string>>(() => cleanCinemaControls(saved?.cinema ?? target.options?.cinema)),
     [quote, setQuote] = useState<{
       key: string;
       credits: number | null;
@@ -167,18 +170,24 @@ function TakeDialog({
     /** The preset's own engine, when this workspace has not connected it and another engine stands in. */
     [missingEngine, setMissingEngine] = useState("");
   const model = models.find((m) => m.id === modelId && m.kind === kind);
+  /* Cinema Studio 4.0 also takes the node's sounds as references (WAV uploads; the server checks each). */
+  const cinemaModel = kind === "video" && model != null && isCinemaStudioModel(model.id);
   const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind)), [target.refs, project.assets, project.sharedAssets]);
+  const boundSounds = useMemo(() => target.refs
+    .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
+    .filter((asset): asset is Asset => !!asset && asset.kind === "audio"), [target.refs, project.assets, project.sharedAssets]);
   const soulAssets = boundRefs.filter((asset, index, all) => asset.soulIdentityId && all.findIndex(a => a.soulIdentityId === asset.soulIdentityId) === index);
   const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
   const boundSoulId = soulAssets[0]?.soulIdentityId;
   const hasBoundVideo = boundRefs.some(asset => asset.kind === "video");
   const videoReferenceKinds = hasBoundVideo ? boundRefs.map(asset => asset.kind).join(',') : '';
   // A trained likeness supplies the face; its cover is not an extra style reference.
-  const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs, [kind, model?.soulIdentity, boundRefs]);
+  const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId)
+    : cinemaModel ? [...boundRefs, ...boundSounds] : boundRefs, [kind, model?.soulIdentity, boundRefs, boundSounds, cinemaModel]);
   const referenceQuery = mediaQuoteReferences(refs);
-  const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
+  const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : asset.kind === "audio" ? "reference_audio" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
   const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) })), resolution) : null;
   /* Each speech model reads in its own vendor's voices: the list swaps with the model. */
   const speechModelId = speechModel || audioSetup?.defaultSpeechModel || "";
@@ -297,7 +306,8 @@ function TakeDialog({
        its engine and settings, so it is itself again once that engine is connected. */
     const wanted=target.options?.modelId;
     if(wanted&&body.model!==wanted&&models.length&&!models.some(m=>m.id===wanted))return {prompt:String(body.prompt??target.prompt),options:target.options!};
-    return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength}};
+    const controls=cleanCinemaControls(body.cinema);
+    return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength,...(Object.keys(controls).length?{cinema:controls}:{})}};
   }
   async function submit() {
     if (busy || initial.error || (!pending && ((kind !== "audio" && !model) || cost == null))) return;
@@ -350,6 +360,8 @@ function TakeDialog({
         quoteFingerprint: quote?.fingerprint,
         firstFrameAssetId: firstFrameId,
         soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
+        /* Price-neutral: the approximate quote is the same with or without them (lib/cinemaStudio.ts). */
+        ...(cinemaModel ? { cinema: cleanCinemaControls(cinema) } : {}),
       }));
       const proposed: PendingGeneration = { key: crypto.randomUUID(), body, credits: cost!, endpoint: kind === "audio" ? "/api/audio" : "/api/generate" };
       const claim = claimPendingGeneration(window.localStorage, storageId, proposed);
@@ -483,7 +495,7 @@ function TakeDialog({
             </div>
           )}
           {kind !== "audio" && refs.length > 0 && <ul className="generation-references" aria-label="Bound references">
-            {refs.map(asset => <li key={asset.id} data-identity={asset.soulIdentityId ? "ready" : undefined}>{asset.name}{asset.soulIdentityId ? " · Identity" : ""}{asset.kind === "video" ? " · Video" : ""}</li>)}
+            {refs.map(asset => <li key={asset.id} data-identity={asset.soulIdentityId ? "ready" : undefined}>{asset.name}{asset.soulIdentityId ? " · Identity" : ""}{asset.kind === "video" ? " · Video" : asset.kind === "audio" ? " · Sound" : ""}</li>)}
           </ul>}
           {kind !== "audio" && soulAssets.length > 0 && !model?.soulIdentity && <p role="note" className="muted small-copy">{models.some(m => m.soulIdentity)
             ? "This engine uses the identity’s portrait as its reference. Choose the identity engine to render its trained likeness."
@@ -544,6 +556,20 @@ function TakeDialog({
                 </select>
               </label>
             )}
+          </div>}
+          {/* Cinema Studio 4.0's own documented controls, named and ordered as Gen's chips name them (lib/workspace/
+              cinema-vocabulary.ts): each is Auto until picked, and Auto sends nothing, so Cinema Studio chooses. */}
+          {cinemaModel && <div className="generation-options cinema-controls" role="group" aria-label="Cinema Studio controls" data-testid="dialog-cinema">
+            {CINEMA_STUDIO_CONTROLS.map(control => (
+              <label key={control.key}>
+                <span data-functional-label="">{control.label}</span>
+                <select aria-label={`Cinema Studio ${control.label.toLowerCase()}`} value={cinema[control.key] ?? ""} disabled={busy || !!pending}
+                  onChange={event => { const value = event.target.value; setCinema(previous => { const next = { ...previous }; if (value) next[control.key] = value; else delete next[control.key]; return next; }); }}>
+                  <option value="">Auto</option>
+                  {control.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            ))}
           </div>}
           {kind === "audio" && <p className="muted small-copy">Audio uses your written direction or script. The node’s visual references remain attached to the node.</p>}
           {notice && <p role="status" className="muted small-copy">{notice}</p>}

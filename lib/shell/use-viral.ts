@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
 import { resumeGivesUp, resumeProblem } from "@/lib/higgsfield-consumer/resume";
 import { POLL, pollDelay, presentTimeout, type PollRate } from "@/lib/poll";
@@ -40,6 +41,8 @@ export type GenjutsuJob = {
   originalAvailability?: string; originalAvailable?: boolean; createdAt: number; updatedAt?: number;
   /** The saved reply of a submit whose answer was lost, whether an unconfirmed job was set aside, and why a failed one failed. */
   providerReceipt?: unknown; setAside?: boolean; failureCode?: string | null;
+  /** A failed run: the account's own status and words, and what its ledger shows for the charge. */
+  failure?: TakeFailure | null;
 };
 export type ViralCapabilities = { resolutions: string[]; minSeconds: number; maxSeconds: number; maxImages: number; maxMediaBytes: number };
 export type Estimate = { key: string; credits: number | null; expiresAt: number; error: string | null; job: GenjutsuJob | null };

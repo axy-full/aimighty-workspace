@@ -113,6 +113,7 @@ async function serviceFixture() {
   };
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
+    "@/lib/providerOutcome": await import("../../lib/providerOutcome"),
     "@/lib/tenant": tenant,
     "@/lib/workbench/records": await import("../../lib/workbench/records"),
     "@/lib/workbench/studio": await import("../../lib/workbench/studio"),

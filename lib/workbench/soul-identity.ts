@@ -8,10 +8,14 @@ export type SoulIdentity = {
   status: 'submitting' | 'training' | 'ready' | 'failed' | 'uncertain';
   previewUrl: string | null; createdAt: number; updatedAt: number;
   creditsBilled: number | null; error: string | null;
+  /** The model it renders with on the platform's key (lib/soulRenderTypes.ts); null when it cannot render (read-only). */
+  renderModel?: string | null;
 };
+/** One family training is offered for, at its fixed price. A family with no price is not listed. */
+export type SoulTrainingVersion = { version: 'v1' | 'v2' | 'cinema'; trainingCredits: number | null; trainingCostUsd?: number | null };
 export type SoulIdentityState = {
   identities: SoulIdentity[]; configured: boolean; generationAvailable?: boolean;
-  terms: { minPhotos: number; maxPhotos: number; trainingCredits: number | null; trainingCostUsd?: number | null };
+  terms: { minPhotos: number; maxPhotos: number; trainingCredits: number | null; trainingCostUsd?: number | null; versions?: SoulTrainingVersion[] };
 };
 
 export function soulReferenceKey(reference: SoulReference) {

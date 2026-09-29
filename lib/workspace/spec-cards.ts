@@ -299,7 +299,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
       ] },
       { title: "OBSERVABILITY", note: "", cards: [
         { name: "Step log", desc: "Every step, its inputs and what it settled at.", chips: ["auditable"], owner: "Atomik", state: (f) => when((f.runs ?? []).some((r) => r.attempts.length > 0), "ACTIVE"), tool: "runs" },
-        { name: "Failures", desc: "Failed generations are not billed and are shown as such.", chips: ["not billed"], owner: "Atomik", tool: "runs" },
+        { name: "Failures", desc: "A failed generation shows what it was charged, from the ledger or its provider's own word.", chips: ["from evidence"], owner: "Atomik", tool: "runs" },
       ] },
     ],
   },
@@ -421,7 +421,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
     facts: (f) => [
       ["Project spend", f.budget?.credits != null ? `${n(f.budget.credits)} cr` : "—"],
       ["Cap", f.budget ? (f.budget.capCredits == null ? "Not set" : `${n(f.budget.capCredits)} cr`) : "—"],
-      ["Failed renders", "Not billed"],
+      ["Failed renders", "Per receipt"],
       ["Ledger", "Settled only"],
       ["Rates", "Snapshot per render"],
     ],
