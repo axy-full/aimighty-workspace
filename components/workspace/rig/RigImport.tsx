@@ -1,21 +1,24 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { importCopy, importParam, withoutImport, type ImportView } from "@/lib/workspace/rig-import";
+import { importBatch, importCopy, importedBoardOf, importParam, withoutImport, type ImportView } from "@/lib/workspace/rig-import";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
 import "./rig.css";
 
 /** Batches one import may take before it says where it stands (each is bounded on the server; Try again carries on). */
 const MAX_BATCHES = 400;
+/** How long "done" waits for the cards to reach this window (the live room, or its few-seconds check of the canvas). */
+const ARRIVAL_MS = 15_000;
 
 /**
  * An old Rig board coming across onto this production's canvas (the Suites
  * URL's `import=<board>`, from "Open in the new Rig" on the old board). The
  * server brings it one bounded batch at a time; every open window sees the
- * cards arrive. The Rig says what is happening: while it runs, when it is
- * done, and when it stopped part way, with what came across and a free Try
- * again that carries on where it stopped.
+ * cards arrive (this one too: the live room, or its few-seconds check of the
+ * canvas, folds them in). The Rig says what is happening: while it runs, when
+ * it is done, and when it stopped part way, with what came across and a free
+ * Try again that carries on where it stopped.
  */
 export function RigImport() {
   const rig = useRig();
@@ -29,7 +32,8 @@ export function RigImport() {
   const busy = useRef<string | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const importBoard = rig.team.importBoard;
+  const scope = rig.scope;
+  const importBoard = useCallback((board: string) => importBatch({ scope, boardId: board, productionId: production ?? "" }), [scope, production]);
 
   const go = useCallback(async (runKey: string, board: string) => {
     if (busy.current === runKey) return;
@@ -75,12 +79,24 @@ export function RigImport() {
     setRun(null);
   }, []);
 
+  /* "Done" once the cards that came across are on this window's canvas too, or after a moment in any case. */
+  const shown = useMemo(() => (boardId ? (rig.project?.nodes ?? []).filter((node) => importedBoardOf(node) === boardId).length : 0), [rig.project, boardId]);
+  const [waited, setWaited] = useState<ImportView | null>(null);
+  const finished = view?.phase === "done" ? view : null;
+  const arriving = !!finished && finished.brought.cards > 0 && shown < finished.answer.cards.here && waited !== finished;
+  useEffect(() => {
+    if (!arriving || !finished) return;
+    const timer = setTimeout(() => setWaited(finished), ARRIVAL_MS);
+    return () => clearTimeout(timer);
+  }, [arriving, finished]);
+
   if (!view || !key || !boardId) return null;
-  const { line, notes } = importCopy(view);
-  const retry = view.phase === "failed" && !view.final;
-  const settled = view.phase === "done" || view.phase === "failed";
+  const said: ImportView = arriving && finished ? { phase: "running", answer: finished.answer, brought: finished.brought } : view;
+  const { line, notes } = importCopy(said);
+  const retry = said.phase === "failed" && !said.final;
+  const settled = said.phase === "done" || said.phase === "failed";
   return (
-    <section className="pxw-import" data-testid="rig-import" data-phase={view.phase} aria-label="Old board" role={view.phase === "failed" ? "alert" : "status"} aria-live="polite">
+    <section className="pxw-import" data-testid="rig-import" data-phase={said.phase} aria-label="Old board" role={said.phase === "failed" ? "alert" : "status"} aria-live="polite">
       <span className="pxw-import-dot" aria-hidden="true" />
       <div className="pxw-import-text">
         <p className="pxw-import-line" data-testid="rig-import-line">{line}</p>

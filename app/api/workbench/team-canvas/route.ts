@@ -11,7 +11,6 @@ import {
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
-import { importBoardBatch } from "@/lib/workbench/board-import";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -79,34 +78,20 @@ export const PATCH = withTenant(async (req: Request) => {
 
 const ACTION_ID = /^[A-Za-z0-9_-]{8,100}$/;
 const tidySchema = z.object({ action: z.literal("tidy"), productionId: z.string().max(100), opId: z.string().regex(ACTION_ID) });
-const importSchema = z.object({ action: z.literal("import"), productionId: z.string().max(100), boardId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/) });
-const actionSchema = z.discriminatedUnion("action", [tidySchema, importSchema]);
 
 /**
- * A server action on the canvas. Free: nothing is priced or charged.
- *
- *  - `tidy`: lays the whole board out (columns by input depth, rows in canvas
- *    order; locked cards stay where they are) for everyone at once. `opId`
- *    names the press, so a retry of the same press changes nothing twice.
- *  - `import`: brings an old Rig board of this production (boards.project_id)
- *    across onto its team canvas, one bounded batch per call; call again until
- *    `done`. Idempotent and resumable: each batch is planned from the canvas as
- *    it is, and a card already brought (or taken off since) is never made
- *    again. The old board itself is only read (lib/workbench/board-import.ts).
+ * A server action on the canvas. `tidy`: lays the whole board out (columns by
+ * input depth, rows in canvas order; locked cards stay where they are) for
+ * everyone at once. Free: nothing is priced or charged. `opId` names the
+ * press, so a retry of the same press changes nothing twice.
  */
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
   if (who.response) return who.response;
   const origin = req.headers.get("origin");
   if (origin && origin !== new URL(req.url).origin) return Response.json({ error: "Invalid request origin" }, { status: 403 });
-  const parsed = actionSchema.safeParse(await req.json().catch(() => null));
+  const parsed = tidySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Check the canvas action before sending it." }, { status: 400, headers: NO_STORE });
-  if (parsed.data.action === "import") {
-    const { productionId, boardId } = parsed.data;
-    try {
-      return Response.json(await importBoardBatch(productionId, boardId, who.userId!), { headers: NO_STORE });
-    } catch (error) { return failure(error); }
-  }
   const { productionId, opId } = parsed.data;
   try {
     await requireProduction(productionId);

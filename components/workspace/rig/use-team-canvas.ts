@@ -9,7 +9,6 @@ import {
 } from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
 import { useWorkspace } from "@/lib/workspace/state";
-import type { BoardImportAnswer } from "@/lib/workbench/board-import";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -47,8 +46,6 @@ type LiveRoom = Room<Presence, Storage>;
 /** The newest change the server made to the canvas (canvas-ops-log latestServerChange). */
 export type ServerChange = { seq: number; at: number; what: string; agent: boolean };
 export type TidyOutcome = { ok: true; moved: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
-/** One batch of an old board's import (`final`: the server refused it and would again, so Try again cannot help). */
-export type ImportOutcome = { ok: true; answer: BoardImportAnswer } | { ok: false; error: string; final: boolean };
 
 export type TeamCanvasApi = {
   /** "live" once in the room; "saved" when only the server copy is shared; "off" before a project is saved. */
@@ -64,8 +61,6 @@ export type TeamCanvasApi = {
   flush: () => Promise<void>;
   /** Lays the board out on the server, for everyone at once. Free. */
   tidy: () => Promise<TidyOutcome>;
-  /** Brings the next batch of an old Rig board onto this production's canvas, for everyone at once (call again until done). Free. */
-  importBoard: (boardId: string) => Promise<ImportOutcome>;
 };
 
 const API = "/api/workbench/team-canvas";
@@ -79,7 +74,6 @@ const SHOWN_MS = 15_000;
 const KEEPALIVE_MAX = 60_000;
 const EMPTY: Canvas = { nodes: {}, assets: {}, order: [], removedIds: [] };
 const TIDY_FAILED = "The board could not be tidied. Try again.";
-const IMPORT_FAILED = "The old board did not reach the new Rig. Try again.";
 
 function isServerChange(value: unknown): value is ServerChange {
   if (!value || typeof value !== "object") return false;
@@ -94,17 +88,6 @@ function isCanvasAnswer(value: unknown): value is { canvas: Canvas | null; room:
   if (v.canvas === null) return v.revision === 0;
   const c = v.canvas as Record<string, unknown> | undefined;
   return !!c && typeof c === "object" && typeof c.nodes === "object" && typeof c.assets === "object" && Array.isArray(c.order) && Array.isArray(c.removedIds);
-}
-
-/** An import batch's answer (POST action "import"): the counts the Rig shows, never trusted blindly. */
-function isImportAnswer(value: unknown): value is BoardImportAnswer {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  const counts = (c: unknown) => !!c && typeof c === "object" && ["total", "here", "off", "left", "refused"].every((k) => typeof (c as Record<string, unknown>)[k] === "number");
-  const board = v.board as Record<string, unknown> | undefined;
-  const brought = v.brought as Record<string, unknown> | undefined;
-  return !!board && typeof board.name === "string" && counts(v.cards) && counts(v.wires) && typeof v.done === "boolean" && typeof v.filed === "number"
-    && !!brought && typeof brought.cards === "number" && typeof brought.wires === "number";
 }
 
 /** The light check's answer (GET ?head=1): the revision, and the newest server change. */
@@ -434,29 +417,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     return { ok: true, moved: v.moved, live };
   }, [scope, send, foldServer]);
 
-  const importBoard = useCallback(async (boardId: string): Promise<ImportOutcome> => {
-    const pid = joined.current;
-    if (!pid) return { ok: false, error: "The team canvas is still opening. Try again.", final: false };
-    /* This window's waiting edits reach the canvas first, so the old board lands beside them, not under them. */
-    await send();
-    let answer: unknown;
-    try {
-      answer = await draftRequest<unknown>(API, scope, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", productionId: pid, boardId }),
-      });
-    } catch (error) {
-      /* A refusal the server would give again (a board of another production, one that is gone) is said as it is. */
-      const status = error instanceof DraftRequestError ? error.status : undefined;
-      const final = typeof status === "number" && status >= 400 && status < 500 && ![401, 408, 429].includes(status);
-      return { ok: false, error: final && error instanceof Error ? error.message : IMPORT_FAILED, final };
-    }
-    if (!isImportAnswer(answer)) return { ok: false, error: IMPORT_FAILED, final: false };
-    /* No live room: what came across is here now, and teammates' windows fold it in on their next check. */
-    if (!room.current) { if (answer.brought.cards || answer.brought.wires) await foldServer(pid); }
-    else if (answer.live === "waiting") setTimeout(() => void draftRequest(`${API}?productionId=${encodeURIComponent(pid)}&head=1`, scope).catch(() => null), 3000);
-    return { ok: true, answer };
-  }, [scope, send, foldServer]);
-
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, importBoard };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy };
 }

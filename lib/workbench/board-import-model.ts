@@ -32,6 +32,9 @@ import type { TeamCanvas } from "./team-canvas-model";
  *    that stopped anywhere carries on where it stopped. Free.
  */
 
+/** A card's record of the old board it came from (CanvasNode.imported), when it has one. */
+export const importedOf = (node: CanvasNode | undefined): NodeImported | undefined => node?.imported;
+
 /** The old board's card kinds, as lib/boards.ts names them, and the word each is shown as. */
 export const BOARD_KIND_WORDS: Record<string, string> = {
   asset: "Asset", shot: "Shot", prompt: "Prompt", image: "Image", video: "Video", edit: "Edit",
@@ -159,10 +162,10 @@ const place = (value: unknown, by: number) => Math.min(MAX, Math.max(MIN, Math.r
  */
 export function boardPlacement(canvas: Pick<TeamCanvas, "nodes" | "removed">, boardId: string, nodes: readonly BoardNode[]): Placement {
   for (const node of [...Object.values(canvas.nodes), ...Object.values(canvas.removed)]) {
-    const from = node?.imported;
+    const from = importedOf(node);
     if (from?.board === boardId && typeof from.dx === "number" && Number.isFinite(from.dx) && typeof from.dy === "number" && Number.isFinite(from.dy)) return { dx: from.dx, dy: from.dy };
   }
-  const others = Object.values(canvas.nodes).filter((node) => node?.imported?.board !== boardId);
+  const others = Object.values(canvas.nodes).filter((node) => importedOf(node)?.board !== boardId);
   if (!others.length || !nodes.length) return { dx: 0, dy: 0 };
   const right = Math.max(...others.map((node) => finite(node.x) + cardWidth(node)));
   const top = Math.min(...others.map((node) => finite(node.y)));
@@ -320,11 +323,11 @@ export function pairState(canvas: Pick<TeamCanvas, "nodes">, boardId: string, pa
   const from = cards.get(pair.from), to = cards.get(pair.to);
   if (from === "off" || to === "off" || from === "full" || to === "full") return "off";
   const target = canvas.nodes[importedNodeId(boardId, pair.to)];
-  const handled = target?.imported?.inputs?.find((input) => input?.from === pair.from);
+  const handled = importedOf(target)?.inputs?.find((input) => input?.from === pair.from);
   if (handled) return handled.held ? "held" : "here";
   if (from === "new" || to === "new" || !target) return "waiting";
   if (target.locked) return "locked";
-  if (!recordHasRoom(target.imported, { from: pair.from, slot: pair.slots.join(", ") })) return "held";
+  if (!recordHasRoom(importedOf(target), { from: pair.from, slot: pair.slots.join(", ") })) return "held";
   return "new";
 }
 
@@ -350,6 +353,14 @@ export function importSummary(canvas: Pick<TeamCanvas, "nodes" | "removed">, gra
   const wiresOut: ImportCounts = { total: pairs.length, here: pairCount("here"), off: pairCount("off"), left: pairCount("new", "waiting"), refused: pairCount("held", "locked") };
   return { board: { id: board.id, name: board.name }, cards: cardsOut, wires: wiresOut, filed: graph.filed, done: cardsOut.left === 0 && wiresOut.left === 0 };
 }
+
+/** One call's answer: where the import stands, and what this call brought across. */
+export type BoardImportAnswer = ImportSummary & {
+  brought: { cards: number; wires: number };
+  /** "sent": the live room has it; "waiting": it goes out again until it lands; "off": no live room (windows check every few seconds). */
+  live: "sent" | "waiting" | "off";
+  credits: 0;
+};
 
 /* ── One batch ─────────────────────────────────────────────────────────── */
 
@@ -393,10 +404,10 @@ export function planBoardImport(canvas: TeamCanvas, graph: BoardGraph, ctx: Impo
     /* A card already here: not an input it has handled, not locked (it waits), and room left in its record. */
     const target = canvas.nodes[idOf(pair.to)];
     if (target) {
-      if (target.locked || target.imported?.inputs?.some((input) => input?.from === pair.from)) continue;
-      if (!recordHasRoom(target.imported, { from: pair.from, slot: pair.slots.join(", ") })) continue;
+      if (target.locked || importedOf(target)?.inputs?.some((input) => input?.from === pair.from)) continue;
+      if (!recordHasRoom(importedOf(target), { from: pair.from, slot: pair.slots.join(", ") })) continue;
     }
-    if ((target?.imported?.inputs?.length ?? 0) + (pending.get(pair.to) ?? 0) >= IMPORTED_INPUTS) continue;
+    if ((importedOf(target)?.inputs?.length ?? 0) + (pending.get(pair.to) ?? 0) >= IMPORTED_INPUTS) continue;
     pending.set(pair.to, (pending.get(pair.to) ?? 0) + 1);
     wiring.push(pair);
   }
@@ -442,7 +453,8 @@ export function planBoardImport(canvas: TeamCanvas, graph: BoardGraph, ctx: Impo
   ops.push(...wires);
   for (const [id, extra] of records) {
     const target = canvas.nodes[id];
-    if (target) ops.push({ kind: "set", nodeId: id, fields: { imported: record(target.imported, extra) } });
+    /* `imported` is a field only the import sets (canvas-ops-model SETTABLE_FIELDS). */
+    if (target) ops.push({ kind: "set", nodeId: id, fields: { imported: record(importedOf(target), extra) } });
   }
   return { ops, opId: `import:${ctx.boardId}:${stableId("batch", JSON.stringify(ops))}`, cards: creates.length, wires: linked };
 }

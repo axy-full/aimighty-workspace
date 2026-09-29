@@ -16,9 +16,9 @@ export function RigPage() {
   usePlanRequest("shots", rig.planRequests);
   return (
     <>
-      <TeamPresence />
       {/* An old board coming across (the old board's "Open in the new Rig"): what it is doing, and Try again. */}
       <RigImport />
+      <TeamPresence />
       {state.rigView === "graph" ? <RigGraph /> : <RigList />}
     </>
   );

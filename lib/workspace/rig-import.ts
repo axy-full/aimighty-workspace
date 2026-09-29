@@ -1,4 +1,5 @@
-import type { ImportCounts, ImportSummary } from "../workbench/board-import-model";
+import type { BoardImportAnswer, ImportCounts, ImportSummary } from "../workbench/board-import-model";
+import { DraftRequestError, draftRequest } from "../workbench/draft-request";
 import type { Project } from "../workbench/studio";
 
 /*
@@ -6,7 +7,8 @@ import type { Project } from "../workbench/studio";
  * the old board (it finds this person's own draft of the board's production, or
  * opens the production for them, and lands on its Rig with `import=<board>`),
  * and what the new Rig says while the board comes across. The import itself is
- * the server's (lib/workbench/board-import.ts), one batch per call. Free.
+ * the server's (lib/workbench/board-import.ts), one batch per call, and every
+ * open Rig window folds the cards in as the team canvas brings them. Free.
  */
 
 /** The Suites URL param naming the old board a Rig brings across (kept by the shell until the person is done with it). */
@@ -18,6 +20,12 @@ export function importParam(search: string | URLSearchParams): string | null {
   const query = typeof search === "string" ? new URLSearchParams(search) : search;
   const all = query.getAll(IMPORT_PARAM);
   return all.length === 1 && BOARD_ID.test(all[0]) ? all[0] : null;
+}
+
+/** The old board a card came across from (its `imported` record, lib/workbench/board-import-model.ts), if any. */
+export function importedBoardOf(node: object | undefined): string | null {
+  const board = (node as { imported?: { board?: unknown } } | undefined)?.imported?.board;
+  return typeof board === "string" ? board : null;
 }
 
 /** The new Rig of this person's draft, bringing the board across. */
@@ -62,6 +70,40 @@ export async function newRigFor(input: { production: string; boardId: string; sc
   const saved = await get("/api/workbench/projects", { method: "PUT", headers: json, body: JSON.stringify({ project: body.project, revision: 0 }) });
   if (!saved.ok) throw new Error(await reason(saved, OPEN_FAILED));
   return newRigHref(body.project.id, input.boardId);
+}
+
+/* ── One batch ─────────────────────────────────────────────────────────── */
+
+export const IMPORT_FAILED = "The old board did not reach the new Rig. Try again.";
+/** One batch's outcome (`final`: the server refused it and would again, so Try again cannot help). */
+export type ImportOutcome = { ok: true; answer: BoardImportAnswer } | { ok: false; error: string; final: boolean };
+
+/** A batch's answer, never trusted blindly: the counts the Rig shows. */
+export function isImportAnswer(value: unknown): value is BoardImportAnswer {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  const counts = (c: unknown) => !!c && typeof c === "object" && ["total", "here", "off", "left", "refused"].every((k) => typeof (c as Record<string, unknown>)[k] === "number");
+  const board = v.board as Record<string, unknown> | undefined;
+  const brought = v.brought as Record<string, unknown> | undefined;
+  return !!board && typeof board.name === "string" && counts(v.cards) && counts(v.wires) && typeof v.done === "boolean" && typeof v.filed === "number"
+    && !!brought && typeof brought.cards === "number" && typeof brought.wires === "number";
+}
+
+/** The next batch of an old board onto the team canvas of `productionId` (its own production): POST /api/rig/boards/<board>. */
+export async function importBatch(input: { scope: string; boardId: string; productionId: string }): Promise<ImportOutcome> {
+  let answer: unknown;
+  try {
+    answer = await draftRequest<unknown>(`/api/rig/boards/${encodeURIComponent(input.boardId)}`, input.scope, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "import", productionId: input.productionId }),
+    });
+  } catch (error) {
+    /* A refusal the server would give again (a board of another production, one that is gone) is said as it is. */
+    const status = error instanceof DraftRequestError ? error.status : undefined;
+    const final = typeof status === "number" && status >= 400 && status < 500 && ![401, 408, 429].includes(status);
+    return { ok: false, error: final && error instanceof Error ? error.message : IMPORT_FAILED, final };
+  }
+  return isImportAnswer(answer) ? { ok: true, answer } : { ok: false, error: IMPORT_FAILED, final: false };
 }
 
 /* ── What the new Rig says while a board comes across ─────────────────── */

@@ -13,7 +13,7 @@ import {
   boardPlacement, cardStates, importedNodeId, importedShape, importSummary, mapBoardNode, mediaCandidates, mediaOfUrl,
   planBoardImport, readBoardGraph, PLACE_GAP, type ImportContext, type ImportCounts, type ImportElement,
 } from "../../lib/workbench/board-import-model";
-import { importCopy, importParam, newRigFor, newRigHref, withoutImport } from "../../lib/workspace/rig-import";
+import { IMPORT_FAILED, importBatch, importCopy, importedBoardOf, importParam, isImportAnswer, newRigFor, newRigHref, withoutImport } from "../../lib/workspace/rig-import";
 
 /*
  * Opening an old Rig board in the new Rig (the agentic canvas plan, PR 6): the
@@ -503,4 +503,33 @@ test("what the Rig says: while it runs, when it is done (or had nothing new), an
   expect(importCopy({ phase: "running", answer: null, brought: { cards: 0, wires: 0 } }).line).toBe("Bringing the old board across…");
   expect(importCopy({ phase: "failed", answer: null, brought: { cards: 0, wires: 0 }, error: "That board belongs to another production.", final: true })).toEqual({ line: "The old board can’t come across here. That board belongs to another production.", notes: [] });
   expect(mediaCandidates(readBoardGraph({ nodes: [card("n", "note", 0, 0, { output: { url: "/api/uploads/up_1" } }), card("i", "image", 0, 0, { output: { genId: "gen_1" } })], wires: [] }), new Map())).toEqual({ uploads: ["up_1"], generations: ["gen_1"] });
+});
+
+test("one batch from the Rig: the board's own route, this account's scope; a refusal the server would repeat is final, anything else is Try again", async () => {
+  const answer = {
+    board: { id: "brd_1", name: "SH04 board" }, cards: { total: 2, here: 2, off: 0, left: 0, refused: 0 }, wires: { total: 1, here: 1, off: 0, left: 0, refused: 0 },
+    filed: 0, done: true, brought: { cards: 2, wires: 1 }, live: "off", credits: 0,
+  };
+  expect(isImportAnswer(answer)).toBe(true);
+  expect([isImportAnswer(null), isImportAnswer({ ...answer, cards: { total: 2 } }), isImportAnswer({ ...answer, brought: null })]).toEqual([false, false, false]);
+  expect([importedBoardOf({ imported: { board: "brd_1" } }), importedBoardOf({ imported: {} }), importedBoardOf(undefined)]).toEqual(["brd_1", null, null]);
+  const real = globalThis.fetch;
+  const sent: { url: string; scope: string | null; body: unknown }[] = [];
+  const reply = (status: number, body: unknown) => async (url: RequestInfo | URL, init?: RequestInit) => {
+    sent.push({ url: String(url), scope: new Headers(init?.headers).get("X-Workbench-Scope"), body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    globalThis.fetch = reply(200, answer) as typeof fetch;
+    expect(await importBatch({ scope: "particl-active-ws-me", boardId: "brd_1", productionId: "prod-1" })).toEqual({ ok: true, answer });
+    expect(sent).toEqual([{ url: "/api/rig/boards/brd_1", scope: "particl-active-ws-me", body: { action: "import", productionId: "prod-1" } }]);
+    globalThis.fetch = reply(409, { error: "That board belongs to another production. Open that production’s Rig to bring it across." }) as typeof fetch;
+    expect(await importBatch({ scope: "s", boardId: "brd_1", productionId: "prod-2" })).toEqual({ ok: false, final: true, error: "That board belongs to another production. Open that production’s Rig to bring it across." });
+    globalThis.fetch = reply(503, { error: "The database is busy." }) as typeof fetch;
+    expect(await importBatch({ scope: "s", boardId: "brd_1", productionId: "prod-1" })).toEqual({ ok: false, final: false, error: IMPORT_FAILED });
+    globalThis.fetch = reply(200, { board: "not an answer" }) as typeof fetch;
+    expect(await importBatch({ scope: "s", boardId: "brd_1", productionId: "prod-1" })).toEqual({ ok: false, final: false, error: IMPORT_FAILED });
+  } finally {
+    globalThis.fetch = real;
+  }
 });

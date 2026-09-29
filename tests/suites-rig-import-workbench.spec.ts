@@ -110,7 +110,9 @@ async function openOldBoard(tab: Page, boardId: string, errors: string[]) {
   return link;
 }
 
-const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
+/** Nothing scrolls sideways: the page, and the pane each shell scrolls its page in (the old shell's `.shell-page`, the Suites' content). */
+const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5
+  && Array.from(document.querySelectorAll<HTMLElement>('.shell-page, [data-testid="content"]')).every((el) => !el.getClientRects().length || el.scrollWidth <= el.clientWidth + 1));
 
 /** The Rig's line about the board: readable (12px or more, above the label floor), thumb-sized buttons, above a phone's tab bar. */
 async function expectReadable(tab: Page, phone: boolean) {
@@ -233,7 +235,7 @@ test("a board that stops part way says what came across, and Try again (free) ca
   page.on("pageerror", (error) => errors.push(error.message));
   /* The first batch lands; the server fails the second call; after that it answers again. */
   let calls = 0, failing = true;
-  await page.route("**/api/workbench/team-canvas", async (route) => {
+  await page.route(`**/api/rig/boards/${boardId}`, async (route) => {
     const request = route.request();
     const body = request.method() === "POST" ? (request.postDataJSON() as { action?: string } | null) : null;
     if (body?.action !== "import") return route.fallback();
@@ -271,21 +273,21 @@ test("a board that stops part way says what came across, and Try again (free) ca
 test("the import route: free, one bounded batch per call, refused for another production's board, and idempotent", async ({ page }) => {
   test.setTimeout(180_000);
   const { headers, productionId, boardId } = await setUp(page, "Harbour route");
-  const post = (data: Record<string, unknown>) => page.request.post("/api/workbench/team-canvas", { headers, data });
+  const post = (board: string, data: Record<string, unknown>) => page.request.post(`/api/rig/boards/${board}`, { headers, data });
   /* Another production: refused, and nothing is written there. */
   const other = await page.request.put("/api/workbench/projects", { headers, data: { project: { ...newProject("Other"), id: `other-${Date.now().toString(36)}` }, revision: 0 } });
   const otherId = ((await other.json()) as { productionProjectId: string }).productionProjectId;
-  const refused = await post({ action: "import", productionId: otherId, boardId });
+  const refused = await post(boardId, { action: "import", productionId: otherId });
   expect(refused.status()).toBe(409);
   expect(((await refused.json()) as { error: string }).error).toContain("belongs to another production");
   expect((await canvasOf(page.request, headers, otherId)).canvas).toBeNull();
-  expect((await post({ action: "import", productionId, boardId: "brd_nope" })).status()).toBe(404);
-  expect((await post({ action: "import", productionId, boardId: "../x" })).status()).toBe(400);
+  expect((await post("brd_nope", { action: "import", productionId })).status()).toBe(404);
+  expect((await post(boardId, { action: "tidy", productionId })).status()).toBe(400);
   /* A write needs this account's scope, like every canvas write. */
-  expect((await page.request.post("/api/workbench/team-canvas", { data: { action: "import", productionId, boardId } })).status()).toBe(409);
-  const first = await post({ action: "import", productionId, boardId });
+  expect((await page.request.post(`/api/rig/boards/${boardId}`, { data: { action: "import", productionId } })).status()).toBe(409);
+  const first = await post(boardId, { action: "import", productionId });
   expect(first.ok(), await first.text()).toBe(true);
   expect(await first.json()).toMatchObject({ credits: 0, done: true, live: "off", filed: 1, brought: { cards: 8, wires: 6 }, cards: { total: 8, here: 8 }, wires: { total: 6, here: 6 } });
-  const second = await post({ action: "import", productionId, boardId });
+  const second = await post(boardId, { action: "import", productionId });
   expect(await second.json()).toMatchObject({ credits: 0, done: true, brought: { cards: 0, wires: 0 } });
 });

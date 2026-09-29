@@ -10,8 +10,10 @@ import { emptyTeamCanvas } from "./team-canvas-model";
 import type { Asset } from "./studio";
 import {
   importSummary, mediaCandidates, planBoardImport, readBoardGraph,
-  type BoardGraph, type ImportContext, type ImportElement, type ImportLimits, type ImportSummary, type MediaRef,
+  type BoardGraph, type BoardImportAnswer, type ImportContext, type ImportElement, type ImportLimits, type MediaRef,
 } from "./board-import-model";
+
+export type { BoardImportAnswer } from "./board-import-model";
 
 /*
  * Opening an old Rig board in the new Rig: one bounded batch per call (the plan
@@ -23,14 +25,6 @@ import {
  * and where (imported_at, imported_to); nothing else on the board is written.
  * Free: nothing is quoted, reserved or charged, and no provider is called.
  */
-
-export type BoardImportAnswer = ImportSummary & {
-  /** What this call brought across. */
-  brought: { cards: number; wires: number };
-  /** "sent": the live room has it; "waiting": it goes out again until it lands; "off": no live room (windows check every few seconds). */
-  live: "sent" | "waiting" | "off";
-  credits: 0;
-};
 
 const assetKind = (value: unknown): Asset["kind"] => (value === "video" || value === "audio" || value === "document" ? value : "image");
 
