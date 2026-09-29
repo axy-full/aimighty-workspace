@@ -311,14 +311,15 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   await expect(card.locator(`[data-testid="rate-row"][data-engine="${GPT_IMAGE}"] .mr-cell[data-reference]`)).toHaveAttribute("data-option", "High");
   await expect(page.getByTestId("workspace-rate-card-legend")).toHaveText("Your balance is counted at the outlined prices.");
   await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
+  /* Every size: no figure or size on the card is clipped (a column head included), and with the card open and the
+     pane at its end, the last row clears the phone's tab bar and the safe area under it (the pane's bottom elsewhere). */
   await wholeFigures(page, "workspace-rate-card");
+  const end = await paneEnd(page);
+  expect(end.bottom, `the last row (“${end.last}”) ends above the tab bar`).toBeLessThanOrEqual(end.limit + 0.5);
   if (PHONES.includes(info.project.name)) {
     expect(await smallTargets(page, '[data-testid="ws-plans"]'), "targets under 44×44").toEqual([]);
     const summary = await rates.locator("summary").boundingBox();
     expect(Math.round(summary!.height * 100) / 100).toBeGreaterThanOrEqual(44);
-    /* The rate card open, the pane at its end: nothing is left under the tab bar. */
-    const end = await paneEnd(page);
-    expect(end.bottom, `the last row (“${end.last}”) ends above the tab bar`).toBeLessThanOrEqual(end.limit + 0.5);
   }
   await shot(page, info, "workspace-usual");
 });
