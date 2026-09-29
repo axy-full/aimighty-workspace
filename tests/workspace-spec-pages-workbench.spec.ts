@@ -298,18 +298,30 @@ test("Compare's Atomik plan builds the comparison from the project's Library, fr
     return route.continue();
   });
   await page.goto(`/workspace?project=${project.id}&suite=subatomik&page=compare`);
-  if (wide) await expect(page.getByTestId("page-title")).toHaveText("Compare");
-  const ask = page.getByTestId(wide ? "atomik-button" : "mobile-ask-atomik");
-  await expect(ask).toBeVisible({ timeout: 30_000 });
-  await ask.click();
+  /* The plan pairs takes of this project's production: it runs once the shell has the project. */
+  await expect.poll(() => page.getByText(project.name).count(), { timeout: 30_000 }).toBeGreaterThan(0);
   const id = (name: string) => (wide ? `atomik-${name}` : `mobile-atomik-${name}`);
-  await expect(page.getByTestId(id("plan-title"))).toHaveText("Build the comparison");
-  /* No account plan is left to refuse: the plan is free and runnable for every workspace, the owner's included. */
+  if (wide) {
+    await expect(page.getByTestId("page-title")).toHaveText("Compare");
+    /* The panel opens on the page's plan: free, and runnable for every workspace, the owner's included. */
+    const ask = page.getByTestId("atomik-button");
+    await expect(ask).toBeVisible({ timeout: 30_000 });
+    await ask.click();
+    await expect(page.getByTestId(id("plan-title"))).toHaveText("Build the comparison");
+    await expect(page.getByTestId(id("price"))).toHaveText("Free");
+    const run = page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ });
+    await expect(run).toBeEnabled();
+    await run.click();
+  } else {
+    /* The phone's Ask Atomik opens the sheet and runs the page's plan: a free plan has no gate to stop at. */
+    const ask = page.getByTestId("mobile-ask-atomik");
+    await expect(ask).toBeVisible({ timeout: 30_000 });
+    await ask.click();
+    await expect(page.getByTestId(id("plan-title"))).toHaveText("Build the comparison");
+    await expect(page.getByTestId(id("price"))).toHaveText("Free");
+  }
+  /* No account plan is left to refuse. */
   await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
-  await expect(page.getByTestId(id("price"))).toHaveText("Free");
-  const run = page.getByRole("button", { name: /Run this page/ }).first();
-  await expect(run).toBeEnabled();
-  await run.click();
   await expect(page.getByTestId(id("state"))).toHaveText("DONE");
   const steps = page.getByTestId(id("step"));
   await expect(steps).toHaveCount(2);
