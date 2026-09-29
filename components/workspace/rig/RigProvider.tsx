@@ -8,7 +8,8 @@ import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/work
 import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { dispatchGeneration, settlePendingGeneration } from "@/lib/workspace/generate-submit";
-import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
+import { newProject, type Asset, type CanvasNode, type Project, type RefKind } from "@/lib/workbench/studio";
+import { withRefKind } from "@/lib/workbench/ref-kind";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
 import { DRAFT_WRITTEN, writtenProject } from "@/lib/workspace/draft-written";
@@ -19,7 +20,7 @@ import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/wor
 import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotReferenceAssets, shotReferenceRole } from "@/lib/workspace/rig";
 import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
 import { RIG_INTENT_EVENT, RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
-import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
+import { isShotNode, rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
 import { renderedSubject } from "@/lib/workspace/take-subject";
 import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
@@ -85,7 +86,12 @@ export type RigContext = {
   saveError: string | null;
   selected: RigShot | null;
   selectedNode: CanvasNode | null;
+  /** The Rig card picked that is not a shot (a reference, a note, a look board): the Card Inspector's. */
+  selectedCard: CanvasNode | null;
+  /** Picks a card: a shot into the shot Inspector, any other card into the Card Inspector. */
   select: (id: string) => void;
+  /** Sets a reference card's kind (Cast, Environment, Element or Ref) for everyone on the canvas; returns the refusal, or null. */
+  setRefKind: (id: string, kind: RefKind) => string | null;
   patchShot: (id: string, patch: ShotPatch) => string | null;
   addShot: () => void;
   /** Link `source` into `target` under the Studio graph's rules; returns the refusal, or null. */
@@ -449,6 +455,16 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const selected = state.selKind === "shot" && state.selId ? shots.find((s) => s.id === state.selId) ?? null : null;
   const selectedNode = selected && project ? project.nodes.find((n) => n.id === selected.id) ?? null : null;
+  const selectedCard = state.selKind === "node" && state.selId && project ? project.nodes.find((n) => n.id === state.selId && !isShotNode(n)) ?? null : null;
+  /* A card picked on the canvas that is not there any more (a teammate took it off, another project opened, an old
+     link) lets go the way a shot does: onto that id's shot if it is one, else the first shot. */
+  useEffect(() => {
+    if (status !== "ready" || !project || state.selKind !== "node" || !state.selId) return;
+    const node = project.nodes.find((n) => n.id === state.selId);
+    if (node && !isShotNode(node)) return;
+    dispatch({ type: "patch", patch: { selKind: "shot", selId: node ? node.id : shots[0]?.id ?? null } });
+    ws.syncUrl();
+  }, [status, project, state.selKind, state.selId, shots, dispatch, ws]);
 
   /* ── The quote on the button ───────────────────────────────────────── */
   const refs = useMemo(() => (project && selectedNode ? shotReferenceAssets(project, selectedNode) : []), [project, selectedNode]);
@@ -626,7 +642,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* ── Selection and editing ─────────────────────────────────────────── */
   const select = useCallback((id: string) => {
-    dispatch({ type: "patch", patch: { selKind: "shot", selId: id, inspector: true } });
+    const node = draftRef.current?.project.nodes.find((n) => n.id === id);
+    dispatch({ type: "patch", patch: { selKind: node && !isShotNode(node) ? "node" : "shot", selId: id, inspector: true } });
     ws.syncUrl();
     setNotice(null);
   }, [dispatch, ws, setNotice]);
@@ -656,6 +673,16 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       else throw err;
     }
   }, [update, select, setNotice]);
+
+  const setRefKind = useCallback((id: string, kind: RefKind): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    const next = withRefKind(current.project, id, kind);
+    if (typeof next === "string") return next;
+    /* An edit like any other: to the team canvas (only this field of this card), then the draft save. */
+    if (next !== current.project) update(() => next);
+    return null;
+  }, [update]);
 
   const connect = useCallback((source: string, target: string): string | null => {
     const current = draftRef.current;
@@ -731,9 +758,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy }), [team.mode, team.peers, team.presence, team.server, team.tidy]);
   const value = useMemo<RigContext>(() => ({
-    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView]);
+    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
+    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

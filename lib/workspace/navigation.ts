@@ -60,6 +60,8 @@ export function visibleTakes(takes: SelectableItem[] | null, filter: LibFilter):
 /** The list a selection of `kind` must belong to, or null while it loads. */
 export function listFor(kind: SelKind, lists: SelectableLists, filter: LibFilter): SelectableItem[] | null {
   if (kind === "shot") return lists.shots;
+  /* A Rig card that is not a shot is picked on the canvas; ←/→ walk the shots, not the cards. */
+  if (kind === "node") return null;
   if (kind === "take") return visibleTakes(lists.takes, filter);
   if (kind === "cast") return lists.cast;
   return null;
@@ -82,6 +84,8 @@ export function repairSelection(
 ): { selKind: SelKind; selId: string | null } {
   const kind = pageKind(page);
   if (kind === "page") return { selKind: "page", selId: state.selId };
+  /* A Rig card that is not a shot stays picked on the Rig: the Rig itself lets go of it once the card is off the canvas. */
+  if (kind === "shot" && state.selKind === "node" && state.selId) return { selKind: "node", selId: state.selId };
   const list = listFor(kind, state.lists, state.libFilter);
   if (list === null) return { selKind: kind, selId: state.selKind === kind ? state.selId : null };
   if (state.selId && list.some((item) => item.id === state.selId)) return { selKind: kind, selId: state.selId };
@@ -133,7 +137,7 @@ export function withLibFilter(state: AppState, libFilter: LibFilter): AppState {
 /* ── URL ──────────────────────────────────────────────────────────────── */
 
 export const WORKSPACE_PATH = "/workspace";
-const SEL_KINDS: SelKind[] = ["shot", "take", "cast"];
+const SEL_KINDS: SelKind[] = ["shot", "take", "cast", "node"];
 
 /** `/workspace?project=&suite=&page=&sel=` — no page means the home view. */
 export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | "view" | "selKind" | "selId"> & { mobile?: MobileLevel }): string {
