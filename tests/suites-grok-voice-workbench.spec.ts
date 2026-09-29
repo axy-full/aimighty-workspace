@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { newProject } from "../lib/workbench/studio";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * Owner, 23 September: Grok APIs wherever possible. Grok Voice speaks a line
@@ -79,7 +80,7 @@ test("Grok transcribes a take: priced by its length, words and speakers, subtitl
   const priced = await page.request.post("/api/audio/transcribe", { headers, data: { sourceGenId: genId, quoteOnly: true } });
   expect(priced.ok(), await priced.text()).toBe(true);
   const { estimatedCredits } = await priced.json();
-  expect((await page.request.post("/api/audio/transcribe", { headers, data: { sourceGenId: genId, maxCredits: estimatedCredits - 1 } })).status()).toBe(estimatedCredits > 0 ? 409 : 200);
+  expect((await page.request.post("/api/audio/transcribe", { headers, data: { sourceGenId: genId, maxCredits: fromDeci(Math.max(0, toDeci(estimatedCredits) - 1)) } })).status()).toBe(estimatedCredits > 0 ? 409 : 200);
 
   /* Through the Takes page: select the clip, price, transcribe, read it, take the subtitles. */
   await page.goto(`/suites?suite=studio&page=takes&project=${project.id}`);

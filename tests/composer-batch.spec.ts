@@ -6,6 +6,7 @@ import type { GenerationBatch } from "../lib/useGenerationBatch";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 import { claimsServer } from "./helpers/claimsServer";
+import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
 
 test("an interrupted batch checks only the pending variant by its key after reload, follows it, and finishes the original ordered requests", async ({
   page,
@@ -283,8 +284,10 @@ test("a batch take that never arrived is not re-sent at a price nobody was shown
   const render = page.locator("[data-render]").filter({ visible: true }).last();
   await expect(render).toBeEnabled();
   const total = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await render.textContent()) ?? "")?.[1]?.replace(/,/g, ""));
-  const perTake = total / 2;
-  expect(perTake).toBeGreaterThan(1);
+  const perTake = fromDeci(toDeci(total) / 2);
+  /* Room for the price to move down a tenth of a credit, the smallest step a charge takes. */
+  expect(perTake).toBeGreaterThanOrEqual(0.2);
+  const lower = fromDeci(toDeci(perTake) - 1);
   /* The server holds the price the button shows; the first take is answered, the second never arrives. */
   server.price = perTake;
   server.plan = ["answer", "before"];
@@ -293,7 +296,7 @@ test("a batch take that never arrived is not re-sent at a price nobody was shown
   expect(server.charges).toEqual([perTake]);
   const lost = server.sent[1];
 
-  server.price = perTake - 1;
+  server.price = lower;
   await page.reload();
   await expect(render).toContainText("Recover batch");
   const mark = server.sent.length;
@@ -301,6 +304,6 @@ test("a batch take that never arrived is not re-sent at a price nobody was shown
   await expect(prompt).toBeEnabled();
   expect({ sent: server.sent.slice(mark).map((s) => s.path), billed: server.charges }).toEqual({ sent: [], billed: [perTake] });
   expect(server.checks).toEqual([{ key: lost.key, endpoint: "/api/generate" }]);
-  await expect(page.getByText(`The estimate is now about ${perTake - 1} cr a take`).first()).toBeVisible();
+  await expect(page.getByText(`The estimate is now about ${creditsFigure(lower)} cr a take`).first()).toBeVisible();
   expect(errors).toEqual([]);
 });

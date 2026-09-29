@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { newProject } from "../lib/workbench/studio";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * Crew through the real authenticated routes and the real meter, on a local
@@ -51,16 +52,17 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     const session = (await created.json()).session as { id: string; model: string };
     const rounds = `/api/crew/sessions/${session.id}/rounds`;
 
-    /* The quote is read-only: 4 members → 9 requests, a whole-credit ceiling, no dollars for a credit workspace. */
+    /* The quote is read-only: 4 members → 9 requests, a ceiling in tenths of a credit, no dollars for a credit workspace. */
     const quote = await request.post(rounds, { headers, data: { quoteOnly: true } }).then((r) => r.json());
     expect(quote).toMatchObject({ members: 4, calls: 9, model: session.model });
-    expect(quote.estimateCredits).toBeGreaterThanOrEqual(1);
+    expect(quote.estimateCredits).toBeGreaterThanOrEqual(0.1);
+    expect(Math.round(quote.estimateCredits * 10) / 10).toBe(quote.estimateCredits);
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
 
     /* No price seen, or a lower one, or no round named: refused before anything is reserved. */
     expect((await request.post(rounds, { headers, data: {} })).status()).toBe(409);
-    expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits - 1, round: 1 } })).status()).toBe(409);
+    expect((await request.post(rounds, { headers, data: { maxCredits: fromDeci(Math.max(0, toDeci(quote.estimateCredits) - 1)), round: 1 } })).status()).toBe(409);
     expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits } })).status()).toBe(409);
     expect((await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits, round: 2 } })).status()).toBe(409);
     expect(await events()).toHaveLength(0);
@@ -87,7 +89,8 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(solutions[0].text).toMatch(/^Locked dawn frame — /);
     const done = stream.find((e) => e.event === "done")!.data;
     expect(done).toMatchObject({ round: 1, billed: true, note: null });
-    expect(Number(done.spendCr)).toBeGreaterThanOrEqual(1);
+    /* Charged in tenths of a credit, never less than one tenth. */
+    expect(Number(done.spendCr)).toBeGreaterThanOrEqual(0.1);
     expect(Number(done.spendCr)).toBeLessThanOrEqual(quote.estimateCredits);
 
     /* One round is one settled event, on the xai engine, within the ceiling. */

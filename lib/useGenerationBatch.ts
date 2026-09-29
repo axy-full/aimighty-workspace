@@ -6,6 +6,7 @@ import { lockedClaim } from "./usePaidAction";
 import { settleStoredRequest } from "./workspace/generate-submit";
 import type { RefItem } from "./refs";
 import type { ShotSpec } from "./studio";
+import { creditsFigure } from "./creditTerms";
 
 type Refusal = { message: string; needsReason: boolean; line?: string };
 export type GenerationBatch = {
@@ -222,7 +223,7 @@ export function useGenerationBatch(surface: string, active: boolean) {
                 notify();
               }
             });
-            const each = (n: number) => (batch.display.unit === "usd" ? `$${n.toFixed(2)}` : `${n.toLocaleString("en-US")} cr`);
+            const each = (n: number) => (batch.display.unit === "usd" ? `$${n.toFixed(2)}` : `${creditsFigure(n)} cr`);
             throw new Error(`The estimate is now about ${each(outcome.price)} a take; this batch was approved at about ${each(approved.price)}. Its remaining takes were not sent, and nothing was charged for them.`);
           }
           if (how === "ask") {
