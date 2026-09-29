@@ -103,6 +103,19 @@ async function seed(ws: TenantWorkspace) {
       })),
     ], "write");
   });
+  /* A workspace skill saved from that plan: a template of its steps, engines and settings, never a figure. */
+  const { skillsReady } = await import("../../lib/atomikSkills");
+  await runInTenant(ws, async () => {
+    await skillsReady();
+    const template = { parameters: [{ key: "place", label: "Place", default: "harbour" }],
+      steps: [{ kind: "video", title: "Harbour wide", prompt: "A {{place}} at dawn", model: DEFAULT_MODEL_ID, params: { seconds: 5, ratio: "16:9", resolution: "1080p" } }] };
+    await db().batch([
+      { sql: `INSERT INTO atomik_skills(workspace_id,id,slug,name,description,scope,owner_id,version,status,source_chat_id,created_at,updated_at)
+              VALUES(?,'skl_margin01','harbour-plan','Harbour plan','A wide for any place.','workspace','u_member',1,'active','ach_margin',?,?)`, args: [ws.id, at, at] },
+      { sql: `INSERT INTO atomik_skill_versions(workspace_id,skill_id,version,name,slug,description,scope,template,note,created_by,created_at)
+              VALUES(?,'skl_margin01',1,'Harbour plan','harbour-plan','A wide for any place.','workspace',?,'Saved from a run','u_member',?)`, args: [ws.id, JSON.stringify(template), at] },
+    ], "write");
+  });
   await platformReady();
   const meter = `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
                  VALUES(?,?,?,?,?,?,?,'succeeded',?,?,?,?,?,?)`;
@@ -137,6 +150,10 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },
   { name: "GET /api/atomik/steps/[id]", file: "app/api/atomik/steps/[id]/route.ts", url: "/api/atomik/steps/ast_margin", params: { id: "ast_margin" } },
   { name: "GET /api/atomik/memory", file: "app/api/atomik/memory/route.ts", url: "/api/atomik/memory?projectId=p_margin", scoped: true },
+  { name: "GET /api/atomik/skills", file: "app/api/atomik/skills/route.ts", url: "/api/atomik/skills" },
+  { name: "GET /api/atomik/skills?runs=1", file: "app/api/atomik/skills/route.ts", url: "/api/atomik/skills?runs=1&projectId=p_margin" },
+  { name: "GET /api/atomik/skills/[id]", file: "app/api/atomik/skills/[id]/route.ts", url: "/api/atomik/skills/skl_margin01", params: { id: "skl_margin01" } },
+  { name: "GET /api/atomik/skills/[id]?version=1", file: "app/api/atomik/skills/[id]/route.ts", url: "/api/atomik/skills/skl_margin01?version=1", params: { id: "skl_margin01" } },
   { name: "GET /api/analytics", file: "app/api/analytics/route.ts", url: "/api/analytics", ownKeys: true },
   { name: "GET /api/usage", file: "app/api/usage/route.ts", url: "/api/usage" },
   { name: "GET /api/usage?rows=1", file: "app/api/usage/route.ts", url: "/api/usage?rows=1" },
