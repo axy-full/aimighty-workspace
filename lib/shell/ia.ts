@@ -110,7 +110,9 @@ export const SHELL_SUITES: ShellSuite[] = [
      under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
      server and tokens. The page id stays `skills`, so every old link still lands here.
      Memory is the shell's own view too: what Atomik keeps in mind. It shares
-     Agent's backing page, as Beats shares Brief's, so `sp=memory` tells the two apart. */
+     Agent's backing page, as Beats shares Brief's, so `sp=memory` tells the two apart.
+     Skills (saved runs, run again with new words) is the same kind of page, beside Memory; its id is
+     `saved-skills` because `skills` has always meant Tools & connections. */
   /* Owner, 28 September 2026: "Just Atomik agent". */
   own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
@@ -120,7 +122,8 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
     ["skills", "Tools", "Tools & connections", "What Atomik reaches, and what reaches Particl", "skills"],
     ["memory", "Memory", "Memory", "Brand, audience and references Atomik keeps in mind", "agent"],
-  ]), ["skills", "memory"]),
+    ["saved-skills", "Skills", "Skills", "Saved runs, run again with new words", "agent"],
+  ]), ["skills", "memory", "saved-skills"]),
 ];
 
 /** Header segment order: Studio | Gen | Business | Viral | Atomik | Crew. Gen and Crew are views, not suites. */

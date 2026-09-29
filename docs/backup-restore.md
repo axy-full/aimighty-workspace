@@ -417,6 +417,22 @@ restored `workbench_team_canvas` by the first window that opens it. Never
 delete rows to "clear" the outbox; a row that cannot be pushed only stays
 pending, and the saved canvas is already correct.
 
+### Atomik skills
+
+Every tenant snapshot includes `atomik_skills` and `atomik_skill_versions`:
+the runs a workspace saved as skills (lib/atomikSkills.ts). Each row carries
+`workspace_id`; the first holds a skill's current name, command, who sees it
+(personal or workspace), its maker, its current version and whether it is
+archived, and the second holds every version as it was saved, append-only.
+A version is a template: steps with their engines and settings, and named
+parameters with their defaults. Nothing in either table is paid, priced or
+produced; running a skill files ordinary proposals in `atomik_chats`,
+`atomik_messages` and `atomik_steps`, each approved on its own. Both tables
+are created the first time a workspace reads or saves a skill, so older
+snapshots simply lack them. Archive is a flag on the skill's row, never a
+delete: restore it from the snapshot as it is, and never remove a version to
+"tidy" a skill's history.
+
 ## Verification evidence
 
 Run the disposable local suite (no remote calls or application env loading):

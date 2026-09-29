@@ -331,8 +331,12 @@ export async function listSkills(opts: { status?: unknown; query?: unknown }, vi
   return out;
 }
 
-/** One skill, with every version it has had (newest first; each version's steps are read on their own). */
-export async function getSkill(id: unknown, viewer: string): Promise<{ skill: SkillView; versions: SkillVersionView[] }> {
+/**
+ * One skill, with every version it has had (newest first; each version's
+ * steps are read on their own), and the engines an edit may move a step to:
+ * the ones Atomik can use here now.
+ */
+export async function getSkill(id: unknown, viewer: string): Promise<{ skill: SkillView; versions: SkillVersionView[]; engines: EngineChoice[] }> {
   const { workspaceId, skill } = await visibleSkill(id, viewer);
   const rs = await db().execute({
     sql: `SELECT version, name, slug, description, scope, note, created_by, created_at FROM ${VERSIONS} WHERE workspace_id = ? AND skill_id = ? ORDER BY version DESC`,
@@ -342,6 +346,7 @@ export async function getSkill(id: unknown, viewer: string): Promise<{ skill: Sk
   return {
     skill: await viewOf(workspaceId, skill, viewer),
     versions: rs.rows.map((r) => versionView(r as Row, names, viewer)),
+    engines: (await engines()).map(choiceOf),
   };
 }
 

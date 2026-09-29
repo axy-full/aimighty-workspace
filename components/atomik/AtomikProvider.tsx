@@ -13,6 +13,7 @@ import type { PaidTextQuote } from "@/lib/paidText";
 import type { ThinkingModel } from "./ModelPicker";
 import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender } from "@/lib/atomikStepRender";
+import { useSkillRunOpens } from "./skills/useSkillRunOpens";
 
 /**
  * Atomik, at app level (design/particl-v2/README.md §5).
@@ -161,6 +162,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
      bound in an effect, since a ref may not change during render. */
   const refreshRef = useRef(refreshChat);
   useEffect(() => { refreshRef.current = refreshChat; }, [refreshChat]);
+  /* A skill run filed its plan in a chat (components/atomik/skills): show that chat, read afresh. */
+  useSkillRunOpens(({ chatId, projectId }) => { setChatFor({ id: chatId, projectId }); setDismissed(null); void refreshRef.current(); refreshIndex(); });
 
   const engines = useMemo(() => index?.engines ?? [], [index]);
   const engineLabel = useCallback((id: string) => engines.find((e) => e.id === id)?.label ?? (id.startsWith(ACCOUNT_MODEL_PREFIX) ? "Connected account" : id), [engines]);
