@@ -4,6 +4,8 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { SPEC_PAGES } from "../lib/workspace/spec-cards";
 import { pageDef, suiteOfPage } from "../lib/workspace/pages";
+import { PLANS } from "../lib/workspace/plans";
+import { runsOnOwnerAccount } from "../lib/shell/connected-capability";
 import type { PageId } from "../lib/workspace/types";
 
 /**
@@ -174,12 +176,18 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
       await expect(page.getByTestId("spec-work").locator(tool.then ?? tool.body)).toBeVisible({ timeout: 30_000 });
     }
 
-    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. */
+    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. A plan that still reads
+       the Higgsfield account's routes (Compare) says the sign-in is retired instead of offering Run. */
     const inspector = page.getByTestId("spec-inspector");
     await expect(inspector.locator(".pxw-fact")).toHaveCount(5);
     const run = inspector.locator(".pxw-insp-run");
-    await expect(run).toBeVisible();
-    if (await run.isDisabled()) await expect(inspector.getByTestId("spec-plan-reason")).not.toBeEmpty();
+    if (runsOnOwnerAccount(PLANS[id])) {
+      await expect(inspector.getByTestId("spec-plan-owner")).toHaveText("Particl no longer signs in to Higgsfield.");
+      await expect(run).toHaveCount(0);
+    } else {
+      await expect(run).toBeVisible();
+      if (await run.isDisabled()) await expect(inspector.getByTestId("spec-plan-reason")).not.toBeEmpty();
+    }
 
     if (SHOTS && info.project.name === "workbench-1440x900" && (id === "brief" || id === "marketing" || id === "runs")) {
       await page.getByTestId("content").evaluate((el) => el.scrollTo(0, 0));
