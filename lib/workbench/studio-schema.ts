@@ -13,12 +13,15 @@ import { validateBins } from "./editorial";
 import { validateMoleculrBindings } from "./moleculr-bindings";
 import { validateColor } from "./color";
 import { validateAudio } from "./audio";
-import type { Project } from "./studio";
+import { REF_KINDS, type Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 import { CINEMA_STUDIO_CONTROLS } from "../cinemaStudioTypes";
 /** A Cinema Studio 4.0 take's creative controls on its node: documented controls and values only (lib/cinemaStudioTypes.ts). */
 const cinemaControlsSchema = z.object(Object.fromEntries(CINEMA_STUDIO_CONTROLS.map((control) =>
   [control.key, z.enum(control.options.map((o) => o.value) as [string, ...string[]]).optional()]))).strict();
+/** The most a reserved node field (master, verify, agent) may hold, as JSON. */
+export const RESERVED_NODE_FIELD_CHARS = 8000;
+const reservedFits = (value: unknown) => JSON.stringify(value).length <= RESERVED_NODE_FIELD_CHARS;
 const asset = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -107,6 +110,21 @@ const node = z.object({
   mode: z.string().max(100).optional(),
   status: z.enum(["draft", "review", "approved"]).optional(),
   activeInput: z.string().max(100).optional(),
+  /* The agentic Rig (owner, 28 September). Declared before anything writes them: this object drops a key it does not
+     declare, the team canvas saves what it parsed, and a field an edit names but the parse dropped is taken off the
+     canvas (team-canvas-model nodeAfterEdit), so an undeclared field would be lost on the first save. */
+  refKind: z.enum(REF_KINDS).optional(),
+  elementId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+  /* Written by later steps only (a master lock, a verify check, a card Atomik made). Loose, so a key a later release
+     adds rides through this one, and bounded, so none of them can grow a canvas. */
+  master: z.looseObject({ lockedAt: z.string().max(40).optional(), lockedBy: z.string().max(200).optional() }).refine(reservedFits).optional(),
+  verify: z.looseObject({
+    rubric: z.number().int().min(1).max(1000).optional(),
+    checks: z.array(z.string().max(40)).max(20).optional(),
+    frames: z.looseObject({ videoAt: z.array(z.number().min(0).max(1)).max(20).optional(), everySeconds: z.number().positive().max(600).optional(), max: z.number().int().min(1).max(100).optional() }).optional(),
+    last: z.looseObject({ id: z.string().max(200).optional(), takeId: z.string().max(200).optional(), verdict: z.string().max(40).optional(), at: z.number().finite().optional() }).optional(),
+  }).refine(reservedFits).optional(),
+  agent: z.looseObject({ runId: z.string().max(200).optional(), key: z.string().max(200).optional() }).refine(reservedFits).optional(),
   /* Rig shot fields (optional; absent on every older draft). Shape only here:
      the catalogue clamp lives in lib/workspace so a catalogue change can never
      make an existing draft unsaveable. */

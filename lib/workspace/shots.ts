@@ -1,5 +1,5 @@
 import { SHOT_NODE_TYPES, type CanvasNode, type NodeOperation, type Project, type ShotFields } from "../workbench/studio";
-import { NODE_DEFS, resolveAsset } from "../workbench/node-graph";
+import { nodeDef, resolveAsset } from "../workbench/node-graph";
 import { failureUncharged } from "../errors";
 import type { TakeFailure } from "../providerOutcome";
 import { shotEngine, clampShotSeconds, defaultShotRatio, defaultShotResolution, resolveShotSettings } from "./engines";
@@ -126,7 +126,7 @@ function inputIssues(node: CanvasNode, project: Project, nodes: CanvasNode[]): s
     const input = nodes.find((n) => n.id === id);
     if (!input) { issues.push("A connected input no longer exists."); continue; }
     if (input.bypassed) continue;
-    const text = NODE_DEFS[input.type].shape === "text";
+    const text = nodeDef(input.type).shape === "text";
     if (text ? !(input.text ?? "").trim() && !shotNote(input) : !resolveAsset(input, nodes, assets))
       issues.push(`${input.title} has nothing attached yet.`);
   }
@@ -164,7 +164,7 @@ export function rigShots(project: Project, jobs: readonly RigJob[] = [], options
       index: i + 1,
       name: node.title,
       note,
-      role: node.role || NODE_DEFS[node.type].role,
+      role: node.role || nodeDef(node.type).role,
       look: look.look,
       lookNodeId: look.lookNodeId,
       engine: settings?.engine ?? node.engine ?? "",
@@ -232,7 +232,7 @@ export function shotPatch(project: Project, id: string, patch: ShotPatch): Proje
   if (patch.role !== undefined) {
     const role = patch.role.trim();
     if (role.length > 100) throw new ShotPatchError("Keep the department under 100 characters.");
-    next.role = role || NODE_DEFS[node.type].role;
+    next.role = role || nodeDef(node.type).role;
   }
   if (patch.note !== undefined) {
     if (patch.note.length > 5000) throw new ShotPatchError("Keep the direction note under 5,000 characters.");

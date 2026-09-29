@@ -63,8 +63,8 @@ test("addShotNode appends a scene node below the graph and never overlaps it", (
 test("inputs, references and preview are resolved from the graph", () => {
   const p = fixture();
   expect(shotInputs(p, "s1")).toEqual([
-    expect.objectContaining({ id: "plate-node", name: "Dune plate", kind: "Media", version: "v1" }),
-    expect.objectContaining({ id: "clip-node", name: "Motion ref", kind: "Media", version: "v1" }),
+    expect.objectContaining({ id: "plate-node", name: "Dune plate", kind: "Ref", version: "v1" }),
+    expect.objectContaining({ id: "clip-node", name: "Motion ref", kind: "Ref", version: "v1" }),
     expect.objectContaining({ id: "note", name: "Director's note", kind: "Direction", version: "—", asset: null }),
   ]);
   expect(shotInputs(p, "missing")).toEqual([]);
