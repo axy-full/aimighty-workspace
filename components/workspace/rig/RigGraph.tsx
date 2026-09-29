@@ -9,6 +9,8 @@ import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import { VerifyCardLine } from "./RigVerify";
+import { isVerifyCard } from "@/lib/workbench/verify";
 import { rigLoadState } from "@/lib/workspace/rig-load-state";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
@@ -63,6 +65,8 @@ function Card({ node, kind, shot, asset, selected, wiring, onSelect, onWireFrom,
       <span className="pxw-graph-kicker">{kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span>{def.label.toUpperCase()}</span>}<span>{version}</span></span>
       {media ? <Media id={node.id} asset={asset} height={def.shape === "scene" ? 88 : 66} badge={isShot && selected} /> : null}
       <span className="pxw-graph-title">{node.title}</span>
+      {/* A Verify card says what its check found, and whether it still is about these masters. */}
+      {isVerifyCard(node) ? <VerifyCardLine node={node} /> : null}
       {grade ? (
         <span className="pxw-graph-readouts">
           {([["B", "brightness"], ["C", "contrast"], ["S", "saturation"]] as const).map(([k, v]) => (

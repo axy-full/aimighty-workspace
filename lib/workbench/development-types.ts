@@ -1,4 +1,6 @@
 import type { AtomikEffortOption } from '../atomik-reasoning';
+import type { AtomikVideoFrame } from './atomik-reference-types';
+import type { TakeVerification, VerifyResult } from './verify';
 
 /**
  * `write` is the Brief's script writer: the director's prompt (the brief) in, a full script out, redrafted from notes until approved.
@@ -8,8 +10,9 @@ import type { AtomikEffortOption } from '../atomik-reasoning';
  * `beatsheet` summarises an uploaded beat sheet (a Final Draft beat board PDF, read in the browser) into the Beats stage's scenes and beats.
  * `condense` shortens one Rig shot's render prompt to fit the engine, keeping every visual instruction.
  * `rig` wires one Rig shot: its prompt and notes from the beat, and which of the project's pictures are its inputs.
+ * `verify` checks one take on a Rig Verify card against its masters (vision, one judge call): lib/workbench/verify.ts.
  */
-export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'environment' | 'beatsheet' | 'condense' | 'rig';
+export type DevelopmentKind = 'idea' | 'screenplay' | 'adfilm' | 'write' | 'frames' | 'sketch' | 'cast' | 'environment' | 'beatsheet' | 'condense' | 'rig' | 'verify';
 export type DevelopmentStage = 'draft' | 'critique' | 'refine';
 export type DevelopmentRequest = {
   projectId: string; requestId: string; kind: DevelopmentKind; model: string;
@@ -21,8 +24,10 @@ export type DevelopmentRequest = {
   fromBeats?: true;
   /** `sketch` only: the beat-sheet shot and the uploaded drawing (a project asset) the agent reads. */
   shotId?: string; sketchAssetId?: string;
-  /** `condense` only: the Rig shot whose render prompt is condensed. */
+  /** `condense`, `rig`: the Rig shot; `verify`: the Verify card. */
   nodeId?: string;
+  /** `verify` only, for a video take: the three stills the browser sampled and stored (lib/workbench/atomik-video-frames.ts). */
+  videoFrames?: AtomikVideoFrame[];
   /** Pictures and text files the director attached to the prompt box (project asset ids, up to four): the agent sees them (owner, 25 September). */
   attachmentAssetIds?: string[];
 };
@@ -53,11 +58,15 @@ export type DevelopmentResult = {
   condensed?: { nodeId: string; key: string; text: string };
   /** `rig`: the shot's prompt, notes, inputs (project asset ids) and first frame, as the agent wired it. */
   rig?: { nodeId: string; prompt: string; notes: string; inputs: string[]; firstFrame: string | null };
+  /** `verify`: the scorecard, each verdict decided by the code from the judge's scores. */
+  verify?: VerifyResult;
 };
 export type DevelopmentQuote = {
   quoteOnly: true; model: string; effort: string; kind: DevelopmentKind;
   sourceHash: string; estimateCredits: number; estimateUsd?: number;
   chunks: number; calls: number; sourceCharacters: number;
+  /** `verify`: this take was checked against these masters already. Nothing is priced or started; the stored scorecard is read, free. */
+  stored?: TakeVerification;
 };
 export type DevelopmentJob = {
   id: string; requestId: string; projectId: string; productionProjectId: string | null;

@@ -22,6 +22,10 @@ The quote covers every phase, reasoning limit and prior-result context. Admissio
 
 The new tenant tables are `workbench_development_jobs` and `workbench_development_steps`. Full database backup captures both. Recovery drain/report and backup preflight include development jobs alongside the existing Atomik and generation workers.
 
+## Rig Verify checks
+
+The Rig's Verify card checks one take against the production's masters (its wired Cast, Environment and Element cards) as the development kind `verify` (`lib/workbench/verify.ts`, `verify-judge.ts`, `verify-server.ts`). It is one judge call, not three phases: a vision model from the same Claude, OpenAI and Grok menu, given bounded review copies of the take (a still, or three stills the browser samples from a video and stores as uploads) and of each master, with no tools. The judge scores each check from 0 to 1; the code turns a score into pass, fail or unsure against fixed thresholds, and an unsure check (or one the judge could not see) makes the card "needs you". The same quote, reservation, durable phase, settlement and recovery apply, so a check is priced before it runs and charged in credits at what it used. A finished check is stored in the tenant table `take_verifications`, unique on the take, a digest of its master set, the rubric and a digest of its frame points, in the same write that finishes its job; asking again for the same key returns the stored scorecard free, and a new master version is a new, priced check. Under `ENGINE_MOCK=1` a scripted judge compares average colours and calls no provider.
+
 ## Collective assets and originals
 
 The top-level Assets entry opens the complete authorized workspace library, grouped by Images, Videos, Audio, Documents and Other files. It uses the same uploads and generated takes as Gen, with pagination, reference reuse and existing edit/upscale actions. Legacy Elements, References and Unfiled views remain available. Historical private `workbench_media` files stay accessible in their authorized project contexts; they are not automatically indexed into the collective workspace library or made visible to other members.

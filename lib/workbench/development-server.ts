@@ -27,14 +27,18 @@ import { ENGINE_PROMPT_LIMIT, shotRenderPrompt, textKey } from '../production/ri
 import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
-import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
+/** The production's stored Verify checks, read by the development route (GET ?verifications=1). */
+export { listVerifications } from './verify-server';
+import { verifyPrompt, type VerifySnapshot } from './verify-judge';
+import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig', 'verify']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -43,6 +47,8 @@ export const developmentRequestSchema = z.object({
   shotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(), sketchAssetId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
   nodeId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
   attachmentAssetIds: z.array(z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)).min(1).max(4).optional(),
+  videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+    timeSeconds: z.number().finite().min(0).max(3600), durationSeconds: z.number().finite().positive().max(3600).optional() }).strict()).min(1).max(3).optional(),
 }).strict();
 export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
@@ -133,10 +139,12 @@ export function developmentSourceHash(canonical: string) { return createHash('sh
 
 type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string; fromJobId?: string; beatSheet?: unknown;
   /* frames / sketch */ style?: string; shots?: { id: string }[]; shot?: unknown; sketch?: { assetId: string; name: string; sha256: string; dataUrl: string };
-  /* any kind: what the director attached to the prompt box */ attachments?: { assetId: string; name: string; sha256?: string; dataUrl?: string; text?: string }[] };
-/** Images a phase sends with its prompt: only the sketch reader's one drawing. */
-export function developmentImages(snapshot: { sketch?: { dataUrl?: string }; attachments?: { dataUrl?: string }[] }): string[] {
-  return [...(snapshot.sketch?.dataUrl ? [snapshot.sketch.dataUrl] : []), ...(snapshot.attachments ?? []).flatMap((a) => (a.dataUrl ? [a.dataUrl] : []))];
+  /* any kind: what the director attached to the prompt box */ attachments?: { assetId: string; name: string; sha256?: string; dataUrl?: string; text?: string }[];
+  /* verify: the take's and the masters' review copies, and the key the check is stored under */ verify?: VerifySnapshot };
+/** Images a phase sends with its prompt: the sketch reader's drawing, the director's attached pictures, a check's take and masters. */
+export function developmentImages(snapshot: { sketch?: { dataUrl?: string }; attachments?: { dataUrl?: string }[]; verify?: { images: { dataUrl: string }[] } }): string[] {
+  return [...(snapshot.sketch?.dataUrl ? [snapshot.sketch.dataUrl] : []), ...(snapshot.attachments ?? []).flatMap((a) => (a.dataUrl ? [a.dataUrl] : [])),
+    ...(snapshot.verify?.images ?? []).map((image) => image.dataUrl)];
 }
 /** The storyboard shots the agent writes for: every beat-sheet shot, numbered, with its scene. */
 function boardSource(project: Project) {
@@ -167,6 +175,8 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
     ...(pictures.length ? { pictures: pictures.map((name, i) => `Image ${i + 1} sent with this message: ${name}`) } : {}), ...(texts.length ? { textFiles: texts } : {}) } });
 }
 function promptForSource(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
+  /* One judge call: the take's and the masters' images follow this text, in order. */
+  if (input.kind === 'verify') return verifyPrompt(snapshot.verify!);
   if (input.kind === 'rig') {
     const { kind: _kind, nodeId: _node, ...source } = snapshot as Snapshot & { kind?: string; nodeId?: string };
     return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
@@ -252,7 +262,8 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   }
   if (input.kind !== 'sketch' && input.sketchAssetId) throw new DevelopmentError('Only the sketch reader takes a drawing.');
   if (input.kind !== 'sketch' && input.kind !== 'frames' && input.shotId) throw new DevelopmentError('Only the storyboard artist takes a shot.');
-  if (input.kind !== 'condense' && input.kind !== 'rig' && input.nodeId) throw new DevelopmentError('Only the Rig steps take a Rig shot.');
+  if (input.kind !== 'condense' && input.kind !== 'rig' && input.kind !== 'verify' && input.nodeId) throw new DevelopmentError('Only the Rig steps take a Rig shot.');
+  if (input.kind !== 'verify' && input.videoFrames?.length) throw new DevelopmentError('Only a Verify check takes sampled frames.');
   const style = project.production?.boards?.style ?? 'live';
   let canonical: string, boardChunks: DevelopmentChunk[] | null = null, images = 0;
   if (input.kind === 'frames') {
@@ -294,6 +305,15 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     if (full.length <= ENGINE_PROMPT_LIMIT) throw new DevelopmentError('This shot\'s prompt already fits the engine; nothing to condense.');
     canonical = JSON.stringify({ kind: 'condense', nodeId: node.id, key: textKey(full), prompt: full });
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [{ id: node.id, heading: textKey(full), start: 0, end: 1 }] }];
+  } else if (input.kind === 'verify') {
+    /* A running check of the same key is looked up among the jobs, so they exist before the free quote reads them. */
+    await developmentReady();
+    let check;
+    try { check = await compileVerify(project, input.nodeId, input.videoFrames, owner); }
+    catch (error) { if (error instanceof VerifyError) throw new DevelopmentError(error.message, error.status); throw error; }
+    canonical = check.canonical;
+    boardChunks = [check.chunk];
+    images = check.images;
   } else if (input.kind === 'cast') {
     const sheet = project.production?.beats;
     const script = agentScript(project, Boolean(sheet?.scenes.length));
@@ -319,6 +339,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   } else canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId, beatSheet) : sourceCanonical(project, input.kind);
   /* What the director attached to the prompt box: pictures the agent sees, text files it reads (owner, 25 September). */
   if (input.attachmentAssetIds?.length) {
+    if (input.kind === 'verify') throw new DevelopmentError('A check reads its take and its masters only. Wire a master into the card instead.');
     if (input.kind === 'condense') throw new DevelopmentError('Condensing reads the shot prompt only; attach pictures to the shot instead.');
     let refs;
     try { refs = await loadAtomikReferences(project, input.attachmentAssetIds, owner); }
@@ -340,7 +361,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
   if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
-  if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
+  if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can ${input.kind === 'verify' ? 'see the take and its masters' : 'read the drawing'}.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
   /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for.
@@ -355,7 +376,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
   const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
-  const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
+  const estimates = chunks.flatMap(chunk => developmentStages(input.kind).map(stage => {
     const maxTokens = stage === 'critique' ? Math.min(reasoning.maxTokens, critiqueReasoning.maxTokens) : reasoning.maxTokens;
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
@@ -377,6 +398,11 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
 }
 export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
+  /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */
+  if (input.kind === 'verify') {
+    const stored = await storedVerificationFor(await getAtomikProject(owner, input.projectId), input.nodeId);
+    if (stored) return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind, sourceHash: '', estimateCredits: 0, chunks: 0, calls: 0, sourceCharacters: 0, stored };
+  }
   const compiled = await compile(input, owner, dependencies(overrides));
   return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind,
     sourceHash: compiled.sourceHash, estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd,
@@ -401,7 +427,7 @@ async function publicJob(row: Row, offset = 0, withResult = true, preloaded?: Pr
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     ...(input.kind === 'sketch' ? { shotId: input.shotId, sketchAssetId: input.sketchAssetId } : {}),
     ...(input.kind === 'frames' && input.shotId ? { shotId: input.shotId } : {}),
-    ...(input.kind === 'condense' || input.kind === 'rig' ? { nodeId: input.nodeId } : {}),
+    ...(input.kind === 'condense' || input.kind === 'rig' || input.kind === 'verify' ? { nodeId: input.nodeId } : {}),
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
     completedChunks, totalChunks, completedSteps, totalSteps: progress.rows.length,
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
@@ -510,7 +536,7 @@ export function developmentProviderOptions(model: CatalogModel, effort: string):
   return { ...existing, anthropic: { ...existing.anthropic, thinking: { type: 'adaptive' }, effort } };
 }
 async function callDevelopmentAgent(input: DevelopmentCall): Promise<DevelopmentReply> {
-  if (engineMock()) return mockDevelopmentReply(input);
+  if (engineMock()) return input.kind === 'verify' ? mockVerifyReply(input) : mockDevelopmentReply(input);
   let auth: DevelopmentAuth;
   try { auth = await developmentAuth(input.model.id); }
   catch (error) { throw Object.assign(error as Error, { providerSubmitted: false }); }
@@ -679,7 +705,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       }
       if (reply.finishReason === 'length') throw new Error('The agent ran out of room before it finished its answer, so nothing was kept from this phase.');
       const value: unknown = parseAgentJson(reply.text);
-      const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk);
+      const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk, snapshot.verify);
       if (stage === 'critique' && Buffer.byteLength(JSON.stringify(result), 'utf8') > DEVELOPMENT_CRITIQUE_BYTES) throw new Error('The critique exceeded its saved review budget.');
       const finished = await db().execute({ sql: "UPDATE workbench_development_steps SET status='succeeded',result=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [JSON.stringify(result), now(), id, Number(next.step_index)] });
       if (!finished.rowsAffected) return { done: true, waiting: false };
@@ -711,7 +737,12 @@ async function finishDevelopmentJob(row: Row, deps: DevelopmentDependencies) {
   const steps = (await db().execute({ sql: 'SELECT stage,status,cost_usd FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] })).rows;
   if (!steps.length || steps.some(step => step.status !== 'succeeded')) throw new Error('The workflow has incomplete development phases.');
   const cost = steps.reduce((sum, step) => sum + Number(step.cost_usd ?? 0), 0);
-  await db().execute({ sql: "UPDATE workbench_development_jobs SET status='succeeded',cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [cost, Number(row.funded_by_platform) ? billCredits(cost, 'text') : 0, now(), String(row.id)] });
+  const credits = Number(row.funded_by_platform) ? billCredits(cost, 'text') : 0;
+  const finished = { sql: "UPDATE workbench_development_jobs SET status='succeeded',cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [cost, credits, now(), String(row.id)] };
+  /* A finished check is stored in the same write that finishes its job: the row exists exactly when the job succeeded. */
+  const stored = (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'verify' ? await verificationStatements(row, credits) : [];
+  if (stored.length) await db().batch([finished, ...stored], 'write');
+  else await db().execute(finished);
   return settleDevelopment({ ...row, status: 'succeeded', cost_usd: cost }, deps);
 }
 

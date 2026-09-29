@@ -56,7 +56,7 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, meta, testId, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, meta, badge, testId, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
   /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
@@ -74,6 +74,8 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   meta?: ReactNode;
   /** The card's test id, when its strip names its takes its own way (a draft and its final). */
   testId?: string;
+  /** A line under the name from another part of the product: the Rig's Verify check of this take (Studio › Takes). */
+  badge?: ReactNode;
   onOpen: () => void;
   /** Re-read the library: a finished take whose stored copy was not there yet. */
   onRefresh: () => Promise<unknown> | void;
@@ -132,6 +134,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
           <span className="pd-take-name">{shownName}</span>
           {why}
           {need}
+          {badge}
         </button>
         {refreshButton}
         {release}

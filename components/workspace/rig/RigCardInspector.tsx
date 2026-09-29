@@ -10,6 +10,7 @@ import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Kicker } from "../ui";
 import { useRig } from "./RigProvider";
+import { VerifySection } from "./RigVerify";
 import "./rig.css";
 
 /**
@@ -80,6 +81,8 @@ function CardInspector({ node, project }: { node: CanvasNode; project: Project }
       <SourceWell id={node.id} asset={source?.asset ?? null} />
       <div className="pxw-inspector-subject" data-testid="inspector-title">{node.title}</div>
       {text ? <p className="pxw-card-text">{text}</p> : null}
+      {/* A Verify card (a review card with a `verify` block): what it checks, its price and its scorecard. */}
+      <VerifySection node={node} project={project} />
 
       {kind ? (
         <div data-section="kind">
