@@ -284,29 +284,28 @@ test("a cast entry's still is made from its prompt, else its description, else i
   expect(castStillPrompt({ name: "", description: "", prompt: "" })).toBe("");
 });
 
-test("an Atomik plan that reads the connected account's kept results is the owner's; no plan spends through the account any more", () => {
-  /* Compare reads results already kept on the project through the owner-only route; it quotes and sends nothing. */
-  expect(runsOnOwnerAccount(PLANS.compare)).toBe(true);
-  /* Motion Transfer and Object Swap run on the API-key engines; Generate, Shorts and History are not runnable. */
-  for (const page of ["motion", "swap", "generate", "shorts", "history"] as const) expect(runsOnOwnerAccount(PLANS[page]), page).toBe(false);
-  expect(runsOnOwnerAccount(PLANS.marketing)).toBe(false);
-  expect(runsOnOwnerAccount(PLANS.boards)).toBe(false);
+test("no Atomik plan runs on the connected account's routes any more: Compare reads the project's Library, for every member", () => {
+  /* Compare reads Particl's own Library of takes; Motion Transfer and Object Swap run on the API-key engines; Generate, Shorts and History are not runnable. */
+  for (const [page, plan] of Object.entries(PLANS)) expect(runsOnOwnerAccount(plan), page).toBe(false);
   expect(runsOnOwnerAccount(null)).toBe(false);
+  /* The rule still catches anything that would call an account route. */
+  expect(runsOnOwnerAccount({ steps: [{ executor: { backend: { path: "/api/higgsfield/consumer/genjutsu" } } }] })).toBe(true);
 });
 
-test("the run engine refuses every connected plan before reading or pricing, saying the sign-in is retired, while workspace plans remain available", async () => {
+test("the run engine refuses a plan on the account's routes before reading or pricing, saying the sign-in is retired; every registry plan, Compare included, is the same for everyone", async () => {
   let requests = 0;
-  const plans = ownerAccountPlans(PLANS, false);
+  const [load] = PLANS.compare.steps;
+  /* Compare as it was before it read the Library: its read on the owner-only account route. */
+  const onAccount = { ...PLANS.compare, steps: [{ ...load, executor: { type: "call" as const, backend: { method: "GET" as const, path: "/api/higgsfield/consumer/genjutsu" }, run: async () => { requests++; return {}; } } }] };
+  const plans = ownerAccountPlans({ ...PLANS, compare: onAccount }, false);
   const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("Nothing may reach the connected account."); } }) });
-  /* Every workspace takes the member path now: Compare, the one plan left on the account's routes, says the sign-in is retired. */
   expect(engine.start("compare")).toEqual({ ok: false, reason: "Particl no longer signs in to Higgsfield." });
   expect(engine.getState().run).toBeNull();
   expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
   expect(requests).toBe(0);
-  /* Plans that no longer touch the account are the same for every workspace. */
-  for (const page of ["motion", "swap", "generate", "shorts", "history"] as const) expect(plans[page], page).toBe(PLANS[page]);
-  expect(plans.marketing).toBe(PLANS.marketing);
-  expect(plans.boards).toBe(PLANS.boards);
+  /* The registry's own plans touch no account route, so every workspace gets them as they are. */
+  const everyone = ownerAccountPlans(PLANS, false);
+  for (const page of Object.keys(PLANS) as (keyof typeof PLANS)[]) expect(everyone[page], page).toBe(PLANS[page]);
   expect(ownerAccountPlans(PLANS, true)).toBe(PLANS);
 });
 

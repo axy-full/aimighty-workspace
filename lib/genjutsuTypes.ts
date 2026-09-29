@@ -34,3 +34,22 @@ export function genjutsuVariantForModel(model: string): GenjutsuVariant | null {
   return GENJUTSU_VARIANTS.find(variant => GENJUTSU_MODELS[variant] === model) ?? null;
 }
 export const isGenjutsuModel = (model: string) => genjutsuVariantForModel(model) !== null;
+
+/**
+ * A transform take kept in the project's Library: made on the API key's
+ * models, or made earlier on the connected account, whose collected runs keep
+ * `params.task` "genjutsu" on the account's own model ids.
+ */
+export const isGenjutsuTake = (take: { model: string; params?: Record<string, unknown> | null }) =>
+  isGenjutsuModel(take.model) || take.params?.task === "genjutsu";
+
+const mediaId = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+/** A transform take's source original, as Particl's media routes serve it: the take it was made from, else the upload; null when it names neither. */
+export function genjutsuSourceUrl(params: Record<string, unknown>): string | null {
+  return mediaId(params.sourceGenId)
+    ? `/api/media/${encodeURIComponent(params.sourceGenId)}`
+    : mediaId(params.sourceUploadId)
+      ? `/api/uploads/${encodeURIComponent(params.sourceUploadId)}`
+      : null;
+}
