@@ -65,8 +65,8 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   /* The brief has words, one take exists and one shot is cut: Brief, Takes and Edit & Sound are done. */
   await expect(page.getByTestId("home-fact-studio")).toHaveText("3 of 10 done");
   await expect(page.getByTestId("home-fact-gen")).toHaveText("Seedance 2.5 · default");
-  /* Business and Viral ran on the connected account; their sign-in is retired, and the tiles say so. */
-  await expect(page.getByTestId("home-fact-business")).toHaveText("Higgsfield sign-in retired");
+  /* Viral ran on the connected account: its sign-in is retired, and the tile says so. Business is Particl's own tools. */
+  await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
   await expect(page.getByTestId("home-fact-viral")).toHaveText("Higgsfield sign-in retired");
   await expect(page.getByTestId("home-fact-atomik")).toHaveText("0 awaiting approval");
   await expect(page.getByTestId("home-fact-crew")).toHaveText("3 seats");
