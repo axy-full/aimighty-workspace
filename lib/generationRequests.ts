@@ -369,6 +369,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
     credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
+  /* A run that was stopped or switched off reserves nothing: asked last, just before the write (it reads the
+     workspace's own database, which is never read inside the platform's write). */
+  const stopped = options.run ? await options.run.live?.() : null;
+  if (stopped) throw new SpendReservationError(stopped, 409, true);
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
@@ -437,8 +441,6 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's
        jobs have settled, what its jobs in flight could still settle at, and this job at its worst. */
     if (options.run) {
-      const stopped = await options.run.live?.();
-      if (stopped) throw new SpendReservationError(stopped, 409, true);
       const job = runCredits({ paid, billed, costUsd: cost });
       const verdict = runLimitVerdict({
         limitTenths: toTenths(options.run.limitCredits),
