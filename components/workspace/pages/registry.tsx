@@ -33,7 +33,7 @@ const COMING: Record<PageId, string> = {
   deliver: "The master checked against the project’s saved delivery spec, then packaged.",
   agent: "Describe an outcome and review the priced plan before anything paid runs.",
   runs: "Every agent run with its dispatch claim, status and accounting.",
-  generate: "Single generations, tools and voice from the connected account.",
+  generate: "Single generations run in Gen, on Particl’s own engines.",
   recipes: "Saved plans that rerun exactly against this project.",
   builds: "Small tools the agent builds and publishes on the viewer’s own credits.",
   skills: "The tool packs the agent can reach, with scope and cost.",

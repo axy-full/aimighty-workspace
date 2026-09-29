@@ -271,9 +271,10 @@ test('effort is quoted, persisted and submitted exactly once with its approved m
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    const gemini: CatalogModel = { ...model, id: 'google/gemini-3.8-flash', owner: 'google', name: 'Gemini 3.8 Flash', reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] };
-    h.deps.models = async () => [gemini];
-    const request = { ...input, model: gemini.id, effort: 'medium', maxCredits: 100 };
+    /* Atomik plans on Claude, OpenAI and Grok: an OpenAI thinker carries the effort here. */
+    const thinker: CatalogModel = { ...model, id: 'openai/gpt-5.5', owner: 'openai', name: 'GPT-5.5', reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] };
+    h.deps.models = async () => [thinker];
+    const request = { ...input, model: thinker.id, effort: 'medium', maxCredits: 100 };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
     expect(quote.effort).toBe('medium');
     expect(quote.maxTokens).toBeGreaterThan(900);
@@ -282,10 +283,9 @@ test('effort is quoted, persisted and submitted exactly once with its approved m
     const row = (await db().execute({ sql: 'SELECT provider_body,request_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
     expect(JSON.parse(String(row.request_body)).effort).toBe('medium');
     const body = JSON.parse(String(row.provider_body));
-    expect(body.providerOptions.google.thinkingConfig.thinkingLevel).toBe('medium');
-    expect(body.providerOptions.vertex.thinkingConfig.thinkingLevel).toBe('medium');
+    expect(body.reasoning_effort).toBe('medium');
+    expect(body.providerOptions).toBeUndefined();
     expect(body.max_tokens).toBe(quote.maxTokens);
-    expect(body.reasoning_effort).toBeUndefined();
     await expect(prepareAtomikJob({ ...request, effort: 'high' }, 'owner', undefined, h.deps)).rejects.toThrow('different instructions');
     const originalRun = h.deps.run;
     h.deps.run = async req => { expect(req.body).toBe(row.provider_body); return originalRun(req); };
@@ -455,7 +455,8 @@ test('suite agent refuses unselected references and cannot silently switch to Ge
     const { input } = await fixture(), h = harness();
     const request = { ...input, suite: 'particl' as const, refs: [], effort: 'auto', maxCredits: 10000 };
     h.deps.models = async () => [model, { ...model, id: 'google/gemini-3.1-pro-preview' }];
-    await expect(quoteAtomikJob({ ...request, model: 'google/gemini-3.1-pro-preview' }, 'owner', h.deps)).rejects.toThrow('No priced language model');
+    /* Gemini is no longer Atomik's at all (Claude, OpenAI and Grok only): refused with the reason, never swapped. */
+    await expect(quoteAtomikJob({ ...request, model: 'google/gemini-3.1-pro-preview' }, 'owner', h.deps)).rejects.toThrow('no longer offered in Atomik');
     h.deps.runSuite = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Cinematic image.', referenceIds: ['another-project-secret'] }], hooks: [], assumptions: [] }) } }], usage: { cost: .01 } }) });
     const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
     await runAtomikJob(job.id, 'owner', h.deps);

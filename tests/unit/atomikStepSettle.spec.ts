@@ -72,20 +72,20 @@ test("the planner's reply is held to the engines it was offered", async () => {
   const allowed = [{ id: KLING, kind: "video" as const }, { id: STILL, kind: "image" as const }, { id: "elevenlabs", kind: "audio" as const }];
 
   // A switched-off engine, named exactly, is replaced by one that is on — and the settings follow it.
-  const off = extractTurn(reply(SEEDANCE), false, allowed)!;
+  const off = extractTurn(reply(SEEDANCE), allowed)!;
   expect(off.propose[0]).toMatchObject({ model: KLING, params: { seconds: 15, resolution: "1080p" } });
   // An upscaler cannot make a shot, even by default.
   expect(extractTurn(reply(TOPAZ))!.propose[0].model).toBe(SEEDANCE);
-  expect(extractTurn(reply(TOPAZ), false, allowed)!.propose[0].model).toBe(KLING);
+  expect(extractTurn(reply(TOPAZ), allowed)!.propose[0].model).toBe(KLING);
   // An unknown id no longer falls back to a switched-off first engine.
-  expect(extractTurn(reply("made-up"), false, allowed)!.propose[0].model).toBe(KLING);
+  expect(extractTurn(reply("made-up"), allowed)!.propose[0].model).toBe(KLING);
   // Nothing of that kind is on: nothing is proposed, and the reply says so.
-  const none = extractTurn(reply(SEEDANCE), false, [{ id: STILL, kind: "image" }])!;
+  const none = extractTurn(reply(SEEDANCE), [{ id: STILL, kind: "image" }])!;
   expect(none.propose).toEqual([]);
   expect(none.say).toContain("Not proposed");
   expect(none.say).toContain("Kitchen");
   // Audio is still Particl's own voice engine.
-  expect(extractTurn(reply("anything", "audio"), false, allowed)!.propose[0].model).toBe("elevenlabs");
+  expect(extractTurn(reply("anything", "audio"), allowed)!.propose[0].model).toBe("elevenlabs");
 });
 
 test("changing a step's engine carries settings that engine can make, priced as rendered", async () => {

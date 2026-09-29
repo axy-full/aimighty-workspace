@@ -10,7 +10,7 @@ import {
 import { LoadBanner } from "../TakeTile";
 
 /**
- * Atomik › Memory (Supercomputer's memory, built in Particl): what Atomik
+ * Atomik › Memory, built in Particl: what Atomik
  * keeps in mind when it plans — brand, audience, references, approved
  * identities and notes, for this project or the whole workspace.
  *
@@ -320,7 +320,7 @@ export function MemoryInspector() {
   return (
     <div className="tc-insp" data-inspector-body="memory">
       <span className="tc-insp-title">Memory</span>
-      <span className="tc-insp-sub">Atomik Supercomputer</span>
+      <span className="tc-insp-sub">Atomik Agent</span>
       <p className="tc-insp-note">Nothing here spends. Atomik reads the kept entries that fit each request, a few at a time, and never one about money. Suggestions wait until someone keeps them. Forget archives an entry; nothing is erased.</p>
     </div>
   );
