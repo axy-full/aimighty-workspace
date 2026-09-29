@@ -15,7 +15,7 @@ import {
   higgsfieldCredentialFingerprint,
 } from "../higgsfield";
 
-import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, MARKETING_PATH } from "../higgsfieldMarketing";
+import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, marketingPath, higgsfieldBalanceRefusal } from "../higgsfieldMarketing";
 
 const API_ORIGIN = "https://api.higgsfield.ai";
 const ENDPOINT = `${API_ORIGIN}/higgsfield-ai/soul/character`;
@@ -71,6 +71,9 @@ async function call(url: string, method: "POST" | "GET", body?: unknown): Promis
   });
   if (!response.ok) {
     await response.body?.cancel();
+    // 403 is the provider's documented "insufficient credits": the request was not accepted.
+    if (method === "POST" && response.status === 403)
+      throw new HiggsfieldHttpError(403, `${higgsfieldBalanceRefusal("higgsfield-submission").message} The request was not accepted.`);
     throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`);
   }
   const data: unknown = await marketingJson(response);
@@ -146,13 +149,17 @@ export const higgsfield: EngineAdapter = {
     const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
     sameCredentials(fingerprint);
     let input: Record<string, unknown>;
+    let path = "";
     if (marketing) {
       // This is a read-only check before the sole paid POST. An unavailable or
-      // changed live price proves that this worker has submitted nothing.
+      // changed price (the live estimate, or a 2.5 build's approximate quote)
+      // proves that this worker has submitted nothing.
       try {
-        input = marketingInput(req.prompt, req.ratio, req.size, marketingSettings(req.marketing), await marketingReferenceUrls(req.references));
-        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>);
+        const settings = marketingSettings(req.marketing);
+        input = marketingInput(req.prompt, req.ratio, req.size, settings, await marketingReferenceUrls(req.references));
+        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>, settings.variant ?? "alpha");
         if (!(req.higgsfieldVendorCostUsd! > 0) || fresh !== req.higgsfieldVendorCostUsd) throw new Error("changed quote");
+        path = marketingPath(settings);
       } catch { throw marketingPreflightError(); }
     } else {
       input = soulCharacterInput(req);
@@ -163,7 +170,7 @@ export const higgsfield: EngineAdapter = {
       provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint,
     } };
     // Exactly one POST. Ambiguous failures retain the durable paid claim.
-    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : ENDPOINT, "POST", input);
+    const result = await call(marketing ? `${API_ORIGIN}/${path}` : ENDPOINT, "POST", input);
     const ref = typeof result.request_id === "string" ? result.request_id : "";
     if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
     // Persist an accepted UUID even if its status URL is malformed. Poll validates
