@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
 import type { RigAgentMode, RigAgentPaidStepView, RigAgentRunView, RigAgentState } from "@/lib/workbench/rig-agent-plan";
 import { creditFigure, isRunLimitAmount } from "@/lib/runLimit";
+import { chargeSentence } from "@/lib/errors";
 import { useRig } from "./RigProvider";
 
 /**
@@ -326,7 +327,8 @@ const RENDER_STATE: Partial<Record<RigAgentPaidStepView["state"], string>> = {
 function priceOf(p: RigAgentPaidStepView): string {
   if (p.tool === "verify") return "Not charged";
   if (p.state === "done") return p.charged != null ? `${cr(p.charged)} settled` : "Settling";
-  if (p.state === "failed") return p.outcome === "not_billed" ? "Not billed" : p.outcome === "charged" && p.charged != null ? `${cr(p.charged)} charged` : "Charge not settled yet";
+  /* A failed take: what Particl's own ledger holds for it (the provider's outcome as the ledger recorded it). */
+  if (p.state === "failed") return p.charge ? chargeSentence(p.charge) : "Settling";
   if (p.state === "skipped") return "Not charged";
   return p.quote != null ? `about ${cr(p.quote)}` : "Priced before it runs";
 }
@@ -345,7 +347,9 @@ function Renders({ run, busy, onRender, onSkip }: { run: RigAgentRunView; busy: 
               <span className="pxw-agent-render-price" data-testid="rig-agent-render-price">{priceOf(p)}</span>
             </div>
             <p className="pxw-agent-render-state" data-testid="rig-agent-render-state">
-              {p.tool === "verify" ? p.reason : p.state === "failed" && p.outcome === "not_billed" ? "Failed · not billed" : RENDER_STATE[p.state] ?? p.state}
+              {p.tool === "verify" ? p.reason
+                : p.state === "failed" ? (p.charge?.settled ? `Failed · ${p.charge.credits > 0 ? "charged" : "not billed"}` : "Failed")
+                : RENDER_STATE[p.state] ?? p.state}
               {waitingOnOwner ? " · waiting for the person who asked" : ""}
             </p>
             {p.tool === "render" && p.reason && (p.state === "paused" || p.state === "failed" || p.state === "approved") ? <p className="pxw-agent-note" data-testid="rig-agent-render-reason">{p.reason}</p> : null}

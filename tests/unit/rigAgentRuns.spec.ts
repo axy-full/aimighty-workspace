@@ -681,13 +681,13 @@ test("a failed take records what the provider did with the charge — not billed
     expect(await balance(ws)).toBe(afterPlan);
     await agent.advanceRigAgentRun(runId, deps);
     let run = await view();
-    expect(run.paid[0]).toMatchObject({ state: "failed", outcome: "not_billed", charged: 0 });
+    expect(run.paid[0]).toMatchObject({ state: "failed", outcome: "not_billed", charged: 0, charge: { credits: 0, settled: true } });
     /* The provider kept its charge for the second: the ledger shows it, and says so. */
     const b = (await renderRows())[1];
     await settleTake(b.id, "failed", 0.2);
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
     run = await view();
-    expect(run.paid[2]).toMatchObject({ state: "failed", outcome: "charged", charged: await credits(0.2) });
+    expect(run.paid[2]).toMatchObject({ state: "failed", outcome: "charged", charged: await credits(0.2), charge: { credits: await credits(0.2), settled: true } });
     expect(await balance(ws)).toBe(afterPlan - (await credits(0.2)));
   });
 });

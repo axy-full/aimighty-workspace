@@ -426,6 +426,8 @@ export type RigAgentPaidStepView = {
   charged: number | null;
   /** For a take that failed: what the ledger shows the provider did with the charge. */
   outcome: "not_billed" | "charged" | "unknown" | null;
+  /** For a take that failed: Particl's own ledger for it (the credits it holds, and whether that is settled). */
+  charge: { credits: number; settled: boolean } | null;
   /** Why it waits, or why it stopped. */
   reason: string | null;
   /** The viewer may approve it now (the person who asked, while it waits or is paused). */
