@@ -18,6 +18,9 @@ import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 /** The most a reserved node field (master, verify, agent) may hold, as JSON. */
 export const RESERVED_NODE_FIELD_CHARS = 8000;
 const reservedFits = (value: unknown) => JSON.stringify(value).length <= RESERVED_NODE_FIELD_CHARS;
+/** An imported card's record of the old board's inputs into it: at most as many as an old board could hold wires (lib/boards.ts). */
+export const IMPORTED_INPUTS = 400;
+export const IMPORTED_NODE_FIELD_CHARS = 64_000;
 const asset = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -121,6 +124,19 @@ const node = z.object({
     last: z.looseObject({ id: z.string().max(200).optional(), takeId: z.string().max(200).optional(), verdict: z.string().max(40).optional(), at: z.number().finite().optional() }).optional(),
   }).refine(reservedFits).optional(),
   agent: z.looseObject({ runId: z.string().max(200).optional(), key: z.string().max(200).optional() }).refine(reservedFits).optional(),
+  /* Written only by the import of an old Rig board (lib/workbench/board-import-model.ts): where the card came from and the
+     old board's inputs into it already handled. Bounded by the old board itself (its wires), and never media: a draft save
+     checks every media reference it holds. */
+  imported: z.looseObject({
+    board: z.string().max(100).optional(),
+    node: z.string().max(200).optional(),
+    kind: z.string().max(40).optional(),
+    element: z.string().max(40).optional(),
+    shot: z.string().max(100).optional(),
+    dx: z.number().finite().optional(),
+    dy: z.number().finite().optional(),
+    inputs: z.array(z.looseObject({ from: z.string().max(200), slot: z.string().max(120).optional(), held: z.string().max(200).optional() })).max(IMPORTED_INPUTS).optional(),
+  }).refine((value) => JSON.stringify(value).length <= IMPORTED_NODE_FIELD_CHARS).optional(),
   /* Rig shot fields (optional; absent on every older draft). Shape only here:
      the catalogue clamp lives in lib/workspace so a catalogue change can never
      make an existing draft unsaveable. */

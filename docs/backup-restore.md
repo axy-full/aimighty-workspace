@@ -417,6 +417,15 @@ restored `workbench_team_canvas` by the first window that opens it. Never
 delete rows to "clear" the outbox; a row that cannot be pushed only stays
 pending, and the saved canvas is already correct.
 
+An old Rig board opened in the new Rig comes across onto its production's
+team canvas as `import` rows here. The board itself is only read: its nodes,
+wires and `updated_at` are never written. Two nullable columns on `boards`,
+`imported_at` and `imported_to`, record when its cards last came across and
+which production holds them; the cards carry `imported` (the board and card
+each came from). After a restore, opening the board again is safe: cards are
+keyed by stable ids, so nothing is made twice and a card someone took off
+stays off.
+
 ## Verification evidence
 
 Run the disposable local suite (no remote calls or application env loading):

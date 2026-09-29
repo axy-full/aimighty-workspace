@@ -5,6 +5,7 @@ import { RigGraph } from "./RigGraph";
 import { RigList } from "./RigList";
 import { useRig } from "./RigProvider";
 import { TeamPresence } from "./TeamPresence";
+import { RigImport } from "./RigImport";
 import "./rig.css";
 
 /** Rig: the shot list by default, the node graph as the advanced view. */
@@ -16,6 +17,8 @@ export function RigPage() {
   return (
     <>
       <TeamPresence />
+      {/* An old board coming across (the old board's "Open in the new Rig"): what it is doing, and Try again. */}
+      <RigImport />
       {state.rigView === "graph" ? <RigGraph /> : <RigList />}
     </>
   );
