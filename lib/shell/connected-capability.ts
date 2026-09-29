@@ -194,7 +194,7 @@ export const isOwnerRunPage = (suite: string | null | undefined, page: string | 
 
 /** The connected account's routes: whatever calls one spends through the owner's account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
-/** An Atomik plan with any step on the connected account is the owner's to run (Viral's Motion, Swap and History, say). */
+/** An Atomik plan with any step on the connected account is the owner's to run (Compare, which reads results kept on the account). */
 export function runsOnOwnerAccount(plan: { steps: readonly { executor: { backend: { path: string } } }[] } | null | undefined): boolean {
   return Boolean(plan?.steps.some((step) => step.executor.backend.path.startsWith(CONNECTED_ROUTE_PREFIX)));
 }
