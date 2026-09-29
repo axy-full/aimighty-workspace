@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
+import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Crew in the browser (design/particl-suites/CREW_ADDENDUM.md), against the
@@ -30,6 +31,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers } = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
+  await openSuitesMenu(page);
   await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
   await suites.getByRole("tab", { name: "Crew" }).click();
   await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
@@ -50,6 +52,8 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await page.getByTestId("crew-goal").fill(GOAL);
   await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
   await page.getByTestId("crew-run").click();
+  /* Observe the transient confirmation before checking the durable transcript. */
+  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d+ cr settled/);
 
   const messages = page.getByTestId("crew-message");
   await expect(messages).toHaveCount(9, { timeout: 30_000 });
@@ -64,7 +68,6 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   await expect(page.getByTestId("crew-solutions").locator(".cw-solution")).toHaveCount(3);
   await expect(panel).toContainText(/\d+ cr settled/);
   await expect(panel).toContainText("1 of 6");
-  await expect(page.getByTestId("toast")).toContainText(/Round 1 complete · \d+ cr settled/);
 
   /* An interjection joins the transcript; Pin adds a fourth solution. */
   await page.getByTestId("crew-say").fill("Keep the tin out of frame.");
@@ -84,6 +87,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");
 
   /* Coming back reopens the same room; Sessions lists it. */
+  await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Crew" }).click();
   await expect(messages).toHaveCount(10);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Sessions/ }).click();
