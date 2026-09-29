@@ -11,7 +11,7 @@ import { applyTeamPatch, emptyTeamCanvas, withTeamCanvas, type TeamCanvas } from
 import { PROJECT_LIMITS } from "../../lib/workbench/project-limits";
 import {
   boardPlacement, cardStates, importedNodeId, importedShape, importSummary, mapBoardNode, mediaCandidates, mediaOfUrl,
-  planBoardImport, readBoardGraph, PLACE_GAP, type ImportContext, type ImportCounts, type ImportElement,
+  importOrder, planBoardImport, readBoardGraph, PLACE_GAP, type ImportContext, type ImportCounts, type ImportElement,
 } from "../../lib/workbench/board-import-model";
 import { IMPORT_FAILED, importBatch, importCopy, importedBoardOf, importParam, isImportAnswer, newRigFor, newRigHref, withoutImport } from "../../lib/workspace/rig-import";
 
@@ -177,7 +177,7 @@ test("where the board lands: its old places on an empty canvas; beside the cards
 
 /* ── Planning a batch (pure) ───────────────────────────────────────────── */
 
-test("a batch: cards first, in board order, then the inputs between cards that are there; each handled input is recorded on its card", () => {
+test("a batch: cards sources first, each with its inputs from cards that are there; each handled input is recorded on its card", () => {
   const board = readBoardGraph({
     nodes: [card("a", "asset", 0, 0, { settings: { kind: "character" } }), card("s", "shot", 300, 0), card("i", "image", 600, 0), card("p", "prompt", 300, 300)],
     wires: [wire("w1", "a", "s", "character"), wire("w2", "s", "i", "spec"), wire("w3", "p", "i", "refs"), wire("w4", "i", "s", "takes", "filed")],
@@ -192,7 +192,7 @@ test("a batch: cards first, in board order, then the inputs between cards that a
   expect(made.find((n) => n.id === id("s"))!.imported!.inputs).toEqual([{ from: "a", slot: "character" }]);
   /* The same canvas and board give the same batch and the same op id. */
   expect(planBoardImport(emptyTeamCanvas(), board, ctx, "ana", { cards: 2, wires: 10 })).toEqual(first);
-  /* After it lands, the next batch makes the rest and wires into a card that was already there with a record update. */
+  /* After it lands, the next batch makes the rest, each with its inputs: the prompt before the image it feeds. */
   const after = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: made.map((n) => (n.id === id("s") ? { ...n, linked: [id("a")] } : n)), made: made.map((n) => n.id), removeNodes: [], upsertAssets: [], order: null, at: 2, author: "ana" });
   const second = planBoardImport(after, board, ctx, "ana", { cards: 2, wires: 10 });
   expect(second.ops.map((op) => op.kind)).toEqual(["create", "create", "wire", "wire"]);
@@ -207,13 +207,37 @@ test("a batch: cards first, in board order, then the inputs between cards that a
   });
 });
 
+test("the order cards come across in: board order, each card after the cards that feed it; a loop keeps board order; a long chain is fine", () => {
+  const graph = readBoardGraph({
+    nodes: [card("img", "image", 0, 0), card("shot", "shot", 0, 0), card("noor", "asset", 0, 0), card("x", "note", 0, 0), card("y", "note", 0, 0), card("lone", "note", 0, 0)],
+    wires: [wire("w1", "noor", "shot", "character"), wire("w2", "shot", "img", "spec"), wire("w3", "x", "y", "text"), wire("w4", "y", "x", "text")],
+  });
+  expect(importOrder(graph).map((n) => n.id)).toEqual(["noor", "shot", "img", "y", "x", "lone"]);
+  const chain = readBoardGraph({
+    nodes: Array.from({ length: 5000 }, (_, i) => card(`n${4999 - i}`, "note", 0, 0)),
+    wires: Array.from({ length: 4999 }, (_, i) => wire(`w${i}`, `n${i}`, `n${i + 1}`, "text")),
+  });
+  const order = importOrder(chain).map((n) => n.id);
+  expect(order.length).toBe(5000);
+  expect(order.slice(0, 3)).toEqual(["n0", "n1", "n2"]);
+  /* A batch keeps a card with the inputs it takes now: one that would not fit waits for the next batch. */
+  const fan = readBoardGraph({
+    nodes: [card("a", "note", 0, 0), card("b", "note", 0, 0), card("c", "note", 0, 0), card("t", "scene", 0, 0)],
+    wires: [wire("w1", "a", "t", "text"), wire("w2", "b", "t", "text"), wire("w3", "c", "t", "text")],
+  });
+  const first = planBoardImport(emptyTeamCanvas(), fan, context(), "ana", { cards: 10, wires: 2 });
+  expect(first.ops.flatMap((op) => (op.kind === "create" ? [op.node.imported!.node] : []))).toEqual(["a", "b", "c"]);
+  expect(first.ops.filter((op) => op.kind === "wire")).toEqual([]);
+});
+
 test("an input the new Rig refuses for good (a loop) is noted on its card and never tried again; one into a locked card waits", () => {
   const board = readBoardGraph({
     nodes: [card("x", "note", 0, 0), card("y", "note", 300, 0), card("z", "note", 600, 0)],
     wires: [wire("w1", "x", "y", "text"), wire("w2", "y", "x", "text"), wire("w3", "x", "z", "text")],
   });
   const ctx = context();
-  const made = planBoardImport(emptyTeamCanvas(), board, ctx, "ana", { cards: 10, wires: 0 }).ops.flatMap((op) => (op.kind === "create" ? [op.node] : []));
+  /* The three cards are on the canvas already (brought before the old board's inputs were drawn), z locked since. */
+  const made = board.nodes.map((n) => mapBoardNode(n, ctx, { dx: 0, dy: 0 }).node);
   let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: made.map((n) => (n.id === id("z") ? { ...n, locked: true } : n)), made: made.map((n) => n.id), removeNodes: [], upsertAssets: [], order: null, at: 2, author: "ana" });
   const batch = planBoardImport(canvas, board, ctx, "ana");
   /* x→y links; y→x would close a loop (held, recorded); x→z waits for its locked card (not tried). */
@@ -421,6 +445,9 @@ test("batches are bounded and resumable: a stopped import carries on where it st
     }
     expect(answer.done).toBe(true);
     expect(seen.every((b) => b.cards <= 2 && b.wires <= 2)).toBe(true);
+    /* Every batch only made cards, each with its inputs: none went back to change a card an earlier batch made. */
+    const rows = (await db().execute("SELECT changes FROM rig_canvas_ops WHERE what='import' ORDER BY seq")).rows;
+    expect(rows.flatMap((r) => (JSON.parse(String(r.changes)) as { made: boolean }[]).filter((c) => !c.made))).toEqual([]);
     expect(seen.reduce((sum, b) => sum + b.cards, 0)).toBe(9);
     expect(seen.reduce((sum, b) => sum + b.wires, 0)).toBe(6);
     expect(Number((await db().execute("SELECT COUNT(*) AS n FROM rig_canvas_ops WHERE what='import'")).rows[0].n)).toBeGreaterThan(3);

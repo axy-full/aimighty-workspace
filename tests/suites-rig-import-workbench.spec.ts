@@ -110,9 +110,21 @@ async function openOldBoard(tab: Page, boardId: string, errors: string[]) {
   return link;
 }
 
-/** Nothing scrolls sideways: the page, and the pane each shell scrolls its page in (the old shell's `.shell-page`, the Suites' content). */
+/** Nothing scrolls sideways: the page, and the Suites' content pane. */
 const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5
-  && Array.from(document.querySelectorAll<HTMLElement>('.shell-page, [data-testid="content"]')).every((el) => !el.getClientRects().length || el.scrollWidth <= el.clientWidth + 1));
+  && Array.from(document.querySelectorAll<HTMLElement>('[data-testid="content"]')).every((el) => !el.getClientRects().length || el.scrollWidth <= el.clientWidth + 1));
+/** The old board's row to the new Rig sits inside the screen: its button and its line end before the right edge, and it never scrolls. */
+const rowFits = (tab: Page) => tab.evaluate(() => {
+  const row = document.querySelector<HTMLElement>("[data-new-rig]");
+  if (!row) return ["no row"];
+  const out: string[] = [];
+  if (row.scrollWidth > row.clientWidth + 1) out.push(`the row scrolls: ${row.scrollWidth} > ${row.clientWidth}`);
+  for (const el of Array.from(row.children) as HTMLElement[]) {
+    const box = el.getBoundingClientRect();
+    if (box.width && box.right > window.innerWidth + 0.5) out.push(`${el.tagName} ends at ${Math.round(box.right)} past ${window.innerWidth}`);
+  }
+  return out;
+});
 
 /** The Rig's line about the board: readable (12px or more, above the label floor), thumb-sized buttons, above a phone's tab bar. */
 async function expectReadable(tab: Page, phone: boolean) {
@@ -144,16 +156,18 @@ test("an old board opens in the new Rig: every card, kind, input and place arriv
   const errors: string[] = [];
   const B = (old: string) => idOf(boardId, old);
 
-  /* A teammate's window is already on the production's Rig. */
-  const second = await context.newPage();
-  await openRig(second, draft.id, errors);
-  await expect.poll(() => places(second)).toEqual({});
-
   /* The old board links to the new Rig. */
   const link = await openOldBoard(page, boardId, errors);
   const box = (await link.boundingBox())!;
   if (phone) expect(Math.min(box.width, box.height), "the link is a thumb-sized target").toBeGreaterThanOrEqual(44 - 0.5);
-  expect(await noSideways(page), "no sideways scroll on the old board").toBe(true);
+  expect(await rowFits(page), "the row to the new Rig fits the screen").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5), "no sideways scroll on the old board").toBe(true);
+  if (["workbench-390x844", "workbench-1440x900"].includes(info.project.name)) await page.screenshot({ path: info.outputPath(`old-board-link-${info.project.name}.png`), animations: "disabled" });
+
+  /* A teammate's window is already on the production's Rig, with nothing on it yet. */
+  const second = await context.newPage();
+  await openRig(second, draft.id, errors);
+  await expect.poll(() => places(second)).toEqual({});
   await link.click();
 
   /* It lands on this person's own draft of the production, on the Rig, bringing the board across. */
@@ -270,17 +284,15 @@ test("a board that stops part way says what came across, and Try again (free) ca
   expect(errors).toEqual([]);
 });
 
-test("the import route: free, one bounded batch per call, refused for another production's board, and idempotent", async ({ page }) => {
+test("the import route: free, one bounded batch per call, refused for a production or board that is not here, and idempotent", async ({ page }) => {
   test.setTimeout(180_000);
   const { headers, productionId, boardId } = await setUp(page, "Harbour route");
   const post = (board: string, data: Record<string, unknown>) => page.request.post(`/api/rig/boards/${board}`, { headers, data });
-  /* Another production: refused, and nothing is written there. */
-  const other = await page.request.put("/api/workbench/projects", { headers, data: { project: { ...newProject("Other"), id: `other-${Date.now().toString(36)}` }, revision: 0 } });
-  const otherId = ((await other.json()) as { productionProjectId: string }).productionProjectId;
-  const refused = await post(boardId, { action: "import", productionId: otherId });
-  expect(refused.status()).toBe(409);
-  expect(((await refused.json()) as { error: string }).error).toContain("belongs to another production");
-  expect((await canvasOf(page.request, headers, otherId)).canvas).toBeNull();
+  /* A production or a board that is not in this workspace: refused, and nothing is written. (A board of another production
+     of this workspace is refused too, with a 409: tests/unit/boardImport.spec.ts.) */
+  const nowhere = await post(boardId, { action: "import", productionId: "prj_nowhere" });
+  expect(nowhere.status()).toBe(404);
+  expect(((await nowhere.json()) as { error: string }).error).toBe("That project is not in this workspace.");
   expect((await post("brd_nope", { action: "import", productionId })).status()).toBe(404);
   expect((await post(boardId, { action: "tidy", productionId })).status()).toBe(400);
   /* A write needs this account's scope, like every canvas write. */

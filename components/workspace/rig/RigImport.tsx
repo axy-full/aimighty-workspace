@@ -78,7 +78,8 @@ export function RigImport() {
      and it says what it finds rather than a line that never ends. */
   const done = useCallback(() => {
     const next = withoutImport(window.location.pathname + window.location.search + window.location.hash);
-    if (next) window.history.replaceState(window.history.state, "", next);
+    /* A state of its own (null), as the shell's writes do: Next.js syncs useSearchParams only for those. */
+    if (next) window.history.replaceState(null, "", next);
     started.current = null;
     setRun(null);
   }, []);

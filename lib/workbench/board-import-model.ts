@@ -380,37 +380,88 @@ export type ImportBatch = {
 const heldForNow = (held: string) => held.startsWith("Choose two existing") || held.startsWith("Unlock this node");
 
 /**
- * The next batch: cards still to come, in board order, then the inputs whose
- * cards are both on the canvas once those are made. Each input is wired by the
- * graph's own rules (canConnect, through planCanvasOps) against the canvas as
- * it is; the ones it links, finds linked, or refuses for good are recorded on
- * their card in the same batch. Deterministic: the same canvas and board give
- * the same batch and the same op id.
+ * The order cards come across in: board order, with each card after the cards that feed it (a loop keeps board order).
+ * A card's inputs then come across in the batch that makes it, so an import never goes back to change a card it made in
+ * an earlier batch — a change an open window's draft save, folding the canvas in between batches, could write over.
+ */
+export function importOrder(graph: BoardGraph): BoardNode[] {
+  const index = new Map(graph.nodes.map((node, i) => [node.id, i]));
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const sources = new Map<string, string[]>();
+  for (const pair of graph.pairs) sources.set(pair.to, [...(sources.get(pair.to) ?? []), pair.from]);
+  const feeds = (id: string) => [...(sources.get(id) ?? [])].sort((a, b) => index.get(a)! - index.get(b)!);
+  const out: BoardNode[] = [];
+  const placed = new Set<string>(), open = new Set<string>();
+  /* Depth first, sources before the card, without recursion (a long chain is a deep one). */
+  for (const root of graph.nodes) {
+    if (placed.has(root.id)) continue;
+    const stack = [{ id: root.id, from: feeds(root.id), next: 0 }];
+    open.add(root.id);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      if (top.next < top.from.length) {
+        const source = top.from[top.next++];
+        if (!placed.has(source) && !open.has(source)) { open.add(source); stack.push({ id: source, from: feeds(source), next: 0 }); }
+        continue;
+      }
+      stack.pop();
+      open.delete(top.id);
+      placed.add(top.id);
+      out.push(byId.get(top.id)!);
+    }
+  }
+  return out;
+}
+
+/**
+ * The next batch: cards still to come, sources first (importOrder), each with
+ * its inputs from cards already on the canvas or made in the same batch; then
+ * inputs into cards already here (an old board that gained an input since).
+ * Each input is wired by the graph's own rules (canConnect, through
+ * planCanvasOps) against the canvas as it is; the ones it links, finds linked,
+ * or refuses for good are recorded on their card in the same batch.
+ * Deterministic: the same canvas and board give the same batch and op id.
  */
 export function planBoardImport(canvas: TeamCanvas, graph: BoardGraph, ctx: ImportContext, author: string, limits: ImportLimits = IMPORT_BATCH): ImportBatch {
   const at = boardPlacement(canvas, ctx.boardId, graph.nodes);
   const cards = cardStates(canvas, graph, ctx.boardId);
-  const making = graph.nodes.filter((node) => cards.get(node.id) === "new").slice(0, Math.max(0, limits.cards));
-  const made = new Set(making.map((node) => node.id));
-  const liveAfter = (id: string) => cards.get(id) === "here" || made.has(id);
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const idOf = (id: string) => importedNodeId(ctx.boardId, id);
+  const into = new Map<string, WirePair[]>();
+  for (const pair of graph.pairs) into.set(pair.to, [...(into.get(pair.to) ?? []), pair]);
 
+  /* The cards: as many as fit, each with room in the batch for the inputs it takes now (the first always goes). */
+  const making: BoardNode[] = [];
+  const made = new Set<string>();
+  let room = Math.max(0, limits.wires);
+  for (const node of importOrder(graph)) {
+    if (making.length >= Math.max(0, limits.cards)) break;
+    if (cards.get(node.id) !== "new") continue;
+    const takes = (into.get(node.id) ?? []).filter((pair) => cards.get(pair.from) === "here" || made.has(pair.from)).length;
+    if (making.length && takes > room) break;
+    making.push(node);
+    made.add(node.id);
+    room = Math.max(0, room - takes);
+  }
+  const liveAfter = (id: string) => cards.get(id) === "here" || made.has(id);
+
+  /* The inputs: the new cards' own first, then those into cards already here. */
   const wiring: WirePair[] = [];
   const pending = new Map<string, number>();
-  for (const pair of graph.pairs) {
-    if (wiring.length >= Math.max(0, limits.wires)) break;
-    if (!liveAfter(pair.from) || !liveAfter(pair.to)) continue;
+  const consider = (pair: WirePair) => {
+    if (wiring.length >= Math.max(0, limits.wires) || !liveAfter(pair.from) || !liveAfter(pair.to)) return;
     /* A card already here: not an input it has handled, not locked (it waits), and room left in its record. */
     const target = canvas.nodes[idOf(pair.to)];
     if (target) {
-      if (target.locked || importedOf(target)?.inputs?.some((input) => input?.from === pair.from)) continue;
-      if (!recordHasRoom(importedOf(target), { from: pair.from, slot: pair.slots.join(", ") })) continue;
+      if (target.locked || importedOf(target)?.inputs?.some((input) => input?.from === pair.from)) return;
+      if (!recordHasRoom(importedOf(target), { from: pair.from, slot: pair.slots.join(", ") })) return;
     }
-    if ((importedOf(target)?.inputs?.length ?? 0) + (pending.get(pair.to) ?? 0) >= IMPORTED_INPUTS) continue;
+    if ((importedOf(target)?.inputs?.length ?? 0) + (pending.get(pair.to) ?? 0) >= IMPORTED_INPUTS) return;
     pending.set(pair.to, (pending.get(pair.to) ?? 0) + 1);
     wiring.push(pair);
-  }
+  };
+  for (const node of making) for (const pair of into.get(node.id) ?? []) consider(pair);
+  for (const pair of graph.pairs) if (cards.get(pair.to) === "here") consider(pair);
 
   /* A shot's LOOK slot fed by a look board: the scene names that board as its look, as the Rig's own shots do. */
   const looks = new Map<string, string>();
