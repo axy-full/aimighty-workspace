@@ -56,7 +56,7 @@ function Refresh({ onRefresh, name }: { onRefresh: () => Promise<unknown> | void
   );
 }
 
-export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, meta, badge, testId, onOpen, onRefresh, dragEffect = "copy" }: {
+export function TakeTile({ entry, variant, label, selected = false, checked = false, cut = false, fresh = false, rowStart = false, action, meta, badge, badgeLabel, testId, onOpen, onRefresh, dragEffect = "copy" }: {
   entry: LibraryEntry;
   variant: Variant;
   /** Its place in a batch strip ("take 2", components/graphite/TakeStrip.tsx), said in place of its name: the strip names the batch. */
@@ -76,6 +76,8 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   testId?: string;
   /** A line under the name from another part of the product: the Rig's Verify check of this take (Studio › Takes). */
   badge?: ReactNode;
+  /** The badge's words, for the name a screen reader hears. */
+  badgeLabel?: string;
   onOpen: () => void;
   /** Re-read the library: a finished take whose stored copy was not there yet. */
   onRefresh: () => Promise<unknown> | void;
@@ -116,7 +118,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
   /* A take held for credits carries its way out: Release at the exact price (the 2-up Library tile leaves it to the Inspector). */
   const release = take.status === "held" && variant !== "library" ? <ReleaseTake entry={entry} onReleased={onRefresh} place="tile" /> : null;
   /* A screen reader hears the take and its state, not the badge text inside the picture. */
-  const spoken = [label, take.name, pair, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null)].filter(Boolean).join(" · ");
+  const spoken = [label, take.name, pair, chip?.label ?? (face === "unavailable" ? "Preview unavailable" : null), badgeLabel].filter(Boolean).join(" · ");
   const shownName = label ?? take.name;
   /* In a strip the card is one of the strip's list of takes (TakeStrip), under #406's `gen-batch-take`. */
   const strip = Boolean(label) && variant === "grid";

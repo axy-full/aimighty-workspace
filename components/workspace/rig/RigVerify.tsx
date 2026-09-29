@@ -35,10 +35,15 @@ function useShown(node: CanvasNode, project: Project) {
   const checks = useVerifications(rig.scope, project.id);
   const subject = useMemo(() => verifySubject(project, node), [project, node]);
   const shown = useMemo(() => verificationFor(checks.list ?? [], node.id, subject), [checks.list, node.id, subject]);
-  /* A teammate's check reached this canvas (its card's last verdict) before this window read it: read now. */
+  /* A teammate's check reached this canvas (its card's last verdict) before this window read it: read now, once. */
   const lastId = node.verify?.last?.id;
   const { refresh, list } = checks;
-  useEffect(() => { if (lastId && list && !list.some((v) => v.id === lastId)) void refresh(); }, [lastId, list, refresh]);
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!lastId || !list || asked.current.has(lastId) || list.some((v) => v.id === lastId)) return;
+    asked.current.add(lastId);
+    void refresh();
+  }, [lastId, list, refresh]);
   return { checks, subject, shown };
 }
 
@@ -92,7 +97,7 @@ export function VerifyShotEntry({ shot }: { shot: RigShot }) {
 
 /* ── In the Card Inspector ─────────────────────────────────────────────── */
 
-const FREE = "Already checked against these masters: the scorecard below is the stored one. Reading it again is free.";
+const FREE = "Already checked against these masters: this is the stored scorecard. Reading it again is free.";
 
 /** A Verify card's Inspector section: what it checks, the price and the approve, and the scorecard. */
 export function VerifySection({ node, project }: { node: CanvasNode; project: Project }) {
@@ -109,7 +114,8 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
   /* The judge: the Production agent's own choice when it can see; else the newest of its family that can, else any that can. */
   const judge = agent.model?.vision ? agent.model : familyModels(runs.models, agent.choice.family).find((m) => m.vision) ?? runs.models.find((m) => m.vision) ?? null;
   const effort = judge && judge.id === agent.model?.id ? agent.effort : "auto";
-  const [notice, setNotice] = useState<string | null>(null);
+  /* The stored check a press of Verify found (read free): said while the card still shows that check. */
+  const [freeFor, setFreeFor] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
   const cancel = useRef<AbortController | null>(null);
@@ -150,9 +156,9 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
       : null);
 
   const ask = async () => {
-    setNotice(null); setProblem(null);
+    setFreeFor(null); setProblem(null);
     /* The same take against the same masters: the stored scorecard, and nothing is asked of the server. */
-    if (current) { setNotice(FREE); return; }
+    if (current) { setFreeFor(current.id); return; }
     if (!judge || !takeAsset) return;
     let videoFrames;
     if (takeAsset.kind === "video") {
@@ -185,7 +191,7 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
         ) : price && quote ? (
           <>
             <p className="pxw-verify-price" data-testid="card-verify-price">
-              One check by {thinkingModelName(quote.input.model)}: {price}, charged in credits once it is done, at what the check actually used.
+              One check by {thinkingModelName(quote.input.model)}: {price}, {inCredits && quote.value.estimateCredits > 0 ? "charged in credits once it is done" : inCredits ? "billed on your key once it is done" : "billed once it is done"}, at what the check actually used.
             </p>
             <div className="pxw-verify-buttons">
               <button type="button" className="pxw-btn pxw-btn--control pxw-verify-button" disabled={Boolean(runs.busy)} onClick={runs.clearQuote}>Cancel</button>
@@ -203,7 +209,7 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
               : !current ? <p className="pxw-inspector-note">The price comes first{judge ? `, from ${thinkingModelName(judge.id)}` : ""}. Nothing is sent until you approve it.</p> : null}
           </>
         )}
-        {notice ?? (stored ? FREE : null) ? <p className="pxw-insp-notice" role="status" data-testid="card-verify-free">{notice ?? FREE}</p> : null}
+        {current && (current.id === freeFor || current.id === stored?.id) ? <p className="pxw-insp-notice" role="status" data-testid="card-verify-free">{FREE}</p> : null}
         {problem || runs.error ? <p className="pxw-insp-error" role="alert" data-testid="card-verify-error">{problem ?? runs.error}</p> : null}
         {!active && latest && (latest.status === "failed" || latest.status === "uncertain") && (!shown || shown.verification.createdAt < latest.updatedAt) && latest.error ? (
           <p className="pxw-insp-error" role="alert" data-testid="card-verify-failed">{latest.error}</p>

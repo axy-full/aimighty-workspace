@@ -29,7 +29,7 @@ import { mockColourScore, verifyChunk, type VerifySnapshot } from "./verify-judg
 export class VerifyError extends Error {
   constructor(message: string, public status = 422) { super(message); this.name = "VerifyError"; }
 }
-export const ALREADY_CHECKED = "This take was already checked against these masters. Its scorecard is on the card, and reading it again is free.";
+export const ALREADY_CHECKED = "This take was already checked against these masters. Its scorecard is on the card. Reading it again is free.";
 export const CHECK_RUNNING = "This take is being checked against these masters right now. Its scorecard lands on the card when the check is done.";
 
 const SCHEMA = [

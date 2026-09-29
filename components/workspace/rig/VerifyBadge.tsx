@@ -25,11 +25,14 @@ export function useTakeVerdicts(scope: string, project: Pick<Project, "id" | "no
   }, [list]);
 }
 
+/** The badge's words: what its check found, and whether the masters have changed since. */
+export const takeVerdictWords = (verdict: TakeVerdict) => `${WORDS[verdict.verdict]}${verdict.stale ? " · older master" : ""}`;
+
 export function TakeVerifyBadge({ verdict }: { verdict: TakeVerdict }) {
   return (
     <span className="gx-tile-verify" data-verdict={verdict.verdict} data-stale={verdict.stale || undefined} data-testid="take-verify">
       <span className="gx-tile-verify-dot" aria-hidden="true" />
-      {WORDS[verdict.verdict]}{verdict.stale ? " · older master" : ""}
+      {takeVerdictWords(verdict)}
     </span>
   );
 }
