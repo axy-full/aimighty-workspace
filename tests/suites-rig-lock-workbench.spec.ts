@@ -27,30 +27,35 @@ const still = (id: string, name: string, extra: Partial<Asset> = {}): Asset => (
 
 /* ── Shared helpers (as the Rig kinds spec reads the canvas and the Card Inspector) ── */
 
+/**
+ * The Rig's canvas, shown and fitted. A development server can reload an open tab while it compiles a route another
+ * tab asked for, and the Rig then opens on its list: the canvas is shown again rather than waited on.
+ */
 async function showCanvas(page: Page) {
-  await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
   const board = page.getByTestId("rig-graph-surface");
-  await expect(board).toBeVisible();
+  await expect(async () => {
+    if (!(await board.isVisible())) await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await expect(board).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
   await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
   await board.evaluate((el) => el.scrollIntoView({ block: "start" }));
   await page.getByTestId("rig-zoom-fit").click();
 }
 const node = (page: Page, id: string) => page.getByTestId("rig-graph").locator(`.pxw-graph-node[data-node-id="${id}"]`);
-async function closeOverlay(page: Page) {
-  if (await page.getByTestId("panel-scrim").isVisible()) await page.getByTestId("close-inspector").click();
-  await expect(page.getByTestId("panel-scrim")).toHaveCount(0);
-}
-async function openInspector(page: Page) {
-  if (!(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click();
-  await expect(page.getByTestId("inspector")).toBeVisible();
-}
+/** Picks a card on the canvas and opens its Card Inspector (the same recovery as showCanvas, step by step). */
 async function pick(page: Page, id: string) {
-  await closeOverlay(page);
-  await page.getByTestId("rig-graph-surface").evaluate((el) => el.scrollIntoView({ block: "start" }));
-  await node(page, id).locator(".pxw-graph-hit").click();
-  await expect(node(page, id)).toHaveAttribute("data-selected", "true");
-  await openInspector(page);
-  return page.locator(`[data-inspector-body="node"][data-node-id="${id}"]`);
+  const body = page.locator(`[data-inspector-body="node"][data-node-id="${id}"]`);
+  await expect(async () => {
+    if (await page.getByTestId("panel-scrim").isVisible()) await page.getByTestId("close-inspector").click({ timeout: 5_000 });
+    await expect(page.getByTestId("panel-scrim")).toHaveCount(0, { timeout: 5_000 });
+    if (!(await page.getByTestId("rig-graph-surface").isVisible())) await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await page.getByTestId("rig-graph-surface").evaluate((el) => el.scrollIntoView({ block: "start" }), undefined, { timeout: 5_000 });
+    await node(page, id).locator(".pxw-graph-hit").click({ timeout: 5_000 });
+    await expect(node(page, id)).toHaveAttribute("data-selected", "true", { timeout: 5_000 });
+    if (!(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click({ timeout: 5_000 });
+    await expect(body).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
+  return body;
 }
 const smallTextIn = (region: Locator) =>
   region.evaluate((root) => {
@@ -129,6 +134,16 @@ test("a card is locked as the master for everyone (free); a tab that never heard
   const errors: string[] = [];
   const first = page;
   const second = await page.context().newPage();
+  /* The second tab stands for a window that never heard of the lock (opened before it, or on the release before this
+     one): its canvas reads name no masters until its own edit to one is held. So a reload of that tab by the
+     development server cannot tell it early. */
+  const hideLocks = { on: true };
+  await second.route(/\/api\/workbench\/team-canvas\?/, async (route) => {
+    if (!hideLocks.on || route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch();
+    const json = await response.json().catch(() => null);
+    return route.fulfill({ response, json: json && typeof json === "object" ? { ...json, locks: [] } : json });
+  });
   for (const tab of [first, second]) {
     await forbidPaidWork(tab);
     tab.on("pageerror", (error) => errors.push(error.message));
@@ -185,6 +200,7 @@ test("a card is locked as the master for everyone (free); a tab that never heard
   await expect(node(second, "lamp")).toHaveAttribute("data-master", "locked");
   await expect(second.locator('[data-inspector-body="node"][data-node-id="lamp"]').getByTestId("card-master")).toHaveAttribute("data-master", "locked");
   expect((await canvas()).canvas!.nodes.lamp.refKind).toBe("element");
+  hideLocks.on = false;
   /* Now it knows: the kind cannot even be pressed. */
   for (const button of await second.locator('[data-inspector-body="node"][data-node-id="lamp"]').getByTestId("card-kind").getByRole("button").all()) await expect(button).toBeDisabled();
   /* Other cards still take its edits. */
@@ -282,6 +298,9 @@ async function openCutout(page: Page) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
+  /* The 640px previews of the mocked stills (and of the cut-out) answer with a real still too. */
+  const previewStill = await readFile("public/campaign/hero.webp");
+  await page.route(/\/api\/workbench\/preview\/(upload|generation)\/[A-Za-z0-9_-]+(\?.*)?$/, (route) => route.fulfill({ body: previewStill, contentType: "image/webp" }));
   const photo = still("photo", "Brass lamp photo", { url: "/api/uploads/up_lamp", uploadId: "up_lamp" });
   const sphere = still("chrome", "Chrome sphere", { url: "/api/uploads/up_sphere", uploadId: "up_sphere" });
   const master = { lockedAt: "2026-09-28T10:00:00.000Z", lockedBy: "Ana", elementId: "el_sphere", versionId: "ver_1", sha256: "b".repeat(64) };
