@@ -6,7 +6,7 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects, upload } from "./
 import { newProject } from "../lib/workbench/studio";
 
 /**
- * Atomik › Memory (Supercomputer's memory, built in Particl), on a local
+ * Atomik › Memory, built in Particl, on a local
  * ENGINE_MOCK=1 server with the real memory routes and a real workspace
  * database: a person adds, edits and forgets what Atomik keeps (forget
  * archives, an edit archives the version it replaces); a paste from another

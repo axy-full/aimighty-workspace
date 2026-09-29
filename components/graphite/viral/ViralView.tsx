@@ -17,6 +17,7 @@ import {
 } from "@/lib/shell/viral";
 import { ago } from "@/lib/workspace/activity";
 import { usePlanRequest } from "@/lib/workspace/atomik-host";
+import { generationRequestBody } from "@/lib/workbench/generation-request";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -112,9 +113,9 @@ function Composer({ scope, page, project, items }: { scope: string; page: ViralP
   const input = useMemo(() => (blocked ? null : genjutsuInput(page, s)), [blocked, page, s]);
   const request = useMemo(() => (input && project && production ? viralRequest(input, { id: project.id, productionProjectId: production }) : null), [input, project, production]);
   const key = JSON.stringify(request);
-  /* The page's Atomik plan runs this very input through its own gate (lib/workspace/plans.ts). */
-  const planInput = useMemo(() => (input ? { resolution: input.resolution, prompt: input.prompt, source: input.source, references: input.references } : undefined), [input]);
-  usePlanRequest(page, planInput);
+  /* The page's Atomik plan prices and sends this very body through its own gate (lib/workspace/plans.ts › motions, swaps). */
+  const planBodies = useMemo(() => (request?.endpoint === "/api/generate" && request.input ? [{ name: VARIANT_NAME[VIRAL_PAGES[page]], body: generationRequestBody(request.input) }] : undefined), [request, page]);
+  usePlanRequest(page, planBodies);
   /* The estimate: read for exactly this request, again when it changes or ages; never while a press is being sent or followed. */
   const quote = take.quote, estimateKey = take.estimate?.key, estimateExpires = take.estimate?.expiresAt ?? 0, runPhase = take.run.phase;
   const busy = runPhase === "submitting" || runPhase === "running";

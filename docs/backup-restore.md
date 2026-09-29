@@ -403,6 +403,20 @@ path. Never rebuild balances from a sum of grants or edit lot balances by hand.
 Credits that expired or changed funding source after the backup need reconciliation
 against the original event and incident interval, not a new paid action.
 
+### Rig canvas operations
+
+Every tenant snapshot includes `rig_canvas_ops`, the append-only record of each
+change the server made to a production's shared Rig canvas (a Tidy, an Atomik
+run's cards): who asked, the run, each card's fields before and after, and
+whether the live room has taken it. The table is created the first time the
+server changes a canvas, so older snapshots simply lack it. Nothing in it is
+paid or priced. A row still marked `pending` after a restore is safe to push
+again: a pushed change lands in the live room only where the room still holds
+what the canvas had before it, and a room with no canvas is started from the
+restored `workbench_team_canvas` by the first window that opens it. Never
+delete rows to "clear" the outbox; a row that cannot be pushed only stays
+pending, and the saved canvas is already correct.
+
 ## Verification evidence
 
 Run the disposable local suite (no remote calls or application env loading):

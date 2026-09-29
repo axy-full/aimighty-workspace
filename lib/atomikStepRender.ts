@@ -107,8 +107,8 @@ type Priced = Pick<Step, "status" | "estCostUsd" | "estCredits" | "billedCredits
  * the ledger billed for a step that ran, the checkpoint's live admission quote
  * when there is one, otherwise the estimate the server converted at the
  * engine's margin. In dollars it is the vendor's dollars the workspace pays.
- * A connected-account step is not in this unit at all; the caller prices it
- * in connected credits.
+ * An older step planned on the connected account is not in this unit at all;
+ * it is read-only and the caller gives it no price (lib/atomikAccountStep.ts).
  */
 export function stepPrice(step: Priced, inCredits: boolean, live: StepQuote | null = null): number | null {
   if (inCredits && step.status === "done" && typeof step.billedCredits === "number") return step.billedCredits;

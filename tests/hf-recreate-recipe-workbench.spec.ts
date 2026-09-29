@@ -410,90 +410,43 @@ test("a take from a tool Gen does not have — an edit, a dub — cannot be recr
   expect(errors).toEqual([]);
 });
 
-test("a member recreates a connected-account take on this workspace's engines, and the card says so", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const connected = generation({
-    id: "gen_account", kind: "video", model: "seedance_2_5", title: "Account take", prompt: "a gull over the breakwater", provider: "higgsfield",
-    params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", duration: 5.04, settings: { aspect_ratio: "9:16", resolution: "720p", duration: 6 } },
-  });
-  const { errors } = await open(page, { member: true, generations: [connected] });
-  const inspector = await inspect(page, "gen_account");
-  await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("a gull over the breakwater");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
-  const model = page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']");
-  await expect(model).toHaveAttribute("data-state", "changed");
-  /* The account's catalogue id is not a name: it is not dressed up as one. */
-  await expect(model).toHaveText("Account model → Seedance 2.5");
-  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model The connected account is the owner’s");
-  /* The settings the account was asked for still carry over where this engine offers them. */
-  await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("gen-length")).toHaveValue("6");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
-  /* Dismissing the card leaves the member's own engine choice where it was. */
-  await page.getByTestId("gen-recipe-dismiss").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
-  expect(await noOverflow(page)).toBe(true);
-  expect(errors).toEqual([]);
-});
-
-test("the owner's Soul take waits for the account's identities, and one no longer there is dropped, never sent", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  const soul = generation({
-    id: "gen_soul", kind: "image", model: "soul_2", title: "Soul portrait", prompt: "a keeper on the pier at first light", provider: "higgsfield",
-    params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "image", settings: { aspect_ratio: "3:4", soul_id: "soul_gone", enhance_prompt: true } },
-  });
-  let release = () => {};
-  const held = new Promise<void>((resolve) => { release = resolve; });
-  const connectedQuotes: { input: { parameters: Record<string, unknown> } }[] = [];
-  const setup = async (page: Page) => {
-    const me = await page.request.get("/api/me").then((r) => r.json());
-    await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-    await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
-    await page.route("**/api/higgsfield/consumer/generation", async (route) => {
-      const body = route.request().postDataJSON() as { action: string; input: { parameters: Record<string, unknown> } };
-      if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: [
-        { id: "soul_2", name: "Soul 2", outputType: "image", aspectRatios: ["1:1", "3:4"], medias: [{ name: "image", roles: ["image_references"], max: 1 }], parameters: [{ name: "soul_id", type: "string" }] },
-      ], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-      if (body.action === "characters") {
-        await held;
-        return route.fulfill({ json: { connected: true, available: true, characters: [{ soulId: "soul_here", name: "Keeper", type: "soul_2", status: "ready", previewUrl: null }] } });
-      }
-      /* A connected price read is refused here: the block under test sits in front of it. */
-      if (body.action === "quote") { connectedQuotes.push(body); return route.fulfill({ status: 409, json: { error: "No connected price in this test." } }); }
-      return route.fulfill({ status: 400, json: { error: "unexpected" } });
+for (const role of ["member", "owner"] as const)
+  test(`${role === "member" ? "a member" : "the owner"} recreates a connected-account take on this workspace's engines, and the card says why`, async ({ page }, info) => {
+    test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+    const connected = generation({
+      id: "gen_account", kind: "video", model: "seedance_2_5", title: "Account take", prompt: "a gull over the breakwater", provider: "higgsfield",
+      params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", duration: 5.04, settings: { aspect_ratio: "9:16", resolution: "720p", duration: 6 } },
     });
-  };
-  const { errors, priced } = await open(page, { generations: [soul], setup });
-  const inspector = await inspect(page, "gen_soul");
-  await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Soul 2");
-  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveAttribute("data-state", "reading");
-  await expect(page.getByTestId("gen-blocked")).toHaveText("Reading the account’s identities…");
-  await expect(page.getByTestId("gen-generate")).toBeDisabled();
-  /* A take enhanced on the account is enhanced there again: Auto follows the take (and Undo puts it back). */
-  await expect(page.getByRole("switch", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
-  release();
-  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveText("Identity → none");
-  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='identity']")).toHaveText("Identity No longer on the account");
-  await expect(page.getByTestId("gen-identity-pick")).toHaveValue("");
-  await expect(page.getByTestId("gen-blocked")).not.toHaveText("Reading the account’s identities…");
-  /* Once the list is read, no price is asked with the identity that is gone. */
-  await expect.poll(() => connectedQuotes.at(-1)?.input.parameters).toBeDefined();
-  expect(connectedQuotes.at(-1)!.input.parameters).not.toHaveProperty("soul_id");
-  /* The owner who moves to Studio engines is told that, not that the account is someone else's. */
-  await page.getByTestId("gen-model").click();
-  const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  await sheet.getByRole("tab", { name: "Studio engines" }).click();
-  await sheet.getByRole("button", { name: "Close" }).click();
-  await expect(sheet).toHaveCount(0);
-  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Account model → /);
-  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Studio engines chosen");
-  await page.getByTestId("gen-recipe-undo").click();
-  await expect(page.getByRole("switch", { name: "Auto" })).toHaveAttribute("aria-checked", "false");
-  expect(priced).toEqual([]);
-  expect(errors).toEqual([]);
-});
+    /* Gen offers no signed-in account's catalogue since 28 September 2026: the owner recreates on Studio engines as well. */
+    const account: string[] = [];
+    const setup = async (page: Page) => {
+      if (role === "owner") {
+        const me = await page.request.get("/api/me").then((r) => r.json());
+        await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
+      }
+      await page.route("**/api/higgsfield/consumer/generation", (route) => { account.push(route.request().method()); return route.fulfill({ status: 409, json: { error: "Gen reaches no signed-in account." } }); });
+    };
+    const { errors } = await open(page, { member: role === "member", generations: [connected], setup });
+    const inspector = await inspect(page, "gen_account");
+    await inspector.getByTestId("inspector-recreate").click();
+    await expect(page.getByTestId("gen-prompt")).toHaveValue("a gull over the breakwater");
+    await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+    const model = page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']");
+    await expect(model).toHaveAttribute("data-state", "changed");
+    /* The account's catalogue id is not a name: it is not dressed up as one. */
+    await expect(model).toHaveText("Account model → Seedance 2.5");
+    await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
+    /* The settings the account was asked for still carry over where this engine offers them. */
+    await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("gen-length")).toHaveValue("6");
+    await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+    /* Dismissing the card leaves the engine choice where it was. */
+    await page.getByTestId("gen-recipe-dismiss").click();
+    await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+    expect(account).toEqual([]);
+    expect(await noOverflow(page)).toBe(true);
+    expect(errors).toEqual([]);
+  });
 
 test("an engine that is gone lands on the nearest size at or below the take's, and says why", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");

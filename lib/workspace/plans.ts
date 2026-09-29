@@ -43,8 +43,7 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
-import { GENJUTSU_LABELS, GENJUTSU_MODELS, isGenjutsuModel } from "../genjutsuTypes";
-import { genjutsuBody, mediaIdentity, type MediaIdentity } from "../genjutsuRequest";
+import { isGenjutsuModel } from "../genjutsuTypes";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -266,148 +265,35 @@ const audioDispatch: DispatchExecutor = {
   },
 };
 
-/* ---------------------------------------- connected account (Motion, Swap, Generate) */
+/* ---------------------------------------- stored results (Compare) */
 
+/**
+ * A result kept on the project from the connected account, read back from
+ * Particl's own record of it (GET, never the account). Atomik no longer
+ * quotes, submits or polls anything on a signed-in account: Motion Transfer
+ * and Object Swap run on the API-key transform engines through
+ * /api/generate, and what has no API-key or direct engine is not offered.
+ */
 type ConsumerJob = {
   id: string;
   status: string;
-  quoteCredits: number | null;
-  quoteExpiresAt: number | null;
-  workspaceId: string | null;
-  workspaceName?: string | null;
   input?: Record<string, unknown>;
   result?: { original?: { asset?: { url?: string } } } | null;
   originalAvailable?: boolean;
 };
 
-function connectedGate(
-  route: string,
-  input: (ctx: PlanContext) => Record<string, unknown> | null,
-  line: (input: Record<string, unknown>, job: ConsumerJob) => string,
-): GateExecutor {
-  return {
-    type: "gate",
-    backend: { method: "POST", path: `${route} {action:"quote"}` },
-    inputKey: (ctx) => stableKey(input(ctx)),
-    quote: async (ctx) => {
-      const value = input(ctx);
-      if (!value || !ctx.projectId) throw new Error("Nothing to price. Nothing was dispatched.");
-      const { job } = await call<{ job: ConsumerJob }>(ctx, route, {
-        body: { action: "quote", draftId: ctx.projectId, input: value, idempotencyKey: newId(ctx) },
-      });
-      if (job.status !== "quoted" || job.quoteCredits == null || !job.workspaceId)
-        throw new Error("The connected account did not return a price. Nothing was dispatched.");
-      return {
-        unit: "connected",
-        parts: [
-          {
-            credits: job.quoteCredits,
-            fingerprint: job.id,
-            quoteId: job.id,
-            body: { draftId: ctx.projectId, id: job.id },
-            meta: { workspaceId: job.workspaceId, workspaceName: job.workspaceName ?? null },
-          },
-        ],
-        expiresAt: job.quoteExpiresAt,
-        line: line(value, job),
-      };
-    },
-  };
-}
-
-/** Submit exactly the approved wallet and credits; the route refuses anything else (approval_changed). */
-function connectedDispatch(route: string, noun: string): DispatchExecutor {
-  return {
-    type: "dispatch",
-    backend: { method: "POST", path: `${route} {action:"submit"}` },
-    dispatch: async (ctx, _io, approved) => {
-      const [part] = approved.parts;
-      const { job } = await call<{ job: ConsumerJob }>(ctx, route, {
-        body: {
-          action: "submit",
-          draftId: part.body.draftId,
-          id: part.quoteId,
-          workspaceId: part.meta?.workspaceId,
-          credits: part.credits,
-        },
-      });
-      if (job.status === "failed") throw new Error(`The ${noun} was refused. Failed jobs are not billed.`);
-      return { detail: job.status, io: { job } };
-    },
-  };
-}
-
-const connectedStatus = (route: string): CallExecutor =>
-  run({ method: "POST", path: `${route} {action:"status"}` }, async (ctx, io) => {
-    const job = io.job as ConsumerJob | undefined;
-    if (!job || !ctx.projectId) return { detail: "No job to follow" };
-    const { job: next } = await call<{ job: ConsumerJob }>(ctx, route, {
-      body: { action: "status", draftId: ctx.projectId, id: job.id },
-    });
-    return { detail: next.status, io: { job: next } };
-  });
-
-const refsOf = (input: Record<string, unknown>) => count(input.references);
-
 /* -------------------------------------------------------------- the registry */
 
+/** Compare reads the results kept on the project (a list, never the account). */
 const GENJUTSU = "/api/higgsfield/consumer/genjutsu";
-const CONNECTED_GENERATION = "/api/higgsfield/consumer/generation";
-const SHORTS = "/api/higgsfield/consumer/shorts";
 
 const boards = (ctx: PlanContext) => bodies(ctx.request?.boards);
 const shots = (ctx: PlanContext) => bodies(ctx.request?.shots);
 const variants = (ctx: PlanContext) => bodies(ctx.request?.variants);
 
-const genjutsuInput =
-  (key: "motion" | "swap", variant: "motion-transfer" | "object-swap") =>
-  (ctx: PlanContext): Record<string, unknown> | null => {
-    const value = ctx.request?.[key];
-    return value && typeof value === "object" ? { ...value, variant } : null;
-  };
-const motionInput = genjutsuInput("motion", "motion-transfer");
-const swapInput = genjutsuInput("swap", "object-swap");
-/**
- * Viral on Particl's API key: the composer's own input (published as `motion`
- * or `swap` — the source, the ordered stills, the resolution, the direction)
- * as the one body the key route takes (lib/genjutsuRequest.ts), filed to the
- * open project. The gate prices it with POST /api/generate/quote and the
- * dispatch sends it once at that ceiling, as the composer's own button does.
- */
-const genjutsuBodies =
-  (key: "motion" | "swap", variant: "motion-transfer" | "object-swap") =>
-  (ctx: PlanContext): NamedBody[] => {
-    const value = ctx.request?.[key];
-    if (!value || typeof value !== "object" || !ctx.projectId || !ctx.productionId) return [];
-    const input = value as Record<string, unknown>;
-    const source = mediaIdentity(input.source);
-    const references = Array.isArray(input.references) ? input.references.map(mediaIdentity) : [];
-    if (!source || !references.length || references.some((reference) => !reference) || typeof input.resolution !== "string") return [];
-    return [{
-      name: GENJUTSU_LABELS[variant],
-      body: genjutsuBody({
-        model: GENJUTSU_MODELS[variant], prompt: typeof input.prompt === "string" ? input.prompt.trim() : "", resolution: input.resolution,
-        source, references: references as MediaIdentity[], projectId: ctx.productionId, workbenchProjectId: ctx.projectId,
-      }),
-    }];
-  };
-const motionBodies = genjutsuBodies("motion", "motion-transfer");
-const swapBodies = genjutsuBodies("swap", "object-swap");
-/** The gate's line: what is priced, and that the figure is the live estimate. */
-const transformLine = (input: Record<string, unknown> | null) =>
-  `${String(input?.resolution ?? "")}${input?.resolution ? ", " : ""}${plural(refsOf(input ?? {}), "ordered reference")}. An estimate from the live price; nothing is sent until you approve it.`;
-/** The Shorts page's current input, supplied through the page-request seam. */
-const shortsInput = (ctx: PlanContext): Record<string, unknown> | null => {
-  const value = ctx.request?.shorts;
-  return value && typeof value === "object" ? { ...value } : null;
-};
-const generationInput = (ctx: PlanContext): Record<string, unknown> | null => {
-  const value = ctx.request?.generation;
-  return value && typeof value === "object" ? { ...value } : null;
-};
-
-const hasSource = (input: Record<string, unknown> | null) =>
-  !!input && !!input.source && typeof input.source === "object";
+/* Motion Transfer and Object Swap: the page's /api/generate bodies for the API-key transform engines. */
+const motions = (ctx: PlanContext) => bodies(ctx.request?.motion);
+const swaps = (ctx: PlanContext) => bodies(ctx.request?.swap);
 
 type DevelopmentQuote = {
   estimateCredits: number;
@@ -962,34 +848,14 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
   }),
 
   generate: plan("generate", {
-    title: "Generate on the connected account",
-    line: "Checks the request against the model's declared limits, takes a live quote and submits once. Billed in the connected account's credits.",
-    priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Generation ${String((io.job as ConsumerJob | undefined)?.status ?? "submitted")}`,
-    runnable: (ctx) => {
-      const project = needProject(ctx);
-      if (!project.ok) return project;
-      const input = generationInput(ctx);
-      return input && typeof input.model === "string" ? OK : notYet("choose a workflow and model on Generate first.");
-    },
-    steps: [
-      step(
-        "Read the request",
-        "read",
-        (ctx) => String(generationInput(ctx)?.type ?? ""),
-        local("request.generation", (ctx) => ({ detail: plural(count(generationInput(ctx)?.medias), "reference") })),
-      ),
-      step(
-        "Approval gate",
-        "gate",
-        "live quote",
-        connectedGate(CONNECTED_GENERATION, generationInput, (input, job) =>
-          `${plural(count(input.medias), "reference")}. Originals are copied to the connected account at quote time; charged to its selected wallet${job.workspaceName ? ` (${job.workspaceName})` : ""}.`,
-        ),
-      ),
-      step("Submit", "dispatch", "once", connectedDispatch(CONNECTED_GENERATION, "generation")),
-      step("Follow the job", "file", "→ Generate", connectedStatus(CONNECTED_GENERATION)),
-    ],
+    title: "Generate one take",
+    line: "Single generations run in Gen, on Particl's own engines, each priced before it runs.",
+    priceLabel: "Not runnable yet",
+    doneLine: () => "Generated",
+    missingBackend:
+      "Atomik no longer generates on a signed-in account (API-key and direct engines only). One-off generations are Gen's: its composer quotes and runs Particl's own engines through /api/generate.",
+    runnable: () => notYet("single generations run in Gen, on Particl's own engines."),
+    steps: [step("Generate", "dispatch", "", missing("single generations run in Gen"))],
   }),
 
   recipes: plan("recipes", {
@@ -1212,93 +1078,69 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   motion: plan("motion", {
     title: "Recast the motion",
-    line: "Resolves your originals, keeps the reference order and prices the transform before anything is sent.",
+    line: "Takes the page's transform request, prices it live on the API-key engine and renders it once you approve.",
     priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Motion transfer ${String((io.admitted as Admitted[] | undefined)?.[0]?.status ?? "submitted")}`,
+    doneLine: (_ctx, io) => `${plural(count(io.admitted), "transfer")} sent`,
     runnable: (ctx) => {
       const project = needProject(ctx);
       if (!project.ok) return project;
-      if (!ctx.productionId) return notYet("save this project first.");
-      return motionBodies(ctx).length ? OK : notYet("choose a source video and a reference on Motion Transfer first.");
+      return motions(ctx).length ? OK : notYet("choose a source video on Motion Transfer first.");
     },
     steps: [
       step(
-        "Resolve originals",
+        "Read the transform",
         "read",
-        "yours",
-        local("request.motion", (ctx) => ({ detail: plural(refsOf(motionInput(ctx) ?? {}), "reference") })),
-      ),
-      step(
-        "Preserve reference order",
-        "compute",
-        (ctx) => plural(refsOf(motionInput(ctx) ?? {}), "reference"),
-        local("reference order", (ctx) => ({ detail: "order kept", io: { order: count(motionInput(ctx)?.references) } })),
-      ),
-      step("Approval gate", "gate", "live quote", generationGate(motionBodies, (_parts, ctx) => transformLine(motionInput(ctx)))),
-      step("Submit", "dispatch", (ctx) => String(motionInput(ctx)?.resolution ?? ""), generationDispatch("ws-motion", "motion transfer")),
-      step("Follow the take", "file", "→ Motion Transfer", fileJobs("motion transfer")),
-    ],
-  }),
-
-  swap: plan("swap", {
-    title: "Swap the product",
-    line: "Names the element to replace, orders the replacement references and prices the transform before anything is sent.",
-    priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Object swap ${String((io.admitted as Admitted[] | undefined)?.[0]?.status ?? "submitted")}`,
-    runnable: (ctx) => {
-      const project = needProject(ctx);
-      if (!project.ok) return project;
-      if (!ctx.productionId) return notYet("save this project first.");
-      return swapBodies(ctx).length ? OK : notYet("choose a source video and a reference on Object Swap first.");
-    },
-    steps: [
-      step(
-        "Resolve originals",
-        "read",
-        "yours",
-        local("request.swap", (ctx) => ({ detail: plural(refsOf(swapInput(ctx) ?? {}), "reference") })),
-      ),
-      step(
-        "Order references",
-        "compute",
-        (ctx) => plural(refsOf(swapInput(ctx) ?? {}), "reference"),
-        local("reference order", (ctx) => ({ detail: "order kept", io: { order: count(swapInput(ctx)?.references) } })),
-      ),
-      step("Approval gate", "gate", "live quote", generationGate(swapBodies, (_parts, ctx) => transformLine(swapInput(ctx)))),
-      step("Submit", "dispatch", (ctx) => String(swapInput(ctx)?.resolution ?? ""), generationDispatch("ws-swap", "object swap")),
-      step("Follow the take", "file", "→ Object Swap", fileJobs("object swap")),
-    ],
-  }),
-
-  shorts: plan("shorts", {
-    title: "Make a set of shorts",
-    line: "Restyles one project video into short clips, quotes the whole set live, and files every collected clip.",
-    priceLabel: "Quote at gate",
-    doneLine: (_ctx, io) => `Shorts ${String((io.job as ConsumerJob | undefined)?.status ?? "submitted")}`,
-    runnable: (ctx) => {
-      const project = needProject(ctx);
-      if (!project.ok) return project;
-      const input = shortsInput(ctx);
-      return hasSource(input) && !!input?.preset ? OK : notYet("Needs Shorts data: choose a source video and a style on Shorts first.");
-    },
-    steps: [
-      step(
-        "Resolve the source",
-        "read",
-        "yours",
-        local("request.shorts", (ctx) => ({ detail: String(shortsInput(ctx)?.aspectRatio ?? "") })),
+        (ctx) => plural(motions(ctx).length, "transfer"),
+        local("request.motion", (ctx) => ({ detail: plural(motions(ctx).length, "transfer") })),
       ),
       step(
         "Approval gate",
         "gate",
         "live quote",
-        connectedGate(SHORTS, shortsInput, (input, job) =>
-          `${String(input.aspectRatio ?? "")}${input.aspectRatio ? ", " : ""}one price for the whole set of clips. The source is copied to the connected account at quote time; charged to its selected wallet${job.workspaceName ? ` (${job.workspaceName})` : ""}.`,
-        ),
+        generationGate(motions, (parts) => partsLine(parts, "transfer", "Your originals are sent in the order you set.")),
       ),
-      step("Submit", "dispatch", (ctx) => String(shortsInput(ctx)?.aspectRatio ?? ""), connectedDispatch(SHORTS, "set of shorts")),
-      step("Follow the session", "file", "→ Shorts", connectedStatus(SHORTS)),
+      step("Render", "dispatch", (ctx) => plural(motions(ctx).length, "transfer"), generationDispatch("ws-motion", "transfer")),
+      step("File the result", "file", "→ Motion Transfer", fileJobs("transfer")),
     ],
+  }),
+
+  swap: plan("swap", {
+    title: "Swap the product",
+    line: "Takes the page's swap request, prices it live on the API-key engine and renders it once you approve.",
+    priceLabel: "Quote at gate",
+    doneLine: (_ctx, io) => `${plural(count(io.admitted), "swap")} sent`,
+    runnable: (ctx) => {
+      const project = needProject(ctx);
+      if (!project.ok) return project;
+      return swaps(ctx).length ? OK : notYet("choose a source video on Object Swap first.");
+    },
+    steps: [
+      step(
+        "Read the swap",
+        "read",
+        (ctx) => plural(swaps(ctx).length, "swap"),
+        local("request.swap", (ctx) => ({ detail: plural(swaps(ctx).length, "swap") })),
+      ),
+      step(
+        "Approval gate",
+        "gate",
+        "live quote",
+        generationGate(swaps, (parts) => partsLine(parts, "swap", "The replacement references are sent in the order you set.")),
+      ),
+      step("Render", "dispatch", (ctx) => plural(swaps(ctx).length, "swap"), generationDispatch("ws-swap", "swap")),
+      step("File the result", "file", "→ Object Swap", fileJobs("swap")),
+    ],
+  }),
+
+  shorts: plan("shorts", {
+    title: "Make a set of shorts",
+    line: "Restyling one video into a set of short clips ran only on a signed-in account.",
+    priceLabel: "Not runnable yet",
+    doneLine: () => "Shorts made",
+    missingBackend:
+      "An API-key or direct engine that restyles one video into a set of short clips. Atomik no longer uses a signed-in account, and none of Particl's engines does this today.",
+    runnable: () => notYet("no API-key engine makes a set of shorts."),
+    steps: [step("Make the shorts", "dispatch", "", missing("no API-key engine makes a set of shorts"))],
   }),
 
   sources: plan("sources", {
@@ -1307,7 +1149,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
     priceLabel: "Not runnable yet",
     doneLine: () => "Sources verified",
     missingBackend:
-      "An endpoint that re-reads each stored original, recomputes its SHA-256 and measures duration and dimensions against the stored receipt and the model limits (e.g. POST /api/higgsfield/consumer/genjutsu {action:\"verify\"}). Hashes are only computed once, when an original is collected.",
+      "An endpoint that re-reads each stored original, recomputes its SHA-256 and measures duration and dimensions against the stored receipt and the model limits. Hashes are only computed once, when an original is collected.",
     runnable: () => notYet("nothing re-hashes stored originals on request."),
     steps: [
       step("Re-hash originals", "read", "", missing("source verification has no backend")),

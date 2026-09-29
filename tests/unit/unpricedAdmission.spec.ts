@@ -321,12 +321,9 @@ test("connected-account work never enters generation admission, so the refusal c
     }
     return null;
   };
-  /* Every connected-account entry point: the consumer routes and Atomik's connected step. */
+  /* Every connected-account entry point: the consumer routes (Atomik's connected step route is gone since 28 September 2026). */
   const consumer = path.join(root, "app/api/higgsfield/consumer");
-  const entries = [
-    ...readdirSync(consumer, { recursive: true }).map(String).filter((file) => file.endsWith("route.ts")).map((file) => path.join(consumer, file)),
-    path.join(root, "app/api/atomik/steps/[id]/connected/route.ts"),
-  ];
+  const entries = readdirSync(consumer, { recursive: true }).map(String).filter((file) => file.endsWith("route.ts")).map((file) => path.join(consumer, file));
   expect(entries.length).toBeGreaterThan(5);
   const reached = new Set<string>();
   const pending = [...entries];
@@ -340,7 +337,8 @@ test("connected-account work never enters generation admission, so the refusal c
     }
   }
   const files = [...reached].map((file) => path.relative(root, file));
-  expect(files).toContain("lib/jobs.ts"); // the walk does reach deep into lib
+  expect(files).toContain("lib/db.ts"); // the walk does reach deep into lib
+  expect(files).toContain("lib/storage.ts");
   expect(files).not.toContain("lib/generationAdmission.ts");
 });
 

@@ -11,6 +11,7 @@ import {publishedContext} from './published-context';
 import {referencedMedia} from '@/lib/mediaBindings';
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
+import {scheduleCanvasPush} from './canvas-push';
 
 const initialized = new WeakMap<Client, Promise<void>>();
 export async function workbenchReady() {
@@ -169,9 +170,14 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
       await tx.execute({sql:'DELETE FROM workbench_draft_writes WHERE owner=? AND draft_id=? AND updated_at<?',args:[owner,project.id,now()-WRITES_KEPT_MS]});
     }
     /* The production's shared Rig canvas follows every save of the draft's nodes, from whichever
-       editor made it — only what this save changed, field by field, so a teammate's edit stands. */
+       editor made it — only what this save changed, field by field, so a teammate's edit stands.
+       What the save no longer shows it only implies taking off: a card the server made stays
+       (it may have been lost to a stale view), and the live room is told to keep it too. */
     const shared=current&&!gone?diffForTeam(current.project,body,0):null;
-    if(shared)await applyTeamCanvasPatch(tx,pid,shared,owner,true).catch((error)=>{if(!(error instanceof TeamCanvasError))throw error;});
+    if(shared){
+      const applied=await applyTeamCanvasPatch(tx,pid,shared,owner,true,{implied:true}).catch((error)=>{if(!(error instanceof TeamCanvasError))throw error;return null;});
+      if(applied?.held.length)scheduleCanvasPush(pid);
+    }
     return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
   });
 }
