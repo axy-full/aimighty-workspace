@@ -68,10 +68,6 @@ function Shell() {
           <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a glass tab bar, stage sheets that pull up over the work. Every tap target is at least 44 px.</p>
           <Chips items={["Home", "Workflow", "Canvas", "Takes", "Edit", "≥ 44 px targets"]} />
         </div>
-        <div className="mk-phone">
-          {/* eslint-disable-next-line @next/next/no-img-element -- a static capture */}
-          <img src={shot("phone-home")} alt="particl studio on a phone, Home" width={392} height={512} loading="lazy" decoding="async" />
-        </div>
       </Cols>
     </Section>
   );

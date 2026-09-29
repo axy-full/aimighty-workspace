@@ -25,6 +25,9 @@ export type StillRenderRequest = {
   soulReferenceId?: string;
   soulCredentialFingerprint?: string;
   soulStrength?: number;
+  /** Soul Standard / Soul 2 / Soul Cinema: stills per request (1 or 4), and the live estimate admission quoted for it. */
+  soulBatch?: number;
+  soulVendorCostUsd?: number;
   kind: "image"; genId: string; model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 };
 export type AudioRenderRequest = {
@@ -46,6 +49,8 @@ export type PollResult = {
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   videoUrl: string | null; totalTokens: number | null; error: string | null;
   imageUrl?: string | null;
+  /** Every still a finished batch request delivered (Soul renders make 1 or 4), the first being `imageUrl`. */
+  imageUrls?: string[] | null;
   vendorStartedAt: number | null; vendorEndedAt: number | null; raw: unknown;
   /** The vendor's own charge for a finished job, when it states one (xAI); checked against the quote before it is billed. */
   costUsd?: number | null;

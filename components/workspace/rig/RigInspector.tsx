@@ -9,6 +9,7 @@ import { shotInputs, shotPreviewAsset, shotVersions, stepDuration } from "@/lib/
 import { shotNotesOnly, type RigShot } from "@/lib/workspace/shots";
 import { useShotEstimate } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
@@ -116,7 +117,9 @@ function ShotInspector({ shot }: { shot: RigShot }) {
      confirms it within seconds. */
   const [discarded, setDiscarded] = useState<ReadonlySet<string>>(() => new Set());
   const jobs = useMemo(() => discarded.size
-    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined } : job)
+    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined,
+        failure: { provider: null, stage: null, code: "cancelled", kind: "canceled", message: null, billing: null, payer: null,
+          charge: { credits: 0, settled: true } } satisfies TakeFailure } : job)
     : rig.jobs, [rig.jobs, discarded]);
   const versions = useMemo(() => shotVersions(project, shot.id, jobs), [project, shot.id, jobs]);
   const tab = state.inspTab;

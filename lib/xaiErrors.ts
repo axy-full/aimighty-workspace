@@ -6,9 +6,9 @@
  * (lib/preflight.ts). Shared by Grok Imagine Video and Grok Voice.
  */
 
-/** A reply xAI actually sent: its status says whether the request was refused or its fate is unknown. */
+/** A reply xAI actually sent: its status says whether the request was refused or its fate is unknown. `body` is a bounded copy of it. */
 export class XaiHttpError extends Error {
-  constructor(public readonly status: number, message: string) { super(message); this.name = "XaiHttpError"; }
+  constructor(public readonly status: number, message: string, public readonly body: string | null = null) { super(message); this.name = "XaiHttpError"; }
 }
 
 /** A definite refusal of the request itself: nothing was accepted, so nothing is charged. */

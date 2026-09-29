@@ -2,6 +2,8 @@
 
 Verified from official public documentation and unauthenticated discovery on 17–18 September 2026. Public repository research performed no authorization grant, app registration, or paid operation; the later owner-approved live connection is recorded below. Documented support does not prove that a particular account has access.
 
+> **Retired 28 September 2026.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Of the three surfaces below only Cloud Marketing Studio Image, on the API key, stays. The consumer CLI and MCP, and the connected account's Marketing Video, DTC ads, templates and setup lists, are retired. Everything from "Consumer workflow contracts" on is kept as the record of what was verified and built.
+
 ## Three distinct Higgsfield surfaces
 
 | Surface | Connection | What Moleculr can claim |
