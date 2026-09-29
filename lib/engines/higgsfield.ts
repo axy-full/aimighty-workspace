@@ -15,7 +15,7 @@ import {
   higgsfieldCredentialFingerprint,
 } from "../higgsfield";
 
-import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, MARKETING_PATH } from "../higgsfieldMarketing";
+import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, marketingPath, higgsfieldBalanceRefusal } from "../higgsfieldMarketing";
 import { isSoulRenderModel, soulVersionOf, SOUL_RENDER_BATCHES } from "../soulRenderTypes";
 import { estimateSoulRender, soulRenderInput, soulRenderPreflightError, SOUL_RENDER_PATHS } from "../soulRender";
 
@@ -75,6 +75,9 @@ async function call(url: string, method: "POST" | "GET", body?: unknown): Promis
     // A bounded copy of the provider's own reason (its FastAPI detail[] or
     // concurrency message) travels with the error; the rest is cancelled.
     const body = await boundedBody(response);
+    // 403 is the provider's documented "insufficient credits": the request was not accepted.
+    if (method === "POST" && response.status === 403)
+      throw new HiggsfieldHttpError(403, `${higgsfieldBalanceRefusal("higgsfield-submission").message} The request was not accepted.`, body);
     throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`, body);
   }
   const data: unknown = await marketingJson(response);
@@ -152,13 +155,17 @@ export const higgsfield: EngineAdapter = {
     const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
     sameCredentials(fingerprint);
     let input: Record<string, unknown>;
+    let path = "";
     if (marketing) {
       // This is a read-only check before the sole paid POST. An unavailable or
-      // changed live price proves that this worker has submitted nothing.
+      // changed price (the live estimate, or a 2.5 build's approximate quote)
+      // proves that this worker has submitted nothing.
       try {
-        input = marketingInput(req.prompt, req.ratio, req.size, marketingSettings(req.marketing), await marketingReferenceUrls(req.references));
-        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>);
+        const settings = marketingSettings(req.marketing);
+        input = marketingInput(req.prompt, req.ratio, req.size, settings, await marketingReferenceUrls(req.references));
+        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>, settings.variant ?? "alpha");
         if (!(req.higgsfieldVendorCostUsd! > 0) || fresh !== req.higgsfieldVendorCostUsd) throw new Error("changed quote");
+        path = marketingPath(settings);
       } catch { throw marketingPreflightError(); }
     } else if (soulVersion) {
       // Soul Standard / Soul 2 / Soul Cinema: the same body priced again, read-only,
@@ -181,7 +188,7 @@ export const higgsfield: EngineAdapter = {
       provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield", soulVersion ? `b${req.soulBatch ?? 1}` : undefined), credentialFingerprint: fingerprint,
     } };
     // Exactly one POST. Ambiguous failures retain the durable paid claim.
-    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : soulVersion ? `${API_ORIGIN}/${SOUL_RENDER_PATHS[soulVersion]}` : ENDPOINT, "POST", input);
+    const result = await call(marketing ? `${API_ORIGIN}/${path}` : soulVersion ? `${API_ORIGIN}/${SOUL_RENDER_PATHS[soulVersion]}` : ENDPOINT, "POST", input);
     const ref = typeof result.request_id === "string" ? result.request_id : "";
     if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
     // Persist an accepted UUID even if its status URL is malformed. Poll validates

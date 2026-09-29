@@ -17,7 +17,7 @@ import { referenceVideoModels } from "@/lib/workbench/reference-ad";
 import { displayModelName, type ModelDef } from "@/lib/models";
 import { CINEMA_STUDIO_CONTROLS, cleanCinemaControls, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { NumberDraftInput } from "./NumberDraftInput";
-import type { MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
+import { MARKETING_BUILDS, marketingQualities, marketingQualityFor, type MarketingBuild, type MarketingQuality, type MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
   pendingGenerationKey,
   readPendingGeneration,
@@ -40,7 +40,7 @@ type Model = {
   soulIdentity?: boolean;
   marketing?: boolean;
 };
-export type MarketingGenerationOptions = { quality: "low" | "medium" | "high"; enhancePrompt: boolean; presetId?: string };
+export type MarketingGenerationOptions = { variant?: MarketingBuild; quality: MarketingQuality; enhancePrompt: boolean; presetId?: string };
 export type GenerationTarget = {
   options?: MoleculrGenerationOptions;
   node: CanvasNode;
@@ -281,12 +281,12 @@ function TakeDialog({
           return { ...identity, role: "reference_image" };
         });
         if (references.some(ref => !ref)) { setQuote(null); setError("Upload the product and cast images to this project before requesting a quote."); return; }
-        void studioRequest<{ estimatedCredits: number; fingerprint: string }>("/api/generate/quote", {
+        void studioRequest<{ estimatedCredits: number; fingerprint: string; approximate?: boolean }>("/api/generate/quote", {
           method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({ model: modelId, prompt, ratio, resolution, refine: false, marketing, references, projectId: mapped!.productionProjectId, shotId: mapped!.shotId }),
         }).then(value => {
           if (!Number.isFinite(value.estimatedCredits) || value.estimatedCredits < 0 || !value.fingerprint) throw new Error("The connected account did not return a valid price. Please refresh the quote.");
-          if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.estimatedCredits, fingerprint: value.fingerprint }); }
+          if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.estimatedCredits, fingerprint: value.fingerprint, approximate: value.approximate === true }); }
         }).catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
       } else void studioRequest<{ credits: number | null; approximate?: boolean }>(
         "/api/workbench/engines?" + new URLSearchParams({ model: modelId, resolution, ratio, duration: String(duration),
@@ -469,10 +469,17 @@ function TakeDialog({
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
           {kind !== "audio" && model?.marketing && <div className="generation-options">
-            <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || marketing.enhancePrompt} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingGenerationOptions['quality'] })}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+            <label className="field-label">Build<select aria-label="Marketing Studio build" value={marketing.variant ?? "alpha"} disabled={busy || !!pending} onChange={event => {
+              const variant = event.target.value as MarketingBuild;
+              setMarketing({ ...(variant === "alpha" ? {} : { variant }), quality: marketingQualityFor({ ...marketing, variant }),
+                enhancePrompt: marketing.enhancePrompt, ...(marketing.presetId ? { presetId: marketing.presetId } : {}) });
+            }}>
+              {MARKETING_BUILDS.map(build => <option key={build.id} value={build.id}>{build.label}</option>)}
             </select></label>
-            <p className="muted small-copy">{marketing.enhancePrompt ? "Preset enhancement · product first, optional cast second · high quality" : "Marketing Studio · direct creative direction"}. Price is checked live before rendering.</p>
+            <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
+              {marketingQualities(marketing.variant).map(quality => <option key={quality.id} value={quality.id}>{quality.label}</option>)}
+            </select></label>
+            <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Marketing Studio · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
           </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">
