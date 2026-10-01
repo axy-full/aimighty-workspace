@@ -127,9 +127,12 @@ const actionSchema = z.discriminatedUnion("action", [
 /**
  * A server action on the canvas. None of these requests charges anything itself.
  *
- *  - `tidy` lays the whole board out (columns by input depth, rows in canvas
- *    order; locked cards stay where they are) for everyone at once. `opId`
- *    names the press, so a retry of the same press changes nothing twice. Free.
+ *  - `tidy` lays the whole board out by sections (lib/workspace/rig-board.ts:
+ *    a block of columns per section under its title, rows in canvas order;
+ *    locked cards stay where they are) for everyone at once, making any kind's
+ *    section title the board lacks. `opId` names the press, so a retry of the
+ *    same press changes nothing twice. `moved`: cards it moved; `sections`:
+ *    section titles it made. Free.
  *  - `agent.*` is Atomik on the board (lib/workbench/rig-agent.ts): ask for a
  *    board with the limit approved for the run (Atomik proposes the cards and
  *    wires; its planning is metered into that limit), approve the proposal as
@@ -151,8 +154,8 @@ export const POST = withTenant(async (req: Request) => {
     if (action.action === "tidy") {
       await requireProduction(action.productionId);
       const result = await applyCanvasOps(action.productionId, { opId: `tidy:${userId}:${action.opId}`, ops: [{ kind: "tidy" }], author: userId, what: "tidy" });
-      const moved = result.outcomes.flatMap((o) => o.nodeIds).length;
-      return Response.json({ revision: result.revision, moved, live: result.live, credits: 0 }, { headers: NO_STORE });
+      const count = (kind: string) => result.outcomes.filter((o) => o.kind === kind).flatMap((o) => o.nodeIds).length;
+      return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
     }
     const { productionId } = action;
     const run =

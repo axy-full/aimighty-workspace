@@ -56,10 +56,12 @@ export function refKindChosen(node: Pick<CanvasNode, "type" | "refKind">): boole
   return isReferenceNode(node) && isRefKind(node.refKind);
 }
 
-/** The word a card is shown under: its kind for a reference, its node type's label for anything else. */
-export function cardLabel(node: Pick<CanvasNode, "type" | "refKind" | "assetId" | "elementId">, project: Assets): string {
+/** The word a card is shown under: its kind for a reference, "Section" for a section title on the board, its node type's label for anything else. */
+export function cardLabel(node: Pick<CanvasNode, "type" | "refKind" | "assetId" | "elementId" | "mode">, project: Assets): string {
   const kind = refKindOf(node, project);
-  return kind ? REF_KIND_LABELS[kind] : nodeDef(node.type).label;
+  if (kind) return REF_KIND_LABELS[kind];
+  /* lib/workspace/rig-graph.ts isSectionNode, read here without importing the board's layout into every card reader. */
+  return node.type === "note" && node.mode === "section" ? "Section" : nodeDef(node.type).label;
 }
 
 function assetOf(project: Assets, id: string): Asset | undefined {

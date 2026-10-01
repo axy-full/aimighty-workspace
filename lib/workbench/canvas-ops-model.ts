@@ -1,9 +1,10 @@
 import { sameJson } from "./merge";
-import { arrangeGraph, canConnect } from "./node-graph";
+import { canConnect } from "./node-graph";
 import { PROJECT_LIMITS } from "./project-limits";
 import type { Asset, CanvasNode } from "./studio";
 import { isAgentAuthor, isLockedMaster, orderedIds, type MasterHold, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
 import { graphLayout } from "../workspace/rig-graph";
+import { tidyBoard } from "../workspace/rig-board";
 
 /*
  * Server-made changes to a production's team canvas, as intents: create a
@@ -241,17 +242,35 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
       const changed = touch(op.nodeId, next as unknown as CanvasNode, keys);
       outcomes.push({ kind: op.kind, nodeIds: changed ? [op.nodeId] : [] });
     } else {
-      /* The board laid out by the graph (lib/workbench/node-graph arrangeGraph): columns by input depth, rows in canvas
-         order. Locked cards keep their place, and so does every card this writer may not move: the rest flow around them. */
+      /* The board by sections (lib/workspace/rig-board.ts tidyBoard): a block of columns per section under its title —
+         Cast, Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review and output, and each section a
+         person made — rows in canvas order, on the 20 px grid. A person's Tidy makes a kind's missing title (never one
+         a person took off the board). An Atomik run's tidy lays out its own cards the same way but makes no title: its
+         build is the proposal the person approved, card for card, and its undo takes off just that. Locked cards keep
+         their place, and so does every card this writer may not move: the rest flow around them. */
       const scope = op.nodeIds ? new Set(op.nodeIds) : null;
       const live = order.filter((id) => nodes.has(id)).map((id) => nodes.get(id)!);
       const movable = (n: CanvasNode) => !n.locked && (!scope || scope.has(n.id)) && mine(n.id);
-      const arranged = arrangeGraph(live.map((n) => (movable(n) ? n : { ...n, locked: true })));
-      const moved: string[] = [];
-      for (const spot of arranged) {
-        const node = nodes.get(spot.id)!;
-        if (movable(node) && touch(spot.id, { ...node, x: clamp(spot.x), y: clamp(spot.y) }, ["x", "y"])) moved.push(spot.id);
+      const canMake = (id: string) => !agent && !canvas.removed[id] && !taken.has(id);
+      const board = tidyBoard(live, { assets: [...Object.values(canvas.assets), ...assets.values()] }, { movable, canMake });
+      const titles: string[] = [];
+      /* Within the canvas's card limit: a title that does not fit is simply not made (its section keeps its place). */
+      for (const title of board.made.slice(0, Math.max(0, PROJECT_LIMITS.nodes - nodes.size))) {
+        nodes.set(title.id, title);
+        made.add(title.id);
+        order.push(title.id);
+        titles.push(title.id);
+        last.focus = title.id;
       }
+      const moved: string[] = [];
+      for (const spot of board.spots) {
+        const node = nodes.get(spot.id)!;
+        const keys = spot.width === undefined ? ["x", "y"] : ["x", "y", "width"];
+        const next = { ...node, x: clamp(spot.x), y: clamp(spot.y), ...(spot.width === undefined ? {} : { width: spot.width }) };
+        if (touch(spot.id, next, keys)) moved.push(spot.id);
+      }
+      /* The titles it made are cards made, like a create's; the cards it moved are the tidy's. */
+      if (titles.length) outcomes.push({ kind: "create", nodeIds: titles });
       outcomes.push({ kind: op.kind, nodeIds: moved });
     }
   }
