@@ -1,5 +1,7 @@
 # Claude Code — install + build prompt (type at the `>` prompt, first message of a fresh session)
 
+> **28 September 2026:** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Where this prompt says to build on or extend the Higgsfield consumer layer, the CLI or the skill packs, that part is retired.
+
 I am the user, typing at the prompt. This is the brief.
 
 The folder `~/Downloads/particl-glass-handoff/` contains the design handoff. First copy it into the repo: `mkdir -p design/particl-suites && cp -R ~/Downloads/particl-glass-handoff/* design/particl-suites/` and commit that as `docs: particl glass handoff`.

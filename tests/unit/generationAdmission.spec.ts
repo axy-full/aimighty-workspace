@@ -793,6 +793,8 @@ test("Marketing live quote is mandatory, immutable and ceiling-approved; replay 
   expect(await rows()).toHaveLength(0);
   const prepared = value(await service.gen.prepareGeneration({ ...body, higgsfieldVendorCostUsd: 0, higgsfieldCredentialFingerprint: "attacker" }, actor));
   expect(prepared.compiled.params).toMatchObject({ marketing: body.marketing, higgsfieldVendorCostUsd: 0.25, higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint() });
+  // 2.0 Alpha is priced by the provider's live figure: never marked approximate.
+  expect(prepared.quote.approximate).toBeUndefined();
   expect((await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint }, "marketing-no-ceiling"))).status).toBe(400);
   expect((await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: 0 }, "marketing-low-ceiling"))).status).toBe(409);
   const payload = { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits };
@@ -808,6 +810,29 @@ test("Marketing live quote is mandatory, immutable and ceiling-approved; replay 
   const changed = await handler.POST(request("generate", { ...payload, marketing: { quality: "medium", enhancePrompt: false } }, "marketing-stale-quote"));
   expect(changed.status).toBe(409);
   expect(dispatched).toHaveLength(1);
+}));
+
+test("Marketing 2.5 builds are quoted approximately from published rates with no provider read, and admitted within the reviewed ceiling", async () => scope("marketing_25_admission", async service => {
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const { marketing25Usd, marketingInput, marketingSettings } = await import("../../lib/higgsfieldMarketing");
+  const body = { model: MARKETING_IMAGE_MODEL_ID, prompt: "Product on a plinth", projectId: "project", ratio: "3:4", resolution: "2k",
+    marketing: { variant: "sunburst", quality: "max", enhancePrompt: false }, refine: false };
+  // The scope forbids the network: a 2.5 quote reads nothing from the provider.
+  const prepared = value(await service.gen.prepareGeneration(body, actor));
+  expect(prepared.quote.approximate).toBe(true);
+  // Priced on the prompt as compiled for the engine, which is the prompt sent.
+  const usd = marketing25Usd(marketingInput(String(prepared.compiled.prompt), body.ratio, body.resolution, marketingSettings(body.marketing), []));
+  expect(prepared.compiled.params).toMatchObject({ marketing: body.marketing, higgsfieldVendorCostUsd: usd });
+  expect(value(await service.gen.prepareGeneration({ ...body, marketing: { quality: "high", enhancePrompt: false } }, actor)).quote.approximate).toBeUndefined();
+  // Extra-high and max stay 2.5-only.
+  expect(await service.gen.prepareGeneration({ ...body, marketing: { variant: "alpha", quality: "max", enhancePrompt: false } }, actor))
+    .toMatchObject({ ok: false, status: 400, body: { code: "invalid_settings" } });
+  const handler = route("generation", service);
+  expect((await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint }, "marketing-25-no-ceiling"))).status).toBe(400);
+  const accepted = await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, "marketing-25-accepted"));
+  expect(accepted.status).toBe(200);
+  expect(dispatched).toHaveLength(1);
+  expect(await meters()).toEqual([expect.objectContaining({ engine_cost_usd: usd })]);
 }));
 
 test("Marketing estimate failures and live price changes stop before reservation; tenant source validation precedes provider reads", async () => scope("marketing_sources", async service => {

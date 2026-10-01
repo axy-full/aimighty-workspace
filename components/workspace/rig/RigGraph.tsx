@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { NODE_DEFS, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
-import type { Asset, CanvasNode } from "@/lib/workbench/studio";
+import { nodeDef, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
+import { REF_KIND_LABELS, refKindOf } from "@/lib/workbench/ref-kind";
+import type { Asset, CanvasNode, RefKind } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
 import { edgePath, graphEdges, graphLayout, GRAPH_PAD, type Box } from "@/lib/workspace/rig-graph";
 import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
@@ -40,14 +41,14 @@ function footer(node: CanvasNode, shot: RigShot | undefined) {
   }
   const status = shot?.status ?? node.status;
   const dot = status === "approved" ? "var(--pxw-green)" : status === "ready" || status === "queued" ? "var(--pxw-atomik-gold)" : "var(--pxw-label-floor)";
-  return { dot, label: node.role || NODE_DEFS[node.type].role };
+  return { dot, label: node.role || nodeDef(node.type).role };
 }
 
-function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWireInto }: {
-  node: CanvasNode; shot: RigShot | undefined; asset: Asset | undefined; selected: boolean; wiring: boolean;
+function Card({ node, kind, shot, asset, selected, wiring, onSelect, onWireFrom, onWireInto }: {
+  node: CanvasNode; kind: RefKind | null; shot: RigShot | undefined; asset: Asset | undefined; selected: boolean; wiring: boolean;
   onSelect: () => void; onWireFrom: () => void; onWireInto: () => void;
 }) {
-  const def = NODE_DEFS[node.type];
+  const def = nodeDef(node.type);
   const isShot = !!shot;
   const text = isShot ? shotNote(node) : (node.text ?? "").trim();
   const media = def.shape === "scene" || def.shape === "reference" || node.type === "media";
@@ -56,10 +57,10 @@ function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWir
   const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
   return (
     <>
-      {isShot ? (
-        <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
-      ) : null}
-      <span className="pxw-graph-kicker"><span>{def.label.toUpperCase()}</span><span>{version}</span></span>
+      {/* Every card is picked (and dragged) by its face: a shot into the shot Inspector, any other card into the Card Inspector. */}
+      <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
+      {/* A reference says what it is to the production (Cast, Environment, Element or Ref); any other card, its type. */}
+      <span className="pxw-graph-kicker">{kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span>{def.label.toUpperCase()}</span>}<span>{version}</span></span>
       {media ? <Media id={node.id} asset={asset} height={def.shape === "scene" ? 88 : 66} badge={isShot && selected} /> : null}
       <span className="pxw-graph-title">{node.title}</span>
       {grade ? (
@@ -102,7 +103,8 @@ export function RigGraph() {
   const shotsById = useMemo(() => new Map(rig.shots.map((s) => [s.id, s])), [rig.shots]);
   const [dropOver, setDropOver] = useState<string | null>(null);
   const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
-  const selId = state.selKind === "shot" ? state.selId : null;
+  /* The picked card: a shot, or any other card on the canvas. */
+  const selId = state.selKind === "shot" || state.selKind === "node" ? state.selId : null;
 
   const [wireFrom, setWireFrom] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -418,7 +420,9 @@ export function RigGraph() {
           {layout.cards.map((card) => {
             const node = byId.get(card.id)!;
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
-            const selected = !!shot && shot.id === selId;
+            const kind = refKindOf(node, project);
+            const def = nodeDef(node.type);
+            const selected = card.id === selId && (state.selKind === "node" ? !shot : !!shot);
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
             const dropAsset = Boolean(shot);
             /* Mine while I drag it; a teammate's while they drag it. */
@@ -430,14 +434,15 @@ export function RigGraph() {
                 className="pxw-graph-node"
                 data-node-id={card.id}
                 data-ctx={`node:${card.id}`}
-                data-shape={NODE_DEFS[node.type].shape}
+                data-shape={def.shape}
+                data-ref-kind={kind ?? undefined}
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}
                 data-drop={dropOver === card.id || undefined}
                 data-moving={moving ? true : undefined}
                 data-peer={watcher ? watcher.name : undefined}
                 role="group"
-                aria-label={`${NODE_DEFS[node.type].label}: ${node.title}`}
+                aria-label={`${kind ? REF_KIND_LABELS[kind] : def.label}: ${node.title}`}
                 style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
                 onPointerDown={node.locked ? undefined : (e) => startDrag(card.id, e)}
                 onClickCapture={(e) => { if (justDragged.current) { justDragged.current = false; e.stopPropagation(); e.preventDefault(); } }}
@@ -448,6 +453,7 @@ export function RigGraph() {
                 {watcher ? <span className="pxw-graph-peer" style={{ background: watcher.color }}>{watcher.name}</span> : null}
                 <Card
                   node={node}
+                  kind={kind}
                   shot={shot}
                   asset={resolveAsset(node, nodes, assets)}
                   selected={selected}

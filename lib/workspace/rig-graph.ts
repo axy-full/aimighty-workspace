@@ -1,4 +1,4 @@
-import { NODE_DEFS, canConnect } from "../workbench/node-graph";
+import { canConnect, nodeDef } from "../workbench/node-graph";
 import type { CanvasNode, Project } from "../workbench/studio";
 
 /**
@@ -15,7 +15,7 @@ export const GRAPH_MIN = { width: 1050, height: 520 };
 
 /** Card width by node shape: 238 scene, 220 references, 254 direction/finishing — never wider than the saved node. */
 export function cardWidth(node: Pick<CanvasNode, "type" | "width">): number {
-  const shape = NODE_DEFS[node.type].shape;
+  const shape = nodeDef(node.type).shape;
   if (shape === "scene") return 238;
   if (shape === "reference") return 220;
   return Math.min(254, Math.max(180, node.width || 254));

@@ -1,12 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { retiredFindings } from "./helpers/retiredSignIn";
 import { signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * The public site (app/(marketing)/site, served by proxy.ts). A visitor sees
  * it at the product's own paths; a member at / still gets the app. Every
- * page is checked at the five sizes for overflow, phone targets and copy
- * about charging, which the public site does not carry. The hero's handoff
- * is followed into Gen, which prices the take itself.
+ * page is checked at the five sizes for overflow, phone targets, copy about
+ * charging, and anything that needs a Higgsfield sign-in, none of which the
+ * public site carries. The hero's handoff is followed into Gen, which prices
+ * the take itself.
  */
 
 const PAGES: [string, string][] = [
@@ -29,7 +31,7 @@ async function fits(page: Page) {
 }
 
 for (const [path, tab] of PAGES) {
-  test(`a visitor sees the site at ${path}`, async ({ page }) => {
+  test(`a visitor sees the site at ${path}`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const res = await page.goto(path);
@@ -42,6 +44,19 @@ for (const [path, tab] of PAGES) {
     expect(small, `${path} has phone targets under 44px`).toEqual([]);
     /* The public site does not describe how work is charged. */
     expect(await page.locator("main").innerText(), `${path} talks about charging`).not.toMatch(/\bquot(e|es|ed|ing)\b|\bestimat|\bcharg|\bbill(ed|ing)? (at|there|in|from)|never billed|\bwallet\b/i);
+    /* Nor does it offer what needs a Higgsfield sign-in (CLAUDE.md, ground rule 10): not in the
+       page, its title or description, or a screenshot's path or caption. */
+    const said = await page.evaluate(() => [
+      document.body.innerText, document.title,
+      document.querySelector('meta[name="description"]')?.getAttribute("content") ?? "",
+      ...Array.from(document.querySelectorAll("img"), (img) => `${img.alt} ${img.getAttribute("src") ?? ""}`),
+    ].join("\n"));
+    expect(retiredFindings(said), `${path} offers what needs a Higgsfield sign-in`).toEqual([]);
+    /* Every picture it shows is served (once: the files are the same at every size). */
+    if (info.project.name === DESKTOP) {
+      const sources = await page.locator("img").evaluateAll((all) => [...new Set(all.map((img) => (img as HTMLImageElement).src))]);
+      for (const src of sources) expect((await page.request.get(src)).status(), src).toBe(200);
+    }
     expect(errors).toEqual([]);
   });
 }

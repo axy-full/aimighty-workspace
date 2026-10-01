@@ -4,13 +4,16 @@ import { creditsApply } from "./credits";
 import { modelLabel } from "./models";
 import { platformDb, platformReady } from "./platform";
 import { monthRange } from "./statements";
-import { requireTenant, type TenantWorkspace } from "./tenant";
+import { currentTenant, requireTenant, type TenantWorkspace } from "./tenant";
 import { GROK_STT_MODEL } from "./xaiVoice";
 import { consumerJobsReady } from "./higgsfield-consumer/jobs";
 import {
   CONNECTED_LABEL, LEDGER_LABEL, connectedLedgerState, creditLedgerState, dollarLedgerState, workflowLabel,
   type ConnectedLedgerPage, type ConnectedLedgerRow, type CreditLedgerPage, type CreditLedgerRow, type DollarLedgerPage, type DollarLedgerRow,
 } from "./usageLedgerTerms";
+import type { Generation } from "./jobs";
+import { accountFailure, parseOutcome, takeFailure } from "./providerOutcome";
+import { billingSentence, failureCopy, failureUncharged } from "./errors";
 
 /**
  * GET /api/usage?rows=1 — the usage ledger, one row per job, paged on the
@@ -36,7 +39,15 @@ const CHARGE = "CASE WHEN paid_by_platform=1 THEN COALESCE(billed_credits,0) ELS
 /* A take a dollar workspace paid for: not the connected account's (its provider's credits, listed with
    ?rows=connected) and not the starter production's demo takes, which nobody rendered or paid for. */
 const LISTED = `g.id NOT GLOB 'gen_hfc_*' AND NOT (json_valid(g.params) AND (COALESCE(json_extract(g.params,'$.consumerCreditUnit'),'')='higgsfield_credits' OR COALESCE(json_extract(g.params,'$.demo'),0)<>0))`;
-const DOLLARS = "CASE WHEN g.cost_usd IS NULL AND g.refine_cost_usd IS NULL THEN NULL ELSE COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) END";
+/* A known refinement charge cannot settle an unknown render charge. */
+const DOLLARS = "CASE WHEN g.cost_usd IS NULL THEN NULL ELSE g.cost_usd+COALESCE(g.refine_cost_usd,0) END";
+/* A take discarded while held, before it was ever sent (lib/held.ts): no provider could have charged for it. */
+const DISCARDED = "CASE WHEN g.status='cancelled' AND json_valid(g.params) THEN json_extract(g.params,'$.discardedAt') END";
+/* A failed take's recorded zero is Particl's own metering, not its provider's word: "not billed" needs the provider's
+   own recorded outcome on the workspace's key (refunded, not charged) or a take discarded before it was sent.
+   The same evidence the rows read (dollarLedgerState, failureUncharged). */
+const UNCHARGED = `(${DISCARDED} IS NOT NULL OR (json_valid(g.provider_outcome) AND json_extract(g.provider_outcome,'$.funding')='own'
+  AND json_extract(g.provider_outcome,'$.billing.state') IN ('refunded','not_charged')))`;
 const MONTH = (col: string) => `strftime('%Y-%m',datetime(${col}/1000,'unixepoch'))`;
 
 type Cursor = { at: number; id: string };
@@ -147,12 +158,19 @@ async function creditRows(ws: TenantWorkspace, q: LedgerQuery, viewer: LedgerVie
     args: [...args, q.limit + 1],
   });
   const page = rs.rows;
-  /* Who: the meter's own record, else the take it billed for (this workspace's database). */
+  /* Who: the meter's own record, else the take it billed for (this workspace's database).
+     Why a failed one failed: that take's recorded outcome — its kind only, never the provider's charge. */
   const unowned = page.filter((r) => r.created_by == null).map((r) => String(r.id));
+  const failedIds = page.filter((r) => String(r.status) === "failed").map((r) => String(r.id));
   const authors = new Map<string, string>();
-  if (unowned.length) {
-    const gens = await db().execute({ sql: `SELECT id,created_by FROM generations WHERE id IN (${unowned.map(() => "?").join(",")})`, args: unowned });
-    for (const g of gens.rows) if (g.created_by != null) authors.set(String(g.id), String(g.created_by));
+  const reasons = new Map<string, string>();
+  const wanted = [...new Set([...unowned, ...failedIds])];
+  if (wanted.length) {
+    const gens = await db().execute({ sql: `SELECT id,created_by,provider_outcome FROM generations WHERE id IN (${wanted.map(() => "?").join(",")})`, args: wanted });
+    for (const g of gens.rows) {
+      if (g.created_by != null && unowned.includes(String(g.id))) authors.set(String(g.id), String(g.created_by));
+      if (failedIds.includes(String(g.id))) reasons.set(String(g.id), failureCopy(takeFailure(g.provider_outcome == null ? null : parseOutcome(String(g.provider_outcome)), { credits: true }).kind).what);
+    }
   }
   const author = (r: (typeof page)[number]) => (r.created_by != null ? String(r.created_by) : authors.get(String(r.id)) ?? "");
   const who = await names(page.map(author), viewer);
@@ -162,6 +180,7 @@ async function creditRows(ws: TenantWorkspace, q: LedgerQuery, viewer: LedgerVie
       id: String(r.id), at: Number(r.created_at), who: nameFor(viewer, author(r), who),
       engine: meteredEngine(String(r.kind), String(r.engine), String(r.model)), kind: String(r.kind),
       credits, state: creditLedgerState(String(r.status), credits, Number(r.paid_by_platform) === 1),
+      ...(reasons.has(String(r.id)) ? { why: reasons.get(String(r.id)) } : {}),
     };
   }), q.limit);
 }
@@ -194,7 +213,7 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
   const args: (string | number)[] = [];
   filters(q, "g.created_at", "g.id", where, args);
   const rs = await db().execute({
-    sql: `SELECT g.id,g.kind,g.model,g.status,g.created_at,g.created_by,${DOLLARS} AS usd
+    sql: `SELECT g.id,g.kind,g.model,g.status,g.created_at,g.created_by,g.provider_outcome,${DOLLARS} AS usd,${DISCARDED} AS discarded
           FROM generations g WHERE ${where.join(" AND ")} ORDER BY g.created_at DESC,g.id DESC LIMIT ?`,
     args: [...args, q.limit + 1],
   });
@@ -202,9 +221,15 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
   const who = await names(rs.rows.map(author), viewer);
   return next(rs.rows.map((r) => {
     const usd = r.usd == null ? null : Number(r.usd);
+    /* The workspace pays its vendors: a failed take's provider outcome is its own money, in the provider's unit. */
+    const failure = r.status === "failed" || r.status === "cancelled"
+      ? takeFailure(r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome)), { credits: false }) : null;
+    /* "Not billed" on evidence only: the provider's own recorded word, or a take discarded before it was sent. */
+    const uncharged = failureUncharged(failure) || r.discarded != null;
     return {
       id: String(r.id), at: Number(r.created_at), who: nameFor(viewer, author(r), who),
-      engine: modelLabel(String(r.model)), kind: String(r.kind ?? "video"), usd, state: dollarLedgerState(String(r.status), usd),
+      engine: modelLabel(String(r.model)), kind: String(r.kind ?? "video"), usd, state: dollarLedgerState(String(r.status), usd, uncharged),
+      ...(failure ? { why: failureCopy(failure.kind, failure.payer).what, provider: failure.billing ? billingSentence(failure.billing, failure.provider) : null } : {}),
     };
   }), q.limit);
 }
@@ -221,7 +246,7 @@ async function dollarTotals(q: LedgerQuery): Promise<DollarLedgerPage["totals"]>
   const rs = await db().execute({
     sql: `SELECT COUNT(*) AS jobs,
                  COALESCE(SUM(CASE WHEN g.status IN ('succeeded','failed','cancelled') THEN COALESCE(${DOLLARS},0) ELSE 0 END),0) AS charged,
-                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND COALESCE(${DOLLARS},0)<=0)
+                 COALESCE(SUM(CASE WHEN (g.status IN ('failed','cancelled') AND COALESCE(${DOLLARS},0)<=0 AND ${UNCHARGED})
                                     OR (g.status='succeeded' AND ${DOLLARS} IS NOT NULL AND ${DOLLARS}<=0) THEN 1 ELSE 0 END),0) AS not_billed
           FROM generations g WHERE ${where.join(" AND ")}`,
     args,
@@ -240,15 +265,21 @@ async function connectedRows(userId: string, q: LedgerQuery): Promise<{ rows: Co
   const args: (string | number)[] = [userId];
   filters(q, "j.created_at", "j.id", where, args);
   const rs = await db().execute({
-    sql: `SELECT j.id,j.workflow,j.status,j.quote_credits,j.created_at,SUBSTR(p.name,1,200) AS project
+    sql: `SELECT j.id,j.workflow,j.status,j.quote_credits,j.created_at,j.failure_code,j.provider_outcome,SUBSTR(p.name,1,200) AS project
           FROM higgsfield_consumer_jobs j LEFT JOIN workbench_projects p ON p.owner=j.user_id AND p.project_id=j.draft_id
           WHERE ${where.join(" AND ")} ORDER BY j.created_at DESC,j.id DESC LIMIT ?`,
     args: [...args, q.limit + 1],
   });
-  return next(rs.rows.map((r) => ({
-    id: String(r.id), at: Number(r.created_at), workflow: workflowLabel(String(r.workflow)),
-    project: r.project == null ? null : String(r.project), quotedCredits: Number(r.quote_credits ?? 0), state: connectedLedgerState(String(r.status)),
-  })), q.limit);
+  return next(rs.rows.map((r) => {
+    /* The viewer's own account: what it said, and what its own ledger shows for the charge, in its credits. */
+    const failure = r.status === "failed"
+      ? accountFailure(r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome)), r.failure_code == null ? null : String(r.failure_code)) : null;
+    return {
+      id: String(r.id), at: Number(r.created_at), workflow: workflowLabel(String(r.workflow)),
+      project: r.project == null ? null : String(r.project), quotedCredits: Number(r.quote_credits ?? 0), state: connectedLedgerState(String(r.status)),
+      ...(failure ? { why: failureCopy(failure.kind, failure.payer).what, provider: failure.billing ? billingSentence(failure.billing, failure.provider) : null } : {}),
+    };
+  }), q.limit);
 }
 
 async function connectedMonths(userId: string): Promise<string[]> {
@@ -262,6 +293,40 @@ async function connectedTotals(userId: string, q: LedgerQuery): Promise<Connecte
   filters({ ...q, id: null }, "j.created_at", "j.id", where, args, false);
   const rs = await db().execute({ sql: `SELECT COUNT(*) AS jobs,COALESCE(SUM(j.quote_credits),0) AS quoted FROM higgsfield_consumer_jobs j WHERE ${where.join(" AND ")}`, args });
   return { jobs: Number(rs.rows[0]?.jobs ?? 0), quoted: Number(rs.rows[0]?.quoted ?? 0) };
+}
+
+/* ── A failed take's charge, from the ledger ─────────────────────────── */
+
+/**
+ * What Particl's own ledger holds for each failed take of a page, for a
+ * workspace on credits: the credits the meter holds for it and whether that
+ * is settled. Only work the platform funded is annotated (a job on the
+ * workspace's own key paid no credits: its provider's own outcome speaks).
+ * One read of `meter_events` for the page, `billed_credits` only — never the
+ * vendor's cost. Returns the same array, annotated in place of a copy.
+ */
+export async function withLedgerCharges<G extends Pick<Generation, "id" | "status" | "failure">>(generations: G[]): Promise<G[]> {
+  const ws = currentTenant()?.workspace;
+  if (!ws || !creditsApply(ws)) return generations;
+  const failed = generations.filter((g) => g.failure && (g.status === "failed" || g.status === "cancelled"));
+  if (!failed.length) return generations;
+  try {
+    await platformReady();
+    const ids = [...new Set(failed.map((g) => g.id))].slice(0, 500);
+    const rs = await platformDb().execute({
+      sql: `SELECT id,status,paid_by_platform,${CHARGE} AS credits FROM meter_events WHERE workspace_id=? AND id IN (${ids.map(() => "?").join(",")})`,
+      args: [ws.id, ...ids],
+    });
+    const byId = new Map(rs.rows.map((r) => [String(r.id), r]));
+    return generations.map((g) => {
+      const row = g.failure ? byId.get(g.id) : undefined;
+      if (!row || Number(row.paid_by_platform) !== 1) return g;
+      return { ...g, failure: { ...g.failure!, charge: { credits: Number(row.credits ?? 0), settled: String(row.status) !== "running" } } };
+    });
+  } catch {
+    /* The take still shows why it failed; its charge line waits for the ledger. */
+    return generations;
+  }
 }
 
 /* ── Pages, files, the response ─────────────────────────────────────── */
@@ -298,14 +363,14 @@ const stamp = (at: number) => { const iso = new Date(at).toISOString(); return [
 export function ledgerCsv(page: Pick<CreditLedgerPage, "unit" | "rows"> | Pick<DollarLedgerPage, "unit" | "rows"> | Pick<ConnectedLedgerPage, "unit" | "rows">): string {
   const lines: (string | number)[][] = [];
   if (page.unit === "higgsfield_credits") {
-    lines.push(["date", "time_utc", "workflow", "project", "status", "connected_credits_quoted"]);
-    for (const r of page.rows) lines.push([...stamp(r.at), r.workflow, r.project ?? "", CONNECTED_LABEL[r.state], r.quotedCredits]);
+    lines.push(["date", "time_utc", "workflow", "project", "status", "connected_credits_quoted", "failure", "provider_charge"]);
+    for (const r of page.rows) lines.push([...stamp(r.at), r.workflow, r.project ?? "", CONNECTED_LABEL[r.state], r.quotedCredits, r.why ?? "", r.provider ?? ""]);
   } else if (page.unit === "credits") {
-    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "credits"]);
-    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.credits]);
+    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "credits", "failure"]);
+    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.credits, r.why ?? ""]);
   } else {
-    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "usd"]);
-    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.usd == null ? "" : Math.round(r.usd * 10000) / 10000]);
+    lines.push(["date", "time_utc", "who", "engine", "kind", "status", "usd", "failure", "provider_charge"]);
+    for (const r of page.rows) lines.push([...stamp(r.at), r.who ?? "", r.engine, r.kind, LEDGER_LABEL[r.state], r.usd == null ? "" : Math.round(r.usd * 10000) / 10000, r.why ?? "", r.provider ?? ""]);
   }
   return lines.map((line) => line.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
