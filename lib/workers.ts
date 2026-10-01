@@ -1,5 +1,7 @@
 import { inngest, EVENTS } from "./inngest";
+import { RIG_AGENT_STOPPED } from "./dispatch";
 import { withRecoveryJob } from "./recovery";
+import { continueRigAgent, rigAgentTick, type RigAgentEventData } from "./workbench/rig-agent";
 import {
   handleAstraRender,
   handleDubbing,
@@ -134,5 +136,38 @@ export const dubbing = inngest.createFunction(
     ),
 );
 
+/**
+ * An Atomik run on a Rig board (lib/workbench/rig-agent.ts): planned, or built
+ * step by step. The run's state lives in the workspace database; each tick is
+ * one bounded, memoised step under the run's lease, and a step applied twice
+ * changes nothing (its canvas op id). Nothing here is paid. One run at a time
+ * per production, two per workspace; a stop cancels it at its next step. Past
+ * the step budget it carries on in a fresh event, like development work.
+ */
+export const rigAgent = inngest.createFunction(
+  {
+    id: "rig-agent",
+    name: "Atomik builds a Rig board",
+    triggers: [{ event: EVENTS.rigAgent }],
+    concurrency: [{ limit: 2, key: "event.data.workspaceId" }, { limit: 1, key: "event.data.productionId" }],
+    retries: 3,
+    cancelOn: [{ event: RIG_AGENT_STOPPED, match: "data.runId" }],
+  },
+  async ({ event, step }) => {
+    const data: RigAgentEventData = {
+      runId: String(event.data.runId ?? ""),
+      productionId: String(event.data.productionId ?? ""),
+      workspaceId: String(event.data.workspaceId ?? ""),
+    };
+    for (let n = 0; n < 40; n++) {
+      const tick = await step.run(`tick-${n}`, () => rigAgentTick(data));
+      if (tick.busy) { await step.sleep(`busy-${n}`, "5s"); continue; }
+      if (!tick.more) return { runId: data.runId, state: tick.state };
+    }
+    await step.run("continue-next-batch", () => continueRigAgent(data));
+    return { runId: data.runId, continued: true };
+  },
+);
+
 /** Everything the route serves. Workers are added here as they are written. */
-export const functions = [probe, render, astraRender, dubbing];
+export const functions = [probe, render, astraRender, dubbing, rigAgent];
