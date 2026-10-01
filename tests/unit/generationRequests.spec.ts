@@ -1,6 +1,7 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
@@ -547,26 +548,36 @@ test("accepted own-key jobs keep their collection key without changing new work 
   }
 });
 
-test("the original workspace's jobs accepted before managed credits are still collected, with the deployment's keys", async () => {
+test("the house workspace's accepted jobs are collected with the deployment's keys; another keyless workspace's own-key job is not", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { vendorKey } = await import("../../lib/vendorKeys");
   const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
   const { platformDb, platformReady } = await import("../../lib/platform");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
   const previous = process.env.FAL_KEY;
   process.env.FAL_KEY = "shared-fal-unit-key";
-  /* The studio's original workspace: legacy, no keys of its own, and on managed credits now like every workspace. */
-  const legacy = { ...workspace("legacy-inflight", false), usesPlatformKeys: true };
+  /* The house workspace (lib/houseWorkspace.ts): no keys of its own, never billed in credits. */
+  const house = { ...workspace("house-inflight", false), id: HOUSE_WORKSPACE_ID, usesPlatformKeys: true };
+  /* The same shape under any other id: the legacy flag does not make a workspace the house. */
+  const flagged = { ...workspace("legacy-inflight", false), usesPlatformKeys: true };
+  const tag = randomUUID().slice(0, 8);
   try {
     await platformReady();
-    /* Metered before the deploy as not platform-paid, although it ran on the deployment's keys. */
-    await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',0,?,?)",
-      args: [`${legacy.id}-inflight`, legacy.id, Date.now(), Date.now()] });
-    await runInTenant(legacy, async () => {
+    /* Metered as not platform-paid, although it ran on the deployment's keys: before the deploy and after it. */
+    for (const ws of [house, flagged])
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',0,?,?)",
+        args: [`${ws.id}-inflight-${tag}`, ws.id, Date.now(), Date.now()] });
+    await runInTenant(house, async () => {
       const keys: (string | null)[] = [];
-      await withAcceptedJobCredentials(`${legacy.id}-inflight`, "fal", async () => { keys.push(vendorKey("fal")); });
+      await withAcceptedJobCredentials(`${house.id}-inflight-${tag}`, "fal", async () => { keys.push(vendorKey("fal")); });
       /* An older job with no meter row reads the same way. */
-      await withAcceptedJobCredentials(`${legacy.id}-pre-meter`, "fal", async () => { keys.push(vendorKey("fal")); });
+      await withAcceptedJobCredentials(`${house.id}-pre-meter-${tag}`, "fal", async () => { keys.push(vendorKey("fal")); });
       expect(keys).toEqual(["shared-fal-unit-key", "shared-fal-unit-key"]);
+    });
+    await runInTenant(flagged, async () => {
+      let called = false;
+      await expect(withAcceptedJobCredentials(`${flagged.id}-inflight-${tag}`, "fal", async () => { called = true; })).rejects.toThrow("original connection is unavailable");
+      expect(called).toBe(false);
     });
   } finally {
     if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;

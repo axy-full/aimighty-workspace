@@ -3,12 +3,18 @@ import { paidByPlatform } from "./platformSpend";
 import { billCredits, billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
+import { isHouseWorkspace } from "./houseWorkspace";
 
 export type { CreditState } from "./creditTerms";
 
-/** Every organisation has its own credit ledger, including the original workspace. */
+/**
+ * Does this workspace pay in credits? Every one does, on its own credit
+ * ledger, except the house workspace (lib/houseWorkspace.ts): it is never
+ * billed in credits, so it has no balance, no grants and no credit walls, and
+ * it reads its spend at the engines' cost.
+ */
 export function creditsApply(ws: TenantWorkspace | null | undefined): boolean {
-  return Boolean(ws);
+  return Boolean(ws) && !isHouseWorkspace(ws);
 }
 
 export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState | null> {
@@ -26,12 +32,12 @@ export async function creditState(): Promise<CreditState | null> {
  * The credits a quote states and its approval ceiling (`maxCredits`) is
  * checked in.
  *
- * A workspace billed in credits is quoted what it will be billed. A workspace
- * on its own keys is billed nothing in credits — its vendors bill it in
- * dollars, which its quote states — and a credit count at the platform's
- * rate beside those dollars would state the margin. Its approval counts the
- * same dollars in whole credits at the price of a credit instead, so the
- * ceiling still holds and says nothing else.
+ * A workspace billed in credits is quoted what it will be billed. The house
+ * workspace is billed nothing in credits — its quote states the engines'
+ * dollars — and a credit count at the platform's rate beside those dollars
+ * would state the margin. Its approval counts the same dollars in whole
+ * credits at the price of a credit instead, so the ceiling still holds and
+ * says nothing else.
  */
 export function quotedCredits(usd: number, engine?: string | null): number {
   return creditsApply(currentTenant()?.workspace) ? billCredits(usd, engine) : billCreditsWith(usd, 1, creditUsd());

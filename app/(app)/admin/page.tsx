@@ -39,7 +39,9 @@ const refusal = async (res: Response): Promise<string> =>
 type Ws = {
   id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean;
   credits: { granted: number; used: number; balance: number } | null; createdAt: number; deletedAt: number | null; owner: { email: string; name: string } | null; members: number;
-  spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
+  /** The house workspace (lib/houseWorkspace.ts): never billed in credits; its spend is read at cost. */
+  house?: boolean;
+  spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number | null; atCost?: boolean } | null;
   grants: { paid: number; free: number };
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
@@ -152,7 +154,7 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits.</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The house workspace is never billed in credits; its spend reads at cost.</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
@@ -175,12 +177,14 @@ export default function AdminPage() {
 
 /** Whose keys a workspace runs on, and — on the platform's — its credit balance, with a way to add some. */
 function CreditsCell({ w, onChanged }: {
-  w: { id: string; legacy: boolean; platformKeys: boolean; credits: { granted: number; used: number; balance: number } | null; gatewayKey: boolean; deletedAt: number | null };
+  w: { id: string; legacy: boolean; platformKeys: boolean; house?: boolean; credits: { granted: number; used: number; balance: number } | null; gatewayKey: boolean; deletedAt: number | null };
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
+  // The house workspace has no balance and takes no credits: nothing to add here.
+  if (w.house) return <span className="mono-s" title="Runs on the platform's engines and is never billed in credits">HOUSE · NOT BILLED</span>;
   // Nobody can open a deleted workspace, so its balance is read, not topped up.
   if (w.deletedAt) return <span className="mono-s">PLATFORM · {w.credits ? `${creditsNumber(w.credits.balance)} CR` : "—"}</span>;
   async function grant() {
@@ -293,6 +297,13 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
  */
 function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
   if (!s || !s.jobs) return <span className="mono-s">—</span>;
+  /* The house workspace: what its jobs cost the engines, and no credits or margin, since it is never billed. */
+  if (s.atCost || s.marginUsd == null) return (
+    <span className="flex flex-col gap-0.5">
+      <span className="mono-v">{usd(s.engineCostUsd, 2)} at cost</span>
+      <span className="text-[11.5px] text-dim">{s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
+    </span>
+  );
   const m = s.marginUsd;
   const free = grants?.free ?? 0;
   return (

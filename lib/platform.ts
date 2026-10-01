@@ -12,6 +12,7 @@ import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant"
 import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
 import { prepareLocalDatabaseDirectory } from "./localDatabase";
 import { createPlatformDatabaseClient } from "./localDatabaseClient";
+import { HOUSE_NOT_BILLED, isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * The platform: what spans workspaces.
@@ -550,8 +551,9 @@ export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean, ac
   }, securityAuditStatement({ workspaceId:id, actorId, action:"workspace.mode_changed", targetType:"workspace", targetId:id, details:{mode:usesPlatformKeys?"platform":"own"}}, true)], "write");
 }
 
-/** Dollars a month on the platform's keys; null returns it to the deployment's default. */
+/** Dollars a month on the platform's keys; null returns it to the deployment's default. The house workspace has none. */
 export async function setWorkspaceAllowance(id: string, usd: number | null): Promise<void> {
+  if (isHouseWorkspace({ id })) throw new Error(HOUSE_NOT_BILLED);
   await platformDb().execute({
     sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ?`,
     args: [usd, now(), id],
@@ -580,11 +582,15 @@ export async function grantCredits(workspaceId: string, credits: number, note: s
  * middle: the request is already marked approved by the time either runs, so
  * a failure between them leaves a paying customer short of the bonus with
  * nothing left that will retry it. One batch, or neither row.
+ *
+ * The house workspace is never given credits (lib/houseWorkspace.ts): a batch
+ * naming it is refused whole, before anything is written.
  */
 export async function grantCreditsBatch(
   rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind }[],
 ): Promise<void> {
   if (!rows.length) return;
+  if (rows.some((r) => isHouseWorkspace({ id: r.workspaceId }))) throw new Error(HOUSE_NOT_BILLED);
   const {billingTransaction,syncBillingLedger}=await import('./billingLedger');
   await billingTransaction(async(tx,ts)=>{
     const workspaces=[...new Set(rows.map(r=>r.workspaceId))];

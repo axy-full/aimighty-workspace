@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import ts from "typescript";
+import * as houseWorkspace from "../../lib/houseWorkspace";
 
 /* The admin desk's PATCH, with its dependencies replaced by recorders. */
-function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean }) {
+function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?: string }) {
   const calls: string[] = [];
   const record = (name: string) => async () => {
     calls.push(name);
@@ -32,6 +33,8 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean }) {
     "@/lib/tenant": { runInTenant: async () => ({ released: [] }) },
     "@/lib/held": { releaseHeldJobs: async () => ({ released: [] }) },
     "@/lib/purge": { restoreDeletedWorkspace: record("restore") },
+    /* The real rule: which workspace is the house is the behaviour under test. */
+    "@/lib/houseWorkspace": houseWorkspace,
   };
   const compiled = ts.transpileModule(
     readFileSync("app/api/admin/workspaces/[id]/route.ts", "utf8"),
@@ -102,6 +105,35 @@ test("a deleted workspace takes no credits, plan or limits from the desk; it can
   expect((await live.patch({ restore: true })).status).toBe(400);
   expect((await live.patch({ grantCredits: 5 })).status).toBe(200);
   expect(live.calls).toEqual(["grant"]);
+});
+
+test("the house workspace takes no credits or allowance from the desk; its other settings apply like any other's", async () => {
+  for (const body of [
+    { grantCredits: 500 },
+    { grantCredits: -5, note: "Correction" },
+    { allowanceUsd: 20 },
+    { allowanceUsd: null },
+    /* A mixed request changes nothing: the refusal comes before any write. */
+    { suspended: true, grantCredits: 500 },
+    { limits: { concurrency: 2 }, allowanceUsd: 20 },
+  ]) {
+    const route = adminRoute({ deletedAt: null, id: houseWorkspace.HOUSE_WORKSPACE_ID, legacy: true });
+    const response = await route.patch(body);
+    expect(response.status, JSON.stringify(body)).toBe(400);
+    expect((await response.json()).error).toBe(houseWorkspace.HOUSE_NOT_BILLED);
+    expect(route.calls).toEqual([]);
+  }
+  const house = adminRoute({ deletedAt: null, id: houseWorkspace.HOUSE_WORKSPACE_ID, legacy: true });
+  expect((await house.patch({ suspended: true, reason: "Maintenance" })).status).toBe(200);
+  expect((await house.patch({ flagged: true, note: "Review" })).status).toBe(200);
+  expect((await house.patch({ limits: { concurrency: 2 } })).status).toBe(200);
+  expect((await house.patch({ internalTest: true })).status).toBe(200);
+  expect((await house.patch({ planId: "studio" })).status).toBe(200);
+  expect(house.calls).toEqual(["suspended", "flag", "limits", "internalTest", "plan"]);
+  /* A legacy-flagged workspace under any other id is not the house: the desk can fund it. */
+  const flagged = adminRoute({ deletedAt: null, legacy: true });
+  expect((await flagged.patch({ grantCredits: 5 })).status).toBe(200);
+  expect(flagged.calls).toEqual(["grant"]);
 });
 
 test("the desk states the welcome grant from the same source provisioning uses, and no unwired gateway promise", () => {

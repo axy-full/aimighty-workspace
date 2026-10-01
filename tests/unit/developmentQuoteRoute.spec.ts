@@ -76,6 +76,10 @@ test("a credit workspace's own-key model keeps its dollar ceiling in the quote; 
   expect((await quoteFor(workspace({}), "openai/gpt-5")).estimateUsd).toBeUndefined();
   /* A workspace on its own keys everywhere sees dollars, as before. */
   expect((await quoteFor(workspace({ usesPlatformKeys: false, keys: { gateway: "test-only-never-sent" } }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBeUndefined();
+  /* The house workspace (lib/houseWorkspace.ts) alone is never billed in credits: its start locks the dollar ceiling. */
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  expect((await quoteFor(workspace({ id: HOUSE_WORKSPACE_ID, legacy: true }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBe(0.42);
+  expect((await quoteFor(workspace({ id: "ws-flagged", legacy: true }), "anthropic/claude-sonnet-4.6")).estimateUsd).toBeUndefined();
 });
 
 test("an own-key quote reads as its dollar ceiling, never \"0 credits\"; a credit quote is credits only, never both units", async () => {
@@ -86,6 +90,6 @@ test("an own-key quote reads as its dollar ceiling, never \"0 credits\"; a credi
   expect(agentPrice({ estimateCredits: 4 }, true)).toBe("4 credits");
   expect(agentPrice({ estimateCredits: 4, estimateUsd: 0.2 }, true)).toBe("4 credits");
   expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
-  /* A workspace that pays its vendors in dollars sees its dollars, never a credit figure. */
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.2 }, false)).toBe("Quote unavailable");
+  /* The house workspace, never billed in credits, sees its dollars, never a credit figure. */
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.2 }, false)).toBe("$0.2000");
 });

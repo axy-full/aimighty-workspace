@@ -5,13 +5,14 @@
  *
  * A workspace on the platform's keys buys credits, and every figure it
  * sees is in whole credits at the engine's margin, rounded up — the rule
- * the metering layer bills by. The studio's own workspace and one on its
- * own keys pay their vendors in dollars and see dollars. A list is summed
+ * the metering layer bills by. The house workspace (lib/houseWorkspace.ts)
+ * is never billed in credits and sees the engines' dollars. A list is summed
  * take by take, never rounded once at the end; a server aggregate carries
  * both units and the hook picks the workspace's.
  */
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
+import { usd } from "@/lib/format";
 import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
 
@@ -62,7 +63,27 @@ export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 export function useMoney(): Money {
   const { rates } = useSession();
   return useMemo<Money>(() => {
-    // Stale pre-migration rate tables must never expose or relabel vendor costs.
+    /* Dollars, for the house workspace alone (lib/houseWorkspace.ts): it is
+       never billed in credits and reads its spend at the engines' cost. The
+       server decides the table's unit and hands "usd" to no other workspace,
+       and the figures arrive already in dollars, so nothing here converts and
+       nothing here knows a margin. THE UNIT IS THE TABLE'S, and only the
+       table's: a visitor or a credit workspace is never given this formatter. */
+    if (rates.unit === "usd") {
+      const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
+      return {
+        inCredits: false,
+        price: (n) => (n > 0 && n < 0.005 ? "<1¢" : usd(n, 2)),
+        rate: (n) => usd(n, 3),
+        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : usd(all(g), 2); },
+        takeCredits: () => 0,
+        sum: (list) => sumWithProviderCreditQuotes(list, standard => usd(standard.reduce((a, g) => a + all(g), 0), 2)),
+        of: (v) => usd(v.spend ?? 0, 2),
+        each: (v, n) => (n > 0 ? usd((v.spend ?? 0) / n, 2) : "—"),
+        approx: (n) => usd(n, 0),
+      };
+    }
+    // A table in any other unit must never expose or relabel vendor costs.
     const currentTable = rates.unit === "cr";
     /* Credits. Every figure that reaches this hook is ALREADY in credits:
        estimates come off the rate table the server converted, and a finished

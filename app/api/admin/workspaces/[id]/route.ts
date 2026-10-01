@@ -6,6 +6,7 @@ import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorks
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
+import { HOUSE_NOT_BILLED, isHouseWorkspace } from "@/lib/houseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,13 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   if (ws.deletedAt && Object.keys(body).some((k) => !markKeys.includes(k))) return NextResponse.json({ error: "This workspace was deleted. Restore it before changing it." }, { status: 409 });
   if ("mode" in body && body.mode !== "platform")
     return NextResponse.json({ error: "All workspaces use Particl credits and managed engines." }, { status: 400 });
+  /* The house workspace is never billed in credits (lib/houseWorkspace.ts): a
+     grant or an allowance means nothing there. Everything else — suspending
+     it, its limits, its flags, its plan, and whether it is the platform's
+     test workspace — applies to it like any other. Checked before anything
+     is written, so a mixed request changes nothing. */
+  if (isHouseWorkspace(ws) && ["grantCredits", "allowanceUsd"].some((k) => k in body))
+    return NextResponse.json({ error: HOUSE_NOT_BILLED }, { status: 400 });
   const out: Record<string, unknown> = { ok: true };
   if ("suspended" in body) {
     const on = Boolean(body.suspended);

@@ -36,13 +36,35 @@ export const dynamic = "force-dynamic";
  * (see /api/analytics), and sets its ceiling in credits: the reply carries no
  * dollar figure at all. `legacyCeiling` says a dollar ceiling set before
  * credits still applies (the spend gate enforces it without naming the
- * figure). A workspace on its own keys reads and caps in dollars.
+ * figure). The house workspace (lib/houseWorkspace.ts), never billed in
+ * credits, reads and caps in the engines' dollars, as its spend gate counts
+ * them (tokenSpendThisMonth); no other workspace is sent a dollar figure.
  */
 export const GET = withTenant(async function GET() {
   const got = await requireSession();
   if (got.response) return got.response;
   const user = got.user;
   await ready();
+  if (!creditsApply(requireTenant())) {
+    const rs = await db().execute({
+      sql: `SELECT t.id, t.name, t.scope, t.cap_usd, t.last_used, t.created_at,
+                   COALESCE((SELECT SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0))
+                             FROM generations g WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
+            FROM api_tokens t WHERE t.user_id = ? AND t.revoked_at IS NULL ORDER BY t.created_at DESC`,
+      args: [tokenMonthStart(), user.id],
+    });
+    return NextResponse.json({
+      unit: "usd",
+      tokens: rs.rows.map((r: any) => ({
+        id: r.id, name: r.name, scope: r.scope,
+        /** In dollars, like `capUsd`. */
+        spendThisMonth: Number(r.spend),
+        capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
+        lastUsed: r.last_used == null ? null : Number(r.last_used),
+        createdAt: Number(r.created_at),
+      })),
+    });
+  }
   /* The token's month runs on the same boundary its ceiling is enforced on (lib/cycle.ts), and counts
      every token-funded operation, reservations included (lib/tokenUsage.ts), in credits. */
   const totals = await tokenCreditUsage(tokenMonthStart());

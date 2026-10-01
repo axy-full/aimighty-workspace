@@ -553,14 +553,17 @@ function Usage() {
 /* ── Engines ─────────────────────────────────────────────────────────── */
 type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 function Engines() {
-  const owner = useSession().role === "owner";
+  const session = useSession();
+  const owner = session.role === "owner";
+  /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
+  const house = session.rates.unit === "usd";
   const { data, error } = useRead<Keys>("/api/workspaces/keys");
   const [linked, setLinked] = useState<boolean | null>(null);
   return (
     <>
       <div className="wsx-card" data-testid="ws-engines">
         <span className="gx-eyebrow">Engines</span>
-        <span className="cw-dim">Managed by Particl. Your organisation pays in credits.</span>
+        <span className="cw-dim">{house ? "Managed by Particl. This house workspace runs on the platform’s engines and is not billed in credits." : "Managed by Particl. Your organisation pays in credits."}</span>
         {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
         {(data?.keys ?? []).filter((key) => key.name !== "xai").map((key) => (
           <div className="wsx-row" key={key.name} data-testid="ws-engine">

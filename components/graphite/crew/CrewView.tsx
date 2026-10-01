@@ -137,7 +137,8 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
           <div className="cw-run">
             {room.blocked ? <span className="gx-reason" id="cw-run-reason" data-testid="crew-run-reason">{room.blocked}</span> : null}
             <button type="button" className="gx-primary" disabled={room.blocked !== null || room.running} aria-describedby={room.blocked ? "cw-run-reason" : undefined} onClick={() => void run()} data-testid="crew-run">
-              {room.running ? "Running…" : room.credits == null ? "Run round" : `Run round · ${cr(room.credits)}`}
+              {/* Dollars only in the house workspace: the server sends a round's dollar ceiling to no other (lib/houseWorkspace.ts). */}
+              {room.running ? "Running…" : room.credits == null ? "Run round" : room.usd != null ? `Run round · up to $${room.usd.toFixed(2)}` : `Run round · ${cr(room.credits)}`}
             </button>
           </div>
         </div>
