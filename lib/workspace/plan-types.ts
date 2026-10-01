@@ -170,7 +170,7 @@ export type PlanRequest = {
   };
   /** Atomik agent: what to ask for (defaults to planning the rest of the project). */
   agent?: { request?: string; role?: string };
-  /** Compare: a kept job to compare against its source. */
+  /** Compare: a transform take in the project's Library (its generation id, as /api/jobs/[id] takes it) to compare against its source. */
   compare?: { jobId?: string };
 };
 

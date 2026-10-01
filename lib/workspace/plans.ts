@@ -43,7 +43,7 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
-import { isGenjutsuModel } from "../genjutsuTypes";
+import { genjutsuSourceUrl, isGenjutsuModel, isGenjutsuTake } from "../genjutsuTypes";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -265,27 +265,67 @@ const audioDispatch: DispatchExecutor = {
   },
 };
 
-/* ---------------------------------------- stored results (Compare) */
+/* ---------------------------------------- kept takes (Compare) */
 
 /**
- * A result kept on the project from the connected account, read back from
- * Particl's own record of it (GET, never the account). Atomik no longer
- * quotes, submits or polls anything on a signed-in account: Motion Transfer
- * and Object Swap run on the API-key transform engines through
- * /api/generate, and what has no API-key or direct engine is not offered.
+ * A transform take as the project's Library lists it (GET /api/workbench/library,
+ * the read the Compare page's own results use): Particl's record of the take
+ * and of its stored original, never a provider or an account. Takes made on
+ * the API-key transform engines and runs made earlier on the connected account
+ * are both kept there once collected, so Compare is free and open to every
+ * member. Atomik quotes, submits and polls nothing on a signed-in account.
  */
-type ConsumerJob = {
+type LibraryTake = {
   id: string;
+  projectId: string | null;
+  model: string;
   status: string;
-  input?: Record<string, unknown>;
-  result?: { original?: { asset?: { url?: string } } } | null;
-  originalAvailable?: boolean;
+  storedUrl: string | null;
+  sourceGenId?: string | null;
+  params?: Record<string, unknown> | null;
+  createdAt?: number;
 };
 
-/* -------------------------------------------------------------- the registry */
+/** The project's Library of takes: the same bounded page the Compare page reads, or one take a request names. */
+const LIBRARY_TAKES = "/api/workbench/library";
+const libraryTakes = (ctx: PlanContext, id?: string) =>
+  `${LIBRARY_TAKES}?projectId=${encodeURIComponent(ctx.projectId ?? "")}&source=generations&${
+    id ? `id=${encodeURIComponent(id)}` : "limit=500"
+  }`;
 
-/** Compare reads the results kept on the project (a list, never the account). */
-const GENJUTSU = "/api/higgsfield/consumer/genjutsu";
+/** A finished transform take of this production whose original is stored. */
+const comparable = (take: LibraryTake, productionId: string | null | undefined) =>
+  Boolean(productionId) &&
+  take.projectId === productionId &&
+  isGenjutsuTake(take) &&
+  take.status === "succeeded" &&
+  Boolean(take.storedUrl);
+
+/** The take a request names, else the newest comparable one; null when there is none. */
+function comparisonTake(
+  takes: readonly LibraryTake[],
+  productionId: string | null | undefined,
+  wanted?: string,
+): LibraryTake | null {
+  if (wanted) {
+    const take = takes.find((item) => item.id === wanted);
+    return take && comparable(take, productionId) ? take : null;
+  }
+  let newest: LibraryTake | null = null;
+  for (const take of takes)
+    if (comparable(take, productionId) && (!newest || (take.createdAt ?? 0) > (newest.createdAt ?? 0))) newest = take;
+  return newest;
+}
+
+/** The take's source original and its own stored original, streamed: what the split player opens on one clock. */
+function comparisonPair(take: LibraryTake): { source: string | null; result: string } {
+  return {
+    source: genjutsuSourceUrl({ ...take.params, ...(take.sourceGenId ? { sourceGenId: take.sourceGenId } : {}) }),
+    result: `/api/media/${encodeURIComponent(take.id)}?stream=1`,
+  };
+}
+
+/* -------------------------------------------------------------- the registry */
 
 const boards = (ctx: PlanContext) => bodies(ctx.request?.boards);
 const shots = (ctx: PlanContext) => bodies(ctx.request?.shots);
@@ -1159,40 +1199,31 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   compare: plan("compare", {
     title: "Build the comparison",
-    line: "Loads the original and the result of a finished job so they open split on one clock.",
+    line: "Loads the original and the result of a finished transform take so they open split on one clock.",
     priceLabel: "Free",
     doneLine: () => "Comparison ready",
     runnable: needProject,
     steps: [
       step(
-        "Load the jobs",
+        "Load the takes",
         "read",
         "",
-        run({ method: "GET", path: GENJUTSU }, async (ctx) => {
-          const { jobs } = await call<{ jobs: ConsumerJob[] }>(
-            ctx,
-            `${GENJUTSU}?draftId=${encodeURIComponent(ctx.projectId ?? "")}`,
-          );
+        run({ method: "GET", path: `${LIBRARY_TAKES}?source=generations` }, async (ctx) => {
           const wanted = ctx.request?.compare?.jobId;
-          const job = wanted
-            ? jobs.find((item) => item.id === wanted)
-            : jobs.find((item) => item.status === "completed" && item.originalAvailable);
-          if (!job || job.status !== "completed" || !job.result?.original?.asset?.url)
-            throw new Error("No finished result with a retained original to compare yet.");
-          return { detail: "1 result", io: { compareJob: job } };
+          const { generations } = await call<{ generations?: LibraryTake[] }>(ctx, libraryTakes(ctx, wanted));
+          const take = comparisonTake(generations ?? [], ctx.productionId, wanted);
+          if (!take) throw new Error("No finished transform take with a stored original to compare yet.");
+          return { detail: "1 take", io: { compareTake: take } };
         }),
       ),
       step(
         "Pair original and result",
         "compute",
         "",
-        local("comparison pair", (_ctx, io) => {
-          const job = io.compareJob as ConsumerJob;
-          return {
-            detail: "paired",
-            io: { comparison: { source: job.input?.source ?? null, result: job.result?.original?.asset?.url ?? null } },
-          };
-        }),
+        local("comparison pair", (_ctx, io) => ({
+          detail: "paired",
+          io: { comparison: comparisonPair(io.compareTake as LibraryTake) },
+        })),
       ),
     ],
   }),

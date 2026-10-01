@@ -7,6 +7,7 @@ import { MediaSourceError } from "../../lib/mediaBindings";
 import { workbenchScopeFor } from "../../lib/workbench/request-scope";
 import { AccountError } from "../../lib/accountDb";
 import * as retired from "../../lib/higgsfield-consumer/retired";
+import { PLANS } from "../../lib/workspace/plans";
 
 /**
  * The guard for the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts):
@@ -272,6 +273,10 @@ test("Atomik reads nothing of the account, and the shell's capability answers me
   for (const gone of ["app/api/atomik/recipes/route.ts", "app/api/atomik/steps/[id]/connected/route.ts", "lib/higgsfield-consumer/planner-service.ts", "lib/higgsfield-consumer/recipes-service.ts"])
     expect(existsSync(gone), gone).toBe(false);
   expect(readFileSync("lib/shell/use-connected-capability.ts", "utf8")).toContain("const owner = !SIGN_IN_RETIRED && ");
+  /* No workspace plan calls an account route, not even to read: Compare reads the project's Library (GET /api/workbench/library). */
+  for (const [page, plan] of Object.entries(PLANS))
+    for (const step of plan.steps) expect(step.executor.backend.path, `${page}: ${step.label}`).not.toMatch(/^\/api\/higgsfield\/consumer\//);
+  expect(readFileSync("lib/workspace/plans.ts", "utf8")).not.toContain("/api/higgsfield/consumer");
 });
 
 test("no page mounts a surface that starts account work: the sign-in card, the developer check, the account's composers and forms", () => {

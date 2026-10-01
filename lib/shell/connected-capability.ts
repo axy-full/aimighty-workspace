@@ -194,7 +194,7 @@ export const isOwnerRunPage = (suite: string | null | undefined, page: string | 
 
 /** The connected account's routes: whatever called one ran on the connected account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
-/** An Atomik plan with any step on the connected account (Compare, which reads results kept on the account). */
+/** An Atomik plan with any step on the connected account: none in the registry since Compare reads the project's Library; the run engine still refuses one. */
 export function runsOnOwnerAccount(plan: { steps: readonly { executor: { backend: { path: string } } }[] } | null | undefined): boolean {
   return Boolean(plan?.steps.some((step) => step.executor.backend.path.startsWith(CONNECTED_ROUTE_PREFIX)));
 }
