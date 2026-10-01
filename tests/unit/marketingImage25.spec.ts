@@ -124,15 +124,17 @@ test("a 2.5 take settles at the provider's stated charge or the delivered image'
     expect(marketing25SettlementUsd(1, wrong as number | null), String(wrong)).toBe(1);
 });
 
-test("a 403 is an insufficient balance: neutral on the platform's key with a platform log, plain on a workspace's own key; a 401 is still access", async () => {
+test("a 403 is an insufficient balance: neutral on the platform's key with a platform log, even where a workspace saved its own key; plain in the house workspace; a 401 is still access", async () => {
   const { estimateMarketingInput, marketingInput, marketingSettings, MarketingError } = await import("../../lib/higgsfieldMarketing");
   const { runInTenant } = await import("../../lib/tenant");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
   const input = marketingInput("A product", "3:4", "2k", marketingSettings({}), []);
   globalThis.fetch = async () => new Response("PRIVATE BALANCE DETAIL", { status: 403 });
   const warnings: string[] = [], warn = console.warn;
   console.warn = (message: string) => { warnings.push(message); };
   try {
-    await runInTenant(workspace("m25_own_key", { keys: { higgsfield: "own-key:own-secret" } }), async () => {
+    /* The house workspace (lib/houseWorkspace.ts) is not billed in credits: the account is the studio's own, as it reads today. */
+    await runInTenant(workspace("m25_house", { id: HOUSE_WORKSPACE_ID }), async () => {
       const error = await estimateMarketingInput(input).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(MarketingError);
       expect(error).toMatchObject({
@@ -141,12 +143,14 @@ test("a 403 is an insufficient balance: neutral on the platform's key with a pla
       });
     });
     expect(warnings).toEqual([]);
-    await runInTenant(workspace("m25_platform_key", { legacy: false, usesPlatformKeys: true }), async () => {
-      const error = await estimateMarketingInput(input).catch((e: unknown) => e);
-      expect(error).toMatchObject({ message: "This engine is unavailable right now; try again shortly. Nothing was submitted.", status: 503, code: "provider_unavailable" });
-      expect(String((error as Error).message)).not.toMatch(/balance|PRIVATE/);
-    });
-    expect(warnings.map(w => JSON.parse(w))).toEqual([expect.objectContaining({ event: "higgsfield.insufficient_balance", surface: "marketing-studio" })]);
+    /* Every other workspace pays in credits on the platform's key; a key it saved never funds new work. */
+    for (const [name, patch] of [["m25_own_key", { keys: { higgsfield: "own-key:own-secret" } }], ["m25_platform_key", { legacy: false, usesPlatformKeys: true }]] as const)
+      await runInTenant(workspace(name, patch), async () => {
+        const error = await estimateMarketingInput(input).catch((e: unknown) => e);
+        expect(error, name).toMatchObject({ message: "This engine is unavailable right now; try again shortly. Nothing was submitted.", status: 503, code: "provider_unavailable" });
+        expect(String((error as Error).message)).not.toMatch(/balance|PRIVATE/);
+      });
+    expect(warnings.map(w => JSON.parse(w))).toEqual([1, 2].map(() => expect.objectContaining({ event: "higgsfield.insufficient_balance", surface: "marketing-studio" })));
   } finally { console.warn = warn; }
   globalThis.fetch = async () => new Response("PRIVATE CREDENTIAL", { status: 401 });
   await expect(estimateMarketingInput(input)).rejects.toThrow("This connected account cannot access Marketing Studio.");
@@ -197,6 +201,7 @@ test("a collected 2.5 take settles on the delivered image within the band, a sta
   const { engineFor } = await import("../../lib/engines");
   const { fixtureUrl } = await import("../../lib/mock");
   const { marketing25Usd, marketingInput, marketingSettings } = await import("../../lib/higgsfieldMarketing");
+  const { creditsAtTerms } = await import("../../lib/billingTerms");
   const engine = engineFor("higgsfield"), poll = engine.poll, fetchMaster = engine.fetchMaster;
   const png = (width: number, height: number) =>
     sharp({ create: { width, height, channels: 3, background: { r: 40, g: 80, b: 120 } } }).png().toBuffer();
@@ -223,10 +228,16 @@ test("a collected 2.5 take settles on the delivered image within the band, a sta
       await reconcileHiggsfieldImage(genId);
       const generation = (await getGeneration(genId))!;
       expect(generation.status).toBe("succeeded");
-      const meter = (await platformDb().execute({ sql: "SELECT engine_cost_usd FROM meter_events WHERE id=?", args: [genId] })).rows[0];
-      expect(Number(meter.engine_cost_usd)).toBe(generation.costUsd);
+      const meter = (await platformDb().execute({ sql: "SELECT engine_cost_usd,billed_credits,credit_usd,credit_margin FROM meter_events WHERE id=?", args: [genId] })).rows[0];
+      /* The workspace pays in credits: the settled figure is the meter's, the take carries the credits billed on it at the
+         terms recorded when it was admitted, and never the vendor's dollars. */
+      const settledUsd = Number(meter.engine_cost_usd);
+      const billed = creditsAtTerms(settledUsd, { creditUsd: Number(meter.credit_usd), margin: Number(meter.credit_margin) });
+      expect(Number(meter.billed_credits)).toBe(billed);
+      expect(generation.costUsd).toBeNull();
+      expect(generation.creditsBilled).toBe(billed);
       const deliveredUsd = marketing25Usd(marketingInput(req.prompt, req.ratio, size, marketingSettings(marketing), []), (delivered[0] * delivered[1]) / 1e6);
-      return { quoteUsd, settledUsd: generation.costUsd, deliveredUsd };
+      return { quoteUsd, settledUsd, deliveredUsd };
     });
   }
   try {
