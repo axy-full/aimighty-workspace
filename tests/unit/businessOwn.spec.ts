@@ -38,10 +38,13 @@ test("Business's own pages follow Setup in the strip, backed by the Marketing pa
   expect(isOwnPage("ads") || isOwnPage("setup") || isOwnPage(null) || isOwnPage("motion")).toBe(false);
 });
 
-test("a price shown before a paid step is an estimate: about N cr, whole, never below zero", () => {
+test("a price shown before a paid step is an estimate: about N cr, to a tenth rounded up, never below zero", () => {
   expect(aboutCredits(7)).toBe("about 7 cr");
-  expect(aboutCredits(6.2)).toBe("about 7 cr");
+  expect(aboutCredits(6.2)).toBe("about 6.2 cr");
+  expect(aboutCredits(6.21)).toBe("about 6.3 cr");
+  expect(aboutCredits(0.01)).toBe("about 0.1 cr");
   expect(aboutCredits(1234)).toBe("about 1,234 cr");
+  expect(aboutCredits(1234.5)).toBe("about 1,234.5 cr");
   expect(aboutCredits(-3)).toBe("about 0 cr");
   expect(aboutCredits(Number.NaN)).toBe("about 0 cr");
 });
