@@ -221,18 +221,21 @@ test("a planner is given a small, ranked share: brand and audience first, what t
   });
 });
 
-/* ── Money never goes in ─────────────────────────────────────────────── */
+/* ── Amounts never go in ─────────────────────────────────────────────── */
 
-test("wallet, plan and pricing data never reach memory, an import, a suggestion or a planner", async () => {
+test("amounts of money never reach memory, an import, a suggestion or a planner; words about money do", async () => {
   const m = await import("../../lib/atomikMemory");
   const text = await import("../../lib/atomikMemoryText");
   const { turnPreamble, memorySection } = await import("../../lib/atomik");
   const money = [
-    "Our Studio plan is $49 a month.", "We have 400 credits left in the wallet.", "Our plan is Agency until March.",
-    "Budget: 5000 USD for the launch.", "Top-ups go on the company card.", "Rate card: 25 cr for a hero take.",
-    "Price point is premium.", "Account balance of 1,200", "Card 4242 4242 4242 4242",
+    "Our Studio plan is $49 a month.", "We have 400 credits left in the wallet.", "Budget: 5000 USD for the launch.",
+    "Rate card: 25 cr for a hero take.", "Account balance of 1,200", "Card 4242 4242 4242 4242",
   ];
-  const film = ["Opening credits in Futura, white on black.", "White balance at 5600K.", "A low-budget handheld look.", "Keep a wide margin around the logo.", "Plan the shots around the golden hour."];
+  /* The owner's rule (29 Sep): only actual amounts are refused. A plan's name, a card in words and a price point are words. */
+  const film = [
+    "Opening credits in Futura, white on black.", "White balance at 5600K.", "A low-budget handheld look.", "Keep a wide margin around the logo.", "Plan the shots around the golden hour.",
+    "Our plan is Agency until March.", "Top-ups go on the company card.", "Price point is premium.",
+  ];
   for (const line of money) expect(text.mentionsMoney(line), line).toBe(true);
   for (const line of film) expect(text.mentionsMoney(line), line).toBe(false);
 
@@ -241,9 +244,9 @@ test("wallet, plan and pricing data never reach memory, an import, a suggestion 
   expect(parsed.skipped.money).toBe(2);
 
   await inTenant(workspace(), async () => {
-    for (const line of money) await expect(m.addMemory({ kind: "note", text: line }, "u"), line).rejects.toMatchObject({ status: 422, message: text.MONEY_REFUSAL });
+    for (const line of money) await expect(m.addMemory({ kind: "note", text: line }, "u"), line).rejects.toMatchObject({ status: 422, message: text.amountRefusal(line) });
     for (const line of film) await m.addMemory({ kind: "note", text: line }, "u");
-    const made = await m.proposeMemory([{ kind: "note", text: "Our plan is Studio" }, { kind: "brand", text: "Teal and sand" }], { source: "atomik", origin: null, projectId: null, by: "u" });
+    const made = await m.proposeMemory([{ kind: "note", text: "Our plan is $49 a month" }, { kind: "brand", text: "Teal and sand" }], { source: "atomik", origin: null, projectId: null, by: "u" });
     expect(made.entries.map((e) => e.text)).toEqual(["Teal and sand"]);
     /* A row that somehow holds money (written before this rule, by hand) is still never read into a planner. */
     const { db } = await import("../../lib/db");
