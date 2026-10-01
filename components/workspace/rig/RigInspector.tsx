@@ -13,6 +13,7 @@ import type { TakeFailure } from "@/lib/providerOutcome";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
+import { VerifyShotEntry } from "./RigVerify";
 import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
@@ -339,6 +340,7 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
       </button>
       {error ? <p className="pxw-insp-error" role="alert">{error}</p> : null}
       {!error && (rig.notice || rig.blocked) ? <p className="pxw-insp-notice" role="status">{rig.notice ?? rig.blocked}</p> : null}
+      <VerifyShotEntry shot={shot} />
       <button type="button" className="pxw-link-button pxw-insp-delete" disabled={locked} title={locked ? "Unlock this shot to delete it." : undefined}
         onClick={remove} data-testid="rig-delete-shot">{confirmDelete ? "Delete this shot and the inputs only it uses?" : "Delete shot"}</button>
     </div>

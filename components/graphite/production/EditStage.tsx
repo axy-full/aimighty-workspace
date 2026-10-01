@@ -34,6 +34,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { SeedanceEditHost } from "../tools/SeedanceEditHost";
 import { AssetNextActions, revealNext } from "../AssetNextActions";
 import { Chip, LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
+import { TakeVerifyBadge, takeVerdictWords, useTakeVerdicts } from "@/components/workspace/rig/VerifyBadge";
 import { KIND_DOT } from "../icons";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
@@ -117,6 +118,8 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   const { live: liveShell } = shell;
   const project = draft.project;
   useStageFacts("takes", project);
+  /* Each take's newest Rig Verify check, as a badge on its tile. */
+  const verdicts = useTakeVerdicts(scope, project);
 
   /* The desk: a status, a kind and a search, over every take grouped by shot and batch. */
   const [filter, setFilter] = useState<DeskFilter>("all");
@@ -466,7 +469,9 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
             items={rows} getKey={(item) => item.key} layout={{ minColumnWidth: 150 }} gap={10} estimateRowHeight={150} estimateWholeRow={28} scroll="ancestor"
             wholeRow={isHeading} runOf={runOf} revealKey={reveal?.key ?? null} revealNonce={reveal?.n} revealAlign="center"
             renderItem={(item) => item.type === "take" ? (
-              <TakeTile entry={item.entry} variant="take" checked={entry?.take.id === item.entry.take.id} rowStart={item.first} onOpen={() => open(item.entry)} onRefresh={library.refresh} />
+              <TakeTile entry={item.entry} variant="take" checked={entry?.take.id === item.entry.take.id} rowStart={item.first} onOpen={() => open(item.entry)} onRefresh={library.refresh}
+                badge={verdicts.has(item.entry.take.id) ? <TakeVerifyBadge verdict={verdicts.get(item.entry.take.id)!} /> : undefined}
+                badgeLabel={verdicts.has(item.entry.take.id) ? takeVerdictWords(verdicts.get(item.entry.take.id)!) : undefined} />
             ) : (
               <div className={item.type === "shot" ? "pd-desk-head" : "pd-desk-head pd-desk-head--strip"} role="heading" aria-level={item.type === "shot" ? 3 : 4} data-testid={item.type === "shot" ? "takes-shot" : "takes-strip"}>
                 <span className="pd-desk-head-name">{item.label}</span>
