@@ -171,9 +171,9 @@ test("a person always wins: an Atomik run moves only cards it made and still las
   ];
   const plan = planCanvasOps(canvas, ops, "agent:run-1");
   expect(plan.outcomes.map((o) => o.held ?? "ok")).toEqual([PERSON_WINS, "ok", "ok", "ok", "ok"]);
-  /* A tidy by the run lays out only its own cards (and makes their section's title); a teammate's stay where they put them. */
+  /* A tidy by the run lays out only its own cards (by section, making no title); a teammate's stay where they put them. */
   const tidy = planCanvasOps(canvas, [{ kind: "tidy" }], "agent:run-1");
-  expect(tidy.changes.map((c) => c.id)).toEqual([kindSectionId("shots"), "mine"]);
+  expect(tidy.changes.map((c) => c.id)).toEqual(["mine"]);
   /* Another run is not this one. */
   expect(planCanvasOps(canvas, [{ kind: "move", nodeId: "mine", x: 1, y: 1 }], "agent:run-2").outcomes[0].held).toBe(PERSON_WINS);
   /* Wiring into a teammate's card makes Atomik its last writer, never its owner: it still may not move it. */

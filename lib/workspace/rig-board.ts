@@ -16,8 +16,10 @@ import { cardHeight, cardWidth, graphEdges, isSectionNode, SECTION_MODE, SECTION
  *    card sits in one section: the one a person filed it under (`section`,
  *    set by letting it go under that title), else its own kind's — Cast,
  *    Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review
- *    and output. A kind's title is made by the first Tidy that needs it, with
- *    an id made from the kind, so two windows (or Atomik) never make two.
+ *    and output. A kind's title is made by the first Tidy a person presses
+ *    that needs it, with an id made from the kind, so two windows never make
+ *    two. (Atomik's build tidies only its own cards and makes no title: it
+ *    places exactly the cards the person approved.)
  *  - Snap. A card let go lands on the 20 px grid; Alt places it freely.
  *  - Tidy. Each section is a block of columns under its title, left to right
  *    in the order above (a person's section beside the kind of card it holds),

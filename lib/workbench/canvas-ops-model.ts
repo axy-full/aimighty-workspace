@@ -198,13 +198,15 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
     } else {
       /* The board by sections (lib/workspace/rig-board.ts tidyBoard): a block of columns per section under its title —
          Cast, Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review and output, and each section a
-         person made — rows in canvas order, on the 20 px grid. A kind's missing title is made here (never one a person
-         took off the board). Locked cards keep their place, and so does every card this writer may not move: the rest
-         flow around them. */
+         person made — rows in canvas order, on the 20 px grid. A person's Tidy makes a kind's missing title (never one
+         a person took off the board). An Atomik run's tidy lays out its own cards the same way but makes no title: its
+         build is the proposal the person approved, card for card, and its undo takes off just that. Locked cards keep
+         their place, and so does every card this writer may not move: the rest flow around them. */
       const scope = op.nodeIds ? new Set(op.nodeIds) : null;
       const live = order.filter((id) => nodes.has(id)).map((id) => nodes.get(id)!);
       const movable = (n: CanvasNode) => !n.locked && (!scope || scope.has(n.id)) && mine(n.id);
-      const board = tidyBoard(live, { assets: [...Object.values(canvas.assets), ...assets.values()] }, { movable, canMake: (id) => !canvas.removed[id] });
+      const canMake = (id: string) => !agent && !canvas.removed[id] && !taken.has(id);
+      const board = tidyBoard(live, { assets: [...Object.values(canvas.assets), ...assets.values()] }, { movable, canMake });
       const titles: string[] = [];
       /* Within the canvas's card limit: a title that does not fit is simply not made (its section keeps its place). */
       for (const title of board.made.slice(0, Math.max(0, PROJECT_LIMITS.nodes - nodes.size))) {

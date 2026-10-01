@@ -8,7 +8,8 @@ import { canvasNodeSchema, saveSchema } from "../../lib/workbench/studio-schema"
 import { canConnect } from "../../lib/workbench/node-graph";
 import { cardLabel } from "../../lib/workbench/ref-kind";
 import { applyTeamPatch, diffForTeam, emptyTeamCanvas, parseTeamCanvas, withTeamCanvas, type TeamCanvas } from "../../lib/workbench/team-canvas-model";
-import { planCanvasOps } from "../../lib/workbench/canvas-ops-model";
+import { planCanvasOps, type CanvasOp } from "../../lib/workbench/canvas-ops-model";
+import { undoOps } from "../../lib/workbench/rig-agent-plan";
 import { mergeDraft } from "../../lib/workbench/draft-merge";
 import { flowChain } from "../../lib/workspace/mobile-templates";
 import { cardHeight, cardWidth, CARD_HEIGHT, graphLayout, isSectionNode } from "../../lib/workspace/rig-graph";
@@ -369,17 +370,38 @@ test("the server's Tidy lays the team canvas out by sections, makes the titles i
   expect(untitled.outcomes).toEqual([{ kind: "tidy", nodeIds: [] }]);
 });
 
-test("the server's Tidy by an Atomik run moves only the run's own cards, and the titles it makes are its own", () => {
-  const made = planCanvasOps(canvasOf([card("person", "scene")]), [{ kind: "create", node: card("mine", "scene", { x: 3000, y: 3000 }) }], "agent:run-1");
-  let canvas = applyTeamPatch(canvasOf([card("person", "scene")]), { ...made.patch, at: 2, author: "agent:run-1" });
-  canvas = { ...canvas, serverMade: { mine: "agent:run-1" } };
-  const plan = planCanvasOps(canvas, [{ kind: "tidy" }], "agent:run-1");
-  expect(plan.outcomes).toEqual([{ kind: "create", nodeIds: [SHOTS] }, { kind: "tidy", nodeIds: ["mine"] }]);
-  const after = applyTeamPatch(canvas, { ...plan.patch, at: 3, author: "agent:run-1" });
-  expect([after.nodes.person.x, after.nodes.person.y]).toEqual([0, 0]);
-  /* The run's card and its title step clear of the person's shot, which stays where they put it. */
-  expect(overlapping(Object.values(after.nodes))).toEqual([]);
-  expect(after.writers[SHOTS]).toBe("agent:run-1");
+test("an Atomik run's tidy lays out only its own cards, by section, and makes no title; its undo takes off just its build, and a person's Tidy makes the titles", () => {
+  const RUN = "agent:run-1";
+  let canvas = canvasOf([card("person", "scene")]);
+  /* One batch through the ops model, recorded as applyCanvasOps records it: the cards it made are the server's. */
+  const step = (ops: CanvasOp[], author: string, at: number) => {
+    const plan = planCanvasOps(canvas, ops, author);
+    canvas = applyTeamPatch(canvas, { ...plan.patch, at, author });
+    for (const change of plan.changes) if (change.made && canvas.nodes[change.id]) canvas.serverMade[change.id] = author;
+    return plan;
+  };
+  /* The run builds a cast card and a shot (lib/workbench/rig-agent-plan.ts places them clear, to the right). */
+  step([{ kind: "create", node: card("mine", "scene", { x: 3000, y: 3000 }) }, { kind: "create", node: card("lead", "character", { x: 3000, y: 3400 }) }], RUN, 2);
+  /* Its tidy moves only its own cards, into their sections' blocks, clear of the person's shot; it makes no title, so
+     the board holds exactly the cards the person approved. */
+  const tidy = step([{ kind: "tidy", nodeIds: ["mine", "lead"] }], RUN, 3);
+  expect(tidy.outcomes).toEqual([{ kind: "tidy", nodeIds: ["lead", "mine"] }]);
+  expect(tidy.patch.made).toEqual([]);
+  expect([canvas.nodes.person.x, canvas.nodes.person.y]).toEqual([0, 0]);
+  expect(canvas.nodes.lead.x).toBeLessThan(canvas.nodes.mine.x);
+  expect([canvas.nodes.lead.x % BOARD_GRID, canvas.nodes.lead.y % BOARD_GRID, canvas.nodes.mine.x % BOARD_GRID, canvas.nodes.mine.y % BOARD_GRID]).toEqual([0, 0, 0, 0]);
+  expect(overlapping(Object.values(canvas.nodes))).toEqual([]);
+  /* Its undo takes off its build and nothing else: the person's shot stays. */
+  expect(step(undoOps(canvas, RUN, []), RUN, 4).outcomes).toEqual([{ kind: "remove", nodeIds: ["mine", "lead"] }]);
+  expect(Object.keys(canvas.nodes)).toEqual(["person"]);
+  /* A person's Tidy makes the title over their own shot. */
+  expect(step([{ kind: "tidy" }], "ana", 5).outcomes).toEqual([{ kind: "create", nodeIds: [SHOTS] }, { kind: "tidy", nodeIds: ["person"] }]);
+  expect(canvas.nodes[SHOTS]).toMatchObject({ title: "Shots", type: "note", mode: "section" });
+  /* A later run tidies its card under that title (the title is the person's: the run neither moves nor remakes it). */
+  step([{ kind: "create", node: card("second", "scene", { x: 3000, y: 3000 }) }], "agent:run-2", 6);
+  expect(step([{ kind: "tidy" }], "agent:run-2", 7).outcomes).toEqual([{ kind: "tidy", nodeIds: ["second"] }]);
+  expect(canvas.nodes[SHOTS]).toMatchObject({ x: 60, y: 60 });
+  expect(overlapping(Object.values(canvas.nodes))).toEqual([]);
 });
 
 /* ── The one new field, through the schema, the team canvas and the merge ── */
