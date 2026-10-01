@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -23,6 +24,8 @@ process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 
 const MARKETING = "higgsfield/marketing-studio-image";
+/* Workspace ids and slugs of this run only: the platform database may be shared with other files in the worker. */
+const RUN = randomBytes(3).toString("hex");
 const actor: AdmissionActor = {
   user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null },
 };
@@ -45,10 +48,10 @@ test.afterAll(() => pool(null));
 async function register(name: string, options: { concurrency?: number; credits?: number } = {}): Promise<TenantWorkspace> {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   await platformReady();
-  const id = `ws_${name}`;
+  const id = `ws_${name}_${RUN}`;
   await platformDb().execute({
     sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,?,500)",
-    args: [id, name, `Studio ${name}`, `file:${path.join(dir, `${name}.db`)}`, options.concurrency ?? 8],
+    args: [id, `sk-${name}-${RUN}`, `Studio ${name}`, `file:${path.join(dir, `${name}.db`)}`, options.concurrency ?? 8],
   });
   await grantCredits(id, options.credits ?? 10_000, "Test", "owner", "manual");
   return rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [id] })).rows[0]);
@@ -241,7 +244,7 @@ test("a reservation takes a slot in its own write: a full share or pool reserves
   await settle(b, "res_b1", "failed", 0);
   await reserve(a, "res_a3");
   expect(await metered("res_a3")).toMatchObject({ status: "running" });
-  expect((await poolDesk()).workspaces.map((w) => [w.workspaceId, w.inFlight])).toEqual([["ws_reserve_a", 2], ["ws_reserve_b", 1]]);
+  expect((await poolDesk()).workspaces.map((w) => [w.workspaceId, w.inFlight])).toEqual([[a.id, 2], [b.id, 1]]);
   for (const id of ["res_a2", "res_a3"]) await settle(a, id, "succeeded");
   await settle(b, "res_b2", "succeeded");
   await inside(b, async () => (await import("../../lib/meter")).meter({ id: "res_b_google", kind: "image", engine: "google", model: "gemini-3-pro-image", status: "succeeded", engineCostUsd: 0.2 }));
@@ -309,8 +312,8 @@ test("queue → admit → release: a freed slot starts the waiting take the line
   // The slot frees: the take that waited longest starts, in its own workspace, and only it.
   await settle(busy, "line_running", "succeeded");
   const visited = await pass();
-  expect(sent).toEqual(["ws_line_first"]);
-  expect(visited.visited[0]).toBe("ws_line_first");
+  expect(sent).toEqual([first.id]);
+  expect(visited.visited[0]).toBe(first.id);
   expect(await status(first, "line_first_take")).toMatchObject({ status: "running", error: null });
   expect(await metered("line_first_take")).toMatchObject({ status: "running" });
   expect(await line("line_first_take")).toMatchObject({ left_at: null, admitted_at: expect.any(Number) });
@@ -320,7 +323,7 @@ test("queue → admit → release: a freed slot starts the waiting take the line
   expect(sent).toHaveLength(1);
   await settle(first, "line_first_take", "succeeded");
   await pass();
-  expect(sent).toEqual(["ws_line_first", "ws_line_later"]);
+  expect(sent).toEqual([first.id, later.id]);
   await settle(later, "line_later_take", "succeeded");
 });
 

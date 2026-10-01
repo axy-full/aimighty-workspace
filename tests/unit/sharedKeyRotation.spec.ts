@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -30,6 +30,8 @@ test.afterAll(() => {
   if (ownerBefore == null) delete process.env.SUPER_ADMIN_EMAIL; else process.env.SUPER_ADMIN_EMAIL = ownerBefore;
 });
 
+/* Workspace ids and slugs of this run only: the platform database may be shared with other files in the worker. */
+const RUN = randomBytes(3).toString("hex");
 const OLD = "old-key-id:old-key-secret";
 const NEW = "new-key-id:new-key-secret";
 const fingerprintOf = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -63,10 +65,10 @@ test.afterEach(() => {
 async function register(name: string): Promise<TenantWorkspace> {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   await platformReady();
-  const id = `ws_${name}`;
+  const id = `ws_${name}_${RUN}`;
   await platformDb().execute({
     sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,8,500)",
-    args: [id, name, `Studio ${name}`, `file:${path.join(dir, `${name}.db`)}`],
+    args: [id, `sk-${name}-${RUN}`, `Studio ${name}`, `file:${path.join(dir, `${name}.db`)}`],
   });
   await grantCredits(id, 10_000, "Test", "owner", "manual");
   return rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [id] })).rows[0]);
@@ -222,12 +224,12 @@ test("the missing old key: the take waits, says so, the admin is told once; noth
     expect(take.params).not.toHaveProperty("higgsfieldStillCollection");
     expect(await metered(id)).toEqual(reserved);
     expect(await inside(ws, async () => (await creditState())!.balance)).toBe(balance);
-    let open = await alerts();
+    let open = (await alerts()).filter((a) => a.id === id);
     expect(open).toEqual([{ id, workspace_id: ws.id, key_prefix: fingerprintOf(OLD).slice(0, 12), first_at: expect.any(Number), last_at: expect.any(Number), resolved_at: null }]);
     const first = open[0].first_at;
     // Asked again later: still one alert, from the same moment; nothing else moved.
     await inside(ws, () => reconcileHiggsfieldImage(id));
-    open = await alerts();
+    open = (await alerts()).filter((a) => a.id === id);
     expect(open).toHaveLength(1);
     expect(open[0].first_at).toBe(first);
     expect(await metered(id)).toEqual(reserved);
@@ -248,7 +250,7 @@ test("the missing old key: the take waits, says so, the admin is told once; noth
     expect(projectTakes([{ origin: "generation", value: gen }])[0]).toMatchObject({ status: "rendering", reason: KEY_CHANGED_REASON, credits: null });
     // The platform's desk lists it, by workspace and a key prefix; never a key.
     const desk = await sharedKeyDesk();
-    expect(desk.keyChanges).toEqual([{ take: id, workspace: "Studio gone_key", key: fingerprintOf(OLD).slice(0, 12), since: first, lastAt: expect.any(Number) }]);
+    expect(desk.keyChanges.filter((k) => k.take === id)).toEqual([{ take: id, workspace: "Studio gone_key", key: fingerprintOf(OLD).slice(0, 12), since: first, lastAt: expect.any(Number) }]);
     expect(JSON.stringify(desk)).not.toMatch(/secret|old-key-id|new-key-id/);
     // The operator keeps the old key for collection: the take is collected and settles at the price it was quoted.
     process.env.HF_CREDENTIALS_PREVIOUS = OLD;
@@ -258,8 +260,8 @@ test("the missing old key: the take waits, says so, the admin is told once; noth
     expect(take.params).not.toHaveProperty("providerKeyChanged");
     expect(await metered(id)).toMatchObject({ status: "succeeded", engine_cost_usd: 0.12, billed_credits: reserved.billed_credits });
     expect(await inside(ws, async () => (await creditState())!.balance)).toBe(balance);
-    expect((await alerts())[0].resolved_at).toEqual(expect.any(Number));
-    expect((await sharedKeyDesk()).keyChanges).toEqual([]);
+    expect((await alerts()).find((a) => a.id === id)?.resolved_at).toEqual(expect.any(Number));
+    expect((await sharedKeyDesk()).keyChanges.filter((k) => k.take === id)).toEqual([]);
     expect(submits).toBe(0);
   } finally {
     engine.render = render;
