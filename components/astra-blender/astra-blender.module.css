@@ -16,6 +16,8 @@
   overflow: hidden;
   font-size: 12px;
   line-height: 1.45;
+  /* Its own width picks the desktop or tablet columns where a host is narrower than the screen (below). */
+  container: astra-workspace / inline-size;
 }
 .workspace button, .workspace input, .workspace textarea, .workspace select { font: inherit; }
 .workspace button { cursor: pointer; }
@@ -147,6 +149,12 @@
 .mobileTabs { display: none; }
 @media (min-width: 1500px) { .layout { grid-template-columns: 205px minmax(300px, 1fr) 295px; min-height: 700px; } .viewport { min-height: 520px; } .inspectorBody { max-height: 760px; } }
 @media (max-width: 1199px) and (min-width: 768px) { .layout { grid-template-columns: 155px minmax(230px, 1fr) 230px; } .header { padding: 12px; } .inspectorBody { padding: 14px 10px; } .segment button span { display: none; } .objectRow .rowIcon { width: 19px; } .sceneItem small { display: none; } .fps { display: none; } .keyButton span { font-size: 9px; } .viewportLabel > span:last-child { display: none; } }
+/* The Studio suite sets Astra between its Library and its Inspector, so on a desktop screen the workspace can be narrower
+   than the desktop columns need (about 700px at 1440×900, where they ran 22px past it): under 820px of its own width it
+   takes the tablet's columns above. */
+@media (min-width: 1200px) {
+  @container astra-workspace (max-width: 819px) { .layout { grid-template-columns: 155px minmax(230px, 1fr) 230px; } .header { padding: 12px; } .inspectorBody { padding: 14px 10px; } .segment button span { display: none; } .objectRow .rowIcon { width: 19px; } .sceneItem small { display: none; } .fps { display: none; } .keyButton span { font-size: 9px; } .viewportLabel > span:last-child { display: none; } }
+}
 @media (max-width: 900px) and (min-width: 768px) { .layout { grid-template-columns: 140px minmax(200px, 1fr) 210px; } .brand p { max-width: 200px; overflow: hidden; white-space: nowrap; } .headerActions { gap: 2px; } .assistantButton { padding: 7px; } .templatePicker { min-width: 98px; } }
 /* A phone, upright or on its side (the test app/phone-chrome.css uses for the Suites shell's phone): one panel at a
    time under the panel tabs, the actions on their own line when the name beside them would not fit, the name wrapped
