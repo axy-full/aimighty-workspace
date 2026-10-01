@@ -16,9 +16,13 @@ import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
  * Deliver's and Edit & Sound's buttons, Environment's library pickers, the ⌘K
  * field and Edit & Sound's "Add takes" are 44px targets on a touch screen; a
  * long file name in a picker never widens the page; and a draft that could
- * not be read says "Try again" ("Retry" is a take's paid re-render). A real
- * project on the local routes, a mocked Library, the mock engine: nothing is
- * paid for.
+ * not be read says "Try again" ("Retry" is a take's paid re-render). The
+ * follow-up floors: the Library overlay ends above a phone's tab bar, its
+ * closing note included; the agent's model and effort pickers, the Atomik
+ * agent panel and the Atomik suite's controls are 44px targets on a touch
+ * screen; Atomik's projects and budget reads say "Try again" when they fail;
+ * and the Atomik pages' group notes read at the label floor. A real project
+ * on the local routes, a mocked Library, the mock engine: nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
@@ -226,5 +230,197 @@ test("a draft that could not be read says Try again, never Retry (Deliver's tool
   down = false;
   await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByTestId("assembly")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Every control a thumb can hit inside `scope` that is under 44×44: buttons, links, fields, a disclosure's summary and
+ * a list's option; a checkbox by its label, which takes the tap for the whole row. A segmented option may be 40px tall
+ * inside its 44px track, the one exemption tests/phoneFloors.ts allows.
+ */
+async function touchTargets(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate((scope) => {
+    const roots = Array.from(document.querySelectorAll<HTMLElement>(scope)).filter((el) => el.getClientRects().length);
+    if (!roots.length) return [`nothing on screen matches ${scope}`];
+    const out: string[] = [];
+    for (const root of roots)
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>("button, a[href], select, input, textarea, summary, [role='option']"))) {
+        if (!el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
+        const target = el.matches("input[type='checkbox'], input[type='radio']") ? (el.closest("label") ?? el) : el;
+        const box = target.getBoundingClientRect();
+        const track = el.classList.contains("gx-seg-btn") ? el.closest(".gx-seg") : null;
+        const floor = track && track.getBoundingClientRect().height >= 43.5 ? 40 : 44;
+        if (box.width < 43.5 || box.height < floor - 0.5)
+          out.push(`${(el.getAttribute("aria-label") || el.textContent || String(el.className) || el.tagName).trim().slice(0, 32)}: ${Math.round(box.width)}×${Math.round(box.height)}`);
+      }
+    return out;
+  }, scope);
+}
+
+test("Library: the overlay's list and its closing note end above the tab bar, where a tap lands on them", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors } = await open(page, "/suites?suite=studio&page=takes&sp=takes", "edit-stage");
+  const library = page.getByTestId("library");
+  if (!(await library.isVisible())) await page.getByTestId("toggle-library").click();
+  const assets = library.getByRole("tab", { name: /Assets/ });
+  if (await assets.count()) await assets.click();
+  await expect(library.locator(".gx-asset").first()).toBeVisible();
+  await expect(library.locator(".gx-lib-foot")).toHaveText("Everything this project has made or uploaded, on every page.");
+  /* The overlay has finished sliding in: an entrance still under way is not where it rests. */
+  await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => null))));
+  const under = await page.evaluate(() => {
+    const out: string[] = [];
+    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
+    const floats = Boolean(bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed");
+    const limit = floats ? bar!.getBoundingClientRect().top : innerHeight;
+    /* The list's own window, not only its last row: a tile half under the bar took a tap meant for it (the floors
+       audit, when the note was hidden and the list ran on under the bar). */
+    const list = document.querySelector<HTMLElement>("[data-testid='library-assets']")!;
+    list.scrollTop = list.scrollHeight;
+    const listBottom = list.getBoundingClientRect().bottom;
+    if (listBottom > limit + 0.5) out.push(`the asset list runs to ${Math.round(listBottom)}px, past ${Math.round(limit)}px`);
+    const tiles = Array.from(list.querySelectorAll<HTMLElement>(".gx-asset")).filter((el) => el.getClientRects().length);
+    const last = tiles.at(-1)!.getBoundingClientRect();
+    if (last.bottom > limit + 0.5) out.push(`the last tile ends at ${Math.round(last.bottom)}px, past ${Math.round(limit)}px`);
+    /* Landscape phones fold the note away with the rest of their compact controls (app/phone-chrome.css); where it
+       shows, it is read above the bar, and a tap on it lands on it. */
+    const note = document.querySelector<HTMLElement>(".gx-library > .gx-lib-foot")!;
+    if (note.getClientRects().length) {
+      const box = note.getBoundingClientRect();
+      if (box.bottom > limit + 0.5) out.push(`the closing note ends at ${Math.round(box.bottom)}px, past ${Math.round(limit)}px`);
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (!hit || !note.contains(hit)) out.push(`the closing note is covered by ${hit ? String(hit.className || hit.tagName).slice(0, 40) : "nothing"}`);
+    }
+    return out;
+  });
+  expect(under, "the Library's contents above the tab bar").toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+/* The agent's reads, answered here: a planning model the workspace reaches and one finished proposal. Nothing is
+   quoted, planned or rendered: any other request to the agent's route is refused and recorded. */
+const AGENT_MODELS = [
+  { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, released: 2, efforts: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }] },
+];
+const AGENT_JOB = {
+  id: "wb_atomik_floors", requestId: "request-floors-1", projectId: "floors", productionProjectId: null, suite: "atomik", status: "succeeded",
+  request: "[atomik] Plan the dunes teaser", model: "anthropic/claude-sonnet-4.6", depth: "Deep", refs: [], estimateCredits: 7, credits: 3, error: null, createdAt: 1, updatedAt: 1,
+  plan: {
+    id: "wb_atomik_floors", request: "[atomik] Plan the dunes teaser", model: "anthropic/claude-sonnet-4.6", depth: "Deep", refs: [], applied: false, intent: "shots",
+    summary: "A three-shot teaser that opens on the dunes and ends on the sphere.", steps: ["Board the dunes at first light."],
+    suiteAgent: { suite: "atomik", projectId: "floors", actions: [{ kind: "image", title: "Dunes at first light", prompt: "Caramel dunes at first light, the chrome sphere on the right.", referenceIds: [] }], hooks: ["First light"], assumptions: ["The audience is festival programmers."] },
+  },
+};
+async function agentReads(page: Page) {
+  const refused: string[] = [];
+  await page.route("**/api/workbench/atomik**", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { configured: true, models: AGENT_MODELS, jobs: [AGENT_JOB] } });
+    refused.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return route.fulfill({ status: 409, json: { error: "No agent request is sent in this test." } });
+  });
+  return refused;
+}
+
+test("the agent's model and effort pickers are 44px targets on touch, closed and open", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await page.route("**/api/workbench/development**", (route) => (route.request().method() === "GET" ? route.fulfill({ json: { configured: true, models: AGENT_MODELS, jobs: [] } }) : route.abort("blockedbyclient")));
+  const { errors } = await open(page, "/suites?suite=studio&page=brief&sp=brief", "brief-stage");
+  const bar = page.getByTestId("agent-bar");
+  const model = bar.getByRole("button", { name: "Agent model" });
+  const effort = bar.getByRole("combobox", { name: "Agent effort" });
+  await expect(model).toContainText("Claude Sonnet 4.6");
+  await expect(effort).toBeEnabled();
+  if (TOUCH.includes(info.project.name)) {
+    for (const [name, control] of [["the model picker", model], ["the effort picker", effort]] as const) {
+      const box = (await control.boundingBox())!;
+      expect.soft(Math.round(box.height), `${name}'s height`).toBeGreaterThanOrEqual(44);
+    }
+    /* Open, the picker's search, its family filters, its close (a phone's sheet) and its rows keep the floor too. */
+    await model.click();
+    const picker = page.getByRole("dialog", { name: "Choose a thinking model" });
+    await expect(picker.getByRole("option", { name: "Claude Sonnet 4.6" })).toBeVisible();
+    expect.soft(await touchTargets(page, "[role='dialog'][aria-label='Choose a thinking model']"), "the model picker, open").toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+    await effort.click();
+    await expect(page.getByRole("option", { name: /High/ })).toBeVisible();
+    expect.soft(await touchTargets(page, "[role='listbox']"), "the effort picker, open").toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("listbox")).toBeHidden();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("Atomik › Agent: the agent panel's controls are 44px targets on touch; the page's group notes read at the floor", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const refused = await agentReads(page);
+  const { errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent", "spec-page");
+  const panel = page.getByRole("region", { name: "Production orchestrator" });
+  await expect(panel.getByLabel("Creative request")).toBeEnabled();
+  await expect(panel.getByText("Production proposal", { exact: true })).toBeVisible();
+  expect.soft(await dimLabels(page, ".pxw-spec-note"), ".pxw-spec-note: under #7C7C84").toEqual([]);
+  if (TOUCH.includes(info.project.name)) {
+    /* Every disclosure open, so the rows inside it are measured too. */
+    await panel.locator("summary").filter({ hasText: "Project references" }).click();
+    await expect(panel.getByRole("checkbox").first()).toBeVisible();
+    await panel.locator("summary").filter({ hasText: "Assumptions to review" }).click();
+    await panel.locator("summary").filter({ hasText: "Dunes at first light" }).click();
+    await expect(panel.getByRole("button", { name: "Remember: The audience is festival programmers." })).toBeVisible();
+    expect.soft(await touchTargets(page, "[aria-label='Production orchestrator']"), "the agent panel").toEqual([]);
+  }
+  expect(refused).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("Atomik › Runs, Budget and Models: the suite's buttons, links and fields are 44px targets on touch", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const refused = await agentReads(page);
+  const { errors } = await open(page, "/suites?suite=atomik&page=runs&sp=runs", "spec-page");
+  const strip = page.getByRole("navigation", { name: "Pages" });
+  const suite = page.locator(".pxw-tool--atomik");
+  for (const [tab, ready] of [["Runs", "Build your first plan"], ["Budget", "Project generation spend"], ["Models", "Effective routing"]] as const) {
+    await strip.getByRole("button", { name: new RegExp(tab) }).click();
+    await expect(suite.getByText(ready, { exact: true })).toBeVisible();
+    if (tab === "Budget") await expect(suite.getByRole("button", { name: "Save cap" })).toBeVisible();
+    if (tab === "Models") await expect(suite.getByRole("link", { name: "Manage engines and routing" })).toBeVisible();
+    if (TOUCH.includes(info.project.name)) expect.soft(await touchTargets(page, ".pxw-tool--atomik"), `Atomik › ${tab}`).toEqual([]);
+  }
+  expect(await sideways(page)).toEqual([]);
+  expect(refused).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("Atomik: a projects or budget read that failed says Try again, never Retry", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const refused = await agentReads(page);
+  /* Workspace reads neither, so Atomik reads both for the first time once the connection is down (the shell already
+     holds the project, so its own head stays). */
+  const { errors } = await open(page, "/suites?view=workspace&tab=general", "workspace-view");
+  let projectsDown = true, budgetDown = false;
+  await page.route(/\/api\/workbench\/projects\?id=/, (route) => (projectsDown && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
+  await page.route(/\/api\/projects(\?.*)?$/, (route) => (budgetDown && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "The project budget could not be loaded (503)." } }) : route.fallback()));
+  await openSuitesMenu(page);
+  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Atomik" }).click();
+  await closeSuitesMenu(page);
+  const strip = page.getByRole("navigation", { name: "Pages" });
+  await strip.getByRole("button", { name: /Runs/ }).click();
+  const projects = page.locator(".pxw-tool--atomik [role='alert']").filter({ hasText: "could not load this project" });
+  await expect(projects).toBeVisible();
+  await expect(projects.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  await expect(projects.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+  projectsDown = false;
+  await projects.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".pxw-tool--atomik").getByText("Build your first plan", { exact: true })).toBeVisible();
+
+  budgetDown = true;
+  await strip.getByRole("button", { name: /Budget/ }).click();
+  const budget = page.locator(".pxw-tool--atomik [role='alert']").filter({ hasText: "could not be loaded" });
+  await expect(budget).toBeVisible();
+  await expect(budget.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  await expect(budget.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+  budgetDown = false;
+  await budget.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".pxw-tool--atomik").getByText("Project generation spend", { exact: true })).toBeVisible();
+  expect(refused).toEqual([]);
   expect(errors).toEqual([]);
 });
