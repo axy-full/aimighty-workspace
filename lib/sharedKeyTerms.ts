@@ -12,6 +12,12 @@ export const POOL_LABEL = "Queued — starts when a slot frees";
 export const POOL_QUEUED = `${POOL_LABEL}.`;
 /** The same wait, as one line under a "Queued" label (the jobs tray, Takes). */
 export const POOL_REASON = "Starts when a slot frees";
+/**
+ * An Atomik run's take that found every shared slot taken as it was reserved. A run never leaves a take held (it could
+ * start later by itself, outside the run's approved limit: lib/workbench/rig-agent-runs.ts), so it is refused instead
+ * of queued, and the run asks.
+ */
+export const POOL_BUSY_FOR_RUN = "Every shared render slot was taken, so this render was not sent. Nothing was charged.";
 
 /** A take whose provider key is gone waits with these words, and is never failed or sent again for it. */
 export const KEY_CHANGED = "The provider key changed; checking with the provider.";

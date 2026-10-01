@@ -506,3 +506,60 @@ test("Generate on a full pool: Queued — starts when a slot frees; never refuse
     expect(Number(started.billed_credits)).toBe(quote.estimatedCredits);
   } finally { globalThis.fetch = fetchBefore; staleRead = false; }
 });
+
+test("an Atomik run's take on a full pool is refused, never queued: before its reservation the run waits for a slot; at its reservation it fails unreserved, outside the line", async () => {
+  /* An Atomik run (Rig agent runs) never leaves a take held: a held take could start later by itself, outside the
+     limit the person approved for the run. So on a full pool a run's take is refused, never parked in the line. */
+  pool("1", "1");
+  const dispatched: string[] = [];
+  const realPool = await import("../../lib/providerPool");
+  let staleRead = false;
+  const gen = load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
+    "@/lib/inngest": { enqueueRender: async (genId: string) => { dispatched.push(genId); return true; } },
+    "@/lib/providerPool": { ...realPool, poolAdmission: async (...args: Parameters<typeof realPool.poolAdmission>) => (staleRead ? { admit: true, free: 1 } : realPool.poolAdmission(...args)) },
+  });
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { POOL_BUSY_FOR_RUN } = await import("../../lib/sharedKeyTerms");
+  const other = await register("run_other"), ws = await register("run_pool");
+  await reserve(other, "run_other_running");
+  const body = { model: MARKETING, prompt: "A bottle on a marble plinth", projectId: "project", ratio: "3:4", resolution: "2k" };
+  const run = { id: "rar_aaaaaaaaaaaaaaaaaaaaaaaa", limitCredits: 5000, band: 1 };
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Network forbidden: nothing is sent"); };
+  try {
+    await inside(ws, async () => {
+      await ready();
+      await db().execute("INSERT INTO projects(id,name,created_at) VALUES('project','Project',0)");
+      await db().execute("INSERT INTO settings(key,value,updated_at) VALUES('promptWriter','none',0) ON CONFLICT(key) DO UPDATE SET value='none'");
+    });
+    const admit = async (staleness: boolean) => (await import("../../lib/tenant")).runInTenant(ws, async () => {
+      staleRead = staleness;
+      const prepared = await gen.prepareGeneration(body, actor);
+      expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
+      const quote = (prepared as { value: PreparedAdmission }).value.quote;
+      return gen.executeGenerationAdmission({ ...body, maxCredits: quote.estimatedCredits }, actor, {
+        checkpoint: (value) => (value.quote.fingerprint === quote.fingerprint ? undefined : { status: 409, body: { error: "changed" } }),
+        defer: async () => {},
+        run,
+      });
+    }, actor);
+    /* Seen full before anything is written: refused for a slot (the run waits for one), and nothing is made. */
+    const before = await admit(false);
+    expect(before.status).toBe(409);
+    expect(before.body).toMatchObject({ runHold: "slots" });
+    expect(before.body.id).toBeUndefined();
+    expect((await inside(ws, () => db().execute("SELECT COUNT(*) AS n FROM generations"))).rows[0].n).toBe(0);
+    /* The last slot went a moment before its reservation: the take fails unreserved and unsent, and never joins the line. */
+    const late = await admit(true);
+    expect(late.status).toBe(409);
+    expect(late.body).toMatchObject({ status: "failed", error: POOL_BUSY_FOR_RUN });
+    const id = String(late.body.id);
+    expect(await status(ws, id)).toMatchObject({ status: "failed", error: POOL_BUSY_FOR_RUN });
+    expect(await metered(id)).toBeUndefined();
+    expect(await line(id)).toBeUndefined();
+    expect((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM provider_pool WHERE workspace_id=?", args: [ws.id] })).rows[0].n).toBe(0);
+    expect(dispatched).toEqual([]);
+  } finally { globalThis.fetch = fetchBefore; staleRead = false; }
+  await settle(other, "run_other_running", "succeeded");
+});
