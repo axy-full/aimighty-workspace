@@ -21,7 +21,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
     business: ["01 Ads", "02 Image ads", "|03 Setup", "|04 Brand", "05 Product", "06 Format", "07 Hooks", "08 Reference", "09 Design"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
-    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory"],
+    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
   });
 });
 
@@ -30,6 +30,14 @@ test("Atomik › Memory is the shell's own page on Agent's backing page, told ap
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "memory")?.id).toBe("memory");
   expect(searchPalette(paletteIndex({ models: [], assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
+});
+
+test("Atomik › Skills is the shell's own page beside Memory, on Agent's backing page; `skills` still means Tools & connections", () => {
+  expect(shellPage("atomik", "saved-skills")).toMatchObject({ n: "08", label: "Skills", title: "Skills", own: true, legacy: { suite: "atomik", page: "agent" } });
+  expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
+  expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
+  expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");
+  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "saved runs")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
