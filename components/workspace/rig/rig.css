@@ -266,3 +266,52 @@
   .pxw [data-inspector-body="shot"] input,
   .pxw [data-inspector-body="shot"] textarea { font-size: 16px; }
 }
+
+/* ── Atomik builds the board: the run card, the same on a desk and a phone ──
+   Ask, the proposal (cards by kind, wires, what comes next, priced), the build
+   step by step, and undo. Labels stay at or above the floor (#7C7C84); nothing
+   dims by opacity; on a phone every control is at least 44×44. */
+.pxw .pxw-agent { margin: 12px 20px; padding: 12px 14px; max-width: 760px; box-sizing: border-box; border-radius: 12px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--pxw-secondary); min-width: 0; }
+.pxw .pxw-agent-head { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.pxw .pxw-agent-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; background: #e0b95e; color: #1c1c1e; font-size: 12px; font-weight: 700; }
+.pxw .pxw-agent-kicker { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: .13em; color: var(--pxw-label-floor); }
+.pxw .pxw-agent-state { font-size: 13px; font-weight: 600; color: var(--pxw-primary); }
+.pxw .pxw-agent-free { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--pxw-green-ink); background: var(--pxw-green-tint); }
+.pxw .pxw-agent-body, .pxw .pxw-agent-last, .pxw .pxw-agent-proposal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pxw .pxw-agent-body { gap: 8px; }
+.pxw .pxw-agent-proposal { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--pxw-blue-tint-border); background: var(--pxw-blue-tint); }
+.pxw .pxw-agent-title { font-size: 14px; font-weight: 650; color: var(--pxw-primary); overflow-wrap: anywhere; }
+.pxw .pxw-agent-label { font-size: 12.5px; color: var(--pxw-muted); }
+.pxw .pxw-agent-goal { width: 100%; min-height: 72px; resize: vertical; box-sizing: border-box; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13.5px; line-height: 1.45; }
+.pxw .pxw-agent-goal::placeholder { color: var(--pxw-label-floor); }
+.pxw .pxw-agent-line, .pxw .pxw-agent-note, .pxw .pxw-agent-count, .pxw .pxw-agent-problem, .pxw .pxw-agent-held, .pxw .pxw-agent-next { margin: 0; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.pxw .pxw-agent-line { color: var(--pxw-secondary); }
+.pxw .pxw-agent-note, .pxw .pxw-agent-count { color: var(--pxw-muted); }
+.pxw .pxw-agent-problem, .pxw .pxw-agent-held { color: var(--pxw-amber-ink); }
+.pxw .pxw-agent-next { color: var(--pxw-blue-soft-ink); }
+.pxw .pxw-agent-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pxw .pxw-agent-groups li { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 8px; font-size: 12.5px; min-width: 0; }
+.pxw .pxw-agent-group { font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-muted); white-space: nowrap; }
+.pxw .pxw-agent-titles { color: var(--pxw-secondary); overflow-wrap: anywhere; }
+.pxw .pxw-agent-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--pxw-muted); }
+.pxw .pxw-agent-steps li { display: flex; gap: 8px; min-width: 0; }
+.pxw .pxw-agent-steps li[data-state="done"] { color: var(--pxw-secondary); }
+.pxw .pxw-agent-steps li > span:first-child { width: 12px; flex: none; color: var(--pxw-green-ink); }
+.pxw .pxw-agent-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
+.pxw .pxw-agent-actions > .pxw-agent-note { margin-right: auto; }
+.pxw .pxw-agent-primary, .pxw .pxw-agent-quiet { min-height: 34px; padding: 0 14px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pxw .pxw-agent-primary { border: 1px solid transparent; background: var(--pxw-blue); color: #fff; }
+.pxw .pxw-agent-primary:hover:not(:disabled) { background: var(--pxw-blue-hover); }
+.pxw .pxw-agent-quiet { border: 1px solid var(--pxw-control-border); background: transparent; color: var(--pxw-secondary); }
+.pxw .pxw-agent-quiet:hover:not(:disabled) { background: rgba(255, 255, 255, .06); }
+.pxw .pxw-agent-primary:disabled { background: #173152; color: var(--pxw-secondary); cursor: default; }
+.pxw .pxw-agent-quiet:disabled { color: var(--pxw-label-floor); cursor: default; }
+@media (max-width: 767px) {
+  .pxw .pxw-agent { margin: 10px 12px; }
+  .pxw .pxw-agent-groups li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-agent-primary, .pxw .pxw-agent-quiet { min-height: 44px; min-width: 44px; }
+  /* 16px keeps a phone from zooming into the field. */
+  .pxw .pxw-agent-goal { font-size: 16px; }
+}

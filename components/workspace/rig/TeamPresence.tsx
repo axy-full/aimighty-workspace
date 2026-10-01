@@ -2,7 +2,7 @@
 import { useRig } from "./RigProvider";
 
 /** What the server's change was, as the team is told it just happened (no live room). */
-const DONE: Record<string, string> = { tidy: "tidied the board", reassert: "kept the team's cards on the board", ops: "changed the board", import: "brought an old board across" };
+const DONE: Record<string, string> = { tidy: "tidied the board", reassert: "kept the team's cards on the board", ops: "changed the board", agent: "built on the board", "agent-undo": "took its build off the board", import: "brought an old board across" };
 const ATOMIK_COLOR = "#e0b95e";
 
 /** Who else is on this production's canvas, above the shot list and the graph alike — Atomik too, while it works on the board. */
