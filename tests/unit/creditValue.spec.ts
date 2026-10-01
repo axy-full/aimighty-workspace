@@ -70,6 +70,24 @@ test("no surface types the rate as copy", () => {
   expect(offenders, "the rate is derived from creditUsd(), never typed").toEqual([]);
 });
 
+test("no spec file prices the whole suite: a credit price is pinned per file, never at a file's top level", () => {
+  /* `playwright test` imports every spec file in the runner before it forks the
+     worker, so one file's top-level `process.env.CREDIT_USD = …` priced every
+     test in the run and none ran at the default. A file that needs a price uses
+     pinCreditUsd (tests/helpers/creditRate.ts), which sets it around that file. */
+  const topLevel = /^process\.env(?:\.|\[["'])(?:CREDIT_USD|SIGNUP_CREDITS|CREDIT_PACKS|CREDIT_MARGINS)\b/m;
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (/\.spec\.ts$/.test(entry.name) && topLevel.test(fs.readFileSync(full, "utf8"))) offenders.push(path.relative(ROOT, full));
+    }
+  };
+  walk(path.join(ROOT, "tests"));
+  expect(offenders, "pin a credit price with pinCreditUsd, not at a spec file's top level").toEqual([]);
+});
+
 /* ── 2. The surfaces that state the rate ─────────────────────────────── */
 
 const ME: MeRead = { credits: { creditUsd: 0.10, granted: 2000, used: 760, balance: 1240 } };
