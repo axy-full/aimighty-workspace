@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { NextRefusal, QUOTE_UNREAD, nextFailureLine, pressNext, quoteNext } from "../../lib/workspace/next-action-run";
 import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
-import { nextActionBody, SEEDANCE_25 } from "../../lib/shell/next-actions";
+import { aboutCredits, nextActionBody, SEEDANCE_25 } from "../../lib/shell/next-actions";
 import type { TakeFailure } from "../../lib/providerOutcome";
 
 /*
@@ -67,7 +67,7 @@ test("the estimate is exactly the request's, and asking is free; a refusal comes
     expect(refused.message).toBe("Luma Ray 2 isn't connected for this workspace. Ask the platform to connect it.");
   });
   /* No answer, a busy server, or a reply that cannot be read: asking again may help, so it is not a refusal. */
-  for (const answer of ["network", { status: 503, json: { error: "down" } }, { status: 429, json: { error: "slow down" } }, { json: { estimatedCredits: 1.5, fingerprint: FP } }, { json: { estimatedCredits: 4, fingerprint: "nope" } }] as Answer[])
+  for (const answer of ["network", { status: 503, json: { error: "down" } }, { status: 429, json: { error: "slow down" } }, { json: { estimatedCredits: 1.55, fingerprint: FP } }, { json: { estimatedCredits: "4", fingerprint: FP } }, { json: { estimatedCredits: 4, fingerprint: "nope" } }] as Answer[])
     await withServer({ "/api/generate/quote": () => answer }, async () => {
       const failed = await quoteNext(SCOPE, BODY).catch((e: unknown) => e);
       expect(failed).toBeInstanceOf(Error);
@@ -75,6 +75,12 @@ test("the estimate is exactly the request's, and asking is free; a refusal comes
     });
   await withServer({ "/api/generate/quote": () => ({ json: { estimatedCredits: -1, fingerprint: FP } }) }, async () => {
     expect(((await quoteNext(SCOPE, BODY).catch((e: unknown) => e)) as Error).message).toBe(QUOTE_UNREAD);
+  });
+  /* Credit terms that charge in tenths quote in tenths: a whole tenth is a figure, shown as it is. */
+  await withServer({ "/api/generate/quote": quoted(12.5) }, async () => {
+    const quote = await quoteNext(SCOPE, BODY);
+    expect(quote.credits).toBe(12.5);
+    expect(aboutCredits(quote.credits)).toBe("about 12.5 cr");
   });
 });
 

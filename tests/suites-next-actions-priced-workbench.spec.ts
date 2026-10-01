@@ -39,7 +39,15 @@ const store = (): LibraryRoute => ({
 });
 
 type Sent = { body: Record<string, unknown>; key: string | null };
-type Server = { quotes: Record<string, unknown>[]; sent: Sent[]; writes: string[]; bump: number; failNext: boolean };
+/**
+ * The workspace's own rules, as admission answers the quote: "reason" — the shot has an approved take, so it asks why
+ * before it prices another (lib/approval.ts); "admin" — the cost approval rule's cap per shot, which a member's take
+ * would pass, so an admin has to press it (lib/approvalRule.ts).
+ */
+type Rule = "reason" | "admin" | null;
+type Server = { quotes: Record<string, unknown>[]; sent: Sent[]; writes: string[]; bump: number; failNext: boolean; holdNext: boolean; rule: Rule };
+const ASK = { title: "v1 is approved. Why render another?", line: "Ana approved v1. The reason is kept with the new take, so the shot's record says why it was revisited." };
+const CAP_LINE = "SH010 is at 60 cr; this take makes it 72 cr, over the 50 cr a shot may take. An admin has to press this one.";
 
 /** The new take as admission files it: its own row, under its source's shot as the next version, naming its source. */
 function filed(id: string, body: Record<string, unknown>, library: LibraryRoute): Generation {
@@ -63,11 +71,14 @@ function filed(id: string, body: Record<string, unknown>, library: LibraryRoute)
 
 /** The paid routes, mocked and recorded: the quote (by engine, `bump` added once asked), the one paid POST, and its job. */
 async function mockPaid(page: Page, library: LibraryRoute): Promise<Server> {
-  const server: Server = { quotes: [], sent: [], writes: [], bump: 0, failNext: false };
-  const jobs = new Map<string, { reads: number; fail: boolean }>();
+  const server: Server = { quotes: [], sent: [], writes: [], bump: 0, failNext: false, holdNext: false, rule: null };
+  const jobs = new Map<string, { reads: number; fail: boolean; held: boolean }>();
   await page.route("**/api/generate/quote", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     server.quotes.push(body);
+    if (server.rule === "reason" && !(typeof body.reason === "string" && body.reason.trim().length >= 3))
+      return route.fulfill({ status: 409, json: { error: ASK.title, line: ASK.line, needsReason: true, approvedVersion: 1 } });
+    if (server.rule === "admin") return route.fulfill({ status: 403, json: { error: CAP_LINE, needsAdmin: true } });
     const credits = (ESTIMATE[String(body.model)] ?? 1) + server.bump;
     return route.fulfill({ json: { estimatedCredits: credits, price: credits, unit: "cr", fingerprint: createHash("sha256").update(JSON.stringify(body)).digest("hex") } });
   });
@@ -78,18 +89,22 @@ async function mockPaid(page: Page, library: LibraryRoute): Promise<Server> {
     const body = request.postDataJSON() as Record<string, unknown>;
     server.sent.push({ body, key: request.headers()["idempotency-key"] ?? null });
     const id = `gen_next_${server.sent.length}`;
-    library.generations.unshift(filed(id, body, library));
-    jobs.set(id, { reads: 0, fail: server.failNext });
+    const held = server.holdNext;
+    library.generations.unshift({ ...filed(id, body, library), ...(held ? { status: "held" } : {}) });
+    jobs.set(id, { reads: 0, fail: server.failNext, held });
     server.failNext = false;
-    return route.fulfill({ status: 202, json: { id, status: "queued" } });
+    server.holdNext = false;
+    /* Short of credits, admission parks the take as held (lib/held.ts): accepted, reserved nothing, charged nothing yet. */
+    return route.fulfill({ status: 202, json: held ? { id, status: "held", held: true } : { id, status: "queued" } });
   });
-  /* The new take's job: running when first read, then its end — landed, or failed with what its provider did with the charge. */
+  /* The new take's job: running when first read, then its end — landed, or failed with what its provider did with the charge. A held one waits. */
   await page.route(/\/api\/jobs\/gen_next_\d+(\?.*)?$/, async (route) => {
     const id = new URL(route.request().url()).pathname.split("/").pop()!;
     const job = jobs.get(id), g = library.generations.find((x) => x.id === id);
     if (route.request().method() !== "GET" || !job || !g) return route.fallback();
     job.reads++;
-    if (job.reads > 1) {
+    if (job.held) g.status = "held";
+    else if (job.reads > 1) {
       Object.assign(g, job.fail
         ? { status: "failed", error: "Refused by the content filter.", failure: { provider: "byteplus", stage: "run", code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } }
         : { status: "succeeded", storedUrl: `/api/media/${id}` });
@@ -152,11 +167,18 @@ async function panelFloors(page: Page, info: TestInfo, panel: Locator, where: st
       }, { message: `${where}: the button clears the tab bar` }).toBeLessThanOrEqual(0.5);
     }
   }
+  /* With NEXT_SHOTS_DIR set, a picture of the panel where it is. */
+  if (process.env.NEXT_SHOTS_DIR) {
+    const action = await panel.getAttribute("data-action");
+    await panel.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: `${process.env.NEXT_SHOTS_DIR}/priced-${where.includes("inspector") ? "inspector" : "desk"}-${action}-${info.project.name.replace("workbench-", "")}.png` });
+  }
 }
 
-/** Open an action, see its estimate, press it once, and see the new take land. Returns the request it sent. */
+/** Open an action (unless its panel is open already: its button toggles it), see its estimate, press it once, and see the new take land. Returns the request it sent. */
 async function run(page: Page, info: TestInfo, server: Server, where: string, row: Locator, action: string, label: string, credits: number, set?: (panel: Locator) => Promise<void>) {
-  await row.getByTestId(`next-${action}`).click();
+  const button = row.getByTestId(`next-${action}`);
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
   const panel = row.getByTestId("next-panel");
   await expect(panel).toHaveAttribute("data-action", action);
   if (set) await set(panel);
@@ -207,7 +229,7 @@ test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each o
   await expect(panel.getByTestId("next-blocked")).toHaveText("Write what moves.");
   await expect(panel.getByTestId("next-go")).toBeDisabled();
   const asked = server.quotes.length;
-  const anim = await run(page, info, server, where, row, "animate", "Animate", 31, async (p) => { await p.getByTestId("next-words").fill("The camera pushes in slowly; the flags stir"); }).catch(async (error) => { throw error; });
+  const anim = await run(page, info, server, where, row, "animate", "Animate", 31, async (p) => { await p.getByTestId("next-words").fill("The camera pushes in slowly; the flags stir"); });
   expect(server.quotes.slice(asked).every((q) => String(q.prompt).length > 0)).toBe(true);
   expect(anim.sent).toMatchObject({ model: SEEDANCE_25, task: "generate", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: false, shotId: "shot_pier", references: [{ genId: "gen_still", role: "first_frame" }] });
 
@@ -279,6 +301,35 @@ test("a moved estimate is asked about again: nothing is sent until the new one i
   expect(errors).toEqual([]);
 });
 
+test("short of credits: the estimate turns the credits pill amber, and the take sent is held, charged nothing until it runs", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const pill = page.getByTestId("workspace-credits");
+  await expect(pill).toContainText(/\d/);
+  await expect(pill).not.toHaveAttribute("data-low");
+  const balance = Number(((await pill.textContent()) ?? "").replace(/[^0-9.]/g, ""));
+  expect(balance, "the balance the pill shows").toBeGreaterThan(0);
+  const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
+  /* An estimate the balance cannot cover: the pill weighs the balance against it, as it does Gen's price. */
+  const price = Math.ceil(balance) + 100;
+  server.bump = price - ESTIMATE[TOPAZ_IMAGE];
+  await row.getByTestId("next-upscale").click();
+  const panel = row.getByTestId("next-panel");
+  const go = panel.getByTestId("next-go");
+  await expect(go).toHaveText(`Upscale · about ${price.toLocaleString("en-US")} cr`);
+  await expect(pill).toHaveAttribute("data-low", "true");
+  await panelFloors(page, info, panel, '[data-testid="inspector"]');
+  /* Sent at that estimate, it is held: accepted, reserved nothing, and says so. */
+  server.holdNext = true;
+  await go.click();
+  await expect.poll(() => server.sent.length).toBe(1);
+  expect(server.sent[0].body).toMatchObject({ maxCredits: price });
+  await expect(panel.getByTestId("next-following")).toHaveText("It is held until credits or a render slot free up. Nothing is charged until it runs.");
+  await expect(go).toBeDisabled();
+  expect(server.sent, "sent once").toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
 test("a failed action says what happened and what its provider did with the charge, and Retry is priced again before it sends", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { server, library, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
@@ -314,7 +365,7 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   inspector = await inspect(page, info, "generation:gen_wide");
   await expect(inspector.getByTestId("next-extend")).toBeDisabled();
   await expect(inspector.getByTestId("next-upscale")).toBeEnabled();
-  await expect(inspector.getByTestId("next-why")).toHaveText("Extend takes a 480p or 720p clip; this one is 1080P.");
+  await expect(inspector.getByTestId("next-why")).toHaveText("Extend takes a 480p or 720p clip; this one is 1080p.");
   expect(server.quotes, "no quote without an open action").toEqual([]);
   expect(server.sent).toEqual([]);
 
@@ -324,6 +375,38 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   await expect(still.getByTestId("next-why")).toHaveText("Save the project first.");
   expect(unsaved.server.quotes).toEqual([]);
   expect([...errors, ...unsaved.errors]).toEqual([]);
+});
+
+test("the workspace's rules hold in the panel: an approved shot asks why before it is priced; past the shot's cap, an admin has to press it", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
+  const panel = row.getByTestId("next-panel");
+  /* SH010's v1 is approved: the quote asks why first, and nothing is priced until the reason is written. */
+  server.rule = "reason";
+  await row.getByTestId("next-outpaint").click();
+  await expect(panel.getByTestId("next-asked")).toHaveText(`${ASK.title} ${ASK.line}`);
+  await expect(panel.getByTestId("next-go")).toBeDisabled();
+  await expect(panel.getByTestId("next-go")).not.toContainText("about");
+  await panel.getByTestId("next-reason").fill("Square for the poster");
+  await expect(panel.getByTestId("next-go")).toHaveText("Outpaint · about 3 cr");
+  await panelFloors(page, info, panel, '[data-testid="inspector"]');
+  await panel.getByTestId("next-go").click();
+  await expect.poll(() => server.sent.length).toBe(1);
+  /* The reason goes with the take it explains, which is filed under the shot as its next version. */
+  expect(server.sent[0].body).toMatchObject({ model: BRIA_EXPAND, shotId: "shot_pier", reason: "Square for the poster", maxCredits: 3 });
+  await expect(panel.getByTestId("next-landed")).toBeVisible({ timeout: 20_000 });
+  await panel.getByTestId("next-close").click();
+
+  /* The cost approval rule: past the shot's cap, a member's take needs an admin. The server's words; the button stays shut. */
+  server.rule = "admin";
+  await row.getByTestId("next-upscale").click();
+  await expect(panel.getByTestId("next-refused")).toHaveText(CAP_LINE);
+  await expect(panel.getByTestId("next-go")).toBeDisabled();
+  await expect(panel.getByTestId("next-go")).toHaveText("Upscale");
+  expect(server.sent, "nothing more sent").toHaveLength(1);
+  expect(server.writes).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("on a phone the Inspector's Next panel keeps the floors for a clip's actions, and its button clears the tab bar", async ({ page }, info) => {

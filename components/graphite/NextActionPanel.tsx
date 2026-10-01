@@ -9,8 +9,10 @@ import {
   type NextRefusalDetail,
 } from "@/lib/workspace/next-action-run";
 import { EXTEND_MOVES } from "@/lib/tasks";
+import { MAX_REASON } from "@/lib/approval";
 import { TOPAZ_IMAGE_PRESETS, type TopazImageSettings } from "@/lib/topaz";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { rememberWorkspaceQuote } from "@/lib/workspace/last-quote";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
 /**
@@ -25,6 +27,11 @@ import type { LibraryEntry } from "@/lib/workspace/library";
  */
 
 const VERB: Record<PricedActionId, string> = { upscale: "Upscaling", outpaint: "Outpainting", animate: "Animating", reframe: "Reframing", extend: "Extending" };
+/** An example answer to the approved shot's question, in each action's terms. */
+const REASON_HINT: Record<PricedActionId, string> = {
+  upscale: "Sharper for delivery", outpaint: "Square for the poster", animate: "A moving version for the trailer",
+  reframe: "Vertical for socials", extend: "Longer for the edit",
+};
 const WORDS_LIMIT = 2000;
 
 type Quote = { key: string; credits?: number; refusal?: { message: string; detail: NextRefusalDetail }; error?: string };
@@ -70,7 +77,12 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
     const controller = new AbortController();
     const timer = setTimeout(() => {
       quoteNext(scope, body, controller.signal)
-        .then((value) => { if (!controller.signal.aborted) setQuote({ key, credits: value.credits }); })
+        .then((value) => {
+          if (controller.signal.aborted) return;
+          setQuote({ key, credits: value.credits });
+          /* The figure the header's credits pill weighs the balance against, as Gen's price is (lib/workspace/last-quote.ts). */
+          rememberWorkspaceQuote(scope, value.credits);
+        })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
           if (error instanceof NextRefusal) {
@@ -99,7 +111,7 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
         storageId: pendingGenerationKey(scope, project.id, `next:${action.id}:${entry.take.id}`),
       });
       if (out.state === "queued") followNextRun(runKey, { scope, projectId: project.id, jobId: out.jobId, credits: out.credits, status: out.status, note: out.note });
-      else if (out.state === "repriced") { setQuote({ key, credits: out.credits }); setNote(out.note); }
+      else if (out.state === "repriced") { setQuote({ key, credits: out.credits }); rememberWorkspaceQuote(scope, out.credits); setNote(out.note); }
       else if (out.state === "refused") {
         setNote(out.note);
         if (out.detail?.needsReason) setAsked(out.detail.needsReason);
@@ -125,13 +137,14 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
       <p className="gx-next-note">A new take from this one; {entry.take.name} stays as it is.</p>
       <fieldset className="gx-next-fields" disabled={busy || following}>
         <Controls settings={settings} facts={facts} onChange={change} />
+        {/* The approved shot's question, then the answer it asks for: kept with the new take (lib/approval.ts). */}
+        {asked ? <p className="gx-next-note" id={`${id}-asked`} data-testid="next-asked">{asked.title} {asked.line}</p> : null}
         {asked ? (
           <Field label="Why another take?">
-            {(labelled) => <input className="gx-field" aria-labelledby={labelled} maxLength={300} value={reason} placeholder="Upscaled for delivery" onChange={(e) => setReason(e.target.value)} data-testid="next-reason" />}
+            {(labelled) => <input className="gx-field" aria-labelledby={labelled} aria-describedby={`${id}-asked`} maxLength={MAX_REASON} value={reason} placeholder={REASON_HINT[action.id]} onChange={(e) => setReason(e.target.value)} data-testid="next-reason" />}
           </Field>
         ) : null}
       </fieldset>
-      {asked ? <p className="gx-next-note" data-testid="next-asked">{asked.title} {asked.line}</p> : null}
       <div className="gx-next-go-row">
         <button type="button" className="gx-primary gx-gen-go gx-next-go" disabled={busy || following || shown == null} data-priced={shown != null ? "" : undefined}
           onClick={() => void press()} data-testid="next-go" aria-label={priceText ? `${word} · ${priceText}` : word}>
@@ -158,7 +171,9 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
       {run?.phase === "landed" ? (
         <div className="gx-next-done" role="status" data-testid="next-landed">
           <p className="gx-next-note">
-            Done: a new take{run.generation.shotCode ? `, ${run.generation.shotCode} v${run.generation.version}` : ` (v${run.generation.version})`}, filed with {entry.take.name}, which stays as it is.
+            {run.generation.shotCode
+              ? `Done: a new take, ${run.generation.shotCode} v${run.generation.version}, filed with ${entry.take.name}, which stays as it is.`
+              : `Done: a new take in Takes, made from ${entry.take.name}, which stays as it is.`}
           </p>
           {onOpenTake ? <button type="button" className="gx-hbtn" onClick={() => onOpenTake(`generation:${run.generation.id}`)} data-testid="next-open-result">Open the new take</button> : null}
         </div>

@@ -3,7 +3,7 @@ import type { Generation } from "../../lib/jobs";
 import type { LibraryUpload } from "../../lib/genLibrary";
 import { libraryEntries, type LibraryEntry } from "../../lib/workspace/library";
 import {
-  SEEDANCE_25, aboutCredits, extendPrompt, madeFrom, nearestRatio, nextActionBody, nextDefaults, nextEngine, nextProblem, nextRatios, nextShotOf,
+  DRAFT_WHY, SEEDANCE_25, aboutCredits, extendPrompt, madeFrom, nearestRatio, nextActionBody, nextActions, nextDefaults, nextEngine, nextProblem, nextRatios, nextShotOf,
   nextSourceOf, notOfferedLine, pricedActions, repricedNote, sourceFacts, topazScales, type NextSettings,
 } from "../../lib/shell/next-actions";
 import { getModel } from "../../lib/models";
@@ -70,7 +70,8 @@ test("a take that cannot go yet says why, once for the whole row; the engine's o
 
   /* Extend reads 480p or 720p clips of 4 to 30 seconds (the vendor's rule, lib/tasks.ts sourceProblem); Reframe and Upscale take five minutes. */
   const clipWhy = (params: Record<string, unknown>) => Object.fromEntries(pricedActions(one([clip({ params })]), saved).map((a) => [a.id, a.why]));
-  expect(clipWhy({ resolution: "1080p", duration: 8 })).toEqual({ upscale: null, reframe: null, extend: "Extend takes a 480p or 720p clip; this one is 1080P." });
+  expect(clipWhy({ resolution: "1080p", duration: 8 })).toEqual({ upscale: null, reframe: null, extend: "Extend takes a 480p or 720p clip; this one is 1080p." });
+  expect(clipWhy({ resolution: "4k", duration: 8 }).extend).toBe("Extend takes a 480p or 720p clip; this one is 4K.");
   expect(clipWhy({ resolution: "720p", duration: 3 })).toEqual({ upscale: null, reframe: null, extend: "Extend takes a clip of 4 seconds or more; this one is 3s." });
   expect(clipWhy({ resolution: "480p", duration: 45 })).toEqual({ upscale: null, reframe: null, extend: "Extend takes a clip of 30 seconds or less; this one is 45s." });
   expect(clipWhy({ resolution: "720p", duration: 400 })).toEqual({
@@ -80,6 +81,11 @@ test("a take that cannot go yet says why, once for the whole row; the engine's o
   });
   /* Unknown settings do not block: the quote asks the server, which measures the original. */
   expect(clipWhy({})).toEqual({ upscale: null, reframe: null, extend: null });
+  /* A draft carries the engine's watermark: nothing paid is made from it; its final is the take to go on from. Its Edit still opens. */
+  const draft = one([clip({ params: { draft: true, resolution: "480p", duration: 5, ratio: "16:9" } })]);
+  expect(pricedActions(draft, saved).map((a) => [a.id, a.enabled, a.why])).toEqual([["upscale", false, DRAFT_WHY], ["reframe", false, DRAFT_WHY], ["extend", false, DRAFT_WHY]]);
+  expect(nextActions(draft, saved).map((a) => a.enabled)).toEqual([true]);
+  expect(pricedActions(one([clip({ params: { finalOf: "g_draft", resolution: "1080p", duration: 5, ratio: "16:9" } })]), saved).find((a) => a.id === "upscale")!.enabled).toBe(true);
   /* Extend's words only restate the vendor's rule: it blocks exactly where sourceProblem does. */
   for (const resolution of ["480p", "720p", "1080p", "4k", undefined]) for (const duration of [2, 4, 8, 30, 31, undefined]) {
     const blocked = pricedActions(one([clip({ params: { resolution, duration } })]), saved).find((a) => a.id === "extend")!.enabled === false;

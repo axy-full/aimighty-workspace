@@ -8,6 +8,7 @@ import { ASTRA_MODEL, DEFAULT_ASTRA } from "@/lib/astra";
 import { resolutionOfHeight } from "@/lib/sourceClip";
 import { clipDoubt } from "@/lib/clipTrust";
 import { cleanReason } from "@/lib/approval";
+import { isDraft } from "@/lib/draftFinal";
 
 /**
  * Idea 12, first slice: what a take can go on to next, as a way INTO the
@@ -142,15 +143,21 @@ function extendProblem(facts: SourceFacts): string | null {
   const sp = { resolution: facts.resolution ?? undefined, duration: facts.seconds ?? undefined };
   if (!sourceProblem(getTask("extend"), sp, facts.origin)) return null;
   const res = (facts.resolution ?? "").toLowerCase();
-  if (res && res !== "480p" && res !== "720p") return `Extend takes a 480p or 720p clip; this one is ${res.toUpperCase()}.`;
+  /* Sizes as the app writes them: "1080p", and "4K". */
+  if (res && res !== "480p" && res !== "720p") return `Extend takes a 480p or 720p clip; this one is ${res === "4k" ? "4K" : res}.`;
   if (facts.seconds != null && facts.seconds < 4) return `Extend takes a clip of 4 seconds or more; this one is ${facts.seconds}s.`;
   return `Extend takes a clip of 30 seconds or less; this one is ${facts.seconds}s.`;
 }
+
+/** What a draft says in place of its actions (lib/draftFinal.ts): it carries the engine's watermark, and its final does not. */
+export const DRAFT_WHY = "A draft is a watermarked preview: make its final, then go on from that.";
 
 /** Why this take cannot go through one action now; null when it can. The take's own state first (as the navigation row says it), then the engine's limits on this source. */
 function pricedGate(entry: Entry, saved: boolean, action: PricedActionId, media: "image" | "video"): Pick<PricedAction, "enabled" | "why"> {
   const base = gate(entry, saved);
   if (!base.enabled) return base;
+  /* A paid upscale, reframe or extension of a draft would carry its watermark: the final is the take to go on from. */
+  if (entry.asset.origin === "generation" && isDraft(entry.asset.value.params)) return { enabled: false, why: DRAFT_WHY };
   const facts = sourceFacts(entry);
   if (media === "video") {
     /* A locked task priced by the source's seconds needs a length it can believe (lib/clipTrust.ts); Astra reads the original itself. */
@@ -358,7 +365,7 @@ export function madeFrom(g: Pick<Generation, "kind" | "model" | "task" | "source
 
 /* ── Money words ────────────────────────────────────────────────────────── */
 
-/** An estimate, as every Next action shows it: "about 12 cr". */
-export const aboutCredits = (credits: number) => `about ${credits.toLocaleString("en-US")} cr`;
+/** An estimate, as every Next action shows it: "about 12 cr" (a tenth shown where the credit terms charge in tenths). */
+export const aboutCredits = (credits: number) => `about ${credits.toLocaleString("en-US", { maximumFractionDigits: 1 })} cr`;
 /** A price that moved between the button and the press: nothing was sent, and the new estimate is asked for again. */
 export const repricedNote = (label: string, credits: number) => `The estimate is now ${aboutCredits(credits)}. Press ${label} again to approve it.`;

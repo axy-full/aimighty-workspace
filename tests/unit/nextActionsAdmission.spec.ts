@@ -181,6 +181,37 @@ test("sent at its estimate, an action files a NEW take under its source's shot a
   expect(await row(clip)).toEqual(before.clip);
 }));
 
+test("the workspace's cost approval rule holds for a Next action: a member's take past the shot's cap needs an admin; an admin's is priced", async () => scope("capped", async (s, { still, clip }) => {
+  const { db } = await import("../../lib/db");
+  const { invalidateSettings } = await import("../../lib/settings");
+  const { currentTenant, runInTenant } = await import("../../lib/tenant");
+  await db().execute("INSERT INTO settings(key,value,updated_at) VALUES('approvalRule','cap',0),('shotCapCredits','1',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  /* SH010 has spent past its cap already (its still was billed), so any take more on it is past the cap. */
+  await db().execute({ sql: "UPDATE generations SET cost_usd=0.5 WHERE id=?", args: [still] });
+  invalidateSettings();
+  try {
+    /* The same workspace, asked by a member: admission reads the actor in scope, never a role it is told. */
+    const member: AdmissionActor = { user: { ...actor.user, id: "member", email: "member@example.invalid", name: "Member", role: "member", owner: false } };
+    const workspace = currentTenant()!.workspace!;
+    const asMember = (request: Record<string, unknown>) => runInTenant(workspace, () => s.gen.prepareGeneration(request, member), member);
+    const requests = [
+      body({ action: "outpaint", ratio: "1:1", prompt: "" }, { genId: still }, "shot_1"),
+      body({ action: "extend", direction: "forward", prompt: "the ferry clears the harbour", resolution: "720p", duration: 5, audio: false }, { genId: clip }, "shot_1"),
+    ];
+    for (const request of requests) {
+      const refused = await asMember(request);
+      expect(refused).toMatchObject({ ok: false, status: 403, body: { needsAdmin: true } });
+      if (!refused.ok) expect(String(refused.body.error)).toContain("An admin has to press this one.");
+      expect(value(await s.gen.prepareGeneration(request, actor)).quote.estimatedCredits).toBeGreaterThan(0);
+    }
+    /* A take filed under no shot is outside a shot's cap. */
+    expect((await asMember(body({ action: "outpaint", ratio: "1:1", prompt: "" }, { genId: still }, ""))).ok).toBe(true);
+  } finally {
+    await db().execute("DELETE FROM settings WHERE key IN ('approvalRule','shotCapCredits')");
+    invalidateSettings();
+  }
+}));
+
 test("a shot with an approved take asks why before another is priced; the reason is kept with the new take", async () => scope("approved", async (s, { still }) => {
   const { db } = await import("../../lib/db");
   await db().execute({ sql: "UPDATE generations SET review_state='approved', approved_by='Ana', approved_at=1 WHERE id=?", args: [still] });

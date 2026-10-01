@@ -45,6 +45,8 @@ export class NextRefusal extends Error {
 
 const FINGERPRINT = /^[a-f0-9]{64}$/;
 export const QUOTE_UNREAD = "The estimate could not be read.";
+/** A figure the credit terms can charge: whole credits, or whole tenths of one where the terms charge in tenths. */
+const chargeable = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && Math.abs(n * 10 - Math.round(n * 10)) < 1e-6;
 
 /**
  * The estimate for exactly `body`, from the server. A refusal (a request the
@@ -70,7 +72,7 @@ export async function quoteNext(scope: string, body: Record<string, unknown>, si
     throw error;
   }
   const credits = reply.estimatedCredits;
-  if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof reply.fingerprint !== "string" || !FINGERPRINT.test(reply.fingerprint))
+  if (!chargeable(credits) || typeof reply.fingerprint !== "string" || !FINGERPRINT.test(reply.fingerprint))
     throw new Error(QUOTE_UNREAD);
   return { credits, fingerprint: reply.fingerprint };
 }
