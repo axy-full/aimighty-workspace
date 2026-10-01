@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
+import { SIGN_IN_RETIRED } from "@/lib/higgsfield-consumer/retired";
 import {
   CAPABILITY_UNREADABLE, CONNECTION_ENDPOINT, capabilityOf, createCapabilityStore,
   type ConnectedCapability, type ConnectionReply,
@@ -30,7 +31,11 @@ const store = createCapabilityStore(async (scope) => {
  */
 export function useConnectedCapability(scope?: string | null, options: { read?: boolean } = {}): ConnectedCapability & { scope: string; revision: number; refresh: () => void } {
   const session = useSession();
-  const owner = session.signedIn && session.owner === true;
+  /* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts): nobody runs the connected
+     account now, the workspace owner included, so every surface takes the path a member always took and
+     nothing is read from the account. Workspace › Engines still shows the owner's grant (to Disconnect it)
+     and the shell's collector still finishes jobs already running; neither reads through this hook. */
+  const owner = !SIGN_IN_RETIRED && session.signedIn && session.owner === true;
   const ownerName = session.workspace?.ownerName ?? null;
   const requested = scope === undefined ? session.requestScope : scope;
   const key = session.signedIn && requested === session.requestScope ? requested ?? "" : "";

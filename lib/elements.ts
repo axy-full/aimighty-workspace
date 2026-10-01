@@ -143,6 +143,19 @@ export async function getElement(elementId: string): Promise<ElementFull | null>
   return (await withAttributes([rowToElement(rs.rows[0])]))[0];
 }
 
+/** Several elements by id, whichever production they belong to (an old board may cite any), with their attributes and versions. Missing ids are left out. */
+export async function getElements(ids: readonly string[]): Promise<ElementFull[]> {
+  await ready();
+  const unique = [...new Set(ids.filter((value) => typeof value === "string" && value))];
+  const found: ElementFull[] = [];
+  for (let start = 0; start < unique.length; start += 400) {
+    const batch = unique.slice(start, start + 400);
+    const rs = await db().execute({ sql: `SELECT * FROM elements WHERE id IN (${batch.map(() => "?").join(",")})`, args: batch });
+    if (rs.rows.length) found.push(...(await withAttributes(rs.rows.map(rowToElement))));
+  }
+  return found;
+}
+
 /**
  * Attach every element's attributes and versions in two queries rather than
  * two per element. The canvas asks for the whole library at once.

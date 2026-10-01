@@ -93,7 +93,7 @@ export function pushRow(room: RoomStorage, row: Pick<CanvasOpRow, "changes" | "a
 const statusOf = (error: unknown) =>
   error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : null;
 
-const DOING: Record<string, string> = { tidy: "Tidying the board", reassert: "Keeping the team's cards", ops: "Working on the board", agent: "Building the board", "agent-undo": "Taking its build off the board" };
+const DOING: Record<string, string> = { tidy: "Tidying the board", reassert: "Keeping the team's cards", import: "Bringing an old board across", ops: "Working on the board", agent: "Building the board", "agent-undo": "Taking its build off the board" };
 
 /**
  * Pushes every pending change of one production, in order, if one is due and

@@ -1,16 +1,11 @@
-import { consumerClientMetadata } from "@/lib/higgsfield-consumer/oauth";
+import { retiredResponse } from "@/lib/higgsfield-consumer/retired";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** Public client metadata is intentionally unauthenticated and contains no credentials. */
+/**
+ * The sign-in client's metadata is withdrawn with the sign-in itself
+ * (lib/higgsfield-consumer/retired.ts): without it no new authorization can
+ * start. Unauthenticated, as before; it never held a credential.
+ */
 export async function GET() {
-  try {
-    return Response.json(consumerClientMetadata(), {
-      headers: { "Cache-Control": "public, max-age=300" },
-    });
-  } catch {
-    return Response.json(
-      { error: "The connection is not configured." },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  return retiredResponse();
 }

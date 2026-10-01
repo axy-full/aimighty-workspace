@@ -31,6 +31,7 @@ import {
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
 /* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
 import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -79,6 +80,13 @@ const elementsCreate = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
 }).strict();
 const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, quoteBatch, submitBatch, checkBatch, explainer, characters, charactersPlan, charactersCreate, elements, elementsCreate]);
+/**
+ * Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts):
+ * every action that prices, starts or builds work, or reads the account's
+ * catalogue, characters, elements or styles. `status` and `check-batch` stay,
+ * so jobs already running are still collected; the saved-job list (GET) stays.
+ */
+const RETIRED = new Set(["catalogue", "quote", "submit", "quote-batch", "submit-batch", "explainer-presets", "characters", "characters-plan", "characters-create", "elements", "elements-create"]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -151,6 +159,7 @@ export const POST = withTenant(async (req: Request) => {
   if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 48000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success)
       return Response.json({ error: "Review the generation request." }, { status: 400, headers });

@@ -71,7 +71,8 @@ test("memory routes: one workspace's entries never reach another, a project read
     expect((await request.post("/api/atomik/memory", { data: { action: "add", kind: "note", text: "No scope" } })).status()).toBe(409);
     const money = await a.add({ kind: "note", text: "We have 400 credits left in the wallet." });
     expect(money.status()).toBe(422);
-    expect(((await money.json()) as { error: string }).error).toContain("never prices, credits or plans");
+    expect(((await money.json()) as { error: string }).error).toContain("Amounts can't be remembered");
+    expect(((await money.json()) as { error: string }).error).toContain("Take out “400 credits”");
     expect((await request.delete("/api/atomik/memory/..%2Fprojects", { headers: a.headers })).status()).toBeGreaterThanOrEqual(400);
 
     /* Forget archives the whole row in the workspace's own database; nothing is erased. */

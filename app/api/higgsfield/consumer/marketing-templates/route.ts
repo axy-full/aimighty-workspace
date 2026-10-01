@@ -27,6 +27,7 @@ import {
   submitConsumerMarketingTemplateJob,
   pollConsumerMarketingTemplate,
 } from "@/lib/higgsfield-consumer/marketing-template-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +52,8 @@ const submit = z
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [catalogue, costs, quote, submit, poll]);
+/** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): reading the template library and its prices, pricing and starting a template. `status` and the saved jobs (GET) stay. */
+const RETIRED = new Set(["catalogue", "costs", "quote", "submit"]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -118,6 +121,7 @@ export const POST = withTenant(async (req: Request) => {
   if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 48000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success)
       return Response.json({ error: "Review the template request." }, { status: 400, headers });

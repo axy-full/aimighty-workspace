@@ -22,7 +22,6 @@ import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach"
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
-import { DeveloperApiRow } from "./DeveloperApiRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -199,7 +198,7 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
         <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Prompt enhancer" style={{ alignSelf: "flex-start" }}>
           {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => set("promptEnhancer", p)} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
         </div>
-        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr; a connected model that enhances on the account does it inside the render.</span>
+        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr.</span>
       </div>
       <div className="wsx-actions">
         <button type="button" className="gx-primary" disabled={!admin || (!changed.length && !renamed) || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>
@@ -558,7 +557,6 @@ function Engines() {
   /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
   const house = session.rates.unit === "usd";
   const { data, error } = useRead<Keys>("/api/workspaces/keys");
-  const [linked, setLinked] = useState<boolean | null>(null);
   return (
     <>
       <div className="wsx-card" data-testid="ws-engines">
@@ -572,9 +570,8 @@ function Engines() {
           </div>
         ))}
       </div>
-      <ConnectedAccountRow owner={owner} onLinked={setLinked} />
+      <ConnectedAccountRow owner={owner} />
       <XaiEngineRow />
-      {owner ? <DeveloperApiRow connected={linked} /> : null}
     </>
   );
 }

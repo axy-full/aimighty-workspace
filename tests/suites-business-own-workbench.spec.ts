@@ -225,8 +225,10 @@ test("Setup lists what Particl made in the project — products, the brand kit, 
   await expect(page.getByTestId("particl-setup-product")).toContainText("In use");
   await expect(page.getByTestId("particl-setup-brand_kit")).toContainText("Northline");
   await expect(page.getByTestId("particl-setup-ad_reference")).toContainText("Founder unboxing.mp4");
-  /* The owner's account lists follow, as before: this owner has not connected one. */
-  await expect(page.getByTestId("setup-connect")).toContainText("Connect the account in Workspace › Engines.");
+  /* The account's lists ran on the retired Higgsfield sign-in: the retired card says so, for the owner too, and no connect prompt. */
+  await expect(page.getByTestId("owner-run-business")).toBeVisible();
+  await expect(page.getByTestId("owner-run-business-title")).toHaveText("Particl no longer signs in to Higgsfield");
+  await expect(page.getByTestId("setup-connect")).toHaveCount(0);
   await expectBusinessFloors(page, info.project.name, "particl-setup", "particl-setup");
 
   await page.getByTestId("particl-setup-product").getByRole("button", { name: /Salt bottle/ }).click();
@@ -242,7 +244,7 @@ test("Setup lists what Particl made in the project — products, the brand kit, 
   expect(seen.errors).toEqual([]);
 });
 
-test("a member works in Business's own tools: the pages are there, the owner's card only where the owner's account runs", async ({ page, playwright }, info) => {
+test("a member works in Business's own tools: the pages are there, the retired card only where the Higgsfield account ran", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(150_000);
   const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
@@ -251,7 +253,7 @@ test("a member works in Business's own tools: the pages are there, the owner's c
   const seen = await openBusiness(page, "brand", fixture(), { member: true });
   await expect(page.getByTestId("brand-tool")).toBeVisible();
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  /* Business is not the owner's whole suite any more: its pages are listed, and no Owner badge sits on its tab. */
+  /* Business is not a retired suite: its pages are listed. No suite carries an Owner badge since the sign-in was retired. */
   const strip = page.getByRole("navigation", { name: "Pages" });
   await expect(strip.getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
   await expect(strip.getByRole("button")).toHaveCount(9);
@@ -264,7 +266,7 @@ test("a member works in Business's own tools: the pages are there, the owner's c
   await page.getByTestId("brand-name").fill("Northline");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Northline");
   await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
-  /* Ads is the owner's: the same calm card as before. */
+  /* Ads ran on the retired sign-in: the same calm card, for everyone. */
   await strip.getByRole("button", { name: /Ads/ }).click();
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
   await expect(page.getByTestId("ads-view")).toHaveCount(0);

@@ -28,8 +28,11 @@ import { graphLayout } from "../workspace/rig-graph";
  * a removal never leaves a teammate's card wired to nothing.
  */
 
-/** What an operation may set on a node directly. Placement is `move`, inputs are `wire`; approving and locking stay a person's. */
-export const SETTABLE_FIELDS = ["title", "text", "mode", "role", "engine", "durationS", "ratio", "resolution", "look", "collapsed", "width"] as const;
+/**
+ * What an operation may set on a node directly. Placement is `move`, inputs are `wire`; approving and locking stay a
+ * person's. `imported` is the record an old board's import keeps on the cards it brought (lib/workbench/board-import-model.ts).
+ */
+export const SETTABLE_FIELDS = ["title", "text", "mode", "role", "engine", "durationS", "ratio", "resolution", "look", "collapsed", "width", "imported"] as const;
 export type SettableField = (typeof SETTABLE_FIELDS)[number];
 
 export type CanvasOp =

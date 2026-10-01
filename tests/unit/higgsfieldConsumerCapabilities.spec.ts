@@ -1,374 +1,65 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import {
-  runWithStore,
-  NoTenantError,
-  type TenantStore,
-} from "../../lib/tenant";
-import { MediaSourceError } from "../../lib/mediaBindings";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 import { workbenchScopeFor } from "../../lib/workbench/request-scope";
-import { AccountError } from "../../lib/accountDb";
-import { ConsumerDiscoveryError } from "../../lib/higgsfield-consumer/mcp";
 
-const secret = "private-access-token-no-client-exposure";
-const discovered = {
-  status: "discovered",
-  discoveryOnly: true,
-  capabilitiesVerified: false,
-  protocolVersion: "2025-11-25",
-  tools: [
-    {
-      name: "brand_kit_fetch",
-      description: "Untrusted description",
-      inputSchema: { type: "object" },
-    },
-  ],
-  summary: { brandExtraction: ["brand_kit_fetch"] },
-};
+/**
+ * Reading what the connected account offers — tool discovery, Atomik › Tools
+ * & connections' reach check, the read-only contract checks and the analysis
+ * model definitions — is retired with the Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts). Each route answers 410 to every
+ * caller and every body, and imports nothing that could reach the account:
+ * no token, no discovery, no rate allowance.
+ */
+const ROUTES = ["capabilities", "qualification", "analysis-qualification"] as const;
 
-/** Executes the real route and tenant wrapper with isolated platform identity,
- * rate storage, OAuth refresh and outbound discovery. Browser tests exercise
- * the platform-management restriction through real sessions. */
-async function fixture(
-  kind: "capabilities" | "qualification" | "analysis-qualification" = "capabilities",
-) {
-  const auth = await import("../../lib/auth");
-  const tenant = await import("../../lib/tenant");
-  let store = {
-    workspace: { id: "workspace", keys: {}, legacy: false, deletedAt: null },
-    user: {
-      id: "owner",
-      name: "Owner",
-      email: "owner@example.test",
-      role: "admin",
-      owner: true,
-    },
-  } as TenantStore;
-  const source = ts.createSourceFile(
-    "auth.ts",
-    readFileSync("lib/auth.ts", "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const statement = source.statements.find(
-    (s) => ts.isFunctionDeclaration(s) && s.name?.text === "withTenant",
-  )!;
-  const wrapper = ts.transpileModule(statement.getText(source), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
+function load(kind: (typeof ROUTES)[number]) {
+  const deps: Record<string, unknown> = { "@/lib/higgsfield-consumer/retired": retired };
+  const output = { exports: {} as { POST(req?: Request): Promise<Response> } };
+  const source = ts.transpileModule(readFileSync(`app/api/higgsfield/consumer/${kind}/route.ts`, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const wrapperExports = {} as Pick<typeof auth, "withTenant">;
-  new Function(
-    "exports",
-    "resolveStore",
-    "runWithStore",
-    "NoTenantError",
-    "MediaSourceError",
-    "workbenchScopeFor",
-    "recoveryRoute",
-    wrapper,
-  )(
-    wrapperExports,
-    async () => store,
-    runWithStore,
-    NoTenantError,
-    MediaSourceError,
-    workbenchScopeFor,
-    (fn: unknown) => fn,
-  );
-  class OAuthError extends Error {
-    constructor(
-      readonly code: string,
-      readonly status: number,
-    ) {
-      super(secret);
-    }
-  }
-  const tokenRequests: string[][] = [];
-  const discoveries: string[] = [];
-  const limits: unknown[][] = [];
-  let token: string | null = secret;
-  let failure: unknown;
-  let tokenFailure: unknown;
-  let limited = false;
-  let platformOwner = true;
-  const deps: Record<string, unknown> = {
-    "@/lib/auth": { ...auth, withTenant: wrapperExports.withTenant, requireSuperAdmin: async () => {
-      const session = await auth.requireOwner();
-      if (session.response) return session;
-      return platformOwner ? session : { response: Response.json({ error: "The platform owner only." }, { status: 403 }) };
-    } },
-    "@/lib/tenant": tenant,
-    "@/lib/accountDb": {
-      AccountError,
-      takeAccountLimit: async (...args: unknown[]) => {
-        limits.push(args);
-        if (limited) throw new AccountError(secret, 429);
-      },
-    },
-    "@/lib/higgsfield-consumer/oauth": {
-      ConsumerOAuthError: OAuthError,
-      getConsumerAccessToken: async (...ids: string[]) => {
-        tokenRequests.push(ids);
-        if (tokenFailure) throw tokenFailure;
-        return token;
-      },
-    },
-    "@/lib/higgsfield-consumer/mcp": {
-      ConsumerDiscoveryError,
-      readConsumerQualification: async (value: string) => {
-        discoveries.push(value);
-        if (failure) throw failure;
-        return { readOnly: true, results: [] };
-      },
-      readConsumerAnalysisQualification: async (value: string) => {
-        discoveries.push(value);
-        if (failure) throw failure;
-        return { readOnly: true, results: [] };
-      },
-    },
-    "@/lib/higgsfield-consumer/discovery": {
-      discoverConsumerCapabilities: async (value: string) => {
-        discoveries.push(value);
-        if (failure) throw failure;
-        return discovered;
-      },
-      discoverAtomikReach: async (value: string) => {
-        discoveries.push(`reach:${value}`);
-        if (failure) throw failure;
-        return { status: "checked", checkedAt: 1, reach: [{ id: "image", available: true }], available: 1, total: 1 };
-      },
-    },
-  };
-  const output = {
-    exports: {} as { POST(req: Request, ctx: unknown): Promise<Response> },
-  };
-  const route = ts.transpileModule(
-    readFileSync(`app/api/higgsfield/consumer/${kind}/route.ts`, "utf8"),
-    {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-      },
-    },
-  ).outputText;
-  new Function("require", "module", "exports", route)(
-    (name: string) => {
-      if (!(name in deps)) throw new Error(`Unexpected dependency ${name}`);
-      return deps[name];
-    },
-    output,
-    output.exports,
-  );
-  return {
-    store: () => store,
-    setStore: (value: TenantStore) => {
-      store = value;
-    },
-    tokenRequests,
-    discoveries,
-    limits,
-    ordinaryOwner: () => { platformOwner = false; },
-    disconnect: () => {
-      token = null;
-    },
-    fail: (value: unknown) => {
-      failure = value;
-    },
-    failToken: (code: string, status: number) => {
-      tokenFailure = new OAuthError(code, status);
-    },
-    limit: () => {
-      limited = true;
-    },
-    post: (
-      scope: string | null = workbenchScopeFor("workspace", "owner"),
-      origin?: string,
-      body?: unknown,
-    ) =>
-      output.exports.POST(
-        new Request(`http://localhost/api/higgsfield/consumer/${kind}`, {
-          method: "POST",
-          headers: {
-            ...(scope === null ? {} : { "X-Workbench-Scope": scope }),
-            ...(origin ? { origin } : {}),
-          },
-          // Caller-supplied identities, endpoints or tool calls must be ignored.
-          body: JSON.stringify(body ?? {
-            workspaceId: "other",
-            userId: "other",
-            endpoint: "https://evil.example",
-            method: "tools/call",
-          }),
-        }),
-        undefined,
-      ),
-  };
+  new Function("require", "module", "exports", source)((name: string) => {
+    if (!(name in deps)) throw new Error(`Unexpected dependency ${name}`);
+    return deps[name];
+  }, output, output.exports);
+  return output.exports;
 }
 
-test("workspace ownership alone cannot expose provider diagnostics or pricing", async () => {
-  for (const kind of ["capabilities", "qualification", "analysis-qualification"] as const) {
-    const f = await fixture(kind);
-    f.ordinaryOwner();
-    expect((await f.post()).status).toBe(403);
-    expect(f.tokenRequests).toEqual([]);
-    expect(f.discoveries).toEqual([]);
-    expect(f.limits).toEqual([]);
+test("the discovery, reach and qualification routes answer 410 to any caller and any body, before anything is read", async () => {
+  const bodies = [{}, { view: "reach" }, { workspaceId: "other", userId: "other", endpoint: "https://evil.example", method: "tools/call" }];
+  const scopes = [workbenchScopeFor("workspace", "owner"), workbenchScopeFor("other", "owner"), null];
+  for (const kind of ROUTES) {
+    const route = load(kind);
+    for (const body of bodies)
+      for (const scope of scopes) {
+        const fetchBefore = globalThis.fetch;
+        let reached = 0;
+        globalThis.fetch = async () => { reached++; throw new Error("NO_NETWORK_IN_ROUTE_TEST"); };
+        try {
+          const response = await route.POST(new Request(`http://localhost/api/higgsfield/consumer/${kind}`, {
+            method: "POST",
+            headers: { ...(scope === null ? {} : { "X-Workbench-Scope": scope }), origin: "https://other.example" },
+            body: JSON.stringify(body),
+          }));
+          expect(response.status, `${kind} ${JSON.stringify(body)}`).toBe(410);
+          expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+          expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+        } finally {
+          globalThis.fetch = fetchBefore;
+        }
+        expect(reached).toBe(0);
+      }
   }
 });
 
-test("capabilities route rejects unauthenticated, nonowner, bearer and stale browser scopes before any token/provider access", async () => {
-  const f = await fixture();
-  const original = f.store();
-  for (const scope of [
-    null,
-    "",
-    workbenchScopeFor("other", "owner"),
-    workbenchScopeFor("workspace", "other"),
-  ])
-    expect((await f.post(scope)).status).toBe(409);
-  expect((await f.post(undefined, "https://evil.example")).status).toBe(403);
-  f.setStore({ ...original, user: null });
-  expect((await f.post(null)).status).toBe(401);
-  f.setStore({ ...original, user: { ...original.user!, owner: false } });
-  expect((await f.post()).status).toBe(403);
-  for (const scope of ["read", "render"] as const) {
-    f.setStore({
-      ...original,
-      token: { id: "token", scope } as TenantStore["token"],
-    });
-    expect((await f.post(null)).status).toBe(403);
-  }
-  expect(f.tokenRequests).toEqual([]);
-  expect(f.discoveries).toEqual([]);
-  expect(f.limits).toEqual([]);
-});
-
-test("qualification route enforces owner session, origin, captured scope, connection and rate before fixed read execution", async () => {
-  const f = await fixture("qualification"),
-    original = f.store();
-  for (const scope of [
-    null,
-    "",
-    workbenchScopeFor("other", "owner"),
-    workbenchScopeFor("workspace", "other"),
-  ])
-    expect((await f.post(scope)).status).toBe(409);
-  expect((await f.post(undefined, "https://evil.example")).status).toBe(403);
-  f.setStore({ ...original, user: null });
-  expect((await f.post(null)).status).toBe(401);
-  f.setStore({ ...original, user: { ...original.user!, owner: false } });
-  expect((await f.post()).status).toBe(403);
-  for (const scope of ["read", "render"] as const) {
-    f.setStore({
-      ...original,
-      token: { id: "token", scope } as TenantStore["token"],
-    });
-    expect((await f.post(null)).status).toBe(403);
-  }
-  expect(f.tokenRequests).toEqual([]);
-  expect(f.discoveries).toEqual([]);
-  f.setStore(original);
-  const response = await f.post();
-  expect(response.status).toBe(200);
-  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-  expect(await response.json()).toEqual({ readOnly: true, results: [] });
-  expect(f.tokenRequests).toEqual([["workspace", "owner"]]);
-  expect(f.limits).toEqual([
-    ["higgsfield-consumer-qualification:workspace:owner", 3, 60_000],
-  ]);
-  f.limit();
-  expect((await f.post()).status).toBe(429);
-  expect(f.discoveries).toHaveLength(1);
-  const absent = await fixture("qualification");
-  absent.disconnect();
-  expect((await absent.post()).status).toBe(409);
-  expect(absent.discoveries).toEqual([]);
-});
-
-test("owner discovery uses only resolved account/workspace, returns unverified schemas, and never caches or returns tokens", async () => {
-  const f = await fixture();
-  const response = await f.post();
-  expect(response.status).toBe(200);
-  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-  expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-  const text = await response.text();
-  expect(JSON.parse(text)).toEqual(discovered);
-  expect(text).not.toContain(secret);
-  expect(f.tokenRequests).toEqual([["workspace", "owner"]]);
-  expect(f.discoveries).toEqual([secret]);
-  expect(f.limits).toEqual([
-    ["higgsfield-consumer-discovery:workspace:owner", 6, 60_000],
-  ]);
-});
-
-test("the reach view (Atomik › Tools & connections) goes through the same owner guard and allowance and returns only row flags", async () => {
-  const f = await fixture();
-  const reach = await f.post(undefined, undefined, { view: "reach" });
-  expect(reach.status).toBe(200);
-  const text = await reach.text();
-  expect(JSON.parse(text)).toEqual({ status: "checked", checkedAt: 1, reach: [{ id: "image", available: true }], available: 1, total: 1 });
-  expect(text).not.toContain(secret);
-  expect(f.discoveries).toEqual([`reach:${secret}`]);
-  expect(f.limits).toEqual([["higgsfield-consumer-discovery:workspace:owner", 6, 60_000]]);
-  f.disconnect();
-  const absent = await f.post(undefined, undefined, { view: "reach" });
-  expect(absent.status).toBe(409);
-  expect(await absent.json()).toMatchObject({ code: "not_connected", error: "Connect the owner’s account in Workspace › Engines." });
-  const member = await fixture();
-  member.setStore({ ...member.store(), user: { ...member.store().user!, owner: false, role: "member" } });
-  expect((await member.post(undefined, undefined, { view: "reach" })).status).toBe(403);
-  expect(member.discoveries).toEqual([]);
-});
-
-test("disconnected and rate-limited callers perform no MCP discovery", async () => {
-  const disconnected = await fixture();
-  disconnected.disconnect();
-  const absent = await disconnected.post();
-  expect(absent.status).toBe(409);
-  expect(await absent.json()).toMatchObject({
-    status: "unavailable",
-    code: "not_connected",
-  });
-  expect(disconnected.discoveries).toEqual([]);
-  const limited = await fixture();
-  limited.limit();
-  const blocked = await limited.post();
-  expect(blocked.status).toBe(429);
-  expect(await blocked.text()).not.toContain(secret);
-  expect(limited.tokenRequests).toEqual([]);
-  expect(limited.discoveries).toEqual([]);
-});
-
-test("OAuth refresh failures and provider/network errors expose only safe categories", async () => {
-  for (const [code, status] of [
-    ["reconnect_required", 401],
-    ["connection_busy", 409],
-    ["unavailable", 503],
-  ] as const) {
-    const f = await fixture();
-    f.failToken(code, status);
-    const response = await f.post();
-    expect(response.status).toBe(status);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    const text = await response.text();
-    expect(text).not.toContain(secret);
-    expect(JSON.parse(text).code).toBe(code);
-    expect(f.discoveries).toEqual([]);
-  }
-  for (const failure of [
-    new ConsumerDiscoveryError("protocol_error"),
-    new Error(secret),
-  ]) {
-    const f = await fixture();
-    f.fail(failure);
-    const response = await f.post();
-    expect(response.status).toBe(
-      failure instanceof ConsumerDiscoveryError ? 502 : 503,
-    );
-    expect(await response.text()).not.toContain(secret);
+test("the retired routes keep no discovery, token or rate code: only the retirement answers", () => {
+  for (const kind of ROUTES) {
+    const source = readFileSync(`app/api/higgsfield/consumer/${kind}/route.ts`, "utf8");
+    const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1]);
+    expect(imports, kind).toEqual(["@/lib/higgsfield-consumer/retired"]);
+    for (const reader of ["getConsumerAccessToken", "discoverConsumerCapabilities", "discoverAtomikReach", "readConsumerQualification", "readConsumerAnalysisQualification", "takeAccountLimit"])
+      expect(source, `${kind} ${reader}`).not.toContain(reader);
   }
 });

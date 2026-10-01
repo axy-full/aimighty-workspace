@@ -19,6 +19,7 @@ import {
   quoteConsumerShorts,
   submitConsumerShortsJob,
 } from "@/lib/higgsfield-consumer/shorts-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,6 +33,8 @@ const submit = z
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [presets, quote, submit, poll]);
+/** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): reading the presets, pricing and starting a set of shorts. `status` and the saved sessions (GET) stay. */
+const RETIRED = new Set(["presets", "quote", "submit"]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -106,6 +109,7 @@ export const POST = withTenant(async (req: Request) => {
   if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 16000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success)
       return Response.json({ error: "Review the Shorts request." }, { status: 400, headers });

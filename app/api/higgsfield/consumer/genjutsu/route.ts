@@ -23,6 +23,7 @@ import {
   submitConsumerGenjutsuJob,
   pollConsumerGenjutsu,
 } from "@/lib/higgsfield-consumer/genjutsu-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,6 +63,8 @@ const poll = z
   .object({ action: z.literal("status"), draftId: id, id: z.uuid() })
   .strict();
 const requestSchema = z.discriminatedUnion("action", [quote, submit, poll]);
+/** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing and starting a transform. `status` and the saved runs (GET) stay, so runs already started are still collected and History still reads. */
+const RETIRED = new Set(["quote", "submit"]);
 function problem(error: unknown) {
   if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
@@ -210,6 +213,7 @@ export const POST = withTenant(
     if (owner.response) return owner.response;
     try {
       const raw = JSON.parse(await readBoundedText(req, 24000));
+      if (asksRetired(raw, RETIRED)) return retiredResponse();
       const parsed = requestSchema.safeParse(raw);
       if (!parsed.success)
         return Response.json(
