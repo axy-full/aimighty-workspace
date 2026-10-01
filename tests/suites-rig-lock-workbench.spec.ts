@@ -29,17 +29,19 @@ const still = (id: string, name: string, extra: Partial<Asset> = {}): Asset => (
 
 /**
  * The Rig's canvas, shown and fitted. A development server can reload an open tab while it compiles a route another
- * tab asked for, and the Rig then opens on its list: the canvas is shown again rather than waited on.
+ * tab asked for, and the Rig then opens on its list: the canvas is shown again rather than waited on. Every step is
+ * retried together, so a reload that lands after the canvas was first seen (the list says "Team canvas" too) shows
+ * it again instead of waiting out the test on a canvas that is not there.
  */
 async function showCanvas(page: Page) {
   const board = page.getByTestId("rig-graph-surface");
   await expect(async () => {
     if (!(await board.isVisible())) await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
     await expect(board).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("rig-team")).toContainText("Team canvas", { timeout: 5_000 });
+    await board.evaluate((el) => el.scrollIntoView({ block: "start" }), undefined, { timeout: 5_000 });
+    await page.getByTestId("rig-zoom-fit").click({ timeout: 5_000 });
   }).toPass({ timeout: 60_000 });
-  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
-  await board.evaluate((el) => el.scrollIntoView({ block: "start" }));
-  await page.getByTestId("rig-zoom-fit").click();
 }
 const node = (page: Page, id: string) => page.getByTestId("rig-graph").locator(`.pxw-graph-node[data-node-id="${id}"]`);
 /** Picks a card on the canvas and opens its Card Inspector (the same recovery as showCanvas, step by step). */
