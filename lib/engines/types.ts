@@ -58,9 +58,9 @@ export type PollResult = {
   costUsd?: number | null;
 };
 
-export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 /** A chat call by its parts, so the instruction can be marked cacheable (brief 1.8). */
-export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 
 /** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
 export type EnhanceRequest = {

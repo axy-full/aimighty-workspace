@@ -1,20 +1,25 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import type { ImportFrom, MemoryKind, MemoryView } from "@/lib/atomikMemoryText";
+import type { ImportFrom, KeptFrom, MemoryKind, MemoryView } from "@/lib/atomikMemoryText";
 
 /**
  * The browser's side of Atomik memory (app/api/atomik/memory): read the
- * workspace's and a project's entries, and the five things a person does to
- * them — keep, edit or accept, forget, find what "forget …" is about, and
- * turn a paste from another assistant into entries to review. Every request
- * carries the workspace scope the page was drawn for; none of them spends.
+ * workspace's and a project's entries, and what a person does to them —
+ * keep one, keep several picked at once (the brand kit, or what Atomik read),
+ * edit or accept, forget, find what "forget …" is about, and turn a paste
+ * from another assistant into entries to review. Every request carries the
+ * workspace scope the page was drawn for; none of them spends. (Atomik
+ * reading a paste is the paid step: the Memory page sends it through
+ * lib/usePaidAction, quoted first.)
  */
 
 export type MemoryLoad = { status: "loading" | "ready" | "error"; entries: MemoryView[]; error: string | null };
 export type ForgetFind = { subject: string; matches: (MemoryView & { selected: boolean })[] };
 export type ImportReply = { entries: MemoryView[]; skipped: { money: number; duplicates: number; beyondLimit: number; invalid: number } };
 export type AddInput = { kind: MemoryKind; text: string; projectId: string | null; assetId?: string | null; source?: "person" | "atomik"; origin?: string | null };
+export type KeepItem = { kind: MemoryKind; text: string; assetId?: string };
+export type KeepReply = { entries: MemoryView[]; skipped: { money: number; duplicates: number; beyondLimit: number; invalid: number } };
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -36,6 +41,7 @@ export function memoryApi(fetcher: Fetcher, changed?: () => void) {
   return {
     add: (input: AddInput) => call<{ entry: MemoryView }>("/api/atomik/memory", "POST", { action: "add", ...input }).then((r) => r.entry),
     importText: (input: { text: string; projectId: string | null; from: ImportFrom }) => call<ImportReply>("/api/atomik/memory", "POST", { action: "import", ...input }),
+    keep: (input: { items: KeepItem[]; projectId: string | null; from: KeptFrom }) => call<KeepReply>("/api/atomik/memory", "POST", { action: "keep", ...input }),
     find: (text: string, projectId: string | null) => call<ForgetFind>("/api/atomik/memory", "POST", { action: "find", text, projectId }),
     forget: (ids: string[], reason: "forgotten" | "dismissed" = "forgotten") => call<{ forgotten: number }>("/api/atomik/memory", "POST", { action: "forget", ids, reason }).then((r) => r.forgotten),
     update: (id: string, patch: { text?: string; kind?: MemoryKind; projectId?: string | null; accept?: boolean; updatedAt?: number }) =>

@@ -3,9 +3,9 @@ import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
-  IMPORT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, MONEY_REFUSAL, PROJECT_ID,
-  cleanMemoryText, forgetMatches, isMemoryKind, memoryLines, mentionsMoney, parseImport, parseMemoryCommand, rankForPlanner,
-  type ImportFrom, type MemoryEntry, type MemoryKind, type MemorySource, type MemoryStatus, type MemoryView, type PlannerMemoryItem,
+  CAST_REF, IMPORT_FROM, KEPT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, PROJECT_ID, SOUL_REF,
+  amountRefusal, cleanMemoryText, forgetMatches, isMemoryKind, memoryLines, mentionsMoney, parseImport, parseMemoryCommand, rankForPlanner, refSource,
+  type ImportFrom, type KeptFrom, type MemoryEntry, type MemoryKind, type MemorySource, type MemoryStatus, type MemoryView, type PlannerMemoryItem,
 } from "./atomikMemoryText";
 
 export type { MemoryEntry, MemoryView } from "./atomikMemoryText";
@@ -13,7 +13,8 @@ export type { MemoryEntry, MemoryView } from "./atomikMemoryText";
 /**
  * Atomik memory: what a workspace asked its agent to keep in mind across
  * chats and projects — brand, audience, references (Library assets, by id),
- * approved identities and notes.
+ * approved identities (a Library asset, an entry of Cast & Elements or a Soul
+ * ID, each by reference, or words alone) and notes.
  *
  * Every entry belongs to one workspace, and to one project where it has one;
  * an entry with no project is the whole workspace's. The table lives in the
@@ -26,9 +27,13 @@ export type { MemoryEntry, MemoryView } from "./atomikMemoryText";
  * a paste from another assistant turned into; until then it waits as
  * `proposed` and no planner reads it. Forget archives through lib/archive.ts
  * (the whole row, copied to archived_rows in the same write) — nothing a
- * team makes is erased — and an edit archives the version it replaces.
+ * team makes is erased — and an edit archives the version it replaces. Any
+ * member may forget any entry, the whole workspace's included: the copy in
+ * the archive is how a forgotten entry comes back.
  *
- * Memory costs nothing: no route here calls a model or a vendor.
+ * Nothing in this module calls a model or a vendor. Reading a paste with
+ * Atomik is the one paid step, quoted first (lib/atomikMemoryRead.ts); what
+ * it proposes is kept here only once a person ticks it.
  */
 
 export class MemoryError extends Error {
@@ -107,13 +112,92 @@ async function libraryAsset(assetId: string): Promise<{ label: string; kind: str
   return { label: cleanMemoryText(String(r.filename ?? "Upload"), 120), kind: r.kind ? String(r.kind) : mimeKind(String(r.mime ?? "")) };
 }
 
-/** Which of these Library assets are still in the Library. */
-async function assetsPresent(ids: string[]): Promise<Set<string>> {
-  const present = new Set<string>();
+/** A database read that may meet a table not made yet in this workspace (no Soul ID trained, no draft saved): nothing there. */
+async function rowsOf(statement: InStatement): Promise<Row[]> {
+  try { return (await db().execute(statement)).rows as Row[]; }
+  catch (error) {
+    if (/no such table/i.test(String((error as Error)?.message ?? error))) return [];
+    throw error;
+  }
+}
+
+const CAST_KIND: Record<string, string> = { character: "character", element: "element" };
+/** A production's Cast & Elements entry as a draft keeps it (lib/production/cast.ts › CastEntry): its id, name and kind. */
+function castEntries(body: unknown, productionId: string): { id: string; name: string; kind: string }[] {
+  let draft: unknown;
+  try { draft = typeof body === "string" ? JSON.parse(body) : body; } catch { return []; }
+  if (!draft || typeof draft !== "object" || (draft as { productionProjectId?: unknown }).productionProjectId !== productionId) return [];
+  const entries = (draft as { production?: { cast?: { entries?: unknown } } }).production?.cast?.entries;
+  return Array.isArray(entries)
+    ? entries.flatMap((e) => (e && typeof e === "object" && typeof e.id === "string"
+      ? [{ id: e.id, name: cleanMemoryText(String(e.name ?? ""), 120) || "Unnamed", kind: CAST_KIND[String(e.kind)] ?? "element" }] : []))
+    : [];
+}
+/** Drafts of a production: a person's own (`owner`), or everyone's; read only for their Cast & Elements. */
+async function draftsOf(productionId: string, owner?: string): Promise<Row[]> {
+  /* Bodies are JSON as JSON.stringify writes it: the production id narrows the read before each is parsed. */
+  const like = `%"productionProjectId":"${productionId}"%`;
+  return rowsOf(owner
+    ? { sql: "SELECT body FROM workbench_projects WHERE owner = ? AND body LIKE ?", args: [owner, like] }
+    : { sql: "SELECT body FROM workbench_projects WHERE body LIKE ?", args: [like] });
+}
+
+/** A Soul ID of this workspace's that `by` may see — their own, one with no production, or one of a production they have a draft of. */
+async function soulIdentity(identityId: string, by: string): Promise<{ label: string; ready: boolean } | null> {
+  const r = (await rowsOf({ sql: "SELECT name, status, settled_at, owner, production_project_id FROM soul_identities WHERE id = ? AND purged_at IS NULL", args: [identityId] }))[0];
+  if (!r) return null;
+  const production = r.production_project_id == null ? null : String(r.production_project_id);
+  if (r.owner !== by && production && !(await draftsOf(production, by)).length) return null;
+  /* Ready once its training settled, as the Cast page reads it (lib/soulIdentities › publicIdentity). */
+  return { label: cleanMemoryText(String(r.name ?? ""), 120) || "Soul ID", ready: r.status === "ready" && r.settled_at != null };
+}
+
+/**
+ * What an approved identity may point at, checked when it is kept: a Library
+ * asset; a Soul ID trained in this workspace and ready; or an entry of a
+ * production's Cast & Elements in one of `by`'s own drafts of it. The label
+ * is its name now, the kind what it is ("Soul ID", "character", "element").
+ */
+async function element(assetId: string, by: string): Promise<{ label: string; kind: string | null }> {
+  if (LIBRARY_ASSET.test(assetId)) {
+    const asset = await libraryAsset(assetId);
+    if (!asset) throw new MemoryError("That asset is not in this workspace's Library.", 404);
+    return asset;
+  }
+  const soul = SOUL_REF.exec(assetId);
+  if (soul) {
+    const identity = await soulIdentity(soul[1], by);
+    if (!identity) throw new MemoryError("That Soul ID is not in this workspace.", 404);
+    if (!identity.ready) throw new MemoryError("That Soul ID is still training. Keep it once it is ready.", 409);
+    return { label: identity.label, kind: "Soul ID" };
+  }
+  const cast = CAST_REF.exec(assetId);
+  if (cast) {
+    if (!(await projectExists(cast[1]))) throw new MemoryError("That production is not in this workspace.", 404);
+    const found = (await draftsOf(cast[1], by)).flatMap((r) => castEntries(r.body, cast[1])).find((e) => e.id === cast[2]);
+    if (!found) throw new MemoryError("That entry is not in Cast & Elements. Open the production's Cast & Elements and try again.", 404);
+    return { label: found.name, kind: found.kind };
+  }
+  throw new MemoryError("A reference is a Library asset.");
+}
+
+/**
+ * Which references are still there, with the name each has now where Memory
+ * reads it live: a Soul ID's name, a Cast & Elements entry's name (from any
+ * draft of its production). A Library asset keeps the name it was kept with;
+ * only that it is still in the Library is read. Absent: gone, so a planner
+ * leaves the entry out.
+ */
+async function refsPresent(ids: string[]): Promise<Map<string, { label: string | null; kind: string | null }>> {
+  const present = new Map<string, { label: string | null; kind: string | null }>();
   const byOrigin = { generation: [] as string[], upload: [] as string[] };
+  const souls: string[] = [];
+  const casts = new Map<string, Set<string>>();
   for (const id of new Set(ids)) {
-    const m = LIBRARY_ASSET.exec(id);
-    if (m) byOrigin[m[1] as "generation" | "upload"].push(m[2]);
+    const library = LIBRARY_ASSET.exec(id), soul = SOUL_REF.exec(id), cast = CAST_REF.exec(id);
+    if (library) byOrigin[library[1] as "generation" | "upload"].push(library[2]);
+    else if (soul) souls.push(soul[1]);
+    else if (cast) casts.set(cast[1], (casts.get(cast[1]) ?? new Set()).add(cast[2]));
   }
   for (const origin of ["generation", "upload"] as const) {
     const list = byOrigin[origin];
@@ -126,7 +210,20 @@ async function assetsPresent(ids: string[]): Promise<Set<string>> {
           : `SELECT id FROM uploads WHERE id IN (${marks})`,
         args: chunk,
       });
-      for (const r of rs.rows) present.add(`${origin}:${String(r.id)}`);
+      for (const r of rs.rows) present.set(`${origin}:${String(r.id)}`, { label: null, kind: null });
+    }
+  }
+  for (let i = 0; i < souls.length; i += 200) {
+    const chunk = souls.slice(i, i + 200);
+    for (const r of await rowsOf({ sql: `SELECT id, name FROM soul_identities WHERE id IN (${chunk.map(() => "?").join(",")}) AND purged_at IS NULL`, args: chunk }))
+      present.set(`soul:${String(r.id)}`, { label: cleanMemoryText(String(r.name ?? ""), 120) || null, kind: "Soul ID" });
+  }
+  for (const [production, wanted] of casts) {
+    for (const draft of await draftsOf(production)) {
+      for (const e of castEntries(draft.body, production)) {
+        const ref = `cast:${production}:${e.id}`;
+        if (wanted.has(e.id) && !present.has(ref)) present.set(ref, { label: e.name, kind: e.kind });
+      }
     }
   }
   return present;
@@ -134,8 +231,8 @@ async function assetsPresent(ids: string[]): Promise<Set<string>> {
 
 type Checked = { kind: MemoryKind; text: string; projectId: string | null; assetId: string | null; assetLabel: string | null; assetKind: string | null };
 
-/** An entry as it may be stored, or the reason it may not. */
-async function checked(input: { kind: unknown; text: unknown; projectId: unknown; assetId: unknown }, known?: Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind">): Promise<Checked> {
+/** An entry as it may be stored, or the reason it may not. `by` is who keeps it: a Cast & Elements entry must be in their own draft. */
+async function checked(input: { kind: unknown; text: unknown; projectId: unknown; assetId: unknown }, by: string, known?: Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind">): Promise<Checked> {
   if (!isMemoryKind(input.kind)) throw new MemoryError("Choose what kind of memory this is: brand, audience, reference, approved identity or note.");
   const kind = input.kind;
   const words = cleanMemoryText(input.text);
@@ -143,16 +240,16 @@ async function checked(input: { kind: unknown; text: unknown; projectId: unknown
   if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
   const assetId = input.assetId == null || input.assetId === "" ? null : String(input.assetId);
   if (kind === "reference" && !assetId) throw new MemoryError("A reference is an asset from the Library: open it there and choose Remember.");
+  const source = refSource(assetId);
+  if ((source === "soul" || source === "cast") && kind !== "identity") throw new MemoryError("Only an approved identity points at a Soul ID or at Cast & Elements.");
   if (assetId && kind !== "reference" && kind !== "identity") throw new MemoryError("Only a reference or an approved identity points at an asset.");
+  if (assetId && !source) throw new MemoryError("A reference is a Library asset.");
   let asset: { label: string; kind: string | null } | null = null;
-  if (assetId) {
-    if (!LIBRARY_ASSET.test(assetId)) throw new MemoryError("A reference is a Library asset.");
-    /* An edit keeps the asset the entry was saved with, even after the asset has left the Library. */
-    asset = known && known.assetId === assetId ? { label: known.assetLabel ?? "Asset", kind: known.assetKind } : await libraryAsset(assetId);
-    if (!asset) throw new MemoryError("That asset is not in this workspace's Library.", 404);
-  }
+  /* An edit keeps what the entry was saved with, even after it has left the Library or Cast & Elements. */
+  if (assetId) asset = known && known.assetId === assetId ? { label: known.assetLabel ?? "Asset", kind: known.assetKind } : await element(assetId, by);
   if (!asset && words.length < 2) throw new MemoryError("Say what Atomik should remember.");
-  if (mentionsMoney(words) || (asset && mentionsMoney(asset.label))) throw new MemoryError(MONEY_REFUSAL, 422);
+  if (mentionsMoney(words)) throw new MemoryError(amountRefusal(words), 422);
+  if (asset && mentionsMoney(asset.label)) throw new MemoryError(amountRefusal(asset.label), 422);
   return { kind, text: words, projectId, assetId, assetLabel: asset?.label ?? null, assetKind: asset?.kind ?? null };
 }
 
@@ -198,7 +295,7 @@ async function entryById(workspaceId: string, id: string): Promise<MemoryEntry |
 export async function addMemory(input: { kind: unknown; text?: unknown; projectId?: unknown; assetId?: unknown; source?: unknown; origin?: unknown }, by: string): Promise<MemoryEntry> {
   await memoryReady();
   const workspaceId = requireTenant().id;
-  const entry = await checked({ kind: input.kind, text: input.text, projectId: input.projectId, assetId: input.assetId });
+  const entry = await checked({ kind: input.kind, text: input.text, projectId: input.projectId, assetId: input.assetId }, by);
   const source: MemorySource = input.source === "atomik" ? "atomik" : "person";
   const origin = typeof input.origin === "string" && /^[\w:.-]{1,120}$/.test(input.origin) ? input.origin : null;
   const same = await duplicateOf(workspaceId, entry);
@@ -263,6 +360,59 @@ export async function importMemory(input: { text: unknown; projectId?: unknown; 
   };
 }
 
+/** At most this many picked at once: a paste's worth, and the brand kit's logo. */
+export const KEEP_LIMIT = MEMORY_LIMITS.importEntries + 1;
+
+/**
+ * What a person picked in one go, kept: lines of the Business brand kit, or
+ * what Atomik read from a paste or a document and the person ticked. Each is
+ * checked like an entry added by hand — kind, words, project, the asset it
+ * points at, and never an amount, because a model's proposal is untrusted and
+ * a brand kit is free text — then lands active, kept by this person: from the
+ * brand kit as their own (origin "brand-kit"), from a read as an import
+ * (origin "atomik-read"). One already kept is not kept twice (one waiting is
+ * accepted instead); one refused or past the workspace's limit is counted,
+ * and the rest are still kept.
+ */
+export async function keepMemory(input: { items: unknown; projectId?: unknown; from: unknown }, by: string) {
+  if (typeof input.from !== "string" || !Object.hasOwn(KEPT_FROM, input.from)) throw new MemoryError("Say where these came from: the brand kit, or what Atomik read.");
+  const from = input.from as KeptFrom;
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (!items.length) throw new MemoryError("Tick what Atomik should remember first.");
+  if (items.length > KEEP_LIMIT) throw new MemoryError(`Keep at most ${KEEP_LIMIT} at a time.`, 413);
+  await memoryReady();
+  const workspaceId = requireTenant().id;
+  const projectId = projectOf(input.projectId);
+  /* A project that is not this workspace's fails every pick alike: said once, before any is kept. */
+  if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
+  const source: MemorySource = from === "brand-kit" ? "person" : "import";
+  const skipped = { money: 0, duplicates: 0, beyondLimit: 0, invalid: 0 };
+  const kept: MemoryEntry[] = [];
+  let room = MEMORY_LIMITS.workspaceEntries - (await count(workspaceId));
+  const at = now();
+  for (const raw of items) {
+    const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    /* What Atomik read is words alone: only the brand kit's logo points at an asset. */
+    const assetId = from === "brand-kit" && item.kind === "reference" ? item.assetId : undefined;
+    let entry: Checked;
+    try { entry = await checked({ kind: item.kind, text: item.text, projectId, assetId }, by); }
+    catch (error) {
+      if (!(error instanceof MemoryError)) throw error;
+      if (error.status === 422) skipped.money++; else skipped.invalid++;
+      continue;
+    }
+    const same = await duplicateOf(workspaceId, entry);
+    if (same?.status === "active") { skipped.duplicates++; continue; }
+    if (same) { kept.push(await updateMemory(same.id, { accept: true }, by)); continue; }
+    if (room <= 0) { skipped.beyondLimit++; continue; }
+    room--;
+    const id = newId("mem");
+    await db().execute(insert(workspaceId, id, entry, { status: "active", source, origin: from, by, at: at + kept.length }));
+    kept.push((await entryById(workspaceId, id))!);
+  }
+  return { entries: kept, skipped };
+}
+
 /**
  * Change an entry, or accept one that was waiting. A changed entry's previous
  * version is copied to the archive in the same write, so an edit never
@@ -281,7 +431,7 @@ export async function updateMemory(id: string, patch: { text?: unknown; kind?: u
     text: patch.text ?? current.text,
     projectId: patch.projectId !== undefined ? patch.projectId : current.projectId,
     assetId: current.assetId,
-  }, current);
+  }, by, current);
   if (next.kind === "reference" && !current.assetId) throw new MemoryError("A reference is an asset from the Library: open it there and choose Remember.");
   const changed = next.kind !== current.kind || next.text !== current.text || next.projectId !== current.projectId;
   const accept = patch.accept === true && current.status === "proposed";
@@ -331,8 +481,16 @@ async function scopedEntries(workspaceId: string, projectId: string | null, stat
   return rs.rows.map((r) => ({ ...toEntry(r as Row), byName: text((r as Row).by_name), acceptedByName: text((r as Row).accepted_by_name) }));
 }
 
-function toView(e: Named, viewer: string, present: Set<string>): MemoryView {
-  const { createdBy, acceptedBy, byName, acceptedByName, ...rest } = e;
+type Present = Awaited<ReturnType<typeof refsPresent>>;
+const refsOf = (entries: readonly Pick<MemoryEntry, "assetId">[]) => entries.flatMap((e) => (e.assetId ? [e.assetId] : []));
+/** An entry with the name its element has now, where Memory reads it live (a Soul ID, a Cast & Elements entry). */
+function live<E extends Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind">>(e: E, present: Present): E {
+  const now = e.assetId ? present.get(e.assetId) : undefined;
+  return now?.label ? { ...e, assetLabel: now.label, assetKind: now.kind ?? e.assetKind } : e;
+}
+
+function toView(e: Named, viewer: string, present: Present): MemoryView {
+  const { createdBy, acceptedBy, byName, acceptedByName, ...rest } = live(e, present);
   return {
     ...rest, scope: e.projectId ? "project" : "workspace",
     byYou: createdBy === viewer, byName, acceptedByYou: acceptedBy === viewer, acceptedByName,
@@ -345,13 +503,13 @@ export async function listMemory(projectId: string | null, viewer: string): Prom
   await memoryReady();
   const workspaceId = requireTenant().id;
   const entries = await scopedEntries(workspaceId, projectOf(projectId));
-  const present = await assetsPresent(entries.flatMap((e) => (e.assetId ? [e.assetId] : [])));
+  const present = await refsPresent(refsOf(entries));
   return entries.map((e) => toView(e, viewer, present));
 }
 
 /** One entry as its view, for a route's reply. */
 export async function memoryView(entry: MemoryEntry, viewer: string): Promise<MemoryView> {
-  const present = await assetsPresent(entry.assetId ? [entry.assetId] : []);
+  const present = await refsPresent(refsOf([entry]));
   return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present);
 }
 
@@ -369,7 +527,7 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
   const entries = await scopedEntries(workspaceId, projectOf(projectId), "active");
   const matches = forgetMatches(subject, entries);
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const present = await assetsPresent(entries.flatMap((e) => (e.assetId ? [e.assetId] : [])));
+  const present = await refsPresent(refsOf(entries));
   return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present), selected: m.selected })) };
 }
 
@@ -384,8 +542,9 @@ export async function plannerMemory(at: { projectId: string | null | undefined; 
   const workspaceId = requireTenant().id;
   const projectId = at.projectId && PROJECT_ID.test(at.projectId) ? at.projectId : null;
   const entries = await scopedEntries(workspaceId, projectId, "active");
-  const present = await assetsPresent(entries.flatMap((e) => (e.assetId ? [e.assetId] : [])));
-  return rankForPlanner(entries.filter((e) => !e.assetId || present.has(e.assetId)), { projectId, query: at.query });
+  const present = await refsPresent(refsOf(entries));
+  /* An element that is gone is left out; one that is there is planned with by the name it has now. */
+  return rankForPlanner(entries.filter((e) => !e.assetId || present.has(e.assetId)).map((e) => live(e, present)), { projectId, query: at.query });
 }
 
 /** The chat planner's MEMORY section body, or "" when there is nothing to say. */
