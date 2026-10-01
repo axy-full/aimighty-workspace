@@ -155,9 +155,8 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         /* That take and no other: Takes opens on it, and says so while it is found. */
         if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
         shell.goSuite("studio", "takes"); onDone(); return;
-      case "gen": toProject(); if (shell.view === "gen") shell.closePanels(); else shell.goGen(); onDone(); return;
-      case "ads": toProject(); shell.goSuite("business", "ads"); onDone(); return;
-      case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
+      /* A connected job's read-only record: Usage lists the person's own account jobs across projects, so the open project stays. */
+      case "usage": shell.goWorkspace("usage"); onDone(); return;
       case "release": void tray.release(job); return;
       case "recreate": {
         if (!job.preset) return;

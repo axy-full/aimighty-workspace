@@ -28,8 +28,11 @@ import { vendorNameIn } from "./vendorNames";
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
 export type TrayTone = "blue" | "amber" | "green" | "red" | "idle";
-/** The one thing a row offers: see the take, start a held one, make a failed one again, or go where it was made. */
-export type TrayAction = "open" | "release" | "recreate" | "gen" | "ads" | "viral";
+/**
+ * The one thing a row offers: see the take, start a held one, make a failed one again, or read a connected
+ * job's record in Workspace › Usage (the pages that made it no longer list the retired account's work).
+ */
+export type TrayAction = "open" | "release" | "recreate" | "usage";
 export type TrayPrice = { amount: number; unit: "cr" | "usd" | "account-cr" };
 
 export type TrayJob = {
@@ -263,8 +266,9 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
     id: row.id, source: "account" as const, kind, name, mediaUrl: null, reason: null, progress: null,
     createdAt: row.createdAt, settledAt: null, draftId: row.draftId, projectName: row.projectName, price: quoted, action: null,
   };
-  /* Where the job's own card is (with Check again and Dismiss), for one nobody can confirm from here. */
-  const where: TrayAction | null = row.workflow === "generation" ? "gen" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
+  /* Particl no longer signs in to Higgsfield, so the page that made a Gen take, a motion transfer or an ad (Gen, Viral,
+     Business) no longer lists it: its read-only record is Workspace › Usage, under the person's connected account. */
+  const record: TrayAction | null = row.workflow === "generation" || row.workflow === "genjutsu" || row.workflow.startsWith("marketing") ? "usage" : null;
   switch (row.status) {
     case "completed":
       return {
@@ -273,7 +277,8 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
       };
     case "failed": {
       const kept = row.failureCode === "invalid_result";
-      const action: TrayAction | null = preset ? "recreate" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
+      /* A failed Gen take is made again on Studio engines when its request was kept; a failed motion transfer or ad has its record. */
+      const action: TrayAction | null = preset ? "recreate" : row.workflow === "generation" ? null : record;
       /* The account's own reason when it gave one; "refunded" or "charged" only once its own ledger names the job. */
       const failure = row.outcome ? accountFailure(row.outcome, row.failureCode) : null;
       return {
@@ -287,10 +292,10 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
     }
     default:
       /* Set aside, or past the time it may hold a slot: never sent again, and nothing here waits on it. */
-      if (row.setAside) return { ...base, stage: "aside", label: phase.label, tone: "idle", settledAt: row.updatedAt, action: where };
+      if (row.setAside) return { ...base, stage: "aside", label: phase.label, tone: "idle", settledAt: row.updatedAt, action: record };
       if (following) return row.status === "accepted" ? { ...base, stage: "rendering", label: "Rendering", tone: "blue" } : { ...base, stage: "confirming", label: phase.label, tone: "amber" };
-      /* Sent, or maybe sent, with nothing to confirm it by: never sent twice; its card says what can be done. */
-      return { ...base, stage: "unconfirmed", label: phase.label, tone: "amber", action: where };
+      /* Sent, or maybe sent, with nothing to confirm it by: never sent twice, and nothing here can check it again. */
+      return { ...base, stage: "unconfirmed", label: phase.label, tone: "amber", action: record };
   }
 }
 
@@ -299,7 +304,7 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
 const STAGES: ReadonlySet<string> = new Set(["submitting", "queued", "rendering", "confirming", "held", "unconfirmed", "complete", "failed", "cancelled", "aside"]);
 const KINDS: ReadonlySet<string> = new Set(["video", "image", "audio", "other"]);
 const TONES: ReadonlySet<string> = new Set(["blue", "amber", "green", "red", "idle"]);
-const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "gen", "ads", "viral"]);
+const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "usage"]);
 const UNITS: ReadonlySet<string> = new Set(["cr", "usd", "account-cr"]);
 const TAKE_ID = /^generation:[A-Za-z0-9_-]{1,160}$/;
 /** A recipe as Gen's letterbox takes it: words, and the take it came from. */
@@ -425,7 +430,7 @@ export function traySummary(jobs: readonly TrayJob[], seen: ReadonlySet<string> 
   return { kind: "quiet", ...counts, text: "Jobs", short: "", tone: "idle" };
 }
 
-export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Gen", ads: "Open Ads", viral: "Open Viral" };
+export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", usage: "Open Usage" };
 
 /** The ledger's own words for a figure: "13 cr", "$0.840"; a connected job's is the account's own credits, said so ("40 connected cr"). */
 export function priceLabel(price: TrayPrice | null): string | null {

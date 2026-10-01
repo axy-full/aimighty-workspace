@@ -17,9 +17,11 @@ import type { Generation } from "../lib/jobs";
  * its side, a bottom sheet on a phone) whose rows say each job's real stage,
  * how long it has run or when it finished, the ledger's figure, and one thing
  * to do: Open in Takes (that take), Release a held one (Top up when the
- * balance is short), Recreate a failed one in Gen, or open where a connected
- * tool made it. The route is exercised for real against seeded rows; the UI
- * tests answer the tray's read from a route mock. Nothing is paid for.
+ * balance is short), Recreate a failed one in Gen, or open a connected job's
+ * read-only record in Workspace › Usage (the retired account's pages no longer
+ * list it). The route is exercised for real against seeded rows; the UI tests
+ * answer the tray's read from a route mock, except the record's, which reads
+ * seeded rows end to end. Nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844"];
@@ -395,6 +397,100 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   expect(errors).toEqual([]);
 });
 
+test("a failed motion transfer or ad, and a take nobody can confirm, open their read-only record in Usage — never a page that no longer lists them", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const touch = TOUCH.includes(info.project.name);
+  /* Real reads end to end: the account's own rows, seeded, listed by the tray's route and by Usage's. */
+  const account = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };
+  const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
+  /* The first reads make sure the account's tables exist in this workspace. */
+  for (const url of ["/api/jobs?view=tray&sync=0", "/api/usage?rows=connected"]) {
+    const read = await page.request.get(url, { headers });
+    expect(read.ok(), await read.text()).toBeTruthy();
+  }
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  const tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0].db_url);
+  platform.close();
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
+  const now = Date.now();
+  try {
+    for (const [id, name] of [[DRAFT, "Harbour launch spot"], ["ws-other", "Trail bottle ads"]])
+      await tenant.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,?,?)",
+        args: [`${me.id}:${id}`, me.id, id, name, JSON.stringify({ id, name }), 1, now] });
+    /* A motion transfer and an ad have no words of their own to be named by: the tray names them by what they are. */
+    const rows: [string, string, string, string, string | null, number][] = [
+      ["hfc-motion", "genjutsu", "failed", "ws-other", null, 30],
+      ["hfc-ad", "marketing-video", "failed", DRAFT, null, 20],
+      ["hfc-take", "generation", "dispatching", DRAFT, "Product spins on a marble plinth", 3],
+    ];
+    for (const [id, workflow, status, draft, prompt, minutes] of rows)
+      await tenant.execute({
+        sql: `INSERT INTO higgsfield_consumer_jobs(id,user_id,draft_id,connected_owner_id,connection_generation,higgsfield_workspace_id,workflow,idempotency_key,payload_json,payload_hash,immutable_hash,
+          quote_credits,quote_expires_at,original_asset_ids,status,provider_job_id,dispatch_claim_hash,failure_code,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        args: [id, me.id, draft, me.id, "g1", "w1", workflow, `k-${id}`, JSON.stringify(prompt ? { input: { type: "video", prompt }, model: { id: "seedance_2_0", outputType: "video" } } : { input: {} }),
+          "h", "i", 40, now + MIN, "[]", status, `p-${id}`, "claim", status === "failed" ? "provider_failed" : null, now - (minutes + 5) * MIN, now - minutes * MIN],
+      });
+  } finally {
+    tenant.close();
+  }
+
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await mockProjects(page, { current: fixture(), list: [{ id: DRAFT, name: "Harbour launch spot" }, { id: "ws-other", name: "Trail bottle ads" }] });
+  await mockLibrary(page, { uploads: [], generations: [] });
+  const paid: string[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && /\/api\/(generate|audio|jobs\/[^/]+\/(retry|release)|higgsfield\/)/.test(new URL(request.url()).pathname)) paid.push(request.url()); });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/suites?suite=studio&page=rig");
+  await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
+
+  /* Nothing here can check the take again: it is counted as unconfirmed, and the failed two are news. */
+  const pill = page.getByTestId("running-jobs");
+  await expect(pill).toHaveAccessibleName("Jobs: 1 unconfirmed");
+  await pill.click();
+  const panel = page.getByRole("dialog", { name: "Jobs" });
+  const rows = panel.getByTestId("jobs-row");
+  await expect(rows.locator(".gx-jobs-name")).toHaveText(["Product spins on a marble plinth", "Ad", "Motion transfer"]);
+  await expect(rows.getByTestId("jobs-stage")).toHaveText(["Not confirmed · never sent twice", "Failed", "Failed"]);
+  await expect(rows.getByTestId("jobs-price")).toHaveText(["40 connected cr"]);
+  await expect(rows.nth(2).getByTestId("jobs-where")).toHaveText("Trail bottle ads");
+  /* Not Open Gen, Ads or Viral: those pages no longer list the account's work. Its record does. */
+  await expect(rows.getByTestId("jobs-action")).toHaveText(["Open Usage", "Open Usage", "Open Usage"]);
+  await arrived(page);
+  if (touch) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
+  expect(await trayWhole(page)).toEqual([]);
+  await noOverflow(page);
+  await shoot(page, info.project.name, "jobs-account-record");
+
+  /* Made in another project: Usage is the workspace's, so the project in view stays. */
+  await page.getByRole("button", { name: "Open Usage: Motion transfer" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("ws-usage")).toBeVisible();
+  const at = new URL(page.url());
+  expect([at.searchParams.get("view"), at.searchParams.get("tab")]).toEqual(["workspace", "usage"]);
+  expect(at.searchParams.get("project")).not.toBe("ws-other");
+  /* The person's own connected-account jobs, newest first, as the ledger words them: the two that failed, and the take never collected. */
+  const record = page.getByTestId("ws-ledger-connected");
+  const listed = record.getByTestId("ws-ledger-connected-row");
+  await expect(listed.locator(".wsx-ledger-what")).toHaveText(["Generation · Harbour launch spot", "Marketing video · Harbour launch spot", "Genjutsu · Trail bottle ads"]);
+  await expect(listed.locator(".wsx-ledger-state")).toHaveText(["Not collected", "Failed", "Failed"]);
+  await expect(listed.locator(".wsx-ledger-amt")).toHaveText(["40 connected cr", "40 connected cr", "40 connected cr"]);
+  await record.scrollIntoViewIfNeeded();
+  await noOverflow(page);
+  await shoot(page, info.project.name, "jobs-account-record-usage");
+
+  /* From Usage itself, the tray's record is the page already open: it only closes. */
+  await pill.click();
+  await page.getByRole("button", { name: "Open Usage: Product spins on a marble plinth" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("ws-usage")).toBeVisible();
+  expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("the tray reads at the server's pace, not while the tab is hidden, and soon after a job starts or ends or the tray opens", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await page.clock.install();
@@ -699,6 +795,10 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
     await consumer("c-failed", "failed", { failure: "provider_failed" });
     await consumer("c-set-aside", "uncertain", { released: now - MIN, updatedAt: now - 7 * 3_600_000 });
     await consumer("c-theirs", "accepted", { user: "someone-else" });
+    /* A failed motion transfer and ad (Gen cannot make them again), and a Gen take sent with nothing to confirm it by. */
+    await consumer("c-motion-failed", "failed", { failure: "provider_failed", workflow: "genjutsu" });
+    await consumer("c-ad-failed", "failed", { failure: "provider_failed", workflow: "marketing-video" });
+    await consumer("c-unconfirmed", "dispatching");
   } finally {
     tenant.close();
   }
@@ -723,7 +823,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(body.pollAfterSeconds).toBe(10);
   expect(body.partial).toBeUndefined();
   const byId = new Map(body.jobs.map((j) => [j.id, j]));
-  expect([...byId.keys()].sort()).toEqual(["c-accepted", "c-done", "c-failed", `gen_t${tag}_discarded`, `gen_t${tag}_done_new`, `gen_t${tag}_failed`, `gen_t${tag}_failed_open`, `gen_t${tag}_held`, `gen_t${tag}_held_big`, `gen_t${tag}_queued`, `gen_t${tag}_running`]);
+  expect([...byId.keys()].sort()).toEqual(["c-accepted", "c-ad-failed", "c-done", "c-failed", "c-motion-failed", "c-unconfirmed", `gen_t${tag}_discarded`, `gen_t${tag}_done_new`, `gen_t${tag}_failed`, `gen_t${tag}_failed_open`, `gen_t${tag}_held`, `gen_t${tag}_held_big`, `gen_t${tag}_queued`, `gen_t${tag}_running`]);
   /* In flight: the figure admission reserved when it was approved, read off the meter — never estimated again. */
   expect(byId.get(`gen_t${tag}_running`)).toMatchObject({ stage: "rendering", price: { amount: 52, unit: "cr" }, settledAt: null });
   expect(byId.get(`gen_t${tag}_queued`)).toMatchObject({ stage: "queued", price: { amount: 26, unit: "cr" } });
@@ -741,8 +841,15 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(byId.get("c-accepted")).toMatchObject({ source: "account", stage: "rendering", price: { amount: 40, unit: "account-cr" }, name: "Account prompt c-accepted", projectName: "Harbour launch spot" });
   expect(byId.get("c-done")).toMatchObject({ stage: "complete", takeId: `generation:gen_hfc_${"b".repeat(40)}`, mediaUrl: `/api/media/gen_hfc_${"b".repeat(40)}` });
   expect(byId.get("c-failed")).toMatchObject({ stage: "failed", label: "Failed", price: null, action: "recreate" });
-  /* A failed connected Generate is made again on the account, with the words and settings it was sent with. */
+  /* A failed connected Generate is made again in Gen, on Studio engines, with the words and settings it was sent with
+     ("connected" marks where it was first made; Gen prices it again before anything runs). */
   expect(byId.get("c-failed")!.preset).toMatchObject({ prompt: "Account prompt c-failed", model: "seedance_2_0", billing: "connected", picks: { ratio: "9:16", duration: 5 } });
+  /* Gen, Viral and Business no longer list the retired account's work: a failed motion transfer or ad, and a take nobody
+     can confirm, open their read-only record in Workspace › Usage. */
+  expect(byId.get("c-motion-failed")).toMatchObject({ source: "account", stage: "failed", label: "Failed", name: "Account prompt c-motion-failed", action: "usage" });
+  expect(byId.get("c-ad-failed")).toMatchObject({ source: "account", stage: "failed", action: "usage" });
+  expect(byId.get("c-unconfirmed")).toMatchObject({ source: "account", stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "usage" });
+  for (const id of ["c-motion-failed", "c-ad-failed", "c-unconfirmed"]) expect(byId.get(id)!.preset).toBeUndefined();
   /* Held first, then the running ones, then what finished. */
   expect(body.jobs[0].stage).toBe("held");
   /* Never a vendor dollar, a payload, a receipt or the account's own name. */

@@ -152,14 +152,18 @@ test("a take is named the way the Library names it — its title, else its words
 test("a connected-account job reads its stage from the account's own record, in the account's own credits", () => {
   expect(accountTrayJob(account({ id: "a", status: "accepted" }))).toMatchObject({ source: "account", stage: "rendering", label: "Rendering", price: { amount: 40, unit: "account-cr" }, action: null });
   expect(accountTrayJob(account({ id: "u", status: "uncertain", hasReceipt: true }))).toMatchObject({ stage: "confirming", label: "Confirming", tone: "amber" });
-  /* Nothing a read can move: said as it is, counted as unconfirmed, never as rendering, and it opens where its card offers Check again. */
+  /* Nothing a read can move: said as it is, counted as unconfirmed, never as rendering. Gen, Viral and Business no longer
+     list the retired account's work, so it opens its read-only record in Workspace › Usage. */
   const stuck = accountTrayJob(account({ id: "d", status: "dispatching" }));
-  expect(stuck).toMatchObject({ stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "gen" });
+  expect(stuck).toMatchObject({ stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "usage" });
   expect(moving(stuck)).toBe(false);
-  expect(accountTrayJob(account({ id: "dv", status: "uncertain", workflow: "genjutsu" })).action).toBe("viral");
+  expect(accountTrayJob(account({ id: "dv", status: "uncertain", workflow: "genjutsu" })).action).toBe("usage");
+  expect(accountTrayJob(account({ id: "dm", status: "dispatching", workflow: "marketing-video" })).action).toBe("usage");
+  /* A tool no Suites page made has no page and no record to open from here, as before. */
+  expect(accountTrayJob(account({ id: "dt", status: "dispatching", workflow: "voice-tool" })).action).toBeNull();
   /* Set aside (or past the time it may hold a slot): never sent again, nothing to wait for — closed, not counted, not news. */
   const aside = accountTrayJob(account({ id: "s", status: "accepted", setAside: true, updatedAt: T0 + 3 * MIN }));
-  expect(aside).toMatchObject({ stage: "aside", label: "Can't be checked", tone: "idle", settledAt: T0 + 3 * MIN, action: "gen" });
+  expect(aside).toMatchObject({ stage: "aside", label: "Can't be checked", tone: "idle", settledAt: T0 + 3 * MIN, action: "usage" });
   expect(active(aside)).toBe(false);
   expect(accountTrayJob(account({ id: "s2", status: "uncertain", setAside: true }))).toMatchObject({ stage: "aside", label: "Set aside · never sent again" });
   expect(traySummary([aside], new Set())).toMatchObject({ kind: "quiet" });
@@ -174,8 +178,12 @@ test("a connected-account job reads its stage from the account's own record, in 
   expect(JSON.stringify(refused)).not.toMatch(/not billed/i);
   /* Finished on the account but not kept: it may have been spent, so the approved figure stays. */
   expect(accountTrayJob(account({ id: "k", status: "failed", failureCode: "invalid_result" }))).toMatchObject({ label: "Not kept · receipt saved", price: { amount: 40, unit: "account-cr" }, action: null });
-  expect(accountTrayJob(account({ id: "v", status: "failed", workflow: "genjutsu" })).action).toBe("viral");
-  expect(accountTrayJob(account({ id: "m", status: "failed", workflow: "marketing-video", prompt: null })).action).toBe("ads");
+  /* A failed motion transfer or ad has no Recreate in Gen: its read-only record, whether or not Viral's History lists account runs. */
+  expect(accountTrayJob(account({ id: "v", status: "failed", workflow: "genjutsu" })).action).toBe("usage");
+  expect(accountTrayJob(account({ id: "m", status: "failed", workflow: "marketing-video", prompt: null })).action).toBe("usage");
+  expect(accountTrayJob(account({ id: "t", status: "failed", workflow: "marketing-template", prompt: null })).action).toBe("usage");
+  /* A failed Gen take with no request kept to make it again: nothing to offer, as before. */
+  expect(accountTrayJob(account({ id: "g", status: "failed" })).action).toBeNull();
   expect(accountTrayJob(account({ id: "n", status: "accepted", workflow: "genjutsu", prompt: null, outputType: null })).name).toBe("Motion transfer");
   expect(priceLabel({ amount: 12.5, unit: "account-cr" })).toBe("12.5 connected cr");
 });
@@ -249,7 +257,7 @@ test("figures are written the ledger's way, and ages say how long it has run or 
   expect(trayWhen(row("r", "rendering", T0), T0 + 4 * MIN)).toBe("4 min");
   expect(trayWhen(row("d", "complete", T0 - 60 * MIN, T0), T0 + 20 * MIN)).toBe("20 min ago");
   expect(trayWhen(row("d", "complete", T0, T0), T0 + 20_000)).toBe("just now");
-  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Gen", "Open Ads", "Open Viral"]);
+  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Usage"]);
 });
 
 test("a reply is checked row by row before the tray draws it", () => {
@@ -265,13 +273,16 @@ test("a reply is checked row by row before the tray draws it", () => {
       { ...row("again", "failed", T0, T0), action: "recreate", preset: preset("again") },
       { ...row("free", "held", T0), action: "release", releaseCredits: 12.5 },
       { ...row("priced", "held", T0), action: "release", releaseCredits: 43 },
+      /* A reply from before this tray (a deploy in between): the pages it pointed at no longer list account work. */
+      { ...row("old-page", "unconfirmed", T0), source: "account", action: "viral" },
+      { ...row("record", "failed", T0, T0), source: "account", action: "usage" },
       { ...row("bad-stage", "rendering", T0), stage: "exploding" },
       { id: 7, name: "no id" },
     ],
   });
   expect(reply?.pollAfterSeconds).toBe(10);
   expect(reply?.partial).toBe(true);
-  expect(reply?.jobs.map((j) => j.id)).toEqual(["ok", "open-nowhere", "open", "again-nothing", "again", "free", "priced"]);
+  expect(reply?.jobs.map((j) => j.id)).toEqual(["ok", "open-nowhere", "open", "again-nothing", "again", "free", "priced", "old-page", "record"]);
   expect(reply?.jobs[0]).toMatchObject({ mediaUrl: null, action: null, tone: "blue", kind: "other", price: null, progress: null, settledAt: null });
   /* An action whose target is missing is no action. */
   expect(reply?.jobs[1]).toMatchObject({ action: null, takeId: null });
@@ -281,5 +292,7 @@ test("a reply is checked row by row before the tray draws it", () => {
   /* Release approves whole credits, or it is no Release. */
   expect(reply?.jobs[5]).toMatchObject({ action: null, releaseCredits: null });
   expect(reply?.jobs[6]).toMatchObject({ action: "release", releaseCredits: 43 });
+  expect(reply?.jobs[7].action).toBeNull();
+  expect(reply?.jobs[8].action).toBe("usage");
   expect(parseTrayReply({ jobs: [] })?.pollAfterSeconds).toBe(60);
 });
