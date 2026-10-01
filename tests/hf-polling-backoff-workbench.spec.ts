@@ -25,8 +25,10 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
  * read that did not happen is known at once, with no waiting) and at the
  * route mocks, which see it go out. Every account reply is a route mock.
  *
- * The Business and Viral pages that showed the connected account's jobs went
- * with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts); the
+ * The Business pages that showed the connected account's jobs went with the
+ * Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). Viral runs on
+ * Particl's API key and lists its takes from the project's Library, collected
+ * by the key's own job reads (tests/hf-viral-real-runs-workbench.spec.ts). The
  * collector still finishing jobs already running is covered on Gen
  * (tests/hf-connected-jobs-finish-workbench.spec.ts). What is here is a
  * Production re-edit's own reads.

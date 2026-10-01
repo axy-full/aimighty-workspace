@@ -211,6 +211,50 @@ test("the model-specific preset catalog accepts bounded category metadata withou
   );
 });
 
+test("the preset catalogue is searched at the provider and keeps each preset's cover, group and aspect only when usable", async () => {
+  const { listMarketingPresets } =
+    await import("../../lib/higgsfieldMarketing");
+  const { runInTenant } = await import("../../lib/tenant");
+  const third = "217e9e94-0bea-4acd-b82a-071a264d8e26";
+  const urls: string[] = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return Response.json({
+      total: 3,
+      cursor: 50,
+      items: [
+        { id: presetId, type: "ads", name: "Studio packshot", cover_image: "https://cdn.example/cover.webp", metadata: { group_name: "Product shots", aspect_ratio: "1:1" }, format_slugs: [] },
+        /* Not https, a blank group, an aspect that is not one: each left out. */
+        { id: requestId, type: "graphic_ads", name: "Bold launch", cover_image: "http://insecure.example/c.png", metadata: { group_name: "  ", aspect_ratio: "wide" } },
+        { id: third, type: "marketplace", name: "Main image", cover_image: null, metadata: null, secret: "PRIVATE" },
+      ],
+    });
+  };
+  await runInTenant(
+    { ...workspace("catalog_search"), usesPlatformKeys: true },
+    async () => {
+      expect(await listMarketingPresets(undefined, " packshot ")).toEqual({
+        total: 3,
+        cursor: "50",
+        items: [
+          { id: presetId, type: "ads", name: "Studio packshot", cover: "https://cdn.example/cover.webp", group: "Product shots", aspectRatio: "1:1" },
+          { id: requestId, type: "graphic_ads", name: "Bold launch" },
+          { id: third, type: "marketplace", name: "Main image" },
+        ],
+      });
+      await listMarketingPresets("50", "packshot");
+      expect(urls).toEqual([
+        "https://api.higgsfield.ai/marketing-studio/image/presets?size=50&search=packshot",
+        "https://api.higgsfield.ai/marketing-studio/image/presets?size=50&cursor=50&search=packshot",
+      ]);
+      /* A search outside the documented 1–100 characters is refused before the provider is asked. */
+      for (const bad of ["", "   ", "x".repeat(101), "a\u0000b"])
+        await expect(listMarketingPresets(undefined, bad)).rejects.toMatchObject({ status: 400, code: "invalid_search" });
+      expect(urls).toHaveLength(2);
+    },
+  );
+});
+
 test("numeric preset cursors normalize to opaque strings and roundtrip pagination including zero", async () => {
   const { listMarketingPresets } =
     await import("../../lib/higgsfieldMarketing");
