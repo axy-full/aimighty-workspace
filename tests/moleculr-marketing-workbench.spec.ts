@@ -208,3 +208,61 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
     ),
   ).toBe(true);
 });
+
+/**
+ * The preset catalogue is a read (GET /api/higgsfield/marketing/presets, on the
+ * platform's key): when it fails the panel says why and offers Try again — the
+ * read failures' word; "Retry" is a paid re-render — and Try again reads the
+ * catalogue again. Nothing is sent but reads.
+ */
+test("a preset catalogue that could not be read says so with Try again, and Try again reads it again", async ({ page }) => {
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  const project: Project = {
+    ...newProject("Brand campaign"),
+    id: "marketing-draft",
+    productionProjectId: "marketing-production",
+    moleculr: { ...EMPTY_MOLECULR, productName: "Camera", hooks: ["Carry your perspective"] },
+  };
+  let reads = 0;
+  let failing = true;
+  const sent: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(), url = new URL(request.url());
+    const json = (value: unknown, status = 200) => route.fulfill({ json: value, status });
+    if (url.pathname === "/api/me") return json(me);
+    if (url.pathname === "/api/workbench/projects") {
+      if (request.method() === "PUT") return json({ revision: 2, productionProjectId: project.productionProjectId, shotMappings: {} });
+      if (request.method() === "POST") return json({ productionProjectId: project.productionProjectId, shotId: "marketing-shot" });
+      return json({ project, revision: 1, projects: [{ id: project.id, name: project.name }], productions: [] });
+    }
+    if (url.pathname === "/api/higgsfield/marketing/presets") {
+      reads++;
+      /* What the route answers when the provider's catalogue does not come back. */
+      if (failing) return json({ configured: true, error: "Marketing Studio presets are temporarily unavailable." }, 503);
+      return json({ configured: true, total: 1, items: [{ id: "96c22aa0-9d48-4f71-8c24-b9e5cf6e9ced", name: "Studio product portrait", type: "ads" }], cursor: null });
+    }
+    if (url.pathname === "/api/jobs") return json({ generations: [] });
+    if (url.pathname === "/api/workbench/atomik" || url.pathname === "/api/workbench/development") return json({ models: [], jobs: [] });
+    if (url.pathname === "/api/workbench/agent" || url.pathname === "/api/workbench/engines") return json({ models: [] });
+    if (request.method() !== "GET") { sent.push(url.pathname); return json({ error: "Paid generation disabled in fixture." }, 409); }
+    return json({});
+  });
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-draft&suite=moleculr&page=brand"));
+  await expect(page.getByRole("heading", { name: "Build a brand worth knowing." })).toBeVisible();
+  await page.getByRole("link", { name: "Variants", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Marketing Studio images" });
+  const alert = panel.getByRole("alert");
+  await expect(alert).toContainText("Marketing Studio presets are temporarily unavailable.");
+  const again = alert.getByRole("button", { name: "Try again", exact: true });
+  await expect(again).toBeVisible();
+  await expect(panel.getByRole("button", { name: /retry/i })).toHaveCount(0);
+  const before = reads;
+  failing = false;
+  await again.click();
+  await expect.poll(() => reads).toBe(before + 1);
+  await expect(alert).toHaveCount(0);
+  await panel.getByRole("button", { name: /^Provider preset/ }).click();
+  await expect(panel.getByRole("button", { name: /Studio product portrait/ })).toBeVisible();
+  expect(sent).toEqual([]);
+});
