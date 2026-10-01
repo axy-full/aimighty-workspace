@@ -1,5 +1,6 @@
 import { DEFAULT_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
 import { GENJUTSU_MODELS } from "./genjutsuTypes";
+import { guessKind, unfence } from "./atomikMemoryText";
 
 /**
  * Mocked engines, for development and tests. No Node imports here: the
@@ -70,10 +71,24 @@ function mockLibrarySteps(asked: string, preamble: string): Record<string, unkno
 }
 
 /**
- * A canned chat completion, shaped like the gateway's, for the three
- * things the app asks a text model for.
+ * The mocked reader's proposals for Memory (lib/atomikMemoryRead.ts): one
+ * entry per line of the fenced text, sorted by what it talks about. Like a
+ * careless model, it proposes every line — amounts included — so the server's
+ * own amounts-only filter is what keeps them out.
  */
-export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "shots", requestBody: string): { ok: boolean; status: number; text: string } {
+function mockMemoryEntries(asked: string): { kind: string; text: string }[] {
+  return unfence(asked).split(/\n+/)
+    .map((line) => line.replace(/^(?:[-*•]+|\d{1,3}[.)])\s+/, "").replace(/\*\*|__|`/g, "").trim())
+    .filter((line) => line.length >= 3 && !/^#{1,6}\s/.test(line) && !/:$/.test(line))
+    .slice(0, 30)
+    .map((text) => ({ kind: guessKind(text), text }));
+}
+
+/**
+ * A canned chat completion, shaped like the gateway's, for the things the
+ * app asks a text model for.
+ */
+export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory", requestBody: string): { ok: boolean; status: number; text: string } {
   let lastUser = "";
   let asked = "", preamble = "";
   try {
@@ -101,6 +116,7 @@ export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "sho
          mock answers the same way, so the whole path can be watched. */
       propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p", attachments: /ATTACHED:/.test(requestBody) }],
     })
+    : kind === "memory" ? JSON.stringify({ entries: mockMemoryEntries(asked) })
     : kind === "idea" ? JSON.stringify({ logline: `Mocked logline for: ${lastUser.replace(/^NOTE:\s*/i, "").slice(0, 120)}`, tone: ["mocked", "quiet", "30s"] })
     : kind === "scene" ? JSON.stringify({ title: "Mocked scene", secs: 6, prose: "Mocked: the scene, rewritten — the same beat, one clear action, the cast where they were." })
     : kind === "shots" ? JSON.stringify({ shots: [
