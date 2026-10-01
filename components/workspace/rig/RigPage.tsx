@@ -1,13 +1,14 @@
 "use client";
 import { usePlanRequest } from "@/lib/workspace/atomik-host";
 import { useWorkspace } from "@/lib/workspace/state";
+import { RigAgentCard } from "./RigAgentCard";
 import { RigGraph } from "./RigGraph";
 import { RigList } from "./RigList";
 import { useRig } from "./RigProvider";
 import { TeamPresence } from "./TeamPresence";
 import "./rig.css";
 
-/** Rig: the shot list by default, the node graph as the advanced view. */
+/** Rig: the shot list by default, the node graph as the advanced view; Atomik's run card above both. */
 export function RigPage() {
   const { state } = useWorkspace();
   const rig = useRig();
@@ -16,6 +17,7 @@ export function RigPage() {
   return (
     <>
       <TeamPresence />
+      <RigAgentCard />
       {state.rigView === "graph" ? <RigGraph /> : <RigList />}
     </>
   );
