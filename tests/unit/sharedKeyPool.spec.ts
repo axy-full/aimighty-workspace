@@ -387,6 +387,14 @@ test("a workspace that cannot be reached steps out of the line; it keeps its pla
   expect(sent).toEqual(["down_take"]);
   expect(await line("down_take")).toMatchObject({ queued_at: t, admitted_at: expect.any(Number), left_at: null });
   await settle(down, "down_take", "succeeded");
+  // A workspace deleted (or suspended) while its take waited: the take leaves the line; nothing of its own changes.
+  const closed = await register("closed");
+  await heldInLine(closed, "closed_take", Date.now() - 2000);
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({ sql: "UPDATE workspaces SET deleted_at=? WHERE id=?", args: [Date.now(), closed.id] });
+  await releasePoolWaiters();
+  expect(await line("closed_take")).toMatchObject({ admitted_at: null, left_at: expect.any(Number) });
+  expect(await status(closed, "closed_take")).toMatchObject({ status: "held" });
   // Discarded while waiting: out of the line, nothing reserved, nothing charged.
   await heldInLine(up, "up_discard", Date.now() - 1000);
   expect(await inside(up, () => discardHeldJob("up_discard"))).toBe(true);
