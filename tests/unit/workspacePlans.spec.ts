@@ -41,6 +41,13 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return json({ estimatedCredits: price(), price: price(), unit: "cr", fingerprint: `fp${"0".repeat(60)}${String(calls.length).padStart(2, "0")}` });
     if (bare === "/api/generate") return json({ id: `gen-${(job += 1)}`, status: "queued" }, 202);
     if (bare.startsWith("/api/jobs/")) return json({ generation: { status: "queued" } });
+    /* The project's Library: one transform take on the key still rendering, one done, and an ordinary still. */
+    if (bare === "/api/workbench/library")
+      return json({ generations: [
+        { id: "t-open", model: "higgsfield-genjutsu-motion-transfer", status: "running" },
+        { id: "t-done", model: "higgsfield-genjutsu-object-swap", status: "succeeded" },
+        { id: "still", model: "image-a", status: "queued" },
+      ], nextPageCursor: null });
     if (bare === "/api/audio" || bare === "/api/audio/dub")
       return body?.quoteOnly
         ? json({ estimatedCredits: price(), price: price(), unit: "cr" })
@@ -164,7 +171,8 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 /* ------------------------------------------------------------------ registry */
 
 /* Generate, Shorts and History ran only on the signed-in account, which Atomik no longer uses. */
-const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts", "history"].sort();
+/* History is not here: it reads the project's Library and each transform take still rendering (free). */
+const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts"].sort();
 const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
 
 test("the registry has exactly one plan for each of the 24 workspace pages", () => {
@@ -385,6 +393,17 @@ test("no plan quotes, submits or polls on the connected account; only Compare re
       expect(page, `${page}: ${step.label}`).toBe("compare");
       expect(step.executor.backend.method, `${page}: ${step.label}`).toBe("GET");
     }
+});
+
+test("Viral History's plan reads the project's Library and each transform take still rendering — never the connected account", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const engine = engineFor(context(fetcher));
+  engine.start("history");
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "history");
+  expect(engine.getState().run!.error).toBeNull();
+  expect(calls.map((call) => call.path.split("?")[0])).toEqual(["/api/workbench/library", "/api/jobs/t-open"]);
+  expect(engine.getState().session[0].label).toBe("1 take checked");
+  expect(dispatches()).toHaveLength(0);
 });
 
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
@@ -615,13 +634,12 @@ test("a failed planning run says what it was charged, never that it was not bill
   ]);
 });
 
-test("generate, shorts and history refuse with their reason and read or send nothing, even with the old account data present", async () => {
+test("generate and shorts refuse with their reason and read or send nothing, even with the old account data present", async () => {
   const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
   const reasons = {
     generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
     shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
-    history: "Not runnable yet — reconciling needed the signed-in account.",
   } as const;
   for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {
     expect(PLANS[page].runnable(context(fetcher)), page).toEqual({ ok: false, reason });

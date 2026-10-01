@@ -14,9 +14,9 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
  * announces it once. Opening Gen later shows the jobs Gen made from what the
  * collector has — their state in one word with its age, a problem named
  * plainly, a finished take moved into Takes — and asks nothing itself. (The
- * Ads and Motion Transfer pages that showed theirs are the retired card now;
- * their results land in Takes the same way.) Every account reply here is a
- * route mock; nothing is paid for.
+ * Ads page that showed its own is the retired card now, and Viral runs on
+ * Particl's API key and reads the Library; account results land in Takes the
+ * same way.) Every account reply here is a route mock; nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -269,6 +269,9 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   expect(saves).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+/* Viral's Motion Transfer and Object Swap run on Particl's API key now and read the project's Library, not the connected
+   account: a take in flight landing without a reload is in tests/hf-viral-real-runs-workbench.spec.ts. */
 
 test("the jump to the takes still rendering reaches them past a long, windowed results grid", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "the jump is on narrow screens; wider, the results sit beside the composer");

@@ -260,6 +260,7 @@ test("a member works in Business's own tools: the pages are there, the retired c
   /* A phone keeps the Suites behind its context badge (app/phone-chrome.css). */
   await openSuitesMenu(page);
   await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
+  /* Nor on Viral's: it runs on Particl's API key for every member. */
   await expect(page.getByTestId("owner-badge-viral")).toHaveCount(0);
   await closeSuitesMenu(page);
   await page.getByTestId("brand-name").fill("Northline");
