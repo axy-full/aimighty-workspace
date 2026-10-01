@@ -448,13 +448,21 @@ time someone asked Atomik to build a production's Rig board, the request, the
 proposal the person approved (and its fingerprint), the run's state, and each
 step's batch of canvas operations with what became of them. Both tables are
 created the first time someone asks, so older snapshots simply lack them.
-Nothing in a build is paid or priced: the columns a later paid step would use
-(a request key, a job, credits reserved and settled) are empty. After a
-restore, a run still marked `planning`, `running` or `paused` is safe to wake:
-a step applied again changes nothing, because its canvas op id is already in
-`rig_canvas_ops`, and a planning turn that had started is not sent again (the
-run asks the person to ask again). Never delete runs or steps; an undo takes a
-build's cards off the canvas softly and records itself on the run.
+Placing cards is free. A run also records the limit the person approved for it
+(and every raise), and each render after the build records its price, who
+approved it, its request key (saved before anything was sent), the job it made
+and the credits reserved and settled; these columns are added to an older
+table when the workspace next uses it. After a restore, a run still marked
+`planning`, `running`, `paused` or `needs_you` is safe to wake: a step applied
+again changes nothing, because its canvas op id is already in
+`rig_canvas_ops`; a planning turn that had started is not sent again (the run
+asks the person to ask again, and its reserved planning charge is released);
+and a render whose key was saved is asked about by that key — followed if it
+landed, fenced if it never arrived — and never sent again. The charges
+themselves live in the platform ledger: each reservation names its run
+(`generation_reservations.run_id`, with its band in `run_band`), and a run's
+limit is counted from there. Never delete runs, steps or reservations; an undo
+takes a build's cards off the canvas softly and records itself on the run.
 
 ## Verification evidence
 
