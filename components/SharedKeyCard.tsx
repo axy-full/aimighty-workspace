@@ -42,7 +42,7 @@ export function SharedKeyCard() {
           </div>
 
           <div className="flex flex-col gap-1.5" data-testid="shared-key-changes">
-            <p className="grouplabel !pb-0">Waiting on a key that changed</p>
+            <p className="grouplabel !pb-0 !text-dim">Waiting on a key that changed</p>
             {data.keyChanges.length === 0 ? (
               <span className="rail-help">None. Every request is collected with the key it was sent on.</span>
             ) : (
@@ -56,7 +56,7 @@ export function SharedKeyCard() {
           </div>
 
           <div className="flex flex-col" data-testid="shared-key-requests">
-            <p className="grouplabel !pb-0">Latest requests</p>
+            <p className="grouplabel !pb-0 !text-dim">Latest requests</p>
             {data.requests.length === 0 ? <span className="rail-help pt-1">No request yet.</span> : data.requests.map((r) => (
               <div key={r.take} className="flex flex-col gap-1 border-b border-[var(--color-hair)] py-2.5" data-testid="shared-key-request">
                 <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

@@ -1,6 +1,8 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { password, signupInvite } from "./helpers/identityAdmin";
 import { newProject, type Project } from "../lib/workbench/studio";
@@ -31,6 +33,15 @@ const MOCK_KEY = createHash("sha256").update("particl-mock:higgsfield").digest("
 /* What a still quoted at the fixture price needs to start, at today's terms: the figure Generate held it at. */
 const NEEDS = heldPriceNow({ estUsd: 0.25 }, "image", MARKETING);
 
+/** SHARED_KEY_SHOTS=<dir> keeps a picture of what was checked, per size (for review; never in CI). */
+async function shoot(page: Page, project: string, name: string, target?: string) {
+  const dir = process.env.SHARED_KEY_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${name}-${project.replace("workbench-", "")}.png`);
+  if (target) await page.locator(target).screenshot({ path: file });
+  else await page.screenshot({ path: file });
+}
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 }
@@ -189,6 +200,7 @@ test("the jobs tray says what a take on the shared key is doing: Queued — star
     expect(await fits(page, ".gx-jobs-tray"), "the tray").toEqual([]);
     if (phone) expect(await lastRowAboveTabBar(page), "the last row and the tab bar").toEqual([]);
     await noOverflow(page);
+    await shoot(page, info.project.name, "tray");
     expect(errors).toEqual([]);
     /* Still waiting, never failed or charged: nothing was asked of the provider for it. */
     const still = (await tenant.execute({ sql: "SELECT status,cost_usd FROM generations WHERE id IN (?,?) ORDER BY id", args: [changed, pooled] })).rows.map((r) => ({ ...r }));
@@ -255,6 +267,7 @@ test("the platform desk shows the shared key to its owner — the pool, takes on
     await expect(card).not.toContainText(/particl-mock|secret|\$\d/i);
     expect(await fits(page, '[data-testid="shared-key-card"]'), "the card").toEqual([]);
     expect(await dimText(page, '[data-testid="shared-key-card"]'), "text dimmer than #7C7C84").toEqual([]);
+    await shoot(page, info.project.name, "desk-card", '[data-testid="shared-key-card"]');
     expect(errors).toEqual([]);
 
     /* A read that fails says so, with Try again, and Try again reads it. */
