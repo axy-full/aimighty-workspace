@@ -174,12 +174,14 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
       await expect(page.getByTestId("spec-work").locator(tool.then ?? tool.body)).toBeVisible({ timeout: 30_000 });
     }
 
-    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. */
+    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. No plan reads the
+       Higgsfield account's routes any more (Compare reads the Library), so every page offers Run. */
     const inspector = page.getByTestId("spec-inspector");
     await expect(inspector.locator(".pxw-fact")).toHaveCount(5);
     const run = inspector.locator(".pxw-insp-run");
     await expect(run).toBeVisible();
     if (await run.isDisabled()) await expect(inspector.getByTestId("spec-plan-reason")).not.toBeEmpty();
+    await expect(inspector.getByTestId("spec-plan-owner")).toHaveCount(0);
 
     if (SHOTS && info.project.name === "workbench-1440x900" && (id === "brief" || id === "marketing" || id === "runs")) {
       await page.getByTestId("content").evaluate((el) => el.scrollTo(0, 0));

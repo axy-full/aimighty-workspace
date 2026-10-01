@@ -9,7 +9,8 @@ import type { LibFilter, RigView } from "@/lib/workspace/types";
 import { primaryAvailability, type GenerateStatus } from "@/components/workspace/PageHeader";
 import { useShell } from "@/lib/shell/state";
 import { PRODUCTION_AGENT_PAGES } from "@/lib/shell/production-tools";
-import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
+import { isOwnerRunPage, isOwnerRunSuite } from "@/lib/shell/connected-capability";
+import { isOwnPage } from "@/lib/shell/business-own";
 import { Glyph } from "./icons";
 
 /**
@@ -54,8 +55,9 @@ export function PageHead({ project, onGenerate, generate }: { project: Project |
       <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.wide ? shell.inspector : shell.inspOpen} aria-keyshortcuts="Meta+J" onClick={shell.toggleInspector} data-testid="toggle-inspector"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="info" size={18} /></span><span className="gx-hbtn-label">Inspector</span></button>
       {/* A Production agent page prices and runs its own steps; a second "Run stage" would be another agent path.
           Atomik › Tools & connections has its own controls, and the plan behind its old Skills page has nothing to run.
-          A suite whose pages ran on the retired Higgsfield sign-in shows its retired card, with no stage to run. */}
-      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (shell.suite.id === "atomik" && (shell.page.id === "skills" || shell.page.id === "memory")) || isOwnerRunSuite(shell.suite.id) ? null : (<>
+          A suite or page whose work ran on the retired Higgsfield sign-in shows its retired card, with no stage to run.
+          Business's own tools (Brand … Design) price and run their own steps, like the Production agent pages. */}
+      {(shell.suite.id === "studio" && PRODUCTION_AGENT_PAGES.has(shell.page.id)) || (shell.suite.id === "atomik" && (shell.page.id === "skills" || shell.page.id === "memory")) || (shell.suite.id === "business" && isOwnPage(shell.page.id)) || isOwnerRunSuite(shell.suite.id) || isOwnerRunPage(shell.suite.id, shell.page.id) ? null : (<>
       {!availability.enabled && availability.reason ? <span className="gx-reason" id="gx-action-reason" data-testid="primary-reason">{availability.reason}</span> : null}
       <button type="button" className="gx-primary" data-testid="primary-action" disabled={!availability.enabled} aria-describedby={availability.reason ? "gx-action-reason" : undefined} onClick={run} data-priced={price ? "" : undefined}>
         <span className="gx-go-act">{action.label}</span>{price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{price}</span> : null}

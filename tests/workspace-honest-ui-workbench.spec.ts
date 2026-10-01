@@ -6,7 +6,7 @@ import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, moc
 /**
  * The workspace's controls do what they say, or are not there (audit, 25 September):
  * the composer's library offers only what the composer can do and holds a sound's
- * length to what is billed; a failed read of the edit offers Retry; Brief opens the
+ * length to what is billed; a failed read of the edit offers Try again; Brief opens the
  * shell's own agent, and only once the brief is saved; the header carries no toggle
  * that changes nothing; the Suites Cast Inspector shows the stage it can show; the
  * Rig's Estimate is the Generate button's own figure.
@@ -101,7 +101,7 @@ test("the composer's library offers only what the composer does, and a sound's l
   expect(errors).toEqual([]);
 });
 
-test("Edit & Sound: a failed read of the edit says so and offers Retry, never a loading line that will not change", async ({ page }, info) => {
+test("Edit & Sound: a failed read of the edit says so and offers Try again, never a loading line that will not change", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { errors } = await open(page, "/workspace?project=ws-honest&suite=particl&page=takes");
   await expect(page.getByTestId("project-title")).toHaveText("Coastal light study");
@@ -111,13 +111,15 @@ test("Edit & Sound: a failed read of the edit says so and offers Retry, never a 
   await page.getByRole("navigation", { name: "Pages" }).locator('[data-page="edit"]').click();
   await expect(page.getByRole("alert").filter({ hasText: "could not load this project" })).toBeVisible();
   await expect(page.getByText("Loading the edit…")).toHaveCount(0);
+  /* "Try again", never "Retry": that word is a take's paid re-render. */
+  await expect(page.getByTestId("edit-retry")).toHaveText("Try again");
   down = false;
   await page.getByTestId("edit-retry").click();
   await expect(page.getByTestId("assembly")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("phone Edit & Sound: a failed read of the edit says so and offers Retry", async ({ page }, info) => {
+test("phone Edit & Sound: a failed read of the edit says so and offers Try again", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const store: ProjectRoute = { current: { ...fixture(), shots: [{ id: "c1", name: "01 — The approach", assetId: "up_plate", duration: 48, sourceIn: 0, note: "" }] } };
   const { errors } = await open(page, "/workspace?project=ws-honest&suite=particl&page=takes", store);
@@ -131,6 +133,7 @@ test("phone Edit & Sound: a failed read of the edit says so and offers Retry", a
   await expect(page.getByRole("alert").filter({ hasText: "could not load this project" })).toBeVisible();
   await expect(page.getByText("Loading the edit…")).toHaveCount(0);
   const retry = page.getByTestId("mobile-edit-retry");
+  await expect(retry).toHaveText("Try again");
   const box = (await retry.boundingBox())!;
   expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
   down = false;

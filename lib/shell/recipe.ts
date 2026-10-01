@@ -1,6 +1,7 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
 import { AUDIO_SECONDS, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
+import { cleanCinemaControls } from "../cinemaStudioTypes";
 
 /**
  * Recreate (README › Interactions, the asset's "Retry"): a take's whole
@@ -51,6 +52,8 @@ export type GenPreset = {
   picks?: RecipePicks;
   references?: RecipeReference[];
   shotSpec?: Record<string, string>;
+  /** A Cinema Studio 4.0 take's creative controls (params.cinema), documented pairs only. */
+  cinema?: Record<string, string>;
   sound?: RecipeSound;
   /** The take this recipe came from. */
   from?: { id: string; name: string };
@@ -149,6 +152,7 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
   const shotSpec = record(params.shotSpec)
     ? Object.fromEntries(Object.entries(params.shotSpec).filter((pair): pair is [string, string] => typeof pair[1] === "string" && pair[1].length > 0).slice(0, 20))
     : {};
+  const cinema: Record<string, string> = cleanCinemaControls(params.cinema);
 
   const sound: RecipeSound = {};
   if (type === "audio" && !connected) {
@@ -167,6 +171,7 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
     picks,
     ...(references.length ? { references } : {}),
     ...(Object.keys(shotSpec).length ? { shotSpec } : {}),
+    ...(Object.keys(cinema).length ? { cinema } : {}),
     ...(Object.keys(sound).length ? { sound } : {}),
     from: { id: g.id, name: options.name },
     ...(options.settingsOnly ? { settingsOnly: true } : {}),
@@ -176,17 +181,19 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
 
 /* ── Citations ─────────────────────────────────────────────────────────── */
 
-type Citable = "image" | "video";
-const TAG_WORD: Record<Citable, string> = { image: "Image", video: "Video" };
+type Citable = "image" | "video" | "audio";
+const TAG_WORD: Record<Citable, string> = { image: "Image", video: "Video", audio: "Audio" };
+const citable = (kind: string | undefined): kind is Citable => kind === "image" || kind === "video" || kind === "audio";
 
 /**
- * How each reference is cited: @Image1, @Video1 — counted within its own
- * kind, in order, the way the engine numbers what it is sent (lib/ark.ts ›
- * buildRequestBody). Anything else (a sound) has no tag.
+ * How each reference is cited: @Image1, @Video1, @Audio1 — counted within its
+ * own kind, in order, the way the engine numbers what it is sent (lib/ark.ts ›
+ * buildRequestBody; a sound only Cinema Studio takes, lib/cinemaStudio.ts ›
+ * cinemaStudioPrompt). Anything else (a document) has no tag.
  */
 export function referenceTags(kinds: readonly (string | undefined)[]): (string | null)[] {
-  const seen: Record<Citable, number> = { image: 0, video: 0 };
-  return kinds.map((kind) => (kind === "image" || kind === "video" ? `@${TAG_WORD[kind]}${++seen[kind]}` : null));
+  const seen: Record<Citable, number> = { image: 0, video: 0, audio: 0 };
+  return kinds.map((kind) => (citable(kind) ? `@${TAG_WORD[kind]}${++seen[kind]}` : null));
 }
 
 /**
@@ -204,16 +211,16 @@ export function retagRecipe(prompt: string, refs: readonly { kind: string | unde
 } {
   const was = referenceTags(refs.map((r) => r.kind));
   const now: (string | null)[] = refs.map(() => null);
-  const next: Record<Citable, number> = { image: 0, video: 0 };
+  const next: Record<Citable, number> = { image: 0, video: 0, audio: 0 };
   for (const found of [true, false]) {
     refs.forEach((r, i) => {
-      if (r.found !== found || (r.kind !== "image" && r.kind !== "video")) return;
+      if (r.found !== found || !citable(r.kind)) return;
       now[i] = `@${TAG_WORD[r.kind]}${++next[r.kind]}`;
     });
   }
   const moves = new Map<string, string>();
   was.forEach((tag, i) => { if (tag && now[i] && tag !== now[i]) moves.set(tag, now[i]!); });
-  const moved = moves.size ? prompt.replace(/@(?:Image|Video)\d+(?!\d)/g, (tag) => moves.get(tag) ?? tag) : prompt;
+  const moved = moves.size ? prompt.replace(/@(?:Image|Video|Audio)\d+(?!\d)/g, (tag) => moves.get(tag) ?? tag) : prompt;
   return { prompt: moved, was, now };
 }
 

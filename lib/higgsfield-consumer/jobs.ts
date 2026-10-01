@@ -9,6 +9,7 @@ import { validateConsumerMarketingTemplateSources } from "./marketing-template-s
 import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
 import { validateConsumerShortsSources } from "./shorts-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
+import { parseOutcome, serializeOutcome, type ProviderOutcome } from "@/lib/providerOutcome";
 
 export type ConsumerWorkflow =
   "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool" | "shorts";
@@ -43,6 +44,8 @@ export type ConsumerJob = ConsumerJobScope & {
   providerReceipt: { [key: string]: ConsumerJson } | null;
   resultManifest: { [key: string]: ConsumerJson } | null;
   failureCode: ConsumerFailureCode | null;
+  /** What the account said when it failed the job, and what its ledger shows for the charge; null on older rows. */
+  providerOutcome: ProviderOutcome | null;
   /** Set when the owner set this unsettled job aside; it no longer holds capacity. */
   releasedAt: number | null;
   createdAt: number;
@@ -216,6 +219,10 @@ export async function consumerJobsReady() {
           await add("higgsfield_consumer_jobs", "released_at INTEGER");
           // When the background heartbeat last took the job for a read. Additive.
           await add("higgsfield_consumer_jobs", "swept_at INTEGER");
+          // What the account said when the job failed — its own status, its
+          // words and, from its own credit ledger, what happened to the
+          // charge (lib/providerOutcome.ts). Null reads as "didn't say". Additive.
+          await add("higgsfield_consumer_jobs", "provider_outcome TEXT");
         })
         .catch((error) => {
           initialized.delete(client);
@@ -256,6 +263,7 @@ function asJob(row: Row): ConsumerJob {
         ? null
         : JSON.parse(String(row.result_manifest)),
     failureCode: row.failure_code as ConsumerFailureCode | null,
+    providerOutcome: row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome)),
     releasedAt: row.released_at == null ? null : Number(row.released_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -780,6 +788,7 @@ async function finishDispatch(
   status: "uncertain" | "failed",
   failureCode: ConsumerFailureCode | null,
   providerReceipt: string | null = null,
+  providerOutcome: ProviderOutcome | null = null,
 ): Promise<ConsumerJob | null> {
   dispatchInput(input);
   await consumerJobsReady();
@@ -797,11 +806,12 @@ async function finishDispatch(
     if (replay && (providerReceipt === null || row.provider_receipt != null))
       return asJob(row);
     await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,failure_code=?,provider_receipt=COALESCE(provider_receipt,?),updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status IN ('dispatching',?) AND dispatch_claim_hash=?",
+      sql: "UPDATE higgsfield_consumer_jobs SET status=?,failure_code=?,provider_receipt=COALESCE(provider_receipt,?),provider_outcome=COALESCE(provider_outcome,?),updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status IN ('dispatching',?) AND dispatch_claim_hash=?",
       args: [
         status,
         failureCode,
         providerReceipt,
+        providerOutcome ? serializeOutcome(providerOutcome) : null,
         Date.now(),
         input.id,
         input.userId,
@@ -853,9 +863,10 @@ export const markConsumerUncertain = (
       ? null
       : canonicalObject(input.providerReceipt, 65_536),
   );
-/** Only for a definitive rejection before provider acceptance; never for a timeout. */
-export const markConsumerFailed = (input: DispatchInput) =>
-  finishDispatch(input, "failed", "submission_rejected");
+/** Only for a definitive rejection before provider acceptance; never for a timeout.
+ * `outcome`: what the account said when it refused (its words; its charge is whatever its ledger says). */
+export const markConsumerFailed = (input: DispatchInput & { outcome?: ProviderOutcome | null }) =>
+  finishDispatch(input, "failed", "submission_rejected", null, input.outcome ?? null);
 
 type PollInput = ConsumerJobScope & { leaseToken: string };
 /** Grants permission to GET the stored provider job, never to submit a generation. */
@@ -898,7 +909,7 @@ async function finishPoll(
   input: PollInput,
   outcome:
     | { status: "completed"; manifest: string }
-    | { status: "failed"; failureCode: ConsumerFailureCode }
+    | { status: "failed"; failureCode: ConsumerFailureCode; providerOutcome?: ProviderOutcome | null }
     | { status: "accepted"; nextPollAt?: number },
 ): Promise<ConsumerJob | null> {
   jobScope(input);
@@ -914,11 +925,12 @@ async function finishPoll(
     )
       return null;
     const changed = await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,result_manifest=?,failure_code=?,poll_lease_hash=NULL,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND poll_lease_hash=? AND poll_lease_until>?",
+      sql: "UPDATE higgsfield_consumer_jobs SET status=?,result_manifest=?,failure_code=?,provider_outcome=COALESCE(?,provider_outcome),poll_lease_hash=NULL,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND poll_lease_hash=? AND poll_lease_until>?",
       args: [
         outcome.status,
         outcome.status === "completed" ? outcome.manifest : null,
         outcome.status === "failed" ? outcome.failureCode : null,
+        outcome.status === "failed" && outcome.providerOutcome ? serializeOutcome(outcome.providerOutcome) : null,
         outcome.status === "accepted" ? (outcome.nextPollAt ?? null) : null,
         now,
         input.id,
@@ -943,16 +955,19 @@ export const completeConsumerJob = (
     status: "completed",
     manifest: canonicalObject(input.resultManifest, 262_144),
   });
+/** `outcome`: what the account said — its own status (nsfw, ip_detected, …) and words; see lib/providerOutcome.ts. */
 export function failConsumerPoll(
-  input: PollInput & { failureCode: "provider_failed" | "invalid_result" },
+  input: PollInput & { failureCode: "provider_failed" | "invalid_result"; outcome?: ProviderOutcome | null },
 ) {
   if (!["provider_failed", "invalid_result"].includes(input.failureCode))
     invalid();
   return finishPoll(input, {
     status: "failed",
     failureCode: input.failureCode,
+    providerOutcome: input.outcome ?? null,
   });
 }
+
 export function releaseConsumerPoll(
   input: PollInput & { nextPollAt?: number },
 ) {

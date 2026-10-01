@@ -13,7 +13,8 @@ READ FIRST, IN ORDER, BEFORE CHANGING ANYTHING:
 1. docs/handoff/HANDOFF.md — state, binding rules, what is proven vs assumed, the queue, the traps.
 2. docs/handoff/status.md — the running record; keep it true as you work.
 3. CLAUDE.md — the repo's ground rules (pricing, tenant isolation, phones first class, small PRs).
-4. docs/handoff/connected-capability-audit-2026-09-19.md — the connected-account capability map.
+4. docs/handoff/connected-capability-audit-2026-09-19.md — the connected-account capability map (historical:
+   the account was retired on 28 September 2026).
 Then run `curl -s https://www.particl.app/api/health` and `git log --oneline -15 origin/main` so you know
 the live state before you trust any of the documents.
 
@@ -25,6 +26,8 @@ HOW THE OWNER WORKS (you have no memory of this yet — save it to your own memo
   a site needs an explicit confirmation on top of the price approval.
 - Never use serif fonts in any design for them. Default to bold sans / grotesk / mono.
 - Extend the existing /api routes and lib; never rebuild them ("I will not rebuild the APIs again").
+- Particl uses provider APIs and loginless MCP only: nothing that needs a Higgsfield sign-in (the account's
+  OAuth MCP, its CLI or a website account). CLAUDE.md ground rule 10, 28 September 2026.
 - Atomik (the agent suite) is to have full parity with the connected provider's agent product — every
   feature, power and resource — without ever naming the provider in the UI.
 - Model names: real names for models we call directly (Seedance 2.5, Kling 3.0, Nano Banana 2, Eleven v3,

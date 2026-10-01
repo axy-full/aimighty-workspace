@@ -25,13 +25,16 @@ export type GenerationBodyInput = {
   /** The fingerprint of the quote being approved; POST /api/generate refuses a request whose price or inputs changed since. */
   quoteFingerprint?: string;
   firstFrameAssetId?: string;
-  soul?: { soulIdentityId: string; soulStrength: number; workbenchProjectId: string };
+  /** A trained identity (this workspace's own id), its likeness strength, and — for Soul Standard, Soul 2 and Soul Cinema — stills per request (1 or 4). */
+  soul?: { soulIdentityId: string; soulStrength: number; workbenchProjectId: string; soulBatch?: number };
   /** The shot setup picked from the camera bank (Gen's film vocabulary), kept on the take so Recreate brings it back. */
   shotSpec?: Record<string, string> | null;
   /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
   batch?: { id: string; variation: number };
   /** Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p watermarked draft whose 1080p final is made after. */
   draft?: boolean;
+  /** Cinema Studio 4.0's creative controls (lib/cinemaStudioTypes.ts): only picked ones; none is every control on Auto. */
+  cinema?: Record<string, string> | null;
 };
 
 export function generationRequestBody(input: GenerationBodyInput): Record<string, unknown> {
@@ -53,6 +56,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
     ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
+    ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
   };
 }
 

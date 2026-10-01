@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
 import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
+import { OWN_TOOLS_FACT } from "@/lib/shell/business-own";
 import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
@@ -20,7 +21,8 @@ import { Glyph, SUITE_LOOK } from "../icons";
  * eyebrow, the display title, six suite tiles with a live fact each, and one
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
  * the takes behind Assets. Every figure is the project's own; a suite whose
- * page ran on the Higgsfield account says its sign-in is retired instead.
+ * pages ran on the Higgsfield account says its sign-in is retired instead, and
+ * Business names Particl's own tools.
  */
 export function SuiteHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
@@ -76,7 +78,9 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
               <span className="gx-where-name">{t.label}</span>
               <span className="gx-where-line">{t.line}</span>
               <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>
-                {retired ? "Higgsfield sign-in retired" : t.fact}
+                {retired ? "Higgsfield sign-in retired"
+                  /* Business is Particl's own tools, for everyone: Ads, whose figures the fact names, ran on the retired sign-in. */
+                  : t.id === "business" ? OWN_TOOLS_FACT : t.fact}
               </span>
             </button>
           );

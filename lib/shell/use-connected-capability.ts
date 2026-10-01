@@ -11,10 +11,10 @@ const refresh = () => {};
  * retired (lib/higgsfield-consumer/retired.ts), so every surface takes the
  * path a member always took — the workspace owner's included — and nothing is
  * read from the account. The answer keeps its shape (`scope`, `revision`,
- * `refresh`) for the pages still on the retired card (Business, Viral and
- * Cast), which go with it once their API-key and Particl versions replace
- * them. Workspace › Engines keeps the owner's grant to Disconnect and the
- * running jobs to Set aside; it never read through here.
+ * `refresh`) for the pages still on the retired card (Business's Ads, Image
+ * ads and Setup, and Viral), which go with it once their API-key and Particl
+ * versions replace them. Workspace › Engines keeps the owner's grant to
+ * Disconnect and the running jobs to Set aside; it never read through here.
  */
 export const useConnectedCapability: (scope?: string | null, options?: { read?: boolean }) => Capability = (scope) => {
   const session = useSession();

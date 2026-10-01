@@ -9,6 +9,7 @@
  * calls.
  */
 import { createHash } from "node:crypto";
+import { accountFailure, higgsfieldAccountOutcome } from "@/lib/providerOutcome";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
@@ -104,6 +105,8 @@ function presentTemplateJob(job: ConsumerJob, availability: ConsumerOriginalAvai
     originalAvailable: availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    /* What the account said, and what its own ledger shows for the charge (its credits, never converted). */
+    failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
@@ -323,7 +326,7 @@ export async function pollConsumerMarketingTemplate(scope: ConsumerJobScope) {
     const failed = consumerMarketingTemplateFailureResult(response.raw, providerJobId);
     if (failed) {
       await connected(scope.userId, claim.job.connectionGeneration);
-      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed", outcome: higgsfieldAccountOutcome(failed) });
       return { job: await consumerMarketingTemplateView(settled ?? (await ownedTemplateJob(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {

@@ -110,8 +110,10 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
         ],
       });
     if (url.pathname === "/api/generate/quote") {
-      quotes.push(request.postDataJSON());
-      return json({ estimatedCredits: 3, fingerprint: "f".repeat(64) });
+      const body = request.postDataJSON();
+      quotes.push(body);
+      /* A 2.5 build is quoted approximately from its published rates. */
+      return json({ estimatedCredits: 3, fingerprint: "f".repeat(64), ...(body.marketing?.variant ? { approximate: true } : {}) });
     }
     if (url.pathname === "/api/jobs") return json({ generations: [] });
     if (
@@ -182,6 +184,22 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   await expect(
     panel.getByRole("button", { name: /Studio product portrait/ }),
   ).toHaveAttribute("aria-pressed", "true");
+  /* A 2.5 build keeps the chosen quality with a preset, up to max, and is priced approximately. */
+  await expect(panel.getByLabel("Marketing Studio build")).toHaveValue("alpha");
+  await panel.getByLabel("Marketing Studio build").selectOption("flare");
+  await expect(panel.getByText("Priced approximately; the delivered image settles it.")).toBeVisible();
+  await expect(panel.getByLabel("Image quality")).toBeEnabled();
+  await panel.getByLabel("Image quality").selectOption("max");
+  await expect.poll(() => project.moleculr?.marketing).toMatchObject({ variant: "flare", quality: "max", enhancePrompt: true, presetId });
+  await panel.getByLabel("Marketing Studio build").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("moleculr-image-presets-25.png") });
+  await panel.getByLabel("Product image").selectOption("product-b");
+  await panel.getByRole("button", { name: "Review campaign image" }).click();
+  const review = page.getByRole("dialog");
+  await expect(review.getByRole("button", { name: "Generate · about 3 cr", exact: true })).toBeEnabled();
+  expect(quotes.at(-1)).toMatchObject({ marketing: { variant: "flare", quality: "max", enhancePrompt: true, presetId } });
+  await expect(review.getByLabel("Marketing image quality")).toBeEnabled();
+  await page.keyboard.press("Escape");
   expect(catalogScopes.every(Boolean)).toBe(true);
   expect(dispatched).toEqual([]);
   expect(

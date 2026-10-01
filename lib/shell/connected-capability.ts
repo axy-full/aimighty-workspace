@@ -2,9 +2,10 @@
  * The words of the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts).
  * Nobody runs the connected account any more — the hook
  * (./use-connected-capability) answers "member" for everyone and reads
- * nothing — and the pages that ran there (Business, Viral and Cast, until
- * their API-key and Particl versions replace them) meet one calm card saying
- * so, with the way to make the same kind of thing on this workspace's credits.
+ * nothing — and the pages that ran there (Business's Ads, Image ads and
+ * Setup, and Viral, until their API-key and Particl versions replace them)
+ * meet one calm card saying so, with the way to make the same kind of thing
+ * on this workspace's credits.
  * Workspace › Engines keeps its Disconnect and Set aside. Pure: the answer's
  * shape and the card's words.
  */
@@ -97,9 +98,18 @@ export function alternativePrice(label: string, price: { credits: number | null;
   return [label, `${price.credits.toLocaleString("en-US")} ${price.unit}`, price.detail || null].filter(Boolean).join(" · ");
 }
 
-/** The shell's suites that ran only on the connected account: their page is the card, with no tabs and no stage to run. */
-export const OWNER_RUN_SUITES: readonly string[] = ["business", "viral"];
+/** The shell's suites that ran only on the connected account on every page: each page is the card, with no stage to run. */
+export const OWNER_RUN_SUITES: readonly string[] = ["viral"];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
+/**
+ * The pages that ran only on the connected account, in a suite whose other pages everyone runs: everyone meets the
+ * retired card there (the sign-in is retired), and no Run stage. Business's Ads, Image ads and Setup did; its own tools
+ * (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account, so the
+ * suite keeps its tabs.
+ */
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "dtc", "setup"] };
+export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
+  Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 
 /** A cast entry's words for a reference still: its prompt, else its description, else its name. */
 export function castStillPrompt(entry: { name: string; description: string; prompt: string }): string {

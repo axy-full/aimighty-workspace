@@ -3,11 +3,12 @@ import { CINEMA_STUDIO_MODEL_ID, isHiggsfieldVideoModel } from "./cinemaStudioTy
 import { platformDb, platformReady } from "./platform";
 import { db, now } from "./db";
 import { requireTenant } from "./tenant";
-import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { HIGGSFIELD_IMAGE_MODELS, isHiggsfieldImageModel, isSoulIdentityModel } from "./models";
 import type { RenderHandle } from "./engines/types";
 import { generationSettlementReady } from "./generationSettlement";
 
-const receiptModels = [SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, ...Object.values(GENJUTSU_MODELS), CINEMA_STUDIO_MODEL_ID];
+/* Every Higgsfield still (Soul Character, Marketing Studio, Soul Standard / 2 / Cinema) and video (Genjutsu, Cinema Studio). */
+const receiptModels = [...HIGGSFIELD_IMAGE_MODELS, ...Object.values(GENJUTSU_MODELS), CINEMA_STUDIO_MODEL_ID];
 const receiptModelSlots = receiptModels.map(() => "?").join(",");
 const supported = (model: string) => isHiggsfieldImageModel(model) || isHiggsfieldVideoModel(model);
 let boot: Promise<void> | undefined;
@@ -66,7 +67,7 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
   const key = isHiggsfieldVideoModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
-  if (!params.paidClaim || (row.model === SOUL_CHARACTER_MODEL_ID ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
+  if (!params.paidClaim || (isSoulIdentityModel(String(row.model)) ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
       !supported(handle.model) || handle.model !== row.model || !handle.ref ||
       (params[key] && params[key].ref !== handle.ref))

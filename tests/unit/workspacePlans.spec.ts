@@ -8,7 +8,7 @@ import {
   VISUAL_PACING_MS,
   isApprovedQuote,
 } from "../../lib/workspace/run-engine";
-import { activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
+import { activityFromAgentJobs, activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { idempotencyKey } from "../../lib/workspace/plan-helpers";
 import { genjutsuSourceUrl, isGenjutsuTake } from "../../lib/genjutsuTypes";
@@ -653,7 +653,10 @@ test("activity merges real sources with this session's runs, newest first, with 
   const jobs = activityFromJobs(
     [
       { id: "g1", title: "Opening", kind: "video", status: "succeeded", creditsBilled: 18, createdAt: now - 7 * 60_000, updatedAt: now - 6 * 60_000 },
-      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000 },
+      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000,
+        failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } },
+      /* Failed with nothing confirmed: no claim either way. */
+      { id: "g3", title: "Pier", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 2 * 3_600_000, updatedAt: now - 2 * 3_600_000 },
     ],
     now,
   );
@@ -662,6 +665,7 @@ test("activity merges real sources with this session's runs, newest first, with 
     ["Board 2 sent", "just now"],
     ["Rendered Opening", "6 min · 18 cr"],
     ["close on the turn failed", "1 hr · not billed"],
+    ["Pier failed", "2 hr"],
   ]);
 
   const { fetcher } = backend();
@@ -669,6 +673,23 @@ test("activity merges real sources with this session's runs, newest first, with 
   const runs = loaded.entries[1];
   // Runs from another production are never shown.
   expect(runs.some((entry) => entry.label.includes("Other"))).toBe(false);
+});
+
+test("a failed planning run says what it was charged, never that it was not billed", () => {
+  const now = 10_000_000;
+  const lines = activityFromAgentJobs([
+    { id: "a1", status: "failed", request: "plan the opening", credits: 3, updatedAt: now - 60_000 },
+    /* Zero credits may be the workspace's own key, which its vendor billed: no claim either way. */
+    { id: "a2", status: "failed", request: "plan the close", credits: 0, updatedAt: now - 120_000 },
+    { id: "a3", status: "failed", request: "plan the pier", credits: null, updatedAt: now - 180_000 },
+    { id: "a4", status: "succeeded", request: "plan the harbour", credits: 5, updatedAt: now - 240_000 },
+  ], now);
+  expect(lines.map((line) => [line.label, line.meta])).toEqual([
+    ["Planning failed: plan the opening", "1 min · 3 cr"],
+    ["Planning failed: plan the close", "2 min"],
+    ["Planning failed: plan the pier", "3 min"],
+    ["Planned plan the harbour", "4 min · 5 cr"],
+  ]);
 });
 
 test("generate, shorts and history refuse with their reason and read or send nothing, even with the old account data present", async () => {

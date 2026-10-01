@@ -18,13 +18,13 @@ export function DraftStatus({ editor, children }: { editor: DraftEditor; childre
   );
 }
 
-/** Loading and load-error states shared by the draft-backed tools. */
+/** Loading and load-error states shared by the draft-backed tools. A failed read offers "Try again": "Retry" is a take's paid re-render. */
 export function DraftGate({ editor, label }: { editor: DraftEditor; label: string }) {
   if (editor.status === "loading") return <p className="pxw-spec-work-empty" role="status">Opening {label}…</p>;
   return (
     <p className="pxw-spec-work-empty" role="alert">
       {editor.error || "This project could not be opened."}{" "}
-      <button type="button" className="pxw-link-button" onClick={editor.reload}>Retry</button>
+      <button type="button" className="pxw-link-button" onClick={editor.reload}>Try again</button>
     </p>
   );
 }

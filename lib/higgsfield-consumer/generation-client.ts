@@ -1,6 +1,8 @@
 import { consumerGenerationInputSchema, type ConsumerGenerationInput } from "./generation-contract";
 import { CONNECTED_OUTPUT_TYPES, type ConnectedOutputType } from "./catalogue";
 import { findConnectedTool, type ConnectedToolName } from "./tools";
+import { parseTakeFailure, type TakeFailure } from "../providerOutcome";
+import { failureLine } from "../errors";
 
 /**
  * The browser side of the connected account's generation workflow, in one
@@ -48,6 +50,8 @@ export type ConnectedJob = {
   originalAvailability?: string;
   /** Why a failed job failed: the account refused it, or it finished but its result could not be kept. */
   failureCode?: string | null;
+  /** A failed job: the account's own status and words, and what its own ledger shows for the charge (its credits). */
+  failure?: TakeFailure | null;
   /** Unsettled but set aside (by its owner, or past the capacity window): it no longer gates new spend. */
   setAside?: boolean;
   createdAt: number;
@@ -73,7 +77,7 @@ export function parseConnectedJob(value: unknown, draftId: string): ConnectedJob
     Number.isInteger(value.batch.variation) && Number(value.batch.variation) >= 1 && Number(value.batch.variation) <= 8
     ? { id: value.batch.id, variation: Number(value.batch.variation) }
     : null;
-  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, batch, input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
+  return { ...value, tool, sources, composer: value.composer === "gen" ? "gen" : null, batch, failure: parseTakeFailure(value.failure), input: consumerGenerationInputSchema.parse(value.input) } as ConnectedJob;
 }
 
 /**
@@ -129,12 +133,17 @@ export function connectedBatchCheckRequest(draftId: string, ids: readonly string
   return { action: "check-batch" as const, draftId, ids: [...ids] };
 }
 
-/** What a failed job means for the owner: a refused render is not billed; a
- * result the account finished but Particl could not keep may have been. */
-export function connectedFailureText(job: Pick<ConnectedJob, "failureCode">) {
-  return job.failureCode === "invalid_result"
-    ? "The account finished this job, but its result could not be kept. Its receipt is saved."
-    : "The connected account reported this job as failed. Failed renders are not billed.";
+/**
+ * What a failed job means for the owner, from the account's own word: why it
+ * failed and what its ledger shows for the charge ("Higgsfield refunded 12
+ * credits", or "didn't say" until it does). A result the account finished
+ * but Particl could not keep may have been billed; its receipt is saved.
+ */
+export function connectedFailureText(job: Pick<ConnectedJob, "failureCode"> & { failure?: TakeFailure | null }) {
+  if (job.failureCode === "invalid_result") return "The account finished this job, but its result could not be kept. Its receipt is saved.";
+  if (!job.failure) return "The connected account reported this job as failed. Higgsfield didn't say if it charged.";
+  const line = failureLine(job.failure);
+  return `${line.what}. ${line.charge ?? "Higgsfield didn't say if it charged"}. ${line.next}.`;
 }
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);

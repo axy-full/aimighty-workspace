@@ -1,6 +1,7 @@
 import { displayModelName } from "../models";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -85,6 +86,8 @@ export type ComposerState = {
   count: number;
   /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
   shot: Record<string, string>;
+  /** Cinema Studio 4.0's creative controls (lib/workspace/cinema-vocabulary.ts): one documented value per control; absent is Auto. */
+  cinema: Record<string, string>;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -104,6 +107,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   picks: {},
   count: 1,
   shot: {},
+  cinema: {},
   notice: null,
 };
 
@@ -124,6 +128,8 @@ export type ComposerRecipe = {
   sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
   /** The take's shot setup (params.shotSpec); none puts every chip back to Auto. */
   shot?: Record<string, string>;
+  /** The take's Cinema Studio controls (params.cinema); none puts every Cinema chip back to Auto. */
+  cinema?: Record<string, string>;
 };
 
 export type ComposerAction =
@@ -137,6 +143,7 @@ export type ComposerAction =
   | { type: "pick"; value: ComposerPicks }
   | { type: "count"; value: number }
   | { type: "shot"; value: Record<string, string> }
+  | { type: "cinema"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -223,6 +230,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
     case "shot":
       return { ...state, shot: { ...action.value }, notice: null };
+    case "cinema":
+      return { ...state, cinema: { ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -247,6 +256,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         voiceId: sound.voiceId ?? state.voiceId,
         count: 1,
         shot: { ...(recipe.shot ?? {}) },
+        cinema: { ...(recipe.cinema ?? {}) },
         notice: null,
       };
     }
@@ -481,6 +491,8 @@ export function composerBlock(input: {
   projects?: "loading" | "ready" | "error";
   /** Any loading or refusal from reading the model catalogue. */
   catalogue: { loading: boolean; error: string | null };
+  /** Sound references held in the well: only Cinema Studio 4.0 takes them. */
+  soundReferences?: number;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
@@ -491,6 +503,8 @@ export function composerBlock(input: {
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
   if (!state.prompt.trim()) return "Write what to generate.";
   if (model.audioTask === "speech" && !state.voiceId) return `${model.label} has no voice to read in here. Choose another model.`;
+  if ((input.soundReferences ?? 0) > 0 && !isCinemaStudioModel(model.id))
+    return `${model.label} takes pictures and video as references, not sound. Remove the sound, or choose Cinema Studio 4.0.`;
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
     return quote.reason ?? "This model has no live price with these settings.";

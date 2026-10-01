@@ -15,13 +15,20 @@
 
 export type LedgerState =
   | "charged" | "held" | "running" | "not-billed" | "own-key"
-  | "failed-not-billed" | "failed-charged" | "waiting" | "unpriced";
+  | "failed-not-billed" | "failed-charged" | "failed-unknown" | "waiting" | "unpriced";
 
-export type CreditLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; credits: number; state: LedgerState };
-export type DollarLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; usd: number | null; state: LedgerState };
+/**
+ * A failed job's row also says why, in the product's words (`why`, lib/errors.ts),
+ * and — only where the money was the workspace's own (its own keys, or its
+ * connected account) — what the provider did with the charge, in the
+ * provider's own unit (`provider`). A credit row never carries the provider's
+ * side: what Particl charged is the row's own amount.
+ */
+export type CreditLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; credits: number; state: LedgerState; why?: string | null };
+export type DollarLedgerRow = { id: string; at: number; who: string | null; engine: string; kind: string; usd: number | null; state: LedgerState; why?: string | null; provider?: string | null };
 
 export type ConnectedState = "completed" | "pending" | "uncertain" | "failed";
-export type ConnectedLedgerRow = { id: string; at: number; workflow: string; project: string | null; quotedCredits: number; state: ConnectedState };
+export type ConnectedLedgerRow = { id: string; at: number; workflow: string; project: string | null; quotedCredits: number; state: ConnectedState; why?: string | null; provider?: string | null };
 
 type Page<Unit, Row, Totals> = { unit: Unit; month: string | null; months?: string[]; totals?: Totals; rows: Row[]; next: string | null };
 export type CreditLedgerPage = Page<"credits", CreditLedgerRow, { jobs: number; charged: number; held: number; notBilled: number }>;
@@ -48,14 +55,17 @@ export function creditLedgerState(status: string, credits: number, paidByPlatfor
 }
 
 /**
- * A take in a workspace that pays its vendors. Render cost exists only on
- * delivered work, so a failed take with none recorded was not billed; a
- * delivered one with none recorded is not claimed either way.
+ * A take in a workspace that pays its vendors. Missing accounting evidence
+ * is unknown, including when a render failed. The money is the workspace's
+ * own with its vendor, so a failed take's recorded zero is only Particl's
+ * metering (a refused request may still be charged): it reads "not billed"
+ * only when `uncharged` confirms it — the provider's own recorded word
+ * (refunded, not charged), or a take discarded before it was ever sent.
  */
-export function dollarLedgerState(status: string, usd: number | null): LedgerState {
+export function dollarLedgerState(status: string, usd: number | null, uncharged = false): LedgerState {
   const billed = usd != null && Number.isFinite(usd) && usd > 0;
   if (status === "succeeded") return billed ? "charged" : usd == null ? "unpriced" : "not-billed";
-  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : "failed-not-billed";
+  if (status === "failed" || status === "cancelled") return billed ? "failed-charged" : uncharged ? "failed-not-billed" : "failed-unknown";
   if (status === "held") return "waiting";
   return "running";
 }
@@ -74,6 +84,7 @@ export const LEDGER_LABEL: Record<LedgerState, string> = {
   "own-key": "Own key · not billed",
   "failed-not-billed": "Failed · not billed",
   "failed-charged": "Failed · charged",
+  "failed-unknown": "Failed · charge unknown",
   waiting: "Waiting",
   unpriced: "No cost recorded",
 };
@@ -134,6 +145,7 @@ export function settledFact(page: { unit?: unknown; rows?: unknown } | null, quo
     case "not-billed": case "failed-not-billed": return "Not billed";
     case "own-key": return "Own key · not billed";
     case "failed-charged": return `${ledgerAmount(row)} · failed`;
+    case "failed-unknown": return "Charge unknown";
     case "unpriced": return "—";
     default: return ledgerAmount(row);
   }

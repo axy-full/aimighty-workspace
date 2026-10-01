@@ -281,7 +281,7 @@ export function batchSettledText(name: string, views: readonly TakeView[]): stri
   const failed = views.filter((v) => v.tone !== "green" && !held.includes(v) && !unsure.includes(v));
   const parts = [made.length ? `${name}: ${made.length} of ${views.length} takes rendered, one strip in Takes.` : `${name}: no take rendered yet.`];
   if (failed.length) {
-    const unbilled = failed.every((v) => v.status.includes("not billed") || v.status.includes("not charged"));
+    const unbilled = failed.every((v) => v.status.includes("not billed") || v.status.includes("not charged") || v.status.includes("refunded"));
     parts.push(`${upper(takesPhrase(failed.map((v) => v.variation)))} did not${unbilled ? " and cost nothing" : ""}.`);
   }
   if (held.length) parts.push(`${upper(takesPhrase(held.map((v) => v.variation)))} ${held.length === 1 ? "is" : "are"} held, not charged until ${held.length === 1 ? "it runs" : "they run"}.`);

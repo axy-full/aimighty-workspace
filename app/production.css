@@ -18,6 +18,8 @@
 .gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 12px; margin-top: -8px; }
 .gx .pd-more > summary { cursor: pointer; color: var(--gx-text-2); font-size: 13px; padding: 4px 0; }
 .gx .pd-more[open] { display: flex; flex-direction: column; gap: 12px; }
+/* On a touch screen the disclosure ("Add takes · 3 in this project") is a 44px target. */
+@media (max-width: 767px), (pointer: coarse) { .gx .pd-more > summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; } }
 .gx .pd-recover { flex-direction: row; align-items: center; flex-wrap: wrap; }
 .gx .pd-recover .gx-hint { flex: 1; min-width: 220px; margin: 0; }
 .gx .pd-progress { gap: 10px; }
@@ -66,10 +68,12 @@
 .gx .pd-scene:nth-child(4n+2) { border-left-color: #BF5AF2; }
 .gx .pd-scene:nth-child(4n+3) { border-left-color: #FF9F0A; }
 .gx .pd-scene:nth-child(4n+4) { border-left-color: #30D158; }
-.gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-3); flex: none; }
+/* Scene, shot and beat numbers are functional labels: --gx-text-2, since the .45 tertiary ink composites under #7C7C84. */
+.gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); flex: none; }
 .gx .pd-scene-heading { flex: 1; min-width: 160px; width: auto; font-family: var(--gx-mono); text-transform: uppercase; letter-spacing: .02em; }
 .gx .pd-order { display: flex; gap: 4px; flex: none; }
 .gx .pd-order .gx-hbtn { min-width: 32px; justify-content: center; }
+@media (pointer: coarse) { .gx .pd-order .gx-hbtn { min-width: 44px; } }
 .gx .pd-cast-line { margin: 0; font-size: 12px; }
 .gx .pd-beats, .gx .pd-shots { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .gx .pd-beat { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
@@ -122,11 +126,33 @@
   .gx .pd-takes button { height: 44px; min-width: 56px; }
 }
 
-/* Cast & Elements: one card per character or element, built with Soul Cinema. */
+/* Cast & Elements: one card per character or element; a character renders with its Soul ID on the platform's key. */
 .gx .pd-cast-name { flex: 1; min-width: 120px; width: auto; }
-.gx .pd-soul { display: flex; align-items: center; gap: 6px; }
-.gx .pd-soul select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+.gx .pd-soul { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gx .pd-soul select { min-height: 32px; max-width: 100%; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } .gx .pd-cast-name { flex-basis: 100%; } }
+@media (pointer: coarse) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } }
+.gx .pd-cast-render { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+.gx .pd-cast-render .pd-soul { flex-wrap: wrap; }
+/* A price on a button wraps rather than being cut. */
+.gx .pd-go { height: auto; min-height: 32px; max-width: 100%; white-space: normal; text-align: left; line-height: 1.3; padding-top: 6px; padding-bottom: 6px; }
+@media (max-width: 767px), (pointer: coarse) { .gx .pd-go { min-height: 44px; } }
+/* The consent row is the target: its checkbox spans the whole row, drawn by the box beside the words. */
+.gx .pd-consent { position: relative; display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; box-sizing: border-box; cursor: pointer; }
+.gx .pd-consent input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.gx .pd-check { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--gx-text-2); box-sizing: border-box; }
+.gx .pd-consent input:checked + .pd-check { background: var(--gx-accent, #0A84FF); border-color: var(--gx-accent, #0A84FF); }
+.gx .pd-consent input:checked + .pd-check::after { content: ""; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
+.gx .pd-consent input:focus-visible + .pd-check { outline: 2px solid var(--gx-accent, #0A84FF); outline-offset: 2px; }
+.gx .pd-consent .gx-hint { margin: 0; }
+.gx .pd-soul-versions { flex-wrap: wrap; max-width: 100%; }
+.gx .pd-cast-render .gx-seg { max-width: 100%; }
+@media (max-width: 759px) {
+  /* Three families wrap inside the card on a phone instead of pushing it sideways. */
+  .gx .gx-seg.pd-soul-versions { display: flex; width: 100%; box-sizing: border-box; }
+  .gx .gx-seg.pd-soul-versions .gx-seg-btn { flex: 1 1 auto; }
+}
+.gx .pd-soul-error { flex-basis: 100%; overflow-wrap: anywhere; }
 
 /* Edit: every take in a grid; Timeline: the picture track as a list, and the tray to add takes. */
 .gx .pd-take-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -185,7 +211,7 @@
 .gx .pd-beat-card-title { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; }
 .gx .pd-beat-card-text { font-size: 13px; line-height: 1.45; color: var(--gx-text); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .gx .pd-beat-card-beats { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--gx-text-2); display: flex; flex-direction: column; gap: 2px; }
-.gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
+.gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); font-family: var(--gx-mono); }
 .gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
 .gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
@@ -199,6 +225,7 @@
 .gx .pd-take-media .gx-badge { top: 6px; left: 6px; }
 .gx .pd-take-cell > .gx-tile-over { inset: 7px 7px auto; aspect-ratio: var(--tile-aspect, 16 / 9); }
 .gx .pd-take .gx-tile-reason { margin-top: -2px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+.gx .pd-take .gx-tile-reason.gx-tile-charge { display: block; overflow: visible; }
 .gx .pd-take.gx-skel { border-color: transparent; }
 
 /* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
@@ -227,6 +254,13 @@
 .gx .pd-frame[data-picked] { outline: 2px solid var(--gx-accent, #0A84FF); outline-offset: -2px; }
 .gx .pd-frame-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); cursor: pointer; min-height: 44px; }
 .gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent, #0A84FF); }
+/* Environment's library pickers (a reference, a plate), styled like the stage's other pickers. The widest file name in
+   the list never widens the row past the screen, and on a touch screen each is a 44px target. */
+.gx .pd-frame > .pd-row-head > select { flex: 1 1 200px; min-width: 0; max-width: 100%; min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
+@media (max-width: 767px), (pointer: coarse) { .gx .pd-frame > .pd-row-head > select { min-height: 44px; font-size: 16px; } }
+/* Environment's place name sits in the card's column, not in a row as Cast's name does: it keeps the field's own height
+   (36px, 44px on a touch screen) instead of growing from nothing to 20px. */
+.gx .pd-frame > .gx-field.pd-cast-name { flex: none; }
 .gx .pd-drawing-delete { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Grok transcription on a take: the lines by speaker, readable at a glance. */
@@ -244,7 +278,7 @@
 .gx .pd-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); }
 .gx .pd-view-toggle button { min-height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text-2); font: inherit; font-size: 13px; cursor: pointer; }
 .gx .pd-view-toggle button[aria-checked="true"] { background: rgba(255, 255, 255, .1); color: var(--gx-text); }
-@media (max-width: 759px) { .gx .pd-view-toggle button { min-height: 44px; } }
+@media (max-width: 759px), (pointer: coarse) { .gx .pd-view-toggle button { min-height: 44px; } }
 .gx .pd-graph-layout { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx .pd-graph-frame { position: relative; }
 /* The open scene's editor floats over the graph's right side, like a properties panel; on a phone it covers the graph until Done. */

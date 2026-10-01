@@ -23,7 +23,17 @@ export type TeamCanvas = {
   retired: Record<string, Asset>;
   /** When each node or asset was last written (ms), for last-write-wins. */
   stamps: Record<string, number>;
+  /** Per node: who last changed it — a person's user id, or a server writer such as `agent:<runId>`. */
+  writers: Record<string, string>;
+  /**
+   * Nodes a server operation made (lib/workbench/canvas-ops.ts), by who made
+   * them. A removal a save only implied never takes one off (heldRemoval).
+   */
+  serverMade: Record<string, string>;
 };
+
+/** A server writer (an Atomik run) rather than a person: `agent:<runId>`. */
+export const isAgentAuthor = (author: string | undefined) => !!author && author.startsWith("agent:");
 
 export type TeamPatch = {
   /** Nodes written whole — except those named in `fields` or `made`. */
@@ -52,9 +62,20 @@ export type TeamPatch = {
    * window, which joins only a canvas that never held it.
    */
   expect?: Record<string, CanvasNode | null>;
+  /** Who wrote it (set by the server, never taken from a window): recorded per node it changed (TeamCanvas.writers). */
+  author?: string;
+  /**
+   * A patch a draft save implied (lib/workbench/records.ts saveDraft) rather
+   * than an edit made on the canvas: a node its window no longer shows may
+   * have been lost to a stale view, so its removals never take off a node a
+   * server operation made — and a node a server operation made that the
+   * canvas has taken off since is never brought back by it (heldReturn).
+   * Set by the server, never taken from a window.
+   */
+  implied?: boolean;
 };
 
-export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, retired: {}, stamps: {} });
+export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, retired: {}, stamps: {}, writers: {}, serverMade: {} });
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -159,26 +180,62 @@ export function landedRemoval(live: CanvasNode | undefined, id: string, patch: P
   return !!live && (!was || sameJson(live, was));
 }
 
+/**
+ * Whether a removal must not land: one a save only implied (a draft save's,
+ * or a catch-up's — it carries `expect`) of a node a server operation made.
+ * The window that sent it may have lost that node to a stale view (a live
+ * room that had not caught up with the server yet), so taking it off would
+ * throw away what the server made for everyone. A removal made on the canvas
+ * itself (the Rig's own delete) still lands.
+ */
+export function heldRemoval(serverMade: Record<string, string> | undefined, id: string, patch: Pick<TeamPatch, "implied" | "expect">): boolean {
+  return !!serverMade?.[id] && (!!patch.implied || patch.expect?.[id] !== undefined);
+}
+
+/**
+ * Whether a write must not land: one a save only implied (a draft save) of a
+ * card a server operation made that the canvas has since taken off (an Atomik
+ * run's undo, or a person's delete). The window that saved had folded the card
+ * in before it came off, so its save still carries it; putting it back would
+ * undo the removal behind everyone's back. A card put back on the canvas
+ * itself (the Rig's own undo, a window's edit) still lands.
+ */
+export function heldReturn(canvas: Pick<TeamCanvas, "nodes" | "removed" | "serverMade">, id: string, patch: Pick<TeamPatch, "implied">): boolean {
+  return !!patch.implied && !canvas.nodes[id] && !!canvas.removed[id] && !!canvas.serverMade?.[id];
+}
+
+/** The removals of a patch that would take a card off this canvas but that heldRemoval keeps from landing. */
+export function heldRemovals(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, patch: Pick<TeamPatch, "removeNodes" | "implied" | "expect">): string[] {
+  return patch.removeNodes.filter((id) => landedRemoval(canvas.nodes[id], id, patch) && heldRemoval(canvas.serverMade, id, patch));
+}
+
 /** Fold a patch in. A write older than what the canvas already holds for that item is ignored. */
 export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas {
-  const out: TeamCanvas = { nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, retired: { ...canvas.retired }, stamps: { ...canvas.stamps } };
+  const out: TeamCanvas = {
+    nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, retired: { ...canvas.retired }, stamps: { ...canvas.stamps },
+    writers: { ...canvas.writers }, serverMade: { ...canvas.serverMade },
+  };
   const newer = (key: string) => (out.stamps[key] ?? 0) <= patch.at;
   for (const node of patch.upsertNodes) {
     const key = `n:${node.id}`;
-    if (!newer(key)) continue;
+    if (!newer(key) || heldReturn(out, node.id, patch)) continue;
     const next = landedWrite(out.nodes[node.id], out.removed[node.id], node, patch);
     if (!next) continue;
+    /* The writer is who last changed the node: a save that only carries what the canvas already holds changes nothing. */
+    const changed = !out.nodes[node.id] || !sameJson(out.nodes[node.id], next);
     out.nodes[node.id] = next;
     delete out.removed[node.id];
     out.stamps[key] = patch.at;
+    if (changed && patch.author) out.writers[node.id] = patch.author;
     if (!out.order.includes(node.id)) out.order.push(node.id);
   }
   for (const id of patch.removeNodes) {
     const key = `n:${id}`;
-    if (!newer(key) || !landedRemoval(out.nodes[id], id, patch)) continue;
+    if (!newer(key) || !landedRemoval(out.nodes[id], id, patch) || heldRemoval(out.serverMade, id, patch)) continue;
     out.removed[id] = out.nodes[id];
     delete out.nodes[id];
     out.stamps[key] = patch.at;
+    if (patch.author) out.writers[id] = patch.author;
   }
   for (const asset of patch.upsertAssets) {
     const key = `a:${asset.id}`;
@@ -238,6 +295,8 @@ export function withTeamCanvas(project: Project, canvas: Pick<TeamCanvas, "nodes
 export function parseTeamCanvas(value: unknown): TeamCanvas {
   const v = (value && typeof value === "object" ? value : {}) as Partial<TeamCanvas>;
   const record = <T>(x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, T>) : {});
+  /* Who wrote what: names only, so a malformed entry is dropped rather than trusted. */
+  const names = (x: unknown) => Object.fromEntries(Object.entries(record<unknown>(x)).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length <= 200));
   return {
     nodes: record<CanvasNode>(v.nodes),
     assets: record<Asset>(v.assets),
@@ -245,7 +304,85 @@ export function parseTeamCanvas(value: unknown): TeamCanvas {
     removed: record<CanvasNode>(v.removed),
     retired: record<Asset>(v.retired),
     stamps: record<number>(v.stamps),
+    writers: names(v.writers),
+    serverMade: names(v.serverMade),
   };
+}
+
+/* ── The live room ─────────────────────────────────────────────────────────
+ * The room keeps each node and asset whole under its id, and the order as a
+ * list. The browser writes it through its live connection
+ * (components/workspace/rig/use-team-canvas.ts) and the server through
+ * Liveblocks' storage API (lib/workbench/canvas-push.ts); both go through
+ * writeRoom, so a server change lands in the room exactly as the same change
+ * made in a window would, by the same landedWrite / landedRemoval rules the
+ * database merge uses.
+ */
+
+/** The room's storage as the team canvas uses it (structural, so a test's stand-in and both Liveblocks clients fit). */
+export type RoomStorage = {
+  nodes: { get(id: string): unknown; set(id: string, value: unknown): void; delete(id: string): void };
+  assets: { get(id: string): unknown; set(id: string, value: unknown): void };
+  order(): readonly string[];
+  setOrder(order: string[]): void;
+  /** The nodes a server operation made, as the server last told the room (none until it has). */
+  serverMade(): Record<string, string>;
+  setServerMade(made: Record<string, string>): void;
+};
+
+/** A plain JSON copy: what a room may hold. */
+export const plainJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/**
+ * A patch written to the room: for a node that was already there, only the
+ * fields it changed (a teammate's edit to another field stands); a catch-up
+ * or a server write lands only where the room still holds what its sender had
+ * (`expect`); a removal a save only implied never takes off a node a server
+ * operation made.
+ */
+export function writeRoom(room: RoomStorage, patch: TeamPatch) {
+  for (const n of patch.upsertNodes) {
+    const next = landedWrite(room.nodes.get(n.id) as CanvasNode | undefined, undefined, n, patch);
+    if (next) room.nodes.set(n.id, plainJson(next));
+  }
+  const made = patch.removeNodes.length ? room.serverMade() : {};
+  for (const id of patch.removeNodes)
+    if (!heldRemoval(made, id, patch) && landedRemoval(room.nodes.get(id) as CanvasNode | undefined, id, patch)) room.nodes.delete(id);
+  for (const a of patch.upsertAssets) room.assets.set(a.id, plainJson(a));
+  if (patch.order) room.setOrder(patch.order);
+}
+
+export type RoomPoint = { x: number; y: number };
+export type RoomDrag = { id: string; dx: number; dy: number };
+/** Someone in the live room as the Rig shows them: a teammate, or Atomik (the server's writer: `agent` in its user info, with what it is doing). */
+export type RoomPeer = { id: number; name: string; color: string; cursor: RoomPoint | null; selected: string | null; drag: RoomDrag | null; agent?: boolean; doing?: string };
+
+export function roomPeer(other: { connectionId: number; info?: unknown; presence: { cursor?: RoomPoint | null; selected?: string | null; drag?: RoomDrag | null; doing?: unknown } }): RoomPeer {
+  const info = (other.info ?? {}) as { name?: string; color?: string; agent?: boolean };
+  const agent = info.agent === true;
+  return {
+    id: other.connectionId, name: info.name ?? (agent ? "Atomik" : "Teammate"), color: info.color ?? "#0A84FF",
+    cursor: other.presence.cursor ?? null, selected: other.presence.selected ?? null, drag: other.presence.drag ?? null,
+    ...(agent ? { agent, ...(typeof other.presence.doing === "string" ? { doing: other.presence.doing.slice(0, 80) } : {}) } : {}),
+  };
+}
+
+/** The shape a room is read into: live nodes, assets, the order, and nodes known to be off. */
+export type TeamCanvasView = { nodes: Record<string, CanvasNode>; assets: Record<string, Asset>; order: string[]; removedIds: string[]; serverMade?: Record<string, string> };
+
+/** A canvas as a window sees it, with its not-yet-sent edits laid over it (the same rules as writeRoom). */
+export function overlay(canvas: TeamCanvasView, patch: TeamPatch | null): TeamCanvasView {
+  if (!patch) return canvas;
+  const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
+  const removedIds = new Set(canvas.removedIds);
+  for (const n of patch.upsertNodes) {
+    const next = landedWrite(nodes[n.id], removedIds.has(n.id) ? n : undefined, n, patch);
+    if (next) { nodes[n.id] = next; removedIds.delete(n.id); }
+  }
+  for (const id of patch.removeNodes)
+    if (!heldRemoval(canvas.serverMade, id, patch) && landedRemoval(nodes[id], id, patch)) { delete nodes[id]; removedIds.add(id); }
+  for (const a of patch.upsertAssets) assets[a.id] = a;
+  return { ...canvas, nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
 }
 
 /**
