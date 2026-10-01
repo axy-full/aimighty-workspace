@@ -200,8 +200,9 @@ async function shot(page: Page, info: TestInfo, name: string) {
 test("a line: the voice list is the chosen model's own and swaps with it, each change is priced again, and one Generate sends the voice on the button at its price", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { quotes, charges, mismatched, errors } = await open(page);
-  /* Gen makes video, images and sound: no 3D tab, whoever is signed in. */
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit", "Analysis"]);
+  /* Gen makes video, images and sound: no 3D tab, whoever is signed in. Analysis ran through the signed-in
+     account, which is retired, so it is gone for everyone. */
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
   await page.getByRole("tab", { name: "Audio" }).click();
   await pickModel(page, /^Grok Voice$/);
   const line = "Not tonight. The ice will hold until morning.";

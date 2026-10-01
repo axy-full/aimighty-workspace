@@ -1,11 +1,11 @@
 /**
- * Who runs the connected Higgsfield account in this workspace, and whether it
- * answers (idea 19). The owner alone connects it and spends through it — every
- * /api/higgsfield/consumer route is owner-only — so a member meets one calm
- * card naming who runs it, with the way to make the same kind of thing on this
- * workspace's credits, never a connect prompt they cannot act on. Pure: the
- * capability, the one read per scope every surface shares, and the member's
- * words.
+ * Who could run the connected Higgsfield account in this workspace, and
+ * whether it answered (idea 19). Since the Higgsfield sign-in was retired
+ * (lib/higgsfield-consumer/retired.ts) nobody runs it — the hook
+ * (./use-connected-capability) answers "member" for everyone — and the
+ * surfaces that ran there meet one calm card saying so, with the way to make
+ * the same kind of thing on this workspace's credits. Pure: the capability,
+ * the one read per scope the surfaces shared, and the card's words.
  */
 
 import type { Plan, Runnable } from "../workspace/plan-types";
@@ -112,19 +112,25 @@ export function createCapabilityStore(read: (scope: string) => Promise<Connectio
 }
 export type CapabilityStore = ReturnType<typeof createCapabilityStore>;
 
-/* ── What a member meets ─────────────────────────────────────────────── */
+/* ── What everyone meets now ─────────────────────────────────────────── */
 
-/** The provider whose account the owner connects. The owner's Suites design names it (the naming rule is retired). */
+/* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), so the
+   surfaces that ran on the connected account show one card to everyone, the
+   workspace owner included: what ran there, that Particl no longer signs in to
+   Higgsfield, and — where a Studio engine makes the same kind of thing — the
+   way to make it on this workspace's credits. No owner name, no "run by". */
+
+/** The provider whose account the owner connected. */
 export const CONNECTED_PROVIDER = "Higgsfield";
 
-/** The surfaces that run only on the owner's account. (Viral and Business › Image ads run on Particl's API key for everyone.) */
+/** The surfaces that ran only on the connected account. (Viral and Business › Image ads run on Particl's API key for everyone.) */
 export type OwnerRunSurface = "business" | "cast" | "workflows";
 /** The same kind of thing on this workspace's credits: Gen, on Studio engines, opened on one output. */
 export type OwnerRunAlternative = { type: "image" | "video"; what: string; action: string };
 export type OwnerRun = {
-  /** Which tools here are the owner's. */
+  /** Which tools these were. */
   eyebrow: string;
-  /** What runs on the owner's account, in one short sentence. */
+  /** What ran on the connected account, in one short sentence. */
   line: string;
   /** Null where no Studio engine makes the same kind of thing. */
   alternative: OwnerRunAlternative | null;
@@ -132,31 +138,27 @@ export type OwnerRun = {
 export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
   business: {
     eyebrow: "Business · Marketing Studio",
-    line: "Ads render on their connected account.",
+    line: "Ads here ran on a signed-in Higgsfield account.",
     alternative: { type: "image", what: "Product stills in Gen, on Studio engines", action: "Open Gen · Images" },
   },
   cast: {
     eyebrow: "Cast · Soul Cinema and Soul ID",
-    line: "Characters, elements and identities build on their connected account.",
+    line: "Soul builds, reference elements and identities here ran on a signed-in Higgsfield account.",
     alternative: { type: "image", what: "Reference stills in Gen, on Studio image engines", action: "Open Gen · Images" },
   },
   workflows: {
     eyebrow: "Connected workflows",
-    line: "These run on their connected account.",
+    line: "These ran on a signed-in Higgsfield account.",
     alternative: null,
   },
 };
-/** Said above the alternative: the member's own way, paid in this workspace's credits. */
+/** Said above the alternative: the way that works here, paid in this workspace's credits. */
 export const ALTERNATIVE_LABEL = "On this workspace’s credits";
 
-/** Who runs the account, in words: the owner by name when the session names them. */
-export function ownerRunBy(ownerName: string | null | undefined): string {
-  return ownerName?.trim() || "the workspace owner";
-}
-/** The card's title: "Higgsfield-account tools are run by" the owner, by name. */
-export function ownerRunTitle(ownerName: string | null | undefined): string {
-  return `${CONNECTED_PROVIDER}-account tools are run by ${ownerRunBy(ownerName)}`;
-}
+/** The card's title, and the reason an account plan cannot run: the one thing that changed. */
+export const ACCOUNT_RETIRED = `Particl no longer signs in to ${CONNECTED_PROVIDER}`;
+/** Under the card's line: nothing made there is lost. */
+export const HISTORY_KEPT = "Past results stay in your Library.";
 /** The workflows card names its tools in the eyebrow ("Dub · Change voice"). */
 export function ownerRunEyebrow(surface: OwnerRunSurface, tools: readonly string[] = []): string {
   return surface === "workflows" && tools.length ? tools.join(" · ") : OWNER_RUNS[surface].eyebrow;
@@ -172,43 +174,36 @@ export function alternativePrice(label: string, price: { credits: number | null;
   return [label, `${price.credits.toLocaleString("en-US")} ${price.unit}`, price.detail || null].filter(Boolean).join(" · ");
 }
 
-/** The badge a member sees on the suites the owner runs, and what it stands for where it is only a mark. */
-export const OWNER_BADGE = "Owner";
-export function ownerBadgeNote(ownerName: string | null | undefined): string {
-  return `Run by ${ownerRunBy(ownerName)} on the ${CONNECTED_PROVIDER} account`;
-}
 /**
- * The shell's suites that run only on the owner's account, and the state
- * layer's suites behind them: none now. Viral runs on Particl's API key for
- * everyone, and so does Business › Image ads; the Business pages still on the
- * account (Ads, Setup) are the owner's page by page (the owner-run card), so
- * a member keeps the suite's tabs.
+ * The shell's suites that ran only on the connected account on every page, and the state layer's suites behind
+ * them: none now. Viral runs on Particl's API key for everyone, and so does Business › Image ads; the Business pages
+ * that ran on the account (Ads, Setup) are the retired card page by page, so the suite keeps its tabs.
  */
 export const OWNER_RUN_SUITES: readonly string[] = [];
 export const OWNER_RUN_LEGACY_SUITES: readonly string[] = [];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
 /**
- * The pages still run only on the owner's account, in a suite whose other pages everyone runs: a member meets the
- * owner-run card there, and no Run stage. Business's Ads and Setup do; Image ads runs on Particl's API key, and its
- * own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account,
- * so a member keeps the suite's tabs.
+ * The pages that ran only on the connected account, in a suite whose other pages everyone runs: everyone meets the
+ * retired card there (the sign-in is retired), and no Run stage. Business's Ads and Setup did; Image ads runs on
+ * Particl's API key, and its own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts)
+ * need no connected account, so the suite keeps its tabs.
  */
 export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "setup"] };
 export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
   Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 
-/** The connected account's routes: whatever calls one spends through the owner's account. */
+/** The connected account's routes: whatever called one ran on the connected account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
-/** An Atomik plan with any step on the connected account is the owner's to run (Compare, which reads results kept on the account). */
+/** An Atomik plan with any step on the connected account: none in the registry since Compare reads the project's Library; the run engine still refuses one. */
 export function runsOnOwnerAccount(plan: { steps: readonly { executor: { backend: { path: string } } }[] } | null | undefined): boolean {
   return Boolean(plan?.steps.some((step) => step.executor.backend.path.startsWith(CONNECTED_ROUTE_PREFIX)));
 }
 
-/** The run engine applies the same role boundary as its panel, including keyboard and legacy entry points. */
-export function ownerAccountPlans(plans: Record<string, Plan>, owner: boolean, ownerName: string | null): Record<string, Plan> {
+/** The run engine applies the same boundary as its panel, including keyboard and legacy entry points: a plan on the connected account says why it cannot run. */
+export function ownerAccountPlans(plans: Record<string, Plan>, owner: boolean): Record<string, Plan> {
   if (owner) return plans;
   return Object.fromEntries(Object.entries(plans).map(([page, plan]) => [page,
-    runsOnOwnerAccount(plan) ? { ...plan, runnable: (): Runnable => ({ ok: false, reason: ownerBadgeNote(ownerName) }) } : plan,
+    runsOnOwnerAccount(plan) ? { ...plan, runnable: (): Runnable => ({ ok: false, reason: `${ACCOUNT_RETIRED}.` }) } : plan,
   ]));
 }
 

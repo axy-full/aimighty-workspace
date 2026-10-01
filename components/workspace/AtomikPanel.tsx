@@ -7,7 +7,7 @@ import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { Keycap, Kicker } from "./ui";
-import { ownerBadgeNote, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
+import { ACCOUNT_RETIRED, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
@@ -114,7 +114,7 @@ export function AtomikPanel() {
           <div className="pxw-atomik-error" role="alert">{atomik.state.notice}</div>
         ) : null}
 
-        {ownerRun ? <p className="pxw-atomik-reason" data-testid="atomik-owner-run">{ownerBadgeNote(capability.ownerName)}.</p> : plan ? (
+        {ownerRun ? <p className="pxw-atomik-reason" data-testid="atomik-owner-run">{ACCOUNT_RETIRED}.</p> : plan ? (
           <div className="pxw-atomik-foot">
             <span className="pxw-atomik-price" data-paid={plan.paid || undefined} data-testid="atomik-price">{priceText(plan, run)}</span>
             <span style={{ flex: 1 }} />

@@ -15,6 +15,7 @@ import { ConsumerVideoServiceError } from "../../lib/higgsfield-consumer/video-s
 import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-original";
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as templates from "../../lib/higgsfield-consumer/marketing-templates";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/marketing-templates": templates,
+    "@/lib/higgsfield-consumer/retired": retired,
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/marketing-template-service": {
@@ -128,47 +130,40 @@ test("template requests cannot adopt another workspace, user, origin or incomple
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]); expect(f.connections).toEqual([]);
 });
 
-test("owner catalogue, costs, quote, exact approval and status receive server-derived identity and the captured project", async () => {
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+}
+
+test("the library, its prices, quote and submit answer 410 before any limit or service; status and the saved jobs still reach the service", async () => {
   const f = await fixture();
-  const catalogueResponse = await f.request("POST", { ...listing, category: "ugc", search: "unboxing", limit: 50 }, { origin: "https://particl.example" });
-  expect(catalogueResponse.status).toBe(200);
-  expect(await catalogueResponse.json()).toEqual({ catalogue: { value: f.catalogue, prices: f.table, options: { category: "ugc", search: "unboxing", limit: 50 } } });
-  expect((await f.request("POST", { ...listing, refresh: true })).status).toBe(200);
-  const costsResponse = await f.request("POST", costs);
-  expect(await costsResponse.json()).toEqual({ costs: { version: "2026-09-18", entries: 1, fetchedAt: 1 } });
-  for (const body of [quote, submit, status]) {
-    const response = await f.request("POST", body, { origin: "https://particl.example" });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(await response.json()).toHaveProperty("job");
-  }
+  for (const body of [{ ...listing, category: "ugc", search: "unboxing", limit: 50 }, { ...listing, refresh: true }, costs, quote, submit])
+    await expectRetired(await f.request("POST", body, { origin: "https://particl.example" }));
+  expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  const polled = await f.request("POST", status, { origin: "https://particl.example" });
+  expect(polled.status).toBe(200);
+  expect(polled.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(polled.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(await polled.json()).toHaveProperty("job");
   const response = await f.request("GET", undefined, { query: "?draftId=draft-1&userId=other&workspaceId=other" });
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { categories: ["all", "ugc", "product-shot", "motion", "ads", "posters", "marketplace"], promptLimit: 2000, maxProductBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false } });
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
-    { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "catalogue", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "costs", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
-    { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([listing, listing, costs, quote, submit, status].map((body) => [`hf-consumer-marketing-templates:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" || body.action === "costs" ? 12 : 6, 60_000]));
+  expect(f.limits).toEqual([["hf-consumer-marketing-templates:workspace:owner:status", 30, 60_000]]);
 });
 
-test("strict template schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {
+test("a stale tab's retired request gets the plain answer whatever its body; the status schema stays strict", async () => {
   const f = await fixture();
-  const malformed = [null, [], {}, { ...quote, action: "create" }, { ...quote, action: "cancel" }, { ...quote, userId: "other" }, { ...quote, workspaceId: wallet },
-    { ...quote, draftId: "../foreign" }, { ...quote, draftId: "x".repeat(201) }, { ...quote, idempotencyKey: "bad" },
-    ...[{ presetId: "../x" }, { presetId: "" }, { presetId: "a".repeat(121) }, { prompt: "a".repeat(2001) }, { prompt: 4 }, { brandName: "b".repeat(121) }, { get_cost: false }, { preset_id: "x" },
-      { productImage: { url: "https://provider.invalid/still.png" } }, { productImage: { uploadId: "a", genId: "b" } }, { productImage: { uploadId: "../secret" } }, { productImage: {} }, { medias: [] }].map((patch) => ({ ...quote, input: { ...input, ...patch } })),
-    { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "40" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
-    { ...status, tool: "marketing_studio_v2_create" }, { ...status, userId: "other" }, { ...listing, category: "gif" }, { ...listing, refresh: "yes" }, { ...listing, search: "s".repeat(121) }, { ...listing, limit: 0 }, { ...listing, limit: 401 }, { ...costs, category: "ugc" }];
+  const staleRetired = [{ ...quote, userId: "other" }, { ...quote, idempotencyKey: "bad" }, { ...quote, input: { ...input, productImage: { url: "https://provider.invalid/still.png" } } },
+    { ...submit, credits: -1 }, { ...submit, input }, { ...listing, category: "gif" }, { ...listing, limit: 401 }, { ...costs, category: "ugc" }];
+  for (const body of staleRetired) await expectRetired(await f.request("POST", body));
+  const malformed = [null, [], {}, { ...quote, action: "create" }, { ...quote, action: "cancel" },
+    { ...status, tool: "marketing_studio_v2_create" }, { ...status, userId: "other" }, { ...status, id: "bad" }, { ...status, draftId: "../foreign" }];
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
@@ -187,19 +182,19 @@ test("template body validation bounds actual UTF8 bytes and reports malformed JS
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test("suspension prevents template dispatch, while catalogue and status remain readable and limits block all service calls", async () => {
+test("a paused workspace can still read a running job; limits block status, and a retired action never reaches the limits", async () => {
   const f = await fixture(), original = f.store();
   f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
-  expect((await f.request("POST", submit)).status).toBe(423); expect(f.calls).toEqual([]);
+  await expectRetired(await f.request("POST", submit)); expect(f.calls).toEqual([]);
   expect((await f.request("POST", status)).status).toBe(200);
-  expect((await f.request("POST", listing)).status).toBe(200);
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "catalogue", "costs"]);
+  await expectRetired(await f.request("POST", listing));
+  expect(f.calls.map((call) => call.name)).toEqual(["status"]);
   f.setStore(original); f.limit();
-  for (const body of [listing, costs, quote, submit, status]) {
-    const response = await f.request("POST", body);
-    expect(response.status).toBe(429); expect(await response.text()).not.toContain("PRIVATE_RATE_STATE");
-  }
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "catalogue", "costs"]);
+  const limited = await f.request("POST", status);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain("PRIVATE_RATE_STATE");
+  for (const body of [listing, costs, quote, submit]) await expectRetired(await f.request("POST", body));
+  expect(f.calls.map((call) => call.name)).toEqual(["status"]);
+  expect(f.limits.map((args) => args[0])).toEqual(["hf-consumer-marketing-templates:workspace:owner:status", "hf-consumer-marketing-templates:workspace:owner:status"]);
 });
 
 test("template errors preserve bounded categories and never expose provider or storage details", async () => {

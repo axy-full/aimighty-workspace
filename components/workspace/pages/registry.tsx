@@ -10,7 +10,6 @@ import { SpecTool } from "../spec/SpecTool";
 import { Kicker } from "../ui";
 import { CastPage } from "./CastPage";
 import { EditPage } from "./EditPage";
-import { ShortsPage } from "./ShortsPage";
 import { TakesPage } from "./TakesPage";
 
 /** Everything a page body receives from the shell. */
@@ -43,7 +42,7 @@ const COMING: Record<PageId, string> = {
   marketing: "Product, brand and cast, message and format, then variants and output.",
   motion: "A source video recast with your own cast, location and product.",
   swap: "One element replaced; the rest of the shot stays as filmed.",
-  shorts: "One video restyled into a set of short clips, each filed into the project.",
+  shorts: "Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.",
   sources: "Your originals, hashed and checked against what the models accept.",
   compare: "Original and result on one clock, split or wiped.",
   history: "Every result, retained in private storage, ready to recreate.",
@@ -68,7 +67,6 @@ const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   cast: CastPage,
   edit: EditPage,
   takes: TakesPage,
-  shorts: ShortsPage,
 };
 
 /** One component per page, so moving between two spec pages starts each fresh. */

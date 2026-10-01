@@ -1,51 +1,11 @@
-import { cookies } from "next/headers";
-import { requireOwner, SESSION_COOKIE, withTenant } from "@/lib/auth";
-import { requireTenant } from "@/lib/tenant";
-import { AccountError, takeAccountLimit } from "@/lib/accountDb";
-import {
-  backfillConsumerSubject,
-  beginConsumerAuthorization,
-  ConsumerOAuthError,
-} from "@/lib/higgsfield-consumer/oauth";
+import { retiredResponse } from "@/lib/higgsfield-consumer/retired";
 export const runtime = "nodejs";
-const headers = { "Cache-Control": "private, no-store" };
-export const POST = withTenant(
-  async () => {
-    const auth = await requireOwner();
-    if (auth.response) return auth.response;
-    try {
-      const session = (await cookies()).get(SESSION_COOKIE)?.value;
-      if (!session) throw new ConsumerOAuthError("session_changed");
-      const identity = {
-        workspaceId: requireTenant().id,
-        userId: auth.user.id,
-      };
-      await takeAccountLimit(
-        `higgsfield-consumer-connect:${identity.workspaceId}:${identity.userId}`,
-        5,
-        300_000,
-      );
-      // A reconnect keeps the running jobs only if Particl knows which
-      // account the current grant belongs to; learn it before replacing it.
-      await backfillConsumerSubject(identity);
-      return Response.json(
-        await beginConsumerAuthorization(identity, session),
-        { headers },
-      );
-    } catch (error) {
-      const known =
-        error instanceof ConsumerOAuthError || error instanceof AccountError;
-      return Response.json(
-        {
-          error: known
-            ? error.message
-            : "The connected account is temporarily unavailable.",
-          code:
-            error instanceof ConsumerOAuthError ? error.code : "unavailable",
-        },
-        { status: known ? error.status : 503, headers },
-      );
-    }
-  },
-  { requireRequestScope: true },
-);
+/**
+ * Connecting (and reconnecting) the Higgsfield account is retired: no new
+ * sign-in starts, for anyone (lib/higgsfield-consumer/retired.ts). A grant
+ * already held stays until the owner presses Disconnect in Workspace ›
+ * Engines, so the jobs it started are still collected.
+ */
+export async function POST() {
+  return retiredResponse();
+}

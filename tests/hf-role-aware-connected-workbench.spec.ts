@@ -8,17 +8,18 @@ import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
- * Idea 19 — role-aware connected-account surfaces, in the browser against a
- * local ENGINE_MOCK server. A member (a real invitation, accepted) meets one
- * calm card wherever the owner's Higgsfield account still runs — Business ›
- * Ads and Setup — naming this workspace's owner, with the way to make the
- * same kind of thing in Gen on this workspace's credits; Viral, Business ›
- * Image ads and Business's own tools (Brand … Design) run for them like for
- * anyone, so no suite carries the owner's key; Gen offers no connected tab to
- * anyone (Studio engines only since 28 September 2026); and nothing of the
- * account is read for them. The owner's connection is read once and shared
- * across Business's account pages, and a failed read is an error to retry,
- * never a member's card. Nothing is generated or billed.
+ * The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), in
+ * the browser against a local ENGINE_MOCK server. Everyone — the workspace
+ * owner included — meets one calm card wherever the connected account used to
+ * run and nothing replaces it yet: Business's Ads and Setup. It says what ran
+ * there, that Particl no longer signs in to Higgsfield and that past results
+ * stay in the Library, with the way to make the same kind of thing in Gen on
+ * this workspace's credits. Viral and Business › Image ads run on Particl's API
+ * key, and Business's own tools and Cast are on the platform's key: all are
+ * everyone's. No suite carries an "Owner" badge, Gen offers no connected
+ * catalogue or Analysis, and nothing new is asked of the account: the only
+ * account route the owner's pages call is the shell's own list of saved jobs
+ * (so jobs already running are still collected). Nothing is generated or billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -27,6 +28,9 @@ const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
+const TITLE = "Particl no longer signs in to Higgsfield";
+/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
+const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 async function settle(page: Page) {
@@ -72,63 +76,80 @@ async function saveProject(page: Page, workspaceId: string, project: Project) {
   return me;
 }
 
-/** A member of a fresh workspace whose owner has a name of its own, and a project with one cast entry. */
+/** A project with one cast entry, saved in the page's workspace. */
+function castProject(name: string) {
+  const project = newProject(name);
+  project.production = { cast: { entries: [{ id: "cast-fox", kind: "character", name: "Fox", description: "A red fox", prompt: "A red fox on ice at dusk", takes: [] }] } };
+  return project;
+}
+/** The workspace's owner, with a project of their own. */
+async function asOwner(page: Page) {
+  const { workspace } = await signInLocally(page.request);
+  const project = castProject("Harbour look");
+  const me = await saveProject(page, workspace.id, project);
+  await forbidPaidWork(page);
+  expect(me.owner, "the page holds the owner's session").toBe(true);
+  return { project, ...watch(page) };
+}
+/** A member of a fresh workspace whose owner has a name of its own. */
 async function asMember(page: Page, playwright: PlaywrightWorkerArgs["playwright"]) {
   const ownerName = `Harbour Production Supervision ${randomBytes(12).toString("hex")}`;
   const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
   const { workspace } = await joinLocallyAsMember(ownerApi, page.request, { ownerName });
   await ownerApi.dispose();
-  const project = newProject("Harbour look");
-  project.production = { cast: { entries: [{ id: "cast-fox", kind: "character", name: "Fox", description: "A red fox", prompt: "A red fox on ice at dusk", takes: [] }] } };
+  const project = castProject("Harbour look");
   const me = await saveProject(page, workspace.id, project);
   await forbidPaidWork(page);
   expect(me.owner, "the page holds a member's session").toBe(false);
   return { ownerName, project, ...watch(page) };
 }
+/** No suite carries the old "Owner" badge or its note. */
+async function noBadges(page: Page) {
+  /* A phone keeps the Suites behind its context badge (app/phone-chrome.css), one tap away. */
+  await openSuitesMenu(page);
+  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+  for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
+  for (const suite of ["business", "viral"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  await closeSuitesMenu(page);
+}
 
-test("a member meets one calm card where the owner's account still runs, runs Viral and Image ads on the workspace's credits, and makes the same kind of thing in Gen", async ({ page, playwright }, info) => {
+test("the owner meets one calm card where the Higgsfield account ran — Business's Ads and Setup — and makes the same kind of thing in Gen on this workspace's credits; Viral and Image ads run on the API key, Cast on the platform's key", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const project = info.project.name;
-  const { ownerName, project: film, consumer, errors } = await asMember(page, playwright);
+  const { project: film, consumer, errors } = await asOwner(page);
 
-  /* Business › Ads: the card names this workspace's owner — on the first paint, from the session — and nothing else of the page. */
+  /* Business › Ads: the card says what changed, on the first paint, and nothing else of that page. */
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
   const business = page.getByTestId("owner-run-business");
   await expect(business).toBeVisible();
-  await expect(page.getByTestId("owner-run-business-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
-  await expect(business).toContainText("connected account");
+  await expect(page.getByTestId("owner-run-business-title")).toHaveText(TITLE);
+  await expect(business).toContainText("Ads here ran on a signed-in Higgsfield account. Past results stay in your Library.");
   await expect(business).toContainText("On this workspace’s credits");
+  await expect(business).not.toContainText(/run by|owner/i);
   await expect(page.getByTestId("ads-view")).toHaveCount(0);
-  await expect(page.getByText(/Connect the account|Only the workspace owner/)).toHaveCount(0);
-  /* The page is the owner's to run: no Run stage for a member. */
+  await expect(page.getByText(/Connect the account|Reconnect the account|Only the workspace owner/)).toHaveCount(0);
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
-  /* No suite is the owner's as a whole any more — Viral and Business › Image ads run on Particl's API key, and
-     Business's own tools are every member's — so no tab carries the key or says who runs it. A phone keeps the
-     Suites behind its context badge (app/phone-chrome.css), one tap away. */
-  await openSuitesMenu(page);
-  for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  for (const suite of ["business", "viral", "atomik"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
-  await closeSuitesMenu(page);
+  await noBadges(page);
   await noSideScroll(page);
   await fingerSized(business, project);
-  await shot(page, "business-member", project);
+  await shot(page, "business-owner", project);
 
-  /* Business's pages are listed: Setup is the same card, with what Particl made in the project below it; Image ads
-     is theirs to run, on Particl's API key. */
+  /* Business's pages are listed; Setup is the same card, with what Particl made in the project below it. */
   await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${film.id}`);
   await expect(page.getByTestId("owner-run-business")).toBeVisible();
   await expect(page.getByTestId("particl-setup")).toBeVisible();
   await expect(page.getByTestId("setup-view")).toHaveCount(0);
+  /* Image ads runs on Particl's API key: the composer, not the card. */
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
   await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await noSideScroll(page);
-  await shot(page, "image-ads-member", project);
+  await shot(page, "image-ads-owner", project);
 
+  /* Open Gen · Images: Gen on Images, Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
-  /* Open Gen · Images: Gen on Images, Studio engines only — no Higgsfield catalogue, no Analysis. */
   const toGen = page.getByTestId("owner-run-business-gen");
   await hydrated(toGen);
   await expect(toGen).toHaveText("Open Gen · Images");
@@ -145,31 +166,31 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
   await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
   await noSideScroll(page);
-  await shot(page, "gen-member-sheet", project);
+  await shot(page, "gen-owner-sheet", project);
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toHaveCount(0);
-  /* A member's four tabs keep one row, each a whole target. */
+  /* Four tabs keep one row, each a whole target. */
   const tabs = await output.getByRole("tab").all();
   const tops = await Promise.all(tabs.map(async (tab) => (await tab.boundingBox())!.y));
   expect(new Set(tops.map((y) => Math.round(y))).size, "one row of tabs").toBe(1);
   if (PHONES.includes(project)) for (const tab of tabs) expect((await tab.boundingBox())!.width).toBeGreaterThanOrEqual(44);
 
-  /* Viral runs on Particl's API key: the member's page is the composer, with its stage's plan theirs to run too. */
+  /* Viral runs on Particl's API key: the page is the composer, with its stage's plan to run too. */
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
   await expect(page.getByTestId("primary-action")).toBeVisible();
   if (WIDE.includes(project)) {
-    /* The stage's Atomik plan is on the key now: the Inspector offers it, and says nobody else runs it. */
+    /* The stage's Atomik plan is on the key (#470): the Inspector offers it, and nothing says the account runs it. */
     await expect(page.getByTestId("spec-plan")).toBeVisible();
     await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
   }
   await noSideScroll(page);
-  await shot(page, "viral-member", project);
+  await shot(page, "viral-owner", project);
 
-  /* Cast runs on the platform's key (28 September): no owner card and no connect prompt. The list, Build identity and each
-     character's render are the member's, on this workspace's credits, and each entry's still can be made in Gen. */
+  /* Cast runs on the platform's key (28 September): no retired card and no connect prompt. The list, Build identity and
+     each character's render are this workspace's, on its credits, and each entry's still can be made in Gen. */
   await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
   await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
@@ -184,7 +205,7 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(fox.getByTestId("cast-render-why")).toHaveText("Train a Soul ID below to render it.", { timeout: 30_000 });
   await noSideScroll(page);
   await fingerSized(soul.locator(".gx-gen-enhance"), project);
-  await shot(page, "cast-member", project);
+  await shot(page, "cast-owner", project);
   const still = fox.getByTestId("cast-still-gen");
   await still.scrollIntoViewIfNeeded();
   await hydrated(still);
@@ -194,144 +215,65 @@ test("a member meets one calm card where the owner's account still runs, runs Vi
   await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A red fox on ice at dusk");
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Reference still · Fox");
-  /* Gen opens at its top, not where the Cast page was scrolled to: the prompt it was sent with is in view. */
   await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
-  await shot(page, "gen-member-still", project);
+  await shot(page, "gen-owner-still", project);
 
-  /* The phone's Home: no suite is the owner's as a whole, so none says who runs it; a member's Business is its own tools. */
+  /* The phone's Home: no suite ran on the account as a whole any more (Viral is on the key), so none says retired or who
+     runs it; Business is Particl's own tools. */
   if (PORTRAIT.includes(project)) {
     await page.getByTestId("tabbar-home").click();
     await expect(page.getByTestId("suite-home")).toBeVisible();
     await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
     for (const suite of ["business", "viral", "studio"]) {
-      await expect(page.getByTestId(`home-fact-${suite}`)).not.toContainText("Run by");
-      await expect(page.getByTestId(`home-suite-${suite}`)).not.toHaveAttribute("data-owner-run", "true");
+      await expect(page.getByTestId(`home-fact-${suite}`)).not.toContainText(/Run by|retired/);
+      await expect(page.getByTestId(`home-suite-${suite}`)).not.toHaveAttribute("data-retired", "true");
     }
     await noSideScroll(page);
-    await shot(page, "home-member", project);
+    await shot(page, "home-owner", project);
   }
 
-  /* Nothing of the connected account was read or sent for the member, anywhere on the way. */
-  expect(consumer, "no connected-account request for a member").toEqual([]);
+  /* Nothing new was asked of the account on the way: the only account route called is the collector's list of saved jobs. */
+  expect(consumer.filter((request) => request !== COLLECTOR_LIST), "no new work, and no read of the account").toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("a member's connected workflows say who runs them, and read nothing", async ({ page, playwright }, info) => {
-  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
-  const { ownerName, project: film, consumer, errors } = await asMember(page, playwright);
-  await page.goto(`/suites?suite=studio&page=edit&project=${film.id}`);
-  await expect(page.getByTestId("owner-run-workflows-title")).toHaveText(`Higgsfield-account tools are run by ${ownerName}`);
-  for (const tool of ["dubbing", "voice_change"]) await expect(page.getByTestId(`workflow-${tool}-tool`)).toHaveCount(0);
-  await expect(page.getByText("The workspace owner uses the connected account.")).toHaveCount(0);
-  await noSideScroll(page);
-  await shot(page, "edit-member", info.project.name);
-  expect(consumer).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("the owner sees no badge and reads the connection once for Business's pages; a lapsed grant says reconnect, with Engines one tap away", async ({ page }, info) => {
-  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
-  const { workspace } = await signInLocally(page.request);
-  const film = newProject("Owner look");
-  const me = await saveProject(page, workspace.id, film);
-  expect(me.owner).toBe(true);
-  const { errors } = watch(page);
-  let reads = 0;
-  await page.route("**/api/higgsfield/consumer/connection", (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    reads++;
-    return route.fulfill({ json: { connected: true, requiresReconnect: true } });
-  });
-  await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
-  const connect = page.getByTestId("ads-connect");
-  await expect(connect).toHaveText(/Reconnect the account in Workspace › Engines\./);
-  await expect(page.getByTestId("ads-blocked")).toHaveText("Reconnect the account in Workspace › Engines.");
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  for (const suite of ["business", "viral"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  expect(await page.locator('[data-suite-tab="business"]').getAttribute("aria-describedby")).toBeNull();
-  await expect(page.locator('[data-suite-tab="business"]')).not.toHaveAccessibleDescription(/Run by/);
-  await expect(page.getByTestId("primary-action")).toBeVisible();
-
-  /* Business's account pages share the one answer: moving between them reads nothing again. Image ads runs on
-     Particl's API key and asks the account for nothing, so it has no connect line at all. */
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await hydrated(strip.getByRole("button", { name: /Image ads/ }));
-  await strip.getByRole("button", { name: /Image ads/ }).click();
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("dtc-connect")).toHaveCount(0);
-  await expect(page.getByText(/Reconnect the account/)).toHaveCount(0);
-  await strip.getByRole("button", { name: /Setup/ }).click();
-  await expect(page.getByTestId("setup-connect")).toHaveText(/Reconnect the account/);
-  await strip.getByRole("button", { name: /Ads/ }).first().click();
-  await expect(page.getByTestId("ads-connect")).toBeVisible();
-  expect(reads, "one read of the connection for every Business page").toBe(1);
-
-  /* Gen offers the owner Studio engines only: a signed-in account's catalogue is not offered (28 September 2026). */
-  await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="gen"]').click();
-  await page.getByTestId("gen-model").click();
-  await expect(page.getByRole("dialog", { name: "Choose a model" }).getByRole("tab")).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Choose a model" }).getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await page.getByRole("dialog", { name: "Choose a model" }).getByRole("button", { name: "Close" }).click();
-  await expect(page.getByTestId("gen-tab-analysis")).toBeVisible();
-
-  /* Engines is where the owner reconnects. */
-  await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="business"]').click();
-  await page.getByTestId("ads-connect").getByRole("button", { name: "Open Engines" }).click();
-  await expect(page.getByTestId("ws-engines")).toBeVisible();
-  await shot(page, "owner-engines", info.project.name);
-  expect(errors).toEqual([]);
-});
-
-test("while the owner's connection is read Business says so, a failed read is an error with Try again — never a member's card — and Try again reads once more", async ({ page }, info) => {
-  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(info.project.name), "one wide, one phone");
-  const { workspace } = await signInLocally(page.request);
-  const film = newProject("Owner errors");
-  await saveProject(page, workspace.id, film);
-  const { errors } = watch(page);
-  let reads = 0;
-  let release: () => void = () => undefined;
-  const held = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/api/higgsfield/consumer/connection", async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    reads++;
-    if (reads === 1) { await held; return route.fulfill({ status: 503, json: { error: "The connected account is temporarily unavailable." } }); }
-    return route.fulfill({ json: { connected: false, requiresReconnect: false } });
-  });
-  await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${film.id}`);
-
-  /* Loading: the reason is the read itself, not a connect prompt the owner may not need. */
-  await expect(page.getByTestId("ads-blocked")).toHaveText("Reading the connected account…");
-  await expect(page.getByTestId("ads-connect")).toHaveCount(0);
-  await expect(page.getByTestId("ads-generate")).toBeDisabled();
-  await shot(page, "owner-reading", info.project.name);
-  release();
-
-  /* Error: said plainly, with Try again; the owner is still the owner. */
-  const failed = page.getByTestId("ads-connect");
-  await expect(failed).toHaveText(/The connected account is temporarily unavailable\.\s*Try again/);
-  await expect(failed).toHaveAttribute("role", "alert");
-  await expect(page.getByTestId("ads-blocked")).toHaveText("The connected account could not be read.");
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await noSideScroll(page);
-  await fingerSized(failed, info.project.name);
-  await shot(page, "owner-error", info.project.name);
-
-  /* Try again reads once more, and the answer replaces the error. */
-  const retry = failed.getByRole("button", { name: "Try again" });
-  await hydrated(retry);
-  await retry.click();
-  await expect(page.getByTestId("ads-connect")).toHaveText(/^Connect the account in Workspace › Engines\.\s*Open Engines$/);
-  await expect(page.getByTestId("ads-connect")).not.toHaveAttribute("role", "alert");
-  expect(reads).toBe(2);
-  expect(errors).toEqual([]);
-});
-
-
-test("the member's Studio alternative takes a fresh credit quote before explicit Generate", async ({ page, playwright }, info) => {
+test("a member meets the same card on Ads and Setup, naming no one, runs Viral and Image ads on the workspace's credits, and nothing of the account is read", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { project: film, consumer } = await asMember(page, playwright);
+  const { ownerName, project: film, consumer, errors } = await asMember(page, playwright);
+  for (const pageId of ["ads", "setup"] as const) {
+    await page.goto(`/suites?suite=moleculr&page=${pageId}&sp=${pageId}&project=${film.id}`);
+    const card = page.getByTestId("owner-run-business");
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId("owner-run-business-title")).toHaveText(TITLE);
+    await expect(card).not.toContainText(ownerName);
+    await expect(card).not.toContainText(/run by/i);
+    await expect(page.getByTestId("primary-action")).toHaveCount(0);
+    await noBadges(page);
+    await noSideScroll(page);
+    await fingerSized(card, info.project.name);
+  }
+  await shot(page, "business-member", info.project.name);
+  /* Image ads and Viral run on Particl's API key for a member as for anyone: the composers, not a card. */
+  await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
+  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
+  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
+  await noSideScroll(page);
+  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
+  await expect(page.getByTestId("viral-view")).toBeVisible();
+  await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("primary-action")).toBeVisible();
+  await noBadges(page);
+  await noSideScroll(page);
+  await shot(page, "viral-member", info.project.name);
+  expect(consumer, "no account route at all for a member").toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("the Studio alternative takes a fresh credit quote before explicit Generate", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { project: film, consumer } = await asOwner(page);
   /* The server's own live quote, held until released: Generate waits for it. Its figure is the one the
      submit-time quote (POST /api/generate/quote) must match exactly before anything is sent. */
   const quotes: number[] = [];
@@ -374,22 +316,22 @@ test("the member's Studio alternative takes a fresh credit quote before explicit
     await generate.click();
     await expect.poll(() => submitted.length).toBe(1);
     expect(submitted[0]).toMatchObject({ maxCredits: credits });
-    expect(consumer).toEqual([]);
+    expect(consumer.filter((request) => request !== COLLECTOR_LIST)).toEqual([]);
   } finally { release(); }
 });
 
-test("the previous workspace Atomik panel never offers a member an account approval: Motion Transfer's plan runs on the API-key engine and waits for the page's request", async ({ page, playwright }, info) => {
+test("the previous workspace Atomik panel never offers an account approval, the owner's included: Motion Transfer's plan runs on the API-key engine and waits for the page's request", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { project: film } = await asMember(page, playwright);
+  const { project: film } = await asOwner(page);
   const writes: string[] = [];
   await page.route("**/api/higgsfield/consumer/**", (route) => {
     if (route.request().method() !== "GET") writes.push(route.request().url());
-    return route.fulfill({ status: 403, json: { error: "Owner only." } });
+    return route.fallback();
   });
   await page.goto(`/workspace?suite=subatomik&page=motion&project=${film.id}`);
   if (WIDE.includes(info.project.name)) await page.getByTestId("atomik-button").click();
   else await page.getByTestId("mobile-ask-atomik").click();
-  /* Atomik no longer runs anything on the account, so the plan is no owner's to run. */
+  /* Atomik no longer runs anything on the account, so the plan is no account's to refuse. */
   await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
   await expect(page.getByTestId("atomik-reason").or(page.getByTestId("mobile-atomik-reason")).first()).toHaveText("Needs Motion Transfer data");
   await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
@@ -397,4 +339,3 @@ test("the previous workspace Atomik panel never offers a member an account appro
   expect(writes).toEqual([]);
   await noSideScroll(page);
 });
-
