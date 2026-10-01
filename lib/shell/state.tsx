@@ -10,6 +10,7 @@ import { projectChanged } from "@/lib/workspace/data";
 import { pageKind } from "@/lib/workspace/pages";
 import { validAssetId } from "@/lib/preview";
 import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, withAsset, withoutLink, type AssetLink, type SelectReason } from "./asset-link";
+import { IMPORT_PARAM } from "@/lib/workspace/rig-import";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
@@ -19,12 +20,13 @@ import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, wit
  * overlay panels, the palette, the context menu, the clipboard and undo).
  *
  * The shell owns its search params at its route — `view`, `tab`, `sp`, `cp`,
- * `room`, the selected take (`asset`) and a link's own `ws` and `production`
- * (lib/shell/asset-link.ts) — and the workspace provider carries them across
- * its own URL writes.
+ * `room`, the selected take (`asset`), a link's own `ws` and `production`
+ * (lib/shell/asset-link.ts), and an old board the Rig is bringing across
+ * (`import`, lib/workspace/rig-import.ts) — and the workspace provider carries
+ * them across its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", ASSET_PARAM, ...LINK_PARAMS] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 

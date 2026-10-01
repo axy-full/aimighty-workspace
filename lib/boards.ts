@@ -44,7 +44,11 @@ export type BoardNode = {
 
 export type BoardWire = { id: string; from: { nodeId: string; portId: string }; to: { nodeId: string; slotId: string }; kind: WireKind };
 
-export type Board = { id: string; projectId: string; name: string; nodes: BoardNode[]; wires: BoardWire[]; createdAt: number; updatedAt: number };
+export type Board = {
+  id: string; projectId: string; name: string; nodes: BoardNode[]; wires: BoardWire[]; createdAt: number; updatedAt: number;
+  /** When its cards last came across into the new Rig (lib/workbench/board-import.ts), and whose team canvas holds them. Null until then. */
+  importedAt?: number | null; importedTo?: string | null;
+};
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 type Row = any;
@@ -54,6 +58,7 @@ const toBoard = (r: Row): Board => ({
   id: String(r.id), projectId: String(r.project_id), name: String(r.name ?? "Board"),
   nodes: json<BoardNode[]>(r.nodes, []), wires: json<BoardWire[]>(r.wires, []),
   createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
+  importedAt: r.imported_at == null ? null : Number(r.imported_at), importedTo: r.imported_to == null ? null : String(r.imported_to),
 });
 
 export async function listBoards(projectId: string): Promise<Board[]> {
@@ -110,6 +115,16 @@ async function writeBoard(boardId: string, patch: BoardPatch, expected: number |
   if (!board) return null;
   if (expected != null && Number(written.rowsAffected ?? 0) === 0) return { conflict: board };
   return { board };
+}
+
+/**
+ * Records that a board's cards came across into the new Rig (lib/workbench/board-import.ts): when, and the production
+ * whose team canvas holds them. Only these two columns: the board's name, nodes, wires and updated_at are never written,
+ * so the old board reads exactly as it did and a page open on it saves against the same revision.
+ */
+export async function markBoardImported(boardId: string, productionId: string, at = now()): Promise<void> {
+  await ready();
+  await db().execute({ sql: `UPDATE boards SET imported_at = ?, imported_to = ? WHERE id = ?`, args: [at, productionId, boardId] });
 }
 
 export { markStale } from "./boardGraph";
