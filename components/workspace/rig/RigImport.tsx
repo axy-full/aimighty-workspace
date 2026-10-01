@@ -15,10 +15,10 @@ const ARRIVAL_MS = 15_000;
  * An old Rig board coming across onto this production's canvas (the Suites
  * URL's `import=<board>`, from "Open in the new Rig" on the old board). The
  * server brings it one bounded batch at a time; every open window sees the
- * cards arrive (this one too: the live room, or its few-seconds check of the
- * canvas, folds them in). The Rig says what is happening: while it runs, when
- * it is done, and when it stopped part way, with what came across and a free
- * Try again that carries on where it stopped.
+ * cards arrive (this one folds each batch in as it lands; others through the
+ * live room, or their few-seconds check of the canvas). The Rig says what is
+ * happening: while it runs, when it is done, and when it stopped part way,
+ * with what came across and a free Try again that carries on where it stopped.
  */
 export function RigImport() {
   const rig = useRig();
@@ -35,6 +35,10 @@ export function RigImport() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const scope = rig.scope;
   const importBoard = useCallback((board: string) => importBatch({ scope, boardId: board, productionId: production ?? "" }), [scope, production]);
+  /* Folds what the server just changed into this window now, not at its next check (a live room brings it by itself). */
+  const { refresh } = rig.team;
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
 
   const go = useCallback(async (runKey: string, board: string) => {
     if (busy.current === runKey) return;
@@ -52,6 +56,11 @@ export function RigImport() {
         answer = got.answer;
         brought.cards += got.answer.brought.cards;
         brought.wires += got.answer.brought.wires;
+        /* The cards this batch brought appear here as it lands (teammates' windows: the live room, or their own check). */
+        if (got.answer.brought.cards || got.answer.brought.wires) {
+          await refreshRef.current().catch(() => undefined);
+          if (!mounted.current) return;
+        }
         if (got.answer.done) { show({ phase: "done", answer: got.answer, brought: { ...brought } }); return; }
         show({ phase: "running", answer, brought: { ...brought } });
         /* No nearer the end (nothing came across, nothing less is left): it stopped here. Trying again carries on. */
