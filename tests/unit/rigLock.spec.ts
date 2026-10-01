@@ -606,7 +606,9 @@ test("Atomik builds, a master is locked (by Atomik for Ana, and by Ana), then th
       model: "mock/rig-agent",
     });
     const deps = { access: async () => null, paceMs: 0, plan };
-    const asked = await agent.askRigAgent({ productionId: "prod-masters", draftId: "draft-masters", userId: "ana", requestId: "req-masters-01", goal: "The captain at her desk." });
+    /* Asked with a limit for the run (#484): the planning turn is metered into it, at the mock planner's price. This plan
+       names no render, so the build is the whole run and nothing after it is priced or sent. */
+    const asked = await agent.askRigAgent({ productionId: "prod-masters", draftId: "draft-masters", userId: "ana", requestId: "req-masters-01", goal: "The captain at her desk.", limit: 500 });
     await agent.advanceRigAgentRun(asked.id, deps);
     const fingerprint = (await agent.rigAgentState("prod-masters", "ana")).run!.proposal!.fingerprint;
     await agent.approveRigAgent({ productionId: "prod-masters", runId: asked.id, fingerprint, userId: "ana" });
