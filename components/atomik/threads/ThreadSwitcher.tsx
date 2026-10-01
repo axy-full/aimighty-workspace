@@ -40,16 +40,16 @@ export default function ThreadSwitcher({ placement }: { placement: "rail" | "she
     <div className={styles.threads} data-placement={placement} data-testid="atomik-threads">
       {placement === "page" ? (
         <div className={styles.bar}>
-          <span className={styles.heading}>Threads{count !== null ? <Mono className={styles.count}>{count}</Mono> : null}</span>
+          <span className={styles.heading}>Threads{count !== null ? <Mono className={styles.count} data-functional-label="">{count}</Mono> : null}</span>
           <button type="button" className={styles.button} onClick={() => { setProblem(null); t.start(); }} disabled={!t.activeId} data-testid="atomik-thread-new">New thread</button>
         </div>
       ) : (
         <div className={styles.bar}>
           <button type="button" className={`${styles.button} ${styles.toggle}`} aria-expanded={open} aria-controls={listId} data-testid="atomik-threads-toggle"
             onClick={() => { if (!open) t.refresh(); setOpen(!open); setProblem(null); }}>
-            <Mono tone="ink">{t.activeId ? (number ? `Thread ${number}` : "Thread") : "New thread"}</Mono>
+            <Mono tone="ink" data-functional-label="">{t.activeId ? (number ? `Thread ${number}` : "Thread") : "New thread"}</Mono>
             {t.activeId && title ? <span className={styles.toggleTitle}>{title}</span> : null}
-            <Mono className={styles.count}>{count === null ? "" : `${count} ${count === 1 ? "thread" : "threads"}`}</Mono>
+            <Mono className={styles.count} data-functional-label="">{count === null ? "" : `${count} ${count === 1 ? "thread" : "threads"}`}</Mono>
           </button>
           <button type="button" className={styles.button} onClick={() => { setProblem(null); setOpen(false); t.start(); }} disabled={!t.activeId} data-testid="atomik-thread-new">New</button>
         </div>
@@ -107,7 +107,7 @@ function ThreadList({ id, onPicked, act }: { id: string; onPicked: () => void; a
                 ) : (
                   <button type="button" className={styles.pick} aria-current={here ? "true" : undefined} onClick={() => { t.select(thread.id); onPicked(); }}>
                     <span className={styles.line}>
-                      <Mono tone="ink">#{thread.number}</Mono>
+                      <Mono tone="ink" data-functional-label="">#{thread.number}</Mono>
                       <span className={styles.title}>{thread.title}</span>
                     </span>
                     <span className={styles.meta} data-testid="atomik-thread-meta">
@@ -155,7 +155,7 @@ function Archived({ act }: { act: (work: Promise<string | null>) => Promise<bool
       {shelf.list.map((thread) => (
         <li key={thread.id} className={styles.row} data-testid="atomik-archived-thread" data-thread-id={thread.id}>
           <span className={styles.line}>
-            <Mono tone="ink">#{thread.number}</Mono>
+            <Mono tone="ink" data-functional-label="">#{thread.number}</Mono>
             <span className={styles.title}>{thread.title}</span>
           </span>
           <span className={styles.meta}>

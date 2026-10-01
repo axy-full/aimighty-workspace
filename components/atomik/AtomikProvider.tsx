@@ -194,9 +194,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     return rows ? rows.filter((t) => t.projectId === prodKey && !hidden.some((h) => h.id === t.id && h.list === listData)) : null;
   }, [listData, prodKey, hidden]);
   const indexed = useMemo(() => (index?.chats ? index.chats.filter((c) => c.projectId === prodKey && !hidden.some((h) => h.id === c.id && h.index === index)) : null), [index, prodKey, hidden]);
-  /* The list says which threads may open; while it cannot be read, the index stands in. */
+  /* The threads that may open, newest activity first: the list's, with the index's beside them (the two are read
+     apart, so either may be a poll behind). A remembered or linked thread waits until the list is read, or failed. */
   const listFailed = !!listError || (listData !== null && !Array.isArray(listData.threads));
-  const openable = list ? list.map((t) => t.id) : listFailed && indexed ? indexed.map((c) => c.id) : null;
+  const known = useMemo(() => {
+    const at = new Map<string, number>();
+    for (const t of list ?? []) at.set(t.id, t.lastActivityAt);
+    for (const c of indexed ?? []) if (!at.has(c.id)) at.set(c.id, c.updatedAt);
+    return [...at.entries()].sort((x, y) => y[1] - x[1]).map(([id]) => id);
+  }, [list, indexed]);
+  const openable = list !== null || listFailed ? known : null;
   const recovery = legacyChat ?? sends.saved[0]?.thread ?? null;
   const choice = ((): { id: string | null; waiting: boolean } => {
     if (chatFor && chatFor.projectId === prodKey) return { id: chatFor.id, waiting: false };
@@ -208,7 +215,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       if (!openable) return { id: null, waiting: true };
       if (openable.includes(id)) return { id, waiting: false };
     }
-    return { id: (list ? list[0]?.id : indexed?.[0]?.id) ?? null, waiting: false };
+    return { id: known[0] ?? null, waiting: false };
   })();
   const activeId = choice.id;
   const activeKey = activeId ?? newThread;
