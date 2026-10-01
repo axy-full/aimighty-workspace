@@ -216,7 +216,8 @@ test("pre-outbox terminal jobs reconcile conservatively, including archived jobs
     await import("../../lib/generationRequests");
   const { repairLegacyGenerationSettlements } =
     await import("../../lib/generationSettlement");
-  await runInTenant(await setup("legacy"), async () => {
+  /* A workspace that pays in credits; `ws_legacy` names the house workspace, which is never billed (lib/houseWorkspace.ts). */
+  await runInTenant(await setup("pre_outbox"), async () => {
     await insert("gen_legacy");
     await reserveGenerationSpend(event("gen_legacy"));
     await db().execute(
