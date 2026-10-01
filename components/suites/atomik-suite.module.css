@@ -506,3 +506,13 @@
     min-width: 0;
   }
 }
+/* The target floor on any touch screen, a phone on its side included: it is wider than the phone rule above, and its
+   buttons, links and fields were 36px. */
+@media (pointer: coarse) {
+  .suite button,
+  .suite a,
+  .suite input,
+  .suite select {
+    min-height: 44px;
+  }
+}
