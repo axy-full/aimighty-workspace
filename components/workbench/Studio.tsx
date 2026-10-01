@@ -769,7 +769,10 @@ export default function Studio({
   }, [loadProject,signedIn,storageKey,sourceMode]);
   useEffect(() => {
     if (!ready||!signedIn||transitioning) return;
-    if(savedSnapshots.current.get(p.id)===JSON.stringify(p))return;
+    // The saved snapshot is what the server held when the last write landed. A write still in flight is about to replace
+    // it, so a draft back at the snapshot meanwhile (an undo, then a redo before the undo's reply) is still queued behind
+    // that write; skipping it left the server holding the undo while the page showed the redo.
+    if(!savingWrites.current&&savedSnapshots.current.get(p.id)===JSON.stringify(p))return;
     pendingSave.current = p;
     setSaveState(failedSave.current ? "Not saved" : "Saving");
     const timer = setTimeout(() => void flushSave(), 650);
