@@ -14,7 +14,7 @@ import {
 } from "@/lib/shell/business";
 import {
   IMAGE_AD_ASPECTS, IMAGE_AD_BUILDS, IMAGE_AD_MAX, IMAGE_AD_PROMPT_MAX, IMAGE_AD_RESOLUTIONS, INITIAL_IMAGE_AD, PRESET_STILLS_MAX,
-  imageAdBlock, imageAdBuild, imageAdRequest, qualityOff, restoreImageAd, withPreset, withProductStill, type ImageAdState,
+  imageAdBlock, imageAdBuild, imageAdRequest, qualityLabel, qualityOff, restoreImageAd, withBuild, withPreset, withProductStill, type ImageAdState,
 } from "@/lib/shell/image-ads";
 import { aboutCredits, estimateReason } from "@/lib/shell/key-estimate";
 import { useShell } from "@/lib/shell/state";
@@ -645,11 +645,14 @@ function ImageAdsView({ scope, project }: { scope: string; project: Project | nu
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
         <p className="bz-intro">Campaign stills built from your own product shots. Pick a preset to have the ad built around the product.</p>
-        <Chips label="Model" options={IMAGE_AD_BUILDS.map((b) => [b.id, b.label] as const)} value={s.build} onPick={(id) => set({ ...s, build: id, quality: imageAdBuild(id).qualities.includes(s.quality) ? s.quality : imageAdBuild(id).qualities.at(-1)! })} testId="image-ad-build" />
+        {/* 2.0 Alpha is priced live; a 2.5 build approximately, and the delivered image settles it (Moleculr's words). */}
+        <Chips label="Model" note={build.approximate ? "priced approximately; the delivered image settles it" : "priced live before generating"}
+          options={IMAGE_AD_BUILDS.map((b) => [b.id, b.label] as const)} value={s.build} onPick={(id) => set(withBuild(s, id))} testId="image-ad-build" />
         <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="sent first · a preset starts from it" testId="image-ad-product"
           still={s.productStill} onStill={(still) => set(withProductStill(s, still))} />
         <PresetPicker scope={scope} value={s.preset} onPick={(preset) => set(withPreset(s, preset))} />
-        <Chips label="Quality" note={presetOff ? `${build.presetQuality} with a preset` : "affects cost"} options={build.qualities} value={s.quality} onPick={(q) => set({ ...s, quality: q })}
+        <Chips label="Quality" note={presetOff && build.presetQuality ? `${qualityLabel(build.presetQuality).toLowerCase()} with a preset` : "affects cost"}
+          options={build.qualities.map((q) => [q, qualityLabel(q)] as const)} value={s.quality} onPick={(q) => set({ ...s, quality: q })}
           disabled={(q) => Boolean(qualityOff(s, q))} why={presetOff} testId="image-ad-quality" />
         <Chips label="Aspect" options={IMAGE_AD_ASPECTS} value={s.aspect} onPick={(v) => set({ ...s, aspect: v })} testId="image-ad-aspect" />
         <Chips label="Size" options={IMAGE_AD_RESOLUTIONS} value={s.resolution} onPick={(v) => set({ ...s, resolution: v })} testId="image-ad-resolution" />
@@ -671,7 +674,7 @@ function ImageAdsView({ scope, project }: { scope: string; project: Project | nu
         {take.note ? <p className="gx-gen-note" role="status" data-testid="image-ad-note">{take.note}</p> : null}
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy} aria-describedby={reason ? "bz-blocked2" : undefined}
           onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="image-ad-generate">{label}</button>
-        {credits != null ? <p className="gx-gen-foot" data-testid="image-ad-foot">An estimate from the live price · filed to this project’s takes</p> : null}
+        {credits != null ? <p className="gx-gen-foot" data-testid="image-ad-foot">{build.approximate ? "An approximate price · the delivered image settles it" : "An estimate from the live price"} · filed to this project’s takes</p> : null}
         {running ? (
           <div className="bz-running" role="status" data-testid="image-ad-running">
             <span className="gx-gen-note">{runningWords} · {aboutCredits(running.credits)}</span>

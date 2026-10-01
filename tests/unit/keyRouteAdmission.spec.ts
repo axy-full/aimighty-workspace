@@ -10,7 +10,7 @@ import { GENJUTSU_MODELS } from "../../lib/genjutsuTypes";
 import { MARKETING_IMAGE_MODEL_ID } from "../../lib/models";
 import { generationRequestBody } from "../../lib/workbench/generation-request";
 import { INITIAL_VIRAL, genjutsuInput, viralRequest, type ViralMedia, type ViralState } from "../../lib/shell/viral";
-import { INITIAL_IMAGE_AD, imageAdRequest, withPreset, type ImageAdState } from "../../lib/shell/image-ads";
+import { INITIAL_IMAGE_AD, imageAdRequest, withBuild, withPreset, type ImageAdState } from "../../lib/shell/image-ads";
 import type { DispatchRequest } from "../../lib/workspace/generate-submit";
 
 /**
@@ -226,4 +226,29 @@ test("Image ads with a preset: the product first and one more still at most, at 
     const three = bodyOf(imageAdRequest({ ...state, medias: [still("model"), still("extra")] }, { productionProjectId: "project" }));
     expect(await f.admission.prepareGeneration(three, MEMBER)).toMatchObject({ ok: false, status: 400 });
     expect((await f.rows(MARKETING_IMAGE_MODEL_ID))).toHaveLength(1);
+  }));
+
+test("Image ads on a 2.5 build: the composer's own body names its variant, is priced approximately, and is admitted once at that figure", async () =>
+  fixture("image_ads_25", MEMBER, async (f) => {
+    for (const id of ["product", "extra"]) await f.upload(id, "image");
+    const preset = { id: "0b9f3c2e-6a1d-4c8e-9f7a-2d5e8c1b4a61", name: "Studio packshot" };
+    await f.seenPreset(preset.id);
+    const plain: ImageAdState = { ...withBuild({ ...INITIAL_IMAGE_AD, prompt: "Bold hero shot on marble", productStill: still("product"), medias: [still("extra")] }, "flare"), quality: "xhigh" };
+    const enhanced = withPreset({ ...withBuild({ ...INITIAL_IMAGE_AD, prompt: "Clean studio packshot", productStill: still("product") }, "sunburst"), quality: "max" }, preset);
+    for (const [state, variant, quality] of [[plain, "flare", "xhigh"], [enhanced, "sunburst", "max"]] as const) {
+      const body = bodyOf(imageAdRequest(state, { productionProjectId: "project" }));
+      expect(body.marketing).toMatchObject({ variant, quality });
+      const quote = prepared(await f.admission.prepareGeneration(body, MEMBER));
+      /* Approximate: from the published rates; the delivered image settles it. */
+      expect(quote.quote).toMatchObject({ unit: "cr", approximate: true });
+      expect(quote.quote.estimatedCredits).toBeGreaterThan(0);
+      const accepted = await f.post(approved(body, quote), `image-ad-${variant}`);
+      expect([200, 202], String(accepted.status)).toContain(accepted.status);
+    }
+    const rows = await f.rows(MARKETING_IMAGE_MODEL_ID);
+    expect(rows.map((row) => (JSON.parse(String(row.params)) as { marketing: { variant?: string; quality: string } }).marketing).map((m) => [m.variant, m.quality]).sort())
+      .toEqual([["flare", "xhigh"], ["sunburst", "max"]]);
+    /* 2.0 Alpha's quote is the provider's live estimate, not an approximation. */
+    const alpha = bodyOf(imageAdRequest({ ...INITIAL_IMAGE_AD, prompt: "Bold hero shot on marble", productStill: still("product") }, { productionProjectId: "project" }));
+    expect(prepared(await f.admission.prepareGeneration(alpha, MEMBER)).quote).not.toHaveProperty("approximate");
   }));
