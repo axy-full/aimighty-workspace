@@ -8,9 +8,9 @@ import { ParticlSetup } from "./ParticlSetup";
 
 /**
  * The Business suite's pages: Particl's own tools (Brand … Design) for
- * everyone; Setup, with what Particl made in this project listed after the
- * connected account's lists (which keep their place, and their phone sheet);
- * the account's Ads; and Image ads, on Particl's API key for everyone — both as BusinessView draws them.
+ * everyone; Setup, the retired card with what Particl made in this project
+ * listed after it; Ads, the retired card; and Image ads, on Particl's API key
+ * for everyone — the last three as BusinessView draws them.
  */
 export function BusinessSuite({ scope, project, page }: { scope: string; project: Project | null; page: string }) {
   if (isOwnPage(page)) return <BusinessOwnView key={page} scope={scope} project={project} page={page} />;

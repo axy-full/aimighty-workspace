@@ -8,6 +8,7 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { shellSuite, type ShellPage } from "./ia";
+import { OWN_TOOLS_FACT } from "./business-own";
 
 export type StageStatus = "done" | "progress" | "ready" | "waiting";
 export type StageCard = { id: string; n: string; label: string; meta: string; status: StageStatus };
@@ -61,8 +62,6 @@ export type SuiteTile = { id: "studio" | "gen" | "business" | "viral" | "atomik"
 export type HomeFacts = {
   /** Generations in flight (the running pill) and the workspace's default video engine's name (Workspace › General). */
   rendering: number; videoEngine: string;
-  /** Business › Ads defaults: the mode's label and the duration. */
-  adMode: string; adSeconds: number;
   /** Viral defaults. */
   viralResolution: string;
   /** Plans waiting for the owner's word. */
@@ -78,7 +77,8 @@ export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): Suite
     { id: "studio", label: "Studio", color: "#0A84FF", line: `Brief to delivery, ${COUNT_WORDS[cards.length] ?? cards.length} stages.`, fact: `${done} of ${cards.length} done` },
     /* Gen has no 3D (Astra is the 3D stage), and "ready" was never checked: the fact is the engine Gen opens on. */
     { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
-    { id: "business", label: "Business", color: "#FF9F0A", line: "Marketing Studio: product, presenter, ad.", fact: `${facts.adMode} · ${facts.adSeconds} s · quoted in Ads` },
+    /* Business is Particl's own tools, for everyone (its Ads ran on the retired Higgsfield sign-in). */
+    { id: "business", label: "Business", color: "#FF9F0A", line: "Marketing Studio: product, presenter, ad.", fact: OWN_TOOLS_FACT },
     { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
     { id: "atomik", label: "Atomik", color: "#30D158", line: "Plans, prices, waits for your word.", fact: `${facts.awaiting} awaiting approval` },
     { id: "crew", label: "Crew", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },

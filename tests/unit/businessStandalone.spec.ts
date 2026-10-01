@@ -3,27 +3,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
-import {
-  INITIAL_ADS, INITIAL_IMAGE_ADS, PRESET_KEY, PRESET_TTL_MS, SETUP_TYPES, OWNED_SETUP_TYPES, adsFromPreset, adsMedias, draftKey, imageAdsBlock, imageAdsFromPreset, imageAdsMedias,
-  parsePreset, presetFor, presetSpent, pruneAds, pruneImageAds, restoreAds, restoreImageAds, withImageStill, withMode, withProductId, withSetup, withStill,
-  type AdStill, type AdsState, type SetupItem, type SetupType,
-} from "../../lib/shell/business";
+import { SETUP_TYPES, OWNED_SETUP_TYPES, type SetupType } from "../../lib/shell/business";
 import { accountOwnEntry, accountPresetEntry, sharedSetupIds, standaloneReads, standaloneSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 import { ConsumerSetupError, NO_PARTICL_SETUP, foreignSetupIds, setupIdsOfParameters, setupIdsOfVideoInput } from "../../lib/higgsfield-consumer/marketing-records";
 
 /**
  * Business is standalone (owner's rule, 23 September): only what Particl made
- * is listed or sent. Pure rules first, then the record table in a real
+ * is listed or sent. The account's Ads and Setup composers went with its
+ * retired sign-in (they are the retired card); the account's server rules stay
+ * until its code goes. Pure rules first, then the record table in a real
  * isolated workspace database.
  */
 const directory = mkdtempSync(path.join(tmpdir(), "particl-business-standalone-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
 process.env.KEYRING_SECRET ??= "business-standalone-isolated-test-key";
 process.env.ENGINE_MOCK = "1";
-
-const still = (id: string, name = id): AdStill => ({ id: `upload:${id}`, name, sourceId: id, origin: "upload", url: `/api/uploads/${id}` });
-const item = (type: SetupItem["type"], id: string, name = id): SetupItem => ({ id, type, name, meta: type, previewUrl: null });
-const NOW = 1_790_000_000_000;
 
 test("no setup type carries a command line; the account's own library types are the owned ones", () => {
   for (const [, label, whose] of SETUP_TYPES) {
@@ -100,88 +94,6 @@ test("a quote naming a setup item Particl may not send is found before anything 
   const error = new ConsumerSetupError();
   expect([error.status, error.code, error.paidAttempted]).toEqual([409, "setup_not_particl", false]);
   expect(error.message).not.toMatch(/higgsfield|cli|--/i);
-});
-
-test("Setup's pick lands on the page it names once; a stale, foreign or malformed pick is spent, another page's fresh pick waits", () => {
-  const hook = presetFor(item("hook", "h1", "Stop scrolling"), "ads", NOW);
-  const raw = JSON.stringify(hook);
-  expect(PRESET_KEY).toBe("particl-business-preset");
-  expect(parsePreset(raw, "ads", NOW + 1000)).toEqual(hook);
-  expect(parsePreset(raw, "dtc", NOW)).toBeNull();
-  expect(parsePreset(raw, "ads", NOW + PRESET_TTL_MS + 1)).toBeNull();
-  expect(presetSpent(raw, "ads", NOW)).toBe(true);
-  expect(presetSpent(raw, "dtc", NOW)).toBe(false);
-  expect(presetSpent(raw, "dtc", NOW + PRESET_TTL_MS + 1)).toBe(true);
-  expect(presetSpent("{nope", "ads", NOW)).toBe(true);
-  expect(presetSpent(null, "ads", NOW)).toBe(false);
-  /* A type the page cannot take, or an id that is not an id, never lands. */
-  expect(parsePreset(JSON.stringify({ ...hook, page: "dtc" }), "dtc", NOW)).toBeNull();
-  expect(parsePreset(JSON.stringify({ ...hook, id: "a b" }), "ads", NOW)).toBeNull();
-  expect(adsFromPreset(hook)).toMatchObject({ hookId: "h1", adReferenceId: null });
-  expect(adsFromPreset(presetFor(item("avatar", "av_preset"), "ads", NOW))).toMatchObject({ avatarId: "av_preset" });
-  expect(adsFromPreset(null)).toBe(INITIAL_ADS);
-  /* Image ads opens DTC Ads for a style, a brand kit or a product. */
-  expect(imageAdsFromPreset(presetFor(item("image_style", "st_bold"), "dtc", NOW))).toMatchObject({ engine: "ms_image", styleId: "st_bold" });
-  expect(imageAdsFromPreset(presetFor(item("brand_kit", "bk1"), "dtc", NOW))).toMatchObject({ engine: "ms_image", brandKitId: "bk1" });
-  expect(imageAdsFromPreset(hook)).toBe(INITIAL_IMAGE_ADS);
-  /* The pick is added to the ad being built, never a fresh composer. */
-  const building: AdsState = { ...INITIAL_ADS, prompt: "Morning routine", productStill: still("up_plate"), avatarId: "av_preset", mode: "tv_spot" };
-  expect(adsFromPreset(hook, building)).toMatchObject({ prompt: "Morning routine", productStill: still("up_plate"), avatarId: "av_preset", hookId: "h1", mode: "ugc" });
-  expect(adsFromPreset(presetFor(item("avatar", "av_2"), "ads", NOW), building)).toMatchObject({ prompt: "Morning routine", mode: "tv_spot", avatarId: "av_2" });
-  const image = { ...INITIAL_IMAGE_ADS, prompt: "Hero on marble", productStill: still("up_plate"), productIds: ["p1"] };
-  expect(imageAdsFromPreset(presetFor(item("product", "p2"), "dtc", NOW), image)).toMatchObject({ engine: "ms_image", prompt: "Hero on marble", productStill: still("up_plate"), productIds: ["p2", "p1"] });
-});
-
-test("a composer's draft survives a trip away and back, read field by field; anything that does not read cleanly falls back", () => {
-  expect(draftKey("scope-a", "proj-1", "ads")).toBe("particl-business-draft:ads:scope-a:proj-1");
-  const ad: AdsState = { ...INITIAL_ADS, prompt: "Morning routine", productStill: still("up_plate"), settingStill: still("up_room"), avatarId: "av_preset", hookId: "h1", duration: 30,
-    medias: [{ ...still("up_extra"), role: "start_image" }] };
-  expect(restoreAds(JSON.parse(JSON.stringify(ad)))).toEqual(ad);
-  /* Junk and unsafe values never come back; the server rules hold on the way in. */
-  const junk = restoreAds({ prompt: 7, mode: "nope", productStill: { ...still("x"), url: "javascript:alert(1)" }, hookId: "a b", duration: 9999, aspect: "wide", medias: [{ ...still("y"), role: "poster" }] })!;
-  expect(junk).toEqual(INITIAL_ADS);
-  expect(restoreAds({ ...ad, mode: "tv_spot" })).toMatchObject({ mode: "tv_spot", hookId: null, settingId: null });
-  expect(restoreAds({ ...ad, adReferenceId: "r1" })).toMatchObject({ adReferenceId: "r1", hookId: null });
-  expect(restoreAds({ ...ad, settingStill: still("up_plate") })).toMatchObject({ productStill: still("up_plate"), settingStill: null });
-  expect(restoreAds(null)).toBeNull();
-  const image = { ...INITIAL_IMAGE_ADS, engine: "ms_image" as const, prompt: "Hero", productStill: still("up_plate"), styleId: "st_bold", batch: 4, productIds: ["p1"], medias: [{ id: "generation:g1", name: "g" }] };
-  expect(restoreImageAds(JSON.parse(JSON.stringify(image)))).toEqual(image);
-  expect(restoreImageAds({ engine: "other", batch: 99, productIds: ["ok", "not ok"], medias: [{ id: "file:/etc", name: "x" }] })).toEqual({ ...INITIAL_IMAGE_ADS, productIds: ["ok"] });
-});
-
-test("a pick Setup no longer lists is dropped rather than sent; nothing changes before a type is read", () => {
-  const state = { ...INITIAL_ADS, productId: "p_acct", avatarId: "av_preset", hookId: "h1" };
-  expect(pruneAds(state, {})).toBe(state);
-  expect(pruneAds(state, { product: { items: [] }, avatar: { items: [item("avatar", "av_preset")] }, hook: { items: [item("hook", "h1")] } })).toEqual({ ...state, productId: null });
-  const image = { ...INITIAL_IMAGE_ADS, engine: "ms_image" as const, styleId: "st_gone", brandKitId: "bk1", productIds: ["p1", "p_acct"] };
-  expect(pruneImageAds(image, { image_style: { items: [item("image_style", "st_bold")] }, brand_kit: { items: [item("brand_kit", "bk1")] }, product: { items: [item("product", "p1")] } }))
-    .toEqual({ ...image, styleId: null, productIds: ["p1"] });
-});
-
-test("the product and setting stills ride first among the references, each once, and a pick clears its alternative", () => {
-  const plate = still("up_plate"), room = still("up_room"), extra = { ...still("up_extra"), role: "start_image" as const };
-  let s: AdsState = { ...INITIAL_ADS, productId: "p_made", medias: [{ ...plate, role: "image" as const }, extra] };
-  s = withStill(s, "product", plate);
-  expect(s.productId).toBeNull();
-  expect(s.medias.map((m) => m.id)).toEqual(["upload:up_extra"]);
-  s = withStill(s, "setting", room);
-  expect(adsMedias(s).map((m) => [m.id, m.role])).toEqual([["upload:up_plate", "image"], ["upload:up_room", "image"], ["upload:up_extra", "start_image"]]);
-  /* The same still cannot be product and setting at once. */
-  expect(withStill(s, "setting", plate)).toMatchObject({ productStill: null, settingStill: plate });
-  /* A preset setting replaces the setting still; a Particl product replaces the product still. */
-  expect(withSetup(s, { settingId: "s1" }).settingStill).toBeNull();
-  expect(withProductId(s, "p_made")).toMatchObject({ productId: "p_made", productStill: null });
-  /* A setting still is a reference still: it rides in any mode. */
-  expect(adsMedias(withMode(s, "tv_spot")).map((m) => m.id)).toContain("upload:up_room");
-  const image = withImageStill({ ...INITIAL_IMAGE_ADS, medias: [{ id: "upload:up_plate", name: "p" }, { id: "generation:g1", name: "g" }] }, plate);
-  expect(imageAdsMedias(image).map((m) => m.id)).toEqual(["upload:up_plate", "generation:g1"]);
-  expect(imageAdsBlock({ ...INITIAL_IMAGE_ADS, productStill: plate, aspect: "auto" }, { connected: true, hasProject: true })).toBeNull();
-});
-
-test("DTC Ads says plainly when the account lists no ad styles, instead of asking for one", () => {
-  const dtc = { ...INITIAL_IMAGE_ADS, engine: "ms_image" as const, prompt: "Hero on marble" };
-  expect(imageAdsBlock(dtc, { connected: true, hasProject: true, styles: 0 })).toBe("The connected account lists no ad styles, so DTC Ads cannot run.");
-  expect(imageAdsBlock(dtc, { connected: true, hasProject: true, styles: 3 })).toBe("Pick a style — the ad format. DTC Ads has no default.");
 });
 
 function workspace(id: string): TenantWorkspace {

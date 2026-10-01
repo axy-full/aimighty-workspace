@@ -99,15 +99,15 @@ test("the capability answers member for everyone, the owner included, and reads 
   expect(existsSync("lib/shell/use-connected-collector.ts")).toBe(false);
 });
 
-test("Gen's composer reads nothing of the account; Business decides ownership from the session, once; Viral and Image ads read nothing of it; Engines never starts a sign-in", () => {
+test("Gen's composer and Business read nothing of the account; Viral and Image ads read nothing of it; Engines never starts a sign-in", () => {
   const composer = readFileSync("lib/workspace/use-composer.ts", "utf8");
   expect(composer).not.toMatch(/useConnectedCapability|higgsfield-consumer|\/api\/higgsfield\/consumer|connected-collector/);
-  for (const file of ["lib/shell/use-business.ts"]) {
+  /* Business's Ads and Setup are the retired card for everyone: no ownership read, no connection read, no account hook. */
+  expect(existsSync("lib/shell/use-business.ts")).toBe(false);
+  for (const file of ["components/graphite/business/BusinessView.tsx", "components/graphite/business/BusinessSuite.tsx", "lib/shell/business.ts"]) {
     const source = readFileSync(file, "utf8");
-    expect(source, file).not.toContain("/api/me");
-    expect(source, file).toContain("useConnectedCapability");
+    expect(source, file).not.toMatch(/"\/api\/me"|\/api\/higgsfield\/consumer\/|from "[^"]*higgsfield-consumer\/|useConnectedCapability|use-business"|use-connected-job"|use-resumed-jobs"/);
   }
-  expect(readFileSync("lib/shell/use-business.ts", "utf8")).not.toContain("/api/higgsfield/consumer/connection");
   /* Engines is the one place that still reads the owner's connection: to list running jobs and to Disconnect. It never starts a sign-in. */
   const row = readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8");
   expect(row).toContain("CONNECTION_ENDPOINT");

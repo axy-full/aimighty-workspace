@@ -26,9 +26,6 @@ import { BrandKitEditor } from "./BrandKitEditor";
 import { ProductProfileEditor } from "./ProductProfileEditor";
 import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
 import { ReferenceAd } from "./ReferenceAd";
-/* The template category stays: collected template originals are still shown as results. The account's
-   marketing video and template library went with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */
-import { TEMPLATE_ASSET_CATEGORY } from "./MarketingTemplates";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import { MOLECULR_SECTIONS } from "@/lib/suites";
 import {
@@ -36,6 +33,10 @@ import {
   creativeTemplate,
 } from "@/lib/workbench/moleculr-creative";
 import creativeStyles from "./moleculr-creative.module.css";
+
+/* The template category stays: collected template originals are still shown as results. The account's
+   marketing video and template library went with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */
+const TEMPLATE_ASSET_CATEGORY = "Campaign template";
 
 export function MoleculrWorkspace({
   project,

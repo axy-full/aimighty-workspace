@@ -297,7 +297,7 @@ test("Gen's copy promises only the outputs its composer makes: no 3D while the c
   expect(`${gen.blurb} · ${gen.pages.join(" · ")}`).not.toMatch(/3D/i);
   expect(readFileSync("app/(marketing)/site/_pages/gen/index.tsx", "utf8")).not.toMatch(/3D/i);
   /* In the app: the Home tile's line (lib/shell/studio-home.ts). */
-  expect(suiteTiles([], { rendering: 0, videoEngine: "", adMode: "", adSeconds: 0, viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
+  expect(suiteTiles([], { rendering: 0, videoEngine: "", viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
 });
 
 /* ── The keymap and the palette ─────────────────────────────────────────── */

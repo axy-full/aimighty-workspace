@@ -21,7 +21,7 @@ import { generationRequestBody } from "@/lib/workbench/generation-request";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { useClock } from "../ResumedJobs";
+import { useClock } from "@/lib/shell/use-clock";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on Particl's API key for every

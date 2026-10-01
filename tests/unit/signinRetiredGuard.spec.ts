@@ -329,19 +329,18 @@ test("the account's screens are deleted: its composers, forms, workflows, collec
     "components/management/HiggsfieldConsumerConnection.tsx", "components/management/ConsumerVideoVerification.tsx",
     "components/workspace/pages/ShortsPage.tsx", "components/workspace/mobile/pages/FormPage.tsx",
     "lib/shell/workflows.ts", "lib/shell/use-connected-collector.ts", "lib/workspace/mobile-form.ts",
+    /* Business's account Ads and Setup composers, the resumed-jobs list, the account job hooks and the collector itself,
+       and the ad-format template library: Ads and Setup are the retired card, Viral and Image ads run on the API key. */
+    "components/graphite/ResumedJobs.tsx", "components/suites/MarketingTemplates.tsx", "components/suites/marketing-templates.module.css",
+    "lib/shell/use-business.ts", "lib/shell/use-viral.ts", "lib/shell/use-connected-job.ts", "lib/shell/use-resumed-jobs.ts", "lib/shell/connected-collector.ts",
   ]) expect(existsSync(gone), gone).toBe(false);
 });
 
-test("nothing a page renders reads the account's client: only the retired card pages kept for their replacements, and the history readers", () => {
-  /* The pages still on the retired card until their API-key or Particl versions land, the modules only they use,
-     and Workspace › Engines' retired row (the running jobs to set aside, and Disconnect). Nothing else. */
-  const KEPT = new Set([
-    "components/graphite/business/BusinessView.tsx", "components/graphite/viral/ViralView.tsx", "components/graphite/production/CastStage.tsx",
-    "components/graphite/OwnerRunCard.tsx", "components/graphite/ResumedJobs.tsx",
-    "components/suites/MarketingTemplates.tsx", "components/graphite/ConnectedAccountRow.tsx",
-    "lib/shell/business.ts", "lib/shell/use-business.ts", "lib/shell/viral.ts", "lib/shell/use-viral.ts",
-    "lib/shell/use-connected-job.ts", "lib/shell/use-resumed-jobs.ts", "lib/shell/connected-collector.ts",
-  ]);
+test("nothing a page renders reads the account's client: only the history readers, and Cast's account element token", () => {
+  /* Cast still reads an element token an older cast entry carries (lib/higgsfield-consumer/element-parse) until the
+     account's code goes. Nothing else: Business and Viral read nothing of the account, and Workspace › Engines' retired
+     row calls only the connection route (the running jobs to set aside, and Disconnect). */
+  const KEPT = new Set(["components/graphite/production/CastStage.tsx"]);
   /* History: a take the account made, read from Particl's own records (the Usage and /usage tabs, the tray's words). */
   const HISTORY = /higgsfield-consumer\/(activity-types|job-state|resume|retired)"/;
   for (const file of uiFiles()) {

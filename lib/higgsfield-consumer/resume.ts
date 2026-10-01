@@ -1,12 +1,12 @@
 /**
- * Picking connected-account jobs back up after the page was left: which saved
- * jobs are still open, which of those a status read can still move, what each
- * state is called, and what a failed read means for the job.
+ * Connected-account jobs in the product's words, now that the Higgsfield
+ * sign-in is retired and only their history is read: which saved jobs are
+ * still open, which of those a status read could still move, what each state
+ * is called, and what a failed read means for the job.
  *
- * Pure (no fetch, no React) so Gen, Business and Viral say one thing and a
- * unit spec can check it. The reading itself is the shell's collector's
- * (lib/shell/connected-collector.ts): a picked-up job is only ever asked for
- * its status — the same leased read the page made before — never re-sent.
+ * Pure (no fetch, no React) so the jobs tray and the account's history say one
+ * thing and a unit spec can check it. The scheduled collection on the server
+ * finishes what was still running; nothing is ever re-sent.
  */
 import { SET_ASIDE_LABEL } from "./job-state";
 import { failedChip } from "../errors";

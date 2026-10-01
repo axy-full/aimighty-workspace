@@ -1,65 +1,14 @@
 import { test, expect } from "@playwright/test";
-import {
-  AD_DURATIONS, AD_MODES, INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_MODES, WHY, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock,
-  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH, catalogueBlock, retryAfterMs, ADS_MODEL, AUTO_RETRIES, QUOTE_MARGIN_MS, autoRetryMs, quoteUsableUntil } from "../../lib/shell/business";
 import { consumerVideoInputSchema, consumerVideoOriginalResult, consumerVideoParams } from "../../lib/higgsfield-consumer/video-contract";
 import { parseSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 
-const ready = { connected: true, hasProject: true };
-const ugc: AdsState = { ...INITIAL_ADS, prompt: "Morning routine with the bottle.", productId: "p1" };
-
-test("the nine modes are the account's slugs; five of them take a hook and a setting", () => {
-  expect(AD_MODES.map((m) => m[0])).toEqual(["ugc", "ugc_how_to", "ugc_unboxing", "product_showcase", "product_review", "tv_spot", "wild_card", "ugc_virtual_try_on", "virtual_try_on"]);
-  expect([...SETUP_MODES]).toEqual(["ugc", "ugc_how_to", "ugc_unboxing", "product_review", "ugc_virtual_try_on"]);
-  expect(takesSetup("tv_spot")).toBe(false);
-  expect([...AD_DURATIONS]).toEqual([15, 30]);
-});
-
-test("hooks and settings are off outside the UGC family and with an ad reference; an ad reference is off with a hook — with the reason, never hidden", () => {
-  expect(adsChipState(ugc).hook).toEqual({ disabled: false, why: null });
-  const tv = withMode({ ...ugc, hookId: "h1", settingId: "s1" }, "tv_spot");
-  expect(tv.hookId).toBeNull(); expect(tv.settingId).toBeNull();
-  expect(adsChipState(tv).hook).toEqual({ disabled: true, why: "Hooks are not for tv_spot." });
-  const withRef = withAdReference({ ...ugc, hookId: "h1" }, "r1");
-  expect(withRef.hookId).toBeNull();
-  expect(adsChipState(withRef).hook).toEqual({ disabled: true, why: WHY.hookMode });
-  expect(adsChipState(withRef).setting.why).toBe(WHY.settingMode);
-  const withHook = withSetup(withRef, { hookId: "h2" });
-  expect(withHook.adReferenceId).toBeNull();
-  expect(adsChipState(withHook).adReference).toEqual({ disabled: true, why: WHY.adReference });
-});
-
-test("Generate ad says why it cannot run, in the prototype's words", () => {
-  expect(adsBlock(ugc, ready)).toBeNull();
-  expect(adsBlock({ ...ugc, prompt: " " }, ready)).toBe("Write the prompt.");
-  expect(adsBlock(ugc, { ...ready, connected: false })).toBe("Connect the account in Workspace › Engines.");
-  expect(adsBlock(ugc, { ...ready, hasProject: false })).toBe("Open a project first.");
-});
-
-test("the parameters are the catalogue's names, only what is set, clamped to the account's range", () => {
-  expect(adsParameters(ugc)).toEqual({ mode: "ugc", aspect_ratio: "9:16", duration: 15, resolution: "720p", generate_audio: true, product_ids: ["p1"] });
-  const full = adsParameters({ ...ugc, avatarId: "a1", hookId: "h1", settingId: "s1", duration: 30 }, { min: 4, max: 20 });
-  expect(full).toMatchObject({ avatar_ids: ["a1"], hook_id: "h1", setting_id: "s1", duration: 20 });
-  expect(clampedDuration({ ...ugc, duration: 30 }, { min: 4, max: 20 })).toBe(20);
-  expect(clampedDuration(ugc, { min: 4, max: 20 })).toBeNull();
-  /* Click-to-Ad and the other gateway-only fields never ride on this path: the tool's schema does not name them. */
-  for (const name of NOT_ON_THIS_PATH) expect(Object.keys(adsParameters({ ...ugc, avatarId: "a1", hookId: "h1", settingId: "s1" }))).not.toContain(name.split(".")[0]);
-  /* A hook never rides outside the family, whatever the state says. */
-  expect(adsParameters({ ...ugc, mode: "tv_spot", hookId: "h1" })).not.toHaveProperty("hook_id");
-  expect(adsParameters({ ...ugc, hookId: "h1", adReferenceId: "r1" })).not.toHaveProperty("hook_id");
-});
-
-test("Image ads needs a prompt or a reference, and a reference for aspect auto", () => {
-  expect(imageAdsBlock(INITIAL_IMAGE_ADS, ready)).toBe("Write the prompt or add a reference.");
-  expect(imageAdsBlock({ ...INITIAL_IMAGE_ADS, prompt: "Hero on marble", aspect: "auto" }, ready)).toBe("Aspect auto needs a reference still.");
-  expect(imageAdsBlock({ ...INITIAL_IMAGE_ADS, prompt: "Hero on marble" }, ready)).toBeNull();
-  /* DTC Ads (ms_image): a style is required and has no default; batch 1–20; up to four products. */
-  const dtc = { ...INITIAL_IMAGE_ADS, engine: "ms_image" as const, prompt: "Hero on marble" };
-  expect(imageAdsBlock(dtc, ready)).toBe("Pick a style — the ad format. DTC Ads has no default.");
-  expect(imageAdsBlock({ ...dtc, styleId: "st1", batch: 21 }, ready)).toBe("Batch is 1–20 images per job.");
-  expect(imageAdsBlock({ ...dtc, styleId: "st1", productIds: ["a", "b", "c", "d", "e"] }, ready)).toBe("Up to 4 products.");
-  expect(imageAdsBlock({ ...dtc, styleId: "st1", batch: 4, productIds: ["a"] }, ready)).toBeNull();
-});
+/**
+ * Business's Ads and Setup ran on the signed-in Higgsfield account, whose
+ * sign-in is retired: their composers are gone (they are the retired card).
+ * What stays until the account's server code goes is its contract: the video
+ * input it validated, how a finished job is recognised, and how setup lists
+ * are read.
+ */
 
 test("the widened video contract carries the setup ids and enforces both server rules", () => {
   const base = { prompt: "A bottle.", duration: 15, resolution: "720p", aspectRatio: "9:16", generateAudio: true, mode: "ugc" as const };
@@ -95,39 +44,4 @@ test("setup items are read from whatever list key the account uses, never invent
   expect(parseSetupItems({ results: [{ uuid: "p1", title: "Sneaker Runner", status: "completed", image_url: "https://cdn.test/p.jpg" }] }, "product")[0]).toMatchObject({ id: "p1", name: "Sneaker Runner", previewUrl: "https://cdn.test/p.jpg" });
   expect(parseSetupItems("nothing", "avatar")).toEqual([]);
   expect(parseSetupItems({ items: [{ id: "x", url: "http://insecure/preview.jpg" }] }, "brand_kit")[0].previewUrl).toBeNull();
-});
-
-test("a composer's catalogue line never says Reading… for ever: a failure says so, a missing model says the account lacks it", () => {
-  const at = (over: Partial<Parameters<typeof catalogueBlock>[0]>) => catalogueBlock({ connected: true, status: "loading", error: null, offered: false, model: ADS_MODEL, ...over });
-  expect(at({})).toBe("Reading the connected catalogue…");
-  expect(at({ status: "error", error: "The account is busy." })).toBe("The account is busy.");
-  expect(at({ status: "ready" })).toBe("The connected account does not offer Marketing Studio video.");
-  expect(at({ status: "ready", offered: true })).toBeNull();
-  /* Not connected has its own line. */
-  expect(at({ connected: false })).toBeNull();
-  /* Re-reads after a failure back off to once a minute. */
-  expect([1, 2, 3, 4, 9].map(retryAfterMs)).toEqual([5000, 15000, 45000, 60000, 60000]);
-});
-
-test("a failed quote is asked again on its own only when the failure passes by itself, and only a few times", () => {
-  /* The network, a rate limit, an unavailable or busy account: 5 s, 15 s, 45 s, then Try again. */
-  expect([1, 2, 3].map((n) => autoRetryMs({ status: null }, n))).toEqual([5000, 15000, 45000]);
-  expect(autoRetryMs({ status: null }, AUTO_RETRIES + 1)).toBeNull();
-  for (const status of [429, 502, 503, 504]) expect(autoRetryMs({ status }, 1)).toBe(5000);
-  expect(autoRetryMs({ status: 409, code: "connection_busy" }, 2)).toBe(15000);
-  /* The account refused the input itself: asking again would be refused again, and every quote re-imports the references. */
-  for (const code of ["parameter_invalid", "model_unknown", "reconnect_required", "insufficient_credits"])
-    expect(autoRetryMs({ status: 400, code }, 1)).toBeNull();
-  expect(autoRetryMs({ status: 0 }, 1)).toBeNull();
-});
-
-test("a quote's usable window is its lifetime on the server, measured on this device from when it arrived", () => {
-  /* Server clock: made at 1,000,000, expires five minutes later. */
-  const job = { createdAt: 1_000_000, quoteExpiresAt: 1_000_000 + 300_000 };
-  expect(quoteUsableUntil(job, 5_000)).toBe(5_000 + 300_000 - QUOTE_MARGIN_MS);
-  /* A device clock hours fast or slow does not change the window. */
-  const fast = Date.parse("2030-01-01T00:00:00Z");
-  expect(quoteUsableUntil(job, fast) - fast).toBe(300_000 - QUOTE_MARGIN_MS);
-  /* A malformed lifetime never reads as usable. */
-  expect(quoteUsableUntil({ createdAt: 10, quoteExpiresAt: 5 }, 100)).toBeLessThan(100);
 });

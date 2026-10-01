@@ -4,14 +4,7 @@ import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/compon
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
 import LazyMedia from "@/components/LazyMedia";
 import { resolveGenInput } from "@/lib/genAssetInput";
-import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
-import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
-import {
-  AD_ASPECTS, AD_DURATIONS, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, INITIAL_ADS,
-  PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, draftKey,
-  isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, restoreAds, withAdReference, withMode, withProductId, withSetup, withStill,
-  type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type SetupItem, type SetupPreset, type SetupType,
-} from "@/lib/shell/business";
+import { draftKey, type AdStill, type BusinessPage } from "@/lib/shell/business";
 import {
   IMAGE_AD_ASPECTS, IMAGE_AD_BUILDS, IMAGE_AD_MAX, IMAGE_AD_PROMPT_MAX, IMAGE_AD_RESOLUTIONS, INITIAL_IMAGE_AD, PRESET_STILLS_MAX,
   imageAdBlock, imageAdBuild, imageAdRequest, qualityLabel, qualityOff, restoreImageAd, withBuild, withPreset, withProductStill, type ImageAdState,
@@ -20,79 +13,37 @@ import { aboutCredits, estimateReason } from "@/lib/shell/key-estimate";
 import { useShell } from "@/lib/shell/state";
 import { useKeyTake } from "@/lib/shell/use-key-take";
 import { useOpenTake } from "@/lib/shell/use-open-take";
-import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
 import type { Generation } from "@/lib/jobs";
 import { useSession } from "@/lib/session";
 import { PresetPicker } from "./PresetPicker";
-import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
-import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
-import { shortName } from "@/lib/higgsfield-consumer/resume";
-import { ResumedJobRows, type ResumedRow } from "../ResumedJobs";
-import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { uploadFilesToProject, useProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
-import { useWorkspace } from "@/lib/workspace/state";
-import { CAPABILITY_UNREADABLE } from "@/lib/shell/connected-capability";
 import { OwnerRunCard } from "../OwnerRunCard";
 
 /**
- * Business = Marketing Studio (FINAL_SPEC §2): Ads on
- * `marketing_studio_video`, Image ads on Marketing Studio Image, and Setup.
+ * Business = Marketing Studio (FINAL_SPEC §2): Ads, Image ads and Setup.
  *
  * Image ads runs on Particl's API key for every workspace and every member
  * (lib/shell/image-ads.ts), through the one workspace-credit path — the
- * estimate on the button, then one send at that figure — and reads nothing
- * of the connected account. Ads and Setup still ride the owner's connected
- * account (the catalogue-generation route: quote → the price on the button →
- * submit with that price → poll), which validates every parameter against the
- * account's live schema and imports the reference stills before the quote.
+ * estimate on the button, then one send at that figure. Ads and Setup ran on
+ * a signed-in Higgsfield account, whose sign-in is retired
+ * (lib/higgsfield-consumer/retired.ts): each is the retired card, for
+ * everyone, with the way to make the same kind of thing in Gen; Setup also
+ * lists what Particl made (ParticlSetup, in BusinessSuite).
  *
- * Particl is standalone: a product or a setting is a still from this
- * project's Library (picked, dropped or uploaded); avatars, hooks and
- * settings are the engine's presets; the account's own library is never
- * listed (lib/higgsfield-consumer/marketing-records.ts).
+ * A product or another still is one from this project's Library (picked,
+ * dropped or uploaded).
  */
-const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
-
 export function BusinessView({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "dtc" | "setup" }) {
   /* Image ads: Particl's API key, for everyone — nothing of the connected account is read for it. */
   if (page === "dtc") return <ImageAdsView scope={scope} project={project} />;
-  return <AccountBusiness scope={scope} project={project} page={page} />;
+  /* Ads and Setup ran on the retired account: the one card, for everyone, on the first paint. */
+  return <OwnerRunCard surface="business" scope={scope} aspect={project?.aspect} page />;
 }
 
-function AccountBusiness({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "setup" }) {
-  const business = useBusiness(scope);
-  /* Ads and Setup run only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19) — on the first paint, from the session. */
-  if (business.connection?.owner === false) return <OwnerRunCard surface="business" scope={scope} aspect={project?.aspect} page />;
-  if (page === "setup") return <SetupView business={business} />;
-  return <AdsView scope={scope} project={project} business={business} />;
-}
 
-type Business = ReturnType<typeof useBusiness>;
 type Media = { id: string; name: string; sourceId: string; origin: "upload" | "generation"; url: string };
 type Library = ReturnType<typeof useProjectLibrary>;
-
-/**
- * What Setup handed over with Use in Ads / Use in Image ads, for this page
- * only (a pure read, so a second render reads the same); useSpentPreset
- * clears it once the page has it, so it never pre-selects anything later.
- */
-function takePreset(page: BusinessPage): SetupPreset | null {
-  if (typeof window === "undefined") return null;
-  try { return parsePreset(sessionStorage.getItem(PRESET_KEY), page, Date.now()); } catch { return null; }
-}
-/** Setup → a page: leave the pick for that page to read once. */
-function leavePreset(item: SetupItem, page: BusinessPage) {
-  try { sessionStorage.setItem(PRESET_KEY, JSON.stringify(presetFor(item, page, Date.now()))); } catch { /* the pick is still on screen */ }
-}
-function useSpentPreset(page: BusinessPage) {
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(PRESET_KEY);
-      if (presetSpent(raw, page, Date.now())) sessionStorage.removeItem(PRESET_KEY);
-    } catch { /* nothing stored */ }
-  }, [page]);
-}
 
 function readDraft<T>(key: string | null, restore: (raw: unknown) => T | null): T | null {
   if (!key) return null;
@@ -100,26 +51,19 @@ function readDraft<T>(key: string | null, restore: (raw: unknown) => T | null): 
 }
 /**
  * The composer's draft for this project (lib/shell/business.ts › Drafts): a
- * trip to Setup, Cast or the Library and back finds the ad as it was, and
- * Setup's pick lands on top of it. Read before paint and never on the server,
- * so the first render matches the server's.
+ * trip to Cast or the Library and back finds the ad as it was. Read before
+ * paint and never on the server, so the first render matches the server's.
  */
-function useComposerDraft<T>(page: BusinessPage, scope: string, projectId: string | null, initial: T, restore: (raw: unknown) => T | null, apply: (preset: SetupPreset | null, current: T) => T): [T, (next: T) => void] {
+function useComposerDraft<T>(page: BusinessPage, scope: string, projectId: string | null, initial: T, restore: (raw: unknown) => T | null): [T, (next: T) => void] {
   const key = projectId ? draftKey(scope, projectId, page) : null;
   const [draft, setDraft] = useState<{ key: string | null; value: T; ready: boolean }>({ key: null, value: initial, ready: false });
-  /* Setup's pick is read once per mount and kept: a second strict-mode pass runs after useSpentPreset has cleared the store. */
-  const pick = useRef<SetupPreset | null | undefined>(undefined);
-  /* The first project the pick landed on; another project opened later starts from its own draft. */
-  const landedOn = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (draft.ready && draft.key === key) return;
-    if (pick.current === undefined) pick.current = takePreset(page);
-    const landing = Boolean(pick.current) && (landedOn.current === null || landedOn.current === key);
-    if (landing && key) landedOn.current = key;
     /* What was built before the project was known carries over; a switch between projects does not. */
     const base = readDraft(key, restore) ?? (!draft.ready || draft.key === null ? draft.value : initial);
-    setDraft({ key, value: landing ? apply(pick.current!, base) : base, ready: true });
-  }, [key, draft, page, initial, restore, apply]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate this project's tab-only draft before paint, never on the server.
+    setDraft({ key, value: base, ready: true });
+  }, [key, draft, initial, restore]);
   useEffect(() => {
     if (!draft.ready || !draft.key) return;
     try { sessionStorage.setItem(draft.key, JSON.stringify(draft.value)); } catch { /* the draft stays on screen */ }
@@ -127,6 +71,7 @@ function useComposerDraft<T>(page: BusinessPage, scope: string, projectId: strin
   const set = useCallback((value: T) => setDraft((d) => ({ ...d, value })), []);
   return [draft.value, set];
 }
+
 
 /** A Business prompt's attachments: pictures become reference stills, up to the well's limit; the rest stays in the Library. */
 async function attachStills(scope: string, attached: Attached, have: number, max: number): Promise<{ stills: Media[]; note: string | null }> {
@@ -137,10 +82,10 @@ async function attachStills(scope: string, attached: Attached, have: number, max
   return { stills, note: keptNote(kept, `reference stills are pictures, up to ${max}.`) };
 }
 
-/** Drag a Library still in; the roles cycle image → start_image → end_image on click. */
-function Well({ scope, projectId, medias, roles, max, onAdd, onRemove, onRole, hint }: {
-  scope: string; projectId?: string | null; medias: (Media & { role?: AdMediaRole })[]; roles: readonly string[]; max: number; hint: string;
-  onAdd: (m: Media) => void; onRemove: (id: string) => void; onRole?: (id: string, role: AdMediaRole) => void;
+/** Drag Library stills in, up to the well's limit. */
+function Well({ scope, projectId, medias, max, onAdd, onRemove, hint }: {
+  scope: string; projectId?: string | null; medias: Media[]; max: number; hint: string;
+  onAdd: (m: Media) => void; onRemove: (id: string) => void;
 }) {
   const [over, setOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,13 +112,10 @@ function Well({ scope, projectId, medias, roles, max, onAdd, onRemove, onRole, h
         {medias.length ? medias.map((m) => (
           <span className="gx-ref" key={m.id}>
             <span className="gx-ref-thumb"><LazyMedia url={m.url} kind="image" alt="" name={m.name} className="gx-lazy" /></span>
-            {onRole && m.role ? (
-              <button type="button" className="bz-role" title="Click to cycle the role" onClick={() => onRole(m.id, roles[(roles.indexOf(m.role!) + 1) % roles.length] as AdMediaRole)}>{m.role}</button>
-            ) : null}
             <span className="gx-ref-name">{m.name}</span>
             <button type="button" className="gx-ref-x" aria-label={`Remove ${m.name}`} onClick={() => onRemove(m.id)}>×</button>
           </span>
-        )) : <span className="gx-well-hint">Drag stills from the Library{onRole ? " — roles image · start_image · end_image" : ""}</span>}
+        )) : <span className="gx-well-hint">Drag stills from the Library</span>}
       </div>
       {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
     </div>
@@ -200,58 +142,6 @@ function Chips<T extends string | number>({ label, note, options, value, onPick,
 
 function Label({ label, note }: { label: string; note?: string }) {
   return <span className="gx-eyebrow" data-functional-label="">{label}{note ? <span className="bz-note"> · {note}</span> : null}</span>;
-}
-
-/** A catalogue preview that is a picture (never a clip), for a chip's face. */
-const pictureOf = (item: SetupItem) => (item.previewUrl && !/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(item.previewUrl) ? item.previewUrl : null);
-
-/** The chips of one setup read: None plus what Particl may use. `still`: a still fills the slot, so None is not pressed. `faces`: show each preview. */
-function SetupChips({ label, items, value, onPick, disabled, why, still, faces }: {
-  label: string; items: readonly SetupItem[]; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; still?: boolean; faces?: boolean;
-}) {
-  return (
-    <div className="gx-chips" role="group" aria-label={label}>
-      <button type="button" className="gx-chip" aria-pressed={value === null && !still} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : undefined} onClick={() => { if (!disabled) onPick(null); }}>None</button>
-      {items.map((item) => {
-        const face = faces ? pictureOf(item) : null;
-        return (
-          <button key={item.id} type="button" className={face ? "gx-chip bz-chip-face" : "gx-chip"} aria-pressed={value === item.id} aria-disabled={disabled || undefined} data-off={disabled || undefined} title={disabled ? why ?? undefined : item.meta} onClick={() => { if (!disabled) onPick(item.id); }}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- A catalogue preview, as the ad-format cards show theirs. */}
-            {face ? <img src={face} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.hidden = true; }} /> : null}
-            <span>{item.name}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * A setup-item picker. While the read is in flight it shows its shape; once
- * read, a type with nothing Particl may use is not shown at all.
- */
-function SetupPicker({ label, note, type, business, value, onPick, disabled, why, testId, faces }: {
-  label: string; note?: string; type: SetupType; business: Business; value: string | null; onPick: (id: string | null) => void; disabled?: boolean; why?: string | null; testId?: string; faces?: boolean;
-}) {
-  const read = business.setup.reads[type];
-  if (!read) return business.setup.loading ? <SetupSkeleton label={label} testId={testId} /> : null;
-  if (!read.items.length) return null;
-  return (
-    <div className="gx-gen-row" data-testid={testId} data-off={disabled || undefined}>
-      <Label label={label} note={note} />
-      {disabled && why ? <span className="gx-reason">{why}</span> : null}
-      <SetupChips label={label} items={read.items} value={value} onPick={onPick} disabled={disabled} why={why} faces={faces} />
-    </div>
-  );
-}
-
-function SetupSkeleton({ label, testId }: { label: string; testId?: string }) {
-  return (
-    <div className="gx-gen-row" data-testid={testId} aria-busy="true">
-      <Label label={label} />
-      <div className="gx-chips" aria-hidden="true"><span className="bz-skel" /><span className="bz-skel bz-skel--wide" /><span className="bz-skel" /></div>
-    </div>
-  );
 }
 
 const STILLS_SHOWN = 36;
@@ -355,263 +245,12 @@ function StillSlot({ scope, projectId, library, label, note, testId, still, onSt
   );
 }
 
-/** After a failed price, a failed job or a finished take: the same input, priced again (a failure with its own Try again needs no second button). */
-function PriceAgain({ job, blocked, testId }: { job: ReturnType<typeof useConnectedJob>; blocked: string | null; testId: string }) {
-  if (blocked || job.canRetry || (job.state.phase !== "failed" && job.state.phase !== "done")) return null;
-  return <button type="button" className="gx-hbtn" onClick={job.requote} data-testid={testId}>Price again</button>;
-}
-
-/** The job this composer remembers for the project; while it reads that one back, its button says so. */
-function rememberedJob(slot: string, draftId: string | null): string | null {
-  try { return draftId ? localStorage.getItem(connectedJobKey(slot, draftId)) : null; } catch { return null; }
-}
-/**
- * This composer's jobs still on the account from an earlier visit (another
- * device, another tab, or older than the one it remembers), as the shell's
- * collector reads them until they land (it announces each one once). The one
- * its button remembers or is running belongs to the button alone: never listed
- * here, and the collector leaves it to the button, so each job has one poller.
- */
-function useEarlierJobs(project: Project | null, job: ReturnType<typeof useConnectedJob>, slot: string, models: readonly string[], name: (job: ConnectedJob) => string) {
-  const live = "job" in job.state && job.state.job ? job.state.job.id : null;
-  const resumed = useResumedConnectedJobs({
-    draftId: project?.id ?? null, keepCompleted: true, owned: [live, rememberedJob(slot, project?.id ?? null)],
-    accept: (saved) => saved.composer !== "gen" && models.includes(saved.input.model),
-  });
-  const rows: ResumedRow[] = resumed.jobs.map(({ job: saved, problem, following }) => ({
-    id: saved.id, name: name(saved), status: saved.status, createdAt: saved.createdAt, problem, following,
-    providerReceipt: saved.providerReceipt, setAside: saved.setAside, failureCode: saved.failureCode,
-  }));
-  return { rows, dismiss: resumed.dismiss };
-}
-/* Ads run one engine, so an ad is named by its prompt. */
-const adName = (job: ConnectedJob) => shortName(job.input.prompt, 80) || job.model.name;
-
-function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
-  if (blocked) return verb;
-  if (state.phase === "resuming") return "Checking the last take…";
-  if (state.phase === "quoting") return `${verb} · pricing…`;
-  if (state.phase === "quoted") return `${verb} · ${cr(state.job.quoteCredits)}`;
-  if (state.phase === "submitting") return "Submitting…";
-  if (state.phase === "running") return "Rendering…";
-  return verb;
-}
-
-/** A failed quote or submit: the account's words, and Try again when nothing prices it again on its own. */
-function JobError({ job, testId }: { job: ReturnType<typeof useConnectedJob>; testId: string }) {
-  if (job.state.phase !== "failed") return null;
-  return (
-    <div className="gx-retry" role="alert" data-testid={testId}>
-      <span className="gx-gen-error" data-testid={`${testId}-text`}>{job.state.error}</span>
-      {job.canRetry ? <button type="button" className="gx-hbtn" onClick={job.requote}>Try again</button> : null}
-    </div>
-  );
-}
-
-/** After a few failed catalogue reads, the account is asked again only on request. */
-function CatalogueAgain({ business }: { business: Business }) {
-  return <div className="gx-retry"><button type="button" className="gx-hbtn" onClick={business.readCatalogue} data-testid="catalogue-again">Read again</button></div>;
-}
-
-/**
- * A Setup read that failed: what went wrong (lib/shell/use-business words it), and Try again. Try again
- * stays focusable while its read is out, and when a good read takes the row away, focus stays in the
- * section it reloaded instead of falling back to the top of the page.
- */
-function ReadProblem({ error, busy, onRetry, testId }: { error: string; busy: boolean; onRetry: () => void; testId: string }) {
-  const row = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const node = row.current;
-    return () => {
-      if (!node?.contains(document.activeElement)) return;
-      const home = node.closest<HTMLElement>("section, [data-read-home]") ?? node.parentElement;
-      if (!home) return;
-      if (!home.hasAttribute("tabindex")) { home.tabIndex = -1; home.dataset.focusHome = ""; }
-      home.focus({ preventScroll: true });
-    };
-  }, []);
-  return (
-    <div ref={row} className="gx-retry" role="alert" aria-busy={busy} data-testid={testId}>
-      <span className="gx-gen-error">{error}</span>
-      <button type="button" className="gx-hbtn" aria-disabled={busy} onClick={() => { if (!busy) onRetry(); }}>{busy ? "Reading…" : "Try again"}</button>
-    </div>
-  );
-}
-
-/** A running job whose last status read failed: said plainly (use-connected-job words it) while it is asked again, later. */
-function RunProblem({ state, testId }: { state: ConnectedJobState; testId: string }) {
-  if (state.phase !== "running" || !state.problem) return null;
-  return <p className="gx-reason" role="status" data-testid={testId}>{state.problem}</p>;
-}
-
-/**
- * The finished take beside the composer. It stays while Price again (or a
- * change to the ad) prices the next run.
- */
-function LatestTake({ job, testId, scope, project, onLibrary }: { job: ConnectedJob; testId: string; scope: string; project: Project | null; onLibrary: () => void }) {
-  const original = connectedOriginal(job), kind = original?.kind;
-  const media = original && (kind === "image" || kind === "video") ? { url: original.url, kind } : null;
-  /* Open in Takes lands on this take, selected — not on the list. */
-  const { openTake, opening } = useOpenTake(scope, project);
-  return (
-    <section className="gx-gen-results bz-latest" aria-label="Latest take" data-testid={testId}>
-      <div className="gx-gen-results-head">
-        <span className="gx-panel-title">Latest take</span>
-        <span className="bz-done-actions">
-          <button type="button" className="gx-hbtn" disabled={!original || opening !== null} onClick={() => void openTake(job.id, original?.generationId, job.createdAt)} data-testid={`${testId}-open`}>{opening ? "Opening…" : "Open in Takes"}</button>
-          <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
-        </span>
-      </div>
-      {media ? (
-        <div className="bz-latest-media" data-testid={`${testId}-take`}>
-          <LazyMedia url={media.url} kind={media.kind} alt="Latest take" name="Latest take" className="gx-lazy" hoverPlay={media.kind === "video"} />
-        </div>
-      ) : null}
-      <p className="gx-gen-note" role="status">Rendered and filed to this project.</p>
-    </section>
-  );
-}
-
-/** The last finished take, shown while the composer is free: while a newer job is resumed, submitted or rendering, it is not "the latest". */
-const latestTake = (job: ReturnType<typeof useConnectedJob>) => (composerBusy(job.state.phase) ? null : job.finished);
-
-/** Until the owner's connection is read, that is the reason — not a connect prompt it may not need; a failed read says so, and so does a lapsed grant. */
-function accountReason(business: Business): string | null {
-  if (business.connectionError) return CAPABILITY_UNREADABLE;
-  if (!business.connection) return "Reading the connected account…";
-  return business.connection.reconnect ? "Reconnect the account in Workspace › Engines." : null;
-}
-
-/** The owner's account, when it cannot run yet: unreadable (Try again), or not connected (Engines is where it is connected). */
-function Connection({ business, testId }: { business: Business; testId?: string }) {
-  const shell = useShell();
-  if (business.connectionError) return <ReadProblem error={business.connectionError} busy={false} onRetry={business.refreshConnection} testId={testId ?? "connection-error"} />;
-  if (!business.connection || business.connection.connected) return null;
-  return (
-    <p className="gx-reason" data-testid={testId}>
-      {business.connection.reconnect ? "Reconnect the account in Workspace › Engines." : "Connect the account in Workspace › Engines."}{" "}
-      <button type="button" className="cw-link" onClick={() => shell.goWorkspace("engines")}>Open Engines</button>
-    </p>
-  );
-}
-
-/* ── Ads ─────────────────────────────────────────────────────────────── */
-function AdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
-  const shell = useShell();
-  const library = useProjectLibrary(scope, project?.id ?? null);
-  const [raw, set] = useComposerDraft("ads", scope, project?.id ?? null, INITIAL_ADS, restoreAds, adsFromPreset);
-  useSpentPreset("ads");
-  /* Once Setup is read, a pick it does not list (not Particl's, or gone) is dropped rather than sent. */
-  const s = useMemo(() => pruneAds(raw, business.setup.reads), [raw, business.setup.reads]);
-  /* One remembered job per composer (lib/shell/use-connected-job.ts): a switch away and back resumes it. */
-  const job = useConnectedJob(project?.id ?? null, "ads", scope);
-  const earlier = useEarlierJobs(project, job, "ads", [ADS_MODEL], adName);
-  const model: CatalogueModel | undefined = business.models[ADS_MODEL];
-  const connected = business.connection?.connected ?? false;
-  const chips = adsChipState(s);
-  const sent = adsMedias(s);
-  const enhancer = useEnhancer({ prompt: s.prompt, mode: "video", model: ADS_MODEL, anchored: s.medias.some((m) => m.role === "start_image"), editing: false });
-  /* Read once; after a failure only Try again reads (never a loop against a refusing account). */
-  const readSetup = business.readSetup, hasSetup = Boolean(business.setup.reads.hook), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
-  useEffect(() => { if (connected && !hasSetup && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.ads]); }, [connected, hasSetup, setupLoading, setupFailed, readSetup]);
-
-  const aspects = (model?.aspectRatios?.length ? model.aspectRatios : AD_ASPECTS) as readonly string[];
-  const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? AD_RESOLUTIONS;
-  const range = model?.durationRange ?? null;
-  const blocked = (project ? accountReason(business) : null) ?? adsBlock(s, { connected, hasProject: Boolean(project) }) ?? business.modelBlock(ADS_MODEL);
-  const clamped = clampedDuration(s, range);
-  const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
-    type: "video", model: ADS_MODEL, prompt: enhancer.auto && enhancer.enhanced ? enhancer.enhanced : s.prompt.trim(),
-    parameters: adsParameters(s, range),
-    medias: adsMedias(s).map((m) => ({ role: m.role, source: m.origin === "upload" ? { uploadId: m.sourceId } : { genId: m.sourceId } })),
-  } : null, [project, blocked, s, range, enhancer.auto, enhancer.enhanced]);
-  const inputKey = JSON.stringify(input);
-  /* The button wears the account's exact price for exactly this input. */
-  const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
-  /* Nothing is priced while a job is resumed, submitted or rendering; after a finished take, Price again prices the next one. */
-  useEffect(() => {
-    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
-    const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
-    return () => clearTimeout(timer);
-  }, [input, inputKey, quoteJob, quotedFor, phase]);
-
-  const media = (m: Media) => ({ ...m, role: "image" as AdMediaRole });
-  const products = business.setup.reads.product?.items ?? [];
-  const settings = business.setup.reads.setting?.items ?? [];
-  const room = AD_MEDIA_MAX - (sent.length - s.medias.length);
-  return (
-    <div className="gx-gen bz gx-enter" data-testid="ads-view">
-      <section className="gx-gen-card" aria-label="Marketing Studio">
-        <Connection business={business} testId="ads-connect" />
-        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.ads])} testId="ads-setup-error" /> : null}
-        <ResumedJobRows rows={earlier.rows} label="Ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="ads-earlier" />
-        <Chips label="Mode" note="ugc is the default" options={AD_MODES} value={s.mode} onPick={(m) => set(withMode(s, m as AdMode))} testId="ads-mode" />
-        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="ads-product"
-          still={s.productStill} onStill={(still) => set(withStill(s, "product", still))}>
-          {products.length ? <SetupChips label="Product" items={products} value={s.productId} still={Boolean(s.productStill)} onPick={(id) => set(id ? withProductId(s, id) : withStill(withProductId(s, null), "product", null))} /> : null}
-        </StillSlot>
-        <SetupPicker label="Avatar" note="optional for UGC" type="avatar" business={business} value={s.avatarId} onPick={(id) => set({ ...s, avatarId: id })} testId="ads-avatar" faces />
-        <SetupPicker label="Hook" note={chips.hook.disabled ? undefined : "prepended to your prompt"} type="hook" business={business} value={s.hookId} onPick={(id) => set(withSetup(s, { hookId: id }))} disabled={chips.hook.disabled} why={chips.hook.why} testId="ads-hook" />
-        {/* A setting still is a reference still and rides with any mode; the engine's preset settings follow the hook rule. */}
-        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Setting" note="scene context" testId="ads-setting"
-          still={s.settingStill} onStill={(still) => set(withStill(s, "setting", still))}>
-          {settings.length ? (<>
-            {chips.setting.disabled && chips.setting.why ? <span className="gx-reason">{chips.setting.why}</span> : null}
-            <SetupChips label="Setting" items={settings} value={s.settingId} still={Boolean(s.settingStill)} onPick={(id) => set(id ? withSetup(s, { settingId: id }) : withStill(withSetup(s, { settingId: null }), "setting", null))} disabled={chips.setting.disabled} why={chips.setting.why} />
-          </>) : null}
-        </StillSlot>
-        <SetupPicker label="Ad reference" note="reference-driven — excludes hooks and settings" type="ad_reference" business={business} value={s.adReferenceId} onPick={(id) => set(withAdReference(s, id))} disabled={chips.adReference.disabled} why={chips.adReference.why} testId="ads-adref" />
-        <Chips label="Aspect" options={aspects} value={s.aspect} onPick={(v) => set({ ...s, aspect: v as AdsState["aspect"] })} testId="ads-aspect" />
-        <Chips label="Duration" note={range ? `${range.min}–${range.max} s` : "≥ 4 s"} options={AD_DURATIONS.map((d) => [d, `${d} s`] as const)} value={s.duration} onPick={(d) => set({ ...s, duration: d })} testId="ads-duration" />
-        {clamped != null ? <p className="gx-gen-note" role="status" data-testid="ads-clamped">The account caps this at {clamped} s; that is what will be sent.</p> : null}
-        <Chips label="Resolution" options={resolutions} value={s.resolution} onPick={(v) => set({ ...s, resolution: v as AdsState["resolution"] })} testId="ads-resolution" />
-        <div className="gx-gen-row" data-testid="ads-audio">
-          <span className="gx-eyebrow" data-functional-label="">Audio<span className="bz-note"> · generate_audio</span></span>
-          <div className="gx-chips" role="group" aria-label="Audio">
-            <button type="button" className="gx-chip" aria-pressed={s.audio} onClick={() => set({ ...s, audio: true })}>On</button>
-            <button type="button" className="gx-chip" aria-pressed={!s.audio} onClick={() => set({ ...s, audio: false })}>Off</button>
-          </div>
-        </div>
-        <div className="gx-gen-row">
-          <span className="gx-eyebrow" data-functional-label="">Prompt</span>
-          <PromptAttach scope={scope} projectId={project?.id} testId="ads-attach" onAttach={async (attached) => { const { stills, note } = await attachStills(scope, attached, sent.length, AD_MEDIA_MAX); if (stills.length) set({ ...s, medias: [...s.medias, ...stills.map(media)] }); return note; }}><textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="What the presenter says and shows. The hook is prepended automatically." value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="ads-prompt" /></PromptAttach>
-          <div className="gx-gen-enhance">
-            <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)}><span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span></button>
-            <span className="gx-spacer" />
-            {enhancer.blocked ? <span className="gx-reason">{enhancer.blocked}</span> : null}
-            <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance}>{enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance" : `Enhance · ${cr(enhancer.credits)}`}</button>
-          </div>
-          {enhancer.enhanced ? (
-            <div className="gx-enhanced"><span className="gx-eyebrow">Enhanced</span><p>{enhancer.enhanced}</p>
-              <div className="gx-enhanced-actions"><button type="button" className="gx-hbtn" onClick={() => { set({ ...s, prompt: enhancer.enhanced! }); enhancer.dismiss(); }}>Use this</button><button type="button" className="gx-hbtn" onClick={enhancer.dismiss}>Keep mine</button></div>
-            </div>
-          ) : null}
-        </div>
-        <Well scope={scope} projectId={project?.id} medias={s.medias} roles={AD_MEDIA_ROLES} max={room} hint="Reference stills · optional"
-          onAdd={(m) => set({ ...s, medias: [...s.medias, media(m)] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} onRole={(id, role) => set({ ...s, medias: s.medias.map((m) => (m.id === id ? { ...m, role } : m)) })} />
-        {blocked ? <p className="gx-reason" id="bz-blocked" data-testid="ads-blocked">{blocked}</p> : null}
-        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
-        <JobError job={job} testId="ads-error" />
-        <RunProblem state={job.state} testId="ads-problem" />
-        <PriceAgain job={job} blocked={blocked} testId="ads-requote" />
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked" : undefined} onClick={() => void job.submit(inputKey)} data-testid="ads-generate">
-          {priceLabel(job.state, "Generate ad", blocked)}
-        </button>
-        {job.state.phase === "quoted" ? <p className="gx-gen-foot">{job.state.job.workspaceName ?? "Connected wallet"} · exact price from the account · filed to this project</p> : null}
-      </section>
-      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="ads-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
-    </div>
-  );
-}
-
 /* ── Image ads (Particl's API key) ───────────────────────────────────── */
-/** Setup picks do not ride on Image ads: its stills are this project's own, sent by identity. */
-const keepCurrent = <T,>(_preset: SetupPreset | null, current: T): T => current;
 function ImageAdsView({ scope, project }: { scope: string; project: Project | null }) {
   const shell = useShell();
   const session = useSession();
   const library = useProjectLibrary(scope, project?.id ?? null);
-  const [s, set] = useComposerDraft<ImageAdState>("dtc", scope, project?.id ?? null, INITIAL_IMAGE_AD, restoreImageAd, keepCurrent);
+  const [s, set] = useComposerDraft<ImageAdState>("dtc", scope, project?.id ?? null, INITIAL_IMAGE_AD, restoreImageAd);
   const take = useKeyTake(scope, project?.id ?? null, "business:image-ads");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
@@ -662,7 +301,7 @@ function ImageAdsView({ scope, project }: { scope: string; project: Project | nu
             <textarea className="gx-textarea" aria-label="Prompt" rows={4} maxLength={IMAGE_AD_PROMPT_MAX} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="image-ad-prompt" />
           </PromptAttach>
         </div>
-        <Well scope={scope} projectId={project?.id} medias={s.medias} roles={["image"]} max={wellMax} hint={s.preset ? "One more still · optional (a model shot)" : `More stills · optional · up to ${IMAGE_AD_MAX} with the product`}
+        <Well scope={scope} projectId={project?.id} medias={s.medias} max={wellMax} hint={s.preset ? "One more still · optional (a model shot)" : `More stills · optional · up to ${IMAGE_AD_MAX} with the product`}
           onAdd={(m) => set({ ...s, medias: [...s.medias, m] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
         {reason ? (
           <div className="gx-retry">
@@ -705,92 +344,5 @@ function LatestKeyTake({ generation, scope, project, onLibrary }: { generation: 
       </div>
       <p className="gx-gen-note" role="status">Rendered and filed to this project.</p>
     </section>
-  );
-}
-
-/* ── Setup ───────────────────────────────────────────────────────────── */
-const PAGE_LABEL: Record<BusinessPage, string> = { ads: "Ads", dtc: "Image ads" };
-function SetupView({ business }: { business: Business }) {
-  const shell = useShell();
-  const { dispatch } = useWorkspace();
-  const connected = business.connection?.connected ?? false;
-  const readSetup = business.readSetup, setupLoading = business.setup.loading, setupEmpty = !Object.keys(business.setup.reads).length, setupFailed = Boolean(business.setup.error);
-  /* Read once; after a failure only Try again or Read again reads. */
-  useEffect(() => { if (connected && !setupLoading && setupEmpty && !setupFailed) void readSetup(); }, [connected, setupLoading, setupEmpty, setupFailed, readSetup]);
-  const [selected, setSelected] = useState<SetupItem | null>(null);
-  const detail = useRef<HTMLElement>(null);
-  useEffect(() => {
-    /* Under 1024px the detail sits under the list: bring it into view, and then its actions — a short landscape stage cannot show all of it.
-       On a portrait phone it is a sheet above the tab bar (business.css) and needs no scroll. */
-    const el = detail.current;
-    if (!selected || !el || typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches || getComputedStyle(el).position === "fixed") return;
-    el.scrollIntoView({ block: "nearest" });
-    el.querySelector<HTMLElement>(".gx-insp-actions")?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
-  const read = !setupEmpty;
-  const groups = SETUP_TYPES.filter(([type]) => (business.setup.reads[type]?.items.length ?? 0) > 0);
-  const rows = groups.reduce((n, [type]) => n + (business.setup.reads[type]?.items.length ?? 0), 0);
-  const sendTo = (item: SetupItem, page: BusinessPage) => {
-    leavePreset(item, page);
-    dispatch({ type: "toast", text: `${item.name} selected for ${PAGE_LABEL[page]}` });
-    shell.goSuite("business", page);
-  };
-  return (
-    <div className="bz-setup gx-enter" data-testid="setup-view" data-detail={selected ? "" : undefined}>
-      <div className="bz-setup-list" data-read-home="">
-        <Connection business={business} testId="setup-connect" />
-        {business.setup.error ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup()} testId="setup-error" /> : null}
-        {(!business.connection && !business.connectionError) || (connected && !read && !setupFailed && (setupLoading || business.setup.connected === null)) ? (
-          <div className="bz-group" aria-busy="true" data-testid="setup-loading">
-            <span className="gx-eyebrow">Reading…</span>
-            {[0, 1, 2].map((i) => <span key={i} className="bz-skel bz-skel--row" aria-hidden="true" />)}
-          </div>
-        ) : null}
-        {groups.map(([type, label, whose]) => (
-          <div className="bz-group" key={type} data-testid={`setup-${type}`}>
-            <div className="bz-group-head">
-              <span className="gx-eyebrow" data-functional-label="">{label}</span>
-              <span className="cw-dim">{whose === "owned" ? "Made in Particl" : "Engine presets"} · {business.setup.reads[type]!.items.length}</span>
-            </div>
-            {business.setup.reads[type]!.items.map((item) => (
-              <button type="button" className="bz-row" key={item.id} aria-pressed={selected?.id === item.id && selected.type === item.type} onClick={() => setSelected(item)}>
-                <span className="bz-row-name">{item.name}</span><span className="cw-dim">{item.meta}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-        {connected && read && !setupLoading && !rows ? (
-          <div className="bz-group bz-empty" data-testid="setup-empty">
-            <span className="bz-empty-title">Nothing to set up yet</span>
-            <span className="cw-dim">Products and settings are stills from this project.</span>
-            <div className="bz-done-actions">
-              <button type="button" className="gx-hbtn bz-make" onClick={() => shell.goSuite("business", "ads")}>Open Ads</button>
-              <button type="button" className="gx-hbtn" onClick={() => shell.openLibrary("assets")}>Open Library</button>
-            </div>
-          </div>
-        ) : null}
-        {connected && !setupFailed ? (
-          <div className="bz-setup-foot">
-            <span className="cw-dim" data-testid="setup-count">{rows} {rows === 1 ? "item" : "items"}</span>
-            <button type="button" className="gx-hbtn" disabled={business.setup.loading} onClick={() => void business.readSetup()}>{business.setup.loading ? "Reading…" : "Read again"}</button>
-          </div>
-        ) : null}
-      </div>
-      {selected ? (
-        <aside className="bz-detail" aria-label="Setup item" data-testid="setup-detail" ref={detail}>
-          <div className="bz-detail-head">
-            <span className="gx-eyebrow">{SETUP_TYPES.find((t) => t[0] === selected.type)?.[1]}{isOwnedSetup(selected.type) ? " · Particl’s" : ""}</span>
-            <button type="button" className="gx-ref-x bz-detail-x" aria-label="Close" onClick={() => setSelected(null)}>×</button>
-          </div>
-          <div className="gx-insp-title">{selected.name}</div>
-          {selected.meta ? <div className="gx-insp-sub">{selected.meta}</div> : null}
-          <div className="gx-insp-actions">
-            {(Object.keys(PRESET_TYPES) as BusinessPage[]).filter((page) => PRESET_TYPES[page].includes(selected.type)).map((page) => (
-              <button key={page} type="button" className="gx-hbtn" onClick={() => sendTo(selected, page)}>Use in {PAGE_LABEL[page]}</button>
-            ))}
-          </div>
-        </aside>
-      ) : null}
-    </div>
   );
 }
