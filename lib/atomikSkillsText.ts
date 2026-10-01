@@ -7,12 +7,16 @@
  * resolution, length, audio task), and the person's own words turned into
  * named parameters: `{{product}}` where the run said "Wave Runner sneakers".
  * It keeps nothing the run produced — no take, no price, no status — and no
- * media: a step that worked from attached media is left out with the reason,
- * never saved without it.
+ * media: a step that worked from attached media, or a library step (lib/
+ * atomikKeySteps.ts: Motion Transfer, Object Swap, Marketing Studio Image,
+ * whose engine, inputs and price are chosen together from the project's
+ * library), is left out with the reason, never saved without it.
  *
  * Pure, so the browser holds the same rules the server enforces
  * (lib/atomikSkills.ts) and the unit tests can hold them to their word.
  */
+
+import { keyStepFamily } from "./atomikKeySteps";
 
 export const SKILL_SCOPES = ["personal", "workspace"] as const;
 export type SkillScope = (typeof SKILL_SCOPES)[number];
@@ -222,10 +226,14 @@ export type RunStep = {
   refs?: readonly unknown[]; status?: string; genId?: string | null; estCostUsd?: number | null;
 };
 
+/** Why a library step is never kept: its engine, inputs and price were chosen together, from one project's library. */
+export const LIBRARY_STEP_REASON = "it is a library step, planned from this project's library, which a skill cannot keep yet";
+
 /** Why a run's step cannot be kept in a skill, or null when it can. */
 export function unkeptReason(step: RunStep): string | null {
   if (step.model.startsWith("connected:")) return "it was planned on the connected account, which Atomik no longer uses";
   if (step.kind !== "video" && step.kind !== "image" && step.kind !== "audio") return "no engine here makes it";
+  if (keyStepFamily(step.model)) return LIBRARY_STEP_REASON;
   if (step.refs && step.refs.length) return "it works from attached media, which a skill cannot keep yet";
   if (!step.prompt.trim()) return "it has no prompt";
   return null;
@@ -328,6 +336,8 @@ export function checkTemplate(value: unknown): SkillTemplate {
     if (!kind) throw new SkillTextError(`Step ${i + 1} must be a video, image or audio step.`);
     const model = typeof o.model === "string" ? o.model.trim() : "";
     if (!model || model.length > 120 || model.startsWith("connected:")) throw new SkillTextError(`Choose an engine for step ${i + 1}.`);
+    /* A library engine's step is planned and priced from one project's library, and a skill keeps no media. */
+    if (keyStepFamily(model)) throw new SkillTextError(`Step ${i + 1} is on a library engine, which plans from a project's library; a skill cannot keep it yet. Choose another engine.`);
     const prompt = cleanPrompt(o.prompt);
     if (prompt.length < 3) throw new SkillTextError(`Write a prompt for step ${i + 1}.`);
     const title = cleanLine(o.title, SKILL_LIMITS.title) || `Step ${i + 1}`;
@@ -505,6 +515,32 @@ export function engineSummary(template: SkillTemplate, label: (id: string) => st
 /** A step's settings in a line: `5s · 1080p · 16:9`. */
 export function settingsLine(params: SkillSettings): string {
   return [params.task ? params.task : null, params.seconds ? `${params.seconds}s` : null, params.resolution ?? null, params.ratio ?? null].filter(Boolean).join(" · ");
+}
+
+/* ── The composer's `/` ───────────────────────────────────────────────── */
+
+/** True while a person is typing a command: `/`, `/wave`, `/wave-runner-spot`. */
+export const typingCommand = (text: string) => /^\/[a-z0-9-]*$/.test(text);
+
+type Commanded = Pick<SkillView, "slug" | "name" | "template">;
+
+/**
+ * The skill a draft starts with (`/wave-runner-spot`, alone or with values after it), and the values:
+ * sending it opens that skill's run form, never a planning turn.
+ */
+export function commandIn<S extends Commanded>(text: string, skills: readonly S[]): { skill: S; values: Record<string, string> } | null {
+  const m = /^\/([a-z][a-z0-9-]{1,39})(?:\s+([\s\S]*))?$/.exec(text.trim());
+  const skill = m ? skills.find((s) => s.slug === m[1]) ?? null : null;
+  return skill ? { skill, values: commandValues(m?.[2] ?? "", skill.template.parameters) } : null;
+}
+
+/** The skills a typed command matches, best first: the command itself, then the start of a command, then anywhere in it or the name. */
+export function matchingSkills<S extends Commanded>(text: string, skills: readonly S[], max = 6): S[] {
+  const q = text.slice(1).toLowerCase();
+  const exact = skills.filter((s) => s.slug === q);
+  const starts = skills.filter((s) => s.slug !== q && s.slug.startsWith(q));
+  const inside = skills.filter((s) => !s.slug.startsWith(q) && (s.slug.includes(q) || s.name.toLowerCase().includes(q)));
+  return [...exact, ...starts, ...inside].slice(0, max);
 }
 
 /**

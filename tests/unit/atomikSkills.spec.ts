@@ -381,3 +381,68 @@ test("a save keeps the chat's latest plan by default, earlier plans start untick
   expect(t.commandValues("Setting: harbour; colour: red", parameters)).toEqual({ setting: "harbour" });
   expect(t.commandValues("just some words", parameters)).toEqual({});
 });
+
+/* ── Library steps ───────────────────────────────────────────────────── */
+
+test("a library step is never kept: the form says why, a template refuses its engine, and a run of only library steps is not offered", async () => {
+  const s = await import("../../lib/atomikSkills");
+  const t = await import("../../lib/atomikSkillsText");
+  const MOTION = "higgsfield-genjutsu-motion-transfer";
+  const MARKETING = "higgsfield/marketing-studio-image";
+  await inTenant(workspace(), async () => {
+    const chatId = await seedRun({ projectId: "p_lib" });
+    /* The same plan also has a campaign still made from the prompt alone, and a transform of a library clip. */
+    const at = Date.now();
+    const libraryStep = (id: string, position: number, kind: string, title: string, model: string, params: object, refs: object[]) => rows(
+      `INSERT INTO atomik_steps (id, chat_id, message_id, position, kind, title, prompt, model, params, refs, status, est_cost_usd, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,'proposed',0.3,?,?)`,
+      [id, chatId, `${chatId}_m2`, position, kind, title, "Teal Wave Runner sneakers on a beach at sunset, campaign light.", model, JSON.stringify(params), JSON.stringify(refs), at + position, at + position]);
+    await libraryStep(`${chatId}_k1`, 4, "image", "Campaign still", MARKETING, { ratio: "1:1", resolution: "2k", marketing: { quality: "high", enhancePrompt: false }, inputs: { references: [] } }, []);
+    await libraryStep(`${chatId}_k2`, 5, "video", "Motion transfer", MOTION, { task: "genjutsu", ratio: "adaptive", resolution: "720p", sourceUploadId: "up_clip", inputs: { source: "Skate.mp4", references: ["Shoe.png"] } }, [{ uploadId: "up_still", role: "reference_image" }]);
+
+    const draft = await s.draftFromRun(chatId);
+    const library = draft.steps.filter((x) => x.model === MARKETING || x.model === MOTION);
+    expect(library.map((x) => [x.title, x.label, x.keep, x.why])).toEqual([
+      ["Campaign still", "Marketing Studio Image", false, t.LIBRARY_STEP_REASON],
+      ["Motion transfer", "Motion Transfer", false, t.LIBRARY_STEP_REASON],
+    ]);
+    /* The default save keeps the rest of the plan and leaves the library steps out. */
+    const saved = await saveSkill(chatId, "u1");
+    expect(saved.template.steps.map((x) => x.model)).toEqual([NANO_PRO, KLING_PRO, "elevenlabs"]);
+    /* Chosen on purpose, a library step is refused with its reason, and nothing is saved. */
+    await expect(saveSkill(chatId, "u1", { slug: "with-library", stepIds: [`${chatId}_s1`, `${chatId}_k1`] })).rejects.toThrow(/Step 2 can't be kept: it is a library step/);
+    expect((await rows("SELECT COUNT(*) AS n FROM atomik_skills"))[0].n).toBe(1);
+    /* No template holds a library engine, whether written by hand or moved to one in an edit. */
+    expect(() => t.checkTemplate({ parameters: [], steps: [{ kind: "image", title: "Still", prompt: "A still of a shoe.", model: MARKETING, params: {} }] }))
+      .toThrow(/is on a library engine/);
+    const moved = { ...saved.template, steps: saved.template.steps.map((x, i) => (i === 0 ? { ...x, model: MARKETING } : x)) };
+    await expect(s.editSkill(saved.id, { expectedVersion: 1, template: moved }, "u1")).rejects.toThrow(/is on a library engine/);
+    expect((await s.getSkill(saved.id, "u1")).skill.version).toBe(1);
+
+    /* The runs offered to save count only what a skill can keep; one of library steps alone is not offered. */
+    const onlyLibrary = `ach_${randomUUID().slice(0, 8)}`;
+    await rows(`INSERT INTO atomik_chats (id, project_id, title, model, agent_mode, status, text_cost_usd, created_by, created_at, updated_at, deleted)
+                VALUES (?, 'p_lib', 'Campaign stills', 'auto', 'ask', 'waiting', 0, 'u1', ?, ?, 0)`, [onlyLibrary, at, at + 50]);
+    await rows(`INSERT INTO atomik_steps (id, chat_id, message_id, position, kind, title, prompt, model, params, refs, status, created_at, updated_at)
+                VALUES (?,?,?,0,'image','Campaign still','A campaign still.',?,'{}','[]','proposed',?,?)`, [`${onlyLibrary}_k`, onlyLibrary, `${onlyLibrary}_m`, MARKETING, at, at]);
+    const runs = await s.savableRuns("p_lib");
+    expect(runs.map((r) => [r.chatId, r.steps])).toEqual([[chatId, 3]]);
+  });
+});
+
+test("`/` in the composer: a command being typed lists its matches with the command itself first; values after a command are read", async () => {
+  const t = await import("../../lib/atomikSkillsText");
+  const skill = (slug: string, name: string) => ({ slug, name, template: { steps: [], parameters: [{ key: "product", label: "Product", default: "sneakers" }] } });
+  /* Newest change first, as the list arrives. */
+  const skills = [skill("wave-runner-spot", "Wave Runner spot"), skill("wave", "Wave"), skill("harbour-wide", "Harbour wave wide")];
+  expect(t.typingCommand("/wave")).toBe(true);
+  expect(t.typingCommand("/")).toBe(true);
+  expect(t.typingCommand("/wave product: red")).toBe(false);
+  expect(t.typingCommand("make a wave")).toBe(false);
+  expect(t.matchingSkills("/wave", skills).map((x) => x.slug)).toEqual(["wave", "wave-runner-spot", "harbour-wide"]);
+  expect(t.matchingSkills("/wave-r", skills).map((x) => x.slug)).toEqual(["wave-runner-spot"]);
+  expect(t.matchingSkills("/", skills).map((x) => x.slug)).toEqual(["wave-runner-spot", "wave", "harbour-wide"]);
+  expect(t.commandIn("/wave-runner-spot product: Red High-Tops", skills)).toEqual({ skill: skills[0], values: { product: "Red High-Tops" } });
+  expect(t.commandIn("/wave", skills)?.skill.slug).toBe("wave");
+  expect(t.commandIn("/wav", skills)).toBeNull();
+});

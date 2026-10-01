@@ -1,10 +1,10 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
-import type { SkillView } from "@/lib/atomikSkillsText";
+import { commandIn, matchingSkills, typingCommand, type SkillView } from "@/lib/atomikSkillsText";
 import { SKILLS_CHANGED, openAtomikChat, useSkillsApi, type SkillsApi } from "@/lib/shell/use-skills";
-import { RunSkillDialog, SaveSkillDialog, SkillHints, commandIn } from "./SkillForms";
+import { RunSkillDialog, SaveSkillDialog, SkillHints, skillOptionId } from "./SkillForms";
 import styles from "./skills.module.css";
 
 /**
@@ -16,35 +16,48 @@ import styles from "./skills.module.css";
  * quote and Continue. Nothing here spends.
  */
 
-/** The skills behind `/`: read each time a command starts being typed, and again after any change. */
+/**
+ * The skills behind `/`: read each time a command starts being typed, and
+ * again after any change or a Try again. A read that fails keeps the skills
+ * already read, and says so only when there are none to show.
+ */
 export function useComposerSkills(text: string) {
   const { signedIn, requestScope } = useSession();
   const api = useSkillsApi(requestScope);
   const wanted = Boolean(signedIn && requestScope && text.startsWith("/"));
-  const [list, setList] = useState<{ scope: string; skills: SkillView[] } | null>(null);
+  const [list, setList] = useState<{ scope: string; skills: SkillView[]; failed?: true } | null>(null);
   const [reading, setReading] = useState(false);
   const [stale, setStale] = useState(0);
+  const sequence = useRef(0);
   const scope = requestScope ?? "";
   useEffect(() => {
     if (!wanted) return;
-    let live = true;
+    /* Only the latest read lands; one left behind by a newer read is dropped, its state with it. */
+    const mine = ++sequence.current;
     const timer = setTimeout(async () => {
       setReading(true);
       try {
         const skills = await api.list("active");
-        if (live) setList({ scope, skills });
-      } catch { /* `/` stays ordinary text when the list cannot be read */ }
-      finally { if (live) setReading(false); }
+        if (mine === sequence.current) setList({ scope, skills });
+      } catch {
+        if (mine === sequence.current) setList((previous) => ({ scope, skills: previous?.scope === scope ? previous.skills : [], failed: true }));
+      } finally { if (mine === sequence.current) setReading(false); }
     }, 0);
-    return () => { live = false; clearTimeout(timer); };
+    return () => clearTimeout(timer);
   }, [wanted, api, scope, stale]);
   useEffect(() => {
     const again = () => setStale((n) => n + 1);
     window.addEventListener(SKILLS_CHANGED, again);
     return () => window.removeEventListener(SKILLS_CHANGED, again);
   }, []);
+  const retry = useCallback(() => setStale((n) => n + 1), []);
   const skills = list?.scope === scope ? list.skills : [];
-  return { api, skills, reading: wanted && list?.scope !== scope, exact: commandIn(text, skills), loading: reading };
+  /* While a command is still being typed (`/wave`), the skills it matches, best first: Enter opens the highlighted one. */
+  const matches = typingCommand(text) ? matchingSkills(text, skills) : [];
+  return {
+    api, skills, matches, retry, failed: list?.scope === scope && list.failed === true,
+    reading: wanted && list?.scope !== scope, exact: commandIn(text, skills), loading: reading,
+  };
 }
 
 export type ComposerSkillsState = ReturnType<typeof useComposerSkills>;
@@ -54,7 +67,7 @@ export function SaveSkillButton({ onOpen, disabled }: { onOpen: () => void; disa
   return <button type="button" className={`${styles.button} ml-auto`} disabled={disabled} onClick={onOpen} data-testid="atomik-save-skill">Save as skill</button>;
 }
 
-export { SkillHints };
+export { SkillHints, skillOptionId };
 
 /**
  * The composer's dialogs: running a skill (its parameters, engines and an

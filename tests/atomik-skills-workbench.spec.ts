@@ -254,6 +254,10 @@ test("the composer saves a run as a skill; / runs it with new words; its first s
   await ask.fill("/wave");
   const hints = surface.getByRole("listbox", { name: "Skills" });
   await expect(hints.getByRole("option")).toHaveText([/\/wave-runner-spot/]);
+  /* The highlighted match is the one Enter opens, and the field points at it. */
+  await expect(hints.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await expect(ask).toHaveAttribute("aria-activedescendant", (await hints.getByRole("option").first().getAttribute("id"))!);
+  await expect(surface.getByRole("button", { name: "Run /wave-runner-spot" })).toBeEnabled();
   /* A thumb's target on a phone; nothing runs off the side. */
   const option = await hints.getByRole("option").first().boundingBox();
   expect(option!.height).toBeGreaterThanOrEqual(phone ? 43.5 : 30);
@@ -262,6 +266,14 @@ test("the composer saves a run as a skill; / runs it with new words; its first s
   let run = page.getByRole("dialog", { name: "Run /wave-runner-spot" });
   await expect(run).toBeVisible();
   await expect(run.getByTestId("skill-param-product")).toHaveValue("Wave Runner sneakers");
+  await run.getByTestId("skill-dialog-close").click();
+  await expect(run).toHaveCount(0);
+  /* Half a command and Enter opens the highlighted skill, not a planning turn. */
+  await ask.fill("/wave-run");
+  await expect(hints.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await ask.press("Enter");
+  await expect(run).toBeVisible();
+  await expect(run.getByTestId("skill-param-setting")).toHaveValue("beach at sunset");
   await run.getByTestId("skill-dialog-close").click();
   await expect(run).toHaveCount(0);
   /* The command with new words, sent: the same form, filled with them. */

@@ -5,6 +5,7 @@ import { getSetting } from "./settings";
 import { MODELS } from "./models";
 import { mediaMutation } from "./mediaMutation";
 import { engines, estimateStepUsd, fitStepParams, getChat, stepForBrowser, type Engine, type Step } from "./atomik";
+import { KEY_STEP_MODELS, keyStepLabel } from "./atomikKeySteps";
 import { PROJECT_ID } from "./atomikMemoryText";
 import {
   SKILL_ID, SKILL_LIMITS, SKILL_SLUG, SkillTextError,
@@ -167,23 +168,29 @@ async function enginesOff(): Promise<string[]> {
 
 const CATALOGUE: CatalogueEntry[] = MODELS.map((m) => ({ id: m.id, label: m.label, family: m.family, provider: m.provider }));
 const choiceOf = (e: Engine): EngineChoice => ({ id: e.id, label: e.label, kind: e.kind, ratios: e.ratios, resolutions: e.resolutions, durations: e.durations });
-/** The name an engine is shown by, whether or not it is still offered. */
+/** The name an engine is shown by, whether or not it is still offered (a library step's by the name its card uses). */
 export function engineLabel(id: string, allowed: readonly Pick<Engine, "id" | "label">[] = []): string {
-  return allowed.find((e) => e.id === id)?.label ?? MODELS.find((m) => m.id === id)?.label ?? (id === "elevenlabs" ? "Voice, sound and music" : id);
+  return allowed.find((e) => e.id === id)?.label ?? keyStepLabel(id) ?? MODELS.find((m) => m.id === id)?.label ?? (id === "elevenlabs" ? "Voice, sound and music" : id);
 }
 
 /* ── Saving a run ──────────────────────────────────────────────────────── */
 
-/** Runs a person could save: the Atomik chats with a plan, newest first (this project's, when one is open). */
+/**
+ * Runs a person could save: the Atomik chats with a step a skill can keep,
+ * newest first (this project's, when one is open), each with how many it has.
+ * A step on the connected account, a library step or one that worked from
+ * attached media is not counted (lib/atomikSkillsText.ts › unkeptReason).
+ */
 export async function savableRuns(projectId: unknown): Promise<SavableRun[]> {
   await ready();
   const project = typeof projectId === "string" && PROJECT_ID.test(projectId) ? projectId : null;
   const rs = await db().execute({
     sql: `SELECT c.id, c.title, c.project_id, c.updated_at, COUNT(s.id) AS n FROM atomik_chats c
           JOIN atomik_steps s ON s.chat_id = c.id AND s.status <> 'rejected' AND s.model NOT LIKE 'connected:%'
+            AND s.model NOT IN (${KEY_STEP_MODELS.map(() => "?").join(",")}) AND (s.refs IS NULL OR s.refs IN ('', '[]'))
           WHERE c.deleted = 0${project ? " AND c.project_id = ?" : ""}
           GROUP BY c.id ORDER BY c.updated_at DESC LIMIT 12`,
-    args: project ? [project] : [],
+    args: [...KEY_STEP_MODELS, ...(project ? [project] : [])],
   });
   return rs.rows.map((r) => ({ chatId: String(r.id), title: String(r.title ?? "New chat"), projectId: text(r.project_id), steps: Number(r.n ?? 0), updatedAt: Number(r.updated_at ?? 0) }));
 }

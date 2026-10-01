@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useMoney } from "@/lib/price";
 import {
   SKILL_LIMITS, SKILL_SCOPE_LABEL, SKILL_SLUG, SkillTextError,
-  commandValues, engineProblemText, keyOf, settingsLine, slugOf, templateFromRun,
+  engineProblemText, keyOf, matchingSkills, settingsLine, slugOf, templateFromRun, typingCommand,
   type ParameterDraft, type SkillDraft, type SkillRunPreview, type SkillRunStep, type SkillScope, type SkillView,
 } from "@/lib/atomikSkillsText";
 import { SkillRequestError, failed, type PlannedRun, type SkillsApi } from "@/lib/shell/use-skills";
@@ -63,38 +63,38 @@ function DialogHead({ children, onClose }: { children: ReactNode; onClose: () =>
 
 /* ── The composer's `/` ───────────────────────────────────────────────── */
 
-/** True while a person is typing a command: `/`, `/wave`, `/wave-runner-spot`. */
-export const typingCommand = (text: string) => /^\/[a-z0-9-]*$/.test(text);
+/** The id of a listed skill, for the composer's `aria-activedescendant`. */
+export const skillOptionId = (listId: string, index: number) => `${listId}-${index}`;
+
 /**
- * The skill a draft starts with (`/wave-runner-spot`, alone or with values after it), and the values:
- * sending it opens that skill's run form, never a planning turn.
+ * `/` in the composer: the skills this person may run, as they type. The
+ * highlighted one (`active`; the first until the arrows move it) is what
+ * Enter opens; the composer's field points at it for a screen reader.
  */
-export function commandIn(text: string, skills: readonly SkillView[]): { skill: SkillView; values: Record<string, string> } | null {
-  const m = /^\/([a-z][a-z0-9-]{1,39})(?:\s+([\s\S]*))?$/.exec(text.trim());
-  const skill = m ? skills.find((s) => s.slug === m[1]) ?? null : null;
-  return skill ? { skill, values: commandValues(m?.[2] ?? "", skill.template.parameters) } : null;
-}
-
-/** The skills a typed command matches, best first: the start of a command, then anywhere in it or the name. */
-export function matchingSkills(text: string, skills: readonly SkillView[], max = 6): SkillView[] {
-  const q = text.slice(1).toLowerCase();
-  const starts = skills.filter((s) => s.slug.startsWith(q));
-  const inside = skills.filter((s) => !s.slug.startsWith(q) && (s.slug.includes(q) || s.name.toLowerCase().includes(q)));
-  return [...starts, ...inside].slice(0, max);
-}
-
-/** `/` in the composer: the skills this person may run, as they type. */
-export function SkillHints({ text, skills, loading, onPick, disabled }: { text: string; skills: readonly SkillView[]; loading: boolean; onPick: (skill: SkillView) => void; disabled: boolean }) {
+export function SkillHints({ text, skills, loading, onPick, disabled, listId, active = 0, failed = false, onRetry }: {
+  text: string; skills: readonly SkillView[]; loading: boolean; onPick: (skill: SkillView) => void; disabled: boolean; listId?: string; active?: number;
+  /** The last read failed and there are no skills to show: said, with Try again. */
+  failed?: boolean; onRetry?: () => void;
+}) {
   if (!typingCommand(text)) return null;
   const matches = matchingSkills(text, skills);
   if (!matches.length) {
     if (loading) return <p className={styles.hint} role="status">Reading skills…</p>;
+    if (failed) {
+      return (
+        <div className={styles.row} role="alert" data-testid="skill-hint-error">
+          <span className={styles.hint}>Skills could not be read.</span>
+          {onRetry ? <button type="button" className={styles.button} onClick={onRetry} disabled={disabled} data-testid="skill-hint-retry">Try again</button> : null}
+        </div>
+      );
+    }
     return <p className={styles.hint} data-testid="skill-hint-none">{skills.length ? `No skill is called ${text}.` : "No skills yet. Save a run as a skill to run it again from here."}</p>;
   }
   return (
-    <div role="listbox" aria-label="Skills" className={styles.list} data-testid="skill-hints">
-      {matches.map((s) => (
-        <button key={s.id} type="button" role="option" aria-selected={false} disabled={disabled} onClick={() => onPick(s)} className={styles.option} title={s.description} data-testid="skill-hint">
+    <div role="listbox" id={listId} aria-label="Skills" className={styles.list} data-testid="skill-hints">
+      {matches.map((s, i) => (
+        <button key={s.id} id={listId ? skillOptionId(listId, i) : undefined} type="button" role="option" aria-selected={i === active} disabled={disabled}
+          onClick={() => onPick(s)} className={styles.option} title={s.description} data-testid="skill-hint">
           <span className={styles.optionCommand}>/{s.slug}</span>
           <span className={styles.optionLine}>{s.name}{s.scope === "workspace" ? " · workspace" : " · just you"}</span>
         </button>
