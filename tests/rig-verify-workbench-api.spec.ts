@@ -47,8 +47,12 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
     const quote = (await quoted.json()) as DevelopmentQuote;
     expect(quote).toMatchObject({ quoteOnly: true, kind: "verify", calls: 1, chunks: 1 });
     expect(quote.estimateCredits).toBeGreaterThan(0);
+    /* The price is what a check usually uses; what the wallet holds while it runs (its ceiling) is never less. */
+    const hold = quote.holdCredits ?? quote.estimateCredits;
+    expect(hold).toBeGreaterThanOrEqual(quote.estimateCredits);
     /* Credits only: no vendor dollars reach a credit workspace. */
     expect(quote.estimateUsd).toBeUndefined();
+    expect(JSON.stringify(quote)).not.toMatch(/usd/i);
     expect(await meterRows()).toHaveLength(0);
     /* A start that did not see this price is refused. */
     expect((await request.post("/api/workbench/development", { headers, data: { ...input, sourceHash: quote.sourceHash, maxCredits: quote.estimateCredits - 1 } })).status()).toBe(409);
@@ -65,7 +69,7 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
     }, { timeout: 60_000 }).toBe("succeeded");
     expect(done.result?.verify).toMatchObject({ verdict: "pass", nodeId: "check", takeId: `upload:${take.id}` });
     expect(done.credits).toBeGreaterThan(0);
-    expect(done.credits!).toBeLessThanOrEqual(quote.estimateCredits);
+    expect(done.credits!).toBeLessThanOrEqual(hold);
     const meter = await meterRows();
     expect(meter).toHaveLength(1);
     expect(meter[0]).toMatchObject({ id: job.id, status: "succeeded" });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import type { Client, InStatement } from "@libsql/client";
+import type { Client, InStatement, ResultSet, Transaction } from "@libsql/client";
 import { db } from "../db";
 import { getAtomikProject } from "./atomik-server";
 import { AtomikReferenceError, loadAtomikReferences, type AtomikVisual } from "./atomik-references";
@@ -23,7 +23,9 @@ import { mockColourScore, verifyChunk, type VerifySnapshot } from "./verify-judg
  * take_verifications (tenant table, additive): one row per check that
  * finished, unique on (take_id, master_set_hash, rubric, frames_hash). The same
  * take checked against the same masters is read back for free; a new master
- * version is a new key, so a new, priced check.
+ * version is a new key, so a new, priced check. A paid start claims its key
+ * before anything is reserved (claimVerifyKey), so one key is never checked
+ * twice at once, on any number of server instances.
  */
 
 export class VerifyError extends Error {
@@ -89,16 +91,64 @@ function publicVerification(row: Row): TakeVerification {
   };
 }
 
+const STORED = "SELECT * FROM take_verifications WHERE take_id=? AND master_set_hash=? AND rubric=? AND frames_hash=?";
+/** A check of the key whose job is queued or running, anyone's. */
+const IN_FLIGHT = "SELECT 1 FROM workbench_development_jobs WHERE status IN ('queued','running') AND json_extract(request_body,'$.kind')='verify' AND json_extract(snapshot,'$.verify.keyHash')=? LIMIT 1";
+const storedArgs = (key: VerifyKey) => { const k = verifyKeyHashes(key); return [k.takeId, k.masterSetHash, k.rubric, k.framesHash]; };
+
 /** The check stored for exactly this key, or null. Reading it spends nothing. */
 export async function storedVerification(key: VerifyKey): Promise<TakeVerification | null> {
   await verifyReady();
-  const k = verifyKeyHashes(key);
-  const row = (await db().execute({ sql: "SELECT * FROM take_verifications WHERE take_id=? AND master_set_hash=? AND rubric=? AND frames_hash=?", args: [k.takeId, k.masterSetHash, k.rubric, k.framesHash] })).rows[0];
+  const row = (await db().execute({ sql: STORED, args: storedArgs(key) })).rows[0];
   return row ? publicVerification(row as Row) : null;
 }
 /** Whether a check of this key is queued or running (anyone's): a second paid check of it is refused. */
 export async function verifyInFlight(keyHash: string): Promise<boolean> {
-  return (await db().execute({ sql: "SELECT 1 FROM workbench_development_jobs WHERE status IN ('queued','running') AND json_extract(request_body,'$.kind')='verify' AND json_extract(snapshot,'$.verify.keyHash')=? LIMIT 1", args: [keyHash] })).rows.length > 0;
+  return (await db().execute({ sql: IN_FLIGHT, args: [keyHash] })).rows.length > 0;
+}
+
+/** A write transaction, its lock retried while busy: nothing is reserved or sent before it, so a retry repeats no paid work (as Atomik's claim does). */
+async function writeTransaction(): Promise<Transaction> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await db().transaction("write"); }
+    catch (error) {
+      if (attempt >= 5 || !/SQLITE_BUSY|database is locked/i.test((error as Error).message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20 * 2 ** attempt));
+    }
+  }
+}
+
+/**
+ * The paid start's claim on a check's key, made before anything is reserved or
+ * sent. Under the database's write lock it refuses, free, a key that is stored
+ * already or being checked now, and otherwise saves the check's job (the claim)
+ * in the same transaction. Two starts of one key on two server instances at
+ * the same instant meet at that lock: the second finds the first's job and is
+ * refused, so the key is reserved, sent and charged once. (The queue in
+ * prepareDevelopmentJob serializes the starts of one instance only.) A start
+ * of the same request again finds its own job and is answered with it, as for
+ * every kind. The job stays the claim while it is queued or running; once it
+ * succeeds its stored row answers instead, and a failed or uncertain check
+ * leaves the key free for a new, priced one.
+ */
+export async function claimVerifyKey(snapshot: Pick<VerifySnapshot, "key" | "keyHash">, request: { owner: string; requestId: string }, insertJob: InStatement): Promise<ResultSet> {
+  await verifyReady();
+  const tx = await writeTransaction();
+  try {
+    const own = (await tx.execute({ sql: "SELECT 1 FROM workbench_development_jobs WHERE owner=? AND request_id=?", args: [request.owner, request.requestId] })).rows.length;
+    if (!own) {
+      if ((await tx.execute({ sql: STORED, args: storedArgs(snapshot.key) })).rows.length) throw new VerifyError(ALREADY_CHECKED, 409);
+      if ((await tx.execute({ sql: IN_FLIGHT, args: [snapshot.keyHash] })).rows.length) throw new VerifyError(CHECK_RUNNING, 409);
+    }
+    const inserted = await tx.execute(insertJob);
+    await tx.commit();
+    return inserted;
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally {
+    tx.close();
+  }
 }
 
 /** The Verify card a request names, what it checks now, and the key a check of it is stored under. */

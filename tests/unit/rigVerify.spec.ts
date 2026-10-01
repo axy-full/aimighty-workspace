@@ -11,14 +11,16 @@ import { canvasNodeSchema } from '../../lib/workbench/studio-schema';
 import { developmentStages } from '../../lib/workbench/development-plan';
 import { developmentInput } from '../../lib/workbench/development-client';
 import type { DevelopmentRequest } from '../../lib/workbench/development-types';
-import { listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep, type DevelopmentCall, type DevelopmentDependencies } from '../../lib/workbench/development-server';
+import { executeDevelopmentAgent, listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep, type DevelopmentCall, type DevelopmentDependencies, type DevelopmentError } from '../../lib/workbench/development-server';
 import {
-  VERIFY_RUBRIC, VERIFY_THRESHOLDS, checkVerdict, framesKey, masterSetKey, mediaIdentity, overallVerdict, verdictLine, verificationFor, verificationStanding,
+  VERIFY_RUBRIC, VERIFY_THRESHOLDS, checkVerdict, framesKey, holdWorthSaying, masterSetKey, mediaIdentity, overallVerdict, verdictLine, verificationFor, verificationStanding,
   verifyCardFor, verifyFrameUrl, verifyKeyOf, verifyParts, verifySubject, withVerifyLast, type TakeVerification,
 } from '../../lib/workbench/verify';
-import { mockColourScore, readVerifyAnswer, verifyPrompt, type VerifySnapshot } from '../../lib/workbench/verify-judge';
+import { VERIFY_CHECK_TOKENS, VERIFY_IMAGE_TOKENS, VERIFY_SUMMARY_TOKENS, mockColourScore, readVerifyAnswer, verifyChunk, verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from '../../lib/workbench/verify-judge';
 import { ALREADY_CHECKED, CHECK_RUNNING, listVerifications, mockVerifyReply, verifyKeyHashes } from '../../lib/workbench/verify-server';
-import type { CatalogModel } from '../../lib/catalog';
+import { ATOMIK_IMAGE_TOKENS } from '../../lib/workbench/atomik-reference-types';
+import { textCostUsd, type CatalogModel } from '../../lib/catalog';
+import { billCredits } from '../../lib/creditTerms';
 import type { MeterEvent } from '../../lib/meter';
 
 /* The agentic Rig, step 5 (plan PR 7): a Verify card checks a take against its masters, priced first, free to read again. */
@@ -30,6 +32,8 @@ process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000,
   pricing: { input: .0000001, output: .0000003 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
 const blind: CatalogModel = { ...model, inputModalities: ['text'] };
+/** Test fixture only: a vision model that thinks, priced so its ceiling and its usual use differ by whole credits (the fixture's prices, not a real rate card). */
+const thinker: CatalogModel = { ...model, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
 /** A workspace on the platform's keys: its checks are priced and charged in credits. */
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -38,14 +42,16 @@ function workspace(): TenantWorkspace {
     gatewayKeyId: null, ownerId: 'owner', createdAt: 0, suspendedAt: null, suspendedReason: null,
     flaggedAt: null, flagNote: null, concurrency: 3, rendersPerHour: 30, storageQuotaBytes: null, deletedAt: null };
 }
+/** The same workspace and database, as another server instance reaches them: with its own in-process queue of starts (prepareDevelopmentJob's spans one instance). */
+const elsewhere = (ws: TenantWorkspace): TenantWorkspace => ({ ...ws, dbUrl: ws.dbUrl.replace(/^file:/, 'file://') });
 /** The scripted judge: scores per check, as a model would answer. */
 function harness(scores: Record<string, number | { score: number; seen?: boolean }>, models: CatalogModel[] = [model]) {
-  const calls: DevelopmentCall[] = [], events: MeterEvent[] = [];
+  const calls: DevelopmentCall[] = [], events: MeterEvent[] = [], reserved: MeterEvent[] = [];
   let reservations = 0;
   const deps: DevelopmentDependencies = {
     models: async () => models, allowance: async () => ({ ok: true }),
     auth: async () => ({ token: 'test-only-not-sent', method: 'api-key' }), funding: async () => {}, reservation: async () => true,
-    reserve: async () => { reservations++; }, meter: async (event) => { events.push(event); },
+    reserve: async (event) => { reservations++; reserved.push(event); }, meter: async (event) => { events.push(event); },
     call: async (input) => {
       calls.push(input);
       const asked = (JSON.parse(input.prompt) as { checks: { check: string }[] }).checks.map((c) => c.check);
@@ -55,7 +61,13 @@ function harness(scores: Record<string, number | { score: number; seen?: boolean
       }), summary: 'Scripted judge.' }), inputTokens: 5000, outputTokens: 300 };
     },
   };
-  return { deps, calls, events, reservations: () => reservations };
+  return { deps, calls, events, reserved, reservations: () => reservations };
+}
+/** An allowance check that lets starts through only once `n` have reached it: each has passed the free check (nothing stored, nothing running) and none has claimed yet. */
+function meeting(n: number): DevelopmentDependencies['allowance'] {
+  let arrived = 0, open!: () => void;
+  const met = new Promise<void>((resolve) => { open = resolve; });
+  return async () => { if (++arrived === n) open(); await met; return { ok: true }; };
 }
 
 const sample = (id: string, name: string, category: string, file: 'hero' | 'character' | 'environment', extra: Partial<Asset> = {}): Asset => ({
@@ -312,6 +324,138 @@ test('an unsure check needs a person; a check needs a model that can see; frames
     await expect(quoteDevelopmentJob(request(video, { nodeId: 'mira' }), 'owner', h.deps)).rejects.toThrow(/Choose a Verify card/);
     expect(h.calls).toHaveLength(1);
   });
+});
+
+test('a check is quoted at what one usually uses while its job holds the ceiling: the approval binds the estimate shown, and the charge is what it used', async () => {
+  /* What one check usually uses: its text, its pictures at the low-detail allowance, its answer, and a quarter of the thinking its effort allows. */
+  expect(verifyLikelyTokens({ textBytes: 3000, images: 3, checks: 4, thinkingAllowance: 4096 }))
+    .toEqual({ inputTokens: 1000 + 3 * VERIFY_IMAGE_TOKENS, outputTokens: VERIFY_SUMMARY_TOKENS + 4 * VERIFY_CHECK_TOKENS + 1024 });
+  expect(verifyLikelyTokens({ textBytes: Number.NaN, images: -1, checks: 0, thinkingAllowance: 0 })).toEqual({ inputTokens: 0, outputTokens: VERIFY_SUMMARY_TOKENS });
+  expect(VERIFY_IMAGE_TOKENS * 8).toBe(ATOMIK_IMAGE_TOKENS);
+  /* The hold is said beside the estimate only when it is at least twice it. */
+  expect([holdWorthSaying(4, 19), holdWorthSaying(5, 9), holdWorthSaying(1, 2), holdWorthSaying(3, 3), holdWorthSaying(1, undefined), holdWorthSaying(0, 0)]).toEqual([true, false, true, false, false, false]);
+  await runInTenant(workspace(), async () => {
+    const project = fixture(); await save(project);
+    const h = harness({ identity: 0.93, wardrobe: 0.9, environment: 0.9, artifacts: 0.95 }, [thinker]);
+    const { quote, approved } = await approve(request(project), h.deps);
+    expect(quote.estimateCredits).toBeGreaterThan(0);
+    expect(quote.holdCredits).toBeGreaterThanOrEqual(2 * quote.estimateCredits);
+    /* A start that did not see this price is refused before anything is claimed or reserved. */
+    await expect(prepareDevelopmentJob({ ...approved, requestId: randomUUID(), maxCredits: quote.estimateCredits - 1 }, 'owner', undefined, h.deps)).rejects.toThrow('The estimate changed');
+    expect(h.reservations()).toBe(0);
+    /* The approved estimate starts it; what is reserved and kept for review is the ceiling. */
+    const prepared = await prepareDevelopmentJob(approved, 'owner', undefined, h.deps);
+    const row = (await db().execute({ sql: 'SELECT estimate_usd,estimate_credits FROM workbench_development_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+    expect(Number(row.estimate_credits)).toBe(quote.holdCredits);
+    expect(h.reserved.map((e) => e.engineCostUsd)).toEqual([Number(row.estimate_usd)]);
+    expect(Number(row.estimate_usd)).toBeGreaterThanOrEqual(2 * quote.estimateUsd!);
+    for (let i = 0; i < 3; i++) await runDevelopmentStep(prepared.job.id, 'owner', h.deps);
+    /* The charge is what the judge used (the scripted reply's tokens), inside the hold. */
+    const [job] = await listDevelopmentJobs('owner', project.id, undefined, h.deps);
+    expect(job.status).toBe('succeeded');
+    expect(job.credits).toBe(billCredits(textCostUsd(thinker, 5000, 300)!, 'text'));
+    expect(job.credits!).toBeLessThanOrEqual(quote.holdCredits!);
+    /* A check whose provider outcome is unknown is never sent again, and what was held for it (not the lower estimate) stays reserved for review. */
+    const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+    await save(changed);
+    const u = harness({}, [thinker]);
+    u.deps.call = async (call) => { u.calls.push(call); throw Object.assign(new Error('The connection closed.'), { providerSubmitted: true }); };
+    const unknown = await prepareDevelopmentJob((await approve(request(changed), u.deps)).approved, 'owner', undefined, u.deps);
+    await runDevelopmentStep(unknown.job.id, 'owner', u.deps);
+    await runDevelopmentStep(unknown.job.id, 'owner', u.deps);
+    const [lost] = await listDevelopmentJobs('owner', project.id, unknown.job.requestId, u.deps);
+    expect(lost.status).toBe('uncertain');
+    expect(lost.error).toContain('What was held for it remains reserved for review.');
+    expect(u.calls).toHaveLength(1);
+    expect(u.events.map((e) => [e.status, e.engineCostUsd, e.unbilled])).toEqual([['failed', u.reserved[0].engineCostUsd, undefined]]);
+    /* Every other agent step is still quoted at its ceiling, with nothing more held. */
+    await save({ ...project, brief: 'A courier crosses the dunes at dawn.' });
+    const idea = await quoteDevelopmentJob({ ...request(project), kind: 'idea', nodeId: undefined }, 'owner', h.deps);
+    expect(idea.estimateCredits).toBeGreaterThan(0);
+    expect(idea.holdCredits).toBeUndefined();
+  });
+});
+
+test('two starts of one key on two server instances at once: one claims it before anything is reserved, the other is refused free, and it is sent and charged once', async () => {
+  const here = workspace(), there = elsewhere(here);
+  const project = fixture();
+  await runInTenant(here, () => save(project));
+  const h = harness({ identity: 0.93, wardrobe: 0.9, environment: 0.9, artifacts: 0.95 });
+  const { approved } = await runInTenant(here, () => approve(request(project), h.deps));
+  const verifyJobs = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM workbench_development_jobs WHERE json_extract(request_body,'$.kind')='verify'")).rows[0].n);
+
+  /* Two people press Verify on the same take and masters, served by two instances: both pass the free check before either claims. */
+  const met = { ...h.deps, allowance: meeting(2) };
+  const starts = await Promise.allSettled([here, there].map((ws) => runInTenant(ws, () => prepareDevelopmentJob({ ...approved, requestId: randomUUID() }, 'owner', undefined, met))));
+  const won = starts.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []));
+  const lost = starts.flatMap((s) => (s.status === 'rejected' ? [s.reason as DevelopmentError] : []));
+  expect(won).toHaveLength(1);
+  expect(lost).toHaveLength(1);
+  expect(lost[0]).toMatchObject({ status: 409, message: CHECK_RUNNING });
+  expect(h.reservations()).toBe(1);
+  await runInTenant(here, async () => {
+    expect(await verifyJobs()).toBe(1);
+    for (let i = 0; i < 3; i++) await runDevelopmentStep(won[0].job.id, 'owner', h.deps);
+    expect((await db().execute('SELECT COUNT(*) AS n FROM take_verifications')).rows[0].n).toBe(1);
+  });
+  expect(h.calls).toHaveLength(1);
+  expect(h.events.map((e) => [e.id, e.status])).toEqual([[won[0].job.id, 'succeeded']]);
+
+  /* A new master, a new key. One instance passes the free check and waits; the other checks the key to the end; then the first claims: the stored scorecard answers it, free. */
+  const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+  await runInTenant(here, () => save(changed));
+  const next = await runInTenant(here, () => approve(request(changed), h.deps));
+  let reached!: () => void, release!: () => void;
+  const waiting = new Promise<void>((resolve) => { reached = resolve; }), held = new Promise<void>((resolve) => { release = resolve; });
+  const late = runInTenant(here, () => prepareDevelopmentJob({ ...next.approved, requestId: randomUUID() }, 'owner', undefined, { ...h.deps, allowance: async () => { reached(); await held; return { ok: true }; } }));
+  late.catch(() => {});
+  try {
+    await waiting;
+    const first = await runInTenant(there, () => prepareDevelopmentJob({ ...next.approved, requestId: randomUUID() }, 'owner', undefined, h.deps));
+    await runInTenant(there, async () => { for (let i = 0; i < 3; i++) await runDevelopmentStep(first.job.id, 'owner', h.deps); });
+  } finally { release(); }
+  await expect(late).rejects.toMatchObject({ status: 409, message: ALREADY_CHECKED });
+  expect(h.reservations()).toBe(2);
+  expect(h.calls).toHaveLength(2);
+
+  /* The same request sent twice at once (a retry racing its original): one job answers both, reserved once. */
+  const third = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'plate' } : n)) };
+  await runInTenant(here, () => save(third));
+  const once = { ...(await runInTenant(here, () => approve(request(third), h.deps))).approved, requestId: randomUUID() };
+  const twice = { ...h.deps, allowance: meeting(2) };
+  const both = await Promise.all([here, there].map((ws) => runInTenant(ws, () => prepareDevelopmentJob(once, 'owner', undefined, twice))));
+  expect(both[0].job.id).toBe(both[1].job.id);
+  expect(both.map((b) => b.scheduled).sort()).toEqual([false, true]);
+  expect(h.reservations()).toBe(3);
+  await runInTenant(here, async () => expect(await verifyJobs()).toBe(3));
+});
+
+test('a check sends its review copies at low detail, through the Gateway and straight to OpenAI; other steps send theirs as before', async () => {
+  const still = 'data:image/jpeg;base64,' + (await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 200, g: 60, b: 60 } } }).jpeg({ quality: 80 }).toBuffer()).toString('base64');
+  const call = (m: CatalogModel, kind: DevelopmentCall['kind'] = 'verify'): DevelopmentCall => ({ model: m, effort: 'auto', stage: 'refine', kind, instructions: 'Return JSON.', prompt: '{}', maxTokens: 4000, chunk: verifyChunk(['identity', 'artifacts']), images: [still, still] });
+  /* Through the Gateway (Claude): every picture carries the low-detail option. */
+  const sent: Record<string, unknown>[] = [];
+  const gateway: typeof fetch = async (_url, init) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return Response.json({ content: [{ type: 'text', text: '{}' }], finishReason: { unified: 'stop', raw: 'stop' }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } }, warnings: [] });
+  };
+  const pictures = (body: Record<string, unknown>) => ((body.prompt as { content: unknown }[]).flatMap((m) => (Array.isArray(m.content) ? m.content : [])) as { type: string; providerOptions?: unknown }[]).filter((part) => part.type === 'file');
+  await executeDevelopmentAgent(call(model), { method: 'api-key', token: 'test-token-not-real' }, gateway);
+  expect(pictures(sent[0]).map((part) => part.providerOptions)).toEqual([{ openai: { imageDetail: 'low' } }, { openai: { imageDetail: 'low' } }]);
+  await executeDevelopmentAgent(call(model, 'sketch'), { method: 'api-key', token: 'test-token-not-real' }, gateway);
+  expect(pictures(sent[1]).map((part) => part.providerOptions)).toEqual([undefined, undefined]);
+  /* Straight to OpenAI on a workspace's own key: every picture is an input image at low detail. */
+  const fakeKey = 'test-openai-key-never-sent';
+  const gpt: CatalogModel = { ...model, id: 'openai/gpt-6-astra', name: 'GPT fixture', owner: 'openai' };
+  const direct: Record<string, unknown>[] = [];
+  await runInTenant({ ...workspace(), keys: { openai: fakeKey }, usesPlatformKeys: false }, () => executeDevelopmentAgent(call(gpt), { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url, init) => {
+    expect(String(url)).toBe('https://api.openai.com/v1/responses');
+    direct.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: 'resp_fixture', object: 'response', created_at: 1, model: 'gpt-6-astra', status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '{}', annotations: [] }] }],
+      usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }, error: null, incomplete_details: null });
+  }));
+  const images = ((direct[0].input as { content: unknown }[]).flatMap((m) => (Array.isArray(m.content) ? m.content : [])) as { type: string; detail?: string }[]).filter((part) => part.type === 'input_image');
+  expect(images.map((part) => part.detail)).toEqual(['low', 'low']);
 });
 
 test('a recovered verify request is accepted as saved, and frames on any other kind are not', () => {

@@ -295,6 +295,14 @@ export function verdictLine(checks: readonly VerifyCheckResult[]): string {
   if (unsure.length) return `${unsure.join(", ")} unsure`;
   return `${checks.length} ${checks.length === 1 ? "check" : "checks"} passed`;
 }
+/**
+ * Whether a check's hold is worth saying beside its estimate ("up to M cr
+ * held"): when the ceiling the wallet holds while it runs is at least twice
+ * what a check usually uses (lib/workbench/verify-judge.ts verifyLikelyTokens).
+ */
+export function holdWorthSaying(estimateCredits: number, holdCredits: number | null | undefined): boolean {
+  return typeof holdCredits === "number" && Number.isFinite(holdCredits) && holdCredits > estimateCredits && holdCredits >= 2 * estimateCredits;
+}
 /** A still for a stored frame or take: its 640px preview, or the sample itself. */
 export function verifyFrameUrl(frame: VerifyFrame | null | undefined, takeId: string): string | null {
   if (frame?.uploadId) return `/api/workbench/preview/upload/${encodeURIComponent(frame.uploadId)}`;

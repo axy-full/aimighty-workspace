@@ -88,6 +88,29 @@ export function readVerifyAnswer(value: unknown, v: Pick<VerifySnapshot, "nodeId
   return { nodeId: v.nodeId, takeId: v.key.takeId, verdict: overallVerdict(checks), checks, summary: answer.summary.trim().slice(0, 600) || verdictLine(checks) };
 }
 
+/*
+ * What a check is quoted at ("about N cr"): what one usually uses, not its
+ * ceiling. The charge is what the provider reports, and the job still
+ * reserves its ceiling as every agent step does (development-server.ts
+ * compile: each picture at the generous allowance for any bounded still, and
+ * all of the answer's and the thinking's room), so a check that uses more than
+ * usual is still covered.
+ */
+/** One review copy: at most 512 px a side, sent at low detail. (The ceiling allows any bounded still eight times this.) */
+export const VERIFY_IMAGE_TOKENS = 1_024;
+/** One check's answer: a score, `seen`, up to three short reasons and a frame. */
+export const VERIFY_CHECK_TOKENS = 150;
+/** The summary, and the JSON around the checks. */
+export const VERIFY_SUMMARY_TOKENS = 120;
+/** The tokens one check usually uses: its text at about three bytes a token, its pictures, its answer, and a quarter of the thinking its effort allows. */
+export function verifyLikelyTokens(p: { textBytes: number; images: number; checks: number; thinkingAllowance: number }): { inputTokens: number; outputTokens: number } {
+  const n = (value: number) => (Number.isFinite(value) && value > 0 ? value : 0);
+  return {
+    inputTokens: Math.ceil(n(p.textBytes) / 3) + Math.ceil(n(p.images)) * VERIFY_IMAGE_TOKENS,
+    outputTokens: VERIFY_SUMMARY_TOKENS + Math.ceil(n(p.checks)) * VERIFY_CHECK_TOKENS + Math.ceil(n(p.thinkingAllowance) / 4),
+  };
+}
+
 /** A check job's chunk: one per job, its segments the checks asked (so a job list reads like every other kind's). */
 export function verifyChunk(checks: readonly VerifyCheck[]) {
   return { index: 0, start: 0, end: checks.length, segments: checks.map((check, i) => ({ id: check, heading: check, start: i, end: i + 1 })) };

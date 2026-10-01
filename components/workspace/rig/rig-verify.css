@@ -48,6 +48,8 @@
 .pxw .pxw-verify-action > .pxw-insp-error,
 .pxw .pxw-verify-action > .pxw-inspector-note { margin: 0; }
 .pxw .pxw-verify-price { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--pxw-body); overflow-wrap: anywhere; }
+/* What the wallet holds while it runs, in small type under the estimate; it wraps, never cut. */
+.pxw .pxw-verify-hold { margin: -4px 0 0; font-size: 12px; line-height: 1.45; color: var(--pxw-label-floor); overflow-wrap: anywhere; }
 .pxw .pxw-verify-buttons { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
 /* A price on a button wraps; it is never cut. */
 .pxw .pxw-verify-button { white-space: normal; max-width: 100%; min-height: 34px; text-align: center; justify-content: center; line-height: 1.3; }

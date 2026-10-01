@@ -115,6 +115,12 @@ async function priceAndApprove(body: Locator, watch: ReturnType<typeof watchDeve
   await expect(start).toHaveText(/^Verify · about \d[\d,]* cr$/);
   const credits = Number((await start.textContent())!.replace(/\D/g, ""));
   expect(credits).toBeGreaterThan(0);
+  /* The price is what a check usually uses; the ceiling the wallet holds while it runs is said in small type when it is well above it. */
+  const hold = body.getByTestId("card-verify-hold");
+  if (await hold.count()) {
+    await expect(hold).toHaveText(/^Up to \d[\d,]* cr held while it runs\.$/);
+    expect(Number((await hold.textContent())!.replace(/\D/g, ""))).toBeGreaterThanOrEqual(2 * credits);
+  }
   /* Nothing paid yet: only the free quote went out. */
   expect(watch.starts()).toEqual([]);
   await start.click();
@@ -184,6 +190,7 @@ test("press Verify on a take: the price comes first, the approved check lands as
 
   await body.getByTestId("card-verify-estimate").click();
   await expect(body.getByTestId("card-verify-price")).toBeVisible();
+  await expect(body.getByTestId("card-verify-hold")).toHaveText(/^Up to \d[\d,]* cr held while it runs\.$/);
   await floors(page, info, body, "with the price");
   if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("verify-price-390x844.png"), animations: "disabled" });
   await body.getByRole("button", { name: "Cancel" }).click();

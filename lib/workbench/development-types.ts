@@ -67,6 +67,11 @@ export type DevelopmentQuote = {
   chunks: number; calls: number; sourceCharacters: number;
   /** `verify`: this take was checked against these masters already. Nothing is priced or started; the stored scorecard is read, free. */
   stored?: TakeVerification;
+  /**
+   * `verify`, in credits only: what the wallet holds while the check runs (its ceiling), where that is more than
+   * `estimateCredits`, which is what a check usually uses ("about N cr"). The charge is what it actually used.
+   */
+  holdCredits?: number;
 };
 export type DevelopmentJob = {
   id: string; requestId: string; projectId: string; productionProjectId: string | null;

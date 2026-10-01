@@ -7,10 +7,10 @@ import { timeAgo } from "@/lib/format";
 import { familyModels } from "@/lib/production/agent";
 import { useMoney } from "@/lib/price";
 import { forgetAtomikVideoFrames, prepareAtomikVideoFrames, staleAtomikFrames } from "@/lib/workbench/atomik-video-frames";
-import type { DevelopmentQuote } from "@/lib/workbench/development-types";
+import type { DevelopmentJob, DevelopmentQuote } from "@/lib/workbench/development-types";
 import type { CanvasNode, Project } from "@/lib/workbench/studio";
 import {
-  CHECK_VERDICT_WORDS, STANDING_WORDS, VERDICT_WORDS, VERIFY_CHECK_LABELS, isVerifyCard, verdictLine, verificationFor,
+  CHECK_VERDICT_WORDS, STANDING_WORDS, VERDICT_WORDS, VERIFY_CHECK_LABELS, holdWorthSaying, isVerifyCard, verdictLine, verificationFor,
   verifyCardFor, verifyFrameUrl, verifySubject, withVerifyLast, type TakeVerification, type VerifyStanding, type VerifySubject,
 } from "@/lib/workbench/verify";
 import { formatCredits } from "@/lib/workspace/cost";
@@ -47,12 +47,20 @@ function useShown(node: CanvasNode, project: Project) {
   return { checks, subject, shown };
 }
 
+const usdOf = (n: number | null | undefined) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
 /** The price in the one unit this workspace pays in, approximate: a check settles at what the judge actually used. */
 function aboutPrice(quote: Pick<DevelopmentQuote, "estimateCredits" | "estimateUsd">, inCredits: boolean): string {
-  const usd = typeof quote.estimateUsd === "number" && Number.isFinite(quote.estimateUsd) && quote.estimateUsd >= 0 ? quote.estimateUsd : null;
+  const usd = usdOf(quote.estimateUsd);
   if (!inCredits) return usd != null ? `about $${usd.toFixed(4)}` : `about ${formatCredits(quote.estimateCredits)}`;
   if (quote.estimateCredits > 0 || usd == null) return `about ${formatCredits(quote.estimateCredits)}`;
   return `about $${usd.toFixed(4)} on your key`;
+}
+/** While a check runs: what is held for it, its ceiling (a running job carries the reservation, not the estimate). */
+function heldPrice(job: Pick<DevelopmentJob, "estimateCredits" | "estimateUsd">, inCredits: boolean): string {
+  const usd = usdOf(job.estimateUsd);
+  if (!inCredits) return usd != null ? `up to $${usd.toFixed(4)}` : `up to ${formatCredits(job.estimateCredits)}`;
+  if (job.estimateCredits > 0) return `up to ${formatCredits(job.estimateCredits)} held`;
+  return usd != null ? `up to $${usd.toFixed(4)} on your key` : "billed on your key";
 }
 
 /* ── On the canvas ─────────────────────────────────────────────────────── */
@@ -173,6 +181,8 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
     await runs.estimate({ kind: "verify", model: judge.id, effort, nodeId: node.id, ...(videoFrames ? { videoFrames } : {}) });
   };
   const price = quote && !stored ? aboutPrice(quote.value, inCredits) : null;
+  /* The ceiling the wallet holds while it runs, said in small type when it is well above the estimate. */
+  const hold = price && quote && inCredits && holdWorthSaying(quote.value.estimateCredits, quote.value.holdCredits) ? quote.value.holdCredits! : null;
   const busy = preparing ? "Preparing the take’s frames…" : runs.busy === "Estimating…" ? "Getting the price…" : runs.busy;
 
   return (
@@ -187,12 +197,13 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
       ) : null}
       <div className="pxw-verify-action" data-testid="card-verify-action">
         {active ? (
-          <p className="pxw-insp-notice" role="status" data-testid="card-verify-running">Checking · {aboutPrice(active, inCredits)} approved. The scorecard lands here when it is done.</p>
+          <p className="pxw-insp-notice" role="status" data-testid="card-verify-running">Checking · {heldPrice(active, inCredits)}. The scorecard lands here when it is done.</p>
         ) : price && quote ? (
           <>
             <p className="pxw-verify-price" data-testid="card-verify-price">
               One check by {thinkingModelName(quote.input.model)}: {price}, {inCredits && quote.value.estimateCredits > 0 ? "charged in credits once it is done" : inCredits ? "billed on your key once it is done" : "billed once it is done"}, at what the check actually used.
             </p>
+            {hold != null ? <p className="pxw-verify-hold" data-testid="card-verify-hold">Up to {formatCredits(hold)} held while it runs.</p> : null}
             <div className="pxw-verify-buttons">
               <button type="button" className="pxw-btn pxw-btn--control pxw-verify-button" disabled={Boolean(runs.busy)} onClick={runs.clearQuote}>Cancel</button>
               <button type="button" className="pxw-btn pxw-btn--primary pxw-verify-button" data-testid="card-verify-start" disabled={Boolean(runs.busy) || Boolean(blocked)}
