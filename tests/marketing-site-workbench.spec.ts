@@ -129,5 +129,5 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
   /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
-  await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]* cr/, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 30_000 });
 });

@@ -126,8 +126,8 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   await fox.getByTestId("cast-batch-4").click();
   await fox.getByTestId("cast-size-1080p").click();
   const run = fox.getByTestId("cast-render-run");
-  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d+ cr$/, { timeout: 30_000 });
-  const credits = Number((await run.innerText()).match(/about (\d+) cr/)![1]);
+  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d[\d,]*(?:\.\d)? cr$/, { timeout: 30_000 });
+  const credits = Number((await run.innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   expect(credits).toBeGreaterThan(0);
   await expect(page.getByTestId("cast-render-why")).toHaveCount(1); // Nova's, not the fox's
   if (PHONES.includes(info.project.name)) {
@@ -163,7 +163,7 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   const first = (await page.request.get(`/api/jobs/${leader}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation;
   expect(first.params.soulBatchIds).toEqual([leader, ...rest]);
   for (const id of rest) expect((await page.request.get(`/api/jobs/${id}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation).toMatchObject({ status: "succeeded", creditsBilled: 0 });
-  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d+ cr$/);
+  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d[\d,]*(?:\.\d)? cr$/);
 
   /* Built earlier on the account: shown read-only; a Soul ID trained there asks to be trained again. */
   const harbour = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Frozen harbour"]') });
