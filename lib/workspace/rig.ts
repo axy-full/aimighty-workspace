@@ -10,6 +10,7 @@ import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
 import { heldNeeds } from "./release";
+import { KEY_CHANGED_LINE, POOL_LABEL, POOL_MARK, waitsOnChangedKey } from "../sharedKeyTerms";
 
 /**
  * Pure helpers behind the workspace Rig: adding a shot, what feeds it, its
@@ -181,7 +182,8 @@ export type VersionRow = {
 
 /** Held takes wait for credits or for a slot — never for an approval. The credits are the figure it was held at. */
 function heldLabel(job: Pick<MediaJob, "params">): string {
-  if (job.params?.held?.why === "slots") return "Held · waiting for a slot";
+  /* Waiting for the platform's shared provider pool (lib/providerPool.ts) rather than this workspace's own slots. */
+  if (job.params?.held?.why === "slots") return job.params.held.pool === POOL_MARK ? POOL_LABEL : "Held · waiting for a slot";
   const needs = heldNeeds(job.params);
   return needs != null ? `Held · needs ${needs.toLocaleString("en-US")} cr` : "Held · needs credits";
 }
@@ -232,7 +234,8 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
     // A held take the release refused for a reason of its own (a cap) says so: that reason, not the wait, is what to act on.
     const reason = job.status === "held" && job.error ? job.error : null;
     const label = state === "failed" ? endedLabel(job)
-      : state === "rendering" ? (job.status === "held" ? (reason ? `Held · ${reason}` : heldLabel(job)) : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
+      : state === "rendering" ? (job.status === "held" ? (reason ? `Held · ${reason}` : heldLabel(job)) : waitsOnChangedKey(job.params) ? KEY_CHANGED_LINE
+        : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
       : `Rendered · ${engineLabel(job.model).long}`;
     rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0,
       ...(job.status === "held" ? { held: true as const } : {}), ...(reason ? { note: reason } : {}) });
@@ -258,9 +261,10 @@ export function generationPhase(job: (Pick<MediaJob, "status" | "creditsBilled" 
     case "succeeded": return { label: "Complete", pct: 100, tone: "green", done: true };
     case "failed":
     case "cancelled": return { label: endedLabel({ id: "", status: job.status, creditsBilled: job.creditsBilled, failure: job.failure }), pct: 100, tone: "red", done: true };
-    case "running": return { label: "Rendering", pct: 50, tone: "blue", done: false };
+    /* Sent on a provider key that is gone: it waits (lib/sharedKeyTerms.ts), never failed or sent again for it. */
+    case "running": return { label: waitsOnChangedKey(job.params) ? KEY_CHANGED_LINE : "Rendering", pct: 50, tone: "blue", done: false };
     case "held": return { label: heldLabel(job), pct: 10, tone: "blue", done: false };
-    default: return { label: "Queued", pct: 10, tone: "blue", done: false };
+    default: return { label: waitsOnChangedKey(job.params) ? KEY_CHANGED_LINE : "Queued", pct: 10, tone: "blue", done: false };
   }
 }
 

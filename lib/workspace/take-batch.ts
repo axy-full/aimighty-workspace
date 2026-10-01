@@ -15,6 +15,7 @@ import { formatCredits } from "./cost";
 import { dispatchGeneration, quoteDispatch, settlePendingGeneration, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
 import { generationPhase, neutralCopy } from "./rig";
 import type { MediaJob } from "../workbench/job-recovery";
+import { POOL_LABEL, POOL_MARK } from "../sharedKeyTerms";
 
 /**
  * Takes 2–4 of one Generate, as ONE priced batch (idea 3).
@@ -428,7 +429,8 @@ export function takeView(take: BatchTake, source: "workspace" | "connected", rea
   /* Held (credits ran out, or no slot yet): not charged until it runs. One waiting for credits waits for the person; one waiting for a slot starts by itself. */
   if (source === "workspace" && (take.state === "held" || read?.media?.status === "held")) {
     const why = read?.media?.params?.held?.why;
-    return { ...base, status: why === "slots" ? "Held · waiting for a slot" : "Held · needs credits", tone: "amber", done: Boolean(read?.media) && why !== "slots" };
+    const pooled = why === "slots" && read?.media?.params?.held?.pool === POOL_MARK;
+    return { ...base, status: pooled ? POOL_LABEL : why === "slots" ? "Held · waiting for a slot" : "Held · needs credits", tone: "amber", done: Boolean(read?.media) && why !== "slots" };
   }
   if (source === "connected") {
     const job = read?.connected;
