@@ -405,6 +405,20 @@ path. Never rebuild balances from a sum of grants or edit lot balances by hand.
 Credits that expired or changed funding source after the backup need reconciliation
 against the original event and incident interval, not a new paid action.
 
+### Rig Verify checks
+
+Every tenant snapshot includes `take_verifications`: each finished check of a
+take against its masters (the Rig's Verify card), with the key it is stored
+under (the take, digests of its master set and frame points, the rubric), the
+masters and frames it used, each check's verdict and reasons, the judge model,
+the development job that ran it (its meter event) and the credits it was
+charged. The table is created the first time a check is asked for, so older
+snapshots simply lack it. A row is written in the same database write that
+marks its job succeeded, so a restored job and its row agree. Never edit or
+delete rows to "re-run" a check; a new master version is a new key, and a
+check still marked running after a restore follows the development-job rules
+above (an uncertain phase is never resubmitted).
+
 ### Rig canvas operations
 
 Every tenant snapshot includes `rig_canvas_ops`, the append-only record of each
