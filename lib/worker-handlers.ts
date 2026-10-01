@@ -9,6 +9,7 @@ import { runInTenant } from "./tenant";
 import { getWorkspace, legacyWorkspace } from "./platform";
 import { runDevelopmentStep } from "./workbench/development-server";
 import { dispatchEvent, EVENTS, type WorkerEvent } from "./dispatch";
+import { handleRigAgent } from "./workbench/rig-agent";
 import type { TenantWorkspace } from "./tenant";
 
 /**
@@ -334,6 +335,8 @@ export function workerJobId(event: WorkerEvent): string {
       return event.data.jobId ?? "";
     case EVENTS.probe:
       return event.data.probeId ?? "";
+    case EVENTS.rigAgent:
+      return event.data.runId ?? "";
   }
 }
 
@@ -358,5 +361,7 @@ export async function runWorkerHandler(event: WorkerEvent): Promise<unknown> {
       return handleDubbing({ jobId: String(data.jobId ?? ""), workspaceId: String(data.workspaceId ?? "") });
     case EVENTS.probe:
       return handleProbe(data as ProbeEventData);
+    case EVENTS.rigAgent:
+      return handleRigAgent({ runId: String(data.runId ?? ""), productionId: String(data.productionId ?? ""), workspaceId: String(data.workspaceId ?? "") });
   }
 }

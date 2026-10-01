@@ -23,7 +23,7 @@ import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
-import { BusinessView } from "./business/BusinessView";
+import { BusinessSuite } from "./business/BusinessSuite";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
@@ -436,7 +436,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                         <StageView page={shell.page.legacy.page} project={project} scope={scope} />
                       </div>
                     ) : shell.page.own && shell.suite.id === "business" ? (
-                      <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
+                      <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />

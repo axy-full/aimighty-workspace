@@ -7,6 +7,7 @@ import { vendorKey } from "./vendorKeys";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
+import { gatewayErrorOutcome, gatewayRefusalOutcome, googleErrorOutcome, googleRefusalOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * Google's still engines — Nano Banana Pro and Nano Banana 2 — through one
@@ -78,7 +79,7 @@ export async function refPayload(ref: Reference): Promise<{ mime: string; b64: s
  * rewording a prompt no rewording would save. It now reads the setting it
  * is describing.
  */
-function refusal(text: string | null): Error {
+function refusal(text: string | null, outcome: ProviderOutcome): StillRefusalError {
   const t = safetyThreshold();
   const off = t === "OFF" || t === "BLOCK_NONE";
   const where = off
@@ -88,11 +89,33 @@ function refusal(text: string | null): Error {
         "GOOGLE_SAFETY_THRESHOLD=OFF turns all four down. The image engine keeps one filter behind them that no setting reaches."
       : "This deployment sends no thresholds, so the image engine's own defaults applied — " +
         "GOOGLE_SAFETY_THRESHOLD=OFF turns the adjustable four down. The image engine keeps one filter behind them that no setting reaches.";
-  return new Error(
+  /* Whether anything was charged is the provider's to say (its usage or cost,
+     carried on the error's outcome) — never asserted here. */
+  return new StillRefusalError(
     "The image engine's built-in filter declined this one. " + where +
-    " Nothing was charged — reword the prompt or drop a reference and try again." +
-    (text ? ` The image engine said: ${text.slice(0, 300)}` : "")
+    " Reword the prompt or drop a reference and try again." +
+    (text ? ` The image engine said: ${text.slice(0, 300)}` : ""),
+    outcome,
   );
+}
+
+/**
+ * The engine answered and drew nothing. It carries what the provider said
+ * about the attempt: Google's own usage (tokens), or the gateway's cost.
+ */
+export class StillRefusalError extends Error {
+  constructor(message: string, readonly outcome: ProviderOutcome) {
+    super(message);
+    this.name = "StillRefusalError";
+  }
+}
+
+/** The gateway answered the still with an error: its status and a bounded copy of its body. */
+export class GatewayImageError extends Error {
+  constructor(message: string, readonly status: number, readonly outcome: ProviderOutcome) {
+    super(message);
+    this.name = "GatewayImageError";
+  }
 }
 
 /* ── Safety thresholds ──────────────────────────────────────────────────
@@ -169,13 +192,17 @@ export async function generateImage(opts: {
 }
 
 /** A failure from the Google door, with the HTTP status when Google answered. */
-class GoogleDoorError extends Error {
+export class GoogleDoorError extends Error {
+  /** What Google said about the attempt when it answered (never when the door was shut before sending). */
+  readonly outcome: ProviderOutcome | null;
   constructor(
     message: string,
     readonly status: number | null,
+    body: unknown = null,
   ) {
     super(message);
     this.name = "GoogleDoorError";
+    this.outcome = status == null ? null : googleErrorOutcome(status, body);
   }
 }
 
@@ -242,11 +269,12 @@ async function viaGateway(opts: {
     raw = await res.text();
   }
   if (!res.ok) {
+    const outcome = gatewayErrorOutcome(res.status, raw.slice(0, 8192));
     const plain = explainGatewayFailure(res.status, raw);
-    if (plain) throw new Error(plain);
+    if (plain) throw new GatewayImageError(plain, res.status, outcome);
     let msg = raw.slice(0, 400);
     try { msg = JSON.parse(raw)?.error?.message ?? msg; } catch { /* raw */ }
-    throw new Error(`Gateway image request failed (${res.status}): ${msg}`);
+    throw new GatewayImageError(`Gateway image request failed (${res.status}): ${msg}`, res.status, outcome);
   }
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   let j: any;
@@ -258,7 +286,7 @@ async function viaGateway(opts: {
   const url: string | undefined = images[0]?.image_url?.url;
   const text: string | null =
     typeof msg.content === "string" && msg.content.trim() ? msg.content.trim() : null;
-  if (!url || !url.startsWith("data:")) throw refusal(text);
+  if (!url || !url.startsWith("data:")) throw refusal(text, gatewayRefusalOutcome(j.usage?.cost, text));
 
   const comma = url.indexOf(",");
   const mime = url.slice(5, url.indexOf(";")) || "image/jpeg";
@@ -336,13 +364,13 @@ async function viaGoogle(opts: {
   }
   let j: InteractionResponse;
   try { j = JSON.parse(raw) as InteractionResponse; }
-  catch { throw new GoogleDoorError(`The image engine returned non-JSON (${res.status}): ${raw.slice(0, 300)}`, res.status); }
+  catch { throw new GoogleDoorError(`The image engine returned non-JSON (${res.status}): ${raw.slice(0, 300)}`, res.status, raw.slice(0, 8192)); }
   if (!res.ok) {
     const msg = j.error?.message ?? raw.slice(0, 400);
     if (res.status === 400 && /API key|api_key|invalid.*key/i.test(msg)) {
-      throw new GoogleDoorError("The image engine rejected the GEMINI_API_KEY on this deployment. Check it in the deployment's environment variables and redeploy.", res.status);
+      throw new GoogleDoorError("The image engine rejected the GEMINI_API_KEY on this deployment. Check it in the deployment's environment variables and redeploy.", res.status, j);
     }
-    throw new GoogleDoorError(`Image engine request failed (${res.status}): ${msg}`, res.status);
+    throw new GoogleDoorError(`Image engine request failed (${res.status}): ${msg}`, res.status, j);
   }
 
   // Prefer the convenience field; otherwise the LAST image block across the
@@ -358,7 +386,7 @@ async function viaGoogle(opts: {
     }
   }
   const text = texts.length ? texts.join("\n").trim() : null;
-  if (!data) throw refusal(text);
+  if (!data) throw refusal(text, googleRefusalOutcome(j.usage, text));
 
   const u = j.usage;
   const totalTokens =

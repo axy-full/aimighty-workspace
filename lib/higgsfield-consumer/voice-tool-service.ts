@@ -9,6 +9,7 @@
  * semantics as the Generate service; no automatic retries of paid calls.
  */
 import { createHash } from "node:crypto";
+import { accountFailure, higgsfieldAccountOutcome } from "@/lib/providerOutcome";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
@@ -96,6 +97,8 @@ function presentVoiceTool(job: ConsumerJob, availability: ConsumerOriginalAvaila
     originalAvailable: !report && availability === "available",
     providerReceipt: job.providerReceipt,
     failureCode: job.failureCode,
+    /* What the account said, and what its own ledger shows for the charge (its credits, never converted). */
+    failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null,
     setAside: consumerJobSetAside(job, observedAt),
     createdAt: job.createdAt,
   };
@@ -273,7 +276,7 @@ export async function pollConsumerVoiceTool(scope: ConsumerJobScope) {
     const failed = report ? consumerVideoAnalysisFailure(response.raw, providerJobId) : consumerVoiceToolFailureResult(response.raw, providerJobId);
     if (failed) {
       await connected(scope.userId, claim.job.connectionGeneration);
-      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed", outcome: higgsfieldAccountOutcome(failed) });
       return { job: await consumerVoiceToolView(settled ?? (await ownedJob(scope))), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (report) {

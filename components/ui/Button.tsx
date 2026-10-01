@@ -59,6 +59,8 @@ type Props = {
   /** A secondary in `--ink-body` — the board dims the lesser of a pair (`Stop`). */
   muted?: boolean;
   cost?: number;
+  /** Before the cost, in the same mono: `about ` for an approximate price. */
+  costPrefix?: ReactNode;
   /** After the cost, in the same mono: `· 0:05`. It widens the button when
       it appears, so a caller that shows a timer should show `· 0:00` from
       the first frame. */
@@ -93,7 +95,7 @@ const SHAPE = {
 } as const;
 
 export default function Button({
-  variant = "secondary", placement = "header", outlined = false, muted = false, cost, costSuffix,
+  variant = "secondary", placement = "header", outlined = false, muted = false, cost, costPrefix, costSuffix,
   busy = false, busyLabel, children, className = "", disabled, type = "button", ...rest
 }: Props) {
   const { price } = useMoney();
@@ -125,7 +127,7 @@ export default function Button({
       </span>
       {cost !== undefined && (
         <span className={`ui-mono ui-mono-cost ${filled ? "text-on-primary-cost" : "text-ink-muted"}`}>
-          {price(cost)}{costSuffix}
+          {costPrefix}{price(cost)}{costSuffix}
         </span>
       )}
     </button>
