@@ -155,13 +155,47 @@ test('a redo pressed while the undo is still saving is saved after it, not left 
   release!();
   await expect.poll(() => state.project.astraBlender?.name, { message: 'the redo reaches the server after the undo' }).toBe(state.proposed.name);
   expect(state.project.astraBlender).toEqual(state.proposed);
-  await expect(page.locator('.save-label, .phone-save').filter({ visible: true }).first()).toHaveAccessibleName('Saved');
+  /* The project bar's save label: a phone hides it in this shell, but it says the same at every size. */
+  await expect(page.locator('.project-bar .save-label')).toHaveText('Saved');
   await page.reload();
   await panel(state.workspace, 'Astra');
   await expect(state.assistant.getByRole('button', { name: 'Applied to scene', exact: true })).toBeDisabled();
   await expect(state.workspace.getByRole('button', { name: 'Redo scene change', exact: true })).toBeDisabled();
   expect(state.project.astraBlender).toEqual(state.proposed);
   expect(state.submissions).toHaveLength(1);
+  expect(state.forbidden).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('an undo and a redo inside the save delay write nothing and the label settles on Saved', async ({ page }) => {
+  /* Back at the saved scene before the undo's save went out: nothing is left queued to write, and the label does not
+     stay on Saving with nothing on its way. */
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const saves: string[] = [];
+  const state = await fixture(page, false, false, false, (saved) => { saves.push(saved.astraBlender?.name ?? ''); });
+  const dialog = await quote(page, state.assistant);
+  await dialog.getByRole('button', { name: 'Run · 7 cr estimated', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await state.assistant.getByRole('button', { name: 'Apply scene proposal', exact: true }).click();
+  await expect.poll(() => state.project.astraBlender?.name).toBe(state.proposed.name);
+  const label = page.locator('.project-bar .save-label');
+  await expect(label).toHaveText('Saved');
+  const before = saves.length;
+  /* Redo a frame or two after Undo, once it is enabled: both well inside the 650ms save delay. */
+  await state.workspace.evaluate(async (root) => {
+    const button = (name: string) => root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+    button('Undo scene change').click();
+    for (let frame = 0; frame < 30 && button('Redo scene change').disabled; frame++) await new Promise((resolve) => requestAnimationFrame(resolve));
+    button('Redo scene change').click();
+  });
+  await expect(state.workspace.getByRole('button', { name: 'Redo scene change', exact: true })).toBeDisabled();
+  await expect(label).toHaveText('Saved');
+  /* Past the save delay: still nothing written, still the applied scene on the server and on the label. */
+  await page.waitForTimeout(1500);
+  expect(saves.slice(before)).toEqual([]);
+  await expect(label).toHaveText('Saved');
+  expect(state.project.astraBlender).toEqual(state.proposed);
   expect(state.forbidden).toEqual([]);
   expect(errors).toEqual([]);
 });

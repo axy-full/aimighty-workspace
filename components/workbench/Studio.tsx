@@ -772,7 +772,13 @@ export default function Studio({
     // The saved snapshot is what the server held when the last write landed. A write still in flight is about to replace
     // it, so a draft back at the snapshot meanwhile (an undo, then a redo before the undo's reply) is still queued behind
     // that write; skipping it left the server holding the undo while the page showed the redo.
-    if(!savingWrites.current&&savedSnapshots.current.get(p.id)===JSON.stringify(p))return;
+    if(!savingWrites.current&&savedSnapshots.current.get(p.id)===JSON.stringify(p)){
+      // Back at what the server holds with nothing on its way (an undo and a redo inside the save delay): a draft queued
+      // in between is not wanted any more, and the label stops saying Saving.
+      pendingSave.current=null;
+      setSaveState(state=>state==="Saving"?"Saved":state);
+      return;
+    }
     pendingSave.current = p;
     setSaveState(failedSave.current ? "Not saved" : "Saving");
     const timer = setTimeout(() => void flushSave(), 650);
