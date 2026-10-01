@@ -241,6 +241,8 @@ test("Image ads on a 2.5 build: Flare at extra high names its variant, is priced
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(180_000);
   const s = await openImageAds(page, playwright, "owner");
+  /* The project is read before anything is chosen: the Product slot takes a file only once it is. */
+  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   const build = page.getByTestId("image-ad-build");
   await build.getByRole("button", { name: "2.5 Flare" }).click();
   await expect(build.getByRole("button", { name: "2.5 Flare" })).toHaveAttribute("aria-pressed", "true");
