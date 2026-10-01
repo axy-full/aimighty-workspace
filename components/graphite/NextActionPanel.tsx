@@ -132,7 +132,8 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
     <div className="gx-next-panel" id={id} ref={panel} role="group" aria-label={`${action.label} ${entry.take.name}`} data-testid="next-panel" data-action={action.id}>
       <div className="gx-next-panel-head">
         <span className="gx-next-panel-title">{action.label}</span>
-        <span className="gx-next-label" data-functional-label="">{action.engine} · this workspace’s credits</span>
+        {/* The engine that makes it, by the name Gen shows. */}
+        <span className="gx-next-label" data-functional-label="">{action.engine}</span>
       </div>
       <p className="gx-next-note">A new take from this one; {entry.take.name} stays as it is.</p>
       <fieldset className="gx-next-fields" disabled={busy || following}>

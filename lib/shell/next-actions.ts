@@ -93,7 +93,12 @@ const MEDIA_ACTIONS: Record<"image" | "video" | "audio", PricedActionId[]> = {
   audio: ["upscale", "extend"],
 };
 /** Why a kind of take has none of its listed actions. */
-const NOT_OFFERED: Record<"audio", string> = { audio: "no engine Particl uses upscales or extends sound." };
+const NOT_OFFERED: Record<"image" | "video" | "audio", string> = {
+  audio: "no engine Particl uses upscales or extends sound.",
+  /* Only if the registry ever loses the engine an action runs on: said, never faked. */
+  image: "no engine Particl uses does this for a still.",
+  video: "no engine Particl uses does this for a clip.",
+};
 
 /** Seedance 2.5 (ModelArk): animates a still from its first frame, and extends a clip. */
 export const SEEDANCE_25 = "dreamina-seedance-2-5-260628";
@@ -180,7 +185,7 @@ export function pricedActions(entry: Entry, context: { saved: boolean }): Priced
   if (kind !== "image" && kind !== "video" && kind !== "audio") return [];
   return MEDIA_ACTIONS[kind].map((id): PricedAction => {
     const engine = nextEngine(kind, id);
-    if (!engine || kind === "audio") return { id, label: PRICED_LABEL[id], engine: null, offered: false, enabled: false, why: NOT_OFFERED.audio };
+    if (!engine || kind === "audio") return { id, label: PRICED_LABEL[id], engine: null, offered: false, enabled: false, why: NOT_OFFERED[kind] };
     return { id, label: PRICED_LABEL[id], engine: engine.label, offered: true, ...pricedGate(entry, context.saved, id, kind) };
   });
 }

@@ -206,7 +206,7 @@ test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each o
   const where = '[data-testid="inspector"]';
 
   const up = await run(page, info, server, where, row, "upscale", "Upscale", 12, async (panel) => {
-    await expect(panel).toContainText("Topaz Image Upscale · this workspace’s credits");
+    await expect(panel.locator(".gx-next-panel-head")).toHaveText(/^Upscale\s*Topaz Image Upscale$/);
     await expect(panel.getByTestId("next-scale").getByRole("radio", { checked: true })).toHaveText("2×");
   });
   expect(up.sent).toMatchObject({ model: TOPAZ_IMAGE, projectId: "prod-next", shotId: "shot_pier", topaz: { factor: 2 }, references: [{ genId: "gen_still", role: "reference_image" }] });
