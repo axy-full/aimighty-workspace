@@ -43,7 +43,6 @@ const UNNAMED = "New chat";
 /** A title a person gives a thread: one printable line, at most 80 characters; null when nothing is left. */
 export function cleanThreadTitle(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  /* eslint-disable-next-line no-control-regex */
   const line = raw.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
   return line ? line.slice(0, THREAD_LIMITS.title).trim() : null;
 }

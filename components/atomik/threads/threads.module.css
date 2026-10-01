@@ -1,0 +1,82 @@
+/* Atomik threads (ThreadSwitcher.tsx): the rail's and the sheet's Threads row, and the Suites Agent page's list.
+   Rail sizes on a desktop (36px controls, as the rail's secondary pair); 44px targets and 16px fields on a phone. */
+
+.threads { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: none; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.heading { display: flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--ink); }
+.count { flex: none; margin-left: auto; }
+.heading .count { margin-left: 0; }
+
+.button {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; padding: 0 10px; border: 1px solid var(--border-mid); border-radius: 9px;
+  background: transparent; color: var(--ink); font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap;
+}
+.button:hover:not(:disabled) { background: rgba(245, 246, 248, .04); }
+.button:disabled { opacity: .5; cursor: default; }
+.button[aria-pressed="true"] { background: var(--selected); }
+.toggle { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; }
+.toggleTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-body); }
+
+.note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-mid); border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--ink-body); }
+.note > span { flex: 1 1 160px; min-width: 0; }
+.problem, .quiet { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-body); overflow-wrap: anywhere; }
+
+.panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.list { display: flex; flex-direction: column; min-width: 0; margin: 0; padding: 0; list-style: none; overflow: hidden; border: 1px solid var(--border-mid); border-radius: 12px; background: var(--card); }
+.row { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px; border-top: 1px solid var(--hairline); }
+.row:first-child { border-top: 0; }
+.pick {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-width: 0; min-height: 44px;
+  padding: 6px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); font-family: inherit; text-align: left;
+}
+.pick:hover { background: rgba(245, 246, 248, .04); }
+.pick[aria-current="true"] { background: var(--selected); }
+.line { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
+.title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.25; color: var(--ink); }
+.meta { font-size: 12px; line-height: 1.35; color: var(--ink-body); overflow-wrap: anywhere; }
+.row > .line, .row > .meta { padding: 0 8px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px 4px; }
+.rename { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
+.field { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--border-mid); border-radius: 9px; background: var(--card); color: var(--ink); font-family: inherit; font-size: 13px; }
+
+@media (max-width: 767px), (pointer: coarse) {
+  .button { height: 44px; min-width: 44px; padding: 0 14px; font-size: 13.5px; }
+  .field { height: 44px; font-size: 16px; }
+  .title { font-size: 14px; }
+}
+
+/* The Suites Agent page (ThreadsPanel.tsx): a card beside the agent panel, the same family of edges and greys. */
+.page { display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 100%; margin: 0 0 24px; padding: 20px; border: 1px solid var(--border-mid); border-radius: 16px; background: var(--card); color: var(--ink); }
+.pageHead { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pageTitle { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; color: var(--ink); }
+.view { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.messages { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.message { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.message[data-role="user"] { align-items: flex-end; }
+.messageText { max-width: min(560px, 100%); padding: 10px 12px; border: 1px solid var(--border-mid); border-radius: 12px; font-size: 13.5px; line-height: 1.45; color: var(--ink-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.message[data-role="user"] .messageText { background: var(--selected); color: var(--ink); }
+.planBox { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.plan { display: flex; flex-direction: column; min-width: 0; margin: 0; padding: 0; list-style: none; overflow: hidden; border: 1px solid var(--border-mid); border-radius: 12px; }
+.step { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px; border-top: 1px solid var(--hairline); }
+.step:first-child { border-top: 0; }
+.step[data-checkpoint] { background: var(--selected); }
+.stepBody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stepTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.2; color: var(--ink); }
+.price { flex: none; white-space: nowrap; }
+.checkpoint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border: 1px solid rgba(245, 246, 248, .3); border-radius: 12px; }
+.checkpointLine { font-size: 13.5px; line-height: 1.45; color: var(--ink-body); overflow-wrap: anywhere; }
+.checkpoint .actions { padding: 0; }
+.primary {
+  display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: center; min-height: 36px; padding: 6px 14px; border: 0; border-radius: 9px;
+  background: var(--color-action, var(--ink)); color: var(--color-on-action, #0a0a0c); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.25; white-space: normal; text-align: center;
+}
+.primary:disabled { opacity: .55; cursor: default; }
+.composer { display: flex; min-width: 0; }
+
+@media (max-width: 767px), (pointer: coarse) {
+  .primary { min-height: 44px; font-size: 14px; }
+}
+@media (max-width: 600px) {
+  .page { padding: 14px; }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Chat, Message, Step, Engine } from "@/lib/atomik";
 import type { StepState, RingMode } from "@/lib/ring";
 import { useProject } from "@/lib/projectContext";
@@ -9,6 +10,8 @@ import { useApi } from "@/lib/useApi";
 import {usePaidAction} from "@/lib/usePaidAction";
 import { useMoney } from "@/lib/price";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
+import { ARCHIVED_NOTE, chatOfRequest, type Thread } from "@/lib/atomikThreadsText";
+import { useRememberedThread, useThreadSends } from "./threads/useThreadSends";
 import type { PaidTextQuote } from "@/lib/paidText";
 import type { ThinkingModel } from "./ModelPicker";
 import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
@@ -18,12 +21,18 @@ import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
 /**
  * Atomik, at app level (design/particl-v2/README.md §5).
  *
- * One conversation per production, and the rail shows the current thing in
- * it: a checkpoint (a priced step waiting for you), a question (Atomik
+ * A production has threads — several conversations, each with its own plan
+ * (lib/atomikThreads.ts) — and the rail shows the current thing in the one
+ * on screen: a checkpoint (a priced step waiting for you), a question (Atomik
  * needs a decision before it spends), a plan (steps priced, nothing run
  * yet), a receipt (everything ran), or the planning ring while it thinks.
  * The header button shows the same state at 14px whether the rail is open
  * or not, which is why this lives in the shell and not in the rail.
+ *
+ * A turn or an approval in one thread never holds another: each thread's
+ * planning turn is saved and recovered in a slot of its own
+ * (threads/useThreadSends.ts), each approval renders under a key naming its
+ * thread, and what is in flight, and what went wrong, is kept per thread.
  *
  * It is the existing agent — chats, messages, steps, the claim-then-render
  * gate — through the existing routes. Atomik never decides anything that
@@ -45,6 +54,38 @@ export type Current =
   | { kind: "checkpoint"; step: Step; done: Step[]; spentCredits: number }
   | { kind: "plan"; steps: Step[] }
   | { kind: "done"; steps: Step[]; failed: Step[]; spentCredits: number };
+
+/** The production's threads (lib/atomikThreads.ts), and which one is on screen. Nothing here spends. */
+export type AtomikThreads = {
+  /** The production the threads are in; null for the ones filed under none. */
+  projectId: string | null;
+  /** The thread on screen; null while a new one waits for its first ask. */
+  activeId: string | null;
+  /** The thread on screen as the list shows it, once the list is read. */
+  active: Thread | null;
+  /** The production's threads, newest activity first; null until read. */
+  list: Thread[] | null;
+  /** Why the list could not be read ("Try again" reads it again). */
+  error: string | null;
+  /** True while the thread to open waits for the list. */
+  loading: boolean;
+  /** The threads with a planning turn saved for recovery. */
+  saved: string[];
+  /** True when the thread on screen is archived: nothing is planned or approved in it until it is restored. */
+  archived: boolean;
+  /** True while a rename, an archive or a restore is saving. */
+  busy: boolean;
+  refresh: () => void;
+  select: (id: string) => void;
+  /** A new thread: the next ask starts it. */
+  start: () => void;
+  /** Each answers why it did not save, or null when it did. */
+  archive: (id: string) => Promise<string | null>;
+  restore: (id: string) => Promise<string | null>;
+  rename: (id: string, title: string) => Promise<string | null>;
+  /** The archived threads, read only while they are asked for. */
+  archivedList: { open: boolean; list: Thread[] | null; error: string | null; show: (open: boolean) => void; refresh: () => void };
+};
 
 export type AtomikLive = {
   chat: Chat | null;
@@ -97,7 +138,9 @@ export type AtomikLive = {
   approve: (step: Step) => Promise<void>;
   stop: (step: Step) => Promise<void>;
   changeEngine: (step: Step, model: string) => Promise<void>;
+  /** A new thread (the rail's context chip): the next ask starts one. */
   clear: () => void;
+  threads: AtomikThreads;
 };
 
 const Ctx = createContext<AtomikLive | null>(null);
@@ -107,49 +150,103 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const { signedIn, workspace, email, requestScope } = useSession();
   const { current: production } = useProject();
   const money = useMoney();
+  const prodKey = production?.id ?? null;
+  /* Before threads, a planning turn was saved in ONE slot per production. A request saved there is still
+     recovered, in the chat its URL names; every turn since is saved in its own thread's slot. */
   const paid=usePaidAction(`/api/atomik/chat:${production?.id??"unfiled"}`);
-  const recovered = paid.pending ? JSON.parse(paid.pending.body) as {text?:string;model?:string;effort?:string} : null;
-  const recoveryText = recovered ? String(recovered.text ?? "") : null;
+  const legacyChat = paid.pending ? chatOfRequest(paid.pending.url) : null;
+  const sends = useThreadSends(prodKey);
   const { data: index, refresh: refreshIndex } = useApi<Index>(signedIn ? "/api/atomik" : null, 60_000);
-  /* A conversation this browser started, and the production it started it
-     for — it stands in for the index's pick only while that production is
-     the one on screen, so no effect has to reset anything. */
+  /* The production's threads, newest activity first: a cheap read, polled slowly and read again after each change. */
+  const threadsUrl = signedIn ? `/api/atomik/threads?projectId=${encodeURIComponent(prodKey ?? "")}` : null;
+  const { data: listData, error: listError, refresh: refreshThreads } = useApi<{ threads?: Thread[] }>(threadsUrl, 60_000, requestScope);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const { data: archivedData, error: archivedError, refresh: refreshArchived } =
+    useApi<{ threads?: Thread[] }>(threadsUrl && archivedOpen ? `${threadsUrl}&archived=1` : null, 0, requestScope);
+  /* A conversation this browser started, picked or was sent to (a skill's
+     run), and the production it is in — it stands in for every other choice
+     only while that production is the one on screen, so no effect has to
+     reset anything. `dismissed` marks a new thread asked for here. */
   const [chatFor, setChatFor] = useState<{ id: string; projectId: string | null } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [thinking, setThinking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /* What is in flight, and what went wrong, per thread (its chat id, or `new:<production>` until its first ask
+     makes it): a turn or an approval in one thread never holds another. */
+  const [flights, setFlights] = useState<Record<string, { busy?: boolean; thinking?: boolean }>>({});
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+  const fly = useCallback((keys: string[], state: { busy?: boolean; thinking?: boolean } | null) => setFlights((all) => {
+    const next = { ...all };
+    for (const key of keys) { if (state) next[key] = { ...next[key], ...state }; else delete next[key]; }
+    return next;
+  }), []);
+  const failIn = useCallback((key: string, message: string | null) => setErrors((all) => ({ ...all, [key]: message })), []);
   const dispatched = useRef(new Set<string>());
 
-  /* The conversation is the production's: its most recent chat, unless the
-     person dismissed it from the rail's context chip. */
-  const pick = useMemo(() => {
-    if (!index?.chats?.length) return null;
-    const mine = production ? index.chats.filter((c) => c.projectId === production.id) : index.chats;
-    const first = (mine.length ? mine : [])[0] ?? null;
-    return first && first.id !== dismissed ? first.id : null;
-  }, [index, production, dismissed]);
-  const activeId = chatFor && chatFor.projectId === (production?.id ?? null) ? chatFor.id : pick;
+  /* Which thread is on screen: one picked, started or opened here; a new one asked for; the one a link names; one
+     with a turn saved for recovery; the one this tab was last on; else the one with the newest activity. A thread
+     that is archived, or another production's, is never opened by itself. */
+  const newThread = `new:${prodKey ?? "unfiled"}`;
+  const [remembered, remember] = useRememberedThread(signedIn && workspace?.id && email ? JSON.stringify([workspace.id, email, prodKey ?? "unfiled"]) : "");
+  const linked = useSearchParams()?.get("thread") || null;
+  /* A thread archived here leaves the list at once: hidden until the list (or the index) it was read in is read again. */
+  const [hidden, setHidden] = useState<{ id: string; list: unknown; index: unknown }[]>([]);
+  const list = useMemo(() => {
+    const rows = listData && Array.isArray(listData.threads) ? listData.threads : null;
+    return rows ? rows.filter((t) => t.projectId === prodKey && !hidden.some((h) => h.id === t.id && h.list === listData)) : null;
+  }, [listData, prodKey, hidden]);
+  const indexed = useMemo(() => (index?.chats ? index.chats.filter((c) => c.projectId === prodKey && !hidden.some((h) => h.id === c.id && h.index === index)) : null), [index, prodKey, hidden]);
+  /* The list says which threads may open; while it cannot be read, the index stands in. */
+  const listFailed = !!listError || (listData !== null && !Array.isArray(listData.threads));
+  const openable = list ? list.map((t) => t.id) : listFailed && indexed ? indexed.map((c) => c.id) : null;
+  const recovery = legacyChat ?? sends.saved[0]?.thread ?? null;
+  const choice = ((): { id: string | null; waiting: boolean } => {
+    if (chatFor && chatFor.projectId === prodKey) return { id: chatFor.id, waiting: false };
+    if (dismissed === newThread) return { id: null, waiting: false };
+    for (const [id, saved] of [[linked, false], [recovery, true], [remembered, false]] as const) {
+      if (!id) continue;
+      /* A turn saved for recovery names a thread this person started: it opens as it is. */
+      if (saved) return { id, waiting: false };
+      if (!openable) return { id: null, waiting: true };
+      if (openable.includes(id)) return { id, waiting: false };
+    }
+    return { id: (list ? list[0]?.id : indexed?.[0]?.id) ?? null, waiting: false };
+  })();
+  const activeId = choice.id;
+  const activeKey = activeId ?? newThread;
+  const busy = !!flights[activeKey]?.busy;
+  const thinking = !!flights[activeKey]?.thinking;
 
-  const { data: loaded, refresh: refreshChat } = useApi<Loaded>(
+  const { data: fetched, refresh: refreshChat } = useApi<Loaded>(
     signedIn && activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : null,
     thinking ? 3_000 : 15_000,
   );
+  /* useApi keeps the last thread's answer until this one's lands: only the thread on screen is ever shown, so a
+     switch never shows — or lets anyone approve — the checkpoint of the thread left behind. */
+  const loaded = fetched && fetched.chat?.id === activeId ? fetched : null;
+  const archived = loaded?.chat.archivedAt != null;
+  /* The turn the thread on screen saved for recovery: one saved before threads (its chat), or its own. */
+  const legacyHere = !!paid.pending && !!activeId && legacyChat === activeId;
+  const ownSave = sends.pendingOf(activeId);
+  const pending = legacyHere ? paid.pending : ownSave?.pending ?? null;
+  const recovered = pending ? JSON.parse(pending.body) as {text?:string;model?:string;effort?:string} : null;
+  const recoveryText = recovered ? String(recovered.text ?? "") : null;
   const composerScope = JSON.stringify([workspace?.id, email, production?.id, activeId]);
-  const [selection, setSelection] = useState<{ scope: string; model: string; effort: string } | null>(null);
-  const [draft, setDraft] = useState<{ scope: string; text: string } | null>(null);
-  const selected = selection?.scope === composerScope ? selection : null;
-  const savedChat = loaded?.chat.id === activeId ? loaded.chat : null;
+  /* Drafts and picks are each thread's own: switching threads keeps what was typed in the other. */
+  const [selections, setSelections] = useState<Record<string, { model: string; effort: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const selected = selections[composerScope] ?? null;
+  const savedChat = loaded?.chat ?? null;
   const model = recovered?.model ?? selected?.model ?? savedChat?.model ?? "auto";
   const effort = recovered?.effort ?? selected?.effort ?? savedChat?.effort ?? "auto";
-  const draftText = recoveryText ?? (draft?.scope === composerScope ? draft.text : "");
+  const draftText = recoveryText ?? drafts[composerScope] ?? "";
   const models = useMemo(() => [...(index?.models?.featured ?? []), ...(index?.models?.rest ?? [])], [index]);
   const modelNote = !recovered?.model && !selected && savedChat?.modelNote ? savedChat.modelNote : null;
-  const setDraftText = useCallback((text: string) => { if (!paid.pending && !busy) setDraft({ scope: composerScope, text }); }, [composerScope, paid.pending, busy]);
-  const setThinkingModel = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model: value, effort: "auto" }); }, [composerScope, paid.pending, busy]);
-  const setReasoningEffort = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model, effort: value }); }, [composerScope, model, paid.pending, busy]);
+  const locked = !!pending || busy;
+  const setDraftText = useCallback((text: string) => { if (!locked) setDrafts((all) => ({ ...all, [composerScope]: text })); }, [composerScope, locked]);
+  const setThinkingModel = useCallback((value: string) => { if (!locked) setSelections((all) => ({ ...all, [composerScope]: { model: value, effort: "auto" } })); }, [composerScope, locked]);
+  const setReasoningEffort = useCallback((value: string) => { if (!locked) setSelections((all) => ({ ...all, [composerScope]: { model, effort: value } })); }, [composerScope, model, locked]);
+  /* An archived thread is not quoted: nothing is planned in it until it is restored. */
   const { quote, error: quoteError, loading: quoting } = useAtomikQuote(activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : "/api/atomik",
-    !paid.pending && draftText.trim() ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
+    !pending && !archived && draftText.trim() ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
 
   /* A claimed step is held against a second Continue only while the plan
      still shows it past proposed. One the server settled back to proposed
@@ -229,7 +326,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
      holds no margin to convert the engines' dollars with. */
   const credits = useCallback((s: Step) => isAccountStep(s) ? null : stepPrice(s, money.inCredits, liveQuoted?.stepId === s.id ? liveQuoted.quote : null), [money, liveQuoted]);
   const isReadOnly = useCallback((s: Step) => isAccountStep(s), []);
-  const approvable = useCallback((s: Step) => !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted]);
+  /* An archived thread's step is shown at its price and waits, unpaid, until the thread is restored. */
+  const approvable = useCallback((s: Step) => !archived && !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted, archived]);
   const approximate = useCallback((s: Step) => liveQuoted?.stepId === s.id && liveQuoted.quote.approximate === true, [liveQuoted]);
   const priceLabel = useCallback((s: Step) => {
     if (isAccountStep(s)) return "Read-only";
@@ -280,124 +378,204 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const totals = { total, unpriced, underCap: cap === null ? null : cap - spent - total, planning };
 
   const send = useCallback(async (text: string) => {
-    const t = (recoveryText??text).trim();
-    if (!t || busy) return;
-    if (!paid.pending && (!quote || t !== draftText.trim())) { setError("Review the current planning estimate before sending."); return; }
-    const requestBody = paid.pending ? JSON.parse(paid.pending.body) : { text: t, model: quote!.model, effort: quote!.effort, maxCredits: quote!.estimateCredits };
-    setBusy(true); setError(null);
+    /* The thread on screen as Send was pressed (null: a new one): the turn is its own, wherever the person goes next. */
+    const from = activeId;
+    const key = from ?? newThread;
+    if (flights[key]?.busy) return;
+    /* A turn saved for recovery goes again exactly as it was saved, or not at all. */
+    const recovering = pending;
+    const t = (recovering ? recoveryText ?? "" : text).trim();
+    if (!t) return;
+    if (!recovering && archived) { failIn(key, ARCHIVED_NOTE); return; }
+    if (!recovering && (!quote || t !== draftText.trim())) { failIn(key, "Review the current planning estimate before sending."); return; }
+    const requestBody = recovering ? JSON.parse(recovering.body) : { text: t, model: quote!.model, effort: quote!.effort, maxCredits: quote!.estimateCredits };
+    const viaLegacy = !!recovering && legacyHere;
+    let keys = [key], sentScope = composerScope;
+    fly(keys, { busy: true }); failIn(key, null);
     try {
-      let id = paid.pending?decodeURIComponent(paid.pending.url.split("/").at(-1)!):activeId;
-      if(paid.pending)setChatFor({id:id!,projectId:production?.id??null});
-      if (!id) {
-        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: production?.id ?? null, model: requestBody.model, effort: requestBody.effort }) });
+      let id = from;
+      if (id) {
+        /* Held on screen: the thread stays the one shown once its saved turn, if any, is cleared. */
+        setChatFor({ id, projectId: prodKey }); remember(id);
+      } else {
+        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: prodKey, model: requestBody.model, effort: requestBody.effort }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Atomik couldn't start a conversation.");
-        id = String(j.id); setChatFor({ id, projectId: production?.id ?? null }); setDismissed(null);
+        const made = String(j.id);
+        id = made;
+        /* The new thread is on screen from here, with what was typed in it and what is in flight. */
+        const madeScope = JSON.stringify([workspace?.id, email, production?.id, made]);
+        const was = sentScope;
+        setDrafts((all) => { const next = { ...all, [madeScope]: all[was] ?? "" }; delete next[was]; return next; });
+        setSelections((all) => { if (!all[was]) return all; const next = { ...all, [madeScope]: all[was] }; delete next[was]; return next; });
+        sentScope = madeScope;
+        fly(keys, null); keys = [made]; fly(keys, { busy: true });
+        setChatFor({ id: made, projectId: prodKey }); setDismissed(null); remember(made);
       }
-      setThinking(true);
-      await paid.run(`/api/atomik/${encodeURIComponent(id)}`, requestBody);
-      setDraft(null);
+      fly(keys, { thinking: true });
+      if (viaLegacy) await paid.run(recovering!.url, requestBody);
+      else await sends.run(id, `/api/atomik/${encodeURIComponent(id)}`, requestBody, recovering?.key);
+      const done = sentScope;
+      setDrafts((all) => { const next = { ...all }; delete next[done]; return next; });
     } catch (e) {
-      setError((e as Error).message);
+      failIn(keys[0], (e as Error).message);
     } finally {
-      setThinking(false);
+      fly(keys, null);
       await refreshRef.current();
       refreshIndex();
-      setBusy(false);
+      refreshThreads();
     }
-  }, [activeId, busy, production, refreshIndex,paid,recoveryText,quote,draftText]);
+  }, [activeId, newThread, flights, pending, recoveryText, archived, quote, draftText, legacyHere, composerScope, fly, failIn, prodKey, remember, workspace, email, production, paid, sends, refreshIndex, refreshThreads]);
 
-  /* Continue: the gate. Claim, then render through the ordinary routes. */
+  /* Continue: the gate. Claim, then render through the ordinary routes. What is in flight, and any error, are the step's thread's. */
   const approve = useCallback(async (proposed: Step) => {
-    if (busy || dispatched.current.has(proposed.id)) return;
+    const key = proposed.chatId;
+    if (flights[key]?.busy || dispatched.current.has(proposed.id)) return;
     /* A step planned on the connected account is never approved: nothing here runs there any more. */
-    if (isAccountStep(proposed)) { setError(ACCOUNT_STEP_NOTE); return; }
+    if (isAccountStep(proposed)) { failIn(key, ACCOUNT_STEP_NOTE); return; }
+    /* Nor is a step of an archived thread, until the thread is restored (its claim is refused too). */
+    if (archived && loaded?.chat.id === key) { failIn(key, ARCHIVED_NOTE); return; }
     /* Continue runs at the price it showed, or not at all. */
     const quote = liveQuoted?.stepId === proposed.id ? liveQuoted.quote : null;
-    if (!quote) { setError(stepQuoteError ?? "This step is still being priced."); return; }
+    if (!quote) { failIn(key, stepQuoteError ?? "This step is still being priced."); return; }
+    /* What the step renders against, taken as Continue is pressed: a switch of thread meanwhile changes none of it. */
+    const project = loaded?.chat.projectId ?? null, context = renderContext, scope = requestScope ?? "", priced = quoteRequest;
     /* Held only once the step is really claimed: a refusal, a failed claim or
        a dropped connection leaves Continue ready to be pressed again. */
     dispatched.current.add(proposed.id);
     let claimed = false;
-    setBusy(true); setError(null);
+    fly([key], { busy: true }); failIn(key, null);
     try {
       /* The price may have moved since the button was drawn (a rate change,
          a margin guard). Asked again before the claim, a changed price is
          shown instead of spent, and the step stays ready at the new one. */
-      const again = await fetchStepQuote(stepRender(proposed, loaded?.chat.projectId ?? null, renderContext), requestScope ?? "");
-      if ("error" in again) { setError(again.error); return; }
+      const again = await fetchStepQuote(stepRender(proposed, project, context), scope);
+      if ("error" in again) { failIn(key, again.error); return; }
       if (quoteMoved(quote, again.quote)) {
-        setStepQuote({ key: quoteRequest, quote: again.quote });
-        setError(`The estimate is now about ${money.price(again.quote.price)}. Press Continue again to approve it.`);
+        setStepQuote({ key: priced, quote: again.quote });
+        failIn(key, `The estimate is now about ${money.price(again.quote.price)}. Press Continue again to approve it.`);
         return;
       }
       const claim = await fetch(`/api/atomik/steps/${proposed.id}/claim`, { method: "POST" });
       const cj = await claim.json().catch(() => ({}));
-      if (!claim.ok) { if (claim.status !== 409) setError(cj.error ?? "That step couldn't be started."); return; }
+      /* A step another tab took meanwhile shows as running once the plan is read. One still proposed was
+         refused (its thread was archived), and the refusal says so. */
+      if (!claim.ok) { if (claim.status !== 409 || cj.step?.status === "proposed") failIn(key, cj.error ?? "That step couldn't be started."); return; }
       claimed = true;
       const step: Step = cj.step;
       /* The quoted request, capped at the quoted credits; a step that changed
          since it was priced is refused by the route rather than charged more. */
-      const render = stepRender(step, loaded?.chat.projectId ?? null, renderContext);
-      /* This approval's own key: a step proposed again after a render that never arrived renders under a new one. */
+      const render = stepRender(step, project, context);
+      /* This approval's own key, naming its thread: a step proposed again after a render that never arrived renders under a new one. */
       const res = await fetch(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": step.requestKey ?? `atomik-step:${step.id}` },
         body: JSON.stringify(approvedBody(render, again.quote)) });
       const j = await res.json().catch(() => ({}));
       /* Still being accepted under this step's key: not a failure. The step
          stays running and is settled from the request's record when the plan
          is next read (lib/atomik.ts › reconcileRunningSteps). */
-      if (res.status === 409 && j.pending) { setError("That render is still being accepted. It will show here once it has started."); return; }
+      if (res.status === 409 && j.pending) { failIn(key, "That render is still being accepted. It will show here once it has started."); return; }
       /* It arrived after the plan had given up on it: its key was set aside and nothing was made or
          charged. The step is proposed again, and is not this reply's to mark failed. */
-      if (res.status === 409 && j.code === "set_aside") { setError(j.error ?? "That render arrived too late to run. Nothing was charged."); return; }
+      if (res.status === 409 && j.code === "set_aside") { failIn(key, j.error ?? "That render arrived too late to run. Nothing was charged."); return; }
       await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(res.ok ? { status: "done", genId: j.id ?? null } : { status: "failed", error: j.error ?? `Failed (${res.status})` }) });
-      if (!res.ok) setError(j.error ?? "That render didn't start.");
+      if (!res.ok) failIn(key, j.error ?? "That render didn't start.");
     } catch (e) {
       /* A dropped connection leaves the claimed step running; reading the
          plan settles it from what the server recorded. */
-      setError((e as Error).message);
+      failIn(key, (e as Error).message);
     } finally {
       if (!claimed) dispatched.current.delete(proposed.id);
       await refreshRef.current();
-      setBusy(false);
+      fly([key], null);
+      refreshThreads();
     }
-  }, [busy, loaded, liveQuoted, stepQuoteError, requestScope, quoteRequest, money, renderContext]);
+  }, [flights, failIn, archived, loaded, liveQuoted, stepQuoteError, renderContext, requestScope, quoteRequest, fly, money, refreshThreads]);
 
   const stop = useCallback(async (step: Step) => {
-    if (busy || isAccountStep(step)) return;
-    setBusy(true);
+    const key = step.chatId;
+    if (flights[key]?.busy || isAccountStep(step)) return;
+    fly([key], { busy: true });
     try {
       await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "rejected" }) });
-    } finally { await refreshRef.current(); setBusy(false); }
-  }, [busy]);
+    } finally { await refreshRef.current(); fly([key], null); refreshThreads(); }
+  }, [flights, fly, refreshThreads]);
 
   /* Re-priced by the server before the button can be pressed again. */
   const changeEngine = useCallback(async (step: Step, model: string) => {
-    if (busy || isAccountStep(step)) return;
-    setBusy(true); setError(null);
+    const key = step.chatId;
+    if (flights[key]?.busy || isAccountStep(step)) return;
+    fly([key], { busy: true }); failIn(key, null);
     try {
       /* The engine alone: the server moves the step's length, size and shape
          to what that engine offers and re-prices it. */
       const r = await fetch(`/api/atomik/steps/${step.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); setError(j.error ?? "That engine didn't stick."); }
-    } finally { await refreshRef.current(); setBusy(false); }
-  }, [busy]);
+      if (!r.ok) { const j = await r.json().catch(() => ({})); failIn(key, j.error ?? "That engine didn't stick."); }
+    } finally { await refreshRef.current(); fly([key], null); }
+  }, [flights, fly, failIn]);
 
-  const clear = useCallback(() => { setDismissed(activeId); setChatFor(null); }, [activeId]);
+  /* ── Threads: pick one, start one, name, archive and restore (PATCH /api/atomik/:id). None of it spends. ── */
+  const select = useCallback((id: string) => { setChatFor({ id, projectId: prodKey }); setDismissed(null); remember(id); }, [prodKey, remember]);
+  const start = useCallback(() => { setDismissed(newThread); setChatFor(null); remember(null); failIn(newThread, null); }, [newThread, remember, failIn]);
+  const [threadBusy, setThreadBusy] = useState(false);
+  const patchThread = useCallback(async (id: string, body: Record<string, unknown>): Promise<string | null> => {
+    setThreadBusy(true);
+    try {
+      const r = await fetch(`/api/atomik/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) return null;
+      const j = await r.json().catch(() => ({}));
+      return typeof j.error === "string" && j.error ? j.error : "That did not save. Try again.";
+    } catch {
+      return "That did not save. Try again.";
+    } finally {
+      setThreadBusy(false);
+      refreshThreads(); refreshArchived(); refreshIndex();
+      void refreshRef.current();
+    }
+  }, [refreshThreads, refreshArchived, refreshIndex]);
+  const archive = useCallback(async (id: string) => {
+    const problem = await patchThread(id, { archived: true });
+    if (!problem) {
+      /* Gone from the list at once, not at the next read; the thread on screen goes with it, and the production's newest activity opens instead. */
+      setHidden((all) => [...all, { id, list: listData, index }]);
+      if (id === activeId) { setChatFor(null); remember(null); }
+    }
+    return problem;
+  }, [patchThread, listData, index, activeId, remember, setHidden]);
+  const restore = useCallback(async (id: string) => {
+    const problem = await patchThread(id, { archived: false });
+    if (!problem) { setHidden((all) => all.filter((h) => h.id !== id)); setArchivedOpen(false); select(id); }
+    return problem;
+  }, [patchThread, select, setHidden]);
+  const rename = useCallback((id: string, title: string) => patchThread(id, { title }), [patchThread]);
+  const archivedRows = archivedData && Array.isArray(archivedData.threads) ? archivedData.threads.filter((t) => t.projectId === prodKey) : null;
+  const threads: AtomikThreads = {
+    projectId: prodKey, activeId, active: list?.find((t) => t.id === activeId) ?? null, list,
+    error: listError ? "Threads could not be read." : null, loading: choice.waiting,
+    saved: [...(legacyChat ? [legacyChat] : []), ...sends.saved.map((s) => s.thread)], archived, busy: threadBusy,
+    refresh: refreshThreads, select, start, archive, restore, rename,
+    archivedList: { open: archivedOpen, list: archivedRows, error: archivedError ? "Archived threads could not be read." : null, show: setArchivedOpen, refresh: refreshArchived },
+  };
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
     chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
-    busy, error:paid.error??error, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
+    busy, error: paid.error ?? ownSave?.error ?? errors[activeKey] ?? null, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear: start, threads,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+const NOT_HERE = "Atomik is not open here.";
+const EMPTY_THREADS: AtomikThreads = {
+  projectId: null, activeId: null, active: null, list: null, error: null, loading: false, saved: [], archived: false, busy: false,
+  refresh: () => {}, select: () => {}, start: () => {}, archive: async () => NOT_HERE, restore: async () => NOT_HERE, rename: async () => NOT_HERE,
+  archivedList: { open: false, list: null, error: null, show: () => {}, refresh: () => {} },
+};
+
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
   totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
-  busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
+  busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {}, threads: EMPTY_THREADS,
 };
 
 export function useAtomik(): AtomikLive {
