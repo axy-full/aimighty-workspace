@@ -168,6 +168,15 @@
   .gx .gx-main > .gx-pagehead:not(:has(> .gx-seg)) > .gx-spacer { flex-grow: 0; }
 }
 
+/* The Library overlay keeps its whole column above the floating tab bar. The panel clears the bar, its gap and the
+   safe area under it (--ph-clear), so the asset list's window ends above the bar and the closing note under it is read
+   and tapped above the bar too. Inside it, the list and the tools keep no clearance of their own: left running on
+   under the bar, a tile half under it took a tap meant for it. */
+@media (max-width: 767px) {
+  .gx .gx-library.gx-panel--overlay { padding-bottom: var(--ph-clear); }
+  .gx .gx-library.gx-panel--overlay > .gx-assets, .gx .gx-library.gx-panel--overlay > .gx-tools { padding-bottom: 6px; scroll-padding-bottom: 0; }
+}
+
 /* A portrait approval row is too narrow for a re-quote's words beside two buttons: while it carries a status, the
    words take the row's width and Not now and Approve (at the new figure) the line under them. */
 @media (max-width: 767px) {
