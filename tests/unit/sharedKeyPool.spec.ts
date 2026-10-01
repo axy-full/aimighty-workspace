@@ -20,7 +20,6 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-shared-pool-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
 
 const MARKETING = "higgsfield/marketing-studio-image";

@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 import { db, now } from "./db";
-import { platformDb, platformReady, SUPER_ADMIN_EMAIL } from "./platform";
+import { platformDb, platformReady } from "./platform";
 import { requireTenant } from "./tenant";
 import { KEY_CHANGED } from "./higgsfield";
 import { mailConfigured, sendMail } from "./mail";
@@ -72,9 +72,11 @@ export async function markKeyChanged(id: string, fingerprint: string | undefined
   if (prior && prior.resolved_at == null) return;
   /* The first take of an episode: tell the platform's owner once, not for every take that follows. */
   const open = Number((await platformDb().execute("SELECT COUNT(*) AS n FROM provider_key_alerts WHERE resolved_at IS NULL")).rows[0]?.n ?? 0);
-  if (open !== 1 || !mailConfigured() || !SUPER_ADMIN_EMAIL) return;
+  /* The platform's owner, as the deployment names it (read when needed, as lib/platform.ts isSuperAdmin does). */
+  const owner = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
+  if (open !== 1 || !mailConfigured() || !owner) return;
   const body = `A take was sent on a provider key that is no longer configured (key ${keyPrefix(fingerprint)}…), so its result cannot be collected yet. Nothing was failed, refunded or sent again. Keep the old key under HF_CREDENTIALS_PREVIOUS, or, if it belonged to the same provider organization, add that key's fingerprint to HF_CREDENTIAL_ALIASES. The platform desk lists every take waiting.`;
-  await sendMail({ to: SUPER_ADMIN_EMAIL, subject: "Particl: takes are waiting on a provider key that changed", text: body, html: `<p>${body}</p>` }).catch(() => {});
+  await sendMail({ to: owner, subject: "Particl: takes are waiting on a provider key that changed", text: body, html: `<p>${body}</p>` }).catch(() => {});
 }
 
 /** The take's key answered again (or the take ended): its wait, and its alert, are over. */

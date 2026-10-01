@@ -50,7 +50,10 @@ async function dimText(page: Page, scope: string): Promise<string[]> {
       for (const e of chain) { const bg = rgba(getComputedStyle(e).backgroundColor); if (bg[3] > 0) ground = over(bg, ground); }
       const style = getComputedStyle(el);
       const ink = over(rgba(style.color), ground);
-      if (luminance(ink) < luminance([0x7c, 0x7c, 0x84]) - 0.5) out.push(`${el.className || el.tagName}: ${style.color} — “${(node.textContent ?? "").trim().slice(0, 24)}”`);
+      /* On a dark ground nothing dimmer than #7C7C84; on a light one, nothing paler. */
+      const floor = luminance([0x7c, 0x7c, 0x84]);
+      const faint = luminance(ground) > 128 ? luminance(ink) > floor + 0.5 : luminance(ink) < floor - 0.5;
+      if (faint) out.push(`${el.className || el.tagName}: ${style.color} — “${(node.textContent ?? "").trim().slice(0, 24)}”`);
     }
     return out;
   }, scope);
@@ -269,7 +272,7 @@ test("the platform desk shows the shared key to its owner — the pool, takes on
     await page.unroute("**/api/admin/shared-key");
 
     /* Anyone else — a workspace's own owner included — is refused the route, and the desk is not theirs to see. */
-    const other = await browser.newContext({ baseURL: info.project.use.baseURL, viewport: page.viewportSize() ?? undefined });
+    const other = await browser.newContext({ baseURL: process.env.PW_BASE_URL || "http://localhost:4551", viewport: page.viewportSize() ?? undefined });
     try {
       const stranger = await other.newPage();
       await signInLocally(stranger.request, "Studio owner");

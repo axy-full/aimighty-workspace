@@ -24,8 +24,11 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-shared-key-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+const ownerBefore = process.env.SUPER_ADMIN_EMAIL;
 process.env.SUPER_ADMIN_EMAIL = "platform-owner@example.invalid";
+test.afterAll(() => {
+  if (ownerBefore == null) delete process.env.SUPER_ADMIN_EMAIL; else process.env.SUPER_ADMIN_EMAIL = ownerBefore;
+});
 
 const OLD = "old-key-id:old-key-secret";
 const NEW = "new-key-id:new-key-secret";
