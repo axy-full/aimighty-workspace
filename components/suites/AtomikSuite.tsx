@@ -137,7 +137,8 @@ export default function AtomikSuite({
       <section className={styles.suite} role="alert">
         <h1>{heading}</h1>
         <p>{drafts.error}</p>
-        <button onClick={() => void drafts.refresh()}>Retry projects</button>
+        {/* A read that failed says "Try again": "Retry" is a take's paid re-render. */}
+        <button onClick={() => void drafts.refresh()}>Try again</button>
       </section>
     );
   if (!drafts.data)
@@ -823,7 +824,7 @@ function Budget({ productionId }: { productionId: string }) {
     return (
       <div className={styles.error} role="alert">
         {projects.error}
-        <button onClick={() => void projects.refresh()}>Retry budget</button>
+        <button onClick={() => void projects.refresh()}>Try again</button>
       </div>
     );
   if (!projects.data) return <p role="status">Loading project budget…</p>;
