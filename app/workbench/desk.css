@@ -44,6 +44,14 @@
 .ps .generation-options.cinema-controls{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px 12px}
 .ps .generation-options.cinema-controls label{display:flex;flex-direction:column;gap:4px;min-width:0}
 .ps .generation-options.cinema-controls select{min-width:0;min-height:44px;text-overflow:ellipsis}
+/* Cinema Studio's Sound switch: off until turned on, a full-size target at its own width, labelled as brightly as the selects. */
+.ps .cinema-sound{display:inline-flex;align-self:flex-start;align-items:center;gap:10px;min-height:44px;padding:0 14px 0 10px;color:var(--graphite-ink);background:var(--graphite-control);border:1px solid var(--graphite-edge);border-radius:6px;font:inherit;font-size:13px;cursor:pointer}
+.ps .cinema-sound:disabled{cursor:default;opacity:.6}
+.ps .cinema-sound-dot{position:relative;flex:none;width:26px;height:16px;border-radius:999px;background:var(--graphite-edge);transition:background .2s}
+.ps .cinema-sound-dot::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--graphite-ink);transition:transform .2s}
+.ps .cinema-sound[aria-checked=true] .cinema-sound-dot{background:#0a84ff}
+.ps .cinema-sound[aria-checked=true] .cinema-sound-dot::after{transform:translateX(10px)}
+@media(prefers-reduced-motion:reduce){.ps .cinema-sound-dot,.ps .cinema-sound-dot::after{transition:none}}
 .ps select{width:100%;padding:10px 12px;color:var(--graphite-ink);background:var(--graphite-control);border:1px solid var(--graphite-edge);border-radius:6px;min-height:42px;font:inherit}
 .ps option{background:var(--graphite-control);color:var(--graphite-ink)}
 .ps .dialog-fields textarea{min-height:100px}

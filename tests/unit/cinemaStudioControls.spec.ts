@@ -487,9 +487,10 @@ test("the prompt compiler writes no camera, light or look module where Cinema St
   const bankModule = (row: string, value: string) => CATEGORIES.find((c) => c.key === row)!.options.find((o) => o.value === value)!.module!;
   const words = "A lighthouse keeper waits under neon on a desaturated pier";
   const neon = bankModule("light", "neon"), muted = bankModule("look", "muted");
-  /* Auto everywhere: the words get the camera, light and look sentences every engine gets. */
+  /* Auto everywhere: the light and look the words name expand as on every engine; the camera is the model's to
+     choose, so no camera sentence is written (tests/unit/cinemaSound.spec.ts). */
   const auto = String(prepared(await f.admission.prepareGeneration(f.body({ prompt: words }), actor)).compiled.prompt);
-  expect(hasCameraModule(auto)).toBe(true);
+  expect(hasCameraModule(auto)).toBe(false);
   expect(auto).toContain(neon);
   expect(auto).toContain(muted);
   /* A picked movement: no camera sentence (the parameter moves the camera); light and look still expand. */

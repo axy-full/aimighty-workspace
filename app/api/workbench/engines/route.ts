@@ -45,7 +45,8 @@ export const GET = withTenant(async (req: Request) => {
     if (Number(q.get('unresolvedVideoRefs') || 0) > 0) throw new MediaQuoteError('Upload the bound reference video from your device before estimating this take.');
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
     const refPrices = await referencePrices(references, Number(q.get('imageRefs') || q.get('refs') || 0));
-    const quote = quoteWorkbenchMedia(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5) }, refPrices);
+    /* `audio=1`: the take is asked for with sound (Cinema Studio's Sound switch); priced as the engine bills it. */
+    const quote = quoteWorkbenchMedia(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1' }, refPrices);
     return Response.json({ models, ...quote }, { headers });
   } catch (error) {
     return Response.json({ error: error instanceof MediaQuoteError ? error.message : 'The reference estimate could not be read.' }, { status: error instanceof MediaQuoteError ? error.status : 500, headers });

@@ -41,10 +41,12 @@ function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "dur
  * engine's contract.
  *
  * The creative controls (camera, lens, aperture, movement, era, genre, light,
- * pacing, palette) and sound references are not in the formula: the published
- * text counts only seconds and pixels, and says image and audio references do
- * not count as video input. So they are not read here, and choosing them
- * leaves the quote and the dispatch re-price exactly where they were.
+ * pacing, palette), sound references and the Sound switch (generate_audio)
+ * are not in the formula: the published text counts only seconds and pixels,
+ * names no charge for sound, and says image and audio references do not count
+ * as video input. So they are not read here, and choosing them leaves the
+ * quote and the dispatch re-price exactly where they were. Should the
+ * published text change, the pricing watch below flags it.
  */
 export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
   if (settingsProblem(params)) return null;
@@ -152,6 +154,8 @@ export async function cinemaStudioInput(prompt: string, params: VideoParams, ref
     duration: params.duration,
     resolution: params.resolution,
     aspect_ratio: params.ratio,
+    /* Always said, never left out: the provider's own default is sound on, and a take is silent unless its
+       Sound switch was on. A sound reference does not turn it on. */
     generate_audio: Boolean(params.generateAudio),
     ...(imageUrls.length ? { image_urls: imageUrls } : {}),
     ...(videoUrls.length ? { video_urls: videoUrls } : {}),

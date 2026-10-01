@@ -35,6 +35,8 @@ export type GenerationBodyInput = {
   draft?: boolean;
   /** Cinema Studio 4.0's creative controls (lib/cinemaStudioTypes.ts): only picked ones; none is every control on Auto. */
   cinema?: Record<string, string> | null;
+  /** Cinema Studio 4.0's Sound switch: sent only when it is on. Absent, admission keeps the take silent. */
+  generateAudio?: boolean;
 };
 
 export function generationRequestBody(input: GenerationBodyInput): Record<string, unknown> {
@@ -57,6 +59,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
+    ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),
   };
 }
 

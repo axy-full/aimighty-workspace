@@ -15,7 +15,7 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, draftOffered, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, READING_ACCOUNT, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type BillingSource, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
 import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
@@ -713,6 +713,19 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             <select id="gx-length" className="gx-select" value={settings.duration} onChange={(e) => composer.dispatch({ type: "pick", value: { duration: Number(e.target.value) } })} data-testid="gen-length">
               {model.durations.map((d) => <option key={d} value={d}>{d} s</option>)}
             </select>
+          </div>
+        ) : null}
+        {/* Cinema Studio's Sound switch: off unless turned on here, whatever sound references the well holds. It is in the
+            price's key, so turning it on or off asks for the price again before Generate. */}
+        {soundOffered(model) ? (
+          <div className="gx-gen-row" data-testid="gen-sound-option">
+            <span className="gx-eyebrow" data-functional-label="">Sound</span>
+            <div className="gx-sound-option">
+              <button type="button" className="gx-toggle" role="switch" aria-checked={Boolean(settings.generateAudio)}
+                onClick={() => composer.dispatch({ type: "pick", value: { generateAudio: !settings.generateAudio } })} data-testid="gen-sound-toggle">
+                <span className="gx-toggle-dot" aria-hidden="true" /><span>With sound</span>
+              </button>
+            </div>
           </div>
         ) : null}
         {/* Sound: a line's voice (the model's own vendor's, so the list swaps with the model), a length for effects and

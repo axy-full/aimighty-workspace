@@ -105,8 +105,9 @@ export type ComposerState = {
 };
 export const TAKES_MAX = 4;
 
-/** `draft`: "Draft first" (lib/draftFinal.ts), honoured only on an engine with draft mode: a 480p draft whose final is made after. */
-export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string; draft?: boolean };
+/** `draft`: "Draft first" (lib/draftFinal.ts), honoured only on an engine with draft mode: a 480p draft whose final is made after.
+ *  `generateAudio`: the Sound switch, honoured only where the engine offers one (soundOffered); off unless picked. */
+export type ComposerPicks = { ratio?: string; resolution?: string; duration?: number; soulId?: string; draft?: boolean; generateAudio?: boolean };
 
 export const INITIAL_COMPOSER: ComposerState = {
   type: "image",
@@ -454,11 +455,19 @@ export type ComposerSettings = {
   ratio: string; resolution: string; duration: number;
   /** A trained character, only where the model declares `soul_id`. */ soulId?: string;
   /** A draft first (lib/draftFinal.ts): 480p, watermarked, and made into its 1080p final after. */ draft?: true;
+  /** The Sound switch is on: the take is asked for with sound (`generateAudio`). Absent, it is asked for without. */ generateAudio?: true;
 };
 
 /** Whether "Draft first" applies to this engine as the composer stands. */
 export const draftOffered = (model: Pick<ComposerModel, "draft" | "resolutions"> | null | undefined): boolean =>
   Boolean(model?.draft && model.resolutions?.includes(DRAFT_RESOLUTION));
+
+/**
+ * Whether the composer offers a Sound switch for this engine: Cinema Studio 4.0 on this workspace's credits. Its
+ * takes are silent unless the switch is on. The switch is its own choice: a sound reference never turns it on.
+ */
+export const soundOffered = (model: Pick<ComposerModel, "id" | "type" | "connected"> | null | undefined): boolean =>
+  Boolean(model && !model.connected && model.type === "video" && isCinemaStudioModel(model.id));
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
 export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {
@@ -479,6 +488,7 @@ export function composerSettings(model: ComposerModel | null, projectAspect?: st
       : model?.durations?.includes(5) ? 5 : model?.durations?.[0] ?? 5,
     ...(model?.soulId && picks.soulId ? { soulId: picks.soulId } : {}),
     ...(draft ? { draft: true as const } : {}),
+    ...(picks.generateAudio && soundOffered(model) ? { generateAudio: true as const } : {}),
   };
 }
 
@@ -529,6 +539,8 @@ export function quoteKeyFor(input: {
     priced, input.seconds, input.instrumental, input.voiceId,
     // Keep existing recovery keys unchanged. Only the new draft body gets its own discriminator.
     ...(input.settings.draft ? ["draft"] : []),
+    /* The Sound switch: on, the take is another request, priced (and approved) again; off, the key is as it was. */
+    ...(input.settings.generateAudio ? ["sound"] : []),
   ]);
 }
 

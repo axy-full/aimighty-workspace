@@ -98,7 +98,10 @@ function soundProblem(model: ModelDef, refs: ReferencePrices): string | null {
     return `Sound references total ${(refs.audioSeconds ?? 0).toFixed(1)} s. Cinema Studio takes ${CINEMA_STUDIO_LIMITS.maxAudioSeconds} s combined.`;
   return null;
 }
-/** One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the take is silent. */
+/**
+ * One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the
+ * take is silent. Cinema Studio's published formula has no term for sound, so its figure is the same either way.
+ */
 export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean }, refs: ReferencePrices) {
   if (!model.resolutions.includes(params.resolution) || !model.ratios.includes(params.ratio) || (model.kind === 'video' && !model.durations.includes(params.duration))) throw new MediaQuoteError('Choose a size, aspect and duration supported by this engine.');
   if (refs.images > model.maxReferenceImages) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceImages} reference images.`);
@@ -118,9 +121,10 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
  * Whether a take from this engine carries sound as the workbench renders it,
  * for the model sheet's Audio chip. xAI's video always does and so has no
  * switch (lib/models.ts › XAI_VIDEO_MODELS). An engine with an audio switch
- * (supportsAudio) renders silent here: the workbench never sends
- * generateAudio (lib/generationAdmission.ts defaults it to false) and its
- * rate is the silent one, so a chip would promise sound the take lacks.
+ * (supportsAudio) renders silent here by default: the workbench sends
+ * generateAudio only from Cinema Studio's Sound switch, which starts off
+ * (lib/generationAdmission.ts defaults it to false), and the rate is the
+ * silent one, so a chip would promise sound the take may lack.
  */
 export function rendersSound(model: ModelDef): boolean {
   return model.kind === 'video' && model.provider === 'xai';

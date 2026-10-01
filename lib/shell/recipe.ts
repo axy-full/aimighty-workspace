@@ -1,7 +1,7 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
 import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
-import { cleanCinemaControls } from "../cinemaStudioTypes";
+import { cleanCinemaControls, isCinemaStudioModel } from "../cinemaStudioTypes";
 
 /**
  * Recreate (README › Interactions, the asset's "Retry"): a take's whole
@@ -120,6 +120,8 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
   if (soulId) picks.soulId = soulId;
   /* A draft comes back as a draft: 480p first, its final after (lib/draftFinal.ts). */
   if (params.draft === true) picks.draft = true;
+  /* A Cinema Studio take made with its Sound switch on comes back with the switch on; any other comes back silent. */
+  if (params.generateAudio === true && isCinemaStudioModel(g.model)) picks.generateAudio = true;
 
   const references: RecipeReference[] = [];
   if (type !== "audio" && Array.isArray(params.references)) {
@@ -242,7 +244,7 @@ export function nearestSetting<T extends string | number>(want: T, offered: read
 /* ── What Gen holds against what the take was made with ──────────────── */
 
 export type RecipeChip = {
-  key: "model" | "ratio" | "resolution" | "duration" | "draft" | "identity" | "length" | "voice" | "instrumental";
+  key: "model" | "ratio" | "resolution" | "duration" | "draft" | "sound" | "identity" | "length" | "voice" | "instrumental";
   label: string;
   /** "16:9", or "21:9 → 16:9" when Gen now holds something else. */
   value: string;
@@ -310,6 +312,9 @@ export function recipeChips(input: {
   if (picks.draft)
     chips.push(settings.draft ? { key: "draft", label: "Draft", value: "Draft first", state: "kept" }
       : { key: "draft", label: "Draft", value: "Draft → full take", state: "changed", why: `${model.label} has no draft mode` });
+  if (picks.generateAudio)
+    chips.push(settings.generateAudio ? { key: "sound", label: "Sound", value: "With sound", state: "kept" }
+      : { key: "sound", label: "Sound", value: "With sound → silent", state: "changed", why: sameModel ? "Changed here" : `${model.label} has no Sound switch here` });
 
   if (picks.soulId) {
     const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");
