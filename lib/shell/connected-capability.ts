@@ -182,10 +182,19 @@ export const OWNER_BADGE = "Owner";
 export function ownerBadgeNote(ownerName: string | null | undefined): string {
   return `Run by ${ownerRunBy(ownerName)} on the ${CONNECTED_PROVIDER} account`;
 }
-/** The shell's suites that run only on the owner's account, and the state layer's suites behind them. */
-export const OWNER_RUN_SUITES: readonly string[] = ["business", "viral"];
+/** The shell's suites that run only on the owner's account on every page, and the state layer's suites behind every owner-run page. */
+export const OWNER_RUN_SUITES: readonly string[] = ["viral"];
 export const OWNER_RUN_LEGACY_SUITES: readonly string[] = ["moleculr", "subatomik"];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
+/**
+ * The pages still run only on the owner's account, in a suite whose other pages everyone runs: a member meets the
+ * owner-run card there, and no Run stage. Business's Ads, Image ads and Setup do; its own tools (Brand, Product,
+ * Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account, so a member keeps the
+ * suite's tabs.
+ */
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "dtc", "setup"] };
+export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
+  Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 
 /** The connected account's routes: whatever calls one spends through the owner's account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";

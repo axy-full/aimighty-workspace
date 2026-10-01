@@ -63,6 +63,7 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 7. **Two first-class surfaces, different jobs.** Desktop is where work is made: composing, wiring Rig, reviewing at speed, bulk actions, admin. Mobile is where work is judged: watch a run, compare, approve, unlock a cap. Neither is a shrunken version of the other. Every change ships with Playwright checks at 360×640, 390×844, 844×390, 1440×900 and 1920×1080. No horizontal overflow at any width; primary actions reachable without panning; dock and sheets clear of the home indicator; no fixed-width layout stranding whitespace above 1600px.
 8. **Small PRs**, one concern each, in phase order.
 9. **Prose in the product is a cost.** The copy voice is good; there's too much of it. Where a paragraph explains what the UI should make obvious, fix the UI and cut the paragraph.
+10. **Provider APIs and loginless MCP only.** Particl uses provider APIs and loginless MCP only — nothing that needs a Higgsfield sign-in (the account's OAuth MCP, its CLI or a website account). Higgsfield work runs on the API key. Owner's decision, 28 September 2026.
 
 ---
 
@@ -754,6 +755,11 @@ Owners can require authenticator enrollment for workspace members through People
 
 Private productions now retain named asset bins and immutable named cuts. The editor captures acknowledged saved revisions, retains original media and source lineage, and saves a safety cut before restoring a non-empty edit. The existing draft, request-scope, tenant, MFA and recovery protections apply throughout. See [editorial history](editorial-history.md) for verification, retention limits, restore conflicts and current export boundaries. Stripe and the approved credit model are unchanged.
 
+### September 27 amendment — failure outcome reporting
+
+Failed generations retain an additive `provider_outcome` record on the tenant's generation row and the platform meter event. Connected jobs retain the same optional record in their tenant database. Existing rows remain valid without one. This is reporting only: admission, reservations and settlement rules are unchanged.
+
+Customer takes show the recorded Particl credit charge when available. Provider diagnostics for platform-funded work remain restricted to the platform administrator. Missing provider evidence remains unknown; token usage is not treated as a billing receipt. Connected-account transaction reconciliation awaits a verified response contract and is not enabled. Failed takes retain their reason and can be reviewed without triggering another generation.
 
 ### September 27 — separately approved draft and final takes
 

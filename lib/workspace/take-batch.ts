@@ -1,3 +1,4 @@
+import { failedChip } from "../errors";
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import {
   CONNECTED_GENERATION_ENDPOINT,
@@ -438,7 +439,8 @@ export function takeView(take: BatchTake, source: "workspace" | "connected", rea
       const original = job.result && typeof job.result === "object" ? (job.result as { original?: { generationId?: unknown } }).original : undefined;
       return { ...base, status: "Complete", tone: "green", done: true, generationId: typeof original?.generationId === "string" ? original.generationId : null };
     }
-    if (job.status === "failed") return { ...base, status: job.failureCode === "invalid_result" ? "Finished · not kept" : "Failed · not billed", tone: "red", done: true };
+    /* Refunded or charged only once the account's own ledger names the job; just "Failed" until then. */
+    if (job.status === "failed") return { ...base, status: job.failureCode === "invalid_result" ? "Finished · not kept" : failedChip(job.failure), tone: "red", done: true };
     if (job.status === "accepted") return { ...base, status: "Rendering", tone: "blue", done: false };
     if (job.status === "quoted") return { ...base, status: "Not sent · not charged", tone: "idle", done: true };
     return { ...base, status: "Checking with the account", tone: "blue", done: false };
@@ -470,7 +472,7 @@ export function batchSettledText(name: string, views: readonly TakeView[]): stri
   const failed = views.filter((v) => v.tone !== "green" && !held.includes(v) && !unsure.includes(v));
   const parts = [made.length ? `${name}: ${made.length} of ${views.length} takes rendered, one strip in Takes.` : `${name}: no take rendered yet.`];
   if (failed.length) {
-    const unbilled = failed.every((v) => v.status.includes("not billed") || v.status.includes("not charged"));
+    const unbilled = failed.every((v) => v.status.includes("not billed") || v.status.includes("not charged") || v.status.includes("refunded"));
     parts.push(`${upper(takesPhrase(failed.map((v) => v.variation)))} did not${unbilled ? " and cost nothing" : ""}.`);
   }
   if (held.length) parts.push(`${upper(takesPhrase(held.map((v) => v.variation)))} ${held.length === 1 ? "is" : "are"} held, not charged until ${held.length === 1 ? "it runs" : "they run"}.`);

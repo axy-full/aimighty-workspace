@@ -92,6 +92,45 @@ test("a failed take is 'not billed' only when the ledger shows nothing charged, 
   expect(blocked.preset).toBeUndefined();
 });
 
+test("a failure its provider answered for reads in the typed words; the label stays the ledger's", () => {
+  const outcome = { provider: "byteplus", stage: "run", code: "InvalidParameter", kind: "invalid_request", message: null, billing: null, payer: "platform" } as const;
+  /* Refused settings are not the content filter, whatever the row's words match. */
+  const settings = engineTrayJob(engine({ id: "s", status: "failed", error: "The engine refused these settings", failure: outcome }), money({ charged: 0 }));
+  expect(settings).toMatchObject({ label: "Failed · not billed", reason: "The engine refused these settings" });
+  /* The engine's own account running dry is not this workspace's balance. */
+  expect(engineTrayJob(engine({ id: "q", status: "failed", error: "The engine account is out of credits", failure: { ...outcome, kind: "provider_quota" } }), money()))
+    .toMatchObject({ label: "Failed", price: null, reason: "The engine account is out of credits" });
+  /* No provider answered for it: the row's own words, as before. */
+  expect(engineTrayJob(engine({ id: "r", status: "failed", error: "The render never came back", failure: { ...outcome, provider: null, kind: "unknown" } }), money()).reason).toBe("The engine timed out");
+
+  /* The connected account: its own reason, and still no charge claimed until its own ledger names one. */
+  const said = { v: 1, provider: "higgsfield_account", stage: "run", code: "nsfw", kind: "content_filter", message: "Flagged", billing: { state: "unknown", basis: "hf-account-silent" }, at: T0 } as const;
+  const refused = accountTrayJob(account({ id: "a", status: "failed", failureCode: "provider_failed", outcome: said }));
+  expect(refused).toMatchObject({ stage: "failed", label: "Failed", price: null, reason: "Refused by the content filter" });
+  expect(JSON.stringify(refused)).not.toMatch(/not billed|refunded|not charged|Flagged/i);
+  expect(accountTrayJob(account({ id: "b", status: "failed", failureCode: "provider_failed", outcome: null })).reason).toBe("The connected account reported it as failed.");
+});
+
+test("on a workspace that pays its vendors, a recorded zero is not the provider's word: 'not billed' only when the provider said so", () => {
+  const usd = (fields: Partial<EngineMoney> = {}) => money({ unit: "usd", ...fields });
+  /* fal refused the request at submit and Particl recorded no cost: a 422 may still be charged, and fal's reply said nothing. */
+  const silent = { provider: "fal", stage: "submit", code: "http_422", kind: "invalid_request", message: null, billing: { state: "unknown", basis: "silent" }, payer: "own" } as const;
+  expect(engineTrayJob(engine({ id: "z", status: "failed", failure: silent }), usd({ charged: 0 }))).toMatchObject({ label: "Failed", price: null, reason: "The engine refused these settings" });
+  expect(engineTrayJob(engine({ id: "zc", status: "cancelled", failure: silent }), usd({ charged: 0 }))).toMatchObject({ label: "Cancelled", price: null });
+  /* No provider answered for it at all: the zero still says nothing. */
+  expect(engineTrayJob(engine({ id: "n", status: "failed", failure: { ...silent, provider: null, stage: null, code: "unknown", kind: "unknown" } }), usd({ charged: 0 })).label).toBe("Failed");
+  expect(engineTrayJob(engine({ id: "n2", status: "failed" }), usd({ charged: 0 })).label).toBe("Failed");
+  /* The provider's own word — its rule for this reply, or its refund — is what says so. */
+  const notCharged = { ...silent, stage: "run", code: "http_503", kind: "provider_error", billing: { state: "not_charged", basis: "fal-5xx" } } as const;
+  expect(engineTrayJob(engine({ id: "nc", status: "failed", failure: notCharged }), usd({ charged: 0 }))).toMatchObject({ label: "Failed · not billed", price: null });
+  const refunded = { provider: "higgsfield", stage: "run", code: "nsfw", kind: "content_filter", message: null, billing: { state: "refunded", basis: "hf-refund" }, payer: "own" } as const;
+  expect(engineTrayJob(engine({ id: "rf", status: "failed", failure: refunded }), usd())).toMatchObject({ label: "Failed · not billed", reason: "Refused by the content filter" });
+  /* A recorded charge keeps its figure and is never "not billed". */
+  expect(engineTrayJob(engine({ id: "b", status: "failed", failure: silent }), usd({ charged: 0.42 }))).toMatchObject({ label: "Failed", price: { amount: 0.42, unit: "usd" } });
+  /* Credits are unchanged: Particl's own ledger at zero is its receipt. */
+  expect(engineTrayJob(engine({ id: "cr", status: "failed", failure: { ...silent, payer: "platform", billing: null } }), money({ charged: 0 })).label).toBe("Failed · not billed");
+});
+
 test("a discarded take is the person's own doing: not a failure, not red", () => {
   const discarded = engineTrayJob(engine({ id: "d", status: "cancelled", error: "Discarded before it started. Nothing was charged.", params: { discardedAt: T0 } }), money(), null, { preset: preset("x") });
   expect(discarded).toMatchObject({ stage: "cancelled", label: "Discarded", tone: "idle", reason: null, action: "recreate" });

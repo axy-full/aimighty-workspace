@@ -1,5 +1,7 @@
 # Handoff: particl studio — marketing site (desktop + mobile)
 
+> **28 September 2026:** the public site no longer describes what needs a Higgsfield sign-in (`CLAUDE.md` ground rule 10): Business Ads' Marketing Studio video, Image ads' DTC engine and template library, Viral's Shorts and 30 references, Atomik's Generate page and the connected catalogue, and Cast's Soul Location, Soul Cast and reference elements. The copy below is the original design handoff.
+
 ## Overview
 A public website for **particl studio**, the generative-video production platform in `axy-full/aimighty-workspace`. It presents the five suites (Gen · Studio · Business · Viral · Atomik) plus Workspace and Pricing in the platform's own Graphite theme — near-black surfaces, `#0A84FF` blue accent — with a Higgsfield-style prompt-bar hero, engine chips and plan cards. All copy is drawn from the repo (`README.md`, `CLAUDE.md` §7A, `lib/workspace/spec-cards.ts`, `lib/workspace/pages.ts`, `lib/suites.ts`, `docs/*`); provider names do not appear in suite copy, per `docs/four-suites-v2-plan.md`. Engine names (Seedance, Kling, Nano Banana, Topaz Astra) do.
 

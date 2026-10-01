@@ -37,13 +37,13 @@ const STAGES: Stage[] = [
     text: "Where the world is built, before the cast. The rules every place shares, then each place, from the beat sheet, the agent or by hand, with plates rendered here, uploaded or taken from the library. Plates are filed as Environment for the Rig and Gen.",
     chips: ["World rules", "Places", "Plates", "Render · Upload · Library", "References · up to 6", "Filed as Environment"] },
   { title: "Cast & Elements",
-    text: "The cast list comes from the beat sheet, or from the agent with a prompt per entry. Every character and element is built with a Soul model on the connected account and saved in the library as Cast or Elements.",
+    text: "The cast list comes from the beat sheet, or from the agent with a prompt per entry. Characters, environments and props keep their names, prompts and reference images in one list.",
     chips: [],
     subs: [
-      { tag: "CAST", text: "Characters from a prompt and a reference image. A Soul ID keeps the identity across builds; upscale or remove the background, and pick the build that stands for the character.",
-        chips: ["Soul Cinema", "Soul 2", "Soul Cast", "Soul ID", "Upscale", "Remove background"] },
-      { tag: "ELEMENTS · ENVIRONMENT", text: "Environments and props, built the same way, a place with Soul Location. Save any build as a reference element the account keeps for reuse.",
-        chips: ["Environment", "Prop", "Soul Location", "Reference element"] },
+      { tag: "CAST", text: "Characters from a prompt and a reference image.",
+        chips: ["Prompt", "Reference image"] },
+      { tag: "ELEMENTS · ENVIRONMENT", text: "Environments and props, listed the same way.",
+        chips: ["Environment", "Prop"] },
     ] },
   { title: "Astra 3D",
     text: "Blocking before rendering. A 3D scene editor, with objects, project pictures and GLB models, lights, the camera and keyframes, plus bounded planner proposals, reviewed native Blender scripts and cloud renders: a PNG still, the .blend and, where it exports, a GLB. Send a render to the Rig as a new shot’s first frame.",
@@ -74,9 +74,9 @@ const ASSETS = [
   { src: "/campaign/environment.webp", width: 1672, height: 941, position: "50% 50%", alt: "The mirrored dunes, an environment plate",
     kind: "PLACE · PLATE 2", state: "SELECTED", tone: styles.green, name: "The mirrored dunes",
     line: "Environment plate · Warm daylight", acts: ["Upload a plate"] },
-  { src: "/campaign/character.webp", width: 1536, height: 1024, position: "50% 20%", alt: "The traveller, a character build",
-    kind: "CAST · BUILD 1", state: "SOUL ID", tone: styles.blue, name: "The traveller",
-    line: "Soul Cinema · Three views", acts: ["Upscale"] },
+  { src: "/campaign/character.webp", width: 1536, height: 1024, position: "50% 20%", alt: "The traveller, a character reference",
+    kind: "CAST · CHARACTER", state: "REFERENCE", tone: styles.blue, name: "The traveller",
+    line: "Reference image · Three views", acts: ["Replace reference"] },
 ];
 
 const pad = (i: number) => String(i + 1).padStart(2, "0");

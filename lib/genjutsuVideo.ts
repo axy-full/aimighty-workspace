@@ -19,6 +19,8 @@ import { uploadReservationsReady } from "./uploadReservations";
 import { engineMock, fixtureUrl } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { invalidate, PROJECTS_KEY } from "./cache";
+import { fundedOutcome } from "./providerFailure";
+import { higgsfieldRequestOutcome, serializeOutcome } from "./providerOutcome";
 
 type Original = { bytes: number; sha256: string; width: number; height: number; seconds: number; requestId: string };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -62,9 +64,11 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         const state = await engineFor("higgsfield").poll!(handle);
         if (state.status === "failed" || state.status === "cancelled") {
           if (original) throw new Error("Contradictory provider outcome");
-          await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=0,error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
-            args: [state.status, state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), now(), id, token] },
-            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
+          /* Its own status and words; its FAQ says failed and NSFW requests are refunded, and only completions billed. */
+          const said = await fundedOutcome(higgsfieldRequestOutcome(state.raw), id, "higgsfield").catch(() => null);
+          await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=0,error=?,provider_outcome=COALESCE(?,provider_outcome),updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
+            args: [state.status, state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), said ? serializeOutcome(said) : null, now(), id, token] },
+            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by), providerOutcome: said });
           await deliverGenerationSettlement(id);
           await settleHiggsfieldGenerationReceipt(id);
           return;

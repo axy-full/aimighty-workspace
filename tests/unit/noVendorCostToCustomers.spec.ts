@@ -76,6 +76,8 @@ async function seed(ws: TenantWorkspace) {
       { sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES('s_margin','p_margin','SH010',?,?)", args: [at, at] },
       { sql: take, args: ["g_take", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "A harbour at dawn", JSON.stringify({ resolution: "1080p", duration: 5, ...INTERNALS }),
         "u_member", at, at, "byteplus", COST.take, COST.writer, "anthropic/claude-test", "tok_margin", "/api/media/g_take", 244800] },
+      { sql: take, args: ["g_failed", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Failed harbour", "{}",
+        "u_member", at + 10, at + 10, "xai", null, null, null, null, null, null] },
       { sql: take, args: ["g_still", "p_margin", "s_margin", "image", "gemini-3.1-flash-image", "A crane at dusk", "{}",
         "u_owner", at + 1, at + 1, "google", COST.still, null, null, null, "/api/media/g_still", null] },
       { sql: take, args: ["g_dub", "p_margin", null, "audio", "eleven_dubbing_v1", "Dub · harbour → French",
@@ -103,6 +105,12 @@ async function seed(ws: TenantWorkspace) {
         args: [`crew_${u.id}`, u.id, ws.usesPlatformKeys ? 1 : null, COST.turn, u.id, at],
       })),
     ], "write");
+    await db().execute({ sql: "UPDATE generations SET status='failed',error=?,provider_outcome=? WHERE id='g_failed'", args: [
+      `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
+      JSON.stringify({ v: 1, provider: "xai", stage: "run", code: "content_moderated", kind: "content_filter",
+        message: `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
+        billing: { state: "billed", amount: COST.take, unit: "usd", basis: "xai-ticks" }, funding: "platform", at }),
+    ] });
   });
   await platformReady();
   const meter = `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
@@ -131,6 +139,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/shots", file: "app/api/shots/route.ts", url: "/api/shots?projectId=p_margin", ownKeys: true },
   { name: "GET /api/productions", file: "app/api/productions/route.ts", url: "/api/productions", ownKeys: true },
   { name: "GET /api/jobs", file: "app/api/jobs/route.ts", url: "/api/jobs?sync=0", ownKeys: true },
+  { name: "GET /api/jobs/[id] (a failed provider job)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_failed?sync=0", params: { id: "g_failed" } },
   { name: "GET /api/jobs/[id] (a dub)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_dub?sync=0", params: { id: "g_dub" } },
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },

@@ -835,7 +835,7 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(await page.request.get("/api/jobs?view=elsewhere&sync=0").then((r) => r.status())).toBe(400);
 });
 
-test("own-key failed jobs keep unknown charges distinct from a recorded zero", async ({ page }) => {
+test("own-key failed jobs say 'not billed' only on the provider's own word, never from a recorded zero", async ({ page }) => {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json()) as { id: string };
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -852,10 +852,13 @@ test("own-key failed jobs keep unknown charges distinct from a recorded zero", a
   const tag = randomBytes(6).toString("hex");
   const now = Date.now();
   try {
-    for (const [suffix, status, cost] of [["unknown", "failed", null], ["zero", "failed", 0], ["cancelled", "cancelled", null]] as const) {
+    /* ModelArk's own rule for a failed task on the workspace's own key: only successful videos are charged. */
+    const notCharged = JSON.stringify({ v: 1, provider: "byteplus", stage: "run", code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null,
+      billing: { state: "not_charged", basis: "ark-success-only" }, funding: "own", at: now });
+    for (const [suffix, status, cost, outcome] of [["unknown", "failed", null, null], ["zero", "failed", 0, null], ["cancelled", "cancelled", null, null], ["said", "failed", 0, notCharged]] as const) {
       await tenant.execute({
-        sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_by,created_at,updated_at,settled_at,cost_usd,error) VALUES(?,'video',?,?,'{}',?,?,?,?,?,?,?)",
-        args: [`gen_${tag}_${suffix}`, "dreamina-seedance-2-5-260628", "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped."],
+        sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_by,created_at,updated_at,settled_at,cost_usd,error,provider_outcome) VALUES(?,'video',?,?,'{}',?,?,?,?,?,?,?,?)",
+        args: [`gen_${tag}_${suffix}`, "dreamina-seedance-2-5-260628", "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped.", outcome],
       });
     }
     /* A separate zero-cost refinement cannot prove the missing render charge was zero. */
@@ -865,7 +868,9 @@ test("own-key failed jobs keep unknown charges distinct from a recorded zero", a
     const body = await response.json() as TrayReply;
     const rows = new Map(body.jobs.map((job) => [job.id, job]));
     expect(rows.get(`gen_${tag}_unknown`)).toMatchObject({ label: "Failed", price: null });
-    expect(rows.get(`gen_${tag}_zero`)).toMatchObject({ label: "Failed · not billed", price: null });
+    /* Particl's own recorded zero is its metering, not the provider's word: nothing is claimed from it. */
+    expect(rows.get(`gen_${tag}_zero`)).toMatchObject({ label: "Failed", price: null });
+    expect(rows.get(`gen_${tag}_said`)).toMatchObject({ label: "Failed · not billed", price: null, reason: "Refused by the content filter" });
     expect(rows.get(`gen_${tag}_cancelled`)).toMatchObject({ label: "Cancelled", price: null });
     const stored = await tenant.execute({ sql: "SELECT cost_usd FROM generations WHERE id=?", args: [`gen_${tag}_unknown`] });
     expect(stored.rows[0].cost_usd).toBeNull();
