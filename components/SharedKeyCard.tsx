@@ -37,7 +37,7 @@ export function SharedKeyCard() {
                 : "The pool is off (HF_POOL_SIZE): nothing waits for the shared key."}
             </span>
             {data.pool.workspaces.map((w) => (
-              <span key={w.name} className="rail-help">{w.name}: {w.inFlight} in flight · {w.waiting} queued</span>
+              <span key={w.id} className="rail-help break-words">{w.name}: {w.inFlight} in flight · {w.waiting} queued</span>
             ))}
           </div>
 
@@ -60,20 +60,20 @@ export function SharedKeyCard() {
             {data.requests.length === 0 ? <span className="rail-help pt-1">No request yet.</span> : data.requests.map((r) => (
               <div key={r.take} className="flex flex-col gap-1 border-b border-[var(--color-hair)] py-2.5" data-testid="shared-key-request">
                 <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="font-medium">{r.workspace}</span>
-                  <span className="mono-s">{r.model}</span>
+                  <span className="font-medium break-words">{r.workspace}</span>
+                  <span className="mono-s break-all">{r.model}</span>
                   <span className="mono-s">{timeAgo(r.at)}</span>
                   <span className="mono-s">{r.settled ? "SETTLED" : "OPEN"}</span>
                 </span>
                 <span className="mono-s !leading-[1.45] break-all">REQUEST <span className="text-ink" data-testid="shared-key-request-id">{r.requestId}</span></span>
                 <span className="mono-s !leading-[1.45] break-all">CORRELATION <span className="text-ink" data-testid="shared-key-correlation-id">{r.correlationId ?? "—"}</span></span>
-                <span className="mono-s !leading-[1.45]">{keyWord(r)} · take {r.take}</span>
+                <span className="mono-s !leading-[1.45] break-all">{keyWord(r)} · take {r.take}</span>
               </div>
             ))}
             <span className="rail-help pt-2">
               {data.correlationSent
-                ? "Our correlation id goes out with every request on the platform key; the provider's own is kept when it answers with one."
-                : "The provider's own correlation id is kept when it answers with one. Ours goes out on the production API once HF_CORRELATION_HEADER is on."}
+                ? "Our correlation id goes out with every request on the key; the provider’s own is kept when it answers with one. Give support both ids."
+                : "Ours is switched off (HF_CORRELATION_HEADER); the provider’s own correlation id is kept when it answers with one."}
             </span>
           </div>
         </>

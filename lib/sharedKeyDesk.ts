@@ -15,7 +15,7 @@ import type { RenderHandle } from "./engines/types";
  */
 export type SharedKeyDesk = {
   pool: { on: boolean; size: number | null; share: number | null; inFlight: number; waiting: number;
-    workspaces: { name: string; inFlight: number; waiting: number }[] };
+    workspaces: { id: string; name: string; inFlight: number; waiting: number }[] };
   keyChanges: { take: string; workspace: string; key: string; since: number; lastAt: number }[];
   requests: { take: string; workspace: string; model: string; requestId: string; correlationId: string | null;
     key: "platform" | "previous" | "other"; keyPrefix: string; at: number; settled: boolean }[];
@@ -54,7 +54,7 @@ export async function sharedKeyDesk(limit = 20): Promise<SharedKeyDesk> {
     pool: {
       on: pool.config !== null, size: pool.config?.size ?? null, share: pool.config?.share ?? null,
       inFlight: pool.inFlight, waiting: pool.waiting,
-      workspaces: pool.workspaces.map((w) => ({ name: name(w.workspaceId), inFlight: w.inFlight, waiting: w.waiting })),
+      workspaces: pool.workspaces.map((w) => ({ id: w.workspaceId, name: name(w.workspaceId), inFlight: w.inFlight, waiting: w.waiting })),
     },
     keyChanges: alerts.map((a) => ({ take: a.id, workspace: name(a.workspaceId), key: a.keyPrefix, since: a.firstAt, lastAt: a.lastAt })),
     requests: receipts.rows.flatMap((r) => {
