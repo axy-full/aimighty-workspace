@@ -6,7 +6,7 @@ import { PROJECT_LIMITS } from "./project-limits";
 import { applyTeamPatch, emptyTeamCanvas, guardMasters } from "./team-canvas-model";
 import { canvasClock, masterLocks, readCanvasRow, requireProduction, teamCanvasReady, TeamCanvasError, writeCanvasRow } from "./team-canvas";
 import { canvasOpsReady, findCanvasOp, insertCanvasOp } from "./canvas-ops-log";
-import { planCanvasOps, withoutHeld, type CanvasOp, type OpOutcome } from "./canvas-ops-model";
+import { heldOutcomes, planCanvasOps, withoutHeld, type CanvasOp, type OpOutcome } from "./canvas-ops-model";
 import { drainCanvasPushes, liveRooms, type RoomClient } from "./canvas-push";
 
 /*
@@ -75,16 +75,21 @@ export async function applyCanvasOps(productionId: string, request: CanvasOpsReq
     if (seen) return { revision: seen.revision, outcomes: seen.outcomes, changed: seen.changed, replay: true };
     const saved = await readCanvasRow(tx, productionId);
     const current = saved?.canvas ?? emptyTeamCanvas();
-    const plan = planCanvasOps(current, ops, request.author);
+    /* The masters, as the elements table has them now: the plan works around them (a master is never taken off, Atomik
+       never takes one out of a card it feeds, a made card never takes a locked element), saying so in its outcomes. */
+    const locks = await masterLocks(tx, current, { upsertNodes: ops.flatMap((op) => (op.kind === "create" ? [op.node] : [])) });
+    const plan = planCanvasOps(current, ops, request.author, locks);
     /* Every card as it would be saved must still be a valid card. */
     if (plan.patch.upsertNodes.some((node) => !canvasNodeSchema.safeParse(node).success))
       throw new TeamCanvasError("A card this change makes would not be valid.", 400);
     let revision = saved?.revision ?? 0;
     /* A locked master never changes through a canvas operation either, Atomik's included: the elements table decides
-       (team-canvas-model guardMasters), and a write it holds is left out of what is recorded and pushed to the room. */
+       (team-canvas-model guardMasters), and a write it holds is left out of what is recorded and pushed to the room —
+       a removal included — and said in the outcomes. */
     const stamped = { ...plan.patch, at: canvasClock(current), author: request.author };
-    const guarded = guardMasters(current, stamped, { locks: await masterLocks(tx, current, stamped) });
+    const guarded = guardMasters(current, stamped, { locks });
     const changes = withoutHeld(plan.changes, guarded.held);
+    const outcomes = heldOutcomes(plan.outcomes, guarded.held, current);
     if (changes.length) {
       const next = applyTeamPatch(current, guarded.patch, "trusted");
       for (const change of changes) if (change.made && next.nodes[change.id]) next.serverMade[change.id] = request.author;
@@ -92,10 +97,10 @@ export async function applyCanvasOps(productionId: string, request: CanvasOpsReq
     }
     await tx.execute(insertCanvasOp({
       productionId, opId: request.opId, what: request.what ?? "ops", author: request.author, runId: request.runId,
-      ops, outcomes: plan.outcomes, changes, assets: guarded.patch.upsertAssets, focus: plan.focus, revision,
+      ops, outcomes, changes, assets: guarded.patch.upsertAssets, focus: plan.focus, revision,
       push: changes.length && rooms ? "pending" : "none",
     }));
-    return { revision, outcomes: plan.outcomes, changed: changes.length, replay: false };
+    return { revision, outcomes, changed: changes.length, replay: false };
   });
 
   if (!rooms) return { ...applied, live: "off" };

@@ -350,7 +350,8 @@ export function wiresOf(changes: readonly Pick<NodeChange, "id" | "made" | "remo
  * A run's undo, against the canvas as it is now: take out the inputs it wired
  * into cards it did not make, then take its own cards off (softly). The canvas
  * operations hold what a person has changed since: a card a teammate edited or
- * still uses stays, with the reason.
+ * still uses stays, with the reason. So does a locked master, even one the run
+ * made: it stays on the board, wired into the cards that use it.
  */
 export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author: string, wires: readonly { from: string; to: string }[]): CanvasOp[] {
   const own = Object.keys(canvas.nodes).filter((id) => canvas.serverMade[id] === author);

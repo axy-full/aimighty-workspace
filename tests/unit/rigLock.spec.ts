@@ -13,6 +13,8 @@ import {
   MASTER_NODE_FIELDS, applyTeamPatch, catchUpForTeam, diffForTeam, emptyTeamCanvas, guardMasters, holdMasterEdits, isLockedMaster, restoreHeld,
   type TeamCanvas, type TeamPatch,
 } from "../../lib/workbench/team-canvas-model";
+import { IN_USE, MASTER_HELD, heldOutcomes, planCanvasOps, roomPatchFor, withoutHeld } from "../../lib/workbench/canvas-ops-model";
+import { undoOps, type BoardSnapshot } from "../../lib/workbench/rig-agent-plan";
 import { CUTOUT_COPY, CUTOUT_MODEL, cutoutAsset, cutoutProblem, cutoutRequest, fileCutout, readCutoutRun } from "../../lib/workspace/cutout";
 import { generationRequestBody } from "../../lib/workbench/generation-request";
 import { cardVersions } from "../../lib/workspace/rig";
@@ -39,6 +41,8 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.BLOB_READ_WRITE_TOKEN = "";
 process.env.ENGINE_MOCK = "1";
+/* Atomik's build pushes to a live room only when one is set up: never here. */
+delete process.env.LIVEBLOCKS_SECRET_KEY;
 
 const node = (id: string, extra: Partial<CanvasNode> = {}): CanvasNode => ({ id, title: id, type: "element", x: 0, y: 0, width: 220, linked: [], ...extra });
 const asset = (id: string, extra: Partial<Asset> = {}): Asset => ({ id, name: id, kind: "image", category: "Element", url: `/api/uploads/${id}`, uploadId: id, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], ...extra });
@@ -456,20 +460,28 @@ test("a canvas operation (Tidy, Atomik's work) goes through the same guard: it n
     const store = await import("../../lib/workbench/team-canvas");
     const { applyCanvasOps } = await import("../../lib/workbench/canvas-ops");
     const { findCanvasOp } = await import("../../lib/workbench/canvas-ops-log");
-    const { withoutHeld } = await import("../../lib/workbench/canvas-ops-model");
     const { lockMaster } = await import("../../lib/masters");
     const { uploadId } = await sources();
     const photo = asset("photo", { uploadId, url: `/api/uploads/${uploadId}` });
     await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("lamp", { title: "Brass lamp", assetId: "photo" })], made: ["lamp"], removeNodes: [], upsertAssets: [photo], order: ["lamp"] }, "ana");
     const { element } = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: "lamp" } }, ana);
-    /* Atomik makes a card that claims the lamp's element: the card is made, the claim is held, and the record says so. */
-    const made = await applyCanvasOps("prod-masters", { opId: "run-7:step-1", ops: [{ kind: "create", node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: element.id }) }], author: "agent:run-7", runId: "run-7" }, { room: null });
+    /* Atomik makes a card that claims the lamp's element (and a lock record of its own): the card is made, the claim is
+       held, and the outcome the run card reads and the record both say so. */
+    const made = await applyCanvasOps("prod-masters", { opId: "run-7:step-1", ops: [{ kind: "create", node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: element.id, master: { ...record, elementId: element.id } }) }], author: "agent:run-7", runId: "run-7" }, { room: null });
     expect(made.changed).toBe(1);
+    expect(made.outcomes).toEqual([{ kind: "create", nodeIds: ["copy"] }, { kind: "create", nodeIds: [], held: MASTER_HELD.claim("Lamp copy"), card: "copy" }]);
+    expect(MASTER_HELD.claim("Lamp copy")).toBe("Lamp copy was placed as a card of its own: a new card never takes a locked master's element.");
     let canvas = (await store.readTeamCanvas("prod-masters"))!.canvas;
     expect(canvas.nodes.copy).toMatchObject({ title: "Lamp copy", assetId: "photo" });
-    expect("elementId" in canvas.nodes.copy).toBe(false);
+    expect("elementId" in canvas.nodes.copy || "master" in canvas.nodes.copy).toBe(false);
     const row = (await findCanvasOp(db(), "prod-masters", "run-7:step-1"))!;
     expect(row.changes.find((c) => c.id === "copy")?.after).not.toHaveProperty("elementId");
+    expect(row.outcomes).toEqual(made.outcomes);
+    /* Taking the master off as a canvas operation, whoever asks: held, and nothing is recorded as taken off. */
+    const off = await applyCanvasOps("prod-masters", { opId: "remove-ana-000001", ops: [{ kind: "remove", nodeIds: ["lamp"] }], author: "ana" }, { room: null });
+    expect(off).toMatchObject({ changed: 0, outcomes: [{ kind: "remove", nodeIds: [] }, { kind: "remove", nodeIds: [], held: MASTER_HELD.stays("Brass lamp"), card: "lamp" }] });
+    expect((await store.readTeamCanvas("prod-masters"))!.canvas.nodes.lamp).toMatchObject({ elementId: element.id });
+    expect((await findCanvasOp(db(), "prod-masters", "remove-ana-000001"))!.changes).toEqual([]);
     /* A person's canvas operation moves the master (its place is not what makes it the master): it lands, the master stays one. */
     const moved = await applyCanvasOps("prod-masters", { opId: "tidy-ana-000001", ops: [{ kind: "move", nodeId: "lamp", x: 480, y: 120 }], author: "ana" }, { room: null });
     expect(moved.changed).toBe(1);
@@ -486,6 +498,152 @@ test("a canvas operation (Tidy, Atomik's work) goes through the same guard: it n
       { id: "c", made: true, fields: [], before: {}, after: { id: "c", title: "C" } },
     ]);
     expect(withoutHeld(changes, [])).toBe(changes);
+  });
+});
+
+test("Atomik's undo never strips a locked master: it stays on the board, wired into the cards that use it, with what it takes; a card made never claims one; each hold is said plainly", () => {
+  const run = "agent:rar_eeeeeeeeeeeeeeeeeeeeeeee";
+  const masters = new Set(["el_lamp"]);
+  /* The run made the lamp (with a note it takes and a shot it feeds) and wired it into Ana's shot; then Atomik locked the
+     lamp for Ana, so the run is still the lamp's last writer: the strongest case. */
+  let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [node("theirs", { title: "Ana's shot", type: "scene" })], removeNodes: [], upsertAssets: [], order: ["theirs"], at: 1, author: "ana" }, "trusted");
+  canvas = applyTeamPatch(canvas, {
+    upsertNodes: [{ ...lamp, linked: ["n1"] }, node("n1", { title: "Worn brass", type: "note" }), node("s1", { title: "Desk shot", type: "scene", linked: ["lamp"] })],
+    made: ["lamp", "n1", "s1"], removeNodes: [], upsertAssets: [asset("photo")], order: null, at: 2, author: run,
+  }, "trusted");
+  canvas = applyTeamPatch(canvas, { upsertNodes: [{ ...canvas.nodes.theirs, linked: ["lamp"] }], fields: { theirs: ["linked"] }, removeNodes: [], upsertAssets: [], order: null, at: 3, author: run }, "trusted");
+  canvas = { ...canvas, serverMade: { lamp: run, n1: run, s1: run } };
+  const ops = undoOps(canvas, run, [{ from: "lamp", to: "theirs" }]);
+  expect(ops).toEqual([{ kind: "unwire", from: "lamp", to: "theirs" }, { kind: "remove", nodeIds: ["lamp", "n1", "s1"] }]);
+
+  const undo = planCanvasOps(canvas, ops, run, masters);
+  expect(undo.outcomes).toEqual([
+    { kind: "unwire", nodeIds: [], held: MASTER_HELD.wired("Brass lamp", "Ana's shot"), card: "lamp" },
+    { kind: "remove", nodeIds: ["s1"] },
+    { kind: "remove", nodeIds: [], held: MASTER_HELD.stays("Brass lamp"), card: "lamp" },
+    /* Held as the lamp's input: the lamp stays, so nothing is left wired to nothing. */
+    { kind: "remove", nodeIds: [], held: IN_USE, card: "n1" },
+  ]);
+  expect(MASTER_HELD.stays("Brass lamp")).toBe("Brass lamp is a locked master, so it stays on the board.");
+  expect(MASTER_HELD.wired("Brass lamp", "Ana's shot")).toBe("Brass lamp is a locked master, so it stays wired into Ana's shot.");
+  /* Only the shot comes off. The guard has nothing left to hold, and the room is told only that. */
+  expect(undo.patch.removeNodes).toEqual(["s1"]);
+  expect(guardMasters(canvas, { ...undo.patch, at: 4, author: run }, { locks: masters }).held).toEqual([]);
+  const after = applyTeamPatch(canvas, { ...undo.patch, at: 4, author: run }, { locks: masters });
+  expect(Object.keys(after.nodes).sort()).toEqual(["lamp", "n1", "theirs"]);
+  expect(after.nodes.lamp).toEqual(canvas.nodes.lamp);
+  expect(after.nodes.theirs.linked).toEqual(["lamp"]);
+  expect(Object.keys(after.removed)).toEqual(["s1"]);
+  expect(roomPatchFor(undo.changes, []).removeNodes).toEqual(["s1"]);
+  /* The elements table decides: unlocked there, the lamp's own record makes it no master, and the undo takes it all off.
+     With no table to ask, the record counts: the rule fails closed. */
+  expect(planCanvasOps(canvas, ops, run, new Set()).outcomes).toEqual([{ kind: "unwire", nodeIds: ["theirs"] }, { kind: "remove", nodeIds: ["lamp", "n1", "s1"] }]);
+  expect(planCanvasOps(canvas, ops, run).outcomes).toEqual(undo.outcomes);
+  /* A person's canvas operation may take a master out of a card (only Atomik is held); none takes a master off. */
+  expect(planCanvasOps(canvas, [{ kind: "unwire", from: "lamp", to: "theirs" }], "ana", masters).outcomes).toEqual([{ kind: "unwire", nodeIds: ["theirs"] }]);
+  expect(planCanvasOps(canvas, [{ kind: "remove", nodeIds: ["lamp"] }], "ana", masters).outcomes[1]).toEqual({ kind: "remove", nodeIds: [], held: MASTER_HELD.stays("Brass lamp"), card: "lamp" });
+
+  /* A card a batch makes never takes a locked element, nor a lock record (only the lock writes one): it is made as a card of
+     its own, and the run card says so. One tied to an element nobody locked keeps it. */
+  const made = planCanvasOps(canvas, [
+    { kind: "create", node: node("copy", { title: "Lamp copy", assetId: "photo", elementId: "el_lamp", master: record }) },
+    { kind: "create", node: node("stool", { title: "Stool", elementId: "el_stool" }) },
+  ], run, masters);
+  expect(made.outcomes).toEqual([
+    { kind: "create", nodeIds: ["copy"] },
+    { kind: "create", nodeIds: [], held: MASTER_HELD.claim("Lamp copy"), card: "copy" },
+    { kind: "create", nodeIds: ["stool"] },
+  ]);
+  const copy = made.patch.upsertNodes.find((n) => n.id === "copy")!;
+  expect(copy).toMatchObject({ title: "Lamp copy", assetId: "photo" });
+  expect("elementId" in copy || "master" in copy).toBe(false);
+  expect(made.patch.upsertNodes.find((n) => n.id === "stool")?.elementId).toBe("el_stool");
+  expect(guardMasters(canvas, { ...made.patch, at: 5, author: run }, { locks: masters }).held).toEqual([]);
+
+  /* Should the guard hold more as a batch is folded in, what is recorded and pushed is what landed, and the outcomes say so. */
+  const removal = { id: "lamp", made: false, removed: true, fields: [], before: canvas.nodes.lamp as unknown as Record<string, unknown>, after: {} };
+  const shot = { id: "s1", made: false, removed: true, fields: [], before: canvas.nodes.s1 as unknown as Record<string, unknown>, after: {} };
+  const held = [{ nodeId: "lamp", elementId: "el_lamp", fields: [], removal: true as const }];
+  expect(withoutHeld([removal, shot], held)).toEqual([shot]);
+  expect(heldOutcomes([{ kind: "remove", nodeIds: ["lamp", "s1"] }], held, canvas)).toEqual([
+    { kind: "remove", nodeIds: ["s1"] },
+    { kind: "remove", nodeIds: [], held: MASTER_HELD.stays("Brass lamp"), card: "lamp" },
+  ]);
+  expect(heldOutcomes([{ kind: "set", nodeIds: ["lamp"] }], [{ nodeId: "lamp", fields: ["refKind"] }], canvas)).toEqual([
+    { kind: "set", nodeIds: ["lamp"] }, { kind: "set", nodeIds: [], held: MASTER_HELD.kept, card: "lamp" },
+  ]);
+  const plain = [{ kind: "tidy" as const, nodeIds: ["s1"] }];
+  expect(heldOutcomes(plain, [], canvas)).toBe(plain);
+});
+
+test("Atomik builds, a master is locked (by Atomik for Ana, and by Ana), then the build is undone: the masters stay whole, on the board and in Ana's shot, and the run card says why", async () => {
+  await tenant("agent-masters", async () => {
+    const { db } = await import("../../lib/db");
+    const store = await import("../../lib/workbench/team-canvas");
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { agentNodeId } = await import("../../lib/workbench/rig-agent-plan");
+    const { mockPlannerModel, runPlanner } = await import("../../lib/workbench/rig-agent-planner");
+    const { undoOpId } = await import("../../lib/workbench/rig-agent-store");
+    const { findCanvasOp } = await import("../../lib/workbench/canvas-ops-log");
+    const { lockMaster } = await import("../../lib/masters");
+    const { saveDraft } = await import("../../lib/workbench/records");
+    const { uploadId, genId } = await sources();
+    const photo = asset("photo", { uploadId, url: `/api/uploads/${uploadId}`, category: "Character" });
+    const render = asset("render", { uploadId: undefined, generationId: genId, url: `/api/media/${genId}` });
+    await saveDraft("ana", project([], [photo, render]), 0);
+    await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("theirs", { title: "Ana's shot", type: "scene", width: 344, mode: "Video" })], made: ["theirs"], removeNodes: [], upsertAssets: [], order: ["theirs"] }, "ana");
+    /* The mock planner (no provider): the captain and a lamp, a note the lamp takes, a shot, and both wired into Ana's shot. */
+    const plan = async (snapshot: BoardSnapshot) => ({
+      ...(await runPlanner(snapshot, mockPlannerModel(snapshot, { calls: [
+        { tool: "create_node", input: { key: "cast-1", kind: "cast", title: "The captain", from: "photo" } },
+        { tool: "create_node", input: { key: "prop-1", kind: "element", title: "Brass lamp", from: "render" } },
+        { tool: "create_node", input: { key: "note-1", kind: "note", title: "Worn brass", text: "Worn brass, warm light." } },
+        { tool: "create_node", input: { key: "shot-1", kind: "shot", title: "01 — Desk", text: "The captain at her desk." } },
+        { tool: "wire", input: { from: "cast-1", to: "shot-1" } }, { tool: "wire", input: { from: "prop-1", to: "shot-1" } },
+        { tool: "wire", input: { from: "note-1", to: "prop-1" } },
+        { tool: "wire", input: { from: "cast-1", to: "theirs" } }, { tool: "wire", input: { from: "prop-1", to: "theirs" } },
+      ], result: { title: "Desk", summary: "The captain and her lamp." } }))),
+      model: "mock/rig-agent",
+    });
+    const deps = { access: async () => null, paceMs: 0, plan };
+    const asked = await agent.askRigAgent({ productionId: "prod-masters", draftId: "draft-masters", userId: "ana", requestId: "req-masters-01", goal: "The captain at her desk." });
+    await agent.advanceRigAgentRun(asked.id, deps);
+    const fingerprint = (await agent.rigAgentState("prod-masters", "ana")).run!.proposal!.fingerprint;
+    await agent.approveRigAgent({ productionId: "prod-masters", runId: asked.id, fingerprint, userId: "ana" });
+    expect((await agent.advanceRigAgentRun(asked.id, deps)).state).toBe("done");
+    const id = (key: string) => agentNodeId(asked.id, key);
+
+    /* Atomik locks its captain for Ana, so the run is still that card's last writer; Ana locks the lamp herself. */
+    const captain = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: id("cast-1") } }, { ...ana, agent: { runId: asked.id } });
+    const lampLock = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: id("prop-1") } }, ana);
+    const before = (await store.readTeamCanvas("prod-masters"))!.canvas;
+    expect(before.writers[id("cast-1")]).toBe(`agent:${asked.id}`);
+    expect([...before.nodes.theirs.linked].sort()).toEqual([id("cast-1"), id("prop-1")].sort());
+
+    const undone = await agent.undoRigAgent({ productionId: "prod-masters", runId: asked.id, userId: "bo" });
+    expect(undone.undo).toMatchObject({ removed: 1, kept: 3 });
+    expect([...undone.undo!.reasons].sort()).toEqual([
+      MASTER_HELD.wired("The captain", "Ana's shot"), MASTER_HELD.wired("Brass lamp", "Ana's shot"),
+      MASTER_HELD.stays("The captain"), MASTER_HELD.stays("Brass lamp"), IN_USE,
+    ].sort());
+    /* Only the shot came off. Both masters stay whole (element, kind, source, lock record), and in Ana's shot; the note the
+       lamp takes stays with it. */
+    const after = (await store.readTeamCanvas("prod-masters"))!.canvas;
+    expect(Object.keys(after.removed)).toEqual([id("shot-1")]);
+    expect(after.nodes[id("cast-1")]).toEqual(before.nodes[id("cast-1")]);
+    expect(after.nodes[id("prop-1")]).toEqual(before.nodes[id("prop-1")]);
+    expect(after.nodes[id("cast-1")]).toMatchObject({ elementId: captain.element.id, assetId: "photo", master: { agent: "atomik" } });
+    expect(after.nodes[id("prop-1")]).toMatchObject({ elementId: lampLock.element.id, assetId: "render" });
+    expect([...after.nodes.theirs.linked].sort()).toEqual([id("cast-1"), id("prop-1")].sort());
+    expect(after.nodes[id("note-1")]).toBeTruthy();
+    /* What the undo recorded, and so what the live room is told, is only what landed: the shot. */
+    const row = (await findCanvasOp(db(), "prod-masters", undoOpId(asked.id)))!;
+    expect(row.changes.map((c) => [c.id, !!c.removed])).toEqual([[id("shot-1"), true]]);
+    expect(roomPatchFor(row.changes, row.assets).removeNodes).toEqual([id("shot-1")]);
+    /* The run card says it in so many words, to anyone on the team. */
+    const card = (await agent.rigAgentState("prod-masters", "bo")).run!;
+    expect(card.undo?.reasons).toEqual(expect.arrayContaining([MASTER_HELD.stays("The captain"), MASTER_HELD.wired("Brass lamp", "Ana's shot")]));
+    expect(card.canUndo).toBe(false);
   });
 });
 
