@@ -61,6 +61,8 @@ export type TeamCanvasApi = {
   flush: () => Promise<void>;
   /** Lays the board out on the server, for everyone at once. Free. */
   tidy: () => Promise<TidyOutcome>;
+  /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
+  refresh: () => Promise<void>;
   /** The locked elements this window knows of (the masters): from the canvas's read, a lock or unlock here, and edits the server held. */
   locks: ReadonlySet<string>;
   /** A lock or unlock this window made (or learned of). */
@@ -480,6 +482,11 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     return { ok: true, moved: v.moved, live };
   }, [scope, send, foldServer]);
 
+  const refresh = useCallback(async () => {
+    const pid = joined.current;
+    if (pid && !room.current) await foldServer(pid);
+  }, [foldServer]);
+
   const learnLock = useCallback((elementId: string, locked: boolean) => {
     const pid = joined.current;
     if (!pid) return;
@@ -489,5 +496,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh, locks, learnLock, writeServer };
 }

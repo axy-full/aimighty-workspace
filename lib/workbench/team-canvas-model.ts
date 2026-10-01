@@ -68,7 +68,9 @@ export type TeamPatch = {
    * A patch a draft save implied (lib/workbench/records.ts saveDraft) rather
    * than an edit made on the canvas: a node its window no longer shows may
    * have been lost to a stale view, so its removals never take off a node a
-   * server operation made. Set by the server, never taken from a window.
+   * server operation made — and a node a server operation made that the
+   * canvas has taken off since is never brought back by it (heldReturn).
+   * Set by the server, never taken from a window.
    */
   implied?: boolean;
 };
@@ -343,6 +345,18 @@ export function heldRemoval(serverMade: Record<string, string> | undefined, id: 
   return !!serverMade?.[id] && (!!patch.implied || patch.expect?.[id] !== undefined);
 }
 
+/**
+ * Whether a write must not land: one a save only implied (a draft save) of a
+ * card a server operation made that the canvas has since taken off (an Atomik
+ * run's undo, or a person's delete). The window that saved had folded the card
+ * in before it came off, so its save still carries it; putting it back would
+ * undo the removal behind everyone's back. A card put back on the canvas
+ * itself (the Rig's own undo, a window's edit) still lands.
+ */
+export function heldReturn(canvas: Pick<TeamCanvas, "nodes" | "removed" | "serverMade">, id: string, patch: Pick<TeamPatch, "implied">): boolean {
+  return !!patch.implied && !canvas.nodes[id] && !!canvas.removed[id] && !!canvas.serverMade?.[id];
+}
+
 /** The removals of a patch that would take a card off this canvas but that heldRemoval keeps from landing. */
 export function heldRemovals(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, patch: Pick<TeamPatch, "removeNodes" | "implied" | "expect">): string[] {
   return patch.removeNodes.filter((id) => landedRemoval(canvas.nodes[id], id, patch) && heldRemoval(canvas.serverMade, id, patch));
@@ -358,7 +372,7 @@ export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch, guard?: Mas
   const newer = (key: string) => (out.stamps[key] ?? 0) <= patch.at;
   for (const node of patch.upsertNodes) {
     const key = `n:${node.id}`;
-    if (!newer(key)) continue;
+    if (!newer(key) || heldReturn(out, node.id, patch)) continue;
     const next = landedWrite(out.nodes[node.id], out.removed[node.id], node, patch);
     if (!next) continue;
     /* The writer is who last changed the node: a save that only carries what the canvas already holds changes nothing. */

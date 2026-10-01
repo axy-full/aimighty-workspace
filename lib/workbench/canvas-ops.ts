@@ -11,7 +11,9 @@ import { drainCanvasPushes, liveRooms, type RoomClient } from "./canvas-push";
 
 /*
  * applyCanvasOps: the one way the server changes a production's team canvas
- * (plan §5.2, structure 3-A). Operations are intents, planned against the
+ * (plan §5.2, structure 3-A): make, move, wire and unwire, set, tidy, and take
+ * off softly (remove: the card is kept whole in the canvas's record of cards
+ * taken off; an Atomik run's undo). Operations are intents, planned against the
  * canvas as it is inside the same write transaction a person's edit takes
  * (lib/workbench/team-canvas.ts), folded in by the same merge on the server's
  * clock, recorded with who asked (a person's user id, or `agent:<runId>`), and
@@ -29,8 +31,10 @@ export const canvasOpSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("create"), node: canvasNodeSchema, assets: z.array(canvasAssetSchema).max(20).optional() }),
   z.object({ kind: z.literal("move"), nodeId: z.string().max(100), x: z.number().finite(), y: z.number().finite() }),
   z.object({ kind: z.literal("wire"), from: z.string().max(100), to: z.string().max(100) }),
+  z.object({ kind: z.literal("unwire"), from: z.string().max(100), to: z.string().max(100) }),
   z.object({ kind: z.literal("set"), nodeId: z.string().max(100), fields: z.record(z.string().max(40), z.unknown()) }),
   z.object({ kind: z.literal("tidy"), nodeIds: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes).optional() }),
+  z.object({ kind: z.literal("remove"), nodeIds: z.array(z.string().max(100)).min(1).max(PROJECT_LIMITS.nodes) }),
 ]);
 
 export type CanvasOpsRequest = {
