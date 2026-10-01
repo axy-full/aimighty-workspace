@@ -105,6 +105,20 @@ async function probe(page: Page) {
     };
   });
 }
+/**
+ * The dev server's live reload is held for every test here. On a dev server
+ * still compiling routes on their first use, the dev client applies what
+ * compiled by refreshing the page and then, for some updates, reloading it.
+ * A reload wipes the page's record above, restarts the pace the page was
+ * keeping and drops the paused clock, so the fresh page's first read looks like
+ * an extra one. The client's socket (/_next/hmr) is answered here, open and
+ * silent: nothing is applied under a test, and the client never reconnects (a
+ * closed socket is retried on the paused clock's timers, and reloads the page
+ * after enough retries). A production build has no such socket.
+ */
+test.beforeEach(async ({ page }) => {
+  await page.routeWebSocket(/\/_next\/hmr(\?|$)/, () => {});
+});
 const record = (page: Page) => page.evaluate(() => (window as unknown as { __sent: Sent[] }).__sent);
 /** Status reads the page sent (the connected account's `status` action, or GET /api/jobs/:id), oldest first. */
 async function statusReads(page: Page, id?: string): Promise<Sent[]> {
