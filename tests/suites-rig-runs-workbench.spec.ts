@@ -210,7 +210,7 @@ test("Auto: renders under the per-job line run on their own, with no tap, up to 
   await expect(card.getByTestId("rig-agent-state")).toHaveText("Needs you", { timeout: 90_000 });
   let run = (await agentOf(page.request, headers, productionId)).agent.run!;
   expect(run.money).toMatchObject({ mode: "auto", limit });
-  await expect(card.getByTestId("rig-agent-mode-line")).toHaveText(` · Auto up to about ${cr(run.money!.jobCeiling)} a render`);
+  await expect(card.getByTestId("rig-agent-mode-line")).toHaveText(` · Auto: drafts up to about ${cr(run.money!.jobCeiling)} each`);
   const renders = run.paid.filter((p) => p.tool === "render");
   const ranAlone = renders.filter((p) => ["rendering", "done", "failed"].includes(p.state)).length;
   expect(ranAlone).toBeGreaterThanOrEqual(1);

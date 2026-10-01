@@ -5,9 +5,10 @@ import { creditUsd } from "../creditTerms";
  * How much Atomik may spend on the Rig without asking (plan §8).
  *
  * A run spends only inside the limit a person approved for it. Inside that
- * limit, in Auto mode, one render may run without a tap only when its price is
- * at or under the per-job line below; anything priced above it always asks.
- * In Ask mode (the default) every paid step asks.
+ * limit, in Auto mode, one render may run without a tap only when it is a
+ * draft priced at or under the per-job line below; anything priced above it,
+ * and any full-quality render, always asks. In Ask mode (the default) every
+ * paid step asks.
  *
  * The per-job line is the platform's approval line (owner, 29 September: Rig
  * jobs use it): SOW §7A guardrail 4, a job price whose single source is

@@ -391,6 +391,21 @@ export async function looseCharges(limit: number, olderThan: number, at = now())
   })).map((r) => String(r.id));
 }
 
+/**
+ * Runs that ended with a render still marked as being sent, or a take in flight, and nobody holding
+ * them: what the stop could not close yet (a request still being accepted, a take still rendering).
+ * The cron closes them (closeEndedSteps, lib/workbench/rig-agent-runs.ts); free reads, never a send.
+ */
+export async function looseSteps(limit: number, at = now()): Promise<string[]> {
+  if (!(await rigAgentExists())) return [];
+  return (await rows(db(), {
+    sql: `SELECT r.id FROM rig_agent_runs r WHERE r.state IN ('stopped','failed','done') AND r.lease_until<=?
+          AND EXISTS (SELECT 1 FROM rig_agent_steps s WHERE s.run_id=r.id AND s.purpose='take' AND s.state IN ('sending','rendering'))
+          ORDER BY r.updated_at LIMIT ?`,
+    args: [at, limit],
+  })).map((r) => String(r.id));
+}
+
 /** Every change the run made to the canvas, from the canvas's own log (lib/workbench/canvas-ops-log.ts). */
 export async function runCanvasChanges(productionId: string, runId: string): Promise<{ changes: import("./canvas-ops-model").NodeChange[] }[]> {
   const exists = (await db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rig_canvas_ops'")).rows.length > 0;

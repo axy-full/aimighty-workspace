@@ -35,9 +35,10 @@ import { withTeamCanvas } from "./team-canvas-model";
  *    free, repeatable preparation (prepareGeneration). A draft where the
  *    engine has one; a job with no price is never run.
  *  - approved: by a tap from the person who asked (Ask, the default), or in
- *    Auto when the price is at or under the per-job line
- *    (lib/workbench/rig-agent-limits.ts). Anything over the line asks. The
- *    run's limit is checked before approval and again before sending.
+ *    Auto when it is a draft priced at or under the per-job line
+ *    (lib/workbench/rig-agent-limits.ts). Anything over the line asks, and so
+ *    does a full-quality render (an engine with no draft). The run's limit is
+ *    checked before approval and again before sending.
  *  - sending: the durable request key is saved first —
  *    `rig-agent:<runId>:<nodeId>:take:<attempt>` — and then the prepared
  *    request is admitted exactly as priced (admitGeneration), with the run's
@@ -76,6 +77,10 @@ export const PENDING_CHECK_MS = 5_000;
 export const SLOT_WAIT_MS = 30_000;
 const LIVE_JOB = new Set(["queued", "running", "held"]);
 const TERMINAL: readonly RigAgentStepState[] = ["done", "failed", "skipped"];
+/** A render a stop let go of before it was sent (or that its reservation refused once the stop landed). */
+export const STOPPED_UNSENT = "Stopped before it was sent. Nothing was charged.";
+const INCOMPLETE_RECORD = "This render's request record is incomplete, so nothing more is sent for it. Press Price again, skip it, or stop.";
+const MISMATCHED_RECORD = "This render's record does not match what was approved, so nothing more is sent for it. Press Price again, skip it, or stop.";
 
 /**
  * THE VERIFY SEAM (plan PR 7, lane rig-verify): checking a take against its masters is a paid
@@ -348,13 +353,15 @@ async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> 
   }
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
-  if (run.mode === "auto" && toTenths(step.quoteCredits) <= toTenths(line)) {
+  /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
+  const draft = admission.request.draft === true;
+  if (run.mode === "auto" && draft && toTenths(step.quoteCredits) <= toTenths(line)) {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = run.mode === "auto"
-    ? `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a render may cost without asking. Render it, skip it, or stop.`
-    : `${title} is ready to render · about ${figure(step.quoteCredits)}.`;
+  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(step.quoteCredits)}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(step.quoteCredits)}. Render it, skip it, or stop.`
+    : `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
 }
@@ -434,7 +441,7 @@ async function landed(run: RunRow, step: StepRow, jobId: string, status: number 
   if (job?.status === "failed" && !charge && (status == null || status >= 400)) {
     const fresh = await getRun(db(), run.id);
     if (fresh?.state !== "running") {
-      await patchStep(db(), step.id, { state: "skipped", reason: "Stopped before it was sent. Nothing was charged." }, ["sending"]);
+      await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
       return stop({ state: fresh?.state ?? null, more: false });
     }
     const said = job.error ?? "This render was refused. Nothing was charged.";
@@ -450,8 +457,7 @@ async function landed(run: RunRow, step: StepRow, jobId: string, status: number 
 
 /** A request whose reply was lost (a crash, an exception, a pending answer): asked about by its durable key, never sent again. */
 async function recover(run: RunRow, step: StepRow): Promise<Moved> {
-  if (!step.requestKey || !step.admission)
-    return pause(run, step, "This render's request record is incomplete, so nothing more is sent for it. Press Price again, skip it, or stop.", "record", ["sending"]);
+  if (!step.requestKey || !step.admission) return pause(run, step, INCOMPLETE_RECORD, "record", ["sending"]);
   const check = await checkGenerationRequest({ userId: run.owner, key: step.requestKey, fingerprint: preparedClaimFingerprint(step.admission) });
   const fresh = await getRun(db(), run.id);
   const live = fresh?.state === "running";
@@ -464,21 +470,63 @@ async function recover(run: RunRow, step: StepRow): Promise<Moved> {
       /* It never arrived, and its key is set aside for good: nothing was sent or charged. A new attempt
          (a new key) may follow under the same approval — unless the run stopped. */
       if (!live) {
-        await patchStep(db(), step.id, { state: "skipped", reason: "Stopped before it was sent. Nothing was charged." }, ["sending"]);
+        await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
         return stop({ state: fresh?.state ?? null, more: false });
       }
       await patchStep(db(), step.id, { state: "approved" }, ["sending"]);
       return CONTINUE;
     case "refused":
       if (!live) {
-        await patchStep(db(), step.id, { state: "skipped", reason: "Stopped before it was sent. Nothing was charged." }, ["sending"]);
+        await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
         return stop({ state: fresh?.state ?? null, more: false });
       }
       /* It was answered without a job: nothing was made or charged. */
       return pause(run, step, check.error, check.status === 402 ? "credits" : "refused", ["sending"]);
     case "mismatch":
-      return pause(run, step, "This render's record does not match what was approved, so nothing more is sent for it. Press Price again, skip it, or stop.", "record", ["sending"]);
+      return pause(run, step, MISMATCHED_RECORD, "record", ["sending"]);
   }
+}
+
+/**
+ * A run that ended (a stop) leaves no paid step half-way, and nothing here sends or charges anything:
+ *  - a render whose key was saved but whose reply was never recorded is asked about by that key, never
+ *    sent again: it landed (followed, and recorded once its take settles); it never arrived, or was
+ *    refused — at its reservation, too, once the stop reached it — so its key is fenced and nothing was
+ *    charged; or it is still being accepted, and the cron asks again (drainRigAgentWakeups);
+ *  - a take whose end the settlement delivered before its step knew its job is recorded now.
+ * Run under the run's lease: at the stop, and by the cron for anything still open.
+ */
+export async function closeEndedSteps(run: RunRow): Promise<void> {
+  for (const step of await stepsOf(db(), run.id)) {
+    if (step.purpose !== "take") continue;
+    if (step.state === "sending") await closeSend(run, step);
+    else if (step.state === "rendering" && step.jobId) await recordTakeEnd(step, step.jobId);
+  }
+}
+
+async function closeSend(run: RunRow, step: StepRow): Promise<void> {
+  if (!step.requestKey || !step.admission) {
+    await patchStep(db(), step.id, { state: "paused", pause: "record", reason: INCOMPLETE_RECORD }, ["sending"]);
+    return;
+  }
+  const check = await checkGenerationRequest({ userId: run.owner, key: step.requestKey, fingerprint: preparedClaimFingerprint(step.admission) });
+  if (check.state === "pending") return;
+  if (check.state === "absent" || check.state === "refused") {
+    await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
+    return;
+  }
+  if (check.state === "mismatch") {
+    await patchStep(db(), step.id, { state: "paused", pause: "record", reason: MISMATCHED_RECORD }, ["sending"]);
+    return;
+  }
+  const [job, charge] = await Promise.all([jobOf(check.id), meterOf(check.id)]);
+  /* Its reservation refused it (the stop reached it first): nothing was reserved or charged. */
+  if (job?.status === "failed" && !charge) {
+    await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
+    return;
+  }
+  if (await patchStep(db(), step.id, { state: "rendering", job_id: check.id, credits_reserved: charge?.credits ?? step.quoteCredits, reason: null }, ["sending"]))
+    await recordTakeEnd(step, check.id);
 }
 
 /** A take in flight: moved along, then recorded as it settled — the charge the ledger shows, never a guess. */

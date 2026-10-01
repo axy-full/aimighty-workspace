@@ -473,7 +473,7 @@ export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pi
   const renders = plan.next.filter((n) => n.what === "render").length, locks = plan.next.filter((n) => n.what === "lock").length;
   const next = [
     ...(renders ? [money?.mode === "auto"
-      ? `Next: render ${plural(renders, "shot")} · priced; up to about ${creditFigure(money.jobCeiling)} cr each runs on its own`
+      ? `Next: render ${plural(renders, "shot")} · priced; drafts up to about ${creditFigure(money.jobCeiling)} cr each run on their own`
       : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];

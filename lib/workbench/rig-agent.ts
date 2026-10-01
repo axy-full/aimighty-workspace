@@ -10,8 +10,7 @@ import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { requireTenant, runInTenant, type TenantWorkspace } from "@/lib/tenant";
 import { catalog, type CatalogModel } from "@/lib/catalog";
 import { quotedCredits } from "@/lib/credits";
-import { checkGenerationRequest, reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
-import { preparedClaimFingerprint } from "@/lib/admissionSupport";
+import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
 import { textVendor } from "@/lib/openai-direct";
@@ -28,10 +27,10 @@ import {
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
 } from "./rig-agent-planner";
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
-import { advancePaidSteps, RIG_AGENT_VERIFY, stepTitle, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
+import { advancePaidSteps, closeEndedSteps, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, newRunId, patchRun, patchStep,
-  releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
+  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
 import { orderedIds } from "./team-canvas-model";
@@ -51,8 +50,8 @@ import { readTeamCanvas, requireProduction } from "./team-canvas";
  *
  * Money (plan §5.5, §8; PR 10). Before a run spends anything, the person who
  * asks approves a limit for it ("up to about N credits for this run") and a
- * mode: Ask (the default: every render waits for their tap) or Auto (a render
- * priced at or under the per-job line runs on its own; anything more asks).
+ * mode: Ask (the default: every render waits for their tap) or Auto (a draft
+ * priced at or under the per-job line runs on its own; anything else asks).
  * The planning turn is metered into that limit — reserved at its ceiling,
  * settled at what it used. Placing cards, wiring and tidying stay free. After
  * the build, the renders the plan names run as paid steps inside the limit
@@ -328,7 +327,7 @@ async function stopRun(runId: string, reason: string) {
     const stopped = await patchRun(tx, runId, { state: "stopped", reason, finished_at: now(), wake_at: null }, ["planning", "awaiting_approval", "running", "paused", "needs_you"]);
     if (stopped) {
       await setSteps(tx, runId, "queued", "skipped"); await setSteps(tx, runId, "proposed", "skipped");
-      await closePaidSteps(tx, runId, "Stopped before it was sent. Nothing was charged.");
+      await closePaidSteps(tx, runId, STOPPED_UNSENT);
     }
     return stopped;
   });
@@ -341,9 +340,10 @@ async function stopRun(runId: string, reason: string) {
 /**
  * After a stop, what the run left mid-way is settled — unless a worker still holds the run, in
  * which case it finishes its one step and records it itself:
- *  - a render whose key was saved but whose reply was never recorded is asked about by that key:
- *    it landed (followed to its end, and charged only as it settles), or it never arrived (its key
- *    is fenced now, so it never will, and nothing was charged);
+ *  - a render whose key was saved but whose reply was never recorded is asked about by that key
+ *    (closeEndedSteps): it landed (followed to its end, and charged only as it settles), or it never
+ *    arrived (its key is fenced now, so it never will, and nothing was charged); one still being
+ *    accepted is asked about again by the cron;
  *  - a planning charge still reserved is released: the worker that held it is gone.
  * Renders already in flight finish and settle at what they cost.
  */
@@ -353,12 +353,7 @@ async function settleLooseWork(runId: string) {
   try {
     const run = await getRun(db(), runId);
     if (!run) return;
-    for (const step of (await stepsOf(db(), runId)).filter((s) => s.state === "sending" && s.requestKey && s.admission)) {
-      const check = await checkGenerationRequest({ userId: run.owner, key: step.requestKey!, fingerprint: preparedClaimFingerprint(step.admission!) });
-      if (check.state === "landed") await patchStep(db(), step.id, { state: "rendering", job_id: check.id }, ["sending"]);
-      else if (check.state === "absent" || check.state === "refused")
-        await patchStep(db(), step.id, { state: "skipped", reason: "Stopped before it was sent. Nothing was charged." }, ["sending"]);
-    }
+    await closeEndedSteps(run);
     if (run.planCharge === "reserved") await releasePlanning(run, null);
   } finally {
     await releaseRun(lease);
@@ -788,11 +783,13 @@ async function cancelQueued(runId: string) {
 
 /**
  * The cron's wake: runs in progress whose wake is due, within the deadline. Also releases a
- * planning charge a stopped or ended run still holds after the worker that reserved it died.
+ * planning charge a stopped or ended run still holds after the worker that reserved it died, and
+ * closes what a stopped run could not close at the stop (closeEndedSteps: a request still being
+ * accepted then, a take still rendering) — free reads, never a send.
  */
-export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt?: number } = {}): Promise<{ advanced: number; released: number }> {
+export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt?: number } = {}): Promise<{ advanced: number; released: number; swept: number }> {
   const ids = await dueRuns(Math.min(options.limit ?? 2, 8));
-  let advanced = 0, released = 0;
+  let advanced = 0, released = 0, swept = 0;
   for (const id of ids) {
     const left = (options.deadlineAt ?? Date.now() + 30_000) - Date.now();
     if (left <= 1000) break;
@@ -809,7 +806,17 @@ export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt
       await releaseRun(lease);
     }
   }
-  return { advanced, released };
+  for (const id of await looseSteps(4)) {
+    const lease = await claimRun(id, LEASE_MS);
+    if (!lease) continue;
+    try {
+      const run = await getRun(db(), id);
+      if (run && !ACTIVE_STATES.includes(run.state)) { await closeEndedSteps(run); swept++; }
+    } finally {
+      await releaseRun(lease);
+    }
+  }
+  return { advanced, released, swept };
 }
 
 /**

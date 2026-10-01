@@ -9,8 +9,8 @@ import { useRig } from "./RigProvider";
 /**
  * Atomik on the board (plan PRs 9 and 10): the run card on the Rig, the same on
  * a desk and on a phone. Ask for a board with a limit for the run ("up to about
- * N credits") and a mode (Ask before each render, or Auto up to the per-job
- * line); Atomik plans inside that limit and proposes the cards and how they
+ * N credits") and a mode (Ask before each render, or Auto for drafts up to the
+ * per-job line); Atomik plans inside that limit and proposes the cards and how they
  * connect; approve the build (free) and watch the cards arrive for the whole
  * team; then each render the plan names is priced and — in Ask, with one tap —
  * rendered as a draft, and the card shows what each settled at against the
@@ -181,7 +181,7 @@ export function RigAgentCard() {
                     Ask me before each one
                   </button>
                   <button type="button" role="radio" aria-checked={mode === "auto"} className="pxw-agent-option" data-testid="rig-agent-mode-auto" onClick={() => setMode("auto")}>
-                    {terms ? `Auto up to about ${cr(terms.jobCeiling)} each` : "Auto up to the per-render line"}
+                    {terms ? `Auto: drafts up to about ${cr(terms.jobCeiling)} each` : "Auto: drafts up to the per-render line"}
                   </button>
                 </div>
               </div>
@@ -277,7 +277,7 @@ function MoneyLine({ run }: { run: RigAgentRunView }) {
       <span data-testid="rig-agent-spent">Spent {cr(m.spent)}</span>
       {m.inFlight ? <span data-testid="rig-agent-inflight"> · {cr(m.inFlight)} on its way</span> : null}
       <span> · about {cr(m.left)} left of {cr(m.limit)}</span>
-      <span className="pxw-agent-mode-line" data-testid="rig-agent-mode-line"> · {m.mode === "auto" ? `Auto up to about ${cr(m.jobCeiling)} a render` : "Ask before each render"}</span>
+      <span className="pxw-agent-mode-line" data-testid="rig-agent-mode-line"> · {m.mode === "auto" ? `Auto: drafts up to about ${cr(m.jobCeiling)} each` : "Ask before each render"}</span>
     </p>
   );
 }

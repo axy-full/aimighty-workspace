@@ -290,7 +290,9 @@ test("the per-job line is the platform's approval line (SOW guardrail 4) at the 
     expect((line + 0.1) * perCredit).toBeGreaterThan(JOB_APPROVAL_LINE_USD);
     expect(Math.round(line * 10)).toBe(line * 10);
   }
-  expect(jobApprovalLineCredits(0.8)).toBe(JOB_APPROVAL_LINE_USD / 0.8);
+  /* Where the line divides evenly into credits, it is exactly that many: read from the one source, never a figure of its own. */
+  expect(jobApprovalLineCredits(0.125)).toBe(JOB_APPROVAL_LINE_USD / 0.125);
+  expect(jobApprovalLineCredits(0.1)).toBe(JOB_APPROVAL_LINE_USD / 0.1);
   expect(jobApprovalLineCredits(0)).toBe(0);
   expect(limits.effectiveJobCeiling(null, 17)).toBe(17);
   expect(limits.effectiveJobCeiling(30, 17)).toBe(17);
@@ -523,7 +525,7 @@ test("Auto: a render at or under the per-job line runs without a tap; one over i
     /* Shot 2 costs more than the line: it asks, and nothing is sent. */
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
-    expect(run.reason).toBe(`02 — The turn is about ${creditFigure(await credits(over))} cr, over the ${creditFigure(line)} cr a render may cost without asking. Render it, skip it, or stop.`);
+    expect(run.reason).toBe(`02 — The turn is about ${creditFigure(await credits(over))} cr, over the ${creditFigure(line)} cr a draft may cost without asking. Render it, skip it, or stop.`);
     expect(run.paid[2]).toMatchObject({ state: "waiting", canRender: true });
     expect(r.calls).toHaveLength(1);
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[2].seq, fingerprint: run.paid[2].fingerprint, userId: OWNER });
@@ -542,6 +544,38 @@ test("Auto: a render at or under the per-job line runs without a tap; one over i
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
     expect((await view()).paid[4]).toMatchObject({ state: "skipped", charged: null });
   }, 20_000);
+});
+
+test("Auto spends without a tap only on drafts: a shot moved to an engine with no draft renders in full, so it asks first, however cheap", async () => {
+  await inRun("auto-full", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { agentNodeId } = await import("../../lib/workbench/rig-agent-plan");
+    const { readTeamCanvas, patchTeamCanvas } = await import("../../lib/workbench/team-canvas");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    const deps = await depsFor(ws, r);
+    const runId = await approvedRun(deps, { limit: 500, mode: "auto", shots: 2 });
+    /* Shot 1 is a draft on the board's default engine: it goes on its own. */
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    /* A teammate moves shot 2 to an engine with no draft before Atomik reaches it. */
+    const shot2 = agentNodeId(runId, "shot-2");
+    const saved = (await readTeamCanvas("prod-1"))!;
+    await patchTeamCanvas("prod-1", { upsertNodes: [{ ...saved.canvas.nodes[shot2], engine: "dreamina-seedance-2-0-260128" }], fields: { [shot2]: ["engine"] }, removeNodes: [], upsertAssets: [], order: null }, TEAMMATE);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const run = await view();
+    const full = run.paid.find((p) => p.tool === "render" && p.state === "waiting")!;
+    expect(full.quote!).toBeLessThanOrEqual(run.money!.jobCeiling);
+    expect(run.reason).toBe(`${full.title} has no draft on its engine, so Atomik asks before rendering it in full · about ${creditFigure(full.quote!)} cr. Render it, skip it, or stop.`);
+    expect(r.calls).toHaveLength(1);
+    const step = (await db().execute({ sql: "SELECT admission FROM rig_agent_steps WHERE run_id=? AND node_id=? AND purpose='take'", args: [runId, shot2] })).rows[0];
+    expect((JSON.parse(String(step.admission)) as PreparedAdmission).request.draft).toBeUndefined();
+    /* One tap from the person who asked sends it, at the price shown. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: full.seq, fingerprint: full.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(2);
+  });
 });
 
 /* ── The limit: a render that would pass it pauses the run ────────────── */
@@ -661,6 +695,52 @@ test("a request whose claim is still being accepted is waited for, never sent ag
     expect(r.calls).toHaveLength(1);
     expect((await view()).paid[0].state).toBe("sending");
     expect(await renderRows()).toEqual([]);
+  });
+});
+
+test("what a stop cannot close at once is closed later, never re-sent: a request still being accepted is closed by the cron once it is answered; a take that settled before its step knew its job is recorded at the stop", async () => {
+  await inRun("closing", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { STOPPED_UNSENT } = await import("../../lib/workbench/rig-agent-runs");
+    const { STALE_CLAIM_MS, generationRequestsReady, runCharges } = await import("../../lib/generationRequests");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    const deps = await depsFor(ws, r);
+    await generationRequestsReady();
+    /* The worker died while its request was being accepted; the run is stopped before anyone could say what became of it. */
+    const pending = await approvedRun(deps, { limit: 500, mode: "auto", shots: 1 });
+    r.behaviour.pendingClaim = true;
+    await agent.advanceRigAgentRun(pending, deps);
+    const before = await balance(ws);
+    let stopped = await agent.stopRigAgent({ productionId: "prod-1", runId: pending, userId: OWNER });
+    expect(stopped.state).toBe("stopped");
+    expect(stopped.paid[0].state).toBe("sending");
+    /* While the claim may still be answered, the cron leaves it be. */
+    expect(await agent.drainRigAgentWakeups()).toMatchObject({ swept: 1 });
+    expect((await view()).paid[0].state).toBe("sending");
+    /* Once no request can still be running it, the cron closes it: nothing was made, sent again or charged. */
+    await db().execute({ sql: "UPDATE generation_requests SET created_at=? WHERE request_key=?", args: [Date.now() - STALE_CLAIM_MS - 1000, r.calls[0].key] });
+    expect(await agent.drainRigAgentWakeups()).toMatchObject({ swept: 1 });
+    stopped = await view();
+    expect(stopped.paid[0]).toMatchObject({ state: "skipped", reason: STOPPED_UNSENT, charged: null });
+    expect(await agent.drainRigAgentWakeups()).toMatchObject({ swept: 0 });
+    expect(r.calls).toHaveLength(1);
+    expect(await renderRows()).toEqual([]);
+    expect(await balance(ws)).toBe(before);
+    expect(await runCharges(pending)).toHaveLength(1);
+    /* The take landed and settled, but its reply was lost: the stop asks by the key, follows it, and records what it settled at. */
+    const settledFirst = await approvedRun(deps, { limit: 500, mode: "auto", shots: 1 });
+    r.behaviour.throwAfterReply = true;
+    await agent.advanceRigAgentRun(settledFirst, deps);
+    expect((await view()).paid[0].state).toBe("sending");
+    const [take] = await renderRows();
+    await settleTake(take.id, "succeeded", 0.3);
+    expect((await view()).paid[0].state).toBe("sending");
+    const halted = await agent.stopRigAgent({ productionId: "prod-1", runId: settledFirst, userId: OWNER });
+    expect(halted.paid[0]).toMatchObject({ state: "done", charged: await credits(0.3) });
+    expect(r.calls).toHaveLength(2);
+    expect(await renderRows()).toHaveLength(1);
+    expect(await agent.drainRigAgentWakeups()).toMatchObject({ swept: 0 });
   });
 });
 

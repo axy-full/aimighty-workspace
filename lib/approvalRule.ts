@@ -20,7 +20,8 @@ export function cleanShotCap(v: unknown): number {
 /**
  * SOW §7A guardrail 4, the platform's approval line: any single job estimated above this price needs the
  * workspace's cost approval rule, whatever the workspace's own setting. It is a price, so in credits it
- * follows the price of a credit (the SOW's "200 cr at US$0.10" and "25 cr at US$0.80" are this one line).
+ * follows the price of a credit (the SOW's "200 cr" is this line at a credit's US$0.10), and the same
+ * line reads as fewer credits when a credit costs more.
  * Its single source: change the line here. Atomik's Rig runs use it as the most one job may cost without
  * asking (lib/workbench/rig-agent-limits.ts); nothing else enforces it yet.
  */
