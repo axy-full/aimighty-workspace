@@ -100,8 +100,9 @@ const TAKE_OVER = ["wheel", "touchstart", "pointerdown"] as const;
  * A target past the list (the Rig's Build from Storyboards, under its shots)
  * moves while the rows before it are measured on the way, and the move keeps
  * the destination it set out for, so it can end short. Then, unless the person
- * took the scroll over or a newer move started, the target is brought in at
- * once; the list, correcting again, keeps it in place as it measures.
+ * took the scroll over or a newer move started, the target is brought where
+ * the move was sent and held there until the lists have measured what the
+ * move mounted (settleOn).
  */
 export function smoothScrollIntoView(el: Element | null | undefined, block: ScrollLogicalPosition = "start") {
   if (!el) return;
@@ -111,18 +112,49 @@ export function smoothScrollIntoView(el: Element | null | undefined, block: Scro
     const move = (movesIn.get(scroller) ?? 0) + 1;
     movesIn.set(scroller, move);
     holdCorrections(scroller, [...lists], (touched) => {
-      if (!touched && movesIn.get(scroller) === move && el.isConnected && !arrived(el, scroller, block)) el.scrollIntoView({ block });
+      if (!touched) settleOn(el, scroller, block, () => movesIn.get(scroller) === move);
     });
   }
   el.scrollIntoView({ block, behavior: "smooth" });
 }
 
-/** Where `block` put it: its top (or centre, or bottom) within what the scroller shows. */
-function arrived(el: Element, scroller: HTMLElement, block: ScrollLogicalPosition) {
-  const box = el.getBoundingClientRect();
-  const view = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
-  const at = block === "center" ? (box.top + box.bottom) / 2 : block === "end" ? box.bottom : box.top;
-  return at >= view.top - 2 && at <= view.bottom + 2;
+/* The frames a target must hold still where its move put it before the move is over, and the longest it is held. */
+const SETTLED_FRAMES = 8;
+const SETTLE_MS = 3000;
+
+/**
+ * The end of a move. A list corrects its scroller only for a row measured
+ * above the fold; a row measured on screen moves everything under it. At the
+ * foot of a scroller (Build from Storyboards, under 1,500 shots, can't reach
+ * the top of the screen) the rows above the target are on screen, and as each
+ * is measured taller than its estimate the target is pushed down, off the
+ * screen. So once a frame, when the target has moved since it was last put
+ * where `block` puts it, it is put back, until it has not moved for
+ * SETTLED_FRAMES frames: the lists have measured what the move mounted. Never
+ * past SETTLE_MS, a newer move, or the person taking the scroll over.
+ */
+function settleOn(el: Element, scroller: HTMLElement, block: ScrollLogicalPosition, current: () => boolean) {
+  const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
+  const until = performance.now() + SETTLE_MS;
+  let touched = false, still = 0, placed = Number.NaN;
+  const took = () => { touched = true; };
+  for (const type of TAKE_OVER) target.addEventListener(type, took, { passive: true });
+  window.addEventListener("keydown", took);
+  const step = () => {
+    if (!touched && current() && el.isConnected && performance.now() < until) {
+      /* Measured before it is put back: a row measured since the last frame shows as a move. */
+      const moved = !(Math.abs(el.getBoundingClientRect().top - placed) < 1);
+      if (moved) {
+        el.scrollIntoView({ block });
+        placed = el.getBoundingClientRect().top;
+      }
+      still = moved ? 0 : still + 1;
+      if (still < SETTLED_FRAMES) { requestAnimationFrame(step); return; }
+    }
+    for (const type of TAKE_OVER) target.removeEventListener(type, took);
+    window.removeEventListener("keydown", took);
+  };
+  step();
 }
 
 /**

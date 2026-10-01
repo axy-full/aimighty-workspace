@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, openSuitesMenu, tapSuiteTab } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, build step 1 (design/particl-suites/README.md): one
@@ -96,20 +96,17 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   expect([param(page, "page"), param(page, "sp")]).toEqual(["rig", "rig"]);
 
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Atomik" }).click();
+  await tapSuiteTab(page, "Atomik");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
   await strip.getByRole("button", { name: /Budget/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Budget");
 
   /* Studio comes back on Rig, not on Brief. */
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Studio" }).click();
+  await tapSuiteTab(page, "Studio");
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
 
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Gen" }).click();
+  await tapSuiteTab(page, "Gen");
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(strip).toHaveCount(0);
   expect(param(page, "view")).toBe("gen");
