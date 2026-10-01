@@ -154,6 +154,9 @@ function extendProblem(facts: SourceFacts): string | null {
   return `Extend takes a clip of 30 seconds or less; this one is ${facts.seconds}s.`;
 }
 
+/** An uploaded clip whose length its own header cannot back (lib/clipTrust.ts): one reason for both the actions it stops. */
+export const UNREAD_LENGTH = "This clip's length could not be read, so it can only be upscaled. Re-export it as an MP4 and upload it again.";
+
 /** What a draft says in place of its actions (lib/draftFinal.ts): it carries the engine's watermark, and its final does not. */
 export const DRAFT_WHY = "A draft is a watermarked preview: make its final, then go on from that.";
 
@@ -167,7 +170,7 @@ function pricedGate(entry: Entry, saved: boolean, action: PricedActionId, media:
   if (media === "video") {
     /* A locked task priced by the source's seconds needs a length it can believe (lib/clipTrust.ts); Astra reads the original itself. */
     if (facts.origin === "upload" && action !== "upscale" && clipDoubt(facts.seconds, facts.bytes))
-      return { enabled: false, why: `${PRICED_LABEL[action]}: this clip's length could not be read. Re-export it as an MP4 and upload it again.` };
+      return { enabled: false, why: UNREAD_LENGTH };
     const problem = action === "extend" ? extendProblem(facts)
       : sourceProblem(getTask(action), { resolution: facts.resolution ?? undefined, duration: facts.seconds ?? undefined }, facts.origin);
     if (problem) return { enabled: false, why: problem };

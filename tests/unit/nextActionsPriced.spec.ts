@@ -3,7 +3,7 @@ import type { Generation } from "../../lib/jobs";
 import type { LibraryUpload } from "../../lib/genLibrary";
 import { libraryEntries, type LibraryEntry } from "../../lib/workspace/library";
 import {
-  DRAFT_WHY, SEEDANCE_25, aboutCredits, extendPrompt, madeFrom, nearestRatio, nextActionBody, nextActions, nextDefaults, nextEngine, nextProblem, nextRatios, nextShotOf,
+  DRAFT_WHY, SEEDANCE_25, UNREAD_LENGTH, aboutCredits, extendPrompt, madeFrom, nearestRatio, nextActionBody, nextActions, nextDefaults, nextEngine, nextProblem, nextRatios, nextShotOf,
   nextSourceOf, notOfferedLine, pricedActions, repricedNote, sourceFacts, topazScales, type NextSettings,
 } from "../../lib/shell/next-actions";
 import { getModel } from "../../lib/models";
@@ -95,7 +95,9 @@ test("a take that cannot go yet says why, once for the whole row; the engine's o
   /* An uploaded clip is priced by its own seconds: a length its size cannot back is not guessed at (lib/clipTrust.ts). */
   const upClip = (over: Partial<LibraryUpload>) => pricedActions(one([], [up("u_clip", { mime: "video/mp4", kind: "video", filename: "clip.mp4", width: 1280, height: 720, ...over })]), saved);
   expect(upClip({ durationS: null }).map((a) => [a.id, a.enabled])).toEqual([["upscale", true], ["reframe", false], ["extend", false]]);
-  expect(upClip({ durationS: null }).find((a) => a.id === "reframe")!.why).toBe("Reframe: this clip's length could not be read. Re-export it as an MP4 and upload it again.");
+  /* One reason for both: the row says it once. */
+  expect(upClip({ durationS: null }).filter((a) => !a.enabled).map((a) => a.why)).toEqual([UNREAD_LENGTH, UNREAD_LENGTH]);
+  expect(UNREAD_LENGTH).toBe("This clip's length could not be read, so it can only be upscaled. Re-export it as an MP4 and upload it again.");
   expect(upClip({ durationS: 8, bytes: 4_000_000 }).every((a) => a.enabled)).toBe(true);
   /* A still already over Topaz's 48 megapixels cannot be upscaled at all; the scales it cannot take are named in the panel. */
   const huge = one([], [up("u_huge", { width: 9000, height: 6000 })]);
