@@ -114,7 +114,7 @@ export type RigContext = {
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
   /** The production's shared canvas: who else is here, presence to show them, and the server's own changes (Tidy). */
-  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence" | "server" | "tidy">;
+  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence" | "server" | "tidy" | "refresh">;
 };
 
 const Context = createContext<RigContext | null>(null);
@@ -756,7 +756,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     toast(why ?? `${asset.name} is a new shot in the Rig`);
   }, [openId, onRigPage, intents, apply, toast]);
 
-  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy }), [team.mode, team.peers, team.presence, team.server, team.tidy]);
+  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh]);
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
     select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
