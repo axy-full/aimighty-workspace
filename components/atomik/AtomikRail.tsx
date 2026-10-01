@@ -13,6 +13,7 @@ import { useAtomik } from "./AtomikProvider";
 import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
 import ThreadSwitcher from "./threads/ThreadSwitcher";
+import styles from "./AtomikRail.module.css";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
@@ -195,7 +196,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
 function Compact({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const a = useAtomik();
   return (
-    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide={false} resize={size.update}/>} footer={<ChatComposer inputHeight={44} />}>
+    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" className={styles.rail} header={<Head wide={false} resize={size.update}/>} footer={<ChatComposer inputHeight={44} />}>
       <ThreadSwitcher placement="rail" />
       <ContextChip />
       <MarketingStudioEntry />
@@ -229,7 +230,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
     </>
   );
   return (
-    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide resize={size.update}/>} footer={footer}>
+    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" className={styles.rail} header={<Head wide resize={size.update}/>} footer={footer}>
       <ThreadSwitcher placement="rail" />
       <ContextChip dismiss={a.clear} />
       <MarketingStudioEntry />

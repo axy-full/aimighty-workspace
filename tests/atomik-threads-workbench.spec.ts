@@ -136,11 +136,35 @@ async function ask(page: Page, surface: Locator, brief: string, production: stri
   expect(answered.status(), await answered.text()).toBe(200);
 }
 
-/** The thread list's floors where a thumb uses it: 44px targets and readable labels, nothing off the side. */
-async function floors(page: Page, scope: string) {
+/**
+ * Every control a thumb can reach under `scope` that is smaller than 44×44. A control hidden from everyone
+ * (aria-hidden, as the visually hidden native select a Radix Select keeps for its form) is not a target.
+ */
+async function touchTargets(page: Page, scope: string) {
+  return page.evaluate((scope) => {
+    const out: string[] = [];
+    for (const root of Array.from(document.querySelectorAll<HTMLElement>(scope)))
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>("button, a[href], select, input, textarea"))) {
+        if (!el.getClientRects().length || el.closest("[aria-hidden='true']")) continue;
+        const box = el.getBoundingClientRect();
+        if (box.width < 43.5 || box.height < 43.5)
+          out.push(`${el.dataset.testid || el.getAttribute("aria-label") || el.textContent?.trim().slice(0, 24) || el.tagName}: ${Math.round(box.width)}×${Math.round(box.height)}`);
+      }
+    return out;
+  }, scope);
+}
+
+/**
+ * The threads' floors where a thumb uses them: nothing off the side, labels at the floor and 44px targets in
+ * `scope` (the repo's helpers), and, with `whole`, every control in that wider block too (its own composer).
+ */
+async function floors(page: Page, scope: string, whole?: string) {
   expect(await sideways(page), "no sideways scroll").toBeLessThanOrEqual(1);
   expect(await dimLabels(page, scope), "thread labels under #7C7C84").toEqual([]);
-  if (page.viewportSize()!.width < 768) expect(await smallTargets(page, scope), "thread targets under 44×44").toEqual([]);
+  if (page.viewportSize()!.width < 768) {
+    expect(await smallTargets(page, scope), "thread targets under 44×44").toEqual([]);
+    if (whole) expect(await touchTargets(page, whole), "targets under 44×44").toEqual([]);
+  }
 }
 
 test("threads in the rail and on a phone: an old link opens the production's conversation as thread 1; a second thread keeps its own plan; switch, rename, archive and restore; a step in thread 2 is approved alone", async ({ page }) => {
@@ -276,7 +300,7 @@ test("the Suites Agent page lists the project's threads; each shows its own plan
   const cont = view.getByTestId("atomik-thread-continue");
   await expect(cont).toContainText(/\d+ cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
-  await floors(page, "[data-testid='atomik-threads-panel']");
+  await floors(page, "[data-testid='atomik-threads-panel'] [data-testid='atomik-threads'], [data-testid='atomik-thread-checkpoint']", "[data-testid='atomik-threads-panel']");
   const rendered = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/generate", { timeout: 60_000 });
   await cont.click();
   expect((await rendered).headers()["idempotency-key"]).toBe(`atomik-step:${f.first.chat}:${f.first.step}`);
