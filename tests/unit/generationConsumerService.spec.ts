@@ -59,6 +59,7 @@ async function serviceFixture() {
   const records = await import("../../lib/higgsfield-consumer/marketing-records");
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
+    "@/lib/providerOutcome": await import("../../lib/providerOutcome"),
     "@/lib/tenant": tenant,
     "@/lib/workbench/records": await import("../../lib/workbench/records"),
     "./jobs": jobs,
@@ -338,6 +339,20 @@ test("polling collects the verified original once, records failure from the prov
       expect(f.state.collectCount).toBe(collects + 1);
     }
     f.state.collectorError = undefined;
+  }));
+
+test("an NSFW rejection keeps its status and redacted words without inferring a refund", async () =>
+  fixture(async (f) => {
+    const quote = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
+    await f.service.submitConsumerGenerationJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: f.state.credits });
+    const params = JSON.parse((await f.jobs.getConsumerJob(scoped(quote.id)))!.payloadJson).params;
+    f.state.pollRaw = { generation: { ...terminal(f, params, "nsfw").generation, error: { message: "Flagged by the safety checker. Contact ops@example.com" } } };
+    const failed = await f.service.pollConsumerGeneration(scoped(quote.id));
+    expect(failed.job).toMatchObject({ status: "failed", failureCode: "provider_failed",
+      failure: { provider: "higgsfield_account", code: "nsfw", kind: "content_filter", message: "Flagged by the safety checker. Contact [email]", payer: "account", billing: { state: "unknown", basis: "hf-account-silent" } } });
+    expect((await f.service.pollConsumerGeneration(scoped(quote.id))).job.failure?.billing?.state).toBe("unknown");
+    expect(f.state.paidCount).toBe(1);
+    expect(f.state.statusCount).toBe(1);
   }));
 
 test("a Gen composer take carries its composer, completes on a status read nobody is watching, and an editor that loaded the draft meanwhile still saves", async () =>

@@ -13,7 +13,7 @@ These are the providers already wired into Particl, as recorded in `lib/provider
 | Google Gemini — direct Gemini image generation | [Google AI Studio API keys](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` for direct Google routing. [Key setup and current auth-key migration](https://ai.google.dev/gemini-api/docs/api-key) |
 | fal — Kling, Topaz image upscale/Astra video upscale, Luma, Bria and configured character models | [fal API keys](https://fal.ai/dashboard/keys) | `FAL_KEY`, created under the intended personal/team account. [API-key guide](https://fal.ai/docs/documentation/setting-up/authentication) |
 | ElevenLabs — speech, sound effects and music | [ElevenLabs API keys](https://elevenlabs.io/app/developers/api-keys) | `ELEVENLABS_API_KEY`. [Quickstart](https://elevenlabs.io/docs/eleven-api/quickstart), [authentication](https://elevenlabs.io/docs/api-reference/authentication) |
-| Higgsfield — Soul character identity and Moleculr Marketing Studio Image | [Higgsfield API console](https://console.higgsfield.ai) | `HF_CREDENTIALS` as `KEY_ID:KEY_SECRET`. [API authentication](https://docs.higgsfield.ai/docs/authentication); separate consumer OAuth is described below. |
+| Higgsfield — Soul character identity and Moleculr Marketing Studio Image | [Higgsfield API console](https://console.higgsfield.ai) | `HF_CREDENTIALS` as `KEY_ID:KEY_SECRET`. [API authentication](https://docs.higgsfield.ai/docs/authentication); the separate consumer OAuth below is retired. |
 
 Atomik's current text path uses AI Gateway rather than separate direct Anthropic or OpenAI keys. Its model selector and effort controls remain constrained by the actual gateway catalog and each model's capabilities. The app's Google adapter may also route image calls through AI Gateway; billing then belongs to the gateway account. Configure the credential for the route in use, and keep all provider credentials server-side.
 
@@ -43,6 +43,8 @@ The general estimate contract returns decimal-string `credits` and `usd` fields.
 Generated provider outputs must be retained in Particl storage; Higgsfield documents a minimum seven-day output availability window, not permanent asset hosting.
 
 ## Marketing video, product extraction and consumer tools
+
+> **Retired 28 September 2026.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). The consumer MCP, the CLI and the account's Marketing Studio video, templates and Virality Predictor are not integrations; this section is kept as the record of why.
 
 The official [Higgsfield CLI model catalog](https://github.com/higgsfield-ai/cli/blob/main/MODELS.md) documents `marketing_studio_video` and `marketing_studio_image` job types. Their consumer schemas are separate from the REST Image schema above. CLI operations include [product extraction](https://github.com/higgsfield-ai/skills/blob/main/higgsfield-generate/references/marketing-products.md), [preset/custom avatars](https://github.com/higgsfield-ai/skills/blob/main/higgsfield-generate/references/marketing-avatars.md), and [video hooks/settings](https://github.com/higgsfield-ai/skills/blob/main/higgsfield-generate/references/marketing-setup-items.md). Full Marketing Studio video and Virality Predictor (`brain_activity`) currently require a separately authorized consumer MCP/CLI connection for the documented integration route; an `HF_CREDENTIALS` REST key does not authorize that route.
 

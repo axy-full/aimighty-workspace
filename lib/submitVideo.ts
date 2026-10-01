@@ -21,6 +21,8 @@ import {
   writeGenerationOutcome,
   deliverGenerationSettlement,
 } from "./generationSettlement";
+import { fundedOutcome, outcomeOfError, outcomeProviderFor } from "./providerFailure";
+import { noAnswerOutcome, serializeOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * The one call that can fail for reasons that aren't ours, in one place:
@@ -160,6 +162,8 @@ async function submissionFailed(
   job: VideoJob,
   error: string,
   uncertain: boolean,
+  /** What the provider said, when the request reached one; never set for a failure before sending. */
+  outcome: ProviderOutcome | null = null,
 ): Promise<SubmitOutcome> {
   let retainedCost: number | null = uncertain ? null : 0;
   if (uncertain) {
@@ -179,8 +183,8 @@ async function submissionFailed(
   let ended = false;
   await writeSubmission(async () => {
     const out = await db().execute({
-      sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
-      args: [error, retainedCost, now(), job.genId],
+      sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),provider_outcome=COALESCE(?,provider_outcome),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
+      args: [error, retainedCost, outcome ? serializeOutcome(outcome) : null, now(), job.genId],
     });
     ended ||= out.rowsAffected > 0;
   }).catch(() => {});
@@ -192,6 +196,7 @@ async function submissionFailed(
       model: job.model.id,
       status: "failed",
       engineCostUsd: uncertain ? null : 0,
+      providerOutcome: outcome,
     },
     { critical: false },
   ).catch(() => {});
@@ -331,12 +336,17 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       const uncertain =
         !(error instanceof FundingSourceChangedError) &&
         !definitelyRejected(error, message);
+      /* What the provider said, when it said anything: a refusal's own code and
+         words, or — sent and never answered — that it did not say. */
+      const said = outcomeOfError(error, { provider: job.model.provider, stage: "submit" })
+        ?? (uncertain ? noAnswerOutcome(outcomeProviderFor(job.model.provider), "submit") : null);
       return submissionFailed(
         job,
         uncertain
           ? `${message} The provider may already have accepted this task. It was not sent again; its estimated cost remains reserved until the provider outcome is reconciled.`
           : message,
         uncertain,
+        await fundedOutcome(said, job.genId, job.model.provider).catch(() => said),
       );
     }
     if (submitted.higgsfieldHandle) {
@@ -433,10 +443,12 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       continue;
     }
     const u = r.uploadId ? byUpload.get(r.uploadId) : undefined;
+    /* A sound reference (Cinema Studio's, admitted as one) comes back only as the sound it was quoted as. */
+    const sound = r.kind === "audio";
     if (
       !u ||
       !u.stored_url ||
-      !["image", "video"].includes(u.kind) ||
+      !(sound ? ["audio"] : ["image", "video"]).includes(u.kind) ||
       (r.kind && r.kind !== u.kind)
     )
       throw new VideoSourceError(
@@ -450,8 +462,8 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       storedUrl: u.stored_url,
       role:
         (r.role as ImageRole) ??
-        (video ? "reference_video" : "reference_image"),
-      kind: video ? "video" : "image",
+        (sound ? "reference_audio" : video ? "reference_video" : "reference_image"),
+      kind: sound ? "audio" : video ? "video" : "image",
       deliveryUrl: u.derivative_url ?? null,
     });
   }

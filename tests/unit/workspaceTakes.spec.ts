@@ -25,7 +25,7 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   const takes = projectTakes([
     gen("g1", { title: "The approach", version: 2, reviewState: "approved" }),
     gen("g2", { prompt: "The encounter", params: { duration: 6 }, creditsBilled: 21 }),
-    gen("g3", { status: "failed", creditsBilled: 0, title: "Mirror fold" }),
+    gen("g3", { status: "failed", creditsBilled: 0, title: "Mirror fold", failure: { provider: "byteplus", stage: "run", code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } }),
     gen("g4", { status: "running", creditsBilled: null }),
     gen("g5", { model: "dreamina-seedance-2-0-260128", durationS: 5.04, reviewState: "changes", creditsBilled: 12, params: { originalSha256: "b".repeat(64) } }),
     gen("g6", { kind: "image", model: "gemini-3.1-flash-image", params: { resolution: "1K" }, creditsBilled: 1, reviewState: "picked" }),
@@ -38,7 +38,8 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takes[0]).toEqual({ id: "generation:g1", sourceId: "g1", kind: "GEN", name: "The approach", version: "v2", meta: "2.5 · 5s", credits: 18, usd: null,
     status: "approved", sha256: null, createdAt: 10 });
   expect(takes[1]).toMatchObject({ name: "The encounter", meta: "2.5 · 6s", credits: 21, status: "review" });
-  expect(takes[2]).toMatchObject({ status: "failed", credits: 0, failedUnbilled: true });
+  /* "not billed" only because the ledger holds nothing for it; the line says why and what to do. */
+  expect(takes[2]).toMatchObject({ status: "failed", credits: 0, failedUnbilled: true, failureLine: "Refused by the content filter · Not billed · Change the prompt or reference" });
   expect(takes[3]).toMatchObject({ status: "rendering", credits: null });
   expect(takes[4]).toMatchObject({ meta: "2.0 · 5s", status: "changes", credits: 12, sha256: "b".repeat(64) });
   expect(takes[5]).toMatchObject({ meta: "NB 2 · 1K", status: "picked", credits: 1 });
@@ -55,6 +56,21 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takesSubtitle(takes)).toBe("11 assets · 56 cr settled"); // 18 + 21 + 0 (failed) + 12 + 1 + 4 (billed failure)
   expect(takesSubtitle([])).toBe("0 assets · 0 cr settled");
   expect(takesSubtitle([{ credits: 1_200 }])).toBe("1 asset · 1,200 cr settled");
+});
+
+test("on a workspace's own keys a failed take's recorded zero is not a price: no figure until its provider confirms it", () => {
+  const own = { provider: "fal", stage: "submit", code: "http_422", kind: "invalid_request", message: null, billing: { state: "unknown", basis: "silent" }, payer: "own" } as const;
+  const [silent, confirmed, charged] = projectTakes([
+    /* Refused at submit and recorded at zero by Particl: a 422 may still be charged, and fal did not say. */
+    gen("o1", { status: "failed", creditsBilled: null, costUsd: 0, failure: own }),
+    /* fal's own rule for a server error: never charged. */
+    gen("o2", { status: "failed", creditsBilled: null, costUsd: 0, failure: { ...own, code: "http_503", kind: "provider_error", billing: { state: "not_charged", basis: "fal-5xx" } } }),
+    gen("o3", { status: "failed", creditsBilled: null, costUsd: 0.42, failure: own }),
+  ]);
+  expect(silent).toMatchObject({ status: "failed", credits: null, usd: null });
+  expect(silent).not.toHaveProperty("failedUnbilled");
+  expect(confirmed).toMatchObject({ status: "failed", failedUnbilled: true, usd: 0 });
+  expect(charged).toMatchObject({ status: "failed", credits: null, usd: 0.42 });
 });
 
 test("engine labels give the real name long, an abbreviation short, for every catalogue and audio id", () => {

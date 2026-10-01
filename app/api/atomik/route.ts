@@ -1,5 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
+import { currentTenant, runWithStore } from "@/lib/tenant";
+import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
@@ -8,6 +10,7 @@ import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
+import { plannerInputs, plannerPresetsStale, refreshPlannerPresets } from "@/lib/atomikLibrary";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +58,12 @@ export const GET = withTenant(async function GET() {
 
   /* Particl's own engines only: Atomik never plans on a signed-in account. */
   const [chats, menu, eng] = await Promise.all([listChats(), menuFor("planner"), engines()]);
+  /* The Marketing Studio presets the planner may name are the ones this key listed within the hour. When
+     none are, the catalogue is read after this response (free, non-generating), never inside a planning quote. */
+  if (await plannerPresetsStale().catch(() => false)) {
+    const store = currentTenant()!;
+    after(await reserveRecoveryContinuation("after-response", () => runWithStore(store, refreshPlannerPresets)));
+  }
   return NextResponse.json({
     chats,
     engines: eng,
@@ -77,11 +86,14 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     const projectId = typeof body.projectId === "string" ? body.projectId : null;
+    /* The project's library and presets for library steps, read as the turn will read them. */
+    const inputs = await plannerInputs(auth.user.id, projectId);
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
+      library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
   const id = await createChat({

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useStageQuotes } from "./use-stage-quotes";
 import { readPendingGeneration, type PendingGeneration } from "@/lib/workbench/pending-generation";
 import {
+  sendingElsewhere,
   sendTranscription,
   settlePendingTranscription,
   transcriptionBody,
@@ -58,7 +59,9 @@ const UNREADABLE = "The saved transcription request cannot be read. Check Activi
  * its own key as soon as the panel sees it: a finished transcript comes back
  * with nothing sent again, one the server has no answer for yet is checked
  * again shortly, and one that never arrived is let go. Nothing is ever
- * re-sent on its own.
+ * re-sent on its own. A request another window is still sending is not asked
+ * about until that window's POST is over (sendingElsewhere): asked sooner, its
+ * key could be set aside before it arrived, and that window's press lost.
  */
 export function TranscribePanel({ scope, source, name, projectId }: { scope: string; source: { genId?: string; uploadId?: string }; name: string; projectId?: string }) {
   const sending = useRef(false);
@@ -110,6 +113,8 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
   /* The request the server has no answer for yet, asked about again later even if another window lets its claim go. */
   const [waitingOn, setWaitingOn] = useState<PendingGeneration | null>(null);
   const waited = useRef(0);
+  /* Keys this panel sent whose POST is over: asking about one cannot overtake it, so it is asked about at once. */
+  const sentHere = useRef(new Set<string>());
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -123,14 +128,16 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
     if (asking.current?.timer) clearTimeout(asking.current.timer);
     const current: { key: string; inFlight: boolean; timer?: ReturnType<typeof setTimeout> } = { key: attempt.key, inFlight: true };
     asking.current = current;
-    /* The button says "Checking last transcription…" for as long as a request is unconfirmed. */
-    const outcome = await settlePendingTranscription({ scope, slot, attempt });
+    /* The button says "Checking last transcription…" for as long as a request is unconfirmed. Not asked while another
+       window is still sending it: that window's POST is let through first, and it is asked about after. */
+    const outcome = (sentHere.current.has(attempt.key) ? null : await sendingElsewhere(slot, attempt))
+      ?? await settlePendingTranscription({ scope, slot, attempt });
     current.inFlight = false;
     if (!mounted.current || asking.current !== current) return;
     take(outcome);
     if (outcome.state === "unknown" && outcome.waiting) {
       setWaitingOn(attempt);
-      current.timer = setTimeout(() => setCheckRound((n) => n + 1), RECHECK_MS[Math.min(waited.current++, RECHECK_MS.length - 1)]);
+      current.timer = setTimeout(() => setCheckRound((n) => n + 1), outcome.retryInMs ?? RECHECK_MS[Math.min(waited.current++, RECHECK_MS.length - 1)]);
     } else {
       setWaitingOn(null);
       waited.current = 0;
@@ -155,7 +162,7 @@ export function TranscribePanel({ scope, source, name, projectId }: { scope: str
     setBusy("Transcribing…"); setError(""); setNote(""); setCheckFailed(false);
     let outcome: TranscriptionOutcome;
     try {
-      outcome = await sendTranscription({ scope, slot, body: { ...body, maxCredits: quote.credits }, credits: quote.credits });
+      outcome = await sendTranscription({ scope, slot, body: { ...body, maxCredits: quote.credits }, credits: quote.credits, onSent: (key) => sentHere.current.add(key) });
     } finally {
       sending.current = false;
       setBusy("");

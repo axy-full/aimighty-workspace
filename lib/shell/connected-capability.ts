@@ -179,10 +179,19 @@ export function alternativePrice(label: string, price: { credits: number | null;
   return [label, `${price.credits.toLocaleString("en-US")} ${price.unit}`, price.detail || null].filter(Boolean).join(" · ");
 }
 
-/** The shell's suites that ran only on the connected account (their page is the card), and the state layer's suites behind them. */
-export const OWNER_RUN_SUITES: readonly string[] = ["business", "viral"];
+/** The shell's suites that ran only on the connected account on every page (each page is the card), and the state layer's suites behind every such page. */
+export const OWNER_RUN_SUITES: readonly string[] = ["viral"];
 export const OWNER_RUN_LEGACY_SUITES: readonly string[] = ["moleculr", "subatomik"];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
+/**
+ * The pages that ran only on the connected account, in a suite whose other pages everyone runs: everyone meets the
+ * retired card there (the sign-in is retired), and no Run stage. Business's Ads, Image ads and Setup did; its own tools
+ * (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account, so the
+ * suite keeps its tabs.
+ */
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "dtc", "setup"] };
+export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
+  Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 
 /** The connected account's routes: whatever called one ran on the connected account. */
 export const CONNECTED_ROUTE_PREFIX = "/api/higgsfield/consumer/";
