@@ -56,10 +56,15 @@ export type PoolConfig = { size: number; share: number };
  * (1–1000; `off` or `0` switches the governor off). `HF_POOL_WORKSPACE_SHARE`:
  * how many of those one workspace may hold (1 up to the pool size). A value
  * that does not read falls back to its default, never to "unlimited".
+ *
+ * Under ENGINE_MOCK there is no provider account to protect, so the governor
+ * is off unless HF_POOL_SIZE is set: fixture takes left in flight by one test
+ * never queue the next one's.
  */
 export function poolConfig(env: Record<string, string | undefined> = process.env): PoolConfig | null {
   const rawSize = (env.HF_POOL_SIZE ?? "").trim().toLowerCase();
   if (rawSize === "off" || rawSize === "0") return null;
+  if (!rawSize && env.ENGINE_MOCK === "1") return null;
   const asked = Number(rawSize);
   const size = rawSize && Number.isInteger(asked) && asked >= 1 && asked <= 1000 ? asked : POOL_DEFAULTS.size;
   const rawShare = (env.HF_POOL_WORKSPACE_SHARE ?? "").trim();
@@ -325,9 +330,17 @@ export async function releasePoolWaiters(deps: PoolPassDeps = {}): Promise<{ vis
           continue;
         }
         visited.push(workspaceId);
-        await runInTenant(ws, async () => {
+        const failed = await runInTenant(ws, async () => {
           await (deps.release ?? (async () => (await import("./held")).releaseHeldJobs()))();
-        }).catch((error) => console.error("shared pool release:", (error as Error).message));
+        }).then(() => false, (error) => { console.error("shared pool release:", (error as Error).message); return true; });
+        /* A workspace that cannot be reached right now steps out of the line, so its takes never hold a free
+           slot away from the others. Nothing of theirs changes: its own next release asks again, and they keep
+           the place they were first given (queued_at). */
+        if (failed)
+          await platformDb().execute({
+            sql: "UPDATE provider_pool SET left_at = ? WHERE pool = ? AND workspace_id = ? AND admitted_at IS NULL AND left_at IS NULL",
+            args: [clock(), SHARED_POOL, workspaceId],
+          }).catch(() => {});
       }
       if (!askedAgain) break;
     }

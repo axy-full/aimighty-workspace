@@ -162,11 +162,10 @@ export function higgsfieldHeaders(
 ): Record<string, string> {
   const credentials = higgsfieldCredentials();
   if (origin !== "dev-v1") return higgsfieldKeyHeaders(credentials, { correlationId });
-  /* The earlier host already takes custom headers (its paired key headers): on the platform's key it gets our correlation id too. */
-  const platform = credentials.fingerprint === platformHiggsfieldCredentials()?.fingerprint;
+  /* The earlier host keeps its paired key headers, and takes our correlation id beside them. */
   return {
     "hf-api-key": credentials.keyId, "hf-secret": credentials.keySecret, "Content-Type": "application/json",
-    ...(platform ? { [CORRELATION_HEADER]: correlationId ?? higgsfieldCorrelationId() } : {}),
+    ...(correlationHeaderOn() ? { [CORRELATION_HEADER]: correlationId ?? higgsfieldCorrelationId() } : {}),
   };
 }
 export class HiggsfieldHttpError extends Error {
@@ -195,14 +194,14 @@ export class HiggsfieldKeyChangedError extends HiggsfieldHttpError {
 }
 
 /* ── Correlation ids ────────────────────────────────────────────────
-   Every platform-key request gets an id the provider's support can trace,
-   and a request's id sits beside its request_id (in the job's handle and its
-   platform receipt), shown only on the platform owner's desk. The provider's
-   own `X-Correlation-ID` answer is what is kept when it sends one. Ours goes
-   out as a request header where the client already sends custom headers (the
-   earlier custom-reference host), and on the production API only once the
-   operator sets `HF_CORRELATION_HEADER=on`: this repo's provider notes do not
-   say that API accepts one. */
+   The provider answers every request with an `X-Correlation-ID` header, and
+   its support asks for that id together with the request_id. A submission's
+   id is kept beside its request_id (in the job's handle and its platform
+   receipt) and shown only on the platform owner's desk; never to a member.
+   Our own id goes out as a custom request header beside the key (the client
+   already sends custom headers), fixed per job and purpose, so a request
+   whose answer was lost can still be traced. `HF_CORRELATION_HEADER=off`
+   stops sending ours; the provider's own is kept either way. */
 export const CORRELATION_HEADER = "X-Correlation-ID";
 const CORRELATION = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -221,20 +220,16 @@ export function responseCorrelationId(response: Pick<Response, "headers">): stri
   return CORRELATION.test(value) ? value : null;
 }
 
-/** Whether our correlation id goes out on the production API (`HF_CORRELATION_HEADER=on`). */
+/** Whether our correlation id goes out with each request (on unless `HF_CORRELATION_HEADER=off`). */
 export function correlationHeaderOn(env: Env = process.env): boolean {
-  return (env.HF_CORRELATION_HEADER ?? "").trim().toLowerCase() === "on";
+  return (env.HF_CORRELATION_HEADER ?? "").trim().toLowerCase() !== "off";
 }
 
-/**
- * Headers for one request on the commercial API: the key, JSON, and — on the
- * platform's key, where the operator has switched it on — our correlation id.
- */
+/** Headers for one request on the commercial API: the key, JSON, and our correlation id. */
 export function higgsfieldKeyHeaders(credentials: HiggsfieldCredentials, options: { correlationId?: string; json?: boolean } = {}): Record<string, string> {
   const headers: Record<string, string> = { Authorization: `Key ${credentials.keyId}:${credentials.keySecret}` };
   if (options.json !== false) headers["Content-Type"] = "application/json";
-  if (correlationHeaderOn() && credentials.fingerprint === platformHiggsfieldCredentials()?.fingerprint)
-    headers[CORRELATION_HEADER] = options.correlationId ?? higgsfieldCorrelationId();
+  if (correlationHeaderOn()) headers[CORRELATION_HEADER] = options.correlationId ?? higgsfieldCorrelationId();
   return headers;
 }
 

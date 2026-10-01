@@ -299,17 +299,6 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
 }
 
 /**
- * Must this job have a confirmed price before it is admitted?
- *
- * A quote (the checkpoint) never states a price nobody can compute. Neither
- * may a job the platform's key pays for, quote or no quote: its credits are
- * billed when it settles (lib/meter.ts), so an unpriced one used to be
- * admitted at an estimate of nothing and charged what the vendor reported,
- * a price nobody approved. A job on the workspace's own key is billed by its
- * vendor directly and metered at no credits, so it may still go unpriced,
- * exactly as before. Checked before any row, reservation or dispatch.
- */
-/**
  * Generate parked a take behind the platform's shared provider pool: it joins
  * the pool's line (from the moment it was held) and the person hears it is
  * queued. Nothing was reserved or sent; it starts, once, when a slot frees.
@@ -333,6 +322,17 @@ async function inPoolLine(
   );
 }
 
+/**
+ * Must this job have a confirmed price before it is admitted?
+ *
+ * A quote (the checkpoint) never states a price nobody can compute. Neither
+ * may a job the platform's key pays for, quote or no quote: its credits are
+ * billed when it settles (lib/meter.ts), so an unpriced one used to be
+ * admitted at an estimate of nothing and charged what the vendor reported,
+ * a price nobody approved. A job on the workspace's own key is billed by its
+ * vendor directly and metered at no credits, so it may still go unpriced,
+ * exactly as before. Checked before any row, reservation or dispatch.
+ */
 function needsConfirmedPrice(
   options: AdmissionExecution,
   provider: string,

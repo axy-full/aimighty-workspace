@@ -58,13 +58,18 @@ export async function markKeyChanged(id: string, fingerprint: string | undefined
   });
   await keyAlertsReady();
   const workspaceId = requireTenant().id;
-  const opened = await platformDb().execute({
+  const prior = (await platformDb().execute({
+    sql: "SELECT resolved_at FROM provider_key_alerts WHERE id=? AND workspace_id=?", args: [id, workspaceId],
+  })).rows[0];
+  /* An alert already open only notes the latest check; one opened (or opened again) starts from now. */
+  await platformDb().execute({
     sql: `INSERT INTO provider_key_alerts(id, workspace_id, key_prefix, first_at, last_at) VALUES(?,?,?,?,?)
-          ON CONFLICT(id) DO UPDATE SET last_at=excluded.last_at, resolved_at=NULL WHERE provider_key_alerts.workspace_id=excluded.workspace_id
-          RETURNING first_at`,
+          ON CONFLICT(id) DO UPDATE SET last_at=excluded.last_at, resolved_at=NULL,
+            first_at=CASE WHEN provider_key_alerts.resolved_at IS NULL THEN provider_key_alerts.first_at ELSE excluded.first_at END
+          WHERE provider_key_alerts.workspace_id=excluded.workspace_id`,
     args: [id, workspaceId, keyPrefix(fingerprint), at, at],
   });
-  if (Number(opened.rows[0]?.first_at) !== at) return;
+  if (prior && prior.resolved_at == null) return;
   /* The first take of an episode: tell the platform's owner once, not for every take that follows. */
   const open = Number((await platformDb().execute("SELECT COUNT(*) AS n FROM provider_key_alerts WHERE resolved_at IS NULL")).rows[0]?.n ?? 0);
   if (open !== 1 || !mailConfigured() || !SUPER_ADMIN_EMAIL) return;
