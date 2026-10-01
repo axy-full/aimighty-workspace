@@ -42,7 +42,8 @@ export async function closeSuitesMenu(page: Page) {
  * address only when it changes).
  */
 export async function tapSuiteTab(page: Page, name: string) {
-  const tab = page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name });
+  /* On a phone the pick closes the menu, so the tab is read while it is hidden. */
+  const tab = page.getByRole("tablist", { name: "Suites", includeHidden: true }).getByRole("tab", { name, includeHidden: true });
   await expect(async () => {
     await openSuitesMenu(page);
     await tab.click({ timeout: 5_000 });
