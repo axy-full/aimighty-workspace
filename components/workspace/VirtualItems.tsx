@@ -128,24 +128,27 @@ const SETTLE_MS = 3000;
  * foot of a scroller (Build from Storyboards, under 1,500 shots, can't reach
  * the top of the screen) the rows above the target are on screen, and as each
  * is measured taller than its estimate the target is pushed down, off the
- * screen. So once a frame the target is put back where `block` puts it, until
- * it has held still there for SETTLED_FRAMES frames: the lists have measured
- * what the move mounted. Never past SETTLE_MS, a newer move, or the person
- * taking the scroll over.
+ * screen. So once a frame, when the target has moved since it was last put
+ * where `block` puts it, it is put back, until it has not moved for
+ * SETTLED_FRAMES frames: the lists have measured what the move mounted. Never
+ * past SETTLE_MS, a newer move, or the person taking the scroll over.
  */
 function settleOn(el: Element, scroller: HTMLElement, block: ScrollLogicalPosition, current: () => boolean) {
   const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
   const until = performance.now() + SETTLE_MS;
-  let touched = false, still = 0, last = Number.NaN;
+  let touched = false, still = 0, placed = Number.NaN;
   const took = () => { touched = true; };
   for (const type of TAKE_OVER) target.addEventListener(type, took, { passive: true });
   window.addEventListener("keydown", took);
   const step = () => {
     if (!touched && current() && el.isConnected && performance.now() < until) {
-      el.scrollIntoView({ block });
-      const top = el.getBoundingClientRect().top;
-      still = Math.abs(top - last) < 1 ? still + 1 : 0;
-      last = top;
+      /* Measured before it is put back: a row measured since the last frame shows as a move. */
+      const moved = !(Math.abs(el.getBoundingClientRect().top - placed) < 1);
+      if (moved) {
+        el.scrollIntoView({ block });
+        placed = el.getBoundingClientRect().top;
+      }
+      still = moved ? 0 : still + 1;
       if (still < SETTLED_FRAMES) { requestAnimationFrame(step); return; }
     }
     for (const type of TAKE_OVER) target.removeEventListener(type, took);
