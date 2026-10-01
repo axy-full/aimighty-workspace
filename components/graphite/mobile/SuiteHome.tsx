@@ -4,8 +4,7 @@ import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
 import { useSession } from "@/lib/session";
 import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
 import { OWN_TOOLS_FACT } from "@/lib/shell/business-own";
-import { isOwnerRunSuite, ownerRunBy } from "@/lib/shell/connected-capability";
-import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
+import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
 import { useJobsTray } from "@/lib/shell/use-jobs-tray";
@@ -21,8 +20,9 @@ import { Glyph, SUITE_LOOK } from "../icons";
  * The phone's Home (GLASS_SPEC §3 › "Where to?"): the project's name as the
  * eyebrow, the display title, six suite tiles with a live fact each, and one
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
- * the takes behind Assets. Every figure is the project's own; for a member,
- * a suite the owner runs on the Higgsfield account says who runs it instead.
+ * the takes behind Assets. Every figure is the project's own; a suite whose
+ * pages ran on the Higgsfield account says its sign-in is retired instead, and
+ * Business names Particl's own tools.
  */
 export function SuiteHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
@@ -32,7 +32,6 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   const session = useSession();
   const jobs = useJobsTray();
   const scoped = useScopedFetch();
-  const capability = useConnectedCapability(undefined, { read: false });
   /* The roster is one free read per project; the count is keyed to the project it answered for. */
   const [roster, setRoster] = useState<{ projectId: string; seats: number } | null>(null);
   const projectId = project?.id ?? null;
@@ -71,17 +70,17 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
       <h1 className="gx-h1 gx-where-title" data-testid="page-title">Where to?</h1>
       <div className="gx-where-grid" role="list" aria-label="Suites">
         {tiles.map((t) => {
-          const ownerRun = !capability.owner && isOwnerRunSuite(t.id);
+          const retired = isOwnerRunSuite(t.id);
           return (
-            <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`} data-owner-run={ownerRun || undefined}>
+            <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`} data-retired={retired || undefined}>
               <span className="gx-where-glow" aria-hidden="true" />
               <span className="gx-where-ic" aria-hidden="true"><Glyph name={SUITE_LOOK[t.id]?.glyph ?? "spark"} size={22} /></span>
               <span className="gx-where-name">{t.label}</span>
               <span className="gx-where-line">{t.line}</span>
               <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>
-                {ownerRun ? <><Glyph name="key" size={12} className="gx-owner-badge-key" />Run by {ownerRunBy(capability.ownerName)}</>
-                  /* A member's Business is Particl's own tools: Ads, whose figures the fact names, is the owner's. */
-                  : t.id === "business" && !capability.owner ? OWN_TOOLS_FACT : t.fact}
+                {retired ? "Higgsfield sign-in retired"
+                  /* Business is Particl's own tools, for everyone: Ads, whose figures the fact names, ran on the retired sign-in. */
+                  : t.id === "business" ? OWN_TOOLS_FACT : t.fact}
               </span>
             </button>
           );

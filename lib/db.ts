@@ -1097,6 +1097,10 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          only; every existing one needs the ALTER. */
       await addColumn("ledger_checks", `balance_credits INTEGER`);
       await addColumn("ledger_checks", `spend_credits INTEGER`);
+      /* An old Rig board opened in the new Rig (lib/workbench/board-import.ts): when its cards last came across, and
+         the production whose team canvas holds them. The board's own nodes, wires and updated_at are never written. */
+      await addColumn("boards", `imported_at INTEGER`);
+      await addColumn("boards", `imported_to TEXT`);
       if (opts.legacy) {
       /* Re-assert the super admin on every boot. A guarantee checked only at
          the point of use can be undone by a direct database edit or a bug in

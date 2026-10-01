@@ -155,7 +155,8 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   await tile(page, "generation:gen_still").click();
   const inspector = page.getByTestId("inspector");
   const next = inspector.getByTestId("next-actions");
-  await expect(next.getByRole("button")).toHaveText(["Re-edit ›"]);
+  /* The tool it opens, then the priced actions (tests/suites-next-actions-priced-workbench.spec.ts): no price on the row itself. */
+  await expect(next.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
   await expect(next).not.toContainText(/\d|credit/i);
   await rowFloors(page, info, next, '[data-testid="inspector"]');
   await next.getByTestId("next-re-edit").click();
@@ -172,7 +173,7 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   /* A clip, from the Library again: already on Takes, its Seedance Edit opens on it. */
   await assets(page, info);
   await tile(page, "generation:gen_clip").click();
-  await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit ›"]);
+  await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit ›", "Upscale", "Reframe", "Extend"]);
   await page.getByTestId("inspector").getByTestId("next-edit").click();
   await expect(page.getByTestId("takes-selected")).toContainText("Selected · Ferry turning");
   await expect(page.getByTestId("gen-edit")).toBeInViewport();
@@ -182,7 +183,9 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   /* A sound: Edit & Sound opens — the row says what opens, nothing more. */
   await assets(page, info);
   await tile(page, "generation:gen_voice").click();
-  await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit & Sound ›"]);
+  /* What no engine here does for a sound is listed, not offered, and says why. */
+  await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit & Sound ›", "Upscale", "Extend"]);
+  await expect(page.getByTestId("inspector").getByTestId("next-not-offered")).toHaveText("Upscale and Extend are not offered: no engine Particl uses upscales or extends sound.");
   await page.getByTestId("inspector").getByTestId("next-edit-sound").click();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
   expect(sent, "nothing that could spend on the way to a tool").toEqual([]);
@@ -196,7 +199,7 @@ test("the selected take in Takes carries the same row; a sound's opens Edit & So
   await deskTile(page, "Pier at dusk").getByTestId("edit-take").click();
   const selected = page.getByTestId("takes-selected");
   const next = selected.getByTestId("next-actions");
-  await expect(next.getByRole("button")).toHaveText(["Re-edit ›"]);
+  await expect(next.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
   await rowFloors(page, info, next, '[data-testid="takes-selected"]');
   await next.getByTestId("next-re-edit").click();
   await expect(page.getByTestId("edit-instruction")).toBeFocused();

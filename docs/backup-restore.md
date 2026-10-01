@@ -407,6 +407,15 @@ against the original event and incident interval, not a new paid action.
 
 ### Rig canvas operations
 
+Opening an old Rig board in the new Rig never writes the board itself: its
+nodes, wires and `updated_at` stay as they were. Two nullable columns on
+`boards`, `imported_at` and `imported_to`, record when its cards last came
+across and which production's team canvas holds them; the cards carry
+`imported` (the board and card each came from), and each batch is an `import`
+row in `rig_canvas_ops`, below. After a restore, opening a board again is
+safe: cards are keyed by stable ids, so nothing is made twice and a card
+someone took off stays off.
+
 Every tenant snapshot includes `rig_canvas_ops`, the append-only record of each
 change the server made to a production's shared Rig canvas (a Tidy, an Atomik
 run's cards): who asked, the run, each card's fields before and after, and
