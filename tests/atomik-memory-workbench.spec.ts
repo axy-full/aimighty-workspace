@@ -240,7 +240,7 @@ test("Import: a paste from another assistant waits for review; a person keeps on
   ].join("\n"));
   await floors(page, '[data-testid="memory-view"]', phone);
   await view.getByTestId("memory-import-go").click();
-  await expect(view.getByTestId("memory-import-result")).toHaveText("3 entries are waiting for you above. 1 line about money left out.");
+  await expect(view.getByTestId("memory-import-result")).toHaveText("3 entries are waiting for you above. 1 line with an amount left out.");
   const waiting = view.getByTestId("memory-waiting");
   await expect(waiting.getByTestId("memory-row")).toHaveCount(3);
   await expect(waiting.getByTestId("memory-meta").first()).toContainText("Imported from Claude");
