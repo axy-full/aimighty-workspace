@@ -242,8 +242,8 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   expect(lines).toHaveLength(1 + 6);
   expect(csv).toContain("Held");
   expect(csv).toContain("Failed · not billed");
-  /* In credits to the tenth, as billed. */
-  expect(lines.some((line) => line.endsWith(",43.7"))).toBe(true);
+  /* In credits to the tenth, as billed (the failure column follows the credits). */
+  expect(lines.some((line) => /,43\.7(?:,|$)/.test(line))).toBe(true);
   if (WIDE.includes(info.project.name)) {
     const [file] = await Promise.all([page.waitForEvent("download"), connected.getByTestId("ws-ledger-connected-export").click()]);
     const quoted = readFileSync((await file.path())!, "utf8");
