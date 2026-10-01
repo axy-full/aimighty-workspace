@@ -382,6 +382,9 @@ test("the canvas dialog: Sound is off with the node's WAV bound; on, the price i
   await expect.poll(() => f.submissions.length).toBe(1);
   expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 35, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   await expect(dialog).toHaveCount(0);
+  /* The node's first input is the WAV, so the inspector's monitor holds that sound, at full volume. The node's own mode
+     ("Video") is not a volume; read as one, it threw and stopped the page. */
+  if (!phone) await expect.poll(() => page.getByRole("complementary", { name: "Node inspector" }).locator("audio").evaluate((el) => (el as HTMLAudioElement).volume)).toBe(1);
   expect(f.errors).toEqual([]);
 });
 
@@ -405,9 +408,12 @@ test("the canvas dialog: off, the take goes silent with its sound reference, and
   await dialog.getByRole("combobox", { name: "Generation engine" }).selectOption(CINEMA);
   await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveAttribute("aria-checked", "false");
 
+  /* The words are the dialog's direction, which starts from the node's brief: sent exactly as shown, never rewritten. */
+  const direction = await dialog.getByRole("textbox", { name: "Generation direction" }).inputValue();
+  expect(direction).toContain(WORDS);
   await dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true }).click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, prompt: WORDS, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, prompt: direction, refine: false, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
   expect(f.submissions[0]).not.toHaveProperty("cinema");
   expect(f.errors).toEqual([]);
