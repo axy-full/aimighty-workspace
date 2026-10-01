@@ -683,6 +683,11 @@
 .pxw .pxw-draft-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; font-size: 11.5px; color: var(--pxw-dimmer); }
 .pxw .pxw-draft-state { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-muted); }
 .pxw .pxw-draft-error { color: var(--pxw-red-ink); }
+/* On a phone or a touch screen the save state reads at the phone's 12px floor, and its one action is a 44px target. */
+@media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-draft-status, .pxw .pxw-draft-state { font-size: 12px; }
+  .pxw .pxw-draft-status .pxw-link-button { min-height: 44px; }
+}
 
 .pxw .pxw-brief-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
 .pxw .pxw-field-block { display: flex; flex-direction: column; gap: 6px; }

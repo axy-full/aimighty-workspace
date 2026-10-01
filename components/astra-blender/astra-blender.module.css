@@ -113,8 +113,8 @@
 .numberField { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--ab-muted); min-width: 0; }
 .workspace.workspace .numberField input { line-height: 1.4; background: var(--ab-control); color: var(--ab-ink); border: 1px solid var(--ab-edge); border-radius: 5px; padding: 7px; width: 90px; min-width: 0; font-variant-numeric: tabular-nums; }
 .vector .numberField { position: relative; }
-.vector .numberField span { position: absolute; left: 7px; font-size: 0; pointer-events: none; }
-.vector .numberField span::first-letter { font-size: 0; }
+/* The axis is its coloured edge; its name stays for assistive technology, off screen rather than 0px text. */
+.vector .numberField span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; pointer-events: none; }
 .workspace.workspace .vector .numberField input { width: 100%; padding: 7px 3px 7px 7px; font-size: 11px; }
 .vector .numberField:nth-child(1) input { border-bottom-color: #b46b6b; }
 .vector .numberField:nth-child(2) input { border-bottom-color: #5b9471; }
@@ -148,38 +148,34 @@
 @media (min-width: 1500px) { .layout { grid-template-columns: 205px minmax(300px, 1fr) 295px; min-height: 700px; } .viewport { min-height: 520px; } .inspectorBody { max-height: 760px; } }
 @media (max-width: 1199px) and (min-width: 768px) { .layout { grid-template-columns: 155px minmax(230px, 1fr) 230px; } .header { padding: 12px; } .inspectorBody { padding: 14px 10px; } .segment button span { display: none; } .objectRow .rowIcon { width: 19px; } .sceneItem small { display: none; } .fps { display: none; } .keyButton span { font-size: 9px; } .viewportLabel > span:last-child { display: none; } }
 @media (max-width: 900px) and (min-width: 768px) { .layout { grid-template-columns: 140px minmax(200px, 1fr) 210px; } .brand p { max-width: 200px; overflow: hidden; white-space: nowrap; } .headerActions { gap: 2px; } .assistantButton { padding: 7px; } .templatePicker { min-width: 98px; } }
-@media (max-width: 767px) {
+/* A phone, upright or on its side (the test app/phone-chrome.css uses for the Suites shell's phone): one panel at a
+   time under the panel tabs, the actions on their own line when the name beside them would not fit, the name wrapped
+   rather than clipped, and 16px fields a phone does not zoom into. */
+@media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
   .workspace { border-radius: 9px; }
-  .header { padding: 12px; min-height: 69px; gap: 8px; flex-wrap: wrap; }
-  .brand { gap: 9px; }
+  .header { padding: 12px; min-height: 69px; gap: 8px 12px; flex-wrap: wrap; }
+  .brand { flex: 1 1 auto; gap: 9px; }
+  .brand > div { min-width: 0; }
   .brand h1 { font-size: 17px; }
-  .brand p { max-width: 130px; font-size: 10px; white-space: nowrap; overflow: hidden; }
+  .brand p { flex-wrap: wrap; max-width: none; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   .brandIcon { width: 32px; height: 32px; border-radius: 8px; }
-  .headerActions { gap: 3px; }
-  .headerActions > .iconButton { width: 25px; min-height: 36px; }
+  .headerActions { gap: 4px; margin-left: auto; }
   .assistantButton { display: none; }
-  .templatePicker { min-width: 103px; }
-  .templatePicker select { font-size: 11px; min-height: 36px; }
-  .mobileTabs { display: flex; align-items: stretch; padding: 0 6px; min-height: 41px; background: var(--ab-panel); border-bottom: 1px solid var(--ab-edge); }
-  .mobileTabs button { flex: 1; font-size: 11px; color: var(--ab-muted); border-bottom: 2px solid transparent; }
+  .templatePicker { min-width: 128px; }
+  .mobileTabs { display: flex; align-items: stretch; padding: 0 6px; min-height: 44px; background: var(--ab-panel); border-bottom: 1px solid var(--ab-edge); }
+  .mobileTabs button { flex: 1; min-width: 44px; min-height: 44px; color: var(--ab-muted); border-bottom: 2px solid transparent; }
   .mobileTabs button[aria-pressed=true] { color: var(--ab-ink); border-color: var(--ab-accent); }
   .layout { display: block; min-height: 530px; }
   .outliner, .inspector { display: none; border: 0; }
   .stage { min-height: 530px; }
   .viewport { min-height: 370px; }
   .loading { min-height: 370px; }
-  .viewportLabel > span:last-child { font-size: 8px; }
-  .viewportToolbar { min-height: 46px; }
-  .segment button { min-height: 33px; font-size: 10px; }
-  .viewportTools .iconButton { width: 29px; height: 33px; }
+  /* The transform tools are their icons here; each keeps its name as its label. */
+  .segment button span { display: none; }
   .timeline { padding: 8px 10px 12px; min-height: 114px; }
-  .timelineTop { gap: 3px; }
-  .timelineTop .iconButton { width: 31px; min-height: 35px; }
+  .timelineTop { flex-wrap: wrap; gap: 4px; }
   .fps { display: none; }
-  .keyButton { min-height: 35px; }
-  .playback label { margin-left: 3px; gap: 4px; }
-  .workspace.workspace .playback input { font-size: 16px; width: 53px; padding: 4px 5px; }
-  .timelineLabels { font-size: 8px; }
+  .playback label { margin-left: 3px; gap: 6px; }
   .timelineLabels > span:nth-child(2) { max-width: 75%; }
   .workspace[data-mobile-tab=objects] .outliner { display: flex; min-height: 530px; }
   .workspace[data-mobile-tab=objects] .stage, .workspace[data-mobile-tab=properties] .stage, .workspace[data-mobile-tab=astra] .stage, .workspace[data-mobile-tab=output] .stage { display: none; }
@@ -187,22 +183,37 @@
   .inspectorTabs { display: none; }
   .inspectorBody { padding: 18px; max-height: none; min-height: 530px; }
   .propertyHeading h2 { font-size: 16px; }
-  .propertyHeading p, .field, .hint, .numberField, .vector legend, .colorField, .sceneSettings summary { font-size: 12px; }
-  .workspace.workspace .field input, .workspace.workspace .field select, .workspace.workspace .numberField input, .workspace.workspace .vector .numberField input { font-size: 16px; padding: 9px 10px; }
+  .workspace.workspace .templatePicker select, .workspace.workspace .addSelect select, .workspace.workspace .playback input, .workspace.workspace .field input, .workspace.workspace .field select, .workspace.workspace .numberField input, .workspace.workspace .vector .numberField input { font-size: 16px; }
+  .workspace.workspace .field input, .workspace.workspace .field select, .workspace.workspace .numberField input, .workspace.workspace .vector .numberField input { padding: 9px 10px; }
   .vector > div { gap: 9px; }
   .workspace.workspace .numberField input { width: 110px; }
-  .objectActions button, .secondaryButton, .exportActions button, .keyListRow button { min-height: 40px; font-size: 12px; }
   .panelHeading { height: 48px; padding: 0 15px; }
-  .panelHeading h2 { font-size: 13px; }
   .addRow { margin: 0 12px 10px; }
   .addSelect { padding-left: 12px; }
-  .addSelect select { min-height: 40px; font-size: 16px; }
   .objectList { max-height: none; padding: 0 9px 16px; }
-  .objectRow { min-height: 45px; }
-  .objectName { font-size: 13px; padding: 9px 6px; gap: 10px; }
-  .rowIcon { width: 36px; height: 36px; }
-  .subheading { padding: 12px 12px 5px 16px; font-size: 11px; }
-  .sceneItem { min-height: 42px; padding: 9px 10px; font-size: 13px; }
-  .sceneItem small { font-size: 10px; }
-  .outlinerFooter { padding: 24px 16px 0; font-size: 10px; }
+  .objectName { padding: 9px 6px; gap: 10px; }
+  .subheading { padding: 12px 12px 5px 16px; }
+  .sceneItem { padding: 9px 10px; }
+  .sceneItem small { display: inline; }
+  .outlinerFooter { padding: 24px 16px 0; }
+}
+/* A touch screen at any width, and every phone: each control is a 44px target and no text is under 12px (the owner's
+   phone floors, tests/astra-phone-floors-workbench.spec.ts). The timeline's scrubber is a 44px strip, its keyframe
+   markers a row of 44px targets under it; the rest keeps its layout. */
+@media (max-width: 767px), (pointer: coarse) {
+  .brand p, .templatePicker, .addSelect, .panelHeading > span, .subheading, .sceneItem small, .outlinerFooter, .hint, .emptyHint, .propertyHeading p, .field, .numberField, .vector legend, .colorField, .colorField code, .checkbox, .sceneSettings summary, .propertySection h3 span, .playback label, .fps, .keyButton, .keyButton span, .timelineLabels, .viewportLabel, .viewportLabel > span:last-child, .viewportHelp, .assetNotice, .segment button, .mobileTabs button, .inspectorTabs button, .assistantButton, .objectActions button, .secondaryButton, .exportActions button, .keyListRow button, .error { font-size: 12px; }
+  .panelHeading h2, .propertySection h3, .objectName, .sceneItem { font-size: 13px; }
+  .iconButton, .rowIcon, .objectRow .rowIcon { width: 44px; height: 44px; }
+  .assistantButton, .segment button, .keyButton, .objectName, .sceneItem, .inspectorTabs button, .objectActions button, .secondaryButton, .exportActions button, .keyListRow button, .checkbox { min-height: 44px; }
+  .segment button, .keyListRow button { min-width: 44px; }
+  .workspace.workspace .templatePicker select, .workspace.workspace .addSelect select, .workspace.workspace .playback input, .workspace.workspace .field input, .workspace.workspace .field select, .workspace.workspace .numberField input, .workspace.workspace .vector .numberField input { min-height: 44px; }
+  .workspace.workspace .playback input { width: 64px; }
+  .workspace.workspace .colorField input { width: 44px; height: 44px; }
+  .sceneSettings summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
+  .viewportToolbar { flex-wrap: wrap; row-gap: 4px; }
+  .scrubber { height: auto; }
+  .workspace.workspace .scrubber > input { height: 44px; }
+  .keyMarkers { position: relative; left: auto; right: auto; height: 44px; margin: 0 12px; }
+  .keyMarkers:empty { display: none; }
+  .keyMarkers button { top: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; }
 }
