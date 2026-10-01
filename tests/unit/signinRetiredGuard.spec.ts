@@ -323,7 +323,7 @@ const uiFiles = () => {
 
 test("the account's screens are deleted: its composers, forms, workflows, collector, diagnostics and connection card", () => {
   for (const gone of [
-    "components/graphite/DeveloperApiRow.tsx", "components/graphite/tools/WorkflowHost.tsx",
+    "components/graphite/DeveloperApiRow.tsx", "components/graphite/tools/WorkflowHost.tsx", "components/graphite/tools/SoulIdHost.tsx",
     "components/suites/ConsumerGenjutsu.tsx", "components/suites/ConsumerMarketingVideo.tsx", "components/suites/consumer-marketing-video.module.css",
     "components/suites/ConsumerShorts.tsx", "components/suites/AtomikVoiceTools.tsx", "components/suites/atomik-generate.module.css",
     "components/management/HiggsfieldConsumerConnection.tsx", "components/management/ConsumerVideoVerification.tsx",
@@ -337,7 +337,7 @@ test("nothing a page renders reads the account's client: only the retired card p
      and Workspace › Engines' retired row (the running jobs to set aside, and Disconnect). Nothing else. */
   const KEPT = new Set([
     "components/graphite/business/BusinessView.tsx", "components/graphite/viral/ViralView.tsx", "components/graphite/production/CastStage.tsx",
-    "components/graphite/tools/SoulIdHost.tsx", "components/graphite/OwnerRunCard.tsx", "components/graphite/ResumedJobs.tsx",
+    "components/graphite/OwnerRunCard.tsx", "components/graphite/ResumedJobs.tsx",
     "components/suites/MarketingTemplates.tsx", "components/graphite/ConnectedAccountRow.tsx",
     "lib/shell/business.ts", "lib/shell/use-business.ts", "lib/shell/viral.ts", "lib/shell/use-viral.ts",
     "lib/shell/use-connected-job.ts", "lib/shell/use-resumed-jobs.ts", "lib/shell/connected-collector.ts",
