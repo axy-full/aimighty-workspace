@@ -237,7 +237,9 @@ test("a member's words: who runs the provider-account tools by name, what runs t
   expect(ownerRunTitle(undefined)).toBe("Higgsfield-account tools are run by the workspace owner");
   expect(ownerBadgeNote("Harbour Owner")).toBe("Run by Harbour Owner on the Higgsfield account");
   expect(OWNER_RUNS.business.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
-  expect(OWNER_RUNS.viral.alternative).toMatchObject({ type: "video", action: "Open Gen · Video" });
+  /* Viral runs on Particl's API key for everyone now: it has no owner-run card. */
+  expect(Object.keys(OWNER_RUNS)).not.toContain("viral");
+  expect(OWNER_RUNS.business.line).toBe("Ads render on their connected account.");
   expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
   expect(OWNER_RUNS.cast.alternative?.what).toContain("Studio image engines");
   /* Dubbing, voice change and social cuts have no Studio engine that makes the same thing: no alternative is invented. */
@@ -250,20 +252,21 @@ test("a member's words: who runs the provider-account tools by name, what runs t
     expect(run.line.split(". ").length).toBe(1);
     for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b/i);
   }
-  /* Viral runs on the owner's account on every page; Business only on Ads, Image ads and Setup — its own tools are everyone's. */
-  expect(OWNER_RUN_SUITES).toEqual(["viral"]);
-  expect(isOwnerRunSuite("viral")).toBe(true);
-  expect(isOwnerRunSuite("business") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
-  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "dtc", "setup"] });
-  for (const page of ["ads", "dtc", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
-  for (const page of OWN_PAGES) expect(isOwnerRunPage("business", page), page).toBe(false);
-  /* A whole owner-run suite is its own rule: the page map names only the pages of a suite others use too. */
-  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunSuite("viral") && !isOwnerRunPage("viral", page), page).toBe(true);
+  /* No suite is the owner's as a whole any more: Viral and Business › Image ads run on Particl's API key for every member,
+     Business's own tools are everyone's, and the Business pages still on the account (Ads, Setup) are the owner's page by page. */
+  expect(OWNER_RUN_SUITES).toEqual([]);
+  expect(isOwnerRunSuite("business") || isOwnerRunSuite("viral") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
+  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "setup"] });
+  for (const page of ["ads", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
+  for (const page of ["dtc", ...OWN_PAGES]) expect(isOwnerRunPage("business", page), page).toBe(false);
+  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunPage("viral", page), page).toBe(false);
   expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
   /* Every owner-run page names a page the suite really has. */
   for (const [suite, pages] of Object.entries(OWNER_RUN_PAGES)) for (const page of pages) expect(SHELL_SUITES.find((s) => s.id === suite)?.pages.some((p) => p.id === page), `${suite}/${page}`).toBe(true);
-  /* The state layer's suites behind them are exactly the shell's suites with an owner-run page. */
-  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id) || OWNER_RUN_PAGES[suite.id]).map((suite) => suite.legacy).sort()).toEqual([...OWNER_RUN_LEGACY_SUITES].sort());
+  /* The state layer's suites behind whole owner-run suites: none. (The inspector marks every plan of such a suite the
+     owner's, so Business's state suite is not one: Image ads and its own tools are every member's.) */
+  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id)).map((suite) => suite.legacy).sort()).toEqual([...OWNER_RUN_LEGACY_SUITES].sort());
+  expect(OWNER_RUN_LEGACY_SUITES).toEqual([]);
 });
 
 test("the alternative is priced exactly as Gen's sheet prices it: the composer's own default engine, at the project's aspect, whole credits", () => {
@@ -297,7 +300,7 @@ test("a cast entry's still is made from its prompt, else its description, else i
 test("an Atomik plan that reads the connected account's kept results is the owner's; no plan spends through the account any more", () => {
   /* Compare reads results already kept on the project through the owner-only route; it quotes and sends nothing. */
   expect(runsOnOwnerAccount(PLANS.compare)).toBe(true);
-  /* Motion Transfer and Object Swap run on the API-key engines; Generate, Shorts and History are not runnable. */
+  /* Motion Transfer and Object Swap run on the API-key engines, History reads the project's Library; Generate and Shorts are not runnable. */
   for (const page of ["motion", "swap", "generate", "shorts", "history"] as const) expect(runsOnOwnerAccount(PLANS[page]), page).toBe(false);
   expect(runsOnOwnerAccount(PLANS.marketing)).toBe(false);
   expect(runsOnOwnerAccount(PLANS.boards)).toBe(false);
@@ -331,8 +334,8 @@ test("the owner's failed read of the account is said as it is on Generate — ne
   expect(composerBlock({ ...base, capability: null })).toBe("Reading the connected account…");
 });
 
-test("Business, Viral, Gen's composer and the connected workflows no longer read /api/me for ownership: the session decides, once", () => {
-  for (const file of ["lib/shell/use-business.ts", "lib/shell/use-viral.ts", "lib/workspace/use-composer.ts", "components/graphite/tools/WorkflowHost.tsx"]) {
+test("Business, Gen's composer and the connected workflows no longer read /api/me for ownership: the session decides, once", () => {
+  for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts", "components/graphite/tools/WorkflowHost.tsx"]) {
     const source = readFileSync(file, "utf8");
     expect(source, file).not.toContain("/api/me");
     expect(source, file).toContain("useConnectedCapability");
@@ -341,6 +344,11 @@ test("Business, Viral, Gen's composer and the connected workflows no longer read
   for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts"]) expect(readFileSync(file, "utf8"), file).not.toContain("/api/higgsfield/consumer/connection");
   /* Engines, where the account is connected and disconnected, busts the shared answer. */
   expect(readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8")).toContain("bustConnectedCapability(scope)");
+  /* Viral and Business › Image ads read nothing of the connected account at all: they run on Particl's API key. */
+  for (const file of ["components/graphite/viral/ViralView.tsx", "lib/shell/viral.ts", "lib/shell/use-key-take.ts", "lib/shell/image-ads.ts", "lib/shell/use-marketing-presets.ts", "components/graphite/business/PresetPicker.tsx"]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).not.toMatch(/\/api\/higgsfield\/consumer\/|higgsfield-consumer\/|useConnectedCapability|use-business/);
+  }
 });
 
 /* ── Atomik › Tools & connections reaches no signed-in account ── */

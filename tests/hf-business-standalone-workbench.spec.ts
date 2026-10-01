@@ -9,10 +9,12 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
  * account's own library is listed or sent. A product or a setting is a still
  * from this project's Library, avatars, hooks and settings are the engine's
  * presets, and nothing asks for an id from a command line. Setup's Use in Ads
- * / Use in Image ads is added to the ad being built, once; the composer keeps
- * its draft across the trip; a finished job sits beside the composer (Price
- * again readies the next run) and re-reads the project's Library.
- * Connected-account replies are route mocks; nothing is billed.
+ * is added to the ad being built, once; the composer keeps its draft across
+ * the trip; a finished job sits beside the composer (Price again readies the
+ * next run) and re-reads the project's Library. Image ads runs on Particl's
+ * API key and takes nothing from Setup; its product is a still from this
+ * project too. Connected-account replies, and here the key route's quote,
+ * send and job read, are route mocks; nothing is billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -171,7 +173,7 @@ test("Ads: product and setting are stills from this project, the avatar an engin
   expect(errors).toEqual([]);
 });
 
-test("Setup lists only what Particl may use, and Use in Image ads lands once — the pick is spent, never pre-selected later", async ({ page }, info) => {
+test("Setup lists only what Particl may use and offers Image ads nothing; Image ads' product is a still from this project, first among the references", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, requests } = await open(page, "setup");
   await expect(page.getByTestId("setup-view")).toBeVisible();
@@ -183,40 +185,44 @@ test("Setup lists only what Particl may use, and Use in Image ads lands once —
   await noSideScroll(page);
   await shot(page, "setup", info.project.name);
 
+  /* An ad style belonged to the account's DTC engine, which Image ads no longer runs: nothing to send it to. */
   await page.getByTestId("setup-image_style").getByRole("button", { name: /Bold launch/ }).click();
   await expect(page.getByTestId("setup-detail")).toContainText("Bold launch");
-  await expect(page.getByTestId("setup-detail").getByRole("button", { name: "Use in Ads" })).toHaveCount(0);
-  await page.getByTestId("setup-detail").getByRole("button", { name: "Use in Image ads" }).click();
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("dtc-engine-ms_image")).toHaveAttribute("aria-selected", "true");
-  /* The engine switch is a phone target too. */
-  if (info.project.name === "workbench-390x844")
-    for (const id of ["dtc-engine-marketing_studio_image", "dtc-engine-ms_image"]) expect(Math.round((await page.getByTestId(id).boundingBox())!.height * 100) / 100).toBeGreaterThanOrEqual(44);
-  await expect(page.getByTestId("dtc-style").getByRole("button", { name: "Bold launch" })).toHaveAttribute("aria-pressed", "true");
+  for (const action of ["Use in Ads", "Use in Image ads"]) await expect(page.getByTestId("setup-detail").getByRole("button", { name: action })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("particl-business-preset"))).toBeNull();
 
-  /* The image ad's product is a still from this project, first among the references. */
-  await page.getByTestId("dtc-product-choose").click();
-  await page.getByTestId("dtc-product-stills").getByRole("button", { name: "Bottle hero" }).click();
-  await expect(page.getByTestId("dtc-product-name")).toHaveText("Bottle hero");
-  await page.getByTestId("dtc-prompt").fill("Bold hero shot on marble");
-  await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
-  const quote = lastQuote(requests)!;
-  expect(quote.input.model).toBe("ms_image");
-  expect(quote.input.parameters).toMatchObject({ style_id: "st_bold" });
-  expect(quote.input.parameters).not.toHaveProperty("product_ids");
-  expect(quote.input.medias).toEqual([{ role: "image", source: { genId: "g_bottle" } }]);
+  /* Image ads, on the key: its quote, its one send and its take's read (answered here). */
+  const IMAGE_TAKE = `gen_${"e".repeat(40)}`;
+  const quotes: Record<string, unknown>[] = [], sends: Record<string, unknown>[] = [];
+  await page.route(/\/api\/generate\/quote$/, (route) => { quotes.push(route.request().postDataJSON() as Record<string, unknown>); return route.fulfill({ json: { estimatedCredits: 40, fingerprint: "f".repeat(64), price: 40, unit: "cr" } }); });
+  await page.route(/\/api\/generate$/, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    sends.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ json: { id: IMAGE_TAKE, status: "running" } });
+  });
+  await page.route(new RegExp(`/api/jobs/${IMAGE_TAKE}(\\?.*)?$`), (route) => route.fulfill({ json: { generation: generation({ id: IMAGE_TAKE, title: "Marble hero", kind: "image", model: "higgsfield/marketing-studio-image", status: "succeeded", storedUrl: `/api/media/${IMAGE_TAKE}` }) } }));
+  const before = requests.length;
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Image ads/ }).click();
+  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await page.getByTestId("image-ad-product-choose").click();
+  await page.getByTestId("image-ad-product-stills").getByRole("button", { name: "Bottle hero" }).click();
+  await expect(page.getByTestId("image-ad-product-name")).toHaveText("Bottle hero");
+  await page.getByTestId("image-ad-prompt").fill("Bold hero shot on marble");
+  await expect(page.getByTestId("image-ad-generate")).toHaveText("Generate image · about 40 cr");
+  expect(quotes.at(-1)).toMatchObject({ model: "higgsfield/marketing-studio-image", references: [{ genId: "g_bottle", role: "reference_image" }], marketing: { enhancePrompt: false } });
   await noSideScroll(page);
   await shot(page, "image-ads", info.project.name);
   /* The finished still sits beside the composer, from Particl's own copy. */
-  await page.getByTestId("dtc-generate").click();
-  await expect(page.getByTestId("dtc-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("dtc-done")).toContainText("Rendered and filed to this project.");
-  await page.getByTestId("dtc-requote").click();
-  await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
-  await page.getByTestId("dtc-done").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await page.getByTestId("image-ad-generate").click();
+  await expect(page.getByTestId("image-ad-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("image-ad-done")).toContainText("Rendered and filed to this project.");
+  expect(sends).toHaveLength(1);
+  expect(sends[0]).toMatchObject({ maxCredits: 40, quoteFingerprint: "f".repeat(64) });
+  await page.getByTestId("image-ad-done").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await noSideScroll(page);
   await shot(page, "image-ads-done", info.project.name);
+  /* Image ads asked the connected account for nothing. */
+  expect(requests.slice(before)).toEqual([]);
   expect(errors).toEqual([]);
 });
 

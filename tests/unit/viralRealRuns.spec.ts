@@ -5,13 +5,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerJobStatus, ConsumerWorkflow, CreateConsumerJob } from "../../lib/higgsfield-consumer/jobs";
-import { INITIAL_VIRAL, RUN_STATUS, mergeRuns, originalNote, runAfterStatus, runCannotSettle, runInFlight, runStatus, viralBlock, viralFailure, type ViralRun } from "../../lib/shell/viral";
 
 /**
- * Viral's Recent and History list real runs only (idea 17): an estimate is
- * never a run, pages go by cursor, and every job still awaiting
- * reconciliation rides on the first page however old it is. The ledger
- * itself keeps every quote.
+ * The connected account's run ledger (idea 17): an estimate is never a run,
+ * pages go by cursor, and every job still awaiting reconciliation rides on
+ * the first page however old it is. The ledger itself keeps every quote.
+ * Viral's own pages no longer read it — they read the project's Library
+ * (tests/unit/suitesViral.spec.ts) — but the ledger stays for history.
  */
 const directory = mkdtempSync(path.join(tmpdir(), "particl-viral-runs-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -150,69 +150,4 @@ test("a run cursor is one opaque value that round-trips and refuses anything els
     try { jobs.parseConsumerJobCursor(bad); } catch (error) { code = (error as { code?: string }).code; }
     expect(code, bad).toBe("invalid_input");
   }
-});
-
-test("every status reads as words, never the raw code", () => {
-  expect(Object.fromEntries(Object.entries(RUN_STATUS).map(([k, v]) => [k, v.label]))).toEqual({
-    quoted: "Estimate", dispatching: "Queued", accepted: "Rendering", uncertain: "Checking", failed: "Failed", completed: "Done",
-  });
-  expect(runStatus("accepted")).toEqual({ label: "Rendering", tone: "active" });
-  expect(runStatus("completed").tone).toBe("done");
-  expect(runStatus("failed").tone).toBe("failed");
-  /* A state this build does not know yet is still not printed raw. */
-  expect(runStatus("reconciling").label).toBe("Checking");
-  expect(["dispatching", "accepted", "uncertain"].every(runInFlight)).toBe(true);
-  expect(["quoted", "failed", "completed"].some(runInFlight)).toBe(false);
-});
-
-test("a failed run says what the account's own ledger shows for its charge, as Gen and Business do", () => {
-  /* The account failed it: refunded or charged only once its ledger names the job. It finished, but its result could not be kept: it may have been billed, and its receipt is saved. */
-  expect(runStatus("failed", "provider_failed")).toEqual({ label: "Failed", tone: "failed" });
-  const refunded = { provider: "higgsfield_account" as const, stage: "run" as const, code: "nsfw", kind: "content_filter" as const, message: null, payer: "account" as const,
-    billing: { state: "refunded" as const, amount: 12, unit: "higgsfield_credits" as const, basis: "hf-ledger" as const } };
-  expect(runStatus("failed", "provider_failed", refunded)).toEqual({ label: "Failed · refunded", tone: "failed" });
-  expect(runStatus("failed", "invalid_result")).toEqual({ label: "Not kept · receipt saved", tone: "failed" });
-  expect(runStatus("completed", "invalid_result").label).toBe("Done");
-  expect(viralFailure({ failureCode: null })).toContain("didn't say if it charged");
-  expect(viralFailure({ failureCode: null })).not.toContain("not billed");
-  expect(viralFailure({ failureCode: "provider_failed", failure: refunded })).toContain("Higgsfield refunded 12 credits");
-  expect(viralFailure({ failureCode: "invalid_result" })).toContain("receipt is saved");
-  expect(viralFailure({ failureCode: "invalid_result" })).not.toContain("not billed");
-  const running: ViralRun<{ id: string; status: string; failureCode?: string | null }> = { phase: "running", job: { id: "r", status: "accepted" } };
-  expect(runAfterStatus(running, { id: "r", status: "failed", failureCode: "invalid_result" })).toMatchObject({ phase: "failed", error: expect.stringContaining("receipt is saved") });
-});
-
-test("the browser keeps one row per run, the freshest copy, newest first, and no estimates", () => {
-  const job = (id: string, status: string, createdAt: number) => ({ id, status, createdAt });
-  const onHand = [job("b", "accepted", 20), job("a", "completed", 10), job("old", "failed", 1)];
-  const merged = mergeRuns([job("b", "completed", 20), job("c", "accepted", 30), job("q", "quoted", 40)], onHand);
-  expect(merged.map((j) => [j.id, j.status])).toEqual([["c", "accepted"], ["b", "completed"], ["a", "completed"], ["old", "failed"]]);
-  /* Equal times fall back to the id, the server's own tiebreak. */
-  expect(mergeRuns([job("x", "completed", 5), job("y", "completed", 5)], []).map((j) => j.id)).toEqual(["y", "x"]);
-  expect(mergeRuns([], [job("q", "quoted", 1)])).toEqual([]);
-});
-
-test("a read that started before a run landed never sets it back", () => {
-  const landed = { id: "r", status: "completed", createdAt: 10, updatedAt: 50 };
-  /* A list read taken before the poll landed it arrives later. */
-  expect(mergeRuns([{ id: "r", status: "accepted", createdAt: 10, updatedAt: 20 }], [landed])).toEqual([landed]);
-  expect(mergeRuns([{ id: "r", status: "uncertain", createdAt: 10 }], [{ id: "r", status: "accepted", createdAt: 10 }])[0].status).toBe("accepted");
-  /* Same state: the later-updated copy wins; a genuinely fresher copy always does. */
-  expect(mergeRuns([{ id: "r", status: "accepted", createdAt: 10, updatedAt: 30 }], [{ id: "r", status: "accepted", createdAt: 10, updatedAt: 40 }])[0].updatedAt).toBe(40);
-  expect(mergeRuns([{ id: "r", status: "completed", createdAt: 10, updatedAt: 60 }], [{ id: "r", status: "accepted", createdAt: 10, updatedAt: 40 }])[0].status).toBe("completed");
-});
-
-test("a run that cannot move on its own is known; a missing original and an unread account are said in words", () => {
-  expect(runCannotSettle({ status: "dispatching" })).toBe(true);
-  expect(runCannotSettle({ status: "uncertain", providerReceipt: null })).toBe(true);
-  expect(runCannotSettle({ status: "uncertain", providerReceipt: { response: {} } })).toBe(false);
-  expect(runCannotSettle({ status: "accepted" })).toBe(false);
-  expect(originalNote({ originalAvailable: true, originalAvailability: "available" })).toBeNull();
-  expect(originalNote({ originalAvailable: false, originalAvailability: "deleted" })).toBe("Archived");
-  expect(originalNote({ originalAvailable: false, originalAvailability: "unavailable" })).toBe("Original unavailable");
-  const base = { connected: false, owner: true, hasProject: true };
-  expect(viralBlock(INITIAL_VIRAL, base)).toBe("Connect the account in Workspace › Engines.");
-  expect(viralBlock(INITIAL_VIRAL, { ...base, account: "Reading the connected account…" })).toBe("Reading the connected account…");
-  expect(viralBlock(INITIAL_VIRAL, { ...base, account: "The connected account could not be read." })).toBe("The connected account could not be read.");
-  expect(viralBlock(INITIAL_VIRAL, { ...base, hasProject: false, account: "Reading the connected account…" })).toBe("Open a project first.");
 });

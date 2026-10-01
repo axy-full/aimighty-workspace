@@ -23,8 +23,8 @@
  * pollers pass CONNECTED_READ_FLOOR_S (higgsfield-consumer/generation-client)
  * as the least hint, since the route allows a person 30 status reads a minute.
  *
- * The shell's collector (lib/shell/connected-collector.ts) and Viral's runs
- * (lib/shell/use-viral.ts) keep the same rules at their own rates. Status
+ * The shell's collector (lib/shell/connected-collector.ts) keeps the same
+ * rules at its own rate. Status
  * reads only. A quote or a submit costs money or spends a price, and nothing
  * here ever repeats one.
  */
