@@ -370,8 +370,9 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
               <p className="gx-hint pd-review-none" data-testid="review-none">{entry.asset.origin === "upload" ? "An upload is a source: it is used, not reviewed." : "Picked and approved once its picture is here."}</p>
             )}
             {reviewProblem ? <p className="gx-reason" role="alert" data-testid="review-error">{reviewProblem}</p> : null}
-            {/* Next: the tool this take goes on to, below — or Edit & Sound for a sound. Navigation only; each tool prices its own run. */}
-            <AssetNextActions entry={entry} saved={Boolean(project.productionProjectId)} onAction={(next) => (next === "edit-sound" ? onTimeline() : revealNext(next))} />
+            {/* Next: the tool this take goes on to, below (or Edit & Sound for a sound), then the priced actions that make a new take from it, each quoted before it runs. */}
+            <AssetNextActions entry={entry} saved={Boolean(project.productionProjectId)} onAction={(next) => (next === "edit-sound" ? onTimeline() : revealNext(next))}
+              scope={scope} project={project} onOpenTake={(id) => liveShell().selectAsset(id, { reason: "open" })} />
             <div className="gx-gen-enhance">
               {entry.media === "audio" ? null : <>
                 <button type="button" className="gx-hbtn" onClick={() => toTimeline(entry)} data-testid="edit-to-timeline">Add to the cut</button>

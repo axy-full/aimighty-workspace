@@ -23,7 +23,7 @@ import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
 import { AssetNextActions, revealNext } from "./AssetNextActions";
-import type { NextActionId } from "@/lib/shell/next-actions";
+import { madeFrom as toolSource, type NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
 
 /**
@@ -81,8 +81,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const pair = generation ? entryDraft(entry) : null;
   const finals = pair?.draft ? library.items.filter((item) => entryDraft(item)?.finalOf === pair.id).map((item) => item.asset.value as Generation) : [];
   const madeFrom = pair?.finalOf ? library.items.find((item) => item.asset.origin === "generation" && item.asset.value.id === pair.finalOf)?.take.name ?? "Its draft" : null;
+  /* A take a tool made from another (a Next action, the desk, Make's panels): its source, which stays as it was, and the tool. */
+  const tool = generation && !madeFrom ? toolSource(generation) : null;
+  const toolFrom = tool ? `${library.items.find((item) => item.take.id === tool.source)?.take.name ?? (tool.source.startsWith("upload:") ? "An upload" : "An earlier take")} · ${tool.action}` : null;
   const facts: [string, string][] = [
     ...(madeFrom ? [["Made from", `${madeFrom} · draft`] as [string, string]] : []),
+    ...(toolFrom ? [["Made from", toolFrom] as [string, string]] : []),
     ["Kind", generation ? "Generation" : "Upload"],
     /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
     ...(generation ? [["Engine", generation.model] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
@@ -134,7 +138,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
           <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
         </>
       ) : null}
-      <AssetNextActions entry={entry} saved={Boolean(project?.productionProjectId)} onAction={openNext} />
+      <AssetNextActions entry={entry} saved={Boolean(project?.productionProjectId)} onAction={openNext}
+        scope={scope} project={project} onOpenTake={(next) => shell.selectAsset(next, { reason: "open" })} />
       <span className="gx-eyebrow">Actions</span>
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
