@@ -1,4 +1,5 @@
-import { DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
+import { GENJUTSU_MODELS } from "./genjutsuTypes";
 
 /**
  * Mocked engines, for development and tests. No Node imports here: the
@@ -43,17 +44,56 @@ export function mockDone(id: string, delayMs = 3000): boolean {
 export const mockStartedAt = (id: string): number => Number(id.split("_").pop()) || Date.now();
 
 /**
+ * The mocked planner's library steps (lib/atomikKeySteps.ts): a brief that
+ * asks for a transform or a campaign still, in a project whose library the
+ * planner was shown, gets them, citing the first clip and still by handle —
+ * so the plan, its prices and an approval can be watched without a vendor.
+ * Anything else, or a library with nothing to work from, gets none.
+ */
+function mockLibrarySteps(asked: string, preamble: string): Record<string, unknown>[] {
+  const offered = (id: string) => preamble.includes(`  ${id} — `);
+  const clip = /^(V\d+) \| video\b/m.exec(preamble)?.[1];
+  const still = /^(S\d+) \| still\b/m.exec(preamble)?.[1];
+  const preset = /preset/i.test(asked) ? /^(P\d+) \| /m.exec(preamble)?.[1] : undefined;
+  const out: Record<string, unknown>[] = [];
+  const swap = /object swap/i.test(asked);
+  const transform = GENJUTSU_MODELS[swap ? "object-swap" : "motion-transfer"];
+  if (/motion transfer|object swap|transform/i.test(asked) && offered(transform) && clip && still)
+    out.push({ kind: "video", title: swap ? "Mocked swap" : "Mocked motion transfer", prompt: swap ? "Swap the bottle for the product in the reference still." : "Carry the clip's movement onto the figure in the reference still.",
+      model: transform, source: clip, references: [still], resolution: "720p" });
+  if (/marketing|campaign/i.test(asked) && offered(MARKETING_IMAGE_MODEL_ID))
+    out.push({ kind: "image", title: "Mocked campaign still", prompt: "The product on a clean studio sweep, soft key light from the left.",
+      model: MARKETING_IMAGE_MODEL_ID, references: still ? [still] : [], quality: "high", ratio: "1:1", resolution: "2k", ...(preset && still ? { preset } : {}),
+      /* A brief that names a 2.5 build gets it, at extra-high quality. */
+      ...(/sunburst/i.test(asked) ? { build: "sunburst", quality: "xhigh" } : /flare|2\.5/i.test(asked) ? { build: "flare", quality: "xhigh" } : {}) });
+  return out;
+}
+
+/**
  * A canned chat completion, shaped like the gateway's, for the three
  * things the app asks a text model for.
  */
 export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "shots", requestBody: string): { ok: boolean; status: number; text: string } {
   let lastUser = "";
+  let asked = "", preamble = "";
   try {
     const j = JSON.parse(requestBody) as { messages?: { role: string; content: string }[] };
     lastUser = [...(j.messages ?? [])].reverse().find((m) => m.role === "user")?.content ?? "";
+    /* A turn's last message may carry pictures beside its words: only the words are read. */
+    const words = (content: unknown) => typeof content === "string" ? content
+      : Array.isArray(content) ? content.map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "")).join(" ") : "";
+    asked = words(lastUser);
+    preamble = words((j.messages ?? []).find((m) => m.role === "user" && words(m.content).startsWith("ENGINES YOU MAY CHOOSE"))?.content);
   } catch { /* an unreadable body still gets a reply */ }
+  const library = kind === "turn" ? mockLibrarySteps(asked, preamble) : [];
   const content =
-    kind === "turn" ? JSON.stringify({
+    kind === "turn" && library.length ? JSON.stringify({
+      title: "Mocked library steps",
+      say: "Mocked: library steps from this project's own media, each priced before it is shown.",
+      activity: ["read the brief", "read the library"],
+      propose: library,
+    })
+    : kind === "turn" ? JSON.stringify({
       title: "Mocked production",
       say: "Mocked: one shot, so the pipeline can be watched end to end without a vendor.",
       activity: ["read the brief", "chose one engine"],
