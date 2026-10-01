@@ -292,6 +292,8 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
     },
     "@/lib/atomik": fake,
     "@/lib/atomikAccountStep": await import("../../lib/atomikAccountStep"),
+    /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */
+    "@/lib/atomikThreads": { ARCHIVED_NOTE: (await import("../../lib/atomikThreadsText")).ARCHIVED_NOTE, threadArchived: (fake.threadArchived as (() => Promise<boolean>) | undefined) ?? (async () => false) },
   };
   const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
@@ -320,6 +322,7 @@ test("the claim and step routes refuse an account step with its reason, and clai
     patchStep: async () => { touched.push("patch"); return stored; },
     stepForBrowser: (s: unknown) => s,
     StepEditError: class extends Error {},
+    threadArchived: async () => { touched.push("archived?"); return false; },
   };
   const ctx = { params: Promise.resolve({ id: "acct" }) };
   const claim = await route("app/api/atomik/steps/[id]/claim/route.ts", fake);

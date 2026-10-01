@@ -144,6 +144,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },
+  { name: "GET /api/atomik/threads", file: "app/api/atomik/threads/route.ts", url: "/api/atomik/threads?projectId=p_margin" },
   { name: "GET /api/atomik/steps/[id]", file: "app/api/atomik/steps/[id]/route.ts", url: "/api/atomik/steps/ast_margin", params: { id: "ast_margin" } },
   { name: "GET /api/atomik/memory", file: "app/api/atomik/memory/route.ts", url: "/api/atomik/memory?projectId=p_margin", scoped: true },
   { name: "GET /api/analytics", file: "app/api/analytics/route.ts", url: "/api/analytics", ownKeys: true },
