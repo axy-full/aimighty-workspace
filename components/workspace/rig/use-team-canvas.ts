@@ -62,6 +62,8 @@ export type TeamCanvasApi = {
   flush: () => Promise<void>;
   /** Lays the board out on the server, for everyone at once. Free. */
   tidy: () => Promise<TidyOutcome>;
+  /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
+  refresh: () => Promise<void>;
 };
 
 const API = "/api/workbench/team-canvas";
@@ -418,5 +420,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     return { ok: true, moved: v.moved, sections: typeof v.sections === "number" ? v.sections : 0, live };
   }, [scope, send, foldServer]);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy };
+  const refresh = useCallback(async () => {
+    const pid = joined.current;
+    if (pid && !room.current) await foldServer(pid);
+  }, [foldServer]);
+
+  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh };
 }
