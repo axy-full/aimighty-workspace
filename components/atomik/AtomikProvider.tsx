@@ -12,7 +12,8 @@ import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import type { PaidTextQuote } from "@/lib/paidText";
 import type { ThinkingModel } from "./ModelPicker";
 import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
-import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender } from "@/lib/atomikStepRender";
+import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender, type StepRenderContext } from "@/lib/atomikStepRender";
+import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
 
 /**
  * Atomik, at app level (design/particl-v2/README.md §5).
@@ -66,6 +67,8 @@ export type AtomikLive = {
   priceLabel: (step: Step) => string;
   /** True once Continue can run this step at a price it shows: the checkpoint's live quote is in. */
   approvable: (step: Step) => boolean;
+  /** True when that live quote is approximate (a Marketing Studio 2.5 build settles on its delivered image): shown as "about". */
+  approximate: (step: Step) => boolean;
   /** Why the checkpoint could not be priced (the admission route's own refusal), if it could not. */
   stepQuoteError: string | null;
   /** True inside the app shell, which hosts the rail this conversation lives in; false where nothing does. */
@@ -163,7 +166,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   useEffect(() => { refreshRef.current = refreshChat; }, [refreshChat]);
 
   const engines = useMemo(() => index?.engines ?? [], [index]);
-  const engineLabel = useCallback((id: string) => engines.find((e) => e.id === id)?.label ?? (id.startsWith(ACCOUNT_MODEL_PREFIX) ? "Connected account" : id), [engines]);
+  /* A library step's engine (a transform, Marketing Studio) is never an engine to switch a shot to, so it is not in `engines`. */
+  const engineLabel = useCallback((id: string) => engines.find((e) => e.id === id)?.label ?? keyStepLabel(id) ?? (id.startsWith(ACCOUNT_MODEL_PREFIX) ? "Connected account" : id), [engines]);
 
   const messages = useMemo(() => loaded?.messages ?? [], [loaded]);
   const lastAssistant = useMemo(() => [...messages].reverse().find((m) => m.role === "assistant") ?? null, [messages]);
@@ -184,8 +188,17 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
      again only when something that prices it changed. */
   const checkpointStep = loaded && !thinking && loaded.chat.status !== "running"
     ? live.find((s) => s.status === "proposed") ?? null : null;
-  const quoteRequest = checkpointStep && signedIn
-    ? JSON.stringify({ scope: requestScope ?? "", stepId: checkpointStep.id, render: stepRender(checkpointStep, loaded?.chat.projectId ?? null) })
+  /* A transform files under the approver's own Studio project for this production (the one
+     GET /api/workbench/projects?production= answers for them): its checkpoint is quoted with
+     that project and waits for the answer. Admission checks it belongs to the production. */
+  const chatProject = loaded?.chat.projectId ?? null;
+  const needsStudio = !!checkpointStep && !!chatProject && keyStepFamily(checkpointStep.model) === "transform";
+  const studio = useApi<{ id: string | null }>(signedIn && needsStudio ? `/api/workbench/projects?production=${encodeURIComponent(chatProject!)}` : null, 0, requestScope);
+  const studioId = studio.data?.id ?? null;
+  const renderContext = useMemo<StepRenderContext>(() => ({ workbenchProjectId: studioId }), [studioId]);
+  const studioKnown = !needsStudio || studio.data !== null || studio.error !== null;
+  const quoteRequest = checkpointStep && signedIn && studioKnown
+    ? JSON.stringify({ scope: requestScope ?? "", stepId: checkpointStep.id, render: stepRender(checkpointStep, chatProject, renderContext) })
     : "";
   const [stepQuote, setStepQuote] = useState<{ key: string; quote?: StepQuote; error?: string; retry?: boolean } | null>(null);
   const [quoteAttempt, setQuoteAttempt] = useState(0);
@@ -217,13 +230,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const credits = useCallback((s: Step) => isAccountStep(s) ? null : stepPrice(s, money.inCredits, liveQuoted?.stepId === s.id ? liveQuoted.quote : null), [money, liveQuoted]);
   const isReadOnly = useCallback((s: Step) => isAccountStep(s), []);
   const approvable = useCallback((s: Step) => !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted]);
+  const approximate = useCallback((s: Step) => liveQuoted?.stepId === s.id && liveQuoted.quote.approximate === true, [liveQuoted]);
   const priceLabel = useCallback((s: Step) => {
     if (isAccountStep(s)) return "Read-only";
     const n = credits(s);
-    if (n !== null) return money.price(n);
+    /* A library step's plan-time figure is the provider's estimate when it was planned: about that,
+       until its checkpoint quote (the ceiling Continue sends) or its bill replaces it. */
+    if (n !== null) return (isKeyStep(s) && s.status === "proposed" && liveQuoted?.stepId !== s.id) || approximate(s) ? `about ${money.price(n)}` : money.price(n);
     if (s.id === checkpointId) return stepQuoteError ? "no price" : "pricing…";
     return "priced at checkpoint";
-  }, [money, credits, checkpointId, stepQuoteError]);
+  }, [money, credits, checkpointId, stepQuoteError, liveQuoted, approximate]);
 
   const spentCredits = live.filter((s) => s.status === "done").reduce((a, s) => a + (credits(s) ?? 0), 0);
   const current: Current = useMemo(() => {
@@ -308,7 +324,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       /* The price may have moved since the button was drawn (a rate change,
          a margin guard). Asked again before the claim, a changed price is
          shown instead of spent, and the step stays ready at the new one. */
-      const again = await fetchStepQuote(stepRender(proposed, loaded?.chat.projectId ?? null), requestScope ?? "");
+      const again = await fetchStepQuote(stepRender(proposed, loaded?.chat.projectId ?? null, renderContext), requestScope ?? "");
       if ("error" in again) { setError(again.error); return; }
       if (quoteMoved(quote, again.quote)) {
         setStepQuote({ key: quoteRequest, quote: again.quote });
@@ -322,7 +338,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       const step: Step = cj.step;
       /* The quoted request, capped at the quoted credits; a step that changed
          since it was priced is refused by the route rather than charged more. */
-      const render = stepRender(step, loaded?.chat.projectId ?? null);
+      const render = stepRender(step, loaded?.chat.projectId ?? null, renderContext);
       /* This approval's own key: a step proposed again after a render that never arrived renders under a new one. */
       const res = await fetch(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": step.requestKey ?? `atomik-step:${step.id}` },
         body: JSON.stringify(approvedBody(render, again.quote)) });
@@ -346,7 +362,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       await refreshRef.current();
       setBusy(false);
     }
-  }, [busy, loaded, liveQuoted, stepQuoteError, requestScope, quoteRequest, money]);
+  }, [busy, loaded, liveQuoted, stepQuoteError, requestScope, quoteRequest, money, renderContext]);
 
   const stop = useCallback(async (step: Step) => {
     if (busy || isAccountStep(step)) return;
@@ -372,7 +388,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
     busy, error:paid.error??error, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -380,7 +396,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 
