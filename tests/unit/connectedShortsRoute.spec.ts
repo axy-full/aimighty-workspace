@@ -15,6 +15,7 @@ import { ConsumerVideoServiceError } from "../../lib/higgsfield-consumer/video-s
 import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-original";
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as studio from "../../lib/higgsfield-consumer/shorts-studio";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -54,6 +55,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/shorts-studio": studio,
+    "@/lib/higgsfield-consumer/retired": retired,
     "@/lib/higgsfield-consumer/shorts-service": {
       consumerShortsJobs: service("list", [job]),
       connectedShortsPresets: service("presets", { presets: [], complete: true, fetchedAt: 1 }),
@@ -94,24 +96,28 @@ test("Shorts routes reject signed-out, non-owner and API-token callers before an
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test("owner presets, quote, exact approval and status reach the service with server identity; strict schemas refuse overrides", async () => {
+test("presets, quote and submit answer 410 before any limit or service; the saved sessions and status still reach the service; the status schema stays strict", async () => {
   const f = await fixture();
   const listing = await f.request("GET", undefined, { query: "?draftId=draft-1" });
   expect(listing.status).toBe(200);
   const body = await listing.json();
   expect(body.capabilities).toMatchObject({ shorts: true, aspectRatios: ["9:16", "16:9"], resolution: "720p", minSourceSeconds: 4, maxSourceSeconds: 120, maxClips: 20, cancel: false });
   expect(JSON.stringify(body.capabilities).toLowerCase()).not.toContain("higgsfield");
-  for (const request of [presets, quote, submit, status]) expect((await f.request("POST", request)).status, JSON.stringify(request)).toBe(200);
-  expect(f.calls.map((call) => call.name)).toEqual(["list", "presets", "quote", "submit", "status"]);
-  expect(f.calls[2].args).toEqual(["owner", "draft-1", input, key]);
-  expect(f.calls[3].args).toEqual([{ userId: "owner", draftId: "draft-1", id: key }, submit]);
-  expect(f.limits.map((args) => args[1])).toEqual([12, 6, 6, 30]);
-  for (const bad of [
-    { ...quote, input: { ...input, resolution: "1080p" } }, { ...quote, input: { ...input, source: { url: "https://example.com/a.mp4" } } },
-    { ...quote, userId: "other" }, { ...submit, credits: -1 }, { action: "create_preset" }, { ...quote, input: { ...input, aspectRatio: "1:1" } },
-  ]) expect((await f.request("POST", bad)).status, JSON.stringify(bad)).toBe(400);
+  /* Whatever a stale tab's retired request holds, the answer is the retirement. */
+  for (const request of [presets, { ...presets, refresh: true }, quote, submit, { ...quote, input: { ...input, resolution: "1080p" } }, { ...quote, userId: "other" }, { ...submit, credits: -1 }]) {
+    const response = await f.request("POST", request);
+    expect(response.status, JSON.stringify(request)).toBe(410);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+  }
+  expect((await f.request("POST", status)).status).toBe(200);
+  expect(f.calls.map((call) => call.name)).toEqual(["list", "status"]);
+  expect(f.calls[1].args).toEqual([{ userId: "owner", draftId: "draft-1", id: key }]);
+  expect(f.limits.map((args) => args[1])).toEqual([30]);
+  for (const bad of [{ action: "create_preset" }, { ...status, id: "bad" }, { ...status, userId: "other" }, {}])
+    expect((await f.request("POST", bad)).status, JSON.stringify(bad)).toBe(400);
   f.fail(new studio.ShortsStudioError("contract_unverified", "The connected account's Shorts Studio tools do not advertise the arguments this workflow sends. Nothing was submitted."));
-  const refused = await f.request("POST", quote);
+  const refused = await f.request("POST", status);
   expect(refused.status).toBe(502);
   expect(await refused.json()).toEqual({ code: "contract_unverified", error: "The connected account's Shorts Studio tools do not advertise the arguments this workflow sends. Nothing was submitted." });
 });

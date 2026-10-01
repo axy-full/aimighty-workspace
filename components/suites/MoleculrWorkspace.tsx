@@ -26,8 +26,9 @@ import { BrandKitEditor } from "./BrandKitEditor";
 import { ProductProfileEditor } from "./ProductProfileEditor";
 import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
 import { ReferenceAd } from "./ReferenceAd";
-import { ConsumerMarketingVideo } from "./ConsumerMarketingVideo";
-import { MarketingTemplateBrowser, MarketingTemplateCreator, TEMPLATE_ASSET_CATEGORY } from "./MarketingTemplates";
+/* The template category stays: collected template originals are still shown as results. The account's
+   marketing video and template library went with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */
+import { TEMPLATE_ASSET_CATEGORY } from "./MarketingTemplates";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import { MOLECULR_SECTIONS } from "@/lib/suites";
 import {
@@ -59,8 +60,6 @@ export function MoleculrWorkspace({
   onBuildStoryboard,
   onReviewVariant,
   onPrepareVariants,
-  onConsumerVideoAsset,
-  onTemplateAsset,
 }: {
   project: Project;
   scope: string;
@@ -91,8 +90,9 @@ export function MoleculrWorkspace({
   onBuildStoryboard?: () => void;
   onReviewVariant?: (nodeId: string) => void;
   onPrepareVariants?: (kind: "image" | "video") => void;
+  /** Filed a collected marketing video (the account's; retired with the Higgsfield sign-in, nothing calls it now). */
   onConsumerVideoAsset?: (asset: Asset, draftId: string) => Promise<void>;
-  /** Files a collected template original (image or video) as a variant result. */
+  /** Filed a collected template original as a variant result (retired with the Higgsfield sign-in; nothing calls it now). */
   onTemplateAsset?: (asset: Asset, draftId: string) => Promise<void>;
 }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
@@ -559,7 +559,6 @@ export function MoleculrWorkspace({
             onSettings={(settings) => set("marketing", settings)}
             onConfigure={onGenerate}
           />
-          <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} />
           </div>
         )}
       </section>
@@ -789,8 +788,6 @@ export function MoleculrWorkspace({
               onConfigure={onGenerate}
             />
           )}
-          {media === "video" && <ConsumerMarketingVideo key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onConsumerVideoAsset}/>}
-          <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onTemplateAsset} />
           <OutputGallery assets={outputs} onSequence={onSequence} />
           </div>
         )}

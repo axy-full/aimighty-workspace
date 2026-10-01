@@ -16,6 +16,7 @@ import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-origi
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as contract from "../../lib/higgsfield-consumer/genjutsu-contract";
 import * as genjutsuTypes from "../../lib/genjutsuTypes";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -58,6 +59,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/genjutsu-contract": contract,
     "@/lib/genjutsuTypes": genjutsuTypes,
+    "@/lib/higgsfield-consumer/retired": retired,
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/genjutsu-service": {
       consumerGenjutsuJobs: service("list", [job]),
@@ -123,39 +125,38 @@ test("Genjutsu consumer requests cannot adopt another workspace, user, origin or
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]); expect(f.connections).toEqual([]);
 });
 
-test("owner quote, exact approval and status receive server-derived identity and captured project", async () => {
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+}
+
+test("quote and submit answer 410 before any limit or service; status and the saved jobs still reach the service with server-derived identity", async () => {
   const f = await fixture();
-  for (const body of [quote, submit, status]) {
-    const response = await f.request("POST", body, { origin: "https://particl.example" });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(await response.json()).toHaveProperty("job");
-  }
+  for (const body of [quote, submit]) await expectRetired(await f.request("POST", body, { origin: "https://particl.example" }));
+  expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  const polled = await f.request("POST", status, { origin: "https://particl.example" });
+  expect(polled.status).toBe(200);
+  expect(polled.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(polled.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(await polled.json()).toHaveProperty("job");
   const response = await f.request("GET", undefined, { query: "?draftId=draft-1&userId=other&workspaceId=other" });
   expect(response.status).toBe(200); expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800, presetsAvailable: false, importsMediaForQuote: true } });
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
-    { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
-    { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([quote, submit, status].map(body => [`hf-consumer-genjutsu:workspace:owner:${body.action}`, body.action === "status" ? 30 : 6, 60_000]));
+  expect(f.limits).toEqual([["hf-consumer-genjutsu:workspace:owner:status", 30, 60_000]]);
 });
 
-test("strict Genjutsu schemas reject remote URLs, spoofed identities, duplicate media and provider overrides", async () => {
+test("a stale tab's quote or submit gets the plain answer whatever its body; the status schema and the GET views stay strict", async () => {
   const f = await fixture();
-  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, userId: "other" }, { ...quote, workspaceId: wallet },
-    { ...quote, draftId: "../foreign" }, { ...quote, draftId: "x".repeat(201) }, { ...quote, idempotencyKey: "bad" },
-    ...[{ model: "other" }, { get_cost: false }, { use_unlim: true }, { medias: [] }, { prompt: "a".repeat(5001) },
-      { variant: "motion_control" }, { resolution: "4k" }, { source: {} }, { source: { uploadId: "a", genId: "b" } },
-      { source: { url: "https://provider.invalid/source.mp4" } }, { source: { uploadId: "../secret" } }, { source: { uploadId: "a".repeat(161) } },
-      { references: Array.from({ length: 31 }, (_, i) => ({ uploadId: `image-${i}` })) }, { references: [{ uploadId: "original-video" }] },
-      { references: [{ uploadId: "image" }, { uploadId: "image" }] }, { references: [{ genId: "image", url: "https://external.invalid/image.png" }] },
-      { references: [{ role: "video", genId: "other" }] }].map(patch => ({ ...quote, input: { ...input, ...patch } })),
-    { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "25" }, { ...submit, workspaceId: "bad" },
-    { ...submit, id: "bad" }, { ...submit, input }, { ...status, tool: "generate_video" }, { ...status, userId: "other" }];
+  const references = Array.from({ length: 30 }, (_, i) => i % 2 ? { genId: `generation-${i}` } : { uploadId: `upload-${i}` });
+  const staleRetired = [{ ...quote, userId: "other" }, { ...quote, idempotencyKey: "bad" }, { ...quote, input: { ...input, source: { url: "https://provider.invalid/source.mp4" } } },
+    { ...quote, input: { ...input, variant: "object-swap", resolution: "720p", prompt: "", references } }, { ...submit, credits: -1 }, { ...submit, input }];
+  for (const body of staleRetired) await expectRetired(await f.request("POST", body));
+  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...status, tool: "generate_video" }, { ...status, userId: "other" }, { ...status, id: "bad" }, { ...status, draftId: "../foreign" }];
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
@@ -186,18 +187,6 @@ test("Viral's runs view lists runs only and pages by the cursor the last page en
   expect(f.connections).toEqual(Array.from({ length: 3 }, () => ({ workspaceId: "workspace", userId: "owner" })));
 });
 
-test("valid Genjutsu boundaries retain ordered source identities without adding provider-controlled fields", async () => {
-  const f = await fixture();
-  const references = Array.from({ length: 30 }, (_, i) => i % 2 ? { genId: `generation-${i}` } : { uploadId: `upload-${i}` });
-  for (const resolution of ["480p", "720p", "1080p"]) {
-    const selected = { ...input, variant: "object-swap", resolution, prompt: "", references };
-    expect((await f.request("POST", { ...quote, input: selected })).status).toBe(200);
-    expect(f.calls.at(-1)?.args).toEqual(["owner", "draft-1", selected, key]);
-  }
-  expect((await f.request("POST", { ...quote, input: { ...input, references: [] } })).status).toBe(200);
-  expect(f.calls.map(call => call.name)).toEqual(["quote", "quote", "quote", "quote"]);
-});
-
 test("Genjutsu body validation bounds actual UTF8 bytes and reports malformed JSON without leaking content", async () => {
   const f = await fixture();
   for (const raw of ["{broken", "", '{"input":"PRIVATE_MARKER"', new Uint8Array([0xc3, 0x28])]) {
@@ -210,18 +199,18 @@ test("Genjutsu body validation bounds actual UTF8 bytes and reports malformed JS
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test("suspension prevents Genjutsu dispatch, while saved status remains readable and limits block all service calls", async () => {
+test("a paused workspace can still read a running job; limits block status, and quote or submit never reaches the limits", async () => {
   const f = await fixture(), original = f.store();
   f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
-  expect((await f.request("POST", submit)).status).toBe(423); expect(f.calls).toEqual([]);
+  await expectRetired(await f.request("POST", submit)); expect(f.calls).toEqual([]);
   expect((await f.request("POST", status)).status).toBe(200);
   expect(f.calls.map(call => call.name)).toEqual(["status"]);
   f.setStore(original); f.limit();
-  for (const body of [quote, submit, status]) {
-    const response = await f.request("POST", body);
-    expect(response.status).toBe(429); expect(await response.text()).not.toContain("PRIVATE_RATE_STATE");
-  }
+  const limited = await f.request("POST", status);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain("PRIVATE_RATE_STATE");
+  for (const body of [quote, submit]) await expectRetired(await f.request("POST", body));
   expect(f.calls.map(call => call.name)).toEqual(["status"]);
+  expect(f.limits.map(args => args[0])).toEqual(["hf-consumer-genjutsu:workspace:owner:status", "hf-consumer-genjutsu:workspace:owner:status"]);
 });
 
 test("Genjutsu recoverable errors preserve bounded categories and never expose provider or storage details", async () => {

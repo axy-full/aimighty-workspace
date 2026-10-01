@@ -4,6 +4,8 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { SPEC_PAGES } from "../lib/workspace/spec-cards";
 import { pageDef, suiteOfPage } from "../lib/workspace/pages";
+import { PLANS } from "../lib/workspace/plans";
+import { runsOnOwnerAccount } from "../lib/shell/connected-capability";
 import type { PageId } from "../lib/workspace/types";
 
 /**
@@ -174,12 +176,18 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
       await expect(page.getByTestId("spec-work").locator(tool.then ?? tool.body)).toBeVisible({ timeout: 30_000 });
     }
 
-    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. */
+    /* Inspector: five facts and the page's plan, disabled with its reason when it cannot run. A plan that still reads
+       the Higgsfield account's routes (Compare) says the sign-in is retired instead of offering Run. */
     const inspector = page.getByTestId("spec-inspector");
     await expect(inspector.locator(".pxw-fact")).toHaveCount(5);
     const run = inspector.locator(".pxw-insp-run");
-    await expect(run).toBeVisible();
-    if (await run.isDisabled()) await expect(inspector.getByTestId("spec-plan-reason")).not.toBeEmpty();
+    if (runsOnOwnerAccount(PLANS[id])) {
+      await expect(inspector.getByTestId("spec-plan-owner")).toHaveText("Particl no longer signs in to Higgsfield.");
+      await expect(run).toHaveCount(0);
+    } else {
+      await expect(run).toBeVisible();
+      if (await run.isDisabled()) await expect(inspector.getByTestId("spec-plan-reason")).not.toBeEmpty();
+    }
 
     if (SHOTS && info.project.name === "workbench-1440x900" && (id === "brief" || id === "marketing" || id === "runs")) {
       await page.getByTestId("content").evaluate((el) => el.scrollTo(0, 0));
@@ -226,20 +234,22 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
 test("Generate points to Gen: no account form, its Atomik plan refuses with the reason, and nothing reaches the account", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signInLocally(page.request);
-  const me = await page.request.get("/api/me").then((response) => response.json());
-  me.owner = true;
   const project = { ...primary, id: "ws-spec-generate" };
-  const account: string[] = [];
+  const asked: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error" && /Maximum update depth/.test(message.text())) errors.push(message.text()); });
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
-    if (path === "/api/me") return json(me);
     if (path === "/api/workbench/projects")
       return json({ project, projects: [{ id: project.id, name: project.name, revision: 1 }], revision: 1, productions: [], shared: null });
-    /* Atomik › Generate asks the account nothing: no catalogue, no quote. */
-    if (path === "/api/higgsfield/consumer/generation") { account.push(`${request.method()} ${path}`); return json({ error: "Atomik reaches no signed-in account." }, 409); }
+    if (path.startsWith("/api/higgsfield/consumer/")) {
+      /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
+      if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
+      asked.push(`${request.method()} ${path}`);
+      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
+    }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);
     return route.continue();
@@ -257,6 +267,6 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
   await expect(page.getByTestId("atomik-reason")).toContainText("single generations run in Gen, on Particl's own engines");
   await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   await page.keyboard.press("Escape");
-  expect(account).toEqual([]);
+  expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);
 });

@@ -65,44 +65,6 @@ function watchPaid(page: Page) {
   return sent;
 }
 
-/** A connected account with a two-model catalogue, which the local mock has none of. */
-async function mockConnected(page: Page) {
-  const wallet = "22222222-2222-4222-8222-222222222222";
-  const posts: Record<string, unknown>[] = [];
-  await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
-  await page.route("**/api/higgsfield/consumer/generation", async (route) => {
-    const body = route.request().postDataJSON();
-    posts.push(body);
-    if (body.action === "catalogue")
-      return route.fulfill({
-        json: {
-          catalogue: {
-            models: [
-              { id: "connected-still", name: "Still 1", description: "", outputType: "image", parameters: [], medias: [], aspectRatios: ["16:9"], tags: [], supportsUnlim: false },
-              { id: "connected-still-pro", name: "Still 1 Pro", description: "", outputType: "image", parameters: [], medias: [], aspectRatios: ["16:9"], tags: [], supportsUnlim: false },
-              { id: "connected-motion", name: "Motion 1", description: "", outputType: "video", parameters: [], medias: [], aspectRatios: ["16:9"], tags: [], supportsUnlim: false },
-            ],
-            unlim: { available: false, remaining: null, expiresAt: null },
-            complete: true,
-            fetchedAt: Date.now(),
-          },
-        },
-      });
-    if (body.action === "quote")
-      return route.fulfill({
-        json: {
-          job: {
-            id: `11111111-1111-4111-8111-${String(posts.length).padStart(12, "0")}`, draftId: body.draftId, status: "quoted", input: body.input,
-            model: { id: body.input.model, name: "Still 1", outputType: "image" }, workspaceId: wallet, workspaceName: "Studio wallet",
-            quoteCredits: 9, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, providerJobId: null, result: null, createdAt: Date.now(),
-          },
-        },
-      });
-    return route.fulfill({ status: 409, json: { error: "This spec submits nothing to the connected account." } });
-  });
-  return posts;
-}
-
 /** Nothing in the composer may clip, and the page may never scroll sideways. */
 async function assertNoClipping(page: Page) {
   const problems = await page.evaluate(() => {
@@ -350,7 +312,14 @@ test("a moved price blocks the send and spends nothing", async ({ page }, info) 
 test("the composer offers this workspace's engines only: no account switch, and the account's catalogue is never read", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const { project } = await seeded(page);
-  const posts = await mockConnected(page);
+  /* Every account request the composer makes, bar the shell collector's lists of saved jobs (ledger reads). */
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const address = new URL(request.url());
+    if (!address.pathname.startsWith("/api/higgsfield/consumer/")) return;
+    if (request.method() === "GET" && address.searchParams.has("draftId")) return;
+    asked.push(`${request.method()} ${address.pathname}`);
+  });
   const sent = watchPaid(page);
   await page.goto(url(project.id));
   await page.getByTestId("topbar-generate").click();
@@ -360,7 +329,7 @@ test("the composer offers this workspace's engines only: no account switch, and 
   await expect(composer(page).getByRole("group", { name: "Credits used" })).toHaveCount(0);
   await expect(composer(page).getByRole("button", { name: "Connected account" })).toHaveCount(0);
   await expect(composer(page)).not.toContainText(/Higgsfield|connected cr/i);
-  expect(posts.map((post) => post.action)).not.toContain("catalogue");
+  expect(asked, "the account's catalogue is never read").toEqual([]);
   expect(sent.filter((s) => s.path === "/api/generate")).toEqual([]);
 });
 

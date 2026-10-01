@@ -6,14 +6,17 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
 
 /**
- * Connected-account jobs finish after the page is left. The shell's collector
- * lists the open project's saved jobs and reads each sent one with the same
- * status read the composer uses (never a quote, never a submit) until it
- * settles, and announces it once. Opening Gen or Ads later shows the jobs that
- * composer made from what the collector has — their state in one word with its
- * age, a problem named plainly, a finished take moved into Takes — and asks
- * nothing itself. (Viral runs on Particl's API key and reads the Library.) Every
- * account reply here is a route mock; nothing is paid for.
+ * Connected-account jobs finish after the page is left — and after the
+ * Higgsfield sign-in was retired (lib/higgsfield-consumer/retired.ts), which
+ * is how jobs already running drain. The shell's collector lists the open
+ * project's saved jobs and reads each sent one with the same status read the
+ * composer used (never a quote, never a submit) until it settles, and
+ * announces it once. Opening Gen later shows the jobs Gen made from what the
+ * collector has — their state in one word with its age, a problem named
+ * plainly, a finished take moved into Takes — and asks nothing itself. (The
+ * Ads page that showed its own is the retired card now, and Viral runs on
+ * Particl's API key and reads the Library; account results land in Takes the
+ * same way.) Every account reply here is a route mock; nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -57,7 +60,6 @@ async function base(page: Page, library: LibraryRoute) {
   const me = await page.request.get("/api/me").then((r) => r.json());
   await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
-  await page.route("**/api/higgsfield/consumer/video", (route) => route.fulfill({ json: { connected: true, reads: [] } }));
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -266,64 +268,6 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   expect(posts.map((p) => p.action).filter((a) => a !== "catalogue").every((a) => a === "status")).toBe(true);
   expect(saves).toEqual([]);
   expect(errors).toEqual([]);
-});
-
-test("Ads shows an ad from an earlier visit until it lands, then points to Takes; the ad its button reads back is its button's alone", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const phone = PHONES.includes(info.project.name);
-  const errors = await base(page, { uploads: [], generations: [] });
-  const ad = connected(11, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "Unboxing the trail runner on a kitchen counter, morning light through the window, close on the laces", ago: 25 * MIN, credits: 40 });
-  const genTake = connected(12, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A Gen take", ago: 4 * MIN, composer: "gen" });
-  /* The last ad submitted on this device: the composer remembers it and reads it back on its own button
-     (held open here, so the composer stays "Checking the last take…" the whole time). */
-  const remembered = connected(13, { status: "accepted", model: "marketing_studio_video", name: "Marketing Studio", prompt: "The ad this device submitted last", ago: 2 * MIN });
-  await page.addInitScript(([key, id]) => { try { localStorage.setItem(key, id); } catch { /* private mode */ } }, [`particl:connected-job:ads:${DRAFT}`, remembered.id]);
-  let done = false;
-  const { posts } = await mockGeneration(page, [ad, genTake, remembered], (id) =>
-    id === ad.id ? { json: { job: done ? completed(ad) : ad, pollAfterSeconds: 8 } }
-      : id === remembered.id ? new Promise<Reply>(() => {})
-        : { status: 404, json: { error: "not this composer's job" } });
-  await page.clock.install();
-  await page.goto(`/suites?suite=moleculr&page=marketing&sp=ads`);
-  await expect(page.getByTestId("ads-view")).toBeVisible();
-  const rows = page.getByTestId("ads-earlier-row");
-  await expect(rows).toHaveCount(1);
-  await expect(rows.locator(".vr-job-name")).toHaveText("Unboxing the trail runner on a kitchen counter, morning light through the…");
-  await expect.poll(() => posts.some((p) => p.action === "status" && p.id === remembered.id)).toBe(true);
-  await expect(page.getByText("The ad this device submitted last")).toHaveCount(0);
-  await expect(rows.locator(".gx-resumed-state")).toHaveText("Rendering · 25 min");
-  await noOverflow(page);
-  await shoot(page, info.project.name, "ads-earlier", "ads-earlier");
-
-  done = true;
-  await page.clock.fastForward(NEXT_READ);
-  await expect(rows.locator(".gx-resumed-state")).toHaveText("Complete");
-  /* The collector's one announcement. */
-  await expect(page.getByTestId("toast")).toHaveText("Marketing Studio rendered on the connected account. It is in Takes.");
-  if (phone) {
-    await thumbSized(page, "Open Takes", "ads-earlier");
-    await thumbSized(page, "Dismiss Unboxing the trail runner on a kitchen counter, morning light through the…", "ads-earlier");
-  }
-  /* The actions travel together at the end of the row, never split across lines. */
-  const open = await rows.getByRole("button", { name: "Open Takes" }).boundingBox();
-  const dismiss = await rows.getByRole("button", { name: /^Dismiss/ }).boundingBox();
-  const row = await rows.boundingBox();
-  expect(Math.abs(open!.y - dismiss!.y)).toBeLessThanOrEqual(1);
-  expect(open!.x).toBeLessThan(dismiss!.x);
-  expect(row!.x + row!.width - (dismiss!.x + dismiss!.width)).toBeLessThanOrEqual(16);
-  await noOverflow(page);
-  await shoot(page, info.project.name, "ads-complete", "ads-earlier");
-  /* The collector reads every open job of the project (the Gen take too); this page shows only its own. */
-  expect(posts.filter((p) => p.action === "status").every((p) => p.id === ad.id || p.id === remembered.id || p.id === genTake.id)).toBe(true);
-  /* One reader per job: while the button reads the remembered ad back (its reply is held open), only the button asked, once. */
-  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id)).toHaveLength(1);
-  await rows.getByRole("button", { name: "Open Takes" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  /* Leaving the page lets the button's job go: from here only the collector may read it. */
-  expect(posts.filter((p) => p.action === "status" && p.id === remembered.id).length).toBeLessThanOrEqual(2);
-  expect(posts.some((p) => p.action === "quote" || p.action === "submit")).toBe(false);
-  expect(errors).toEqual([]);
-  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 /* Viral's Motion Transfer and Object Swap run on Particl's API key now and read the project's Library, not the connected
