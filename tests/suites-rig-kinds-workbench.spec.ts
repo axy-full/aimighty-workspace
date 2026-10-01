@@ -78,33 +78,40 @@ async function openMocked(page: Page, extra: CanvasNode[] = []) {
   return { errors, store, team };
 }
 
-/** The Rig's canvas, scrolled into its pane and fitted, so every card is on screen at any size. */
+/**
+ * The Rig's canvas, scrolled into its pane and fitted, so every card is on screen at any size. A development server
+ * still compiling routes on their first use can reload the open tab, and the Rig then opens on its list, which says
+ * "Team canvas" too: every step is retried together, so the canvas is shown again rather than waited on.
+ */
 async function showCanvas(page: Page) {
-  await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
   const board = page.getByTestId("rig-graph-surface");
-  await expect(board).toBeVisible();
-  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
-  await board.evaluate((el) => el.scrollIntoView({ block: "start" }));
-  await page.getByTestId("rig-zoom-fit").click();
+  await expect(async () => {
+    if (!(await board.isVisible())) await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await expect(board).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("rig-team")).toContainText("Team canvas", { timeout: 5_000 });
+    await board.evaluate((el) => el.scrollIntoView({ block: "start" }), undefined, { timeout: 5_000 });
+    await page.getByTestId("rig-zoom-fit").click({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 const node = (page: Page, id: string) => page.getByTestId("rig-graph").locator(`.pxw-graph-node[data-node-id="${id}"]`);
 
-/** On a phone the Inspector is a panel over the canvas: it is closed to reach a card, and opened to read one. */
-async function closeOverlay(page: Page) {
-  if (await page.getByTestId("panel-scrim").isVisible()) await page.getByTestId("close-inspector").click();
-  await expect(page.getByTestId("panel-scrim")).toHaveCount(0);
-}
-async function openInspector(page: Page) {
-  if (!(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click();
-  await expect(page.getByTestId("inspector")).toBeVisible();
-}
+/**
+ * Picks a card on the canvas and opens its Card Inspector. On a phone the Inspector is a panel over the canvas: it is
+ * closed to reach a card, and opened to read one. The same recovery as showCanvas: every step is retried together.
+ */
 async function pick(page: Page, id: string) {
-  await closeOverlay(page);
-  await page.getByTestId("rig-graph-surface").evaluate((el) => el.scrollIntoView({ block: "start" }));
-  await node(page, id).locator(".pxw-graph-hit").click();
-  await expect(node(page, id)).toHaveAttribute("data-selected", "true");
-  await openInspector(page);
+  const body = page.locator(`[data-inspector-body="node"][data-node-id="${id}"]`);
+  await expect(async () => {
+    if (await page.getByTestId("panel-scrim").isVisible()) await page.getByTestId("close-inspector").click({ timeout: 5_000 });
+    await expect(page.getByTestId("panel-scrim")).toHaveCount(0, { timeout: 5_000 });
+    if (!(await page.getByTestId("rig-graph-surface").isVisible())) await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await page.getByTestId("rig-graph-surface").evaluate((el) => el.scrollIntoView({ block: "start" }), undefined, { timeout: 5_000 });
+    await node(page, id).locator(".pxw-graph-hit").click({ timeout: 5_000 });
+    await expect(node(page, id)).toHaveAttribute("data-selected", "true", { timeout: 5_000 });
+    if (!(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click({ timeout: 5_000 });
+    await expect(body).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 /** Visible text under 12px inside one region. */
