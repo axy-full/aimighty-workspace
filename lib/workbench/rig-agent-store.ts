@@ -24,6 +24,12 @@ import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, Step
  *    which price, its durable request key (saved before anything is sent), the
  *    job it made, and the credits reserved and settled for it. A run records
  *    the limit a person approved for it and every change to that limit.
+ *  - A take that fails its check is fixed by new steps added while the run is
+ *    live (insertLiveSteps): a fix (`fix` = its number on that shot) and the
+ *    check of the fixed take, appended after the plan's own steps. A shot's
+ *    fix n exists once (a unique index). A step's own paid text (the fix
+ *    writer's turn) is reserved, settled or released like the planning turn:
+ *    `charge_id` names its meter event and `charge` says where it stands.
  */
 
 type Executor = Pick<Client, "execute"> | Transaction;
@@ -94,10 +100,14 @@ const COLUMNS: Record<string, [string, string][]> = {
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
+    ["fix", "INTEGER"], ["charge_id", "TEXT"], ["charge", "TEXT"],
   ],
 };
 const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_rig_agent_steps_job ON rig_agent_steps(job_id) WHERE job_id IS NOT NULL`,
+  /* A shot's fix n, and the check of it, each exist once: adding them again changes nothing. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_rig_agent_steps_fix ON rig_agent_steps(run_id, node_id, purpose, fix) WHERE fix IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_rig_agent_steps_charge ON rig_agent_steps(charge) WHERE charge='reserved'`,
 ];
 
 async function addColumns(client: Client) {
@@ -136,8 +146,13 @@ export type PlanUsage = { model: string; inputTokens: number; outputTokens: numb
 export type LimitRecord = { credits: number; mode: RigAgentMode; jobCeiling: number; by: string; at: number };
 /** The planning turn's charge: reserved at its ceiling while Atomik plans, then settled at what it used, or released. */
 export type PlanCharge = "reserved" | "settled" | "released";
-/** Why a paid step waits for a person. */
-export type PauseKind = "limit" | "credits" | "admin" | "refused" | "unpriced" | "record";
+/**
+ * Why a paid step waits for a person. `check`: its take's check needs a person (unsure, failed
+ * with no targeted fix, or failed after its fixes); the run flags that shot and carries on with the
+ * others (lib/workbench/rig-agent-runs.ts waitScope).
+ */
+export type PauseKind = "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | "check";
+const PAUSE_KINDS: readonly PauseKind[] = ["limit", "credits", "admin", "refused", "unpriced", "record", "check"];
 
 export type RunRow = {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; mode: RigAgentMode;
@@ -155,9 +170,21 @@ export type RunRow = {
 
 export type StepRow = {
   id: string; runId: string; seq: number; tool: StepTool; label: string; purpose: string; nodeId: string | null;
+  /** How many times this step's paid request has been sent, each under its own key (lib/workbench/rig-agent-runs.ts stepRequestKey). */
   attempt: number; ops: CanvasOp[]; opId: string | null; state: RigAgentStepState; result: OpOutcome[] | null;
-  /** The saved request key of the paid attempt now being sent (`rig-agent:<runId>:<nodeId>:take:<attempt>`). */
+  /**
+   * The saved request key of the paid attempt now being sent: `rig-agent:<runId>:<nodeId>:take:<attempt>`
+   * for a render, `rig-agent:<runId>:<nodeId>:fix:<fix>:<attempt>` for a fix, and for a check the
+   * request id of its development job.
+   */
   requestKey: string | null;
+  /** A fix step: which fix of its shot it is (1, 2, …); on a check, the fix whose take it checks. Null for the plan's own steps. */
+  fix: number | null;
+  /** The meter event of this step's own paid text (the fix writer's turn), once one may have been reserved. */
+  chargeId: string | null;
+  /** Where that charge stands: reserved while the turn may run, then settled at what it used, or released. */
+  charge: PlanCharge | null;
+  updatedAt: number;
   jobId: string | null;
   creditsReserved: number | null;
   creditsSettled: number | null;
@@ -201,8 +228,11 @@ function stepOf(r: Record<string, unknown>): StepRow {
     requestKey: str(r.request_key), jobId: str(r.job_id), creditsReserved: num(r.credits_reserved), creditsSettled: num(r.credits_settled),
     admission: parse<PreparedAdmission | null>(r.admission, null), quoteCredits: num(r.quote_credits), band: num(r.band),
     approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), approvedFingerprint: str(r.approved_fingerprint),
-    reason: str(r.reason), pause: (str(r.pause) as PauseKind | null), settledAt: num(r.settled_at),
+    reason: str(r.reason), pause: PAUSE_KINDS.includes(r.pause as PauseKind) ? (r.pause as PauseKind) : null, settledAt: num(r.settled_at),
     outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
+    fix: num(r.fix), chargeId: str(r.charge_id),
+    charge: r.charge === "reserved" || r.charge === "settled" || r.charge === "released" ? r.charge : null,
+    updatedAt: Number(r.updated_at ?? 0),
   };
 }
 
@@ -293,6 +323,30 @@ export async function insertSteps(tx: Transaction, runId: string, plan: Compiled
   }
 }
 
+/** A step added while the run is live: a shot's fix n, or the check of its fixed take. */
+export type LiveStep = { tool: "fix" | "verify"; purpose: "fix" | "verify"; label: string; nodeId: string; fix: number };
+
+/**
+ * Adds steps to a live run, after every step it has (in the order given), inside the caller's write
+ * transaction. A step already there — the same shot's fix n, or the check of it — is kept as it is
+ * and not added again, so asking twice adds once. Answers the steps as stored, in the order given.
+ */
+export async function insertLiveSteps(tx: Transaction, runId: string, steps: readonly LiveStep[], at: number): Promise<StepRow[]> {
+  const out: StepRow[] = [];
+  for (const step of steps) {
+    const found = (await rows(tx, { sql: "SELECT * FROM rig_agent_steps WHERE run_id=? AND node_id=? AND purpose=? AND fix=?", args: [runId, step.nodeId, step.purpose, step.fix] }))[0];
+    if (found) { out.push(stepOf(found)); continue; }
+    const seq = Number((await rows(tx, { sql: "SELECT COALESCE(MAX(seq),0)+1 AS seq FROM rig_agent_steps WHERE run_id=?", args: [runId] }))[0].seq);
+    await tx.execute({
+      sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,node_id,attempt,prepared,op_id,state,fix,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,0,'[]',NULL,'next',?,?,?)`,
+      args: [`${runId}:${seq}`, runId, seq, step.tool, step.label, step.purpose, step.nodeId, step.fix, at, at],
+    });
+    out.push((await getStep(tx, runId, seq))!);
+  }
+  return out;
+}
+
 /** The op id a build step applies under: the same step applied again changes nothing (applyCanvasOps). */
 export const stepOpId = (runId: string, seq: number) => `rig-agent:${runId}:${seq}`;
 /** The op id of a run's undo. */
@@ -313,6 +367,7 @@ type StepPatch = Partial<{
   credits_reserved: number | null; credits_settled: number | null; admission: PreparedAdmission | null; quote_credits: number | null;
   band: number | null; approved_at: number | null; approved_by: string | null; approved_fingerprint: string | null;
   reason: string | null; pause: PauseKind | null; settled_at: number | null; outcome: StepRow["outcome"];
+  charge_id: string | null; charge: PlanCharge | null;
 }>;
 
 /**
@@ -329,6 +384,28 @@ export async function patchStep(executor: Executor, stepId: string, patch: StepP
   const result = await executor.execute({
     sql: `UPDATE rig_agent_steps SET ${[...keys.map((key) => `${key}=?`), "updated_at=?"].join(",")} WHERE id=?${guard}`,
     args: [...values, now(), stepId, ...(from ?? [])] as (string | number | null)[],
+  });
+  return result.rowsAffected > 0;
+}
+
+/**
+ * Records that a step's paid text may now be reserved under `chargeId`, before the ledger is asked:
+ * a worker that dies in between leaves a record the cron releases. Refused (false) while the step
+ * already holds another charge that is still reserved.
+ */
+export async function openStepCharge(executor: Executor, stepId: string, chargeId: string): Promise<boolean> {
+  const result = await executor.execute({
+    sql: "UPDATE rig_agent_steps SET charge_id=?,charge='reserved',updated_at=? WHERE id=? AND (charge IS NULL OR charge<>'reserved' OR charge_id=?)",
+    args: [chargeId, now(), stepId, chargeId],
+  });
+  return result.rowsAffected > 0;
+}
+
+/** Moves a step's reserved charge on (settled or released), only while it is that charge and still reserved. */
+export async function closeStepCharge(executor: Executor, stepId: string, chargeId: string, to: "settled" | "released"): Promise<boolean> {
+  const result = await executor.execute({
+    sql: "UPDATE rig_agent_steps SET charge=?,updated_at=? WHERE id=? AND charge_id=? AND charge='reserved'",
+    args: [to, now(), stepId, chargeId],
   });
   return result.rowsAffected > 0;
 }
@@ -384,25 +461,49 @@ export async function dueRuns(limit: number, at = now()): Promise<string[]> {
  * a worker that died while Atomik planned. The cron releases them (lib/workbench/rig-agent.ts).
  */
 export async function looseCharges(limit: number, olderThan: number, at = now()): Promise<string[]> {
-  if (!(await rigAgentExists())) return [];
+  if (!(await readyIfExists())) return [];
   return (await rows(db(), {
     sql: "SELECT id FROM rig_agent_runs WHERE plan_charge='reserved' AND state NOT IN ('planning') AND lease_until<=? AND updated_at<=? ORDER BY updated_at LIMIT ?",
     args: [at, olderThan, limit],
   })).map((r) => String(r.id));
 }
 
+/** Whether this workspace has runs; when it has, the tables are brought up to date first (a sweep may read a column added since). */
+async function readyIfExists(): Promise<boolean> {
+  if (!(await rigAgentExists())) return false;
+  await rigAgentReady();
+  return true;
+}
+
 /**
- * Runs that ended with a render still marked as being sent, or a take in flight, and nobody holding
- * them: what the stop could not close yet (a request still being accepted, a take still rendering).
- * The cron closes them (closeEndedSteps, lib/workbench/rig-agent-runs.ts); free reads, never a send.
+ * Runs that ended with paid work still open and nobody holding them: what the stop could not close
+ * yet — a render or a fix still marked as being sent or in flight, a check whose job is still being
+ * admitted or running, or a step's paid text still reserved. The cron closes them (closeEndedSteps,
+ * lib/workbench/rig-agent-runs.ts); free reads and releases, never a send.
  */
 export async function looseSteps(limit: number, at = now()): Promise<string[]> {
-  if (!(await rigAgentExists())) return [];
+  if (!(await readyIfExists())) return [];
   return (await rows(db(), {
     sql: `SELECT r.id FROM rig_agent_runs r WHERE r.state IN ('stopped','failed','done') AND r.lease_until<=?
-          AND EXISTS (SELECT 1 FROM rig_agent_steps s WHERE s.run_id=r.id AND s.purpose='take' AND s.state IN ('sending','rendering'))
+          AND EXISTS (SELECT 1 FROM rig_agent_steps s WHERE s.run_id=r.id
+            AND ((s.purpose IN ('take','fix','verify') AND s.state IN ('sending','rendering')) OR s.charge='reserved'))
           ORDER BY r.updated_at LIMIT ?`,
     args: [at, limit],
+  })).map((r) => String(r.id));
+}
+
+/**
+ * Runs in any state with a step's paid text still reserved since before `olderThan` and nobody
+ * holding the run: a worker that died while that turn ran (a live one holds the run's lease for as
+ * long as its turn may take). The cron releases the charge, unbilled; the turn is never sent again
+ * on its own.
+ */
+export async function looseStepCharges(limit: number, olderThan: number, at = now()): Promise<string[]> {
+  if (!(await readyIfExists())) return [];
+  return (await rows(db(), {
+    sql: `SELECT r.id AS id, MIN(s.updated_at) AS since FROM rig_agent_runs r JOIN rig_agent_steps s ON s.run_id=r.id
+          WHERE s.charge='reserved' AND s.updated_at<=? AND r.lease_until<=? GROUP BY r.id ORDER BY since LIMIT ?`,
+    args: [olderThan, at, limit],
   })).map((r) => String(r.id));
 }
 

@@ -238,7 +238,8 @@ export class DryBoard {
 /* ── The plan, compiled into steps of canvas operations ───────────────── */
 
 export type CompiledCard = { key: string; kind: AgentKind; id: string; title: string };
-export type StepTool = "create" | "wire" | "tidy" | "render" | "verify" | "lock";
+/** `fix`: a fix of a take that failed its check, added while the run is live (never part of a compiled plan). */
+export type StepTool = "create" | "wire" | "tidy" | "render" | "verify" | "lock" | "fix";
 export type CompiledStep = {
   seq: number; tool: StepTool; purpose: "build" | "take" | "verify" | "lock"; label: string;
   /** The card a next step is about. */
@@ -410,18 +411,23 @@ export type RigAgentMoneyView = {
   planning: { state: "reserved" | "settled" | "released"; credits: number | null } | null;
 };
 
-/** A render (or the check of its take) after the build, as the run card shows it. */
+/** A render (or the check of its take, or a fix of a take that failed its check) after the build, as the run card shows it. */
 export type RigAgentPaidStepView = {
   seq: number;
-  tool: "render" | "verify";
+  tool: "render" | "verify" | "fix";
   title: string;
+  /** A fix: which fix of its shot it is; a check: the fix whose take it checks. Null otherwise. */
+  fix: number | null;
   state: RigAgentStepState;
   /** The approximate price before it runs ("about N cr"). */
   quote: number | null;
   /** The most it may settle at (its price times its band): what the run's limit keeps room for. */
   worst: number | null;
-  /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
-  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
+  /**
+   * Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, its record — or
+   * `check`: its take's check needs a person, and the run carries on with the other shots meanwhile.
+   */
+  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | "check" | null;
   /** What it was charged, once the ledger has settled it. */
   charged: number | null;
   /** For a take that failed: what the ledger shows the provider did with the charge. */

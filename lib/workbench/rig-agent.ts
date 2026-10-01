@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { db, now } from "@/lib/db";
 import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
 import { engineMock } from "@/lib/mock";
-import { getWorkspace, platformDb, platformReady } from "@/lib/platform";
+import { getWorkspace } from "@/lib/platform";
 import { withPipelineActor } from "@/lib/pipeline/actor";
 import { PipelineError } from "@/lib/pipeline/schema";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
@@ -27,9 +27,10 @@ import {
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
 } from "./rig-agent-planner";
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
-import { advancePaidSteps, closeEndedSteps, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
+import { closeChargeIntent, PAID_TEXT_TIMEOUT_MS, releaseStepCharge, releaseTextCharge } from "./rig-agent-charges";
+import { advancePaidSteps, closeEndedSteps, PAID_PURPOSES, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, looseStepCharges, looseSteps, newRunId, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
@@ -119,11 +120,13 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   };
   const mine = run.owner === viewer;
   const asking = run.state === "needs_you" || run.state === "running";
-  const paid: RigAgentPaidStepView[] = steps.filter((s) => s.purpose === "take" || s.purpose === "verify").map((s) => {
+  const paid: RigAgentPaidStepView[] = steps.filter((s) => (PAID_PURPOSES as readonly string[]).includes(s.purpose)).map((s) => {
     const title = stepTitle(run, s);
+    /* A check: what it settled at, and — paused — that its shot waits for a person while the run carries on. */
     if (s.purpose === "verify")
-      return { seq: s.seq, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
-        reason: RIG_AGENT_VERIFY ? s.reason : VERIFY_LATER, canRender: false, fingerprint: null };
+      return { seq: s.seq, tool: "verify", title, fix: s.fix, state: s.state, quote: null, worst: null, pause: s.state === "paused" ? s.pause : null, charged: s.creditsSettled,
+        outcome: s.state === "failed" ? s.outcome : null, charge: null,
+        reason: s.state === "next" && !RIG_AGENT_VERIFY ? VERIFY_LATER : s.reason, canRender: false, fingerprint: null };
     const charge = s.jobId ? byId.get(s.jobId) : undefined;
     const ended = s.state === "done" || s.state === "failed";
     const charged = !ended ? null : charge ? (charge.running ? null : charge.credits) : s.creditsSettled;
@@ -132,17 +135,18 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       : charge ? { credits: charge.credits, settled: !charge.running }
       : s.creditsSettled != null ? { credits: s.creditsSettled, settled: true } : null;
     const open = s.state === "waiting" || s.state === "paused";
+    /* A fix is a render of its own (an edit of the failed take); a person's tap on one is not in this build yet. */
     return {
-      seq: s.seq, tool: "render", title, state: s.state, quote: s.quoteCredits,
+      seq: s.seq, tool: s.purpose === "fix" ? "fix" : "render", title, fix: s.fix, state: s.state, quote: s.quoteCredits,
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
       pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
-      canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
+      canRender: s.purpose === "take" && mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
     };
   });
   return {
     id: run.id, state: run.state, reason: run.reason, goal: run.goal, mine,
     proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint, money) : null,
-    steps: steps.filter((s) => s.purpose !== "take" && s.purpose !== "verify").map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
+    steps: steps.filter((s) => !(PAID_PURPOSES as readonly string[]).includes(s.purpose)).map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
     built: { cards, wires },
     held,
     undo: run.undo,
@@ -314,12 +318,22 @@ export async function stopRigAgent(input: { productionId: string; runId: string;
   return viewOf(input.runId, input.userId);
 }
 
-/** Paid work not sent yet is let go: nothing was reserved for it, and nothing will be. */
+/** A step let go at a stop after it had already spent something (a check that ran): what it was charged stays on it. */
+export const STOPPED_AFTER_SPEND = "The run stopped before this went further.";
+
+/**
+ * Paid work not sent yet — renders, checks and fixes — is let go: nothing was reserved for it, and
+ * nothing will be. A step that already spent something (a check that ran and waits for a person, a
+ * fix writer's turn that settled) is let go too, keeping what it was charged, and says only that the
+ * run stopped.
+ */
 async function closePaidSteps(tx: Parameters<typeof setSteps>[0], runId: string, reason: string) {
+  const open = `run_id=? AND purpose IN (${PAID_PURPOSES.map(() => "?").join(",")}) AND state IN ('next','waiting','approved','paused')`;
   await tx.execute({
-    sql: "UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE run_id=? AND purpose='take' AND state IN ('next','waiting','approved','paused')",
-    args: [reason, now(), runId],
+    sql: `UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE ${open} AND (credits_settled IS NOT NULL OR charge='settled')`,
+    args: [STOPPED_AFTER_SPEND, now(), runId, ...PAID_PURPOSES],
   });
+  await tx.execute({ sql: `UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE ${open}`, args: [reason, now(), runId, ...PAID_PURPOSES] });
 }
 
 async function stopRun(runId: string, reason: string) {
@@ -632,9 +646,7 @@ async function settlePlanning(run: RunRow, price: PlannerPrice, ceilingUsd: numb
 
 /** The planning event's outcome is settled (billed, or released unbilled): nothing for a recovery drain to reconcile. */
 async function closePlanningIntent(runId: string) {
-  const [{ billingTransaction }, { resolveRecoveryJobTx }] = await Promise.all([import("@/lib/billingLedger"), import("@/lib/recovery")]);
-  const workspaceId = requireTenant().id;
-  await billingTransaction((tx) => resolveRecoveryJobTx(tx, workspaceId, planEventId(runId)));
+  await closeChargeIntent(planEventId(runId));
 }
 
 /**
@@ -644,15 +656,7 @@ async function closePlanningIntent(runId: string) {
  */
 async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner" | "planCharge">, costUsd: number | null) {
   if (run.planCharge !== "reserved") return;
-  await platformReady();
-  const id = planEventId(run.id);
-  const row = (await platformDb().execute({ sql: "SELECT kind,engine,model,status,engine_cost_usd FROM meter_events WHERE workspace_id=? AND id=?", args: [requireTenant().id, id] })).rows[0];
-  if (row && String(row.status) === "running")
-    await meter({
-      id, kind: "text", engine: String(row.engine), model: String(row.model), status: "failed", unbilled: true,
-      engineCostUsd: costUsd ?? Number(row.engine_cost_usd ?? 0), projectId: run.productionId, createdBy: run.owner,
-    }, { critical: true });
-  if (row) await closePlanningIntent(run.id);
+  await releaseTextCharge(planEventId(run.id), run, costUsd);
   await patchRun(db(), run.id, { plan_charge: "released" });
 }
 
@@ -783,9 +787,10 @@ async function cancelQueued(runId: string) {
 
 /**
  * The cron's wake: runs in progress whose wake is due, within the deadline. Also releases a
- * planning charge a stopped or ended run still holds after the worker that reserved it died, and
- * closes what a stopped run could not close at the stop (closeEndedSteps: a request still being
- * accepted then, a take still rendering) — free reads, never a send.
+ * planning charge, or a step's own paid text, that a run still holds after the worker that
+ * reserved it died, and closes what a stopped run could not close at the stop (closeEndedSteps: a
+ * request still being accepted then, a take or a fix still rendering, a check still running) —
+ * free reads and releases, never a send.
  */
 export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt?: number } = {}): Promise<{ advanced: number; released: number; swept: number }> {
   const ids = await dueRuns(Math.min(options.limit ?? 2, 8));
@@ -802,6 +807,20 @@ export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt
     try {
       const run = await getRun(db(), id);
       if (run?.planCharge === "reserved" && run.state !== "planning") { await releasePlanning(run, null); released++; }
+    } finally {
+      await releaseRun(lease);
+    }
+  }
+  /* A step's own paid text (a fix writer's turn) a dead worker left reserved, in a run of any state: released, never sent again. */
+  const cutoff = now() - PAID_TEXT_TIMEOUT_MS - LEASE_MS;
+  for (const id of await looseStepCharges(4, cutoff)) {
+    const lease = await claimRun(id, LEASE_MS);
+    if (!lease) continue;
+    try {
+      const run = await getRun(db(), id);
+      if (!run) continue;
+      for (const step of await stepsOf(db(), id))
+        if (step.charge === "reserved" && step.updatedAt <= cutoff && (await releaseStepCharge(run, step, null))) released++;
     } finally {
       await releaseRun(lease);
     }
