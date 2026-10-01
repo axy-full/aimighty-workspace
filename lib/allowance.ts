@@ -2,6 +2,7 @@ import { currentTenant } from "./tenant";
 import { creditCheck } from "./credits";
 import { paidByPlatform, platformSpendSince } from "./platformSpend";
 import type { VendorKeyName } from "./vendorKeys";
+import type { EstimateTerms } from "./billingTerms";
 import { cycleBounds } from "./cycle";
 import { isHouseWorkspace } from "./houseWorkspace";
 
@@ -52,9 +53,11 @@ export const ALLOWANCE_REACHED = "This workspace has reached its monthly cap on 
 
 /**
  * The gate. Call before spending on `vendor`; a refusal carries the
- * sentence to show and the status to send.
+ * sentence to show and the status to send. `engine` is the margin key the
+ * estimate is counted at, or the exact terms the job's reservation will charge
+ * (currentBillingTerms), so the wall asks for what will be reserved.
  */
-export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: string | null): Promise<
+export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms): Promise<
   { ok: true } | { ok: false; status: number; error: string }
 > {
   const credit = await creditCheck(vendor, estUsd, engine);

@@ -87,15 +87,15 @@ async function open(page: Page, path: string) {
   return { errors, patches, writes, ruleWrites };
 }
 
-test("Atomik › Tools & connections keeps the eight packs the Skills page listed, each with its folder", async ({ page }, info) => {
+test("Atomik › Tools & connections lists Particl's own reach and server, and no skill packs for a signed-in account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?suite=atomik&page=skills&sp=skills");
   await expect(page.getByTestId("tools-view")).toBeVisible();
+  await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
   await page.getByTestId("tools-tab-connect").click();
-  await page.getByTestId("skill-packs").locator("summary").click();
-  await expect(page.getByTestId("skill-row")).toHaveCount(8);
-  await expect(page.getByTestId("skill-row").first()).toContainText("higgsfield-generate");
-  await expect(page.getByTestId("skill-row").first().getByRole("link", { name: "Open the higgsfield-generate folder" })).toHaveAttribute("href", "https://github.com/higgsfield-ai/skills/tree/main/higgsfield-generate");
+  await expect(page.getByTestId("mcp-tool")).toHaveCount(7);
+  await expect(page.getByTestId("skill-packs")).toHaveCount(0);
+  await expect(page.getByTestId("tools-view")).not.toContainText(/higgsfield/i);
   expect(errors).toEqual([]);
 });
 

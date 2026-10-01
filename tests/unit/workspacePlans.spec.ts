@@ -8,7 +8,7 @@ import {
   VISUAL_PACING_MS,
   isApprovedQuote,
 } from "../../lib/workspace/run-engine";
-import { activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
+import { activityFromAgentJobs, activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { idempotencyKey } from "../../lib/workspace/plan-helpers";
 
@@ -41,6 +41,13 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return json({ estimatedCredits: price(), price: price(), unit: "cr", fingerprint: `fp${"0".repeat(60)}${String(calls.length).padStart(2, "0")}` });
     if (bare === "/api/generate") return json({ id: `gen-${(job += 1)}`, status: "queued" }, 202);
     if (bare.startsWith("/api/jobs/")) return json({ generation: { status: "queued" } });
+    /* The project's Library: one transform take on the key still rendering, one done, and an ordinary still. */
+    if (bare === "/api/workbench/library")
+      return json({ generations: [
+        { id: "t-open", model: "higgsfield-genjutsu-motion-transfer", status: "running" },
+        { id: "t-done", model: "higgsfield-genjutsu-object-swap", status: "succeeded" },
+        { id: "still", model: "image-a", status: "queued" },
+      ], nextPageCursor: null });
     if (bare === "/api/audio" || bare === "/api/audio/dub")
       return body?.quoteOnly
         ? json({ estimatedCredits: price(), price: price(), unit: "cr" })
@@ -118,10 +125,13 @@ function fullRequest(): PlanRequest {
     shots: [shot("Opening", "wide"), shot("Turn", "close")],
     stems: [{ name: "Music", body: { task: "music", text: "slow" } }, { name: "Effects", body: { task: "sound", text: "wind" } }],
     variants: [{ name: "Variant 1", body: { model: "image-m", prompt: "hook", marketing: { quality: "high" } } }],
-    motion: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }, { uploadId: "r2" }], resolution: "720p" },
-    swap: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }], resolution: "720p", prompt: "swap it" },
+    /* Motion Transfer and Object Swap: the bodies the API-key transform form sends to /api/generate. */
+    motion: [{ name: "Transfer 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-motion-transfer", prompt: "recast", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }, { uploadId: "r2", role: "reference_image" }] } }],
+    swap: [{ name: "Swap 1", body: { task: "genjutsu", model: "higgsfield-genjutsu-object-swap", prompt: "swap it", resolution: "720p", projectId: "prod-1", workbenchProjectId: "draft-1",
+      sourceUploadId: "u1", references: [{ uploadId: "r1", role: "reference_image" }] } }],
+    /* What the connected account's Shorts form still publishes: no plan reads it any more. */
     shorts: { source: { uploadId: "u1" }, preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" }, aspectRatio: "9:16" },
-    generation: { type: "image", model: "image-x", prompt: "a", parameters: {}, medias: [] },
     astra: { sourceDigest: "c".repeat(64) },
     development: { kind: "screenplay" },
   };
@@ -160,8 +170,10 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 
 /* ------------------------------------------------------------------ registry */
 
-const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources"].sort();
-const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap", "shorts"] as const;
+/* Generate, Shorts and History ran only on the signed-in account, which Atomik no longer uses. */
+/* History is not here: it reads the project's Library and each transform take still rendering (free). */
+const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts"].sort();
+const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
 
 test("the registry has exactly one plan for each of the 24 workspace pages", () => {
   const pages = Object.values(WORKSPACE_PLAN_PAGES).flat();
@@ -355,19 +367,43 @@ test("approved Particl dispatch sends exactly the approved credits and fingerpri
   expect(engine.getState().session[0].label).toBe("2 shots sent to render");
 });
 
-test("approved connected-account dispatch submits exactly the approved wallet and credits", async () => {
-  const { fetcher, dispatches } = backend({ price: () => 142 });
+for (const [page, model] of [["motion", "higgsfield-genjutsu-motion-transfer"], ["swap", "higgsfield-genjutsu-object-swap"]] as const)
+  test(`${page}: quotes and renders on the API-key transform engine at exactly the approved price, never on the connected account`, async () => {
+    const { fetcher, dispatches, calls } = backend({ price: () => 142 });
+    const engine = engineFor(context(fetcher));
+    engine.start(page);
+    await until(() => engine.getState().run?.status === "waiting");
+    const quote = engine.getState().run!.quote!;
+    expect(quote.unit).toBe("cr");
+    expect(quote.credits).toBe(142);
+    await engine.approve();
+    await until(() => engine.getState().run?.status === "done", "done");
+    const [sent] = dispatches();
+    expect(sent.path).toBe("/api/generate");
+    expect(sent.body).toMatchObject({ task: "genjutsu", model, maxCredits: 142, quoteFingerprint: quote.parts[0].fingerprint, refine: false });
+    expect(calls.some((call) => call.path.startsWith("/api/higgsfield/consumer/")), page).toBe(false);
+    expect(engine.getState().completed[page]).toBe(true);
+  });
+
+test("no plan quotes, submits or polls on the connected account; only Compare reads the results already kept", () => {
+  for (const page of PLAN_PAGES)
+    for (const step of PLANS[page].steps) {
+      const path = step.executor.backend.path;
+      if (!path.startsWith("/api/higgsfield/consumer/")) continue;
+      expect(page, `${page}: ${step.label}`).toBe("compare");
+      expect(step.executor.backend.method, `${page}: ${step.label}`).toBe("GET");
+    }
+});
+
+test("Viral History's plan reads the project's Library and each transform take still rendering — never the connected account", async () => {
+  const { fetcher, calls, dispatches } = backend();
   const engine = engineFor(context(fetcher));
-  engine.start("motion");
-  await until(() => engine.getState().run?.status === "waiting");
-  const quote = engine.getState().run!.quote!;
-  expect(quote.unit).toBe("connected");
-  expect(quote.line).toContain("2 ordered references");
-  await engine.approve();
-  await until(() => engine.getState().run?.status === "done", "done");
-  const [submit] = dispatches();
-  expect(submit.body).toEqual({ action: "submit", draftId: "draft-1", id: quote.parts[0].quoteId, workspaceId: "wallet-1", credits: 142 });
-  expect(engine.getState().completed.motion).toBe(true);
+  engine.start("history");
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "history");
+  expect(engine.getState().run!.error).toBeNull();
+  expect(calls.map((call) => call.path.split("?")[0])).toEqual(["/api/workbench/library", "/api/jobs/t-open"]);
+  expect(engine.getState().session[0].label).toBe("1 take checked");
+  expect(dispatches()).toHaveLength(0);
 });
 
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
@@ -559,7 +595,10 @@ test("activity merges real sources with this session's runs, newest first, with 
   const jobs = activityFromJobs(
     [
       { id: "g1", title: "Opening", kind: "video", status: "succeeded", creditsBilled: 18, createdAt: now - 7 * 60_000, updatedAt: now - 6 * 60_000 },
-      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000 },
+      { id: "g2", title: null, prompt: "close on the turn", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 3_600_000, updatedAt: now - 3_600_000,
+        failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: "platform", charge: { credits: 0, settled: true } } },
+      /* Failed with nothing confirmed: no claim either way. */
+      { id: "g3", title: "Pier", kind: "video", status: "failed", creditsBilled: null, createdAt: now - 2 * 3_600_000, updatedAt: now - 2 * 3_600_000 },
     ],
     now,
   );
@@ -568,6 +607,7 @@ test("activity merges real sources with this session's runs, newest first, with 
     ["Board 2 sent", "just now"],
     ["Rendered Opening", "6 min · 18 cr"],
     ["close on the turn failed", "1 hr · not billed"],
+    ["Pier failed", "2 hr"],
   ]);
 
   const { fetcher } = backend();
@@ -577,20 +617,37 @@ test("activity merges real sources with this session's runs, newest first, with 
   expect(runs.some((entry) => entry.label.includes("Other"))).toBe(false);
 });
 
-test("shorts: without Shorts data it refuses with a reason; with it, it quotes on the Shorts route and submits the exact approved wallet and credits", async () => {
-  const { fetcher, calls, dispatches } = backend();
-  const bare = { ...context(fetcher), request: { ...fullRequest(), shorts: undefined } };
-  const verdict = PLANS.shorts.runnable(bare);
-  expect(verdict).toEqual({ ok: false, reason: "Not runnable yet — Needs Shorts data: choose a source video and a style on Shorts first." });
+test("a failed planning run says what it was charged, never that it was not billed", () => {
+  const now = 10_000_000;
+  const lines = activityFromAgentJobs([
+    { id: "a1", status: "failed", request: "plan the opening", credits: 3, updatedAt: now - 60_000 },
+    /* Zero credits may be the workspace's own key, which its vendor billed: no claim either way. */
+    { id: "a2", status: "failed", request: "plan the close", credits: 0, updatedAt: now - 120_000 },
+    { id: "a3", status: "failed", request: "plan the pier", credits: null, updatedAt: now - 180_000 },
+    { id: "a4", status: "succeeded", request: "plan the harbour", credits: 5, updatedAt: now - 240_000 },
+  ], now);
+  expect(lines.map((line) => [line.label, line.meta])).toEqual([
+    ["Planning failed: plan the opening", "1 min · 3 cr"],
+    ["Planning failed: plan the close", "2 min"],
+    ["Planning failed: plan the pier", "3 min"],
+    ["Planned plan the harbour", "4 min · 5 cr"],
+  ]);
+});
+
+test("generate and shorts refuse with their reason and read or send nothing, even with the old account data present", async () => {
+  const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
-  expect(engine.start("shorts")).toEqual({ ok: true, action: "started" });
-  await until(() => engine.getState().run?.status === "waiting", "waiting");
-  const quote = calls.find((call) => call.body?.action === "quote")!;
-  expect([quote.path, quote.body?.input]).toEqual(["/api/higgsfield/consumer/shorts", fullRequest().shorts]);
-  expect(dispatches()).toHaveLength(0);
-  expect(await engine.approve()).toEqual({ ok: true });
-  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
-  expect(dispatches().map((call) => [call.path, call.body])).toEqual([["/api/higgsfield/consumer/shorts", { action: "submit", draftId: "draft-1", id: quote.body ? "q-1" : "", workspaceId: "wallet-1", credits: 18 }]]);
+  const reasons = {
+    generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
+    shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
+  } as const;
+  for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {
+    expect(PLANS[page].runnable(context(fetcher)), page).toEqual({ ok: false, reason });
+    expect(PLANS[page].paid, page).toBe(false);
+    expect(engine.start(page), page).toEqual({ ok: false, reason });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(calls).toHaveLength(0);
 });
 
 /* ------------------------------------------------------------ Deliver, Agent */

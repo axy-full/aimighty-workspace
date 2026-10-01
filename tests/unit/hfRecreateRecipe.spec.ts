@@ -165,12 +165,11 @@ test("the card's chips: kept where Gen holds the take's value, changed with a re
 test("a connected recipe: named by the account's list, the right reason for each person, and a vanished identity is never sent", () => {
   const preset = recreatePreset(take({ provider: "higgsfield", kind: "image", model: "soul_cinematic", params: { task: "connected-generation", settings: { aspect_ratio: "3:4", soul_id: "soul_abc" } } }), { name: "Pier" });
   const studio: ComposerModel = { id: "gpt-image-2", label: "GPT Image 2", type: "image", ratios: ["1:1", "3:4"] };
-  /* A member: the account is the owner's. Its catalogue id is not a name, so it is not dressed up as one. */
+  /* Gen runs on Studio engines only, for a member and the owner alike. The account's catalogue id is not a name, so it is not dressed up as one. */
   const member = chipsFor({ preset, model: studio, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "The connected account is the owner’s" });
-  /* The owner who chose Studio engines is told that, not that the account is someone else's. */
+  expect(member[0]).toMatchObject({ key: "model", value: `${ACCOUNT_MODEL} → GPT Image 2`, state: "changed", why: "Gen runs on Studio engines only" });
   const ownerOnStudio = chipsFor({ preset, model: studio, owner: true, settings: composerSettings(studio, undefined, preset.picks) });
-  expect(ownerOnStudio[0]).toMatchObject({ why: "Studio engines chosen" });
+  expect(ownerOnStudio[0]).toMatchObject({ why: "Gen runs on Studio engines only" });
   /* The owner whose account is not connected sees why, once. */
   const unconnected = "No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.";
   expect(chipsFor({ preset, billing: "connected", owner: true, model: null, settings: composerSettings(null), blocked: unconnected })).toEqual([
@@ -235,7 +234,8 @@ test("the composer takes a recipe in one step, a settings-only one keeps its wor
 });
 
 test("citations count within their kind, the way the engine numbers what it is sent", () => {
-  expect(referenceTags(["video", "image", "image", "audio", undefined])).toEqual(["@Video1", "@Image1", "@Image2", null, null]);
+  /* A sound is cited too since Cinema Studio takes sound references (<<<audio_1>>>); a document has no tag. */
+  expect(referenceTags(["video", "image", "image", "audio", undefined, "audio"])).toEqual(["@Video1", "@Image1", "@Image2", "@Audio1", null, "@Audio2"]);
   expect(cites("@Image1 walks", "@Image1")).toBe(true);
   expect(cites("@Image12 walks", "@Image1")).toBe(false);
 });
@@ -255,6 +255,10 @@ test("a gone reference: the ones still here are renumbered, the gone one keeps a
   expect(retagRecipe("@Image1 and @Image12", [{ kind: "image", found: true }]).prompt).toBe("@Image1 and @Image12");
   const three = retagRecipe("@Image1, @Image2, @Image3", [{ kind: "image", found: false }, { kind: "image", found: true }, { kind: "image", found: false }]);
   expect(three.prompt).toBe("@Image2, @Image1, @Image3");
+  /* Sounds are renumbered within their own kind, and never move a picture's citation. */
+  const sounds = retagRecipe("@Audio2 under @Image1, then @Audio1", [{ kind: "audio", found: false }, { kind: "image", found: true }, { kind: "audio", found: true }]);
+  expect(sounds.now).toEqual(["@Audio2", "@Image1", "@Audio1"]);
+  expect(sounds.prompt).toBe("@Audio1 under @Image1, then @Audio2");
 });
 
 test("a size or length the new model does not offer lands on the nearest one at or below it", () => {

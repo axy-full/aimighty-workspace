@@ -74,7 +74,7 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 07; Business after 02; Viral after 02; Atomik after 01 and 04. */
+/** Group starts: Studio after 03 and 07; Business after 02 and 03; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
   own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
@@ -85,7 +85,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     /* Owner, 24 September: where the world is built, before Cast & Elements. The shell renders its own
        view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
     ["environment", "Environment", "Environment", "Build the world", "boards"],
-    ["cast", "Cast", "Cast & Elements", "Built with Soul Cinema", "cast"],
+    ["cast", "Cast", "Cast & Elements", "Characters that stay themselves", "cast"],
     ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
     ["rig", "Rig", "Rig", "Bring it all together", "rig"],
     /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.
@@ -94,13 +94,21 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["edit", "Edit & Sound", "Edit & Sound", "Cut the takes, add the sound", "edit"],
     ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
   ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),
-  /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them. */
-  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2], [
+  /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them.
+     After Setup, Particl's own tools (lib/shell/business-own.ts): they need no connected account, so
+     every member of every workspace uses them. */
+  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2, 3], [
     ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting, and the mode", "marketing"],
     ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
     ["setup", "Setup", "Setup items", "Avatars · hooks · settings · styles", "marketing"],
+    ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
+    ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
+    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Gen", "marketing"],
+    ["hooks", "Hooks", "Hooks", "Up to twelve opening lines, written against the brief", "marketing"],
+    ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
+    ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
-  /* Viral pages are the shell's own views (step 3) on the existing genjutsu-service. */
+  /* Viral pages are the shell's own views (step 3), run on Particl's API key through /api/generate (Genjutsu on the key). */
   own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
     ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
@@ -109,9 +117,10 @@ export const SHELL_SUITES: ShellSuite[] = [
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
      under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
      server and tokens. The page id stays `skills`, so every old link still lands here.
-     Memory is the shell's own view too (Supercomputer's memory): what Atomik keeps in mind. It shares
+     Memory is the shell's own view too: what Atomik keeps in mind. It shares
      Agent's backing page, as Beats shares Brief's, so `sp=memory` tells the two apart. */
-  own(build("atomik", "Atomik", "SUPERCOMPUTER", "Atomik Supercomputer", "atomik", [1, 4], [
+  /* Owner, 28 September 2026: "Just Atomik agent". */
+  own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
     ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
@@ -128,7 +137,7 @@ export const HEADER_SEGMENT: { id: ShellSuiteId | "gen" | "crew"; label: string;
   { id: "gen", label: "Gen", title: "Generate" },
   { id: "business", label: "Business", title: "Moleculr Business Suite · Marketing Studio" },
   { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
-  { id: "atomik", label: "Atomik", title: "Atomik Supercomputer" },
+  { id: "atomik", label: "Atomik", title: "Atomik Agent" },
   /* Crew is a module with its own tables and pages, not a production suite (CREW_ADDENDUM.md). */
   { id: "crew", label: "Crew", title: "Crew" },
 ];

@@ -21,6 +21,8 @@ import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, 
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
+import type { ProviderFailureRow, ProviderFailureSummary } from "@/lib/meter";
+import { billingAmount, failureCopy } from "@/lib/errors";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -147,6 +149,7 @@ export default function AdminPage() {
             <TopupsCard onChanged={refresh} />
 
             <EnginesCard />
+            <ProviderChargesCard />
             <ConcurrencyCard c={data.concurrency} />
 
             <PlatformLayerCard />
@@ -493,6 +496,62 @@ function EnginesCard() {
                   <td className={`py-2 text-right tabular-nums ${w.failRate > 0.2 ? "text-lift" : "text-dim"}`}>{pct(w)}</td>
                   <td className="py-2 text-right tabular-nums text-dim">{wait(w)}</td>
                   <td className="py-2 text-right tabular-nums text-dim">{usd(w.engineCostUsd, 2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The owner's view of failed takes on the platform's own keys: what each
+ * provider said it did with the charge (billed, refunded, not charged, or
+ * didn't say), in its own unit. This is the platform's cost, not a
+ * workspace's bill — it appears here and nowhere a customer can see.
+ */
+function ProviderChargesCard() {
+  const { data } = useApi<{ failures?: { summary: ProviderFailureSummary[]; recent: ProviderFailureRow[] } }>("/api/admin/engines", 60_000);
+  const failures = data?.failures;
+  if (!failures) return null;
+  const said = (r: ProviderFailureRow) => {
+    const amount = billingAmount({ amount: r.billing.amount ?? undefined, unit: r.billing.unit ?? undefined });
+    return r.billing.state === "refunded" ? `refunded${amount ? ` ${amount}` : ""}` : r.billing.state === "billed" ? `charged${amount ? ` ${amount}` : ""}`
+      : r.billing.state === "not_charged" ? "not charged" : "didn't say";
+  };
+  return (
+    <section className="scard" data-testid="admin-provider-charges">
+      <div className="scard-h"><span>Failed takes · provider charges</span><span>Latest 1,000 recorded failures in the last 7 days, across every workspace using the platform&rsquo;s own keys: what each provider said about the charge.</span></div>
+      {failures.summary.length === 0 ? <span className="rail-help">No provider outcome recorded for a failed take on the platform&rsquo;s keys in the last week.</span> : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-[13px]">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Charged</th><th className="pb-2 text-right font-medium">Refunded</th><th className="pb-2 text-right font-medium">Not charged</th><th className="pb-2 text-right font-medium">Didn&rsquo;t say</th><th className="pb-2 text-right font-medium">Charged, by the provider</th></tr></thead>
+            <tbody>
+              {failures.summary.map((s) => (
+                <tr key={s.engine} className="border-t border-hair">
+                  <td className="py-2 pr-3">{s.engine}</td>
+                  <td className="py-2 text-right tabular-nums">{s.failed}</td>
+                  <td className={`py-2 text-right tabular-nums ${s.byState.billed ? "text-lift" : "text-dim"}`}>{s.byState.billed}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.refunded}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.not_charged}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.unknown}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{s.billed.length ? s.billed.map((b) => billingAmount(b)).join(" · ") : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table className="mt-3 w-full min-w-[640px] text-[13px]" data-testid="admin-provider-charges-recent">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">When</th><th className="pb-2 font-medium">Engine · model</th><th className="pb-2 font-medium">What happened</th><th className="pb-2 font-medium">Provider&rsquo;s code</th><th className="pb-2 font-medium">The charge</th></tr></thead>
+            <tbody>
+              {failures.recent.map((r) => (
+                <tr key={r.id} className="border-t border-hair">
+                  <td className="py-2 pr-3 text-dim">{timeAgo(r.at)}</td>
+                  <td className="py-2 pr-3">{r.engine} · <span className="text-dim">{r.model}</span></td>
+                  <td className="py-2 pr-3" title={r.message ?? undefined}>{failureCopy(r.kind).what}</td>
+                  <td className="py-2 pr-3 mono-s text-dim">{r.code}</td>
+                  <td className="py-2">{said(r)}</td>
                 </tr>
               ))}
             </tbody>

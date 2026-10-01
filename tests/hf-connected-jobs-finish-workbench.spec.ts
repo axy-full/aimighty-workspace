@@ -12,8 +12,8 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
  * settles, and announces it once. Opening Gen or Ads later shows the jobs that
  * composer made from what the collector has — their state in one word with its
  * age, a problem named plainly, a finished take moved into Takes — and asks
- * nothing itself. Motion Transfer follows its own jobs, and says a failed read
- * on the run's row. Every account reply here is a route mock; nothing is paid for.
+ * nothing itself. (Viral runs on Particl's API key and reads the Library.) Every
+ * account reply here is a route mock; nothing is paid for.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -242,10 +242,10 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   /* The landed take is a result card (components/graphite/TakeTile.tsx), no longer a picked-up one. */
   await expect(page.getByTestId("gen-view").locator(".gx-gen-grid").getByTestId("take-tile")).toHaveCount(1);
   await readsTakenIn();
-  /* Then the unconfirmed one settles as failed: said so, not billed, dismissable. */
+  /* Then the unconfirmed one settles as failed: said so — no billing claim until the account's ledger names one — dismissable. */
   confirmed = true;
   await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
-  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed · not billed");
+  await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
   if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");
@@ -326,65 +326,8 @@ test("Ads shows an ad from an earlier visit until it lands, then points to Takes
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("Motion Transfer rows move from Rendering to settled instead of sitting at accepted; a read that fails is said on the row, asked again, and cleared by the next good one", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await base(page, { uploads: [], generations: [] });
-  const job = {
-    id: "33333333-3333-4333-8333-000000000021", draftId: DRAFT, status: "accepted",
-    input: { variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ uploadId: "up_ref" }] },
-    workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 34, creditUnit: "higgsfield_credits", quoteExpiresAt: 0,
-    providerJobId: "22222222-2222-4222-8222-000000000021", createdAt: Date.now() - 7 * MIN,
-  };
-  /* Rendering, then the account needs reconnecting for a while, then it has finished the job. */
-  let state: "accepted" | "reconnect" | "completed" = "accepted";
-  const posts: Record<string, unknown>[] = [];
-  await page.route("**/api/higgsfield/consumer/genjutsu**", async (route) => {
-    const request = route.request();
-    const current = state !== "completed" ? job : { ...job, status: "completed", originalAvailable: true, originalAvailability: "available", result: { original: { generationId: GEN, asset: { generationId: GEN, url: `/api/media/${GEN}`, kind: "video", mime: "video/mp4" } } } };
-    if (request.method() === "GET") return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800 }, jobs: [current] } });
-    const body = request.postDataJSON() as Record<string, unknown>;
-    posts.push(body);
-    if (body.action !== "status") return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
-    /* The route's own answer while the connection needs renewing (ConsumerOAuthError "reconnect_required"). */
-    if (state === "reconnect") return route.fulfill({ status: 401, json: { code: "reconnect_required", error: "Reconnect the account in Workspace › Engines before continuing." } });
-    return route.fulfill({ json: { job: current, pollAfterSeconds: 8 } });
-  });
-  const reads = () => posts.filter((p) => p.action === "status").length;
-  await page.clock.install();
-  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion`);
-  await expect(page.getByTestId("viral-view")).toBeVisible();
-  /* Recent beside the composer: the run in words, with its credits and age. */
-  const row = page.getByTestId("viral-run");
-  const status = row.getByTestId("viral-run-status"), problem = row.getByTestId("viral-run-problem");
-  await expect(row).toHaveCount(1);
-  await expect(status).toHaveText("Rendering");
-  await expect(row).toContainText("34 cr · 7 min ago");
-  await expect.poll(reads).toBeGreaterThan(0);
-  await noOverflow(page);
-  await shoot(page, info.project.name, "viral-rendering", "viral-run");
-
-  /* The account needs reconnecting: the row says so plainly, still rendering, and the run keeps being asked after. */
-  state = "reconnect";
-  const before = reads();
-  await page.clock.fastForward("00:10");
-  await expect(problem).toHaveText("Reconnect the account in Workspace › Engines to finish this take.");
-  await expect(status).toHaveText("Rendering");
-  await noOverflow(page);
-  await shoot(page, info.project.name, "viral-reconnect", "viral-run");
-  await page.clock.fastForward("01:01");
-  await expect.poll(reads).toBeGreaterThan(before + 1);
-  await expect(problem).toBeVisible();
-
-  /* Reconnected, and the account has finished it: the next good read clears the problem and settles the row. */
-  state = "completed";
-  await page.clock.fastForward("01:01");
-  await expect(status).toHaveText("Done");
-  await expect(status).toHaveAttribute("data-tone", "done");
-  await expect(row).toContainText("34 cr settled");
-  await expect(problem).toHaveCount(0);
-  expect(posts.every((p) => p.action === "status" && p.id === job.id)).toBe(true);
-  expect(errors).toEqual([]);
-});
+/* Viral's Motion Transfer and Object Swap run on Particl's API key now and read the project's Library, not the connected
+   account: a take in flight landing without a reload is in tests/hf-viral-real-runs-workbench.spec.ts. */
 
 test("the jump to the takes still rendering reaches them past a long, windowed results grid", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "the jump is on narrow screens; wider, the results sit beside the composer");

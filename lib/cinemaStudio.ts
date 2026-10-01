@@ -13,6 +13,8 @@ import {
   CINEMA_STUDIO_PATH,
   CINEMA_STUDIO_RATIOS,
   CINEMA_STUDIO_RESOLUTIONS,
+  isCinemaStudioAudioMime,
+  readCinemaControls,
 } from "./cinemaStudioTypes";
 
 type QuoteParams = Pick<VideoParams, "resolution" | "ratio" | "duration" | "hasVideoInput" | "inputSeconds">;
@@ -37,6 +39,12 @@ function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "dur
  * and dispatch refuses to send if the settings no longer price the same.
  * Null means no price: the settings or reference seconds are outside the
  * engine's contract.
+ *
+ * The creative controls (camera, lens, aperture, movement, era, genre, light,
+ * pacing, palette) and sound references are not in the formula: the published
+ * text counts only seconds and pixels, and says image and audio references do
+ * not count as video input. So they are not read here, and choosing them
+ * leaves the quote and the dispatch re-price exactly where they were.
  */
 export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
   if (settingsProblem(params)) return null;
@@ -91,27 +99,43 @@ export const CINEMA_STUDIO_PRICING_WATCH: PricingWatch = {
 };
 
 /**
- * Particl cites attached media as @Image1 / @Video1; the provider reads
- * <<<image_1>>> / <<<video_1>>>, and each token must name an attached item of
- * that kind. A citation of media that is not attached is left as written.
+ * Particl cites attached media as @Image1 / @Video1 / @Audio1; the provider
+ * reads <<<image_1>>> / <<<video_1>>> / <<<audio_1>>>, and each token must
+ * name an attached item of that kind. A citation of media that is not
+ * attached is left as written.
  */
-export function cinemaStudioPrompt(prompt: string, images: number, videos: number): string {
-  return prompt.replace(/@(image|video)(\d+)\b/gi, (token, kind: string, n: string) => {
-    const index = Number(n), count = kind.toLowerCase() === "image" ? images : videos;
-    return index >= 1 && index <= count ? `<<<${kind.toLowerCase()}_${index}>>>` : token;
+export function cinemaStudioPrompt(prompt: string, images: number, videos: number, audios = 0): string {
+  return prompt.replace(/@(image|video|audio)(\d+)\b/gi, (token, kind: string, n: string) => {
+    const k = kind.toLowerCase(), index = Number(n);
+    const count = k === "image" ? images : k === "video" ? videos : audios;
+    return index >= 1 && index <= count ? `<<<${k}_${index}>>>` : token;
   });
 }
 
-/** Only admission's authorized, retained originals reach this; never a client URL. */
+/**
+ * The request body, built only from the schema's own parameters. Only
+ * admission's authorized, retained originals reach this; never a client URL.
+ * Sound references are WAV uploads of this workspace (the provider documents
+ * WAV as its audio input); a generated sound (MP3) never gets here. The
+ * creative controls are checked again against the documented values and sent
+ * only when picked: a control on Auto is left out, so the model chooses it.
+ */
 export async function cinemaStudioInput(prompt: string, params: VideoParams, references: Reference[]) {
   if (typeof prompt !== "string" || !/\S/.test(prompt) || prompt.length > 10000 || settingsProblem(params))
     throw new HiggsfieldHttpError(422, "Cinema Studio needs a prompt, 4–30 seconds, 480p or 720p and a supported aspect ratio.");
+  const controls = readCinemaControls(params.cinema);
+  if (!controls.ok) throw new HiggsfieldHttpError(422, controls.error);
   const images = references.filter(ref => ref.kind === "image");
   const videos = references.filter(ref => ref.kind === "video");
-  if (images.some(ref => ref.role !== "reference_image") || videos.some(ref => ref.role !== "reference_video") ||
+  const audios = references.filter(ref => ref.kind === "audio");
+  if (images.length + videos.length + audios.length !== references.length ||
+      images.some(ref => ref.role !== "reference_image") || videos.some(ref => ref.role !== "reference_video") ||
+      audios.some(ref => ref.role !== "reference_audio" || ref.fromGeneration) ||
       images.length > CINEMA_STUDIO_LIMITS.maxImages || videos.length > CINEMA_STUDIO_LIMITS.maxVideos ||
-      references.length > CINEMA_STUDIO_LIMITS.maxReferences)
-    throw new HiggsfieldHttpError(422, "Cinema Studio takes up to 30 reference stills and 10 reference clips, cited in the prompt. It has no first or last frame.");
+      audios.length > CINEMA_STUDIO_LIMITS.maxAudios || references.length > CINEMA_STUDIO_LIMITS.maxReferences)
+    throw new HiggsfieldHttpError(422, "Cinema Studio takes up to 30 reference stills, 10 reference clips and 10 sound references, cited in the prompt. It has no first or last frame.");
+  if (audios.some(ref => !isCinemaStudioAudioMime(ref.mime)))
+    throw new HiggsfieldHttpError(422, "Cinema Studio takes sound references as WAV files.");
   if (references.some(ref => !/^[A-Za-z0-9_-]{1,160}$/.test(ref.id) || !/^[A-Za-z0-9]+$/.test(ref.ext)))
     throw new HiggsfieldHttpError(422, "A Cinema Studio reference identity is invalid.");
   if (!engineMock() && references.length && !usingBlob())
@@ -120,15 +144,19 @@ export async function cinemaStudioInput(prompt: string, params: VideoParams, ref
     const path = ref.fromGeneration ? (ref.kind === "video" ? videoPath(ref.id) : imagePath(ref.id)) : uploadPath(ref.id, ref.ext);
     return engineMock() ? `https://fixtures.particl.invalid/${path}` : presignedReadUrl(path, 0.25, ref.storedUrl);
   };
-  const [imageUrls, videoUrls] = await Promise.all([Promise.all(images.map(signed)), Promise.all(videos.map(signed))]);
+  const [imageUrls, videoUrls, audioUrls] = await Promise.all([
+    Promise.all(images.map(signed)), Promise.all(videos.map(signed)), Promise.all(audios.map(signed)),
+  ]);
   return {
-    prompt: cinemaStudioPrompt(prompt, images.length, videos.length),
+    prompt: cinemaStudioPrompt(prompt, images.length, videos.length, audios.length),
     duration: params.duration,
     resolution: params.resolution,
     aspect_ratio: params.ratio,
     generate_audio: Boolean(params.generateAudio),
     ...(imageUrls.length ? { image_urls: imageUrls } : {}),
     ...(videoUrls.length ? { video_urls: videoUrls } : {}),
+    ...(audioUrls.length ? { audio_urls: audioUrls } : {}),
+    ...controls.controls,
   };
 }
 

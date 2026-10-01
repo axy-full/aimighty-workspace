@@ -9,9 +9,8 @@ import { effectiveRules } from "@/lib/rules";
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
 import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
-import { connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
-import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
 import { plannerMemoryText } from "@/lib/atomikMemory";
+import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -89,19 +88,20 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
     const memory = await plannerMemoryText({ projectId: loaded.chat.projectId, query: text }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
-    /* The owner's connected account: read-only context and priced proposals.
-       The quote and the turn it prices see the same (cached) context. */
-    const connected = await connectedPlannerFor(got.user, got.token, loaded.chat.projectId);
-    /* `/name brief` runs a recipe from the connected account (A5 + A6). */
-    const recipe = await recipeForMessage(got.user, got.token, text);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, memory, model: b.model, effort, rules, connected, recipe,
+    /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
+    const inputs = await plannerInputs(got.user.id, loaded.chat.projectId);
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, memory, model: b.model, effort, rules,
+      library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
-    await runTurn(id, { context, memory, model: b.model, effort, maxCredits, rules, connected, recipe });
+    /* A library step is proposed only at a price: the admission quote, as this person, for its exact render. */
+    await runTurn(id, { context, memory, model: b.model, effort, maxCredits, rules,
+      library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
+      priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {
-    if (!quoteOnly && !(e instanceof RecipeError)) await patchChat(id, { status: "failed" });
-    const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof RecipeError;
+    if (!quoteOnly) await patchChat(id, { status: "failed" });
+    const known = e instanceof PaidTextError || e instanceof SpendReservationError;
     return NextResponse.json(
       { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
       { status: known ? e.status : 502 },

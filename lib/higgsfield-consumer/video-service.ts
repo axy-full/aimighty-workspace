@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { accountFailure, higgsfieldAccountOutcome } from "@/lib/providerOutcome";
 import { requireTenant } from "@/lib/tenant";
 import { readDraft, saveDraft } from "@/lib/workbench/records";
 import { newProject } from "@/lib/workbench/studio";
@@ -58,7 +59,7 @@ function presentVideo(job: ConsumerJob, availability: ConsumerOriginalAvailabili
     quoteExpired: job.status === "quoted" && job.quoteExpiresAt <= observedAt,
     providerJobId: job.providerJobId, result,
     originalAvailability: availability, originalAvailable: availability === "available",
-    providerReceipt: job.providerReceipt, failureCode: job.failureCode, setAside: consumerJobSetAside(job, observedAt), createdAt: job.createdAt,
+    providerReceipt: job.providerReceipt, failureCode: job.failureCode, failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null, setAside: consumerJobSetAside(job, observedAt), createdAt: job.createdAt,
   };
 }
 export async function consumerVideoView(job: ConsumerJob) {
@@ -191,7 +192,7 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
     const failed = consumerVideoFailureResult(response.raw, claim.job.providerJobId!);
     if (failed) {
       await connected(scope.userId, claim.job.connectionGeneration);
-      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed" });
+      const settled = await failConsumerPoll({ ...scope, leaseToken: claim.leaseToken, failureCode: "provider_failed", outcome: higgsfieldAccountOutcome(failed) });
       return { job: await consumerVideoView(settled ?? await ownedVideo(scope)), providerStatus: { status: failed }, pollAfterSeconds };
     }
     if (terminal) {

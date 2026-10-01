@@ -1035,6 +1035,11 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
            taken. Null on older rows, which fall back to `provider`: that is
            what the ledger already assumed, so nothing restates itself. */
         `billed_to TEXT`,
+        /* What the provider said when a take failed: its own code, a bounded
+           and redacted copy of its words, and whether it billed the attempt
+           (lib/providerOutcome.ts). Null on older rows, which read as
+           "the provider didn't say". Additive. */
+        `provider_outcome TEXT`,
       ]) {
         await addColumn("generations", col);
       }

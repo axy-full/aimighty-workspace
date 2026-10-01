@@ -10,6 +10,7 @@ import type {
 import { currentTenant, requireTenant } from "./tenant";
 import { db } from "./db";
 import { creditsApply, quotedCredits } from "./credits";
+import type { EstimateTerms } from "./billingTerms";
 import { billedTo } from "./providers";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
 import {
@@ -75,7 +76,8 @@ export function admissionCheckpoint(
   actor: AdmissionActor,
   kind: PreparedAdmission["kind"],
   usd: number,
-  margin: string,
+  /* The margin key, or the exact terms the reservation will charge (lib/credits.ts quotedCredits). */
+  margin: EstimateTerms,
   compiled: Record<string, unknown>,
   terms: { approximate?: boolean } = {},
 ): AdmissionReply | undefined {

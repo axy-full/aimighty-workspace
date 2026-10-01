@@ -824,13 +824,18 @@ test("failed jobs keep an unknown charge distinct from the ledger's recorded zer
   expect(tenantUrl).toMatch(/^file:/);
   const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   try {
-    /* `zero` carries the take's own recorded vendor zero: not the workspace's ledger, so it proves nothing about a charge. */
-    for (const [suffix, status, cost] of [
-      ["unknown", "failed", null], ["zero", "failed", 0], ["released", "failed", null], ["charged", "failed", null], ["unsettled", "failed", null], ["cancelled", "cancelled", null],
+    /* `zero` carries the take's own recorded vendor zero: not the workspace's ledger, so it proves nothing about a charge.
+       `said` carries its provider's own word from when the workspace was on its own key (ModelArk's rule: only
+       successful videos are charged). It names the reason; in credits, only the ledger says what was charged. */
+    const notCharged = JSON.stringify({ v: 1, provider: "byteplus", stage: "run", code: "OutputVideoSensitiveContentDetected", kind: "content_filter", message: null,
+      billing: { state: "not_charged", basis: "ark-success-only" }, funding: "own", at: now });
+    for (const [suffix, status, cost, outcome] of [
+      ["unknown", "failed", null, null], ["zero", "failed", 0, null], ["released", "failed", null, null], ["charged", "failed", null, null],
+      ["unsettled", "failed", null, null], ["cancelled", "cancelled", null, null], ["said", "failed", 0, notCharged],
     ] as const) {
       await tenant.execute({
-        sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_by,created_at,updated_at,settled_at,cost_usd,error) VALUES(?,'video',?,?,'{}',?,?,?,?,?,?,?)",
-        args: [`gen_${tag}_${suffix}`, ENGINE, "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped."],
+        sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_by,created_at,updated_at,settled_at,cost_usd,error,provider_outcome) VALUES(?,'video',?,?,'{}',?,?,?,?,?,?,?,?)",
+        args: [`gen_${tag}_${suffix}`, ENGINE, "A quiet harbour", status, me.id, now, now, now, cost, "The engine stopped.", outcome],
       });
     }
     /* A separate zero-cost refinement cannot prove the missing render charge was zero. */
@@ -843,6 +848,8 @@ test("failed jobs keep an unknown charge distinct from the ledger's recorded zer
     expect(rows.get(`gen_${tag}_unknown`)).toMatchObject({ label: "Failed", price: null });
     expect(rows.get(`gen_${tag}_zero`)).toMatchObject({ label: "Failed", price: null });
     expect(rows.get(`gen_${tag}_unsettled`)).toMatchObject({ label: "Failed", price: null });
+    /* The provider's word gives the reason; with no settled row on the ledger, no charge is claimed either way. */
+    expect(rows.get(`gen_${tag}_said`)).toMatchObject({ label: "Failed", price: null, reason: "Refused by the content filter" });
     /* Settled on the ledger: a recorded zero says not billed, a recorded charge shows its credits. */
     expect(rows.get(`gen_${tag}_released`)).toMatchObject({ label: "Failed · not billed", price: null });
     expect(rows.get(`gen_${tag}_charged`)).toMatchObject({ label: "Failed", price: { amount: 9, unit: "cr" } });

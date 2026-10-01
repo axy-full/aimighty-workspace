@@ -3,7 +3,7 @@ import type { Client } from "@libsql/client";
 import { findStoredSource, readStoredSourceBytes, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "./mediaSource.server";
 import { allowanceCheck } from "./allowance";
 import { paidByPlatform } from "./platformSpend";
-import { billCredits } from "./creditTerms";
+import { creditsAtTerms, currentBillingTerms } from "./billingTerms";
 import { completeGenerationRequest, fenceGenerationRequest, generationRequestsReady, reserveGenerationSpend, SpendReservationError, TRANSCRIPTION_STALE_MS, type GenerationRequest } from "./generationRequests";
 import { deliverGenerationSettlement, generationSettlementReady } from "./generationSettlement";
 import { meter, meteredCharge, type MeterEvent } from "./meter";
@@ -19,7 +19,10 @@ import { PreflightError } from "./preflight";
  * apart, and subtitles made from them. Priced by the source's measured length
  * on the xAI key and quoted first as an approximate price, reserved at that
  * estimate, then settled at what the transcript's own duration says through
- * the credit terms, never above three times the estimate.
+ * the credit terms, never above three times the estimate. The quote, its
+ * approval ceiling and the credit wall read the terms the reservation and the
+ * settlement charge (TRANSCRIPTION_JOB), so the price shown is what is
+ * reserved for that estimate.
  *
  * A paid request is sent under an Idempotency-Key and claimed before anything
  * is spent (withGenerationRequest, in the route). The claim names the
@@ -38,6 +41,12 @@ import { PreflightError } from "./preflight";
  * left is held for review, and the answer says so.
  */
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+/**
+ * A transcription as the meter records it. Its reservation and settlement
+ * charge at the terms these name (lib/billingTerms.ts currentBillingTerms),
+ * and its quote is read at the same terms, never by the vendor's name alone.
+ */
+const TRANSCRIPTION_JOB = { kind: "audio", engine: "xai", model: GROK_STT_MODEL } as const;
 export type TranscriptionInput = { sourceUploadId?: unknown; sourceGenId?: unknown; language?: unknown; diarize?: unknown; quoteOnly?: unknown; maxCredits?: unknown; projectId?: unknown };
 export type TranscriptionReply = { status: number; body: Record<string, unknown> };
 /** How far a paid transcription has got, in order: its estimate reserved; the provider's transcript in hand; that transcript saved with its bill queued; the bill on the meter; the reply made. */
@@ -203,20 +212,21 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   const length = await resolveStoredDuration(source);
   if (length.seconds == null) return { status: 422, body: { error: `This source has no measured length, so it cannot be priced${length.reason ? `: ${length.reason}` : "."}` } };
   const estimateUsd = grokTranscriptionUsd(length.seconds);
-  const estimatedCredits = paidByPlatform("xai") ? billCredits(estimateUsd, "xai") : 0;
+  /* Quoted, held to its ceiling and checked against the balance at the terms its reservation will charge. */
+  const terms = currentBillingTerms(TRANSCRIPTION_JOB.kind, TRANSCRIPTION_JOB.model);
+  const estimatedCredits = paidByPlatform("xai") ? creditsAtTerms(estimateUsd, terms) : 0;
   if (input.quoteOnly === true) return { status: 200, body: { quoteOnly: true, estimatedCredits, seconds: length.seconds } };
   /* A paid transcription is saved on its claim before it is charged, so it runs only under one (the route's withGenerationRequest). */
   const claim = options.claim;
   if (!claim) return { status: 500, body: { error: "This transcription was not sent under a request key. Nothing was sent or charged.", charged: 0 } };
   if (!Number.isFinite(Number(input.maxCredits)) || Number(input.maxCredits) < estimatedCredits)
     return { status: 409, body: { error: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", estimatedCredits } };
-  const allowance = await allowanceCheck("xai", estimateUsd, "xai");
+  const allowance = await allowanceCheck("xai", estimateUsd, terms);
   if (!allowance.ok) return { status: allowance.status, body: { error: allowance.error } };
 
   const step = options.deps?.step;
   const event = {
-    id: transcriptionEventId(requireTenant().id, claim),
-    kind: "audio" as const, engine: "xai", model: GROK_STT_MODEL,
+    id: transcriptionEventId(requireTenant().id, claim), ...TRANSCRIPTION_JOB,
     projectId: typeof input.projectId === "string" ? input.projectId : null, createdBy: userId,
   };
   try { await (options.deps?.reserve ?? reserveGenerationSpend)({ ...event, status: "running", engineCostUsd: estimateUsd }, { token: currentTenant()?.token }); }

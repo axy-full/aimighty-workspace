@@ -19,7 +19,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
-    business: ["01 Ads", "02 Image ads", "|03 Setup"],
+    business: ["01 Ads", "02 Image ads", "|03 Setup", "|04 Brand", "05 Product", "06 Format", "07 Hooks", "08 Reference", "09 Design"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
     atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory"],
   });
@@ -60,14 +60,15 @@ test("a state-layer page finds its shell page; a shared backing page follows the
   expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("ads");
 });
 
-test("suite names and marks are the design's, verbatim", () => {
+test("suite names and marks are the design's, verbatim, with Atomik renamed by the owner", () => {
   /* Owner decision, 21 September 2026: the Suites surface follows the design
-     README's names; the never-name rule covers the legacy screens only. */
+     README's names; the never-name rule covers the legacy screens only.
+     Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
     ["STUDIO", "Particl Production Studio"],
     ["BUSINESS", "Moleculr Business Suite · Marketing Studio"],
     ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
-    ["SUPERCOMPUTER", "Atomik Supercomputer"],
+    ["AGENT", "Atomik Agent"],
   ]);
   for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
 });

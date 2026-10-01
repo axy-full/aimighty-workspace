@@ -42,8 +42,11 @@ export const GET = withTenant(async (req: Request) => {
       30,
       60_000,
     );
+    const query = new URL(req.url).searchParams;
+    /* `search` narrows the catalogue at the provider (1–100 characters); a page of it goes by the same cursor. */
     const page = await listMarketingPresets(
-      new URL(req.url).searchParams.get("cursor") ?? undefined,
+      query.get("cursor") ?? undefined,
+      query.get("search") ?? undefined,
     );
     return Response.json(
       { configured: true, ...page, capabilities: MARKETING_CAPABILITIES },

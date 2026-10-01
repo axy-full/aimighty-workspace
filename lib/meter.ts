@@ -5,6 +5,7 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import type { Span } from "./concurrency";
 import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
+import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, type FailureKind, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * The metering layer. Every engine call, whatever the vendor, is written
@@ -46,6 +47,12 @@ export type MeterEvent = {
    * failed agent run: the vendor's cost is recorded, the bill is zero.
    */
   unbilled?: boolean;
+  /**
+   * What the provider said when the job failed (lib/providerOutcome.ts).
+   * Information only: it never changes `billed_credits`, and only the
+   * platform admin desk reads it back.
+   */
+  providerOutcome?: ProviderOutcome | null;
 };
 
 export class FundingSourceChangedError extends Error {
@@ -126,8 +133,8 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         await tx.execute({
         sql: `INSERT INTO meter_events
                 (id, workspace_id, project_id, shot_id, kind, engine, model, status,
-                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, credit_usd, credit_margin)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, credit_usd, credit_margin, provider_outcome)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
               ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 engine_cost_usd = COALESCE(excluded.engine_cost_usd, meter_events.engine_cost_usd),
@@ -139,9 +146,11 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
                 shot_id = COALESCE(excluded.shot_id, meter_events.shot_id),
                 duration_ms = COALESCE(excluded.duration_ms, meter_events.duration_ms),
                 created_by = COALESCE(excluded.created_by, meter_events.created_by),
+                provider_outcome = COALESCE(excluded.provider_outcome, meter_events.provider_outcome),
                 updated_at = excluded.updated_at`,
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
-               cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin],
+               cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin,
+               e.providerOutcome ? serializeOutcome(e.providerOutcome) : null],
         });
         if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);
       }, ts);
@@ -300,4 +309,55 @@ export async function engineHealth(sinceMs: number): Promise<EngineHealthRow[]> 
       engineCostUsd: Number(r.cost ?? 0),
     };
   });
+}
+
+export type ProviderFailureRow = {
+  id: string; workspaceId: string; engine: string; model: string; at: number;
+  provider: string; code: string; kind: FailureKind; message: string | null;
+  billing: { state: BillingState; amount: number | null; unit: BillingUnit | null; basis: string };
+};
+export type ProviderFailureSummary = {
+  engine: string; failed: number;
+  byState: Record<BillingState, number>;
+  /** What the providers said they charged the platform for failed jobs, summed per unit. */
+  billed: { unit: BillingUnit; amount: number }[];
+};
+
+/**
+ * PLATFORM ADMIN DESK ONLY (the route requires the super admin): for every
+ * failed job the platform's own keys paid for, across every workspace, what
+ * the provider said it did with the charge — billed, refunded, not charged
+ * or didn't say — with its own amounts. Never read by a workspace route.
+ */
+export async function providerFailuresSince(sinceMs: number, recent = 20): Promise<{ summary: ProviderFailureSummary[]; recent: ProviderFailureRow[] }> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT id, workspace_id, engine, model, provider_outcome, updated_at FROM meter_events
+          WHERE status = 'failed' AND paid_by_platform = 1 AND provider_outcome IS NOT NULL AND updated_at >= ?
+          ORDER BY updated_at DESC, id DESC LIMIT 1000`,
+    args: [sinceMs],
+  });
+  const rows: ProviderFailureRow[] = [];
+  for (const r of rs.rows as unknown as Record<string, unknown>[]) {
+    const o = parseOutcome(String(r.provider_outcome));
+    if (!o) continue;
+    rows.push({
+      id: String(r.id), workspaceId: String(r.workspace_id), engine: String(r.engine), model: String(r.model), at: Number(r.updated_at),
+      provider: o.provider, code: o.code, kind: o.kind, message: o.message,
+      billing: { state: o.billing.state, amount: o.billing.amount ?? null, unit: o.billing.unit ?? null, basis: o.billing.basis },
+    });
+  }
+  const byEngine = new Map<string, ProviderFailureSummary>();
+  for (const row of rows) {
+    const s = byEngine.get(row.engine) ?? { engine: row.engine, failed: 0, byState: { billed: 0, refunded: 0, not_charged: 0, unknown: 0 }, billed: [] };
+    s.failed++;
+    s.byState[row.billing.state]++;
+    if (row.billing.state === "billed" && row.billing.amount != null && row.billing.unit) {
+      const line = s.billed.find((b) => b.unit === row.billing.unit);
+      if (line) line.amount += row.billing.amount;
+      else s.billed.push({ unit: row.billing.unit, amount: row.billing.amount });
+    }
+    byEngine.set(row.engine, s);
+  }
+  return { summary: [...byEngine.values()].sort((a, b) => b.failed - a.failed), recent: rows.slice(0, recent) };
 }

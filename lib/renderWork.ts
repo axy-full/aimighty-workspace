@@ -5,7 +5,10 @@ import { PreflightError } from "./preflight";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { getModel, imageTokens, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { getModel, imageTokens, HIGGSFIELD_IMAGE_MODELS, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { isSoulRenderModel } from "./soulRenderTypes";
+import { soulBatchId, soulBatchTakeId, soulRenderDelivered, soulRenderSettlementUsd } from "./soulRender";
+import { isBatchId } from "./variations";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
@@ -22,9 +25,12 @@ import { fetchBytes } from "./mockFs";
 import type { Produced as EngineProduced, RenderHandle } from "./engines/types";
 import { engineFor } from "./engines";
 import { higgsfieldSubmissionRejected } from "./higgsfield";
+import { marketing25Usd, marketing25SettlementUsd } from "./higgsfieldMarketing";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 import { inspectAudioBuffer } from "./mediaSource.server";
+import { fundedOutcome, outcomeOfError } from "./providerFailure";
+import { higgsfieldRequestOutcome, serializeOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * The work of a still or a piece of audio, lifted out of the route that
@@ -71,6 +77,8 @@ export type StillJob = {
   soulCredentialFingerprint?: string;
   soulVendorCostUsd?: number;
   soulStrength?: number;
+  /** Stills per Soul render request (1 or 4). */
+  soulBatch?: number;
   kind: "image";
   genId: string;
   modelId: string;
@@ -176,6 +184,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
     soulCredentialFingerprint: typeof params.soulCredentialFingerprint === "string" ? params.soulCredentialFingerprint : undefined,
     soulVendorCostUsd: typeof params.soulVendorCostUsd === "number" ? params.soulVendorCostUsd : undefined,
     soulStrength: typeof params.soulStrength === "number" ? params.soulStrength : undefined,
+    soulBatch: typeof params.soulBatch === "number" ? params.soulBatch : undefined,
     references: hydrated,
     startedAt,
   };
@@ -367,13 +376,18 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     // A synchronous vendor may have charged before the connection failed.
     // Leave the claim intact: automatic retries must never buy it again.
-    // A refusal the vendor sent, or a request that never left, charged nothing.
+    // A refusal the vendor sent, or a request that never left, is released
+    // here; what the vendor itself did with the charge is its own to say,
+    // and travels with the take (lib/providerOutcome.ts).
+    const provider = job.kind === "audio" ? audioVendor(job.modelId) : getModel(job.modelId).provider;
+    const said = await fundedOutcome(outcomeOfError(error, { provider, stage: "submit" }), job.genId, provider).catch(() => null);
     await failJob(
       job.genId,
       (error as Error).message,
       error instanceof FundingSourceChangedError || error instanceof PreflightError || falSubmissionRejected(error) ||
         higgsfieldSubmissionRejected(error) || (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) ||
         xaiSubmissionRejected(error),
+      said,
     );
     throw error;
   }
@@ -399,6 +413,8 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
     soulReferenceId: job.soulReferenceId,
     soulCredentialFingerprint: job.soulCredentialFingerprint,
     soulStrength: job.soulStrength,
+    soulBatch: job.soulBatch,
+    soulVendorCostUsd: job.soulVendorCostUsd,
     references: job.references,
   });
   if (!("produced" in out)) {
@@ -446,6 +462,25 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
   return finishStill(job, out.produced, queueMs, now() - engineStart);
 }
 
+/**
+ * What a collected connected still settles at. Soul and Marketing Studio 2.0
+ * settle at their verified estimate. A 2.5 build was quoted approximately:
+ * it settles at the provider's own charge if it states one, else the same
+ * published-rate figure for the image actually delivered, within a sane band
+ * of the quote (lib/higgsfieldMarketing.ts › marketing25SettlementUsd).
+ */
+async function marketingSettledUsd(job: StillJob, bytes: Buffer, quoteUsd: number, reportedUsd: number | null): Promise<number> {
+  const settings = job.marketing;
+  if (job.modelId !== MARKETING_IMAGE_MODEL_ID || !settings || (settings.variant ?? "alpha") === "alpha") return quoteUsd;
+  const meta = await (await import("sharp")).default(bytes).metadata().catch(() => null);
+  const megapixels = meta?.width && meta?.height ? (meta.width * meta.height) / 1e6 : null;
+  const delivered = megapixels == null ? null : marketing25Usd({
+    prompt: job.prompt, image_urls: job.references.map((ref) => ref.id), quality: settings.quality,
+    resolution: job.size, enhance_prompt: settings.enhancePrompt,
+  }, megapixels);
+  return marketing25SettlementUsd(quoteUsd, delivered, reportedUsd);
+}
+
 /** Collect one acknowledged Soul request. This path never submits a generation. */
 export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
   return withRecoveryJob(requireTenant().id, genId, async () => {
@@ -453,10 +488,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
     const until = now() + 180_000;
     const claim = await db().execute({
       sql: `UPDATE generations SET params=json_set(params,'$.higgsfieldStillPollUntil',?)
-        WHERE id=? AND kind='image' AND model IN (?,?) AND provider='higgsfield' AND deleted=0 AND status IN ('queued','running')
+        WHERE id=? AND kind='image' AND model IN (${HIGGSFIELD_IMAGE_MODELS.map(() => "?").join(",")}) AND provider='higgsfield' AND deleted=0 AND status IN ('queued','running')
         AND json_extract(params,'$.higgsfieldStillHandle') IS NOT NULL
         AND COALESCE(json_extract(params,'$.higgsfieldStillPollUntil'),0) < ? RETURNING params`,
-      args: [until, genId, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, now()],
+      args: [until, genId, ...HIGGSFIELD_IMAGE_MODELS, now()],
     });
     if (!claim.rows.length) return;
     const params = JSON.parse(String(claim.rows[0].params));
@@ -474,8 +509,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       const vendorCostUsd = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd;
       const state = await withAcceptedJobCredentials(genId, "higgsfield", () => engine.poll!({ ...saved, credentialFingerprint }));
       if (state.status === "failed" || state.status === "cancelled") {
-        // Higgsfield documents failed, NSFW and canceled requests as uncharged.
-        await failJob(genId, state.error ?? "The connected-account request was canceled.", true);
+        // Its own status and words; its FAQ: failed and NSFW requests are
+        // refunded, and only successful completions are billed.
+        const said = await fundedOutcome(higgsfieldRequestOutcome(state.raw), genId, "higgsfield").catch(() => null);
+        await failJob(genId, state.error ?? "The connected-account request was canceled.", true, said);
         await settleHiggsfieldGenerationReceipt(genId);
         return;
       }
@@ -486,13 +523,23 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
           args: [state.status, now(), genId] });
         return;
       }
-      if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
+      const soulRender = isSoulRenderModel(job.modelId);
+      const stills = soulRender
+        ? soulRenderDelivered(state.imageUrls ?? (state.imageUrl ? [state.imageUrl] : []), job.soulBatch ?? 1)
+        : state.imageUrl ? [state.imageUrl] : [];
+      if (!stills.length || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
         throw new Error("The connected-account request needs its saved image and verified price before collection can finish.");
-      const bytes = await engine.fetchMaster!(state.imageUrl);
+      /* A Soul batch's other stills are filed first, each a take of its own; the request's own take seals last,
+         so a collection interrupted between them files them again, once. */
+      if (stills.length > 1) await fileSoulBatch(job, stills.slice(1), isBatchId(params.batchId) ? params.batchId : soulBatchId(job.genId));
+      const bytes = await engine.fetchMaster!(stills[0]);
       inHand = true;
       const out = await finishStill(job, {
         bytes, mime: "image/png",
-        costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
+        // A Soul render settles at its quoted live estimate unless the provider states a charge within the band;
+        // everything else at marketingSettledUsd (its verified estimate, or a Marketing Studio 2.5 build's own rule).
+        costUsd: soulRender ? soulRenderSettlementUsd(vendorCostUsd!, state.costUsd) : await marketingSettledUsd(job, bytes, vendorCostUsd!, state.costUsd ?? null),
+        totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
         args: [JSON.stringify(out), now(), genId] });
@@ -519,6 +566,51 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.higgsfieldStillPollUntil') WHERE id=? AND json_extract(params,'$.higgsfieldStillPollUntil')=?",
         args: [genId, until] });
     }
+  });
+}
+
+/**
+ * The 2nd–4th stills of one Soul render request, filed as takes of their own
+ * beside the request's take (same project, prompt, model and author; the
+ * batch's strip and numbers). The request's take carries the whole request's
+ * price, so these carry none. Idempotent: a still already filed is never
+ * fetched or stored again, and the ids are fixed by the request's own take.
+ */
+async function fileSoulBatch(job: StillJob, urls: string[], batchId: string): Promise<void> {
+  const leader = (await db().execute({ sql: "SELECT params FROM generations WHERE id=? AND deleted=0", args: [job.genId] })).rows[0];
+  if (!leader) throw new Error("The Soul render's take is no longer available to file its batch.");
+  const own = JSON.parse(String(leader.params || "{}")) as Record<string, unknown>;
+  const engine = engineFor("higgsfield");
+  const sharp = (await import("sharp")).default;
+  const ids = [job.genId];
+  for (const [index, url] of urls.entries()) {
+    const variation = index + 2;
+    const id = soulBatchTakeId(job.genId, variation);
+    ids.push(id);
+    const filed = (await db().execute({ sql: "SELECT stored_url FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (filed?.stored_url) continue;
+    const png = await sharp(await engine.fetchMaster!(url)).png().toBuffer();
+    const { value: stored } = await withRetry(() => storeImageBytes(id, png), { max: 3 });
+    const params = {
+      ratio: job.ratio, resolution: job.size, via: "higgsfield",
+      ...(typeof own.soulIdentityId === "string" ? { soulIdentityId: own.soulIdentityId } : {}),
+      ...(typeof own.workbenchProjectId === "string" ? { workbenchProjectId: own.workbenchProjectId } : {}),
+      soulStrength: job.soulStrength, soulBatch: job.soulBatch, soulBatchOf: job.genId, batchId, variation,
+    };
+    await db().execute({
+      sql: `INSERT INTO generations (id, project_id, kind, model, prompt, params, status, stored_url, bytes, cost_usd,
+              created_by, created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
+            SELECT ?, project_id, 'image', model, prompt, ?, 'succeeded', ?, ?, 0,
+              created_by, created_at, ?, token_id, shot_id, version, provider, task, 'higgsfield'
+            FROM generations WHERE id=? ON CONFLICT(id) DO NOTHING`,
+      args: [id, JSON.stringify(params), stored.url, stored.bytes, now(), job.genId],
+    });
+  }
+  // The request's take names every still of its batch (its page files them all) and joins the batch's strip.
+  await db().execute({
+    sql: `UPDATE generations SET params=json_set(params,'$.soulBatchIds',json(?),'$.batchId',?,'$.variation',COALESCE(json_extract(params,'$.variation'),1)),updated_at=?
+      WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
+    args: [JSON.stringify(ids), batchId, now(), job.genId],
   });
 }
 
@@ -594,7 +686,8 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
     } catch (error) {
       // A refused result is terminal; a transport/storage failure keeps the
       // known handle and reservation so the same render can be collected later.
-      if (error instanceof FalHttpError && [400, 422].includes(error.status)) await failJob(genId, error.message, true);
+      if (error instanceof FalHttpError && [400, 422].includes(error.status))
+        await failJob(genId, error.message, true, await fundedOutcome(outcomeOfError(error, { provider: "fal", stage: "run" }), genId, "fal").catch(() => null));
       else {
         await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running')", args: [(error as Error).message.slice(0,600), now(), genId] });
         throw error;
@@ -769,6 +862,8 @@ export async function failJob(
   genId: string,
   message: string,
   rejectedBeforeGeneration = false,
+  /** What the provider said, when the request reached one (lib/providerOutcome.ts). */
+  outcome: ProviderOutcome | null = null,
 ): Promise<void> {
 return await withRecoveryJob(requireTenant().id, genId, async () => {
 
@@ -815,10 +910,11 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
       // An unsent refund holds only while nothing has claimed the paid step since.
       sql: `UPDATE generations
       SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?),
-          cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?), updated_at=?
+          cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?),
+          provider_outcome=COALESCE(?, provider_outcome), updated_at=?
       WHERE id=? AND status NOT IN ('succeeded','cancelled')${unsent && !rejectedBeforeGeneration
         ? " AND json_extract(params,'$.paidClaim') IS NULL AND json_extract(params,'$.producedOutcome') IS NULL" : ""}`,
-      args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
+      args: [message.slice(0, 600), ms, spentUsd, spentCredits, outcome ? serializeOutcome(outcome) : null, now(), genId],
     },
     {
       id: genId,
@@ -829,6 +925,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
       // Retain the original reservation for an ambiguous provider/storage failure.
       engineCostUsd: free ? 0 : null,
       durationMs: ms,
+      ...(outcome ? { providerOutcome: outcome } : {}),
     },
   );
   await deliverGenerationSettlement(genId);

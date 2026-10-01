@@ -73,13 +73,13 @@ export function SpecTool({
         </>
       );
     case "motion":
-      return <SubatomikTool key={id} variant="motion-transfer" projectId={id} publish="motion" />;
+      return <SubatomikTool key={id} variant="motion-transfer" projectId={id} />;
     case "swap":
-      return <SubatomikTool key={id} variant="object-swap" projectId={id} publish="swap" />;
+      return <SubatomikTool key={id} variant="object-swap" projectId={id} />;
     case "sources":
     case "compare":
     case "history":
-      return <SubatomikTool key={id} variant="motion-transfer" projectId={id} publish={null} />;
+      return <SubatomikTool key={id} variant="motion-transfer" projectId={id} />;
     case "agent":
     case "runs":
     case "recipes":

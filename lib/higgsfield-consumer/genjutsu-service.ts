@@ -1,4 +1,5 @@
 import { requireTenant } from "@/lib/tenant";
+import { accountFailure, higgsfieldAccountOutcome } from "@/lib/providerOutcome";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
@@ -92,6 +93,8 @@ function presentGenjutsu(
     setAside: consumerJobSetAside(job, observedAt),
     /* Why a failed run failed: a refused render is not billed; a result that could not be kept may have been. */
     failureCode: job.failureCode,
+    /* What the account said, and what its own ledger shows for the charge (its credits, never converted). */
+    failure: job.status === "failed" ? accountFailure(job.providerOutcome, job.failureCode) : null,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };
@@ -380,6 +383,7 @@ export async function pollConsumerGenjutsu(scope: ConsumerJobScope) {
         ...scope,
         leaseToken: claim.leaseToken,
         failureCode: "provider_failed",
+        outcome: higgsfieldAccountOutcome(failed),
       });
       return {
         job: await consumerGenjutsuView(

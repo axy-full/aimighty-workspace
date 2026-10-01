@@ -9,6 +9,8 @@ write-up is kept current in place, so check the git log for anything newer than 
 
 If you are a new Claude Code session, [`START-HERE.md`](START-HERE.md) is the opening prompt to follow.
 
+> **28 September 2026: the connected account is retired.** Particl uses provider APIs and loginless MCP only: nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Shorts in §2, rule 3 in §3, the connected-account row in §4 and §6 are kept as history.
+
 ---
 
 ## 1. The first ten minutes

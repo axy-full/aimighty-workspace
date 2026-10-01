@@ -4,7 +4,9 @@ import { db, ready, now } from "@/lib/db";
 import { workbenchTransaction } from "./records";
 import { canvasAssetSchema, canvasNodeSchema } from "./studio-schema";
 import { PROJECT_JSON_BYTES, PROJECT_LIMITS } from "./project-limits";
-import { applyTeamPatch, emptyTeamCanvas, parseTeamCanvas, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { applyTeamPatch, emptyTeamCanvas, heldRemovals, parseTeamCanvas, referencedAssetIds, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { canvasOpsReady, insertCanvasOp } from "./canvas-ops-log";
+import { collabConfigured } from "@/lib/collab";
 
 /*
  * The one Rig canvas a production's team shares, in the workspace database.
@@ -80,34 +82,79 @@ export async function readTeamCanvas(productionId: string): Promise<{ canvas: Te
   return { canvas: parseTeamCanvas(body), revision: Number(row.revision) };
 }
 
+/** Only the revision (0: nobody has opened this production's canvas yet): the light check an open window makes. */
+export async function teamCanvasRevision(productionId: string): Promise<number> {
+  await teamCanvasReady();
+  const row = (await db().execute({ sql: "SELECT revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
+  return row ? Number(row.revision) : 0;
+}
+
 /** Fold one person's edit in. The server's clock orders writes, so a skewed laptop clock cannot win. */
 export async function patchTeamCanvas(productionId: string, patch: Omit<TeamPatch, "at">, userId: string) {
   await teamCanvasReady();
   return workbenchTransaction(async (tx) => (await applyTeamCanvasPatch(tx, productionId, patch, userId))!);
 }
 
-/**
- * The same fold inside a transaction the caller holds (a draft save carries
- * its node edits to the canvas this way). With `onlyIfShared`, a production
- * whose canvas nobody has opened yet is left alone: the first Rig to open it
- * brings the whole draft.
- */
-export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false) {
+/** The canvas row as it is inside the caller's transaction (null: nobody has opened this production's canvas yet). */
+export async function readCanvasRow(tx: Transaction, productionId: string): Promise<{ canvas: TeamCanvas; revision: number } | null> {
   const row = (await tx.execute({ sql: "SELECT body,revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
-  if (!row && onlyIfShared) return null;
-  let current = emptyTeamCanvas();
-  if (row) { try { current = parseTeamCanvas(JSON.parse(String(row.body))); } catch { current = emptyTeamCanvas(); } }
-  const at = Math.max(now(), ...Object.values(current.stamps).map(Number).filter(Number.isFinite));
-  const next = applyTeamPatch(current, { ...patch, at });
+  if (!row) return null;
+  let canvas = emptyTeamCanvas();
+  try { canvas = parseTeamCanvas(JSON.parse(String(row.body))); } catch { canvas = emptyTeamCanvas(); }
+  return { canvas, revision: Number(row.revision) };
+}
+
+/** The server's clock for a write: never behind anything the canvas already holds. */
+export const canvasClock = (canvas: TeamCanvas) => Math.max(now(), ...Object.values(canvas.stamps).map(Number).filter(Number.isFinite));
+
+/** Saves a canvas at the next revision, inside the caller's transaction, within the project limits. */
+export async function writeCanvasRow(tx: Transaction, productionId: string, next: TeamCanvas, previous: number, by: string) {
   if (Object.keys(next.nodes).length > PROJECT_LIMITS.nodes)
     throw new TeamCanvasError(`A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} nodes.`, 413);
   const body = JSON.stringify(next);
   if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
-  const revision = (row ? Number(row.revision) : 0) + 1;
+  const revision = previous + 1;
   await tx.execute({
     sql: `INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,?,?,?)
           ON CONFLICT(production_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
-    args: [productionId, body, revision, userId, now()],
+    args: [productionId, body, revision, by, now()],
   });
-  return { canvas: next, revision };
+  return revision;
+}
+
+/**
+ * The same fold inside a transaction the caller holds (a draft save carries
+ * its node edits to the canvas this way, `implied`). With `onlyIfShared`, a
+ * production whose canvas nobody has opened yet is left alone: the first Rig
+ * to open it brings the whole draft.
+ *
+ * `held`: cards a server operation made that this patch's removals would have
+ * taken off although it only implied them (heldRemoval). They stay, and the
+ * live room is told to hold them too (a re-assert, pushed like any server
+ * change), so a window that lost them to a stale view gets them back.
+ */
+export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false, options: { implied?: boolean } = {}) {
+  const saved = await readCanvasRow(tx, productionId);
+  if (!saved && onlyIfShared) return null;
+  const current = saved?.canvas ?? emptyTeamCanvas();
+  const stamped = { ...patch, at: canvasClock(current), author: userId, implied: options.implied || undefined };
+  const held = heldRemovals(current, stamped);
+  const next = applyTeamPatch(current, stamped);
+  const revision = await writeCanvasRow(tx, productionId, next, saved?.revision ?? 0, userId);
+  if (held.length) await logReassert(tx, productionId, next, held, revision);
+  return { canvas: next, revision, held };
+}
+
+/** Records that the server keeps these cards on the canvas: an outbox row the room takes like any server change. */
+async function logReassert(tx: Transaction, productionId: string, canvas: TeamCanvas, ids: string[], revision: number) {
+  await canvasOpsReady(tx);
+  const nodes = ids.map((id) => canvas.nodes[id]).filter(Boolean);
+  const used = referencedAssetIds(nodes, Object.values(canvas.assets));
+  await tx.execute(insertCanvasOp({
+    productionId, opId: `reassert:${revision}`, what: "reassert", author: "server", ops: [],
+    outcomes: [{ kind: "create", nodeIds: nodes.map((n) => n.id), held: "Kept: a save only implied taking these off." }],
+    changes: nodes.map((n) => ({ id: n.id, made: true, fields: [], before: {}, after: n as unknown as Record<string, unknown> })),
+    assets: Object.values(canvas.assets).filter((a) => used.has(a.id)), focus: null, revision,
+    push: collabConfigured() ? "pending" : "none",
+  }));
 }

@@ -1,23 +1,20 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { SKILL_PACKS, SKILLS_REPO } from "@/lib/shell/skills";
 import { useShell } from "@/lib/shell/state";
 import {
-  CLIENTS, DEFAULT_CEILING, STATUS_LABEL, ceilingShare, createReachMemory, mcpEndpoint, mcpTools, parseTokens, reachConnection, reachRows, reachStateFrom, reachSummary, readCeiling, setupGuide, tokenBody, tokenFacts, usable,
-  type ApiToken, type ClientId, type ReachOpen, type ReachRow, type ReachState, type TokenUnit, type ToolsTab,
+  CLIENTS, DEFAULT_CEILING, STATUS_LABEL, ceilingShare, mcpEndpoint, mcpTools, parseTokens, reachRows, readCeiling, setupGuide, tokenBody, tokenFacts,
+  type ApiToken, type ClientId, type ReachOpen, type ReachRow, type TokenUnit, type ToolsTab,
 } from "@/lib/shell/tools-connections";
-import { markConnectedCapability, settleConnectedCapability, useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useWorkspace } from "@/lib/workspace/state";
 
 /**
  * Atomik › Tools & connections (it replaced Atomik › Skills). Two tabs:
- *  - What Atomik can do: Particl's own reach, then the connected account's,
- *    each with its live status (owner only; a free tools/list read) and an
- *    Open that goes where it runs.
+ *  - What Atomik can do: Particl's own reach, each with an Open that goes
+ *    where it runs. Atomik works with API-key and direct engines only, so
+ *    nothing here reaches a signed-in account.
  *  - Claude & ChatGPT: Particl's own MCP server — make or revoke a token,
- *    copy the setup for a client, see the tools it gets; and the public skill
- *    packs the old page listed, with the same install commands and links.
+ *    copy the setup for a client, see the tools it gets.
  * Nothing here generates or spends. A new token's secret lives only in this
  * component's state: shown once, filled into the setup, never stored.
  */
@@ -25,12 +22,7 @@ const noop = () => () => {};
 const readOrigin = () => window.location.origin;
 const serverOrigin = () => "";
 
-/* One reach answer per workspace scope for a minute, so moving between pages
-   does not spend the owner's discovery allowance (six a minute, shared with
-   Workspace › Engines), and only while the connection it was read under
-   stands (lib/shell/tools-connections › createReachMemory). The tab is kept
-   the same way while the page is left. */
-const reachMemory = createReachMemory();
+/* The tab is kept while the page is left. */
 let lastTab: ToolsTab = "reach";
 
 const TABS: { id: ToolsTab; label: string }[] = [
@@ -72,78 +64,14 @@ export function ToolsView() {
 
 function Reach({ onTab }: { onTab: (tab: ToolsTab) => void }) {
   const shell = useShell();
-  /* Who owns the workspace, which scope this is and the connection's revision come from the capability every
-     surface shares (a member never asks). Discovery's own reply carries the connection, so nothing else is read. */
-  const { owner, scope, revision } = useConnectedCapability(undefined, { read: false });
-  const scoped = useScopedFetch(scope || null);
-  /* What is on screen, and for which scope and connection: an answer from another workspace, or from before a
-     connect, reconnect or disconnect, is not this page's. An owner reuses a check under a minute old. */
-  const [shown, setShown] = useState<{ scope: string; revision: number; state: ReachState } | null>(() => {
-    const kept = owner ? reachMemory.recall(scope, revision) : null;
-    return kept ? { scope, revision, state: kept } : null;
-  });
-  const current = shown && shown.scope === scope && shown.revision === revision ? shown.state : null;
-  const state: ReachState = !owner ? { kind: "owner-only" } : current ?? { kind: "checking" };
-  const answered = current !== null;
-  const live = useRef(true);
-  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
-
-  const check = useCallback(async () => {
-    if (!owner) return;
-    /* Where the connection stands before the request; the check supersedes any still in flight for this scope. */
-    const ticket = reachMemory.begin(scope, markConnectedCapability(scope) ?? 0);
-    if (live.current) setShown({ scope: ticket.scope, revision: ticket.revision, state: { kind: "checking" } });
-    let next: ReachState;
-    try {
-      const response = await scoped("/api/higgsfield/consumer/capabilities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ view: "reach" }) });
-      next = reachStateFrom(response.status, await response.json().catch(() => null));
-    } catch {
-      next = { kind: "error", message: "The connected account could not be checked. Try again, or open Workspace › Engines." };
-    }
-    /* A reply that set out before a connect, reconnect or disconnect, or before a newer check, lands on nothing:
-       not shown, not kept, and the newer check still answers. A current one shares what it says of the connection. */
-    if (!reachMemory.land(ticket, markConnectedCapability(ticket.scope) ?? 0, next)) return;
-    const connection = reachConnection(next);
-    if (connection) settleConnectedCapability(ticket.scope, connection, ticket.revision);
-    if (live.current) setShown({ scope: ticket.scope, revision: ticket.revision, state: next });
-  }, [owner, scoped, scope]);
-
-  /* One automatic check on arrival, and again when the connection changes under the page, unless an answer
-     for this scope and connection is under a minute old; "Check again" runs it on purpose. */
-  useEffect(() => {
-    if (!owner || answered) return;
-    const timer = setTimeout(() => {
-      const kept = reachMemory.recall(scope, revision);
-      if (kept) setShown({ scope, revision, state: kept });
-      else void check();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [owner, answered, scope, revision, check]);
-
-  const rows = reachRows(state);
+  const rows = reachRows();
   const open = (target: ReachOpen) => ("gen" in target ? shell.goGen() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
-  const checkedAt = state.kind === "checked" ? new Date(state.checkedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
   return (
     <>
       <p className="tc-intro">What Atomik reaches today, and where each one runs. Open goes straight there.</p>
       <section className="tc-card" aria-labelledby="tc-built-in" data-testid="reach-particl">
         <div className="tc-head"><h2 className="tc-title" id="tc-built-in">Built into Particl</h2></div>
-        {rows.filter((r) => r.group === "particl").map((row) => <ReachLine key={row.id} row={row} onOpen={open} />)}
-      </section>
-      <section className="tc-card" aria-labelledby="tc-connected" data-testid="reach-connected" aria-busy={state.kind === "checking"}>
-        <div className="tc-head">
-          <h2 className="tc-title" id="tc-connected">Connected account</h2>
-          <span className="tc-summary" role="status" data-testid="reach-summary">{reachSummary(state)}{checkedAt ? ` · checked ${checkedAt}` : ""}</span>
-          <span className="gx-spacer" />
-          {owner ? (
-            <button type="button" className="gx-hbtn" disabled={state.kind === "checking"} onClick={() => void check()} data-testid="reach-check">{state.kind === "checking" ? "Checking…" : state.kind === "error" ? "Try again" : "Check again"}</button>
-          ) : null}
-          {owner && (state.kind === "connect" || state.kind === "error") ? (
-            <button type="button" className={state.kind === "connect" ? "gx-primary" : "gx-hbtn"} onClick={() => shell.goWorkspace("engines")} data-testid="reach-engines">Open Engines</button>
-          ) : null}
-        </div>
-        {state.kind === "checked" ? <p className="tc-note">Checked against the tools the account offers right now; a page that runs on one model checks that model when it opens.</p> : null}
-        {rows.filter((r) => r.group === "connected").map((row) => <ReachLine key={row.id} row={row} onOpen={open} />)}
+        {rows.map((row) => <ReachLine key={row.id} row={row} onOpen={open} />)}
       </section>
     </>
   );
@@ -159,7 +87,7 @@ function ReachLine({ row, onOpen }: { row: ReachRow; onOpen: (target: ReachOpen)
       </span>
       <span className="tc-side">
         <span className="tc-pill" data-status={row.status} data-testid="reach-status">{STATUS_LABEL[row.status]}</span>
-        {row.open && usable(row.status) ? <button type="button" className="gx-hbtn" onClick={() => onOpen(row.open!)} aria-label={`Open ${row.open.label}: ${row.label}`} data-testid="reach-open">{row.open.label}</button> : null}
+        {row.open ? <button type="button" className="gx-hbtn" onClick={() => onOpen(row.open!)} aria-label={`Open ${row.open.label}: ${row.label}`} data-testid="reach-open">{row.open.label}</button> : null}
       </span>
     </div>
   );
@@ -207,42 +135,7 @@ function Connect() {
           </div>
         ))}
       </section>
-      <SkillPacks />
     </>
-  );
-}
-
-/* The packs the old Skills page listed: same install command, same folder link. Atomik does not read them. */
-function SkillPacks() {
-  const { toast } = useWorkspace();
-  const [copied, setCopied] = useState<string | null>(null);
-  const copy = async (id: string, text: string) => {
-    try { await navigator.clipboard.writeText(text); setCopied(id); toast("Install command copied."); }
-    catch { toast("Copy didn’t work here. Select the command and copy it."); }
-  };
-  return (
-    <details className="tc-card tc-packs" data-testid="skill-packs">
-      <summary className="tc-head tc-summary-row">
-        <span className="tc-title">Skill packs for your own assistant</span>
-        <span className="tc-summary">{SKILL_PACKS.length} public packs</span>
-      </summary>
-      <p className="tc-note">These teach an assistant on your computer to use the connected account directly; Atomik doesn’t read them. Copy a command and run it where your assistant runs.</p>
-      {SKILL_PACKS.map((p) => (
-        <div className="tc-row" key={p.id} data-testid="skill-row">
-          <span className="tc-dot" data-status="built-in" aria-hidden="true" />
-          <span className="tc-text">
-            <span className="tc-name tc-mono">{p.id}</span>
-            <span className="cw-dim">{p.line}</span>
-            <code className="tc-cmd" title={p.install}>{p.install}</code>
-          </span>
-          <span className="tc-side">
-            <button type="button" className="gx-hbtn" onClick={() => void copy(p.id, p.install)} aria-label={`Copy the install command for ${p.id}`}>{copied === p.id ? "Copied" : "Copy"}</button>
-            <a className="gx-hbtn" href={p.href} target="_blank" rel="noreferrer" aria-label={`Open the ${p.id} folder`}>Open</a>
-          </span>
-        </div>
-      ))}
-      <div className="tc-foot"><a className="gx-hbtn" href={SKILLS_REPO} target="_blank" rel="noreferrer" title={SKILLS_REPO.replace("https://", "")} data-testid="skill-packs-all">All packs on GitHub</a></div>
-    </details>
   );
 }
 
@@ -455,8 +348,8 @@ export function ToolsInspector() {
   return (
     <div className="tc-insp" data-inspector-body="tools">
       <span className="tc-insp-title">Tools &amp; connections</span>
-      <span className="tc-insp-sub">Atomik Supercomputer</span>
-      <p className="tc-insp-note">Nothing on this page spends. Checking the connected account is a free read the owner runs. A token spends only when your assistant starts a take, and stops at its monthly ceiling; revoking one disables it, and nothing is erased.</p>
+      <span className="tc-insp-sub">Atomik Agent</span>
+      <p className="tc-insp-note">Nothing on this page spends. A token spends only when your assistant starts a take, and stops at its monthly ceiling; revoking one disables it, and nothing is erased.</p>
     </div>
   );
 }

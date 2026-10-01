@@ -9,7 +9,7 @@ import type { AtomikDependencies } from "../../lib/workbench/atomik-server";
 import { loadRouteModule } from "../helpers/vendorCostScan";
 
 /**
- * Atomik memory (Supercomputer's memory, built in Particl): entries scoped to
+ * Atomik memory, built in Particl: entries scoped to
  * their workspace and project, isolated between workspaces and projects,
  * archived never erased, kept only by a person, read into both planners small
  * and ranked — and never a word about wallets, plans or prices.

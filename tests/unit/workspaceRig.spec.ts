@@ -63,8 +63,8 @@ test("addShotNode appends a scene node below the graph and never overlaps it", (
 test("inputs, references and preview are resolved from the graph", () => {
   const p = fixture();
   expect(shotInputs(p, "s1")).toEqual([
-    expect.objectContaining({ id: "plate-node", name: "Dune plate", kind: "Media", version: "v1" }),
-    expect.objectContaining({ id: "clip-node", name: "Motion ref", kind: "Media", version: "v1" }),
+    expect.objectContaining({ id: "plate-node", name: "Dune plate", kind: "Ref", version: "v1" }),
+    expect.objectContaining({ id: "clip-node", name: "Motion ref", kind: "Ref", version: "v1" }),
     expect.objectContaining({ id: "note", name: "Director's note", kind: "Direction", version: "—", asset: null }),
   ]);
   expect(shotInputs(p, "missing")).toEqual([]);
@@ -123,7 +123,7 @@ test("versions merge filed takes with jobs in flight or failed, newest first", (
   expect([relativeAge(now - 1000, now), relativeAge(now - 3 * 86_400_000, now), relativeAge(null, now)]).toEqual(["just now", "3 d", ""]);
 });
 
-test("generation phase follows the real job; a failed render is shown as not billed", () => {
+test("generation phase follows the real job; only a confirmed zero charge is shown as not billed", () => {
   expect(generationPhase(null)).toMatchObject({ label: "Submitting", done: false });
   expect(generationPhase({ status: "queued" })).toMatchObject({ label: "Queued", tone: "blue", done: false });
   expect(generationPhase({ status: "held" })).toMatchObject({ label: "Held · needs credits", done: false });
@@ -132,6 +132,7 @@ test("generation phase follows the real job; a failed render is shown as not bil
   expect(generationPhase({ status: "running" })).toMatchObject({ label: "Rendering", done: false });
   expect(generationPhase({ status: "succeeded" })).toMatchObject({ label: "Complete", pct: 100, tone: "green", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 0 })).toMatchObject({ label: "Failed · not billed", tone: "red", done: true });
+  expect(generationPhase({ status: "failed" })).toMatchObject({ label: "Failed", done: true });
   expect(generationPhase({ status: "failed", creditsBilled: 12 })).toMatchObject({ label: "Failed", done: true });
 });
 
@@ -155,7 +156,8 @@ test("the dispatch gate sends only the price that was shown", () => {
 
 test("engine labels in messages become neutral names; other vendor names fall back", () => {
   expect(neutralCopy("Seedance 2.5 accepts at most 30 image references.")).toBe("Seedance 2.5 accepts at most 30 image references.");
-  expect(neutralCopy("Review a live Genjutsu quote before submitting this take.")).toBe("The engine could not take this request. Nothing was charged.");
+  /* The fallback never claims a charge it cannot see (idea 15). */
+  expect(neutralCopy("Review a live Genjutsu quote before submitting this take.")).toBe("The engine could not take this request.");
   expect(neutralCopy("Insufficient credits.", "x")).toBe("Insufficient credits.");
 });
 

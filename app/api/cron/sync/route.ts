@@ -22,6 +22,8 @@ import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
+import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
+import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -123,6 +125,17 @@ export async function GET(req: Request) {
               const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
               deferred ||= report.deferred;
             });
+            // Server-made Rig canvas changes the live room has not taken yet
+            // (free; the room only ever gets what the saved canvas holds).
+            await stage("canvas_pushes", () =>
+              drainCanvasPushes(null, { limit: 4, deadlineAt }),
+            );
+            // Atomik runs on Rig boards whose wake is due: a plan or a build
+            // a lost event left waiting, or one paused by the kill switch
+            // (free; a build never renders or spends).
+            await stage("rig_agents", () =>
+              drainRigAgentWakeups({ limit: 2, deadlineAt }),
+            );
             await stage("storage_sizes", () => backfillSizes(8));
             await stage("expired_uploads", async () => {
               const report = await cleanupExpiredUploads(5);

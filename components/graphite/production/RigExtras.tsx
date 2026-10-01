@@ -14,7 +14,7 @@ import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { shotEngines } from "@/lib/workspace/engines";
 import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
-import { shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
+import { inputKindText, shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { LibraryMore } from "../LibraryMore";
@@ -124,7 +124,7 @@ export function ShotInputs({ shot, locked }: { shot: RigShot; locked: boolean })
             <span className="pxw-insp-row-thumb pxw-insp-row-thumb--media" aria-hidden="true">{row.asset?.url && (row.asset.kind === "image" || row.asset.kind === "video") ? <LazyMedia url={row.asset.url} kind={row.asset.kind} alt="" name={row.asset.name} className="gx-lazy" /> : row.asset ? <span {...previewAttrs(assetPreview(row.asset))} className="pxw-insp-row-glyph">▤</span> : null}</span>
             <span className="pxw-insp-row-text">
               <span className="pxw-insp-row-name">{row.name}</span>
-              <span className="pxw-insp-row-kind">{first ? "First frame" : row.asset?.kind === "video" ? "Reference video" : row.asset ? "Reference image" : row.kind}</span>
+              <span className="pxw-insp-row-kind" data-ref-kind={row.refKind ?? undefined}>{inputKindText(row, first)}</span>
             </span>
             <span className="pxw-insp-row-actions">
               {row.asset?.kind === "image" ? <button type="button" className="pxw-link-button" disabled={locked} aria-pressed={first} onClick={() => setProblem(rig.apply((p) => setFirstFrame(p, shot.id, first ? null : row.asset!.id)))}>{first ? "Unmark first frame" : "Make first frame"}</button> : null}

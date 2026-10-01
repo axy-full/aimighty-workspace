@@ -15,6 +15,7 @@ function fixture() {
   let calls = 0,
     configured = true,
     failure: Error | null = null;
+  const asked: [string | undefined, string | undefined][] = [];
   const store: TenantStore = {
     workspace: { id: "workspace", deletedAt: null } as TenantStore["workspace"],
     user: {
@@ -63,8 +64,9 @@ function fixture() {
     "@/lib/higgsfieldMarketing": {
       MarketingError: ProviderError,
       MARKETING_CAPABILITIES: { maxImages: 16 },
-      listMarketingPresets: async (cursor?: string) => {
+      listMarketingPresets: async (cursor?: string, search?: string) => {
         calls++;
+        asked.push([cursor, search]);
         if (failure) throw failure;
         return { items: [], total: 0, cursor: cursor ?? null };
       },
@@ -80,6 +82,7 @@ function fixture() {
   );
   return {
     store,
+    asked,
     calls: () => calls,
     configure: (value: boolean) => {
       configured = value;
@@ -87,10 +90,10 @@ function fixture() {
     fail: () => {
       failure = new Error("PRIVATE token and provider payload");
     },
-    get: (scope?: string) =>
+    get: (scope?: string, query = "") =>
       runWithStore(store, () =>
         output.exports.GET(
-          new Request("http://localhost/api/higgsfield/marketing/presets", {
+          new Request(`http://localhost/api/higgsfield/marketing/presets${query}`, {
             headers: scope === undefined ? {} : { "X-Workbench-Scope": scope },
           }),
         ),
@@ -143,3 +146,13 @@ test("preset discovery permits scoped read tokens, never caches privately, and r
   expect(bad.status).toBe(503);
   expect(await bad.text()).not.toContain("PRIVATE");
 });
+
+test("preset discovery passes the search and the cursor on to the catalogue, and nothing else", async () => {
+  const route = fixture();
+  const scope = workbenchScopeFor("workspace", "owner");
+  expect((await route.get(scope)).status).toBe(200);
+  expect((await route.get(scope, "?search=packshot")).status).toBe(200);
+  expect((await route.get(scope, "?search=packshot&cursor=50&size=100&extra=1")).status).toBe(200);
+  expect(route.asked).toEqual([[undefined, undefined], [undefined, "packshot"], ["50", "packshot"]]);
+});
+

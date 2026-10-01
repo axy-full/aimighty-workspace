@@ -679,89 +679,8 @@ test("Setup: a failed read says so in plain words with Try again, is never asked
   expect(errors).toEqual([]);
 });
 
-test("Motion Transfer: runs in flight are read one at a time, in turn, each at the account's own pace and never inside its window, and nothing while the tab is hidden", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const VIRAL_DRAFT = "ws-viral-poll";
-  const A = "33333333-3333-4333-8333-00000000000a", B = "33333333-3333-4333-8333-00000000000b";
-  /* A asks for 30 s between reads, B for 15 s. B is the newer run, listed first. */
-  const HINT: Record<string, number> = { [A]: 30, [B]: 15 };
-  const running = (id: string, minutesAgo: number) => ({
-    id, draftId: VIRAL_DRAFT, status: "accepted", input: { variant: "motion-transfer", resolution: "720p", prompt: "", source: { uploadId: "up_src" }, references: [{ uploadId: "up_ref" }] },
-    workspaceId: WALLET, workspaceName: "Fixture wallet", quoteCredits: 22, creditUnit: "higgsfield_credits", quoteExpiresAt: 0,
-    createdAt: Date.now() - minutesAgo * MIN, providerJobId: `22222222-2222-4222-8222-00000000000${id.slice(-1)}`,
-  });
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  await mockProjects(page, { current: { ...newProject("Coastal light study"), id: VIRAL_DRAFT, productionProjectId: "prod-ws", shotMappings: {} } });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  const me = await page.request.get("/api/me").then((r) => r.json());
-  await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-  let release: () => void = () => undefined;
-  const listed = new Promise<void>((resolve) => { release = resolve; });
-  const asked: string[] = [];
-  const posts: Record<string, unknown>[] = [];
-  let listReads = 0;
-  await page.route("**/api/higgsfield/consumer/genjutsu**", async (route) => {
-    const req = route.request();
-    if (req.method() === "GET") {
-      listReads++;
-      await listed;
-      return route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: { resolutions: ["480p", "720p", "1080p"], minSeconds: 4, maxSeconds: 30, maxImages: 30, maxMediaBytes: 52428800 }, jobs: [running(A, 3), running(B, 2)], nextCursor: null } });
-    }
-    const body = req.postDataJSON() as { action: string; id?: string };
-    posts.push(body);
-    if (body.action !== "status" || !body.id) return route.fulfill({ status: 400, json: { error: "unexpected in this spec" } });
-    asked.push(body.id);
-    return route.fulfill({ json: { job: running(body.id, body.id === A ? 3 : 2), pollAfterSeconds: HINT[body.id] } });
-  });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await probe(page);
-  await page.clock.install();
-  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion`);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  await expect(page.getByTestId("viral-view")).toBeVisible();
-  await expect.poll(() => listReads).toBeGreaterThan(0);
-  await pauseClock(page);
-  await draw(page, 0.5);
-  release();
-  const rows = page.getByTestId("viral-recent").getByTestId("viral-run");
-  await expect(rows).toHaveCount(2);
-  await settled(page);
-  const seen = () => asked.length;
-
-  /* A tick (4 s) after the list: the first listed run; the other one tick after that — never two reads together. */
-  await nextRead(page, 4000, seen);
-  expect(asked).toEqual([B]);
-  await nextRead(page, 4000, seen);
-  expect(asked).toEqual([B, A]);
-  /* B asked for 15 s: it is read again after that and a half second, jittered upward only (17.05 s after its read,
-     13.05 s after A's) — and at the bottom of the jitter, 15.5 s: never inside its window. */
-  await draw(page, 0);
-  await nextRead(page, 13_050, seen);
-  expect(asked).toEqual([B, A, B]);
-  await draw(page, 0.5);
-  await nextRead(page, 15_500, seen);
-  /* A asked for 30 s: not read inside it, while B was read twice. */
-  expect(asked).toEqual([B, A, B, B]);
-
-  /* Hidden: neither run is asked about, however long; back: the read that fell due (A's turn) is made at once. */
-  await setHidden(page, true);
-  await page.clock.runFor(2 * MIN);
-  expect(await statusReads(page)).toHaveLength(4);
-  await setHidden(page, false);
-  expect(await statusReads(page)).toHaveLength(5);
-  await expect.poll(seen).toBe(5);
-  expect(asked).toEqual([B, A, B, B, A]);
-  await settled(page);
-  await expect(rows.first().getByTestId("viral-run-status")).toHaveText("Rendering");
-  expect(posts.every((p) => p.action === "status")).toBe(true);
-  oneAtATime(await statusReads(page));
-  await noOverflow(page);
-  await shoot(page, info.project.name, "viral-two-running", "viral-recent");
-  expect(errors).toEqual([]);
-});
+/* Motion Transfer no longer reads the connected account: Viral runs on Particl's API key and lists its takes
+   from the project's Library, collected by the key's own job reads (tests/hf-viral-real-runs-workbench.spec.ts). */
 
 test("Production re-edit: a failed read says so while it is checked again, and a re-edit that can no longer be read says where it goes and what it costs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -807,10 +726,10 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await expect(page.getByTestId("edit-render")).toBeDisabled();
   await shoot(page, info.project.name, "reedit-read-failed", "edit-checking");
 
-  /* The next read (the 3 s pace, doubled: 6 s) finds nothing on record: it stops, says where a finished one goes and that
-     a failed one costs nothing, and offers the price again. No read after that, and the re-edit was sent once. */
+  /* The next read (the 3 s pace, doubled: 6 s) finds nothing on record: it stops, says where a finished one goes — never
+     that a failed one cost nothing — and offers the price again. No read after that, and the re-edit was sent once. */
   await nextRead(page, 6000, seen);
-  await expect(page.getByTestId("edit-image").getByRole("alert")).toHaveText("This re-edit can no longer be checked from here. If it renders, it lands in the library; a failed render is not billed.");
+  await expect(page.getByTestId("edit-image").getByRole("alert")).toHaveText("This re-edit can no longer be checked from here. If it renders, it lands in the library.");
   await expect(checking).toBeHidden();
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
   await expect(page.getByTestId("edit-render")).toBeEnabled();

@@ -1,5 +1,7 @@
 # Claude Code prompt — paste this as the first message
 
+> **28 September 2026:** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Where this prompt says to build on or extend the Higgsfield consumer layer, the CLI or the skill packs, that part is retired.
+
 Read `design_handoff_particl_suites/README.md` in full before writing any code, then implement the redesign in this repository.
 
 ## What you are building

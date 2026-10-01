@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { failedChip } from "../errors";
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
@@ -63,6 +64,8 @@ import {
   type BatchTake, type TakeRead, type TakeView,
 } from "./take-batch";
 import { newBatchId } from "../variations";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { cinemaForSend } from "./cinema-vocabulary";
 import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig";
 import { shotPatch } from "./shots";
 import { useWorkspace } from "./state";
@@ -302,7 +305,8 @@ function referenceAsset(reference: ComposerReference): Asset {
 function connectedPhase(job: ConnectedJob | null): { label: string; pct: number; tone: "blue" | "green" | "red"; done: boolean } {
   if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
   if (job.status === "completed") return { label: "Complete", pct: 100, tone: "green", done: true };
-  if (job.status === "failed") return { label: "Failed · not billed", pct: 100, tone: "red", done: true };
+  /* Refunded or charged only once the account's own ledger names the job; just "Failed" until then. */
+  if (job.status === "failed") return { label: job.failureCode === "invalid_result" ? "Finished · not kept" : failedChip(job.failure), pct: 100, tone: "red", done: true };
   if (job.status === "accepted") return { label: "Rendering", pct: 50, tone: "blue", done: false };
   return { label: "Queued", pct: 10, tone: "blue", done: false };
 }
@@ -448,7 +452,9 @@ export function useComposer(options: {
   const shared = useConnectedCapability(scope, { read: wantsConnected });
   // A recalled connected preset must not strand a member behind a hidden switch.
   // Workspace settings receive a fresh quote before Generate can enable.
-  useEffect(() => { if (!shared.owner && state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [shared.owner, state.billing]);
+  /* Studio engines only: a signed-in account's catalogue is no longer offered to anyone (API-key and direct
+     engines only), so a composer that restores or is handed the account's source moves back to this workspace's. */
+  useEffect(() => { if (state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [state.billing]);
   const capability = useMemo<ConnectedCapability | null>(() => {
     if (!shared.owner) return { owner: false, connected: false, suspended };
     if (shared.status === "loading") return null;
@@ -486,9 +492,15 @@ export function useComposer(options: {
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
-  /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts). */
+  /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts).
+     Cinema Studio 4.0 takes its own documented controls instead (lib/workspace/cinema-vocabulary.ts): sent as its
+     parameters, never written into the words, and never in the price (its formula counts seconds and pixels only). */
   const compose = options.compose;
-  const sent = useMemo(() => (compose ? compose(state.prompt, state.shot, state.type) : { prompt: state.prompt, shotSpec: null }), [compose, state.prompt, state.shot, state.type]);
+  const cinemaModel = state.billing === "workspace" && model != null && isCinemaStudioModel(model.id);
+  const sent = useMemo(() => {
+    const words = compose ? compose(state.prompt, cinemaModel ? {} : state.shot, state.type) : { prompt: state.prompt, shotSpec: null };
+    return { ...words, cinema: cinemaModel ? cinemaForSend(state.cinema) : null };
+  }, [compose, state.prompt, state.shot, state.type, state.cinema, cinemaModel]);
 
   /* Sound as it is billed: the length held to the model's range, and the voice a line is read in — the one picked
      while this model has it, else the model's first (each speech model reads in its own vendor's voices). The picker,
@@ -610,6 +622,7 @@ export function useComposer(options: {
       ? { loading: catalogue === null, error: catalogue?.error ?? null }
       : { loading: engines.loading, error: engines.error },
     sentPrompt: connectedInput?.prompt,
+    soundReferences: state.references.filter((r) => r.kind === "audio").length,
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
@@ -793,7 +806,7 @@ export function useComposer(options: {
                   /* Every take of the batch goes in the words as sent: the film vocabulary written in, the setup as data. */
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
-                  batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec,
+                  batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
                 },
               };
           const outcome = await sendWorkspaceBatch({ scope, shown, count, storageId, request });
@@ -983,6 +996,7 @@ export function useComposer(options: {
                   references,
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
+                  cinema: now.sent.cinema,
                   ...(settings.draft ? { draft: true } : {}),
                 },
               },
