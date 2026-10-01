@@ -44,8 +44,10 @@ function footer(node: CanvasNode, shot: RigShot | undefined) {
   return { dot, label: node.role || nodeDef(node.type).role };
 }
 
-function Card({ node, kind, shot, asset, selected, wiring, onSelect, onWireFrom, onWireInto }: {
+function Card({ node, kind, shot, asset, selected, wiring, master, onSelect, onWireFrom, onWireInto }: {
   node: CanvasNode; kind: RefKind | null; shot: RigShot | undefined; asset: Asset | undefined; selected: boolean; wiring: boolean;
+  /** A locked master (its element is locked): the one source of truth for this character, place or product. */
+  master: boolean;
   onSelect: () => void; onWireFrom: () => void; onWireInto: () => void;
 }) {
   const def = nodeDef(node.type);
@@ -60,7 +62,7 @@ function Card({ node, kind, shot, asset, selected, wiring, onSelect, onWireFrom,
       {/* Every card is picked (and dragged) by its face: a shot into the shot Inspector, any other card into the Card Inspector. */}
       <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
       {/* A reference says what it is to the production (Cast, Environment, Element or Ref); any other card, its type. */}
-      <span className="pxw-graph-kicker">{kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}</span> : <span>{def.label.toUpperCase()}</span>}<span>{version}</span></span>
+      <span className="pxw-graph-kicker">{kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}{master ? <span className="pxw-graph-master"> · MASTER</span> : null}</span> : <span>{def.label.toUpperCase()}</span>}<span>{version}</span></span>
       {media ? <Media id={node.id} asset={asset} height={def.shape === "scene" ? 88 : 66} badge={isShot && selected} /> : null}
       <span className="pxw-graph-title">{node.title}</span>
       {grade ? (
@@ -421,6 +423,7 @@ export function RigGraph() {
             const node = byId.get(card.id)!;
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
             const kind = refKindOf(node, project);
+            const master = !!node.elementId && rig.masters.has(node.elementId);
             const def = nodeDef(node.type);
             const selected = card.id === selId && (state.selKind === "node" ? !shot : !!shot);
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
@@ -436,13 +439,14 @@ export function RigGraph() {
                 data-ctx={`node:${card.id}`}
                 data-shape={def.shape}
                 data-ref-kind={kind ?? undefined}
+                data-master={master ? "locked" : undefined}
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}
                 data-drop={dropOver === card.id || undefined}
                 data-moving={moving ? true : undefined}
                 data-peer={watcher ? watcher.name : undefined}
                 role="group"
-                aria-label={`${kind ? REF_KIND_LABELS[kind] : def.label}: ${node.title}`}
+                aria-label={`${kind ? REF_KIND_LABELS[kind] : def.label}${master ? " master" : ""}: ${node.title}`}
                 style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
                 onPointerDown={node.locked ? undefined : (e) => startDrag(card.id, e)}
                 onClickCapture={(e) => { if (justDragged.current) { justDragged.current = false; e.stopPropagation(); e.preventDefault(); } }}
@@ -458,6 +462,7 @@ export function RigGraph() {
                   asset={resolveAsset(node, nodes, assets)}
                   selected={selected}
                   wiring={!!wireFrom && wireFrom !== card.id}
+                  master={master}
                   onSelect={() => rig.select(node.id)}
                   onWireFrom={() => { setWireFrom(card.id); setMessage(null); }}
                   onWireInto={() => wireInto(card.id)}

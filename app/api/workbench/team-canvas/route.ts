@@ -5,8 +5,9 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
 import { collabConfigured } from "@/lib/collab";
+import { db } from "@/lib/db";
 import {
-  patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
+  masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
@@ -37,6 +38,7 @@ function failure(error: unknown) {
  * live room folds the canvas in when it moves. `head=1` answers only the revision and `server`:
  * the light check those windows make every few seconds. `agent=1` answers Atomik's run card:
  * whether building is switched on, and the newest run on this production.
+ * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
  */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
@@ -58,6 +60,7 @@ export const GET = withTenant(async (req: Request) => {
       revision: saved?.revision ?? 0,
       room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
       server,
+      locks: saved ? [...(await masterLocks(db(), saved.canvas))] : [],
     }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
@@ -78,7 +81,14 @@ export const PATCH = withTenant(async (req: Request) => {
     const saved = await patchTeamCanvas(productionId, patch, who.userId!);
     /* A card the server made that this edit only implied taking off stays: the live room is told to keep it. */
     if (saved.held.length) scheduleCanvasPush(productionId);
-    return Response.json({ revision: saved.revision }, { headers: NO_STORE });
+    /* Writes that would have changed a locked master did not land; the rest of the edit did. `held` says which,
+       with the card (or asset) as the canvas holds it, so the window puts it back. */
+    const held = saved.masterHolds.map((h) => ({
+      ...h,
+      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: saved.canvas.nodes[h.nodeId] } : {}),
+      ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
+    }));
+    return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
 

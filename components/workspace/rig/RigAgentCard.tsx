@@ -218,7 +218,7 @@ function Proposal({ run }: { run: RigAgentRunView }) {
   );
 }
 
-/** A build in progress: each step as it lands, with anything a person's edit held. */
+/** A build in progress: each step as it lands, with anything a person's edit or a locked master held. */
 function Steps({ run }: { run: RigAgentRunView }) {
   const build = run.steps.filter((s) => s.state !== "next");
   const done = build.filter((s) => s.state === "done").length;
@@ -227,9 +227,10 @@ function Steps({ run }: { run: RigAgentRunView }) {
       <p className="pxw-agent-line" role="status" data-testid="rig-agent-progress">Building · {done} of {build.length} {build.length === 1 ? "step" : "steps"}</p>
       <ol className="pxw-agent-steps" data-testid="rig-agent-steps">
         {build.map((s) => (
-          <li key={s.seq} data-state={s.state}><span aria-hidden="true">{s.state === "done" ? "✓" : "·"}</span><span>{s.label}</span></li>
+          <li key={s.seq} data-state={s.state} data-held={s.held.length ? "" : undefined}><span aria-hidden="true">{s.state === "done" ? "✓" : "·"}</span><span>{s.label}{s.held.length ? " · held" : ""}</span></li>
         ))}
       </ol>
+      {run.held.map((why) => <p key={why} className="pxw-agent-held" data-testid="rig-agent-held">Held · {why}</p>)}
     </>
   );
 }

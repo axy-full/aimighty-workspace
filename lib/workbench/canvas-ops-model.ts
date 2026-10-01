@@ -2,7 +2,7 @@ import { sameJson } from "./merge";
 import { arrangeGraph, canConnect } from "./node-graph";
 import { PROJECT_LIMITS } from "./project-limits";
 import type { Asset, CanvasNode } from "./studio";
-import { isAgentAuthor, orderedIds, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { isAgentAuthor, isLockedMaster, orderedIds, type MasterHold, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
 import { graphLayout } from "../workspace/rig-graph";
 
 /*
@@ -26,6 +26,14 @@ import { graphLayout } from "../workspace/rig-graph";
  * the card moves to the canvas's own record of cards taken off, whole, and
  * nothing is erased. A card another card still takes an input from stays, so
  * a removal never leaves a teammate's card wired to nothing.
+ *
+ * A locked master (a reference card whose element is locked: `masters`, from
+ * the elements table) stays as it is, whoever asks: it is never taken off, a
+ * card an operation makes never takes a locked element (nor a lock record:
+ * only the lock writes one), and Atomik never takes a master out of a card it
+ * feeds. Each is held, with the reason, so the run card can say so. The patch
+ * is then folded in through the master guard (team-canvas-model guardMasters)
+ * all the same.
  */
 
 /**
@@ -59,6 +67,24 @@ export type NodeChange = { id: string; made: boolean; removed?: boolean; fields:
 /** Why a card another card still takes an input from is not taken off. */
 export const IN_USE = "Another card still takes an input from this one, so it stays on the board.";
 
+/** A card's name as a held reason gives it. */
+const cardName = (node: Pick<CanvasNode, "title"> | undefined) => {
+  const title = (node?.title ?? "").replace(/\s+/g, " ").trim();
+  return !title ? "A card" : title.length > 80 ? `${title.slice(0, 79)}…` : title;
+};
+
+/** Why a locked master stays as it is, in the words the run card shows. */
+export const MASTER_HELD = {
+  /** A master is never taken off the board, whoever asks. */
+  stays: (master: string) => `${master} is a locked master, so it stays on the board.`,
+  /** Atomik never takes a master out of a card it feeds. */
+  wired: (master: string, into: string) => `${master} is a locked master, so it stays wired into ${into}.`,
+  /** A card an operation makes never stands for a locked element: only a lock makes a master. */
+  claim: (card: string) => `${card} was placed as a card of its own: a new card never takes a locked master's element.`,
+  /** Anything else the master guard held as the change was folded in. */
+  kept: "A locked master stays as it is, so part of this change did not land.",
+};
+
 export type CanvasOpsPlan = {
   /** The batch as one team canvas patch (no `at`: the server's clock stamps it). */
   patch: Omit<TeamPatch, "at">;
@@ -72,7 +98,13 @@ export const PERSON_WINS = "Someone else made or last changed this card, so Atom
 const MIN = -10_000, MAX = 20_000;
 const clamp = (v: number) => Math.min(MAX, Math.max(MIN, Math.round(v)));
 
-export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], author: string): CanvasOpsPlan {
+/**
+ * `masters`: the locked elements, as the elements table has them (lib/workbench/team-canvas.ts masterLocks). With no
+ * table to ask, a card carrying a lock record counts as a master: the rule fails closed, as the guard's does.
+ */
+export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], author: string, masters?: ReadonlySet<string>): CanvasOpsPlan {
+  const guard = masters ? { locks: masters } : undefined;
+  const isMaster = (node: CanvasNode | undefined) => !!node && isLockedMaster(node, guard);
   const nodes = new Map(Object.entries(canvas.nodes));
   const order = orderedIds(canvas);
   const made = new Set<string>();
@@ -125,14 +157,18 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
       if (canvas.removed[id] || taken.has(id)) { outcomes.push({ kind: op.kind, nodeIds: [], held: "That card was taken off the canvas; only a person can put it back." }); continue; }
       if (nodes.size >= PROJECT_LIMITS.nodes) { outcomes.push({ kind: op.kind, nodeIds: [], held: `A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} cards.` }); continue; }
       /* A made card starts with no inputs: the ones it names are wired by the graph's rules, like any wire. It never
-         arrives approved: approving stays a person's. */
-      const { status, ...card } = op.node;
+         arrives approved: approving stays a person's. Nor does it arrive a master: it never takes a locked element, and
+         never a lock record (only the lock writes one). */
+      const { status, master, ...card } = op.node;
+      const claims = master !== undefined || (!!card.elementId && !!guard?.locks.has(card.elementId));
+      if (card.elementId && guard?.locks.has(card.elementId)) delete card.elementId;
       nodes.set(id, { ...card, ...(status && status !== "approved" ? { status } : {}), linked: [], x: clamp(op.node.x), y: clamp(op.node.y) });
       made.add(id);
       order.push(id);
       last.focus = id;
       for (const asset of op.assets ?? []) if (!canvas.assets[asset.id]) assets.set(asset.id, asset);
       outcomes.push({ kind: op.kind, nodeIds: [id] });
+      if (claims) outcomes.push({ kind: op.kind, nodeIds: [], held: MASTER_HELD.claim(cardName(card)), card: id });
       for (const from of op.node.linked) {
         const wired = wire(from, id);
         if (wired.held) outcomes.push(wired);
@@ -150,6 +186,9 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
       if (!target) { outcomes.push({ kind: op.kind, nodeIds: [], held: canvas.removed[op.to] || taken.has(op.to) ? "That card was taken off the canvas." : "That card is not on the canvas." }); continue; }
       if (!target.linked.includes(op.from)) { outcomes.push({ kind: op.kind, nodeIds: [] }); continue; }
       if (target.locked) { outcomes.push({ kind: op.kind, nodeIds: [], held: "Unlock this node before changing its inputs." }); continue; }
+      /* Atomik never takes a locked master out of a card it feeds: the card keeps the master it uses. */
+      const source = nodes.get(op.from);
+      if (agent && isMaster(source)) { outcomes.push({ kind: op.kind, nodeIds: [], held: MASTER_HELD.wired(cardName(source), cardName(target)), card: op.from }); continue; }
       const next = { ...target, linked: target.linked.filter((id) => id !== op.from) } as CanvasNode;
       if (next.activeInput === op.from) delete next.activeInput;
       touch(op.to, next, ["linked", "activeInput"]);
@@ -161,6 +200,10 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
       for (const id of new Set(op.nodeIds)) {
         /* Already off (a removal arriving twice, or a person took it off first): nothing to do. */
         if (!nodes.has(id) && (canvas.removed[id] || taken.has(id))) continue;
+        /* A locked master never comes off, whoever asks — even one the run made itself — and so it is still there when
+           the cards it takes an input from are weighed below: they stay with it. */
+        const live = nodes.get(id);
+        if (isMaster(live)) { held.push({ kind: op.kind, nodeIds: [], held: MASTER_HELD.stays(cardName(live)), card: id }); continue; }
         const found = editable(id);
         if ("held" in found) held.push({ kind: op.kind, nodeIds: [], held: found.held, card: id });
         else going.add(id);
@@ -248,6 +291,57 @@ export function planCanvasOps(canvas: TeamCanvas, ops: readonly CanvasOp[], auth
 export function focusPoint(nodes: readonly CanvasNode[], id: string): { x: number; y: number } | null {
   const card = graphLayout(nodes).cards.find((c) => c.id === id);
   return card ? { x: card.left + 24, y: card.top + 18 } : null;
+}
+
+/**
+ * The changes a batch makes, less the writes the master guard held
+ * (team-canvas-model guardMasters): what lands is what is recorded and pushed
+ * to the live room. A card made keeps everything but the held fields (it is
+ * never tied to a locked element); a changed card keeps only its fields that
+ * landed, and a change left with none is dropped; a removal the guard held
+ * never happened, so the room never takes that card off either.
+ */
+export function withoutHeld(changes: NodeChange[], held: readonly MasterHold[]): NodeChange[] {
+  const byNode = new Map<string, Set<string>>();
+  const kept = new Set<string>();
+  for (const h of held) {
+    if (!h.nodeId) continue;
+    if (h.removal) kept.add(h.nodeId);
+    else byNode.set(h.nodeId, new Set([...(byNode.get(h.nodeId) ?? []), ...h.fields]));
+  }
+  if (!byNode.size && !kept.size) return changes;
+  return changes.flatMap((change) => {
+    if (change.removed) return kept.has(change.id) ? [] : [change];
+    const keys = byNode.get(change.id);
+    if (!keys) return [change];
+    if (change.made) {
+      const after = { ...change.after };
+      for (const key of keys) delete after[key];
+      return [{ ...change, after }];
+    }
+    const fields = change.fields.filter((key) => !keys.has(key));
+    if (!fields.length) return [];
+    const only = (values: Record<string, unknown>) => Object.fromEntries(Object.entries(values).filter(([key]) => fields.includes(key)));
+    return [{ ...change, fields, before: only(change.before), after: only(change.after) }];
+  });
+}
+
+/**
+ * The outcomes of a batch, true to what the master guard held as it was folded
+ * in. planCanvasOps already holds what it knows of (a master's removal, Atomik
+ * taking one out of a card, a made card's claim), so this changes nothing
+ * unless the guard held more: then a removal it held is no longer counted as
+ * done, and each hold is an outcome of its own, so the run card says so.
+ */
+export function heldOutcomes(outcomes: OpOutcome[], held: readonly MasterHold[], canvas: Pick<TeamCanvas, "nodes">): OpOutcome[] {
+  if (!held.length) return outcomes;
+  const kept = new Set(held.flatMap((h) => (h.removal && h.nodeId ? [h.nodeId] : [])));
+  const out = outcomes.map((o) => (o.kind === "remove" && o.nodeIds.some((id) => kept.has(id)) ? { ...o, nodeIds: o.nodeIds.filter((id) => !kept.has(id)) } : o));
+  for (const h of held)
+    out.push(h.removal && h.nodeId
+      ? { kind: "remove", nodeIds: [], held: MASTER_HELD.stays(cardName(canvas.nodes[h.nodeId])), card: h.nodeId }
+      : { kind: "set", nodeIds: [], held: MASTER_HELD.kept, ...(h.nodeId ? { card: h.nodeId } : {}) });
+  return out;
 }
 
 /**

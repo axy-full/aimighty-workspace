@@ -148,7 +148,9 @@ export function cardVersions(project: Project, node: CanvasNode): CardVersionRow
   const rows: CardVersionRow[] = source
     ? sourceLine(assets, source).map((a) => ({ id: a.id, v: `v${a.version}`, label: a.id === source.id ? `Current · ${a.name}` : a.name, meta: ASSET_KIND_WORD[a.kind] ?? "File", current: a.id === source.id, saved: false }))
     : [];
-  for (const saved of [...(node.versions ?? [])].reverse()) rows.push({ id: saved.id, v: "Saved", label: saved.label, meta: savedDay(saved.savedAt), current: false, saved: true });
+  /* A saved version that is already in the source's line (the original a cut-out was made from) is listed once, there. */
+  const listed = new Set(rows.map((row) => row.id));
+  for (const saved of [...(node.versions ?? [])].reverse()) if (!saved.assetId || !listed.has(saved.assetId)) rows.push({ id: saved.id, v: "Saved", label: saved.label, meta: savedDay(saved.savedAt), current: false, saved: true });
   return rows;
 }
 

@@ -76,18 +76,20 @@ export function FlowPage() {
         if (!node) return null;
         /* A reference reads as its kind (Cast, Environment, Element or Ref); any other card, as its type. */
         const label = cardLabel(node, project);
+        /* A locked master says so: its element is locked (the server's answer). */
+        const master = !!node.elementId && rig.masters.has(node.elementId);
         const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
         const asset = resolveAsset(node, nodes, assets);
         const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
         const text = shot ? shotNote(node) : (node.text ?? "").trim();
         const f = footer(node, shot);
         return (
-          <div className="pxm-flow-step" key={step.id} data-node-id={step.id} data-scene={step.scene ? "" : undefined}>
+          <div className="pxm-flow-step" key={step.id} data-node-id={step.id} data-scene={step.scene ? "" : undefined} data-master={master ? "locked" : undefined}>
             {step.wire ? <span className="pxm-flow-wire" data-wire={step.wire} aria-hidden="true" /> : null}
             <span className="pxm-flow-pin" data-scene={step.scene ? "" : undefined} aria-hidden="true" />
-            <div className="pxm-flow-card" role="group" aria-label={`${label}: ${node.title}`}>
+            <div className="pxm-flow-card" role="group" aria-label={`${label}${master ? " master" : ""}: ${node.title}`}>
               <div className="pxm-flow-kicker">
-                <span data-functional-label="">{label.toUpperCase()}</span>
+                <span data-functional-label="">{label.toUpperCase()}{master ? " · MASTER" : ""}</span>
                 <span data-functional-label="">{version}</span>
               </div>
               <div className="pxm-flow-body">

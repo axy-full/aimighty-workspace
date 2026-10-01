@@ -361,6 +361,19 @@ retains both. Provider acceptance without durable handle persistence requires
 support investigation; automated recovery cannot safely invent the missing
 provider ID.
 
+### Rig master locks
+
+Every tenant snapshot includes `element_lock_events`, the append-only history of
+each element lock and unlock (the Rig's locked masters): who, when, whether
+Atomik did it, the reason an unlock gave, and a snapshot of what the lock froze
+(each attribute's current version with the sha256 of its source). The element
+row itself keeps only its last lock state, and `attribute_versions.sha256` keeps
+the hash recorded when a lock first froze that version. Nothing in either is paid
+or priced. Restore both with the elements they describe; never edit or delete
+history rows. A master whose source was changed or re-rendered after a restore is
+reported by the Rig's source check against the restored snapshot, not repaired
+by rewriting it.
+
 ### Higgsfield consumer jobs
 
 > **Sign-in retired 28 September 2026.** Particl uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10), so it no longer connects to a Higgsfield account. `higgsfield_consumer_jobs` stays in every snapshot as history and the dispositions below still describe restored rows, but a disposition that needs the old connection is reconciled from the saved receipt and the provider's own records, never by signing in again.
