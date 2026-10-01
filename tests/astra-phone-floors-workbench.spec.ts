@@ -221,9 +221,17 @@ async function openPanel(page: Page, host: Host, name: "Scene" | "Objects" | "Pr
   return workspace;
 }
 
-/** Every disclosure in the open panel, opened. */
+/** Every disclosure in the open panel, opened — one at a time, as each one opened leaves the closed list (and may show more). */
 async function openDetails(page: Page, host: Host) {
-  for (const summary of await page.locator(host.root).locator("details:not([open]) > summary").filter({ visible: true }).all()) await summary.click();
+  const closed = page.locator(host.root).locator("details:not([open]) > summary").filter({ visible: true });
+  for (let opened = 0; (await closed.count()) > 0; opened++) {
+    expect(opened, "a bounded number of disclosures").toBeLessThan(20);
+    /* This summary, not whichever is first once it opens. */
+    const summary = (await closed.first().elementHandle())!;
+    await summary.click();
+    await expect.poll(() => summary.evaluate((element) => (element.parentElement as HTMLDetailsElement).open)).toBe(true);
+    await summary.dispose();
+  }
 }
 
 async function walk(page: Page, host: Host, size: string) {
