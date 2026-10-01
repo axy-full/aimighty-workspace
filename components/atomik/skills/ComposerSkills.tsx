@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { commandIn, matchingSkills, typingCommand, type SkillView } from "@/lib/atomikSkillsText";
@@ -62,6 +62,25 @@ export function useComposerSkills(text: string) {
 
 export type ComposerSkillsState = ReturnType<typeof useComposerSkills>;
 
+/**
+ * The composer's last word on a skill ("Saved as /x…", "Planned…"), held
+ * outside any one composer and kept with the chat it is about: a checkpoint
+ * arriving folds the rail, which draws its composer afresh, and the word
+ * stays. Opening a skill or Save as skill, or sending a request, clears it.
+ */
+type Notice = { chatId: string; text: string } | null;
+let notice: Notice = null;
+const listeners = new Set<() => void>();
+const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+export function sayAboutChat(chatId: string | null, text: string | null) {
+  notice = chatId && text ? { chatId, text } : null;
+  for (const fn of listeners) fn();
+}
+export function useSkillNotice(chatId: string | null): string | null {
+  const current = useSyncExternalStore(subscribe, () => notice, () => null);
+  return current && chatId && current.chatId === chatId ? current.text : null;
+}
+
 /** "Save as skill" beside the composer's pickers, while a plan with steps is on screen. */
 export function SaveSkillButton({ onOpen, disabled }: { onOpen: () => void; disabled: boolean }) {
   return <button type="button" className={`${styles.button} ml-auto`} disabled={disabled} onClick={onOpen} data-testid="atomik-save-skill">Save as skill</button>;
@@ -74,21 +93,21 @@ export { SkillHints, skillOptionId };
  * estimate), and saving the chat's plan as one. Rendered beside the
  * composer's form, never inside it, so no submit here reaches its Send.
  */
-export function ComposerSkillDialogs({ api, running, saving, chat, onClose, onSaved }: {
+export function ComposerSkillDialogs({ api, running, saving, chat, onClose }: {
   api: SkillsApi; running: { skill: SkillView; values: Record<string, string> } | null; saving: string | null;
   /** The conversation on screen, whose plan a run joins; none, and the run starts one for this production. */
   chat: { id: string; projectId: string | null } | null;
-  onClose: () => void; onSaved: (said: string) => void;
+  onClose: () => void;
 }) {
   const { current: production } = useProject();
   const projectId = chat ? chat.projectId : production?.id ?? null;
   const planned = useCallback((run: { chatId: string }) => {
     /* The conversation shows the chat the plan was filed in; its first step is the checkpoint. */
     openAtomikChat({ chatId: run.chatId, projectId });
-    onSaved("Planned. Each step waits for its price and your Continue.");
+    sayAboutChat(run.chatId, "Planned. Each step waits for its price and your Continue.");
     onClose();
-  }, [projectId, onClose, onSaved]);
+  }, [projectId, onClose]);
   if (running) return <RunSkillDialog api={api} skill={running.skill} values={running.values} chatId={chat?.id ?? null} projectId={chat ? null : projectId} onPlanned={planned} onClose={onClose} />;
-  if (saving) return <SaveSkillDialog api={api} chatId={saving} onSaved={(skill) => { onSaved(`Saved as /${skill.slug}. Type / to run it again.`); onClose(); }} onClose={onClose} />;
+  if (saving) return <SaveSkillDialog api={api} chatId={saving} onSaved={(skill) => { sayAboutChat(saving, `Saved as /${skill.slug}. Type / to run it again.`); onClose(); }} onClose={onClose} />;
   return null;
 }

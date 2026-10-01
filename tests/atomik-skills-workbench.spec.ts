@@ -329,18 +329,22 @@ test("Skills page: an edit makes version 2 and version 1 stays readable; archive
   const w = await signedIn(page);
   const productionId = await production(page.request);
   const skill = await saveViaApi(page.request, w, await seedRun(w, productionId, w.me.id));
-  let failFirst = true;
+  /* The list can't be read until Try again: every read fails till then. (The view is drawn again once the project
+     is known, and reads again; a single failed read would be read over before it could be seen.) */
+  let unreadable = true;
   await page.route("**/api/atomik/skills**", (route) => {
-    if (failFirst && route.request().method() === "GET" && new URL(route.request().url()).pathname === "/api/atomik/skills" && !new URL(route.request().url()).searchParams.has("runs")) {
-      failFirst = false;
+    const url = new URL(route.request().url());
+    if (unreadable && route.request().method() === "GET" && url.pathname === "/api/atomik/skills" && !url.searchParams.has("runs"))
       return route.fulfill({ status: 500, json: { error: "Skills could not be loaded." } });
-    }
     return route.fallback();
   });
   await openSkillsPage(page, productionId);
   const view = page.getByTestId("skills-view");
+  /* Drawn for this project: its runs are offered for saving. */
+  await expect(view.getByTestId("skills-runs")).toContainText("Atomik runs in this project");
   await expect(view.getByTestId("skills-error")).toContainText("Skills could not be loaded.");
   await expect(view.getByTestId("skills-error-retry")).toHaveText("Try again");
+  unreadable = false;
   await view.getByTestId("skills-error-retry").click();
   const row = view.getByTestId("skill-row");
   await expect(row).toHaveCount(1);
@@ -489,7 +493,8 @@ test("the Skills page runs a skill with new words: planning is free, and its fir
   await form.getByTestId("skill-param-setting").fill("");
   await expect(form.getByTestId("skill-param-empty")).toHaveText("Fill in Setting.");
   await expect(form.getByTestId("skill-plan")).toBeDisabled();
-  await form.getByTestId("skill-param-setting").fill("a harbour wall at noon");
+  /* A value stands where its phrase stood, word for word: "beach at sunset" follows "a" in the skate pass. */
+  await form.getByTestId("skill-param-setting").fill("harbour wall at noon");
   await expect(form.getByTestId("skill-run-step")).toHaveCount(2);
   await expect(form.getByTestId("skill-run-price").first()).toHaveText(/^about \d+ cr$/);
   await floors(page, '[data-testid="skill-detail"]', phone);
@@ -507,7 +512,7 @@ test("the Skills page runs a skill with new words: planning is free, and its fir
   expect(generated).toEqual([]);
   const planned = (await books(w)).steps.filter((s) => s.status === "proposed");
   expect(planned.map((s) => s.prompt)).toEqual([
-    "Studio still of teal Canvas slip-ons on wet sand, a harbour wall at noon, warm backlight.",
+    "Studio still of teal Canvas slip-ons on wet sand, harbour wall at noon, warm backlight.",
     "A skater rolls along a harbour wall at noon in teal Canvas slip-ons, low wide tracking shot.",
   ]);
   await floors(page, '[data-testid="skill-detail"]', phone);
