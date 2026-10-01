@@ -2,10 +2,10 @@
  * The words of the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts).
  * Nobody runs the connected account any more — the hook
  * (./use-connected-capability) answers "member" for everyone and reads
- * nothing — and the pages that ran there (Business's Ads, Image ads and
- * Setup, and Viral, until their API-key and Particl versions replace them)
- * meet one calm card saying so, with the way to make the same kind of thing
- * on this workspace's credits.
+ * nothing — and the pages that ran there and have no replacement yet
+ * (Business's Ads and Setup, until Particl's own versions replace them) meet
+ * one calm card saying so, with the way to make the same kind of thing on this
+ * workspace's credits. Viral and Business › Image ads run on Particl's API key.
  * Workspace › Engines keeps its Disconnect and Set aside. Pure: the answer's
  * shape and the card's words.
  */
@@ -42,8 +42,8 @@ export const CAPABILITY_UNREADABLE = "The connected account could not be read.";
 /** The provider whose account the owner connected. */
 export const CONNECTED_PROVIDER = "Higgsfield";
 
-/** The surfaces that ran only on the connected account. */
-export type OwnerRunSurface = "business" | "viral" | "cast" | "workflows";
+/** The surfaces that ran only on the connected account. (Viral and Business › Image ads run on Particl's API key for everyone.) */
+export type OwnerRunSurface = "business" | "cast" | "workflows";
 /** The same kind of thing on this workspace's credits: Gen, on Studio engines, opened on one output. */
 export type OwnerRunAlternative = { type: "image" | "video"; what: string; action: string };
 export type OwnerRun = {
@@ -57,13 +57,8 @@ export type OwnerRun = {
 export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
   business: {
     eyebrow: "Business · Marketing Studio",
-    line: "Ads and image ads here ran on a signed-in Higgsfield account.",
+    line: "Ads here ran on a signed-in Higgsfield account.",
     alternative: { type: "image", what: "Product stills in Gen, on Studio engines", action: "Open Gen · Images" },
-  },
-  viral: {
-    eyebrow: "Viral · Genjutsu",
-    line: "Motion Transfer and Object Swap here ran on a signed-in Higgsfield account.",
-    alternative: { type: "video", what: "Video takes in Gen, on Studio engines", action: "Open Gen · Video" },
   },
   cast: {
     eyebrow: "Cast · Soul Cinema and Soul ID",
@@ -98,16 +93,20 @@ export function alternativePrice(label: string, price: { credits: number | null;
   return [label, `${price.credits.toLocaleString("en-US")} ${price.unit}`, price.detail || null].filter(Boolean).join(" · ");
 }
 
-/** The shell's suites that ran only on the connected account on every page: each page is the card, with no stage to run. */
-export const OWNER_RUN_SUITES: readonly string[] = ["viral"];
+/**
+ * The shell's suites that ran only on the connected account on every page: none now. Viral runs on Particl's API key
+ * for everyone, and so does Business › Image ads; Business's Ads and Setup are the retired card page by page, so the
+ * suite keeps its tabs.
+ */
+export const OWNER_RUN_SUITES: readonly string[] = [];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
 /**
  * The pages that ran only on the connected account, in a suite whose other pages everyone runs: everyone meets the
- * retired card there (the sign-in is retired), and no Run stage. Business's Ads, Image ads and Setup did; its own tools
- * (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no connected account, so the
- * suite keeps its tabs.
+ * retired card there (the sign-in is retired), and no Run stage. Business's Ads and Setup did; Image ads runs on
+ * Particl's API key, and its own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts)
+ * need no connected account, so the suite keeps its tabs.
  */
-export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "dtc", "setup"] };
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "setup"] };
 export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
   Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 

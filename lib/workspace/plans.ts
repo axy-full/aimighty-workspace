@@ -43,7 +43,7 @@ import type {
   WorkspaceSuite,
 } from "./plan-types";
 import { WORKSPACE_PLAN_PAGES } from "./plan-types";
-import { genjutsuSourceUrl, isGenjutsuTake } from "../genjutsuTypes";
+import { genjutsuSourceUrl, isGenjutsuModel, isGenjutsuTake } from "../genjutsuTypes";
 
 /** Same lifetime the product already gives a Particl quote (lib/quote.ts QUOTE_TTL_MS). */
 export const PARTICL_QUOTE_TTL_MS = 120_000;
@@ -1229,14 +1229,40 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
   }),
 
   history: plan("history", {
-    title: "Reconcile the results",
-    line: "Re-reading unsettled jobs needed the signed-in account. Results already kept stay in History.",
-    priceLabel: "Not runnable yet",
-    doneLine: () => "Results reconciled",
-    missingBackend:
-      "Reconciling a job re-read it on the signed-in account, which Atomik no longer uses. Takes rendered on the API-key engines settle through /api/jobs on their own.",
-    runnable: () => notYet("reconciling needed the signed-in account."),
-    steps: [step("Re-read unsettled jobs", "read", "", missing("reconciling needed the signed-in account"))],
+    title: "Settle the transforms",
+    line: "Reads this project's transform takes still rendering, so each one lands, fails or says why.",
+    priceLabel: "Free",
+    doneLine: (_ctx, io) => `${plural(Number(io.reconciled ?? 0), "take")} checked`,
+    runnable: needProject,
+    steps: [
+      step(
+        "Read the project's takes",
+        "read",
+        "",
+        run({ method: "GET", path: "/api/workbench/library" }, async (ctx) => {
+          const query = new URLSearchParams({ projectId: ctx.projectId ?? "", source: "generations", limit: "60" });
+          const { generations } = await call<{ generations: { id: string; model: string; status: string }[] }>(ctx, `/api/workbench/library?${query}`);
+          const transforms = generations.filter((take) => isGenjutsuModel(take.model));
+          const open = transforms.filter((take) => take.status === "queued" || take.status === "running");
+          return { detail: `${plural(transforms.length, "take")} · ${open.length} unsettled`, io: { open: open.map((take) => take.id) } };
+        }),
+      ),
+      step(
+        "Read each one still rendering",
+        "file",
+        "",
+        run({ method: "GET", path: "/api/jobs/[id]" }, async (ctx, io) => {
+          const ids = (io.open as string[]) ?? [];
+          const states: Record<string, number> = {};
+          for (const id of ids) {
+            const { generation } = await call<{ generation: { status: string } }>(ctx, `/api/jobs/${encodeURIComponent(id)}`);
+            states[generation.status] = (states[generation.status] ?? 0) + 1;
+          }
+          const summary = Object.entries(states).map(([state, n]) => `${n} ${state}`).join(" · ");
+          return { detail: summary || "nothing unsettled", io: { reconciled: ids.length } };
+        }),
+      ),
+    ],
   }),
 };
 

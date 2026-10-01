@@ -176,7 +176,8 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 /* ------------------------------------------------------------------ registry */
 
 /* Generate, Shorts and History ran only on the signed-in account, which Atomik no longer uses. */
-const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts", "history"].sort();
+/* History is not here: it reads the project's Library and each transform take still rendering (free). */
+const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts"].sort();
 const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
 
 test("the registry has exactly one plan for each of the 24 workspace pages", () => {
@@ -464,6 +465,18 @@ test("a transform take's source is a media or upload route for a safe id only, a
   expect(isGenjutsuTake({ model: "image-a", params: { task: "edit" } })).toBe(false);
 });
 
+test("Viral History's plan reads the project's Library and each transform take still rendering — never the connected account", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const engine = engineFor(context(fetcher));
+  engine.start("history");
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "history");
+  expect(engine.getState().run!.error).toBeNull();
+  /* Of the Library's takes (LIBRARY above), the one transform on the key still rendering is read; the failed one, the finished ones and the account's are not. */
+  expect(calls.map((call) => call.path.split("?")[0])).toEqual(["/api/workbench/library", "/api/jobs/motion-running"]);
+  expect(engine.getState().session[0].label).toBe("1 take checked");
+  expect(dispatches()).toHaveLength(0);
+});
+
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
   const { fetcher, dispatches } = backend({ price: () => 7 });
   const engine = engineFor(context(fetcher));
@@ -692,13 +705,12 @@ test("a failed planning run says what it was charged, never that it was not bill
   ]);
 });
 
-test("generate, shorts and history refuse with their reason and read or send nothing, even with the old account data present", async () => {
+test("generate and shorts refuse with their reason and read or send nothing, even with the old account data present", async () => {
   const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
   const reasons = {
     generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
     shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
-    history: "Not runnable yet — reconciling needed the signed-in account.",
   } as const;
   for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {
     expect(PLANS[page].runnable(context(fetcher)), page).toEqual({ ok: false, reason });

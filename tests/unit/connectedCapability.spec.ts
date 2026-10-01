@@ -27,7 +27,9 @@ test("the words everyone meets since the sign-in was retired: what ran on the ac
   /* The card and the routes say the same thing. */
   expect(`${ACCOUNT_RETIRED}. ${HISTORY_KEPT}`).toBe(SIGN_IN_RETIRED_MESSAGE);
   expect(OWNER_RUNS.business.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
-  expect(OWNER_RUNS.viral.alternative).toMatchObject({ type: "video", action: "Open Gen · Video" });
+  /* Viral runs on Particl's API key for everyone now: it has no retired card. Business's card is Ads' and Setup's. */
+  expect(Object.keys(OWNER_RUNS)).not.toContain("viral");
+  expect(OWNER_RUNS.business.line).toBe("Ads here ran on a signed-in Higgsfield account.");
   expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
   expect(OWNER_RUNS.cast.alternative?.what).toContain("Studio image engines");
   /* Dubbing, voice change and social cuts have no Studio engine that makes the same thing: no alternative is invented. */
@@ -41,20 +43,19 @@ test("the words everyone meets since the sign-in was retired: what ran on the ac
     expect(run.line).toMatch(/ ran on a signed-in Higgsfield account\.$/);
     for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b|\brun by\b|\bowner\b/i);
   }
-  /* Viral ran on the account on every page; Business only on Ads, Image ads and Setup — its own tools are everyone's. */
-  expect(OWNER_RUN_SUITES).toEqual(["viral"]);
-  expect(isOwnerRunSuite("viral")).toBe(true);
-  expect(isOwnerRunSuite("business") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
-  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "dtc", "setup"] });
-  for (const page of ["ads", "dtc", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
-  for (const page of OWN_PAGES) expect(isOwnerRunPage("business", page), page).toBe(false);
-  /* A whole owner-run suite is its own rule: the page map names only the pages of a suite others use too. */
-  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunSuite("viral") && !isOwnerRunPage("viral", page), page).toBe(true);
+  /* No suite ran on the account as a whole any more: Viral and Business › Image ads run on Particl's API key for everyone,
+     Business's own tools are everyone's, and the Business pages that ran on the account (Ads, Setup) are the retired card page by page. */
+  expect(OWNER_RUN_SUITES).toEqual([]);
+  expect(isOwnerRunSuite("business") || isOwnerRunSuite("viral") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
+  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "setup"] });
+  for (const page of ["ads", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
+  for (const page of ["dtc", ...OWN_PAGES]) expect(isOwnerRunPage("business", page), page).toBe(false);
+  for (const page of ["motion", "swap", "history"]) expect(isOwnerRunPage("viral", page), page).toBe(false);
   expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
   /* Every owner-run page names a page the suite really has. */
   for (const [suite, pages] of Object.entries(OWNER_RUN_PAGES)) for (const page of pages) expect(SHELL_SUITES.find((s) => s.id === suite)?.pages.some((p) => p.id === page), `${suite}/${page}`).toBe(true);
-  /* The state layer's suites behind them: Moleculr's and Subatomik's pages. */
-  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id) || OWNER_RUN_PAGES[suite.id]).map((suite) => suite.legacy).sort()).toEqual(["moleculr", "subatomik"]);
+  /* The state layer's suite behind the retired pages: Moleculr's (Business). Viral (Subatomik) runs on Particl's API key. */
+  expect(SHELL_SUITES.filter((suite) => OWNER_RUN_SUITES.includes(suite.id) || OWNER_RUN_PAGES[suite.id]).map((suite) => suite.legacy).sort()).toEqual(["moleculr"]);
 });
 
 test("the alternative is priced exactly as Gen's sheet prices it: the composer's own default engine, at the project's aspect, whole credits", () => {
@@ -98,10 +99,10 @@ test("the capability answers member for everyone, the owner included, and reads 
   expect(existsSync("lib/shell/use-connected-collector.ts")).toBe(false);
 });
 
-test("Gen's composer reads nothing of the account; Business and Viral decide ownership from the session, once; Engines never starts a sign-in", () => {
+test("Gen's composer reads nothing of the account; Business decides ownership from the session, once; Viral and Image ads read nothing of it; Engines never starts a sign-in", () => {
   const composer = readFileSync("lib/workspace/use-composer.ts", "utf8");
   expect(composer).not.toMatch(/useConnectedCapability|higgsfield-consumer|\/api\/higgsfield\/consumer|connected-collector/);
-  for (const file of ["lib/shell/use-business.ts", "lib/shell/use-viral.ts"]) {
+  for (const file of ["lib/shell/use-business.ts"]) {
     const source = readFileSync(file, "utf8");
     expect(source, file).not.toContain("/api/me");
     expect(source, file).toContain("useConnectedCapability");
@@ -112,6 +113,11 @@ test("Gen's composer reads nothing of the account; Business and Viral decide own
   expect(row).toContain("CONNECTION_ENDPOINT");
   expect(row).toContain('method: "DELETE"');
   expect(row).not.toMatch(/consumer\/connect"|consumerAuthorizeUrl|"Reconnect|Opening sign-in|window\.location\.assign/);
+  /* Viral and Business › Image ads read nothing of the connected account at all: they run on Particl's API key. */
+  for (const file of ["components/graphite/viral/ViralView.tsx", "lib/shell/viral.ts", "lib/shell/use-key-take.ts", "lib/shell/image-ads.ts", "lib/shell/use-marketing-presets.ts", "components/graphite/business/PresetPicker.tsx"]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).not.toMatch(/\/api\/higgsfield\/consumer\/|higgsfield-consumer\/|useConnectedCapability|use-business/);
+  }
 });
 
 /* ── Atomik › Tools & connections reaches no signed-in account ── */

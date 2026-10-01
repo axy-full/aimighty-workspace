@@ -1,7 +1,8 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject } from "../lib/workbench/studio";
+import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { newProject, type Project } from "../lib/workbench/studio";
 import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
@@ -382,3 +383,55 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
   expect(errors).toEqual([]);
 });
 
+const TAKE = `gen_${"d".repeat(40)}`;
+
+test("Business › a finished image ad's Open in Takes lands on that take, not on the newest one", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  const fixture: Project = { ...newProject("Coastal light study"), id: "ws-honest", productionProjectId: "prod-ws", shotMappings: {} };
+  await mockProjects(page, { current: fixture });
+  const now = Date.now();
+  const ad = generation({ id: TAKE, title: "Marble hero", kind: "image", model: "higgsfield/marketing-studio-image", provider: "higgsfield", createdAt: now - 1_000 });
+  /* The ad lands filed in the project; a newer take sits above it, so landing on the ad is not luck. */
+  await mockLibrary(page, {
+    uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" })],
+    generations: [generation({ id: "g_newer", title: "Evening pass", createdAt: now + 60_000 }), ad],
+  });
+  /* Image ads runs on Particl's API key: the quote, the one send and the take's read are the routes the composer uses (answered here, nothing billed). */
+  const sent: Record<string, unknown>[] = [];
+  const consumer: string[] = [];
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) consumer.push(`${request.method()} ${path}`); });
+  await page.route(/\/api\/generate\/quote$/, (route) => route.fulfill({ json: { estimatedCredits: 40, fingerprint: "f".repeat(64), price: 40, unit: "cr" } }));
+  await page.route(/\/api\/generate$/, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    sent.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ json: { id: TAKE, status: "running" } });
+  });
+  await page.route(new RegExp(`/api/jobs/${TAKE}(\\?.*)?$`), (route) => route.fulfill({ json: { generation: { ...ad, status: "succeeded", storedUrl: `/api/media/${TAKE}` } } }));
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/suites?suite=moleculr&page=marketing&sp=dtc");
+  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await hydrated(page.getByTestId("image-ad-prompt"));
+  await page.getByTestId("image-ad-prompt").fill("Bold hero shot on marble");
+  await expect(page.getByTestId("image-ad-generate")).toHaveText("Generate image · about 40 cr");
+  await page.getByTestId("image-ad-generate").click();
+  const done = page.getByTestId("image-ad-done");
+  await expect(done.getByTestId("image-ad-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ model: "higgsfield/marketing-studio-image", maxCredits: 40, quoteFingerprint: "f".repeat(64) });
+  const open = done.getByTestId("image-ad-done-open");
+  await expect(open).toHaveText("Open in Takes");
+  if (TOUCH.includes(info.project.name)) expect((await open.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await open.click();
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Marble hero");
+  expect(new URL(page.url()).searchParams.get("sel")).toBe(`take:generation:${TAKE}`);
+  await noSideScroll(page);
+  /* The shell's collector lists an owner's earlier account jobs on every page (the drain, not Image ads): that one read aside, nothing. */
+  expect(consumer.filter((call) => call !== "GET /api/higgsfield/consumer/generation"), "Image ads reads nothing of the connected account").toEqual([]);
+  expect(errors).toEqual([]);
+});
