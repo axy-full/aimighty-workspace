@@ -258,7 +258,8 @@ test("a member works in Business's own tools: the pages are there, the owner's c
   /* A phone keeps the Suites behind its context badge (app/phone-chrome.css). */
   await openSuitesMenu(page);
   await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
-  await expect(page.getByTestId("owner-badge-viral")).toBeVisible();
+  /* Nor on Viral's: it runs on Particl's API key for every member. */
+  await expect(page.getByTestId("owner-badge-viral")).toHaveCount(0);
   await closeSuitesMenu(page);
   await page.getByTestId("brand-name").fill("Northline");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Northline");

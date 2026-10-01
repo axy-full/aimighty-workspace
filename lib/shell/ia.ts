@@ -108,7 +108,7 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
     ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
-  /* Viral pages are the shell's own views (step 3) on the existing genjutsu-service. */
+  /* Viral pages are the shell's own views (step 3), run on Particl's API key through /api/generate (Genjutsu on the key). */
   own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
     ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
     ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
