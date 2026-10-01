@@ -32,3 +32,20 @@ export async function closeSuitesMenu(page: Page) {
     await expect(badge, "the badge says the menu is closed").toHaveAttribute("aria-expanded", "false", { timeout: 5_000 });
   }).toPass({ timeout: 45_000 });
 }
+
+/**
+ * Taps a suite's tab (Studio, Gen, Atomik…), on a phone through the menu, and
+ * checks the tap took: that tab is then the selected one. A reload that lands
+ * after the menu opened closes it again, and a tap made in that moment is
+ * lost, so a tap that did not take is made again from the menu. Tapping the
+ * suite already shown again adds no history entry (the shell writes the
+ * address only when it changes).
+ */
+export async function tapSuiteTab(page: Page, name: string) {
+  const tab = page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name });
+  await expect(async () => {
+    await openSuitesMenu(page);
+    await tab.click({ timeout: 5_000 });
+    await expect(tab, `${name} is the selected suite`).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
+}

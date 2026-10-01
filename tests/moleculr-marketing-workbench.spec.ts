@@ -4,6 +4,7 @@ import { newProject, type Asset, type Project } from "../lib/workbench/studio";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { projectSchema } from "../lib/workbench/studio-schema";
 import { legacyShell } from "./helpers/legacyShell";
+import { smallTargets } from "./phoneFloors";
 
 test("Moleculr discovers real preset IDs, saves selection and quotes ordered image references without submitting", async ({
   page,
@@ -213,9 +214,11 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
  * The preset catalogue is a read (GET /api/higgsfield/marketing/presets, on the
  * platform's key): when it fails the panel says why and offers Try again — the
  * read failures' word; "Retry" is a paid re-render — and Try again reads the
- * catalogue again. Nothing is sent but reads.
+ * catalogue again. On a phone Try again is a 44×44 target like any other.
+ * Nothing is sent but reads.
  */
-test("a preset catalogue that could not be read says so with Try again, and Try again reads it again", async ({ page }) => {
+test("a preset catalogue that could not be read says so with Try again, and Try again reads it again", async ({ page }, info) => {
+  const phone = ["workbench-360x640", "workbench-390x844", "workbench-844x390"].includes(info.project.name);
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
   const project: Project = {
@@ -254,6 +257,7 @@ test("a preset catalogue that could not be read says so with Try again, and Try 
   const panel = page.getByRole("region", { name: "Marketing Studio images" });
   const alert = panel.getByRole("alert");
   await expect(alert).toContainText("Marketing Studio presets are temporarily unavailable.");
+  if (phone) expect(await smallTargets(page, '[aria-label="Marketing Studio images"] .suite-alert'), "Try again under 44×44").toEqual([]);
   const again = alert.getByRole("button", { name: "Try again", exact: true });
   await expect(again).toBeVisible();
   await expect(panel.getByRole("button", { name: /retry/i })).toHaveCount(0);
