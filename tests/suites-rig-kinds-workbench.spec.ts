@@ -97,11 +97,12 @@ async function showCanvas(page: Page) {
 const node = (page: Page, id: string) => page.getByTestId("rig-graph").locator(`.pxw-graph-node[data-node-id="${id}"]`);
 
 /**
- * Picks a card on the canvas and opens its Card Inspector. On a phone the Inspector is a panel over the canvas: it is
- * closed to reach a card, and opened to read one. The same recovery as showCanvas: every step is retried together.
+ * Picks a card on the canvas and opens its Inspector: the Card Inspector, or a shot's own. On a phone the Inspector is
+ * a panel over the canvas: it is closed to reach a card, and opened to read one. The same recovery as showCanvas: every
+ * step is retried together.
  */
 async function pick(page: Page, id: string) {
-  const body = page.locator(`[data-inspector-body="node"][data-node-id="${id}"]`);
+  const body = page.locator(`[data-inspector-body="node"][data-node-id="${id}"], [data-inspector-body="shot"][data-shot-id="${id}"]`);
   await expect(async () => {
     if (await page.getByTestId("panel-scrim").isVisible()) await page.getByTestId("close-inspector").click({ timeout: 5_000 });
     await expect(page.getByTestId("panel-scrim")).toHaveCount(0, { timeout: 5_000 });
