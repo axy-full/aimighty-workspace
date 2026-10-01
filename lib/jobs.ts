@@ -30,7 +30,7 @@ import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
 import { restoreHiggsfieldGenerationReceipts, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { clearKeyChanged, KEY_GONE_END, KEY_GONE_MS } from "./higgsfieldKeyAlerts";
-import { POOL_MARK } from "./providerPool";
+import { POOL_MARK } from "./sharedKeyTerms";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
