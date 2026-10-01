@@ -91,7 +91,8 @@
  .popup {display:flex;width:100%;max-width:none;max-height:min(82dvh,calc(var(--app-visible-height,100dvh) - 24px));border-radius:18px 18px 0 0;background:var(--graphite-card);box-shadow:0 0 0 100vmax #0009;padding-bottom:env(safe-area-inset-bottom)}
  .popup::before {content:"";display:block;flex:none;width:36px;height:5px;margin:12px auto 0;border-radius:3px;background:var(--graphite-selected)}
  .heading {padding:14px 20px 12px;font-size:20px;letter-spacing:-.03em;font-weight:500}.heading>span:nth-child(2){margin-left:auto;font-size:11px;color:var(--graphite-muted)}
- .popup .mobileClose {display:grid;place-items:center;flex:none;width:32px;height:32px;color:var(--graphite-muted)}
+ /* A 44px target round the same 20px cross; the negative margin keeps the heading's row as it was. */
+ .popup .mobileClose {display:grid;place-items:center;flex:none;width:44px;height:44px;margin:-6px;color:var(--graphite-muted)}
  .search {margin:0 20px;min-height:44px}.search input{font-size:16px}
  .providers{margin:12px 20px 0}.providers button{min-height:36px}
  .list{padding:12px 20px 18px}.groupHeading{background:var(--graphite-card)}
@@ -99,4 +100,16 @@
  .footer{padding:13px 20px;font-size:12px}.effortList{padding:0 20px 20px}.effortOption{min-height:48px;font-size:14px}
  /* The phone floor: 12px text and 44px targets, in the trigger, its note and the sheet. */
  .providerMark,.effortNote,.groupHeading,.groupHeading>span:last-child,.heading>span:nth-child(2){font-size:12px}.providers button{min-height:44px}
+}
+
+/* The target floor on any touch screen, a phone on its side included: the triggers (a full-width one too) and the
+   search field itself are 44px tall, and a family filter as short as "All" is 44px wide. */
+@media (max-width: 767px), (pointer: coarse) {
+  .trigger, .trigger.compact { min-height: 44px; }
+  .search input { min-height: 44px; }
+  .providers button { min-width: 44px; }
+}
+/* A phone on its side is wider than the phone rules above, which already raise the filters and effort rows. */
+@media (min-width: 760px) and (pointer: coarse) {
+  .providers button, .effortOption { min-height: 44px; }
 }
