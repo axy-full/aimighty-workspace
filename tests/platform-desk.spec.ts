@@ -1,6 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@libsql/client";
 import { randomBytes } from "node:crypto";
 import { password, noSideScroll, signupInvite } from "./helpers/identityAdmin";
+import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 
 /* The platform owner's desk (/admin), at one desktop size. It has its own spec
    so that a CI shard compiling it is not also compiling every account page:
@@ -8,8 +10,8 @@ import { password, noSideScroll, signupInvite } from "./helpers/identityAdmin";
    ENGINE_MOCK server only; the server must run with SUPER_ADMIN_EMAIL set to
    the fixture address below (CI does). */
 
-test("the platform desk marks a deleted workspace and restores it; money stays off it until then", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "customer-1440x900", "the platform desk is a desktop console: one desktop size");
+/** Signed in as the platform owner, the one account the deployment names. */
+async function platformOwner(page: Page): Promise<{ id: string; workspace: { id: string } }> {
   const ownerEmail = "platform-owner@example.test";
   const login = await page.request.post("/api/auth/login", { data: { email: ownerEmail, password } });
   if (!login.ok()) {
@@ -23,6 +25,12 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
   // Only the deployment names the platform owner; the server under test must
   // run with SUPER_ADMIN_EMAIL set to this fixture address (CI does).
   expect(me.superAdmin, `start the server with SUPER_ADMIN_EMAIL=${ownerEmail}`).toBe(true);
+  return me;
+}
+
+test("the platform desk marks a deleted workspace and restores it; money stays off it until then", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "customer-1440x900", "the platform desk is a desktop console: one desktop size");
+  const me = await platformOwner(page);
   const name = `Closing ${randomBytes(4).toString("hex")}`;
   const created = await page.request.post("/api/workspaces", {
     headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
@@ -63,4 +71,41 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
     data: { name },
   });
   expect(again.ok(), await again.text()).toBe(true);
+});
+
+test("the platform desk reads the house workspace as never billed: no balance, nothing added, its spend at cost", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "customer-1440x900", "the platform desk is a desktop console: one desktop size");
+  const me = await platformOwner(page);
+  /* A deployment has its house workspace once its primary database has people (lib/platform.ts importLegacy): the row
+     is seeded as that import writes it, with one job its engines ran, metered at cost and billed nothing. */
+  const at = Date.now();
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await platform.execute({
+      sql: `INSERT OR IGNORE INTO workspaces (id, slug, name, db_url, db_token_enc, legacy, uses_platform_keys, owner_id, created_at, updated_at)
+            VALUES ('ws_legacy', 'house-desk', 'House', '(primary)', NULL, 1, 1, ?, ?, ?)`,
+      args: [me.id, at, at],
+    });
+    await platform.execute({
+      sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at)
+            VALUES(?,'ws_legacy','image','google','gemini-3.1-flash-image','succeeded',0.04,0,0,?,?)`,
+      args: [`house_desk_${randomBytes(4).toString("hex")}`, at, at],
+    });
+  } finally { platform.close(); }
+  /* It takes no credits and no allowance: refused before anything is written. */
+  for (const data of [{ grantCredits: 100 }, { allowanceUsd: 10 }]) {
+    const refused = await page.request.patch("/api/admin/workspaces/ws_legacy", { data });
+    expect(refused.status(), JSON.stringify(data)).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/never billed in credits/);
+  }
+  const desk = await page.request.get("/api/admin/invites").then((r) => r.json()) as { workspaces: { id: string }[] };
+  expect(desk.workspaces.find((w) => w.id === "ws_legacy")).toMatchObject({
+    house: true, credits: null, spend30: { atCost: true, billedCredits: 0, marginUsd: null },
+  });
+  await page.goto("/admin");
+  const row = page.locator(".steam").filter({ hasText: "HOUSE · NOT BILLED" });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByText(/ at cost$/)).toBeVisible();
+  await expect(row).not.toContainText(/ CR\b|margin/);
+  expect(await noSideScroll(page)).toBe(true);
 });
