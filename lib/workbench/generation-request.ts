@@ -16,7 +16,11 @@ export type GenerationBodyInput = {
   prompt: string;
   kind: "image" | "video";
   model: { id: string; marketing?: boolean; soulIdentity?: boolean };
-  /** Where the take files. No shot: it files to the project alone (Business › Image ads, Viral), as a take from the Library does. */
+  /**
+   * Where the take files. The stages that file to no shot (Cast, Environment, Storyboards, Edit) send
+   * `shotId: ""`, as they always have; no `shotId` at all files to the project alone (Business › Image ads,
+   * Viral), as a take from the Library does.
+   */
   mapping: { shotId?: string; productionProjectId: string };
   ratio: string;
   resolution: string;
@@ -58,7 +62,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     prompt: input.prompt,
     model: model.id,
     projectId: input.mapping.productionProjectId,
-    ...(input.mapping.shotId ? { shotId: input.mapping.shotId } : {}),
+    ...(input.mapping.shotId === undefined ? {} : { shotId: input.mapping.shotId }),
     ratio: input.ratio,
     resolution: input.resolution,
     ...(model.marketing ? {} : { duration: input.duration }),
