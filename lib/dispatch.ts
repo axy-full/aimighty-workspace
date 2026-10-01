@@ -27,7 +27,16 @@ export const EVENTS = {
   development: "workbench/development.requested",
   /** A funded dubbing project to submit, ask after, or collect (lib/dubbing.ts). */
   dubbing: "audio/dubbing.requested",
+  /** An Atomik run on a Rig board to plan or build (lib/workbench/rig-agent.ts). Free: nothing in it is paid. */
+  rigAgent: "rig/agent.run.requested",
 } as const;
+
+/**
+ * Inngest only, never a worker event: a stopped Atomik run cancels its
+ * function at its next step. The run's own state stops it anyway; this only
+ * spares Inngest the wait.
+ */
+export const RIG_AGENT_STOPPED = "rig/agent.run.stopped";
 
 export type WorkerEventName = (typeof EVENTS)[keyof typeof EVENTS];
 export const WORKER_EVENT_NAMES = [
@@ -36,6 +45,7 @@ export const WORKER_EVENT_NAMES = [
   EVENTS.astraRender,
   EVENTS.development,
   EVENTS.dubbing,
+  EVENTS.rigAgent,
 ] as const satisfies readonly WorkerEventName[];
 
 export type WorkerEvent = {
