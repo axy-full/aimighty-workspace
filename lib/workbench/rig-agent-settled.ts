@@ -21,6 +21,21 @@ async function hasRuns(): Promise<boolean> {
   return exists;
 }
 
+/**
+ * A check of a take finished and was stored (lib/workbench/development-server.ts): a run whose check
+ * of that take waits for a person to check the clip on the board reads it now (free), and is woken.
+ */
+export async function rigCheckStored(takeId: string): Promise<void> {
+  if (!(await hasRuns())) return;
+  const waiting = (await db().execute({
+    sql: "SELECT run_id FROM rig_agent_steps WHERE purpose='verify' AND state='paused' AND pause='check' AND verdict IS NULL AND json_extract(request,'$.take')=? LIMIT 8",
+    args: [takeId],
+  }).catch(() => ({ rows: [] }))).rows;
+  if (!waiting.length) return;
+  const { rigCheckLanded } = await import("./rig-agent");
+  for (const row of waiting) await rigCheckLanded(String(row.run_id), takeId);
+}
+
 export async function rigRenderSettled(genId: string): Promise<void> {
   if (!(await hasRuns())) return;
   const { stepOfJob, getRun } = await import("./rig-agent-store");

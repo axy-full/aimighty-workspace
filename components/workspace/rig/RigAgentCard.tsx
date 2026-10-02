@@ -1,9 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
-import type { RigAgentMode, RigAgentPaidStepView, RigAgentRunView, RigAgentState } from "@/lib/workbench/rig-agent-plan";
+import type { RigAgentMode, RigAgentPaidStepView, RigAgentRunView, RigAgentState, ShotChoice } from "@/lib/workbench/rig-agent-plan";
+import { CHECK_VERDICT_WORDS, VERIFY_CHECK_LABELS, holdWorthSaying } from "@/lib/workbench/verify";
+import { readAgent } from "@/lib/production/agent";
 import { creditFigure, isRunLimitAmount } from "@/lib/runLimit";
 import { chargeSentence } from "@/lib/errors";
+import { useShellIfMounted } from "@/lib/shell/state";
 import { useRig } from "./RigProvider";
 
 /**
@@ -16,6 +19,13 @@ import { useRig } from "./RigProvider";
  * rendered as a draft, and the card shows what each settled at against the
  * limit. Stop lets go of anything not sent; renders already on their way
  * settle at what they cost.
+ *
+ * Plan PR 11: each take is then checked against its masters (priced; in Auto,
+ * a check up to the per-job line runs on its own), and a failed check gets at
+ * most two targeted fixes, each an edit of the take that asks for a tap at its
+ * price. A shot whose check needs a person shows its scorecard and the choices
+ * (accept as is, another fix, render again, check again, skip) while the run
+ * carries on with the other shots.
  *
  * Everything shown comes from the server's run (GET /api/workbench/team-canvas
  * ?agent=1): read often while Atomik works, now and then otherwise, so a
@@ -43,6 +53,7 @@ const cr = (credits: number) => `${creditFigure(credits)} cr`;
 
 export function RigAgentCard() {
   const rig = useRig();
+  const shell = useShellIfMounted();
   const project = rig.project;
   const pid = project?.productionProjectId ?? null;
   const draftId = project?.id ?? null;
@@ -133,7 +144,8 @@ export function RigAgentCard() {
     const credits = Number(limitText);
     if (!isRunLimitAmount(credits)) { setProblem("Set a limit for this run in credits."); return; }
     if (planning != null && credits < planning) { setProblem(`The limit has to cover planning: at least ${cr(planning)}.`); return; }
-    const ok = await send({ action: "agent.plan", projectId: draftId, requestId: crypto.randomUUID(), goal: text, limit: credits, mode }, "plan");
+    /* The Production agent this person chose: the run's checks are judged, and its fixes written, on it. */
+    const ok = await send({ action: "agent.plan", projectId: draftId, requestId: crypto.randomUUID(), goal: text, limit: credits, mode, agent: readAgent() }, "plan");
     if (ok) { setComposing(false); setGoal(""); }
   };
   const act = (action: string, extra: Record<string, unknown> = {}) => run && send({ action, runId: run.id, ...(action === "agent.approve" ? { fingerprint: run.proposal?.fingerprint } : {}), ...extra }, action + (extra.seq ? `:${extra.seq}` : ""));
@@ -186,7 +198,7 @@ export function RigAgentCard() {
                 </div>
               </div>
               <p className="pxw-agent-note" id="rig-agent-limit-note" data-testid="rig-agent-terms">
-                Planning is priced and counts toward this limit{planning != null ? ` (up to about ${cr(planning)})` : ""}. Placing cards is free. Every render is priced before it runs, and nothing passes the limit.
+                Planning is priced and counts toward this limit{planning != null ? ` (up to about ${cr(planning)})` : ""}. Placing cards is free. Every render, check and fix is priced before it runs, and nothing passes the limit.
               </p>
             </>
           ) : null}
@@ -212,7 +224,11 @@ export function RigAgentCard() {
           {run.state === "needs_you" && run.reason ? <p className="pxw-agent-needs" role="status" data-testid="rig-agent-needs">{run.reason}</p> : null}
           {run.state === "paused" && run.reason ? <p className="pxw-agent-problem" role="status">{run.reason}</p> : null}
           {!terminal && !agent.enabled && run.state !== "paused" ? <p className="pxw-agent-problem" role="status">Atomik&apos;s board building is switched off right now.</p> : null}
-          {!terminal && run.paid.length > 0 && run.state !== "awaiting_approval" && run.state !== "planning" ? <Renders run={run} busy={busy} onRender={(p) => void act("agent.render", { seq: p.seq, ...(p.fingerprint ? { fingerprint: p.fingerprint } : {}) })} onSkip={(p) => void act("agent.skip", { seq: p.seq })} /> : null}
+          {!terminal && run.paid.length > 0 && run.state !== "awaiting_approval" && run.state !== "planning" ? (
+            <Renders run={run} busy={busy} onRender={(p) => void act("agent.render", { seq: p.seq, ...(p.fingerprint ? { fingerprint: p.fingerprint } : {}) })}
+              onSkip={(p) => void act("agent.skip", { seq: p.seq })} onChoose={(p, choice) => void act("agent.resolve", { seq: p.seq, choice })}
+              onOpen={(id) => { rig.select(id); /* A phone's Inspector is a sheet the shell opens; a desk's opens with the selection. */ if (shell && !shell.wide) shell.openInspector(); }} />
+          ) : null}
           {limited && run.mine && raiseTo != null ? (
             <div className="pxw-agent-raise" data-testid="rig-agent-raise">
               <label className="pxw-agent-label" htmlFor="rig-agent-raise-limit">New limit for this run</label>
@@ -323,10 +339,30 @@ const RENDER_STATE: Partial<Record<RigAgentPaidStepView["state"], string>> = {
   next: "Up next", waiting: "Ready", approved: "Approved · going next", sending: "Sending", rendering: "Rendering…",
   done: "Rendered · in Takes", failed: "Failed", paused: "Needs you", skipped: "Not rendered",
 };
+const CHECK_STATE: Partial<Record<RigAgentPaidStepView["state"], string>> = {
+  next: "Checked once its take lands", waiting: "Ready to check", approved: "Approved · checking next", sending: "Starting the check", rendering: "Checking…",
+  done: "Checked", failed: "Not checked", paused: "Needs you", skipped: "Not checked",
+};
+/** A check on its way says where it is; once it has stopped, why (its verdict, a person's decision, or what it waits for). */
+const CHECK_MOVING: readonly RigAgentPaidStepView["state"][] = ["next", "waiting", "approved", "sending", "rendering"];
+const CHOICE_LABEL: Record<ShotChoice, string> = { accept: "Accept as is", fix: "Try another fix", rerender: "Render again", recheck: "Check again", skip: "Skip" };
+const SPENDS: readonly ShotChoice[] = ["fix", "rerender", "recheck"];
 
-/** What a render cost or will cost, in credits, never cut short: its price before, its settled charge after. */
+/**
+ * What a paid step cost or will cost, in credits, never cut short: its price before, its settled charge after. A check
+ * is priced like a render; one that never ran, or ran free (a check read again), was not charged.
+ */
 function priceOf(p: RigAgentPaidStepView): string {
-  if (p.tool === "verify") return "Not charged";
+  if (p.tool === "verify") {
+    if (p.charged != null) return p.charged > 0 ? `${cr(p.charged)} settled` : "Not charged";
+    if (p.state === "next") return "Priced before it runs";
+    if (p.state === "waiting" || p.state === "approved" || p.state === "sending" || p.state === "rendering" || (p.state === "paused" && p.pause !== "check"))
+      return p.quote != null ? `about ${cr(p.quote)}` : "Priced before it runs";
+    return "Not charged";
+  }
+  /* A fix that never rendered (skipped, or its shot handed to a person): only its note, if one was written, was charged. */
+  if (p.tool === "fix" && (p.state === "skipped" || (p.state === "paused" && p.pause === "check")))
+    return p.note?.settled && p.note.credits ? `${cr(p.note.credits)} settled` : "Not charged";
   if (p.state === "done") return p.charged != null ? `${cr(p.charged)} settled` : "Settling";
   /* A failed take: what Particl's own ledger holds for it (the provider's outcome as the ledger recorded it). */
   if (p.state === "failed") return p.charge ? chargeSentence(p.charge) : "Settling";
@@ -334,40 +370,93 @@ function priceOf(p: RigAgentPaidStepView): string {
   return p.quote != null ? `about ${cr(p.quote)}` : "Priced before it runs";
 }
 
-/** The renders after the build (and the checks of their takes): each priced, each approved, each settled. */
-function Renders({ run, busy, onRender, onSkip }: { run: RigAgentRunView; busy: string | null; onRender: (p: RigAgentPaidStepView) => void; onSkip: (p: RigAgentPaidStepView) => void }) {
+/** Where a paid step stands, in words: a check's verdict or why it waits; a render's or a fix's state, with what its note cost. */
+function stateOf(p: RigAgentPaidStepView): string {
+  if (p.tool === "verify") return (CHECK_MOVING.includes(p.state) ? CHECK_STATE[p.state] : p.reason ?? p.scorecard?.line ?? CHECK_STATE[p.state]) ?? p.state;
+  const state = p.state === "failed" ? (p.charge?.settled ? `Failed · ${p.charge.credits > 0 ? "charged" : "not billed"}` : "Failed") : RENDER_STATE[p.state] ?? p.state;
+  return p.note?.settled && p.note.credits != null ? `${state} · written for ${cr(p.note.credits)}` : state;
+}
+
+/** The tap that approves a paid step at the price the card shows: a render, a fix, or a check. */
+function tapLabel(p: RigAgentPaidStepView): string {
+  if (p.state === "paused" && (p.pause === "unpriced" || p.pause === "record" || p.quote == null)) return "Price again";
+  if (p.quote == null) return p.tool === "verify" ? "Check" : "Render";
+  if (p.tool === "verify") return `Check · about ${cr(p.quote)}`;
+  if (p.state === "paused") return `Retry · about ${cr(p.quote)}`;
+  return `${p.tool === "fix" ? "Render the fix" : "Render"} · about ${cr(p.quote)}`;
+}
+
+type RowActions = {
+  busy: string | null;
+  onRender: (p: RigAgentPaidStepView) => void; onSkip: (p: RigAgentPaidStepView) => void;
+  onChoose?: (p: RigAgentPaidStepView, choice: ShotChoice) => void; onOpen?: (cardId: string) => void;
+};
+
+/** The renders after the build, the checks of their takes and the fixes of a failed check: each priced, each approved, each settled. */
+function Renders({ run, ...actions }: { run: RigAgentRunView } & RowActions) {
   return (
     <ol className="pxw-agent-renders" data-testid="rig-agent-renders">
-      {run.paid.map((p) => {
-        const open = p.state === "waiting" || p.state === "paused";
-        const waitingOnOwner = open && !p.canRender && !run.mine && ["needs_you", "running"].includes(run.state);
-        return (
-          <li key={p.seq} className="pxw-agent-render" data-state={p.state} data-tool={p.tool} data-testid={`rig-agent-render-${p.seq}`}>
-            <div className="pxw-agent-render-head">
-              <span className="pxw-agent-render-title">{p.tool === "verify" ? `Check · ${p.title}` : p.title}</span>
-              <span className="pxw-agent-render-price" data-testid="rig-agent-render-price">{priceOf(p)}</span>
-            </div>
-            <p className="pxw-agent-render-state" data-testid="rig-agent-render-state">
-              {p.tool === "verify" ? p.reason
-                : p.state === "failed" ? (p.charge?.settled ? `Failed · ${p.charge.credits > 0 ? "charged" : "not billed"}` : "Failed")
-                : RENDER_STATE[p.state] ?? p.state}
-              {waitingOnOwner ? " · waiting for the person who asked" : ""}
-            </p>
-            {p.tool === "render" && p.reason && (p.state === "paused" || p.state === "failed" || p.state === "approved") ? <p className="pxw-agent-note" data-testid="rig-agent-render-reason">{p.reason}</p> : null}
-            {p.canRender ? (
-              <div className="pxw-agent-actions">
-                <button type="button" className="pxw-agent-quiet" data-testid="rig-agent-skip" disabled={!!busy} onClick={() => onSkip(p)}>Skip</button>
-                <button type="button" className="pxw-agent-primary" data-testid="rig-agent-render" disabled={!!busy} onClick={() => onRender(p)}>
-                  {busy === `agent.render:${p.seq}` ? "Sending…"
-                    : p.state === "paused" && (p.pause === "unpriced" || p.pause === "record" || p.quote == null) ? "Price again"
-                    : p.quote != null ? `${p.state === "paused" ? "Retry" : "Render"} · about ${cr(p.quote)}` : "Render"}
-                </button>
-              </div>
-            ) : null}
-          </li>
-        );
-      })}
+      {run.paid.map((p) => <PaidRow key={p.seq} run={run} p={p} {...actions} />)}
     </ol>
+  );
+}
+
+function PaidRow({ run, p, busy, onRender, onSkip, onChoose, onOpen }: { run: RigAgentRunView; p: RigAgentPaidStepView } & RowActions) {
+  const open = p.state === "waiting" || p.state === "paused";
+  const flagged = p.state === "paused" && p.pause === "check";
+  const waitingOnOwner = open && !p.canRender && !p.choices.length && !run.mine && ["needs_you", "running"].includes(run.state);
+  const before = p.state === "next" || p.state === "waiting" || p.state === "paused";
+  /* A check's scorecard, while its shot waits for a person: what failed, or was unsure, and why. */
+  const rows = flagged && p.scorecard ? p.scorecard.checks.filter((c) => c.verdict !== "pass") : [];
+  const hold = p.tool === "verify" && p.hold != null && p.quote != null && ["waiting", "approved", "sending", "rendering"].includes(p.state) && holdWorthSaying(p.quote, p.hold) ? p.hold : null;
+  return (
+    <li className="pxw-agent-render" data-state={p.state} data-tool={p.tool} data-verdict={p.verdict ?? undefined} data-flagged={flagged ? "" : undefined} data-testid={`rig-agent-render-${p.seq}`}>
+      <div className="pxw-agent-render-head">
+        <span className="pxw-agent-render-title">{p.label}</span>
+        <span className="pxw-agent-render-price" data-testid="rig-agent-render-price">{priceOf(p)}</span>
+      </div>
+      <p className="pxw-agent-render-state" data-testid="rig-agent-render-state">
+        {stateOf(p)}
+        {waitingOnOwner ? " · waiting for the person who asked" : ""}
+      </p>
+      {p.tool !== "verify" && p.reason && (p.state === "paused" || p.state === "failed" || p.state === "approved") ? <p className="pxw-agent-note" data-testid="rig-agent-render-reason">{p.reason}</p> : null}
+      {p.tool === "fix" && p.edit ? <p className="pxw-agent-edit" data-testid="rig-agent-edit">{p.edit}</p> : null}
+      {/* The owner's choice: a clip's fix is an edit, which has no draft: full quality, priced on the clip it edits. */}
+      {p.tool === "fix" && p.takeKind === "video" && before ? <p className="pxw-agent-note" data-testid="rig-agent-fix-terms">An edit has no draft: it renders at full quality, priced on the clip it edits.</p> : null}
+      {hold != null ? <p className="pxw-agent-note" data-testid="rig-agent-hold">Up to {cr(hold)} held while it runs.</p> : null}
+      {rows.length ? (
+        <ul className="pxw-agent-checks" data-testid="rig-agent-scorecard">
+          {rows.map((c) => (
+            <li key={c.check} data-check={c.check} data-verdict={c.verdict}>
+              <span className="pxw-agent-check-name">{VERIFY_CHECK_LABELS[c.check as keyof typeof VERIFY_CHECK_LABELS] ?? c.check}</span>
+              <span className="pxw-agent-check-verdict" data-functional-label="">{CHECK_VERDICT_WORDS[c.verdict]}</span>
+              {c.reasons.length ? <span className="pxw-agent-check-why">{c.reasons.join(" ")}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {flagged && ((onChoose && p.choices.length) || (p.card && onOpen)) ? (
+        <div className="pxw-agent-choices" role="group" aria-label={`Decide for ${p.title}`} data-testid="rig-agent-choices">
+          {p.card && onOpen ? (
+            <button type="button" className="pxw-agent-quiet" data-testid="rig-agent-open-card" onClick={() => onOpen(p.card!)}>Open its Verify card</button>
+          ) : null}
+          {onChoose ? p.choices.map((choice) => (
+            <button key={choice} type="button" className="pxw-agent-quiet" data-testid={`rig-agent-choice-${choice}`} data-choice={choice} disabled={!!busy} onClick={() => onChoose(p, choice)}>
+              {CHOICE_LABEL[choice]}{SPENDS.includes(choice) && p.prices[choice] != null ? ` · about ${cr(p.prices[choice]!)}`
+                : choice === "fix" && p.fixNote != null ? ` · writing about ${cr(p.fixNote)}` : ""}
+            </button>
+          )) : null}
+        </div>
+      ) : null}
+      {p.canRender ? (
+        <div className="pxw-agent-actions">
+          <button type="button" className="pxw-agent-quiet" data-testid="rig-agent-skip" disabled={!!busy} onClick={() => onSkip(p)}>Skip</button>
+          <button type="button" className="pxw-agent-primary" data-testid="rig-agent-render" disabled={!!busy} onClick={() => onRender(p)}>
+            {busy === `agent.render:${p.seq}` ? "Sending…" : tapLabel(p)}
+          </button>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -375,6 +464,7 @@ function Renders({ run, busy, onRender, onSkip }: { run: RigAgentRunView; busy: 
 function LastRun({ run }: { run: RigAgentRunView }) {
   const placed = `${plural(run.built.cards, "card")} · ${plural(run.built.wires, "wire")}`;
   const rendered = run.paid.filter((p) => p.tool === "render" && p.state === "done").length;
+  const fixed = run.paid.filter((p) => p.tool === "fix" && p.state === "done").length;
   return (
     <div className="pxw-agent-last" data-testid="rig-agent-last">
       {run.undo ? (
@@ -388,14 +478,14 @@ function LastRun({ run }: { run: RigAgentRunView }) {
       ) : null}
       {run.money ? (
         <p className="pxw-agent-line" data-testid="rig-agent-total">
-          {rendered ? `${plural(rendered, "draft")} rendered · ` : ""}{cr(run.money.spent)} spent of {cr(run.money.limit)}{run.money.inFlight ? ` · ${cr(run.money.inFlight)} still settling` : ""}
+          {rendered ? `${plural(rendered, "draft")} rendered · ` : ""}{fixed ? `${plural(fixed, "fix", "fixes")} · ` : ""}{cr(run.money.spent)} spent of {cr(run.money.limit)}{run.money.inFlight ? ` · ${cr(run.money.inFlight)} still settling` : ""}
         </p>
       ) : null}
       {run.reason && run.state !== "done" ? <p className="pxw-agent-note">{run.reason}</p> : null}
       {[...run.held, ...(run.undo?.reasons ?? [])].filter((why, i, all) => all.indexOf(why) === i).map((why) => (
         <p key={why} className="pxw-agent-held" data-testid="rig-agent-held">Held · {why}</p>
       ))}
-      {run.paid.some((p) => p.tool === "render" && p.state !== "next") ? <Renders run={run} busy={null} onRender={() => {}} onSkip={() => {}} /> : null}
+      {run.paid.some((p) => p.tool !== "verify" && p.state !== "next") ? <Renders run={run} busy={null} onRender={() => {}} onSkip={() => {}} /> : null}
       {run.state === "done" && !run.undo && !run.paid.length ? run.proposal?.next.map((line) => <p key={line} className="pxw-agent-next" data-testid="rig-agent-next">{line}</p>) : null}
     </div>
   );

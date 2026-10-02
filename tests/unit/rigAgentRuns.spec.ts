@@ -430,8 +430,8 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     expect(first).toMatchObject({ quote: await credits(0.3), canRender: true, pause: null });
     expect(first.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(run.reason).toBe(`01 — Opening is ready to render · about ${creditFigure(await credits(0.3))} cr.`);
-    /* The check of a take is shown and never charged until verify lands. */
-    expect(run.paid[1]).toMatchObject({ reason: "Verify arrives in the next update.", charged: null, canRender: false });
+    /* The check of a take is shown, and does nothing (and costs nothing) before its take lands. */
+    expect(run.paid[1]).toMatchObject({ tool: "verify", state: "next", charged: null, canRender: false });
     /* A teammate sees it waiting, and may not tap it. */
     expect((await view(TEAMMATE)).paid[0].canRender).toBe(false);
     await expect(agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: first.fingerprint, userId: TEAMMATE })).rejects.toMatchObject({ status: 403 });
@@ -466,9 +466,11 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     await agent.advanceRigAgentRun(runId, deps);
     const job2 = (await renderRows())[1];
     await settleTake(job2.id, "succeeded", 0.45);
-    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
+    /* Both takes landed; each one's check waits for a person (its masters have no pictures yet), so the run waits on them. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     run = await view();
-    expect(run.state).toBe("done");
+    expect(run.state).toBe("needs_you");
+    expect(run.paid.filter((p) => p.tool === "verify").map((p) => [p.state, p.pause, p.charged])).toEqual([["paused", "check", null], ["paused", "check", null]]);
     expect(run.paid.filter((p) => p.tool === "render").map((p) => [p.state, p.charged])).toEqual([["done", await credits(0.3)], ["done", await credits(0.45)]]);
     const spent = (await meterRow(agent.planEventId(runId)))!.credits + (await credits(0.3)) + (await credits(0.45));
     expect(run.money).toMatchObject({ spent, inFlight: 0 });
@@ -539,9 +541,9 @@ test("Auto: a render at or under the per-job line runs without a tap; one over i
     expect(run.paid[4]).toMatchObject({ state: "waiting", canRender: true });
     expect(run.money!.jobCeiling).toBe(line);
     expect(r.calls).toHaveLength(2);
-    /* Skipped: nothing is charged, and the run finishes. */
+    /* Skipped: nothing is charged; what is left is the checks of the two takes, which wait for a person. */
     await agent.skipRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[4].seq, userId: OWNER });
-    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     expect((await view()).paid[4]).toMatchObject({ state: "skipped", charged: null });
   }, 20_000);
 });
@@ -616,7 +618,7 @@ test("a render that would pass the limit pauses the run (needs you) with nothing
     /* The second would pass the limit: the run waits for a person, and nothing is reserved or sent for it. */
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     const run = await view();
-    const paused = run.paid.find((p) => p.state === "paused")!;
+    const paused = run.paid.find((p) => p.tool === "render" && p.state === "paused")!;
     expect(paused).toMatchObject({ pause: "limit", canRender: true, quote: each });
     expect(run.reason).toBe(`The next render is about ${creditFigure(each)} cr; this run's limit of ${creditFigure(limit)} cr leaves about ${creditFigure(limit - planned - each)} cr. Raise the limit, skip this render, or stop.`);
     expect(r.calls).toHaveLength(1);
@@ -677,7 +679,9 @@ test("a lost reply is asked about by its key and never sent again: one that land
     expect(await renderRows()).toHaveLength(2);
     /* A request still being accepted is waited for, never sent again. */
     await settleTake((await renderRows())[1].id, "succeeded", 0.3);
-    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
+    /* Both takes landed, each once; what is left is their checks, which wait for a person. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(r.calls).toHaveLength(3);
   });
 });
 

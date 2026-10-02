@@ -243,8 +243,17 @@ function agentScript(project: Pick<Project, 'script'>, hasBeats: boolean): strin
   if (script.length > AGENT_SCRIPT_CHARS) throw new DevelopmentError('This script is longer than the agent reads in one pass. Break it into beats first, so it reads every scene.');
   return script;
 }
-async function compile(input: DevelopmentRequest, owner: string, deps: DevelopmentDependencies) {
-  const project = await getAtomikProject(owner, input.projectId);
+/**
+ * What an Atomik run passes when it starts a check itself (lib/workbench/rig-agent-checks.ts): the
+ * board as the run reads it (the person's draft with the production's team canvas, and the run's
+ * own take filed on its shot) — the person's saved draft alone does not hold cards or takes the run
+ * made — and the run whose approved limit the reservation counts toward.
+ */
+export type DevelopmentRunOptions = { project?: Project; run?: import('../runLimit').RunSpend };
+
+async function compile(input: DevelopmentRequest, owner: string, deps: DevelopmentDependencies, given?: Project) {
+  if (given && given.id !== input.projectId) throw new DevelopmentError('This request names another project.', 409);
+  const project = given ?? await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new DevelopmentError('Save the project to link its production budget.', 409);
   let base = '', beatSheet: unknown;
   if (input.kind !== 'write' && (input.fromJobId || input.fromBeats)) throw new DevelopmentError('Only the script writer redrafts an earlier result.');
@@ -412,13 +421,13 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
 /** The price a person is shown and approves: a Verify check's usual use ("about N cr"), every other step's ceiling. */
 const shownPrice = (compiled: { estimateUsd: number; estimateCredits: number; likely?: { usd: number; credits: number } }) =>
   compiled.likely ?? { usd: compiled.estimateUsd, credits: compiled.estimateCredits };
-export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
+export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>, options: DevelopmentRunOptions = {}): Promise<DevelopmentQuote> {
   /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */
   if (input.kind === 'verify') {
-    const stored = await storedVerificationFor(await getAtomikProject(owner, input.projectId), input.nodeId);
+    const stored = await storedVerificationFor(options.project ?? await getAtomikProject(owner, input.projectId), input.nodeId);
     if (stored) return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind, sourceHash: '', estimateCredits: 0, chunks: 0, calls: 0, sourceCharacters: 0, stored };
   }
-  const compiled = await compile(input, owner, dependencies(overrides)), shown = shownPrice(compiled);
+  const compiled = await compile(input, owner, dependencies(overrides), options.project), shown = shownPrice(compiled);
   return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind,
     sourceHash: compiled.sourceHash, estimateCredits: shown.credits, estimateUsd: shown.usd,
     /* Credits only: what the wallet holds while it runs, where that is more than the estimate. */
@@ -486,16 +495,16 @@ function eventFor(row: Row, status: MeterEvent['status'], cost?: number): MeterE
     projectId: String(row.production_project_id), createdBy: String(row.owner), status, engineCostUsd: cost };
 }
 const preparationTails = new Map<string, Promise<void>>();
-export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>) {
+export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, options: DevelopmentRunOptions = {}) {
   const ws = requireTenant(), key = ws.id + ':' + ws.dbUrl;
   const previous = preparationTails.get(key) ?? Promise.resolve();
   let release!: () => void;
   const tail = new Promise<void>(resolve => { release = resolve; }); preparationTails.set(key, tail);
   await previous;
-  try { return await prepareUnlocked(input, owner, token, overrides); }
+  try { return await prepareUnlocked(input, owner, token, overrides, options); }
   finally { release(); if (preparationTails.get(key) === tail) preparationTails.delete(key); }
 }
-async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>) {
+async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, options: DevelopmentRunOptions = {}) {
   await developmentReady();
   const deps = dependencies(overrides), fingerprint = developmentSourceHash(JSON.stringify(input));
   const found = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
@@ -504,7 +513,7 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
     return { job: await publicJob(found), scheduled: false };
   }
   if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textVendor(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
-  const compiled = await compile(input, owner, deps);
+  const compiled = await compile(input, owner, deps, options.project);
   await deps.auth(input.model);
   if (input.sourceHash !== compiled.sourceHash) throw new DevelopmentError('The source changed after the quote. Save the current project and review a new quote.', 409);
   /* A dollar approval counts only where the workspace pays the vendor itself: on the platform's keys a
@@ -534,7 +543,8 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   const row = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE id=?', args: [id] })).rows[0];
   try {
     await db().batch(compiled.estimates.map((step, index) => ({ sql: `INSERT INTO workbench_development_steps(job_id,step_index,chunk_index,stage,status,estimate_usd,max_tokens,updated_at) VALUES(?,?,?,?,'queued',?,?,?)`, args: [id, index, step.chunk, step.stage, step.cost, step.maxTokens, ts] })), 'write');
-    await deps.reserve(eventFor(row, 'running', compiled.estimateUsd), { token, projectId: compiled.project.productionProjectId });
+    /* A run's check counts toward the limit its person approved, refused there once the run has stopped (band 1: it reserves its ceiling and settles at or under it). */
+    await deps.reserve(eventFor(row, 'running', compiled.estimateUsd), { token, projectId: compiled.project.productionProjectId, ...(options.run ? { run: options.run } : {}) });
     // Admission flag prevents a concurrent recovery POST from outrunning reservation.
     const admitted = await db().execute({ sql: "UPDATE workbench_development_jobs SET status='running',updated_at=? WHERE id=? AND status='queued'", args: [now(), id] });
     if (!admitted.rowsAffected) throw new Error('Admission was interrupted before a provider call. The reservation will be released.');
@@ -772,7 +782,11 @@ async function finishDevelopmentJob(row: Row, deps: DevelopmentDependencies) {
   const stored = (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'verify' ? await verificationStatements(row, credits) : [];
   if (stored.length) await db().batch([finished, ...stored], 'write');
   else await db().execute(finished);
-  return settleDevelopment({ ...row, status: 'succeeded', cost_usd: cost }, deps);
+  const settled = await settleDevelopment({ ...row, status: 'succeeded', cost_usd: cost }, deps);
+  /* A clip an Atomik run waits on, checked on the board: the run reads the stored check now, free (lib/workbench/rig-agent-settled.ts). */
+  const takeId = stored.length ? (JSON.parse(String(row.snapshot)) as { verify?: VerifySnapshot }).verify?.key.takeId : undefined;
+  if (takeId) await import('./rig-agent-settled').then((m) => m.rigCheckStored(takeId)).catch((error) => console.error('rig agent check stored:', (error as Error).message));
+  return settled;
 }
 
 /** The terminal row is an outbox: failed ledger writes are retried without any provider work. */

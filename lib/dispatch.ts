@@ -46,6 +46,14 @@ export const RIG_AGENT_STOPPED = "rig/agent.run.stopped";
  */
 export const RIG_RENDER_SETTLED = "rig/render.settled";
 
+/**
+ * Inngest only, never a worker event: a person decided for a run that was waiting for them (a tap,
+ * a skip, a raised limit, a decision on a shot, or a clip checked on the board). The run's function
+ * waits for it (`waitForEvent`, matched on the run's id, for up to seven days) before its next tick;
+ * the run's own wake covers a function that is not waiting. Identifiers only.
+ */
+export const RIG_AGENT_RESOLVED = "rig/agent.resolved";
+
 export type WorkerEventName = (typeof EVENTS)[keyof typeof EVENTS];
 export const WORKER_EVENT_NAMES = [
   EVENTS.probe,

@@ -13,9 +13,11 @@ import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
-  approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
+  approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, resolveRigAgentShot, RigAgentError, rigAgentEnabled, rigAgentState,
   skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
+import { SHOT_CHOICES } from "@/lib/workbench/rig-agent-plan";
+import { AGENT_FAMILIES } from "@/lib/production/agent";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -25,7 +27,7 @@ async function caller(req: Request, write: boolean) {
   if (auth.response) return { response: auth.response };
   const scopeError = workbenchScopeProblem(req, requireTenant().id, auth.user.id, write);
   if (scopeError) return { response: Response.json({ error: scopeError }, { status: 409, headers: NO_STORE }) };
-  return { userId: auth.user.id };
+  return { userId: auth.user.id, name: auth.user.name };
 }
 
 function failure(error: unknown) {
@@ -113,6 +115,8 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("agent.plan"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
     requestId: z.string().regex(ACTION_ID), goal: z.string().trim().min(3).max(2000), model: z.string().min(1).max(120).optional(),
     limit: LIMIT, mode: z.enum(["ask", "auto"]).optional(),
+    /* The Production agent the person has chosen: the run's checks are judged, and its fixes written, on it. */
+    agent: z.object({ family: z.enum(AGENT_FAMILIES.map((f) => f.id) as [string, ...string[]]), model: z.string().max(120), effort: z.string().max(40) }).strict().optional(),
   }),
   runAction("agent.approve").extend({ fingerprint: FINGERPRINT }),
   runAction("agent.decline"),
@@ -122,6 +126,8 @@ const actionSchema = z.discriminatedUnion("action", [
   runAction("agent.render").extend({ seq: SEQ, fingerprint: FINGERPRINT.optional() }),
   runAction("agent.skip").extend({ seq: SEQ }),
   runAction("agent.limit").extend({ limit: LIMIT }),
+  /* A shot that waits for the person who asked: take it as it is, another fix, render it again, check it again, or skip it. */
+  runAction("agent.resolve").extend({ seq: SEQ, choice: z.enum(SHOT_CHOICES as unknown as [string, ...string[]]) }),
 ]);
 
 /**
@@ -136,8 +142,9 @@ const actionSchema = z.discriminatedUnion("action", [
  *  - `agent.*` is Atomik on the board (lib/workbench/rig-agent.ts): ask for a
  *    board with the limit approved for the run (Atomik proposes the cards and
  *    wires; its planning is metered into that limit), approve the proposal as
- *    shown or set it aside, render a paid step at the price shown, skip one, or
- *    raise the limit (only the person who asked); stop a run or undo a build
+ *    shown or set it aside, render a paid step (a render, a check, a fix) at
+ *    the price shown, skip one, raise the limit, or decide for a shot that
+ *    waits for them (only the person who asked); stop a run or undo a build
  *    (anyone on the team). What a run spends is spent by its worker, inside
  *    the approved limit. Each answers Atomik's run card.
  */
@@ -159,13 +166,15 @@ export const POST = withTenant(async (req: Request) => {
     }
     const { productionId } = action;
     const run =
-      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode })
+      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode,
+        agent: action.agent ? { family: action.agent.family as "claude" | "grok" | "openai", model: action.agent.model, effort: action.agent.effort } : null })
       : action.action === "agent.approve" ? await approveRigAgent({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
       : action.action === "agent.decline" ? await declineRigAgent({ productionId, runId: action.runId, userId })
       : action.action === "agent.stop" ? await stopRigAgent({ productionId, runId: action.runId, userId })
       : action.action === "agent.render" ? await renderRigAgentStep({ productionId, runId: action.runId, seq: action.seq, fingerprint: action.fingerprint ?? null, userId })
       : action.action === "agent.skip" ? await skipRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : action.action === "agent.limit" ? await raiseRigAgentLimit({ productionId, runId: action.runId, limit: action.limit, userId })
+      : action.action === "agent.resolve" ? await resolveRigAgentShot({ productionId, runId: action.runId, seq: action.seq, choice: action.choice as (typeof SHOT_CHOICES)[number], userId, name: who.name })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
     return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }
