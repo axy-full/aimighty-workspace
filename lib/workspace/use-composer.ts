@@ -585,7 +585,9 @@ export function useComposer(options: {
             return { key: quoteKey, credits: null, state: "unavailable", reason: "Sound cannot be priced with these settings." };
           return { key: quoteKey, credits, state: "ready", reason: null };
         }
-        const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration) });
+        /* The Sound switch is in the read: the figure is for the take as it will be asked for. */
+        const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration),
+          ...(settings.generateAudio ? { audio: "1" } : {}) });
         const references = state.references.length ? mediaQuoteReferences(state.references.map(referenceAsset)) : "";
         const result = await studioRequest<{ credits: number | null; approximate?: boolean }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
           signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store",
@@ -807,6 +809,7 @@ export function useComposer(options: {
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
+                  ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
           const outcome = await sendWorkspaceBatch({ scope, shown, count, storageId, request });
@@ -998,6 +1001,7 @@ export function useComposer(options: {
                   shotSpec: now.sent.shotSpec,
                   cinema: now.sent.cinema,
                   ...(settings.draft ? { draft: true } : {}),
+                  ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               },
           onClaim: (approved) => setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(approved)].join(" · "), jobId: null, projectId: project.id }),

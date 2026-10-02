@@ -39,6 +39,8 @@ type Model = {
   maxReferenceVideos: number;
   soulIdentity?: boolean;
   marketing?: boolean;
+  /** Cinema Studio's Sound switch is offered in this workspace (GET /api/workbench/engines › sound). */
+  sound?: boolean;
 };
 export type MarketingGenerationOptions = { variant?: MarketingBuild; quality: MarketingQuality; enhancePrompt: boolean; presetId?: string };
 export type GenerationTarget = {
@@ -158,6 +160,8 @@ function TakeDialog({
     [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? target.options?.soulStrength ?? 1),
     /* Cinema Studio 4.0's creative controls, as Gen offers them: documented values only, each Auto until picked. */
     [cinema, setCinema] = useState<Record<string, string>>(() => cleanCinemaControls(saved?.cinema ?? target.options?.cinema)),
+    /* Cinema Studio 4.0's Sound switch: off unless the take being recovered, or the node's last take, had it on. */
+    [sound, setSound] = useState<boolean>(saved ? saved.generateAudio === true : target.options?.generateAudio === true),
     [quote, setQuote] = useState<{
       key: string;
       credits: number | null;
@@ -172,6 +176,8 @@ function TakeDialog({
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   /* Cinema Studio 4.0 also takes the node's sounds as references (WAV uploads; the server checks each). */
   const cinemaModel = kind === "video" && model != null && isCinemaStudioModel(model.id);
+  /* Its Sound switch, where this workspace is offered it (once its sound is priced, or in the house workspace). */
+  const soundModel = cinemaModel && model?.sound === true;
   const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind)), [target.refs, project.assets, project.sharedAssets]);
@@ -195,7 +201,9 @@ function TakeDialog({
   const speechVoiceId = speechVoiceFor(speechVoices, voiceId)?.id ?? "";
   const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
     voiceId: speechVoiceId, modelId: speechModelId }));
-  const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
+  /* Sound on is another request: it is priced (and approved) again. Off, the key is as it always was. */
+  const withSound = soundModel && sound;
+  const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(withSound ? { sound: true } : {}), ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
   const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
     studioRequest<{ models: Model[] }>("/api/workbench/engines", { headers: { "X-Workbench-Scope": scope } })
@@ -291,13 +299,14 @@ function TakeDialog({
       } else void studioRequest<{ credits: number | null; approximate?: boolean }>(
         "/api/workbench/engines?" + new URLSearchParams({ model: modelId, resolution, ratio, duration: String(duration),
           ...(model.soulIdentity ? { soulIdentityId: selectedSoulId, projectId: project.id } : {}),
+          ...(withSound ? { audio: "1" } : {}),
         }).toString() + '&' + referenceQuery,
         { signal: abort.signal, headers: { "X-Workbench-Scope": scope } },
       ).then(value => { if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.credits, approximate: value.approximate === true }); } })
         .catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
     }, model.marketing ? 450 : 0);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [kind, model, modelId, resolution, ratio, duration, refs, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope, mapped, marketing, prompt, preparationRevision]);
+  }, [kind, model, modelId, resolution, ratio, duration, refs, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope, mapped, marketing, prompt, preparationRevision, withSound]);
 
   function acceptedSettings(attempt: PendingGeneration) {
     if(attempt.endpoint==='/api/audio')return undefined;
@@ -307,7 +316,7 @@ function TakeDialog({
     const wanted=target.options?.modelId;
     if(wanted&&body.model!==wanted&&models.length&&!models.some(m=>m.id===wanted))return {prompt:String(body.prompt??target.prompt),options:target.options!};
     const controls=cleanCinemaControls(body.cinema);
-    return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength,...(Object.keys(controls).length?{cinema:controls}:{})}};
+    return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength,...(Object.keys(controls).length?{cinema:controls}:{}),...(body.generateAudio===true?{generateAudio:true}:{})}};
   }
   async function submit() {
     if (busy || initial.error || (!pending && ((kind !== "audio" && !model) || cost == null))) return;
@@ -360,8 +369,9 @@ function TakeDialog({
         quoteFingerprint: quote?.fingerprint,
         firstFrameAssetId: firstFrameId,
         soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
-        /* Price-neutral: the approximate quote is the same with or without them (lib/cinemaStudio.ts). */
-        ...(cinemaModel ? { cinema: cleanCinemaControls(cinema) } : {}),
+        /* Price-neutral: the approximate quote is the same with or without them (lib/cinemaStudio.ts). The Sound
+           switch goes only when it is on and offered; the price on the button was read for it. */
+        ...(cinemaModel ? { cinema: cleanCinemaControls(cinema), generateAudio: withSound } : {}),
       }));
       const proposed: PendingGeneration = { key: crypto.randomUUID(), body, credits: cost!, endpoint: kind === "audio" ? "/api/audio" : "/api/generate" };
       const claim = claimPendingGeneration(window.localStorage, storageId, proposed);
@@ -571,6 +581,12 @@ function TakeDialog({
               </label>
             ))}
           </div>}
+          {/* Cinema Studio's Sound switch: off unless turned on here, whatever sounds the node is bound to. Turning it on
+              or off reads the price again before Generate. */}
+          {soundModel && <button type="button" role="switch" className="cinema-sound" aria-checked={sound} disabled={busy || !!pending}
+            onClick={() => setSound(on => !on)} data-testid="dialog-cinema-sound">
+            <span className="cinema-sound-dot" aria-hidden="true" /><span>With sound</span>
+          </button>}
           {kind === "audio" && <p className="muted small-copy">Audio uses your written direction or script. The node’s visual references remain attached to the node.</p>}
           {notice && <p role="status" className="muted small-copy">{notice}</p>}
           {pending && (

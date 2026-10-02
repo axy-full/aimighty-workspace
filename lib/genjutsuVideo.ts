@@ -116,11 +116,13 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
       // A transform settles at its live estimate. Cinema Studio was quoted
       // approximately and settles on what was delivered: the provider's own
       // charge if it states one, else its published formula on the measured
-      // output, kept within a sane band of the quote.
+      // output (with what sound adds, for a take made with sound), kept within
+      // a sane band of the quote.
       const settledUsd = isCinemaStudioModel(String(row.model))
         ? cinemaStudioSettlementUsd(usd, cinemaStudioDeliveredUsd({
             resolution: String(params.resolution), width: original.width, height: original.height, seconds: original.seconds,
             hasVideoInput: Boolean(params.hasVideoInput), inputSeconds: Number(params.inputSeconds),
+            generateAudio: params.generateAudio === true,
           }), reportedUsd)
         : usd;
       await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,duration_s=?,

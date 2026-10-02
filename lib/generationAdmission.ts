@@ -2,6 +2,7 @@ import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/ge
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
@@ -483,6 +484,10 @@ export async function executeGenerationAdmission(
     // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
     if (cinema && !cinemaStudioEnabled())
       return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
+    /* Its Sound switch is offered only once sound is priced, and in the house workspace, which is metered at cost
+       (lib/cinemaSoundPricing.ts). Anywhere else a take asked for with sound stops here: nothing reserved or sent. */
+    if (cinema && model.supportsAudio && Boolean(body.generateAudio ?? false) && !cinemaSoundOffered(requireTenant()))
+      return admissionReply({ error: CINEMA_SOUND_UNAVAILABLE }, { status: 400 });
     /* Cinema Studio's creative controls: only its documented parameters and values, only on its own engine.
        They direct the shot and never enter the price (lib/cinemaStudio.ts). */
     if (body.cinema != null && !cinema)
@@ -1854,7 +1859,8 @@ export async function executeGenerationAdmission(
      * Higgsfield's move: the camera is a self-contained, scene-independent
      * block, written precisely enough that the engine cannot read it as a
      * neighbouring move. This attaches one to EVERY render, not just the ones
-     * composed in the Studio.
+     * composed in the Studio — except Cinema Studio's, whose camera is its own
+     * parameter (below).
      *
      * It is not inventing a camera. Either the author named a move — in which
      * case expanding "handheld" into its sixty rigorous words is honouring
@@ -1899,12 +1905,14 @@ export async function executeGenerationAdmission(
         const choice = named ?? fromModel ?? inferred;
 
         /* Cinema Studio takes its camera move, light, camera body and palette as parameters. Where one is
-           picked, that parameter directs the shot and the words get no second, competing module for it. */
+           picked, that parameter directs the shot and the words get no second, competing module for it.
+           Its camera is never written into the words: a picked movement goes as `camera_movement`, and a
+           movement left on Auto is the model's to choose, so no move is named, inferred or expanded for it. */
         const directed = params.cinema ?? {};
         // Camera, plus the light and look the author already named — each from
         // the bank, so the wording is identical on every render that uses it.
         const craft = craftModules({
-          ...(directed.camera_movement ? {} : { [choice.kind]: choice.value }),
+          ...(cinema ? {} : { [choice.kind]: choice.value }),
           light: directed.light ? "" : (spec.light ?? ""),
           look: directed.color_palette || directed.camera_model ? "" : (spec.look ?? ""),
         });
@@ -1997,6 +2005,8 @@ export async function executeGenerationAdmission(
         duration: params.duration,
         hasVideoInput,
         inputSeconds: hasVideoInput ? inputSeconds : undefined,
+        /* With sound, what its measured charge adds (lib/cinemaSoundPricing.ts). */
+        generateAudio: params.generateAudio,
       });
       if (usd == null)
         return admissionReply({ error: "Cinema Studio has no confirmed price for these settings." }, { status: 400 });

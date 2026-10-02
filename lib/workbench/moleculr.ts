@@ -91,6 +91,8 @@ export type MoleculrGenerationOptions = {
   soulStrength?: number;
   /** Cinema Studio 4.0's creative controls the node's take was made with (lib/cinemaStudioTypes.ts); absent is every control on Auto. */
   cinema?: Partial<Record<string, string>>;
+  /** The node's take was made with Cinema Studio 4.0's Sound switch on; absent, it was silent. */
+  generateAudio?: boolean;
 };
 export type MoleculrBrief = {
   referenceAd?: ReferenceAdConfig;

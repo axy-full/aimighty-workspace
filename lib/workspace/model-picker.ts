@@ -133,15 +133,18 @@ export function rateQuery(at: PriceAt): string {
   if (at.picks.duration != null) q.set("pickDuration", String(at.picks.duration));
   /* "Draft first": an engine with draft mode is priced as its 480p draft. */
   if (at.picks.draft) q.set("pickDraft", "1");
+  /* The Sound switch: where it is offered, the engine is priced as a take with sound. */
+  if (at.picks.generateAudio) q.set("pickSound", "1");
   if (at.aspect) q.set("aspect", at.aspect);
   q.set("seconds", String(at.seconds));
   const refs = at.references.length ? mediaQuoteReferences(at.references.map(quoteAsset)) : "";
   return [q.toString(), refs].filter(Boolean).join("&");
 }
 
-/** A rate prices this row only when it names the settings the composer would render the engine with. */
+/** A rate prices this row only when it names the settings the composer would render the engine with, sound included. */
 function fits(rate: EngineRate, m: ComposerModel, want: ComposerSettings): boolean {
-  return rate.resolution === want.resolution && rate.ratio === want.ratio && (m.type !== "video" || rate.duration === want.duration);
+  return rate.resolution === want.resolution && rate.ratio === want.ratio && (m.type !== "video" || rate.duration === want.duration) &&
+    Boolean(rate.sound) === Boolean(want.generateAudio);
 }
 
 /**
