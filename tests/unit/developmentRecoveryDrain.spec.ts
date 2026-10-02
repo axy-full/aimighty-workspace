@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from '@playwright/test';
 import { createClient } from '@libsql/client';
 import { mkdtempSync } from 'node:fs';
@@ -34,7 +35,7 @@ for (const condition of ['queued-phase', 'started-phase', 'uncertain-phase', 'pa
     const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
     let jobId = '';
     await runInTenant(ws, async () => {
-      await ready();
+      await ready(); await fundFixtureWorkspace();
       const project = seedProject(); project.id = 'drain-development-' + randomUUID(); project.productionProjectId = 'production-' + randomUUID();
       const input = { projectId: project.id, requestId: randomUUID(), kind: 'idea' as const, model: model.id, effort: 'auto' };
       await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: [owner + ':' + project.id, owner, project.id, project.name, JSON.stringify(project), Date.now()] });

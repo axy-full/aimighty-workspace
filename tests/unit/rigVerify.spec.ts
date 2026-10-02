@@ -444,16 +444,23 @@ test('a check sends its review copies at low detail, through the Gateway and str
   expect(pictures(sent[0]).map((part) => part.providerOptions)).toEqual([{ openai: { imageDetail: 'low' } }, { openai: { imageDetail: 'low' } }]);
   await executeDevelopmentAgent(call(model, 'sketch'), { method: 'api-key', token: 'test-token-not-real' }, gateway);
   expect(pictures(sent[1]).map((part) => part.providerOptions)).toEqual([undefined, undefined]);
-  /* Straight to OpenAI on a workspace's own key: every picture is an input image at low detail. */
+  /* Straight to OpenAI on the platform's own OpenAI key (a key a workspace saved never funds new work): every picture is
+     an input image at low detail. */
   const fakeKey = 'test-openai-key-never-sent';
   const gpt: CatalogModel = { ...model, id: 'openai/gpt-6-astra', name: 'GPT fixture', owner: 'openai' };
   const direct: Record<string, unknown>[] = [];
-  await runInTenant({ ...workspace(), keys: { openai: fakeKey }, usesPlatformKeys: false }, () => executeDevelopmentAgent(call(gpt), { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url, init) => {
-    expect(String(url)).toBe('https://api.openai.com/v1/responses');
-    direct.push(JSON.parse(String(init?.body)));
-    return Response.json({ id: 'resp_fixture', object: 'response', created_at: 1, model: 'gpt-6-astra', status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '{}', annotations: [] }] }],
-      usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }, error: null, incomplete_details: null });
-  }));
+  const priorKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = fakeKey;
+  try {
+    await runInTenant(workspace(), () => executeDevelopmentAgent(call(gpt), { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url, init) => {
+      expect(String(url)).toBe('https://api.openai.com/v1/responses');
+      direct.push(JSON.parse(String(init?.body)));
+      return Response.json({ id: 'resp_fixture', object: 'response', created_at: 1, model: 'gpt-6-astra', status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '{}', annotations: [] }] }],
+        usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }, error: null, incomplete_details: null });
+    }));
+  } finally {
+    if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey;
+  }
   const images = ((direct[0].input as { content: unknown }[]).flatMap((m) => (Array.isArray(m.content) ? m.content : [])) as { type: string; detail?: string }[]).filter((part) => part.type === 'input_image');
   expect(images.map((part) => part.detail)).toEqual(['low', 'low']);
 });

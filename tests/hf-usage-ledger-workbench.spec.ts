@@ -322,7 +322,7 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
   expect(errors).toEqual([]);
 });
 
-test("a workspace that pays its vendors reads its takes in dollars, and the connected account's takes are not among them", async ({ page }, info) => {
+test("migrated workspaces retain historical external receipts without displaying vendor amounts", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "a phone and a desktop");
   const { workspace } = await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -338,22 +338,25 @@ test("a workspace that pays its vendors reads its takes in dollars, and the conn
     await tenant.execute({ sql: gen, args: ["gen_usd_failed", "gemini-3.1-flash-image", "a gull", "{}", "failed", "image", "google", null, null, me.id, now - 2000, now - 2000] });
     await tenant.execute({ sql: gen, args: [`gen_hfc_${"c".repeat(40)}`, SEEDANCE, "a pier", JSON.stringify({ consumerCreditUnit: "higgsfield_credits", consumerCredits: 75 }), "succeeded", "video", "higgsfield", null, null, me.id, now - 3000, now - 3000] });
   } finally { tenant.close(); }
-  /* The bars' own read asks the vendors for balances; this test is about the rows, so the bars are a fixture. */
-  await page.route(/\/api\/usage$/, (route) => route.fulfill({ json: { vendors: [{ id: "byteplus", label: "BytePlus", models: [{ model: SEEDANCE, label: "Seedance 2.5", n: 1, spend: 1.3 }] }] } }));
+  const receipts = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    for (const [id, status, at] of [["gen_usd_charged", "succeeded", now - 1000], ["gen_usd_failed", "failed", now - 2000]] as const)
+      await receipts.execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,'video','byteplus',?,?,0,0,0,?,?)", args: [id + workspace.id, workspace.id, SEEDANCE, status, at, at] });
+  } finally { receipts.close(); }
   await page.goto("/suites?view=workspace&tab=usage");
   const rows = page.getByTestId("ws-ledger-row");
   await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText("$1.30");
-  await expect(rows.first()).toContainText("Charged");
-  await expect(rows.nth(1)).toContainText("Failed · charge unknown");
-  /* The failed take recorded no cost: its charge is unknown, so the summary counts nothing as not billed. */
-  await expect(page.getByTestId("ws-ledger-summary")).toHaveText("All months · $1.30 charged");
+  await expect(rows.first()).toContainText("Own key · not billed");
+  await expect(rows.nth(1)).toContainText("Failed · not billed");
+  await expect(page.getByTestId("ws-ledger-summary")).toContainText("0 cr charged");
+  await expect(page.getByTestId("ws-ledger-summary")).toContainText("2 not billed");
+  await expect(page.getByTestId("workspace-view")).not.toContainText("$");
   const body = await (await page.request.get("/api/usage?rows=1")).json();
-  expect(body.unit).toBe("usd");
-  expect(JSON.stringify(body)).not.toContain("credits");
+  expect(body.unit).toBe("credits");
+  expect(JSON.stringify(body)).not.toMatch(/costUsd|engine_cost_usd|spendUsd/);
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("ws-ledger-export").click()]);
-  expect(readFileSync((await download.path())!, "utf8").split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd,failure,provider_charge");
-  await shot(page, info, "dollars");
+  expect(readFileSync((await download.path())!, "utf8").split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,credits,failure");
+  await shot(page, info, "historical-credits");
 });
 
 test("the ledger says it is reading, says when there is nothing yet, and a refused read offers Try again", async ({ page }, info) => {

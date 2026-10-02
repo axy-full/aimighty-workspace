@@ -127,12 +127,21 @@ test("collection finds the key a job was sent on by its pinned fingerprint: curr
   // An alias too short to name one key names none.
   process.env.HF_CREDENTIAL_ALIASES = fingerprintOf(OLD).slice(0, 11);
   expect(() => higgsfieldCollectionCredentials(fingerprintOf(OLD))).toThrow(HiggsfieldKeyChangedError);
-  // A workspace's own key is the one sending now for it; the platform's key is found by its own fingerprint too.
+  // A key a workspace saved never sends new work: the platform's key is the one sending now for it too. A job that was
+  // accepted on the saved key (metered as not platform-paid) is collected with it (lib/acceptedJobCredentials.ts).
   process.env.HF_CREDENTIAL_ALIASES = "";
   const ws = { ...(await register("own_key")), keys: { higgsfield: "own-key-id:own-key-secret" } };
   await inside(ws, async () => {
-    expect(higgsfieldCollectionCredentials(fingerprintOf("own-key-id:own-key-secret"))).toMatchObject({ via: "current" });
-    expect(higgsfieldCollectionCredentials(fingerprintOf(NEW))).toMatchObject({ keyId: "new-key-id", via: "platform" });
+    expect(() => higgsfieldCollectionCredentials(fingerprintOf("own-key-id:own-key-secret"))).toThrow(HiggsfieldKeyChangedError);
+    expect(higgsfieldCollectionCredentials(fingerprintOf(NEW))).toMatchObject({ keyId: "new-key-id", via: "current" });
+    const { platformDb } = await import("../../lib/platform");
+    const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
+    await platformDb().execute({
+      sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,'image','higgsfield',?,'running',0.12,0,0,?,?)",
+      args: [`own_key_job_${ws.id}`, ws.id, SOUL, Date.now(), Date.now()],
+    });
+    expect(await withAcceptedJobCredentials(`own_key_job_${ws.id}`, "higgsfield", async () => higgsfieldCollectionCredentials(fingerprintOf("own-key-id:own-key-secret"))))
+      .toMatchObject({ keyId: "own-key-id", via: "current" });
   });
 });
 

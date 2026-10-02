@@ -33,6 +33,8 @@ const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, p
 /** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing, rehearsing and starting a marketing video, and reading the account's setup lists. `status` and the saved jobs (GET) stay. */
 const RETIRED = new Set(["quote", "quote-rehearsal", "submit", "setup"]);
 function problem(error: unknown) {
+  if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
+    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
     return Response.json({ code: `original_${error.code}`, error: error.message }, {
       status: error.code === "quota" ? 507 : error.code === "timeout" ? 504 : error.code === "storage_unavailable" ? 503 : error.code === "invalid_video" ? 422 : error.code === "not_found" ? 404 : 409,

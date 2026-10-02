@@ -17,5 +17,5 @@ export default function OpenAIConnection() {
     } catch (error) { setMessage((error as Error).message); }
     finally { setBusy(false); }
   }
-  return <ManagementCard title="Connected language account" description="Direct thinking models use the workspace’s own key, or the platform’s private OPENAI_API_KEY, when configured. Other providers keep their existing connections."><p>Use a project API key with Models read and Responses/Chat Completions write permissions. Billing and model access are managed in your <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">provider project</a>.</p><button className="button" disabled={busy} onClick={() => void verify()}>{busy ? 'Checking the account…' : 'Verify language account'}</button>{message && <ManagementNotice>{message}</ManagementNotice>}</ManagementCard>;
+  return <ManagementCard title="Connected language account" description="Direct thinking models use the shared language engine and your organisation’s Particl credits."><p>Check that the language engine is available for your workspace.</p><button className="button" disabled={busy} onClick={() => void verify()}>{busy ? 'Checking the account…' : 'Verify language account'}</button>{message && <ManagementNotice>{message}</ManagementNotice>}</ManagementCard>;
 }

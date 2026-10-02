@@ -36,9 +36,11 @@ test("a credit workspace sees credits only — even when a dollar figure arrives
   expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).not.toContain("$");
 });
 
-test("a model on the workspace's own key names its dollars there, never '0 credits'; a dollar workspace sees dollars", () => {
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, true)).toBe("$0.0312 on your key");
+test("a credit workspace never reads a dollar quote, never '0 credits' for one; the house workspace reads its dollars", () => {
+  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, true)).toBe("Quote unavailable");
+  /* The house workspace (lib/houseWorkspace.ts) is never billed in credits: the dollars its own quote carries. */
   expect(agentPrice({ estimateCredits: 0, estimateUsd: 2.5 }, false)).toBe("$2.5000");
+  expect(agentPrice({ estimateCredits: 0 }, false)).toBe("Quote unavailable");
   /* No dollar figure at all (a platform model that costs nothing): the credit figure is all there is. */
   expect(agentPrice({ estimateCredits: 0 }, true)).toBe("0 credits");
 });
@@ -46,19 +48,22 @@ test("a model on the workspace's own key names its dollars there, never '0 credi
 test("a run in progress: reserved credits, or what it may cost on the workspace's own key", () => {
   expect(agentReserved(run({ status: "running", credits: null }), true)).toBe("reserved up to 12 credits");
   /* A credit workspace's run list carries no dollars, so an own-key run says where it is billed. */
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, ownKey: true }), true)).toBe("billed on your key");
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, estimateUsd: 0.05 }), false)).toBe("up to $0.0500");
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, ownKey: true }), true)).toBe("External account · historical");
+  /* The house's runs are metered as not platform-billed (ownKey), and read in its dollars. */
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, estimateUsd: 0.05, ownKey: true }), false)).toBe("up to $0.0500");
+  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0 }), false)).toBe("Quote unavailable");
 });
 
 test("a finished run's charge: credits, not billed when it failed, on your key, dollars, or still settling", () => {
   expect(agentCharged(run({}), true)).toBe("9 credits");
   expect(agentCharged(run({ credits: null }), true)).toBeNull();
   expect(agentCharged(run({ status: "failed", credits: 0 }), true)).toBe("not billed");
-  expect(agentCharged(run({ ownKey: true, estimateCredits: 0, credits: 0 }), true)).toBe("billed on your key");
+  expect(agentCharged(run({ ownKey: true, estimateCredits: 0, credits: 0 }), true)).toBe("External account · historical");
   /* An older reply without the flag: a zero-credit estimate is the workspace's own key. */
-  expect(agentCharged(run({ ownKey: undefined, estimateCredits: 0, credits: 0 }), true)).toBe("billed on your key");
-  expect(agentCharged(run({ costUsd: 0.0213 }), false)).toBe("$0.0213");
-  expect(agentCharged(run({ costUsd: null }), false)).toBeNull();
+  expect(agentCharged(run({ ownKey: undefined, estimateCredits: 0, credits: 0 }), true)).toBe("0 credits");
+  /* The house workspace: what the engines charged, in dollars, never credits. */
+  expect(agentCharged(run({ costUsd: 0.0213, ownKey: true }), false)).toBe("$0.0213");
+  expect(agentCharged(run({ costUsd: null, credits: null }), false)).toBeNull();
 });
 
 /* ── Notes ───────────────────────────────────────────────────────────────── */

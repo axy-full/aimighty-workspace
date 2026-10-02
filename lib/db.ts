@@ -286,6 +286,7 @@ const SCHEMA = [
      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
      scope       TEXT NOT NULL DEFAULT 'render',
      cap_usd     REAL,
+     cap_credits INTEGER,
      last_used   INTEGER,
      created_at  INTEGER NOT NULL,
      revoked_at  INTEGER
@@ -1017,6 +1018,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         });
         await c.execute({ sql: `UPDATE projects SET production_id = ?, step = ? WHERE id = ?`, args: [pid, step, String(r.id)] });
       }
+      await addColumn("api_tokens", "cap_credits INTEGER");
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
         `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,

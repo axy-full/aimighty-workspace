@@ -1,15 +1,7 @@
 import { currentTenant } from "./tenant";
 
-/**
- * Whose key pays for a render.
- *
- * A workspace's own key for a vendor always wins: sealed in its record,
- * unsealed only inside the process about to use it. Where it holds none,
- * the deployment's key steps in — for the platform's own workspace, and
- * for every workspace that runs on the platform's keys (the default at
- * sign-up, walled by lib/allowance.ts). A workspace on its own keys reaches
- * nothing it has not added: that vendor is simply unrouted for it.
- */
+/** Shared provider credentials stay on the server. Workspace keys from the
+ * previous billing mode are retained for history but never fund new work. */
 export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield" | "xai";
 
 const ENV: Record<VendorKeyName, string> = {
@@ -24,17 +16,15 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
   { name: "gemini", label: "Connected image account", does: "Nano Banana stills, direct" },
   { name: "fal", label: "Connected render account", does: "Kling 3.0 video · motion control · Topaz upscale · identity training" },
   { name: "elevenlabs", label: "Connected audio account", does: "Voice · sound effects · music" },
-  { name: "higgsfield", label: "Connected identity account", does: "Identity renders · enter API key ID:API key secret" },
+  { name: "higgsfield", label: "Connected identity account", does: "Reusable identities · identity renders" },
   { name: "xai", label: "xAI · Grok", does: "Crew · one Grok agent per seated member" },
 ];
 
 export function vendorKey(name: VendorKeyName): string | null {
-  const ws = currentTenant()?.workspace;
-  if (ws) {
-    const own = ws.keys[name];
-    if (own) return own;
-    if (!ws.usesPlatformKeys) return null;
-  }
+  const context = currentTenant();
+  const accepted = context?.acceptedCredential;
+  if (accepted?.workspaceId === context?.workspace?.id && accepted?.vendor === name)
+    return accepted.value;
   if (name === "higgsfield" && !process.env.HF_CREDENTIALS && process.env.HF_API_KEY_ID && process.env.HF_API_KEY_SECRET)
     return `${process.env.HF_API_KEY_ID}:${process.env.HF_API_KEY_SECRET}`;
   return process.env[ENV[name]] || null;
@@ -46,12 +36,5 @@ export function vendorKeyForEnv(envName: string): string | null {
   return entry ? vendorKey(entry[0]) : null;
 }
 
-/**
- * May this workspace use the deployment's own identity (Vercel OIDC) at
- * the gateway? Only the platform's workspace: that identity bills the
- * deployment's credit, and the deployment belongs to one studio.
- */
-export function deploymentIdentityAllowed(): boolean {
-  const ws = currentTenant()?.workspace;
-  return !ws || ws.usesPlatformKeys;
-}
+/** The managed gateway can use the deployment identity for every workspace. */
+export function deploymentIdentityAllowed(): boolean { return true; }

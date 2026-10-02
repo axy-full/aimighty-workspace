@@ -4,24 +4,18 @@ import { billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
+import { isHouseWorkspace } from "./houseWorkspace";
 
 export type { CreditState } from "./creditTerms";
 
 /**
- * A workspace's credit balance.
- *
- * Granted minus used. Grants are rows in the platform record (the welcome
- * grant at sign-up, whatever management adds on /admin); used is the
- * platform-paid spend read off the workspace's own tables, converted at
- * the credit terms. Nothing is written when a render finishes — the
- * balance is a sum, so it cannot drift from the ledger it is a view of.
- *
- * Credits apply to a workspace on the platform's keys. The studio's own
- * workspace and any workspace on its own keys spend dollars with their
- * vendors and have no balance here.
+ * Does this workspace pay in credits? Every one does, on its own credit
+ * ledger, except the house workspace (lib/houseWorkspace.ts): it is never
+ * billed in credits, so it has no balance, no grants and no credit walls, and
+ * it reads its spend at the engines' cost.
  */
 export function creditsApply(ws: TenantWorkspace | null | undefined): boolean {
-  return Boolean(ws && !ws.legacy && ws.usesPlatformKeys);
+  return Boolean(ws) && !isHouseWorkspace(ws);
 }
 
 export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState | null> {
@@ -39,12 +33,12 @@ export async function creditState(): Promise<CreditState | null> {
  * The credits a quote states and its approval ceiling (`maxCredits`) is
  * checked in.
  *
- * A workspace billed in credits is quoted what it will be billed. A workspace
- * on its own keys is billed nothing in credits — its vendors bill it in
- * dollars, which its quote states — and a credit count at the platform's
- * rate beside those dollars would state the margin. Its approval counts the
- * same dollars in whole credits at the price of a credit instead, so the
- * ceiling still holds and says nothing else.
+ * A workspace billed in credits is quoted what it will be billed. The house
+ * workspace is billed nothing in credits — its quote states the engines'
+ * dollars — and a credit count at the platform's rate beside those dollars
+ * would state the margin. Its approval counts the same dollars in whole
+ * credits at the price of a credit instead, so the ceiling still holds and
+ * says nothing else.
  *
  * `engine` is the margin key, or the exact terms the job's reservation will
  * charge (lib/billingTerms.ts currentBillingTerms): given those, the quote is

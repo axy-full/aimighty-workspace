@@ -149,7 +149,7 @@ type HeldRow = {
   projectId: string | null; shotId: string | null; createdBy: string | null;
   /** `needs` is what it costs to start now; `heldAt` what it cost when it was held — the figure approved at Generate. */
   estUsd: number; estimateValid: boolean; needs: number; heldAt: number | null; why: HeldWhy;
-  token?: { id: string; capUsd: number | null };
+  token?: { id: string; capUsd: number | null; capCredits?: number | null };
   /** Waiting for the shared pool, and since when (its place in that line). */
   pool: boolean; since: number;
 };

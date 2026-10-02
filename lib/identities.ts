@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { withRecoveryJob } from './recovery';
 import { TRAIN_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 import type { Transaction } from "@libsql/client";
@@ -440,7 +441,7 @@ return await withRecoveryJob(requireTenant().id, identity.trainingRunId ?? ident
   if (identity.status !== "training" || !identity.requestId || !identity.trainer) return { identity, progress: null };
   let st;
   try {
-    st = await falStatus(identity.trainer, identity.requestId, true);
+    st = await withAcceptedJobCredentials(identity.trainingRunId ?? identity.id, "fal", () => falStatus(identity.trainer!, identity.requestId!, true));
   } catch (e) {
     // A status call failing is weather, not a verdict — unless the key is gone.
     const msg = (e as Error).message;
@@ -459,7 +460,7 @@ return await withRecoveryJob(requireTenant().id, identity.trainingRunId ?? ident
     return { identity, progress: progressFromLogs(st.logs) };
   }
   try {
-    const out = await falResult<TrainResult>(identity.trainer, identity.requestId);
+    const out = await withAcceptedJobCredentials(identity.trainingRunId ?? identity.id, "fal", () => falResult<TrainResult>(identity.trainer!, identity.requestId!));
     const lora = out.diffusers_lora_file?.url;
     if (!lora) throw new Error("The trainer finished without returning a model file.");
     const castId = await joinCast(identity);
@@ -781,7 +782,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
 
   let st;
   try {
-    st = await falStatus(RENDERER, row.requestId);
+    st = await withAcceptedJobCredentials(row.id, "fal", () => falStatus(RENDERER, row.requestId));
   } catch (e) {
     const msg = (e as Error).message;
     // A job fal no longer knows about is never coming back.
@@ -818,7 +819,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
     return;
   }
   try {
-    const out = await falResult<RenderResult>(RENDERER, row.requestId);
+    const out = await withAcceptedJobCredentials(row.id, "fal", () => falResult<RenderResult>(RENDERER, row.requestId));
     await finishRender(row.id, out, row.createdAt, row.seed);
   } catch (e) {
     const err = e as Error;

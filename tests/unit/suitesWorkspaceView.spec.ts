@@ -109,14 +109,11 @@ test("usage: a credit workspace reads creditUsage().byModel and spentCredits; th
   expect(usageRows(null)).toEqual({ unit: "cr", rows: [], total: 0 });
 });
 
-test("engine keys say whose key a render uses, by the workspace's mode", () => {
-  expect(keyStatus("platform", false)).toEqual({ label: "platform key", canConnect: true });
-  expect(keyStatus("platform", true)).toEqual({ label: "connected", canConnect: true });
-  /* On its own keys, a vendor it has not added is unrouted (lib/vendorKeys.ts returns null). */
-  expect(keyStatus("own", false)).toEqual({ label: "not connected", canConnect: true });
-  /* The studio's own workspace runs on the deployment; its keys route refuses a Connect. */
-  expect(keyStatus("legacy", false)).toEqual({ label: "deployment key", canConnect: false });
-  expect(keyStatus("legacy", true)).toEqual({ label: "deployment key", canConnect: false });
+test("managed engine availability never invites customers to provide keys", () => {
+  for (const mode of ["platform", "own", "legacy"] as const) {
+    expect(keyStatus(mode, false)).toEqual({ label: "Unavailable", canConnect: false });
+    expect(keyStatus(mode, true)).toEqual({ label: "Available", canConnect: false });
+  }
 });
 
 test("the account connection opens only the account's own authorize page, and its outcome is said", () => {

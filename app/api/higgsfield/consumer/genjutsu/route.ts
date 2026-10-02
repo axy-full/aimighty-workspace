@@ -66,6 +66,8 @@ const requestSchema = z.discriminatedUnion("action", [quote, submit, poll]);
 /** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing and starting a transform. `status` and the saved runs (GET) stay, so runs already started are still collected and History still reads. */
 const RETIRED = new Set(["quote", "submit"]);
 function problem(error: unknown) {
+  if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
+    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerGenjutsuError)
     return Response.json(
       { code: error.code, error: error.message },

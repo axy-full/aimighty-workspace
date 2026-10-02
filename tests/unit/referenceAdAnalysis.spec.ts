@@ -208,7 +208,7 @@ async function fixture() {
     refs: [project.assets[0].id],
     referenceAd: referenceAdBinding(project, project.moleculr!.referenceAd!),
     videoFrames,
-    maxCredits: 0,
+    maxCredits: undefined,
   });
   let calls = 0,
     reservations = 0,
@@ -240,6 +240,8 @@ async function fixture() {
       };
     },
   };
+  const { quoteAtomikJob } = await import("../../lib/workbench/atomik-server");
+  input.maxCredits = (await quoteAtomikJob(input, "owner", deps)).estimateCredits;
   return {
     project,
     input,

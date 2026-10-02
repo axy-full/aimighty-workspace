@@ -175,23 +175,26 @@ test("a workspace that pays its vendors: the same rule on its dollar body, the v
     /* "u_gone" made a take and has since left: no user row, so nobody reads a name for it. */
     for (const [key, by, usd, refine] of [["owner", "u_owner", 1.25, 0.05], ["editor", "u_editor", 0.5, null], ["crew", "u_crew", 0.25, null], ["member", "u_member", 0.1, null], ["gone", "u_gone", 0.05, null]] as const)
       await db().execute({ sql: take, args: [`g_${key}`, "dreamina-seedance-2-5-260628", `a harbour, ${key}`, usd, refine, by, at, at] });
+    const { meter } = await import("../../lib/meter");
+    for (const [key, by, cost] of [["owner", "u_owner", 1.3], ["editor", "u_editor", .5], ["crew", "u_crew", .25], ["member", "u_member", .1], ["gone", "u_gone", .05]] as const)
+      await meter({ id: `privacy_migrated_${key}`, kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: cost, createdBy: by });
     /* The owner read the vendor's console: the reading carries who took it. */
     await recordCheck({ provider: "byteplus", balanceUsd: 40, spendUsd: 10, balanceCredits: null, spendCredits: null, note: "", checkedAt: at + 1_000, userId: "u_owner" });
   });
 
   const owner = await usageAs(ws, person("u_owner"));
-  expect(owner.body.unit).toBeUndefined();
+  expect(owner.body.unit).toBe("credits");
   expect(owner.body.byPerson.map((r) => [r.name, r.n, r.spend])).toEqual([
-    ["Owner Fixture", 1, 1.3], ["Editor Fixture", 1, 0.5], ["Crew Fixture", 1, 0.25], ["Member Fixture", 1, 0.1], ["Unknown", 1, 0.05],
+    ["Owner Fixture", 1, 20], ["Editor Fixture", 1, 8], ["Crew Fixture", 1, 4], ["Member Fixture", 1, 2], ["Unknown", 1, 1],
   ]);
-  expect(owner.body.vendors.find((v) => v.id === "byteplus")?.anchor?.authorName).toBe("Owner Fixture");
+  expect(owner.body.vendors.find((v) => v.id === "byteplus")?.anchor).toBeUndefined();
 
   /* The one who left is someone else's work to a member: part of the Teammate row. */
   const member = await usageAs(ws, person("u_member"));
   expect(member.body.byPerson.map((r) => r.name)).toEqual(["Teammate", "Member Fixture"]);
   expect(member.body.byPerson[0].n).toBe(4);
-  expect(member.body.byPerson[0].spend).toBeCloseTo(1.3 + 0.5 + 0.25 + 0.05, 9);
-  expect(member.body.byPerson[1]).toMatchObject({ n: 1, spend: 0.1 });
-  expect(member.body.vendors.find((v) => v.id === "byteplus")?.anchor?.authorName).toBe("Teammate");
+  expect(member.body.byPerson[0].spend).toBe(33);
+  expect(member.body.byPerson[1]).toMatchObject({ n: 1, spend: 2 });
+  expect(member.body.vendors.find((v) => v.id === "byteplus")?.anchor).toBeUndefined();
   for (const other of TEAMMATES) expect(member.wire, `a member's usage names ${other}`).not.toContain(other);
 });

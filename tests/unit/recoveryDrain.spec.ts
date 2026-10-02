@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { RECOVERY_PROTOCOL } from "../../lib/recovery/control.mjs";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
@@ -47,7 +48,7 @@ for (const budgetExpires of [false, true])
       });
       const ws = (await getWorkspace(workspaceId))!;
       await runInTenant(ws, async () => {
-        await ready();
+        await ready(); await fundFixtureWorkspace();
         for (const [id, status] of [
           ["accepted", "running"],
           ["accepted_next", "running"],

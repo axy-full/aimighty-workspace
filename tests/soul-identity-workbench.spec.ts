@@ -182,10 +182,10 @@ test('Soul ID submits through the real mock backend and saves a usable local bin
   const state=await page.request.get(`/api/soul/identities?projectId=${f.project.id}`,{headers:{'X-Workbench-Scope':f.scope}}).then(response=>response.json());
   expect(state.identities).toHaveLength(1);expect(state.identities[0].status).toBe('ready');expect(state.identities[0].creditsBilled).toBeGreaterThan(0);
   await page.goto('/settings#engines');
-  const connection=page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Connected identity account',exact:true})});
-  await expect(connection.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toBeVisible();
-  await expect(connection.getByLabel('Identity account API key secret',{exact:true})).toHaveAttribute('type','password');
-  await expect(connection.getByRole('button',{name:'Save identity account',exact:true})).toBeDisabled();
+  const connection=page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Identity engine',exact:true})});
+  await expect(connection).toContainText('Generations use your organisation’s Particl credits.');
+  await expect(connection.getByRole('textbox')).toHaveCount(0);
+  await expect(connection.getByRole('button',{name:'Verify connection',exact:true})).toHaveCount(0);
   await connection.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('higgsfield-connection.png')});
 });
 

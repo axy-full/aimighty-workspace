@@ -33,33 +33,35 @@ async function granted(ws: TenantWorkspace, credits = 500) {
   await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_at) VALUES(?,?,?,'unit','manual',0)", args: [`grant_${ws.id}`, ws.id, credits] });
 }
 
-test("a token's monthly ceiling trips on the credits the workspace pays, never on the vendors' dollars", async () => {
+test("a token credit ceiling includes reserved work and does not expose provider amounts", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   const { tokenSpendThisMonth } = await import("../../lib/auth");
   const { billCredits, creditUsd } = await import("../../lib/creditTerms");
   const ws = workspace("token", true);
-  /* A ceiling two jobs fit in the vendors' dollars, but not in what the workspace pays for them. */
+  /* The next job must include the existing reservation in the credit ceiling. */
   const perJob = billCredits(1, SEEDANCE);
-  const cap = (2 + 2 * perJob * creditUsd()) / 2;
+  const cap = perJob + Math.floor(perJob / 2);
   await granted(ws);
   await runInTenant(ws, async () => {
     await ready();
     await db().batch([
       "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_owner','owner@example.test','Owner','x','admin',0)",
-      { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_usd,created_at) VALUES('tok_walls','hash_walls','Agent','u_owner','render',?,0)", args: [cap] },
+      { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_credits,created_at) VALUES('tok_walls','hash_walls','Agent','u_owner','render',?,0)", args: [cap] },
     ], "write");
-    const token = { id: "tok_walls", capUsd: cap };
+    const token = { id: "tok_walls", capCredits: cap, capUsd: null };
     const job = (id: string) => ({ id, kind: "video" as const, engine: "byteplus", model: SEEDANCE, status: "running" as const, engineCostUsd: 1, createdBy: "u_owner" });
     await reserveGenerationSpend(job("gen_walls_1"), { token });
     await db().execute({ sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,cost_usd,token_id) VALUES('gen_walls_1',?,'one','{}','running',?,?,'video',1,'tok_walls')`, args: [SEEDANCE, Date.now(), Date.now()] });
-    /* The second would fit in the vendors' dollars; in what the workspace pays, it does not. */
+    /* A second reservation exceeds the approved credit ceiling. */
     const refused = await reserveGenerationSpend(job("gen_walls_2"), { token }).then(() => null, (e: unknown) => e);
     expect(refused).toBeInstanceOf(SpendReservationError);
     expect((refused as InstanceType<typeof SpendReservationError>).status).toBe(429);
-    expect((refused as Error).message).toContain("token's monthly spending ceiling");
-    /* What the admission check reads, and what a refusal says: credits, and their price. */
+    /* The refusal names the ceiling the customer set, in credits; never a vendor figure or a dollar. */
+    expect((refused as Error).message).toContain(`token's ${cap.toLocaleString("en-US")} cr monthly ceiling`);
+    expect((refused as Error).message).not.toMatch(/\$/);
+    /* What the admission check reads: credits billed, and their price; never the vendors' dollars. */
     expect(await tokenSpendThisMonth("tok_walls")).toEqual({ usd: perJob * creditUsd(), credits: perJob });
   });
 });
@@ -79,15 +81,14 @@ test("the monthly cap on the platform's engines refuses without a figure", async
   });
 });
 
-test("a quote's approval credits carry the margin only where credits are billed", async () => {
+test("current and migrated studios receive the same retail credit quote", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { quotedCredits } = await import("../../lib/credits");
   const { billCredits } = await import("../../lib/creditTerms");
   const { publicQuote, quoteOf, liveTerms } = await import("../../lib/quote");
   expect(await runInTenant(workspace("quote_cr", true), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
-  /* On its own keys the workspace reads its vendor's dollars in `price`: the approval counts the same
-     dollars in credits at the price of a credit, so the two side by side say nothing more. */
-  expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(14);
+  /* Stored funding preferences cannot bypass managed retail quotes. */
+  expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
   /* A quote leaves the server in credits alone (/api/rig/quote). */
   const q = quoteOf([{ key: "s1", usd: 1.339101, engine: SEEDANCE }, { key: "s2", usd: 0.512901, engine: SEEDANCE }], liveTerms());
   const shown = publicQuote(q);
