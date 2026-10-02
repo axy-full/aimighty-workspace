@@ -214,7 +214,7 @@ test("no route, cron or library path erases media, a workspace or a team's rows"
   const retired = /\b(cleanupDeletedGenerations|purgeWorkspace|retryWorkspacePurges|cleanupAstraArtifacts)\s*\(/;
   const definedIn = new Set([path.join("lib", "mediaDeletion.ts"), path.join("lib", "purge.ts")]);
   // What a team makes. Security and housekeeping tables (sessions, chunks, logs) are not listed.
-  const content = /DELETE FROM (uploads|projects|shots|canvas_items|cast_members|ideas|identities|crew_members|crew_solutions|workspace_rules|topups|ledger_checks|atomik_messages|atomik_steps|atomik_memory|elements|element_attributes|attribute_versions|bindings|shot_presets|generations|project_library_uploads|workbench_projects)\b/;
+  const content = /DELETE FROM (uploads|projects|shots|canvas_items|cast_members|ideas|identities|crew_members|crew_solutions|workspace_rules|topups|ledger_checks|atomik_messages|atomik_steps|atomik_memory|atomik_skills|atomik_skill_versions|elements|element_attributes|attribute_versions|bindings|shot_presets|generations|project_library_uploads|workbench_projects)\b/;
   const offenders: string[] = [];
   for (const file of files) {
     const text = readFileSync(file, "utf8");

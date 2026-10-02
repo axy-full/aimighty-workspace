@@ -478,6 +478,22 @@ themselves live in the platform ledger: each reservation names its run
 limit is counted from there. Never delete runs, steps or reservations; an undo
 takes a build's cards off the canvas softly and records itself on the run.
 
+### Atomik skills
+
+Every tenant snapshot includes `atomik_skills` and `atomik_skill_versions`:
+the runs a workspace saved as skills (lib/atomikSkills.ts). Each row carries
+`workspace_id`; the first holds a skill's current name, command, who sees it
+(personal or workspace), its maker, its current version and whether it is
+archived, and the second holds every version as it was saved, append-only.
+A version is a template: steps with their engines and settings, and named
+parameters with their defaults. Nothing in either table is paid, priced or
+produced; running a skill files ordinary proposals in `atomik_chats`,
+`atomik_messages` and `atomik_steps`, each approved on its own. Both tables
+are created the first time a workspace reads or saves a skill, so older
+snapshots simply lack them. Archive is a flag on the skill's row, never a
+delete: restore it from the snapshot as it is, and never remove a version to
+"tidy" a skill's history.
+
 ## Verification evidence
 
 Run the disposable local suite (no remote calls or application env loading):
