@@ -553,6 +553,44 @@ test("Ask: a check waits for one tap at its price; a tap at another price is ref
   });
 });
 
+test("a check paused at the run's limit can be approved again at its price; nothing is reserved while it waits, and once the limit is raised that approval stands and it runs once", async () => {
+  await inRun("check-limit", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    const { runCharges } = await import("../../lib/generationRequests");
+    const r = renders(ws, () => 0.3);
+    const j = judge({});
+    const deps = await depsFor(ws, r, { checks: { development: j.development } });
+    const runId = await approvedRun(deps, { limit: 500, mode: "ask", shots: 1 });
+    await stillShots(runId);
+    expect(await tickTo(runId, deps, { tapRenders: true })).toEqual({ state: "needs_you", more: false });
+    let run = await view();
+    let check = run.paid[1];
+    expect(check).toMatchObject({ tool: "verify", state: "waiting", canRender: true });
+    expect(check.worst).toBeGreaterThan(0);
+    /* The limit is set to what the run has spent (a test fixture: a person can only raise it), so the check no longer fits. */
+    await db().execute({ sql: "UPDATE rig_agent_runs SET cap_credits=? WHERE id=?", args: [run.money!.spent, runId] });
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: check.seq, fingerprint: check.fingerprint, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    check = (await view()).paid[1];
+    expect(check).toMatchObject({ state: "paused", pause: "limit", canRender: true, fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(j.seen).toEqual([]);
+    expect((await runCharges(runId)).some((c) => c.id.startsWith("wb_development_"))).toBe(false);
+    /* Tapped again at its price: still past the limit, it waits again, and still nothing is reserved. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: check.seq, fingerprint: check.fingerprint, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect((await view()).paid[1]).toMatchObject({ state: "paused", pause: "limit" });
+    expect((await runCharges(runId)).some((c) => c.id.startsWith("wb_development_"))).toBe(false);
+    /* The limit raised: the approval at that price stands, and the check runs once. */
+    await agent.raiseRigAgentLimit({ productionId: "prod-1", runId, limit: 500, userId: OWNER });
+    expect(await tickTo(runId, deps)).toEqual({ state: "done", more: false });
+    expect(j.seen).toEqual(["01 — Opening"]);
+    run = await view();
+    expect(run.paid[1]).toMatchObject({ state: "done", verdict: "pass" });
+    expect((await runCharges(runId)).filter((c) => c.id.startsWith("wb_development_"))).toHaveLength(1);
+  });
+});
+
 test("a clean fail adds fix 1: written by the fix writer (metered like planning), priced as a re-edit of the failed still — never a fresh render — asking for a tap even in Auto; it renders under its own key, its check reads the fixed take, and a pass is done", async () => {
   await inRun("fix-pass", async (ws) => {
     const agent = await import("../../lib/workbench/rig-agent");
