@@ -168,7 +168,7 @@ test("accepted receipt recovers tenant handle outage, collects original bytes on
     expect((await submitVideoRow(id)).ok).toBe(true);expect(submissions).toBe(1);
     await reconcileGenjutsuVideo(id);await reconcileGenjutsuVideo(id);
     expect(polls).toBe(1);expect(submissions).toBe(1);
-    const gen=(await getGeneration(id))!;expect(gen.status).toBe("succeeded");expect(gen.storedUrl).toBe(`/api/media/${id}`);expect(gen.costUsd).toBeNull(); expect(gen.creditsBilled).toBe(12);
+    const gen=(await getGeneration(id))!;expect(gen.status).toBe("succeeded");expect(gen.storedUrl).toBe(`/api/media/${id}`);expect(gen.costUsd).toBeNull(); const {billCredits,marginKeyOf}=await import("../../lib/creditTerms"); /* The saved price, in tenths at the default price of a credit (it read 12 at US$0.10, whole). */ expect(gen.creditsBilled).toBe(billCredits(0.75,marginKeyOf("video",value.model.id)));
     expect(gen.params).not.toHaveProperty("higgsfieldVideoHandle");expect(JSON.stringify(gen)).not.toContain("credentialFingerprint");
     expect(await readVideoBytes(id)).toEqual(readFileSync("public/fixtures/clip.mp4"));
     // The measured length is on the column the per-second tools price from, not only in params.

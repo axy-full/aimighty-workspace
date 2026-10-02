@@ -206,6 +206,7 @@ test('direct OpenAI funding is separate from Gateway and provider changes fail b
   const direct = workspace({ keys: { openai: 'workspace-openai' } });
   await runInTenant(direct, () => meter({ id: 'meter-direct-byok', kind: 'text', engine: 'openai', model: 'openai/gpt-6-astra', status: 'running', engineCostUsd: .10 }));
   const rows = await platformDb().execute("SELECT id,paid_by_platform,billed_credits FROM meter_events WHERE id IN ('meter-direct-openai','meter-direct-byok') ORDER BY id");
-  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 1, billed_credits: 2 });
+  /* Charged in tenths: 1.5 credits at this file's price, never rounded up to a whole credit. */
+  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 1, billed_credits: 1.5 });
   expect(rows.rows[1].paid_by_platform).toBe(1);
 });

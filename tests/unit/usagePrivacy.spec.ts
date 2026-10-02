@@ -186,7 +186,8 @@ test("a workspace that pays its vendors: the same rule on its dollar body, the v
   const owner = await usageAs(ws, person("u_owner"));
   expect(owner.body.unit).toBe("credits");
   expect(owner.body.byPerson.map((r) => [r.name, r.n, r.spend])).toEqual([
-    ["Owner Fixture", 1, 20], ["Editor Fixture", 1, 8], ["Crew Fixture", 1, 4], ["Member Fixture", 1, 2], ["Unknown", 1, 1],
+    /* In tenths at this file's price of a credit, never rounded up to whole credits. */
+    ["Owner Fixture", 1, 19.5], ["Editor Fixture", 1, 7.5], ["Crew Fixture", 1, 3.8], ["Member Fixture", 1, 1.5], ["Unknown", 1, 0.8],
   ]);
   expect(owner.body.vendors.find((v) => v.id === "byteplus")?.anchor).toBeUndefined();
 
@@ -194,8 +195,9 @@ test("a workspace that pays its vendors: the same rule on its dollar body, the v
   const member = await usageAs(ws, person("u_member"));
   expect(member.body.byPerson.map((r) => r.name)).toEqual(["Teammate", "Member Fixture"]);
   expect(member.body.byPerson[0].n).toBe(4);
-  expect(member.body.byPerson[0].spend).toBe(33);
-  expect(member.body.byPerson[1]).toMatchObject({ n: 1, spend: 2 });
+  /* The teammates' sum in whole tenths: 19.5 + 7.5 + 3.8 + 0.8. */
+  expect(member.body.byPerson[0].spend).toBe(31.6);
+  expect(member.body.byPerson[1]).toMatchObject({ n: 1, spend: 1.5 });
   expect(member.body.vendors.find((v) => v.id === "byteplus")?.anchor).toBeUndefined();
   for (const other of TEAMMATES) expect(member.wire, `a member's usage names ${other}`).not.toContain(other);
 });

@@ -84,12 +84,14 @@ test('explicit provider rejection releases only the rejected reservation without
 
 test('a refused submission starts the take that waited for its slot, not the ten-minute cron',async()=>{
  const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {db,now}=await import('../../lib/db');
+ /* Held as the app holds a take today (lib/held.ts heldInfo): its price in tenths at today's price of a credit. */
+ const {heldInfo}=await import('../../lib/held');
  const engine=engineFor('byteplus'),original=engine.render;let calls=0;
  engine.render=async()=>{calls++;if(calls===1)throw new Error('Ark submit failed (422): invalid input');return {handle:{provider:'byteplus',ref:'slot-came-back',model:'mock'}};};
  try{await runInTenant({...workspace('slot_back'),concurrency:1},async()=>{
   const job=await makeJob('gen_refused_first');
   await db().execute({sql:`INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,billed_to,created_by,created_at,updated_at) VALUES('gen_waited','video',?,'Test',?,'held','byteplus','generate','byteplus','owner',?,?)`,
-   args:[job.model.id,JSON.stringify({...job.params,held:{estUsd:.7,needs:11,at:1,why:'slots'}}),now(),now()]});
+   args:[job.model.id,JSON.stringify({...job.params,held:heldInfo(.7,'video',job.model.id,'slots')}),now(),now()]});
   const result=await submitVideoJob(job);
   expect(result.ok).toBe(false);
   // The refusal freed the one slot; the held take was released and sent from its row.

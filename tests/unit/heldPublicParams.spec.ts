@@ -57,7 +57,8 @@ test("a workspace on its own keys keeps the dollars that are its own, and is not
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("own-keys-map", false), async () => {
     const gen = rowToGeneration(heldRow("gen_own", "held", "slots"));
-    expect(gen.params.held).toEqual({ why: "slots", needs: 21 });
+    /* #425: a saved own key no longer exempts it, so it is sent its price in credits, in tenths (20.6, not 21). */
+    expect(gen.params.held).toEqual({ why: "slots", needs: 20.6 });
   });
 });
 

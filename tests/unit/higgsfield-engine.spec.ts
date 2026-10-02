@@ -184,6 +184,7 @@ test("a completed request stores the full master and settles the saved price aft
   const { reconcileHiggsfieldImage } = await import("../../lib/renderWork");
   const { getGeneration } = await import("../../lib/jobs");
   const { fixtureBytes } = await import("../../lib/mockFs");
+  const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
   const sharp = (await import("sharp")).default;
   const genId = `gen_soul_${path.basename(dir)}`;
   const output = path.join(process.cwd(), ".data", "generations", `${genId}.png`);
@@ -203,7 +204,8 @@ test("a completed request stores the full master and settles the saved price aft
       expect(gen.status).toBe("succeeded");
       expect(gen.storedUrl).toBe(`/api/media/${genId}`);
       expect(gen.costUsd).toBeNull();
-      expect(gen.creditsBilled).toBe(2);
+      /* The saved price (0.12), not the changed configuration, in tenths at the default price of a credit. */
+      expect(gen.creditsBilled).toBe(billCredits(0.12, marginKeyOf("image", req.model.id)));
       const saved = await readFile(output);
       const original = await fixtureBytes("still.png");
       expect(await sharp(saved).raw().toBuffer()).toEqual(await sharp(original).raw().toBuffer());

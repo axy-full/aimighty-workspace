@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* The house workspace (lib/houseWorkspace.ts) beside a member workspace and a
    new one, against real local databases: the house runs on the platform's
@@ -15,8 +16,9 @@ process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.WORKSPACE_DB_DIRECTORY = path.join(dir, "tenants");
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Priced at US$0.10 for this file only: a top-level CREDIT_USD would price the whole unit suite. */
+pinCreditUsd("0.10");
 
 /* Unit specs share one worker and one platform database, so every id here is unique to this run. */
 const run = randomUUID().slice(0, 8);

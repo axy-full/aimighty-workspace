@@ -13,8 +13,10 @@ export async function fundFixtureWorkspace(credits = 10_000): Promise<void> {
   const root = realpathSync(tmpdir()) + path.sep;
   if (!file || !realpathSync(file).startsWith(root)) throw new Error("Fixture funds require a disposable local database");
   if ((await platformDb().execute({ sql: "SELECT 1 FROM credit_grants WHERE workspace_id=? LIMIT 1", args: [workspace.id] })).rows.length) return;
+  /* In today's credits, saying so (unit_usd): a grant row without one is a legacy US$0.10 grant. */
+  const { creditUsd } = await import("../../lib/creditTerms");
   await platformDb().execute({
-    sql: "INSERT OR IGNORE INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES(?,?,?,'manual',0)",
-    args: [`fixture_funds_${workspace.id}`, workspace.id, credits],
+    sql: "INSERT OR IGNORE INTO credit_grants(id,workspace_id,credits,kind,created_at,unit_usd) VALUES(?,?,?,'manual',0,?)",
+    args: [`fixture_funds_${workspace.id}`, workspace.id, credits, creditUsd()],
   });
 }

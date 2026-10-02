@@ -635,7 +635,9 @@ test("Marketing durable receipts recover lost tenant acknowledgement, settle sav
       await reconcileHiggsfieldImage(genId);
       await reconcileHiggsfieldImage(genId);
       expect((await getGeneration(genId))!.costUsd).toBeNull();
-      expect((await getGeneration(genId))!.creditsBilled).toBe(4);
+      /* The saved price (0.25), in tenths at the default price of a credit. */
+      const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
+      expect((await getGeneration(genId))!.creditsBilled).toBe(billCredits(0.25, marginKeyOf("image", req.model.id)));
       expect((await getGeneration(genId))!.status).toBe("succeeded");
       expect(
         (
