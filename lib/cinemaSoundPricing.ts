@@ -1,4 +1,5 @@
 import type { TenantWorkspace } from "./tenant";
+import { isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * What Cinema Studio 4.0's Sound switch (`generate_audio`) costs, and where it is offered.
@@ -16,8 +17,9 @@ import type { TenantWorkspace } from "./tenant";
  *   of range or not a number, malformed JSON, an empty object) counts as unset, and is logged once without its value.
  *
  * Unset, the switch is not offered and admission refuses a take asked for with sound, before anything is reserved or
- * sent, except in the house workspace. That one is metered at cost and never billed in credits, so there sound may
- * still be asked for (and costs what the provider bills), which is how its charge is measured.
+ * sent, except in the house workspace (lib/houseWorkspace.ts, named by its id, never by the legacy flag). That one is
+ * metered at cost and never billed in credits, so there sound may still be asked for (and costs what the provider
+ * bills), which is how its charge is measured.
  *
  * Set, the switch is offered everywhere, and the sound cost is part of the take's price wherever the price is made:
  * the quote and the credit ceiling approved on Generate, the re-price before dispatch, and the settlement on the
@@ -69,13 +71,10 @@ export function cinemaSoundPricing(): CinemaSoundPricing | null {
 }
 
 /**
- * The house workspace: the studio's original one, metered at cost and never billed in credits
- * (lib/credits.ts › creditsApply). Read from its legacy flag until the house workspace has a module of its own.
+ * Whether this workspace may ask Cinema Studio for sound: anywhere once sound is priced, and always in the house
+ * workspace (lib/houseWorkspace.ts: by its id; a workspace that only carries the legacy flag is not the house).
  */
-export const isHouseWorkspace = (ws: Pick<TenantWorkspace, "legacy"> | null | undefined): boolean => ws?.legacy === true;
-
-/** Whether this workspace may ask Cinema Studio for sound: anywhere once sound is priced, and always in the house workspace. */
-export function cinemaSoundOffered(ws: Pick<TenantWorkspace, "legacy"> | null | undefined): boolean {
+export function cinemaSoundOffered(ws: Pick<TenantWorkspace, "id"> | null | undefined): boolean {
   return cinemaSoundPricing() != null || isHouseWorkspace(ws);
 }
 

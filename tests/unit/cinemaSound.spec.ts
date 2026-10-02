@@ -10,14 +10,16 @@ import type { Reference, VideoParams } from "../../lib/ark";
 import type { VideoRenderRequest } from "../../lib/engines/types";
 import type { ComposerModel, EngineRow } from "../../lib/workspace/composer";
 import { CINEMA_STUDIO_MODEL_ID } from "../../lib/cinemaStudioTypes";
+import { HOUSE_WORKSPACE_ID } from "../../lib/houseWorkspace";
 
 /**
  * Cinema Studio 4.0's Sound switch, its private price, and its Movement on Auto.
  *
  * - What sound costs is set privately, in the environment (lib/cinemaSoundPricing.ts), and read strictly: anything
  *   it does not fully understand counts as unset. Every price below is a fixture, not the real pricing.
- * - Unset, the switch is offered only in the house workspace, which is metered at cost. Everywhere else it is hidden,
- *   and admission refuses a take asked for with sound, before anything is reserved or sent.
+ * - Unset, the switch is offered only in the house workspace (by its id, never by the legacy flag), which is metered at
+ *   cost. Everywhere else it is hidden, and admission refuses a take asked for with sound, before anything is reserved
+ *   or sent.
  * - Set, the switch is offered everywhere and sound is part of the price wherever the price is made: the quote, the
  *   credit ceiling, the re-price before dispatch and the settlement, through the same credit terms.
  * - A request carries `generateAudio` only when the switch is on; a sound reference never turns it on. The provider
@@ -114,16 +116,15 @@ test("the sound price is read strictly from the environment: one or more of thre
   expect(warnings[0]).not.toContain("0.75");
 });
 
-test("where sound is offered: anywhere once it is priced, always in the house workspace, nowhere else", async () => {
-  const { cinemaSoundOffered, isHouseWorkspace } = await import("../../lib/cinemaSoundPricing");
-  const credits = workspace("on_credits"), house = workspace("house", true);
-  expect(isHouseWorkspace(house)).toBe(true);
-  expect([credits, null, undefined].map(isHouseWorkspace)).toEqual([false, false, false]);
-  expect([cinemaSoundOffered(credits), cinemaSoundOffered(house), cinemaSoundOffered(null)]).toEqual([false, true, false]);
+test("where sound is offered: anywhere once it is priced, always in the house workspace (by its id), nowhere else", async () => {
+  const { cinemaSoundOffered } = await import("../../lib/cinemaSoundPricing");
+  /* The house is named by its id; a workspace that only carries the legacy flag is not the house, and fails closed. */
+  const credits = workspace("on_credits"), house = workspace(HOUSE_WORKSPACE_ID, true), flagged = workspace("flagged_not_house", true);
+  expect([credits, house, flagged, null].map(cinemaSoundOffered)).toEqual([false, true, false, false]);
   process.env[PRICING] = '{"perTakeUsd":"wrong"}';
-  expect([cinemaSoundOffered(credits), cinemaSoundOffered(house)]).toEqual([false, true]);
+  expect([credits, house, flagged].map(cinemaSoundOffered)).toEqual([false, true, false]);
   process.env[PRICING] = PER_TAKE;
-  expect([cinemaSoundOffered(credits), cinemaSoundOffered(house), cinemaSoundOffered(null)]).toEqual([true, true, true]);
+  expect([credits, house, flagged, null].map(cinemaSoundOffered)).toEqual([true, true, true, true]);
 });
 
 /* ── What sound adds to a take ───────────────────────────────────────── */
@@ -343,8 +344,15 @@ test("the composer's price read: sound is offered and priced only where it is, r
     expect(refused.status).toBe(400);
     expect(await refused.json()).toEqual({ error: UNAVAILABLE });
   }, actor);
+  /* Unset, a workspace that only carries the legacy flag is not the house: no switch, and sound is refused. */
+  await runInTenant(workspace("cinema_sound_read_flagged", true), async () => {
+    expect(await cinemaRow()).not.toHaveProperty("sound");
+    const refused = await read(`model=${encodeURIComponent(CINEMA_STUDIO_MODEL_ID)}&${at}&audio=1`);
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: UNAVAILABLE });
+  }, actor);
   /* Unset, in the house workspace: offered, at what is known (nothing added). */
-  await runInTenant(workspace("cinema_sound_read_house", true), async () => {
+  await runInTenant(workspace(HOUSE_WORKSPACE_ID, true), async () => {
     expect(await cinemaRow()).toMatchObject({ sound: true });
     const silent = await priced(CINEMA_STUDIO_MODEL_ID, at), loud = await priced(CINEMA_STUDIO_MODEL_ID, `${at}&audio=1`);
     expect(loud).toMatchObject({ credits: silent.credits, approximate: true });
@@ -388,17 +396,18 @@ test("the watched pricing text is the one the quote prices from, and it names no
 
 /* ── Admission, through the real /api/generate route ─────────────────── */
 
-async function fixture(name: string, run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, house = false) {
+async function fixture(name: string, run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, legacy = false) {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   await platformReady();
   await platformDb().execute({
     sql: "INSERT INTO workspaces(id,slug,name,db_url,legacy,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,?,1,'owner',0,0,20,200)",
-    args: [name, name, name, `file:${path.join(dir, `${name}.db`)}`, house ? 1 : 0],
+    args: [name, name, name, `file:${path.join(dir, `${name}.db`)}`, legacy ? 1 : 0],
   });
-  await grantCredits(name, 100000, "Cinema Studio sound test", actor.user.id, "manual");
+  /* The house is never given credits; every other workspace pays in them. */
+  if (name !== HOUSE_WORKSPACE_ID) await grantCredits(name, 100000, "Cinema Studio sound test", actor.user.id, "manual");
   const ws = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [name] })).rows[0]);
-  expect(ws.legacy).toBe(house);
+  expect(ws.legacy).toBe(legacy);
   await runInTenant(ws, async () => run(await setup(name)), actor);
 }
 async function setup(name: string) {
@@ -406,8 +415,9 @@ async function setup(name: string) {
   const { platformDb } = await import("../../lib/platform");
   const higgsfield = await import("../../lib/higgsfield");
   await database.ready();
-  await database.db().execute("INSERT INTO projects(id,name,created_at) VALUES('project','Saved production',0)");
-  await database.db().execute("INSERT INTO settings(key,value,updated_at) VALUES('promptWriter','none',0)");
+  /* A workspace with the legacy flag keeps its data in the primary database, so two such fixtures share it. */
+  await database.db().execute("INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('project','Saved production',0)");
+  await database.db().execute("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES('promptWriter','none',0)");
   const dispatches: string[] = [];
   const admission = load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
     "@/lib/inngest": { enqueueRender: async (id: string) => { dispatches.push(id); return true; } },
@@ -466,7 +476,20 @@ test("unset, a take asked for with sound is refused before anything is reserved 
   expect(f.dispatches).toHaveLength(1);
 }));
 
-test("unset, the house workspace may still ask for sound, at the figure that is known", async () => fixture("cinema_sound_house", async (f) => {
+test("unset, a workspace that only carries the legacy flag is not the house: sound is refused there, nothing reserved or sent", async () => fixture("cinema_sound_flagged", async (f) => {
+  const refused = await f.admission.prepareGeneration(f.body({ generateAudio: true }), actor);
+  expect(refused).toMatchObject({ ok: false, status: 400 });
+  expect(JSON.stringify(refused)).toContain(UNAVAILABLE);
+  const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
+  const reply = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-flagged");
+  expect(reply.status).toBe(400);
+  expect(await reply.json()).toEqual({ error: UNAVAILABLE });
+  expect(await f.rows()).toEqual([]);
+  expect(await f.reserved()).toBe(0);
+  expect(f.dispatches).toEqual([]);
+}, true));
+
+test("unset, the house workspace (by its id) may still ask for sound, at the figure that is known", async () => fixture(HOUSE_WORKSPACE_ID, async (f) => {
   const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
   const loud = prepared(await f.admission.prepareGeneration(f.body({ generateAudio: true }), actor));
   expect(params(loud).generateAudio).toBe(true);
