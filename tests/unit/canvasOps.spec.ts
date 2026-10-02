@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
 import { newProject, type Asset, type CanvasNode } from "../../lib/workbench/studio";
-import { arrangeGraph } from "../../lib/workbench/node-graph";
+import { kindSectionId, tidyBoard } from "../../lib/workspace/rig-board";
 import {
   applyTeamPatch, catchUpForTeam, emptyTeamCanvas, overlay, parseTeamCanvas, roomPeer, writeRoom,
   type RoomStorage, type TeamCanvas, type TeamPatch,
@@ -140,18 +140,22 @@ test("set writes only the fields an operation may set: approving stays a person'
   expect(plan.outcomes.map((o) => o.held ?? "ok")).toEqual(["ok", "A card's status is not set this way.", "That card is not on the canvas."]);
 });
 
-test("tidy lays the board out by the graph: columns by input depth, rows in order, locked cards stay; a second tidy moves nothing", () => {
+test("tidy lays the board out by sections: a block per section under its title, rows in order, locked cards stay; a second tidy moves nothing", () => {
   const canvas = canvasOf([scene("a", { x: 900, y: 700 }), scene("b", { x: 100, y: 1200, linked: ["a"] }), scene("c", { x: 1500, y: 100 }), scene("l", { x: 3000, y: 3000, locked: true })]);
   const plan = planCanvasOps(canvas, [{ kind: "tidy" }], "ana");
-  const positions = Object.fromEntries(plan.changes.map((c) => [c.id, c.after]));
-  expect(positions).toEqual({ a: { x: 60, y: 70 }, b: { x: 460, y: 70 }, c: { x: 60, y: 448 } });
-  /* The same layout the graph's own arrange makes. */
-  for (const n of arrangeGraph(Object.values(canvas.nodes))) if (positions[n.id]) expect(positions[n.id]).toEqual({ x: n.x, y: n.y });
+  const positions = Object.fromEntries(plan.changes.filter((c) => !c.made).map((c) => [c.id, c.after]));
+  expect(positions).toEqual({ a: { x: 60, y: 140 }, b: { x: 60, y: 400 }, c: { x: 60, y: 660 } });
+  /* The shots' section title is made with them, in its place. */
+  const shots = kindSectionId("shots");
+  expect(plan.changes.filter((c) => c.made).map((c) => [c.id, c.after.title, c.after.x, c.after.y])).toEqual([[shots, "Shots", 60, 60]]);
+  expect(plan.outcomes).toEqual([{ kind: "create", nodeIds: [shots] }, { kind: "tidy", nodeIds: ["a", "b", "c"] }]);
+  /* The same layout the board's own tidy makes (lib/workspace/rig-board.ts). */
+  for (const spot of tidyBoard(Object.values(canvas.nodes), { assets: [] }).spots) expect(positions[spot.id]).toEqual({ x: spot.x, y: spot.y });
   const tidied = applyTeamPatch(canvas, { ...plan.patch, at: 5, author: "ana" });
   expect(tidied.nodes.l).toMatchObject({ x: 3000, y: 3000 });
   expect(planCanvasOps(tidied, [{ kind: "tidy" }], "ana").changes).toEqual([]);
   /* Atomik's cursor sits on the card it touched last, in the graph's own coordinates. */
-  expect(focusPoint(Object.values(tidied.nodes), "c")).toEqual({ x: 44, y: 416 });
+  expect(focusPoint(Object.values(tidied.nodes), "c")).toEqual({ x: 44, y: 638 });
 });
 
 test("a person always wins: an Atomik run moves only cards it made and still last wrote, and may still wire into a teammate's", () => {
@@ -167,7 +171,7 @@ test("a person always wins: an Atomik run moves only cards it made and still las
   ];
   const plan = planCanvasOps(canvas, ops, "agent:run-1");
   expect(plan.outcomes.map((o) => o.held ?? "ok")).toEqual([PERSON_WINS, "ok", "ok", "ok", "ok"]);
-  /* A tidy by the run lays out only its own cards; a teammate's stay where they put them. */
+  /* A tidy by the run lays out only its own cards (by section, making no title); a teammate's stay where they put them. */
   const tidy = planCanvasOps(canvas, [{ kind: "tidy" }], "agent:run-1");
   expect(tidy.changes.map((c) => c.id)).toEqual(["mine"]);
   /* Another run is not this one. */
@@ -273,9 +277,10 @@ test("concurrent edits: nothing a person changed is lost, and nothing the server
       applyCanvasOps("prod-1", { opId: "tidy-1", ops: [{ kind: "tidy" }], author: "ana", what: "tidy" }, { room: null }),
       patchTeamCanvas("prod-1", { upsertNodes: [scene("a", { x: 900, y: 700, text: "Bo's prompt" })], fields: { a: ["text"] }, removeNodes: [], upsertAssets: [], order: null }, "bo"),
     ]);
-    expect(tidied.changed).toBe(2);
+    /* Two cards moved, and the shots' section title made. */
+    expect(tidied.changed).toBe(3);
     let canvas = (await readTeamCanvas("prod-1"))!.canvas;
-    expect(canvas.nodes.a).toMatchObject({ x: 60, y: 70, text: "Bo's prompt" });
+    expect(canvas.nodes.a).toMatchObject({ x: 60, y: 140, text: "Bo's prompt" });
     /* Bo drags b after the tidy: the later write wins, and Bo is its writer. */
     await patchTeamCanvas("prod-1", { upsertNodes: [{ ...canvas.nodes.b, x: 1234 }], fields: { b: ["x"] }, removeNodes: [], upsertAssets: [], order: null }, "bo");
     /* Atomik makes s; a stale catch-up from Bo's other window drops it, and so does Bo's stale draft save: s stays. */
@@ -351,8 +356,10 @@ test("the room push reaches the same canvas as the database merge, and a teammat
     expect(room.calls).toEqual(["particl:ws_ops-room:prod-1"]);
     const saved = (await readTeamCanvas("prod-1"))!.canvas;
     expect(room.nodes()).toEqual(saved.nodes);
-    expect(room.store.get("order")).toEqual(["a", "b", "n", "s"]);
-    expect(room.storage().serverMade()).toEqual({ s: "ana" });
+    /* The made card and the section titles the tidy made join the room's order, and the room learns the server made them. */
+    const titles = [kindSectionId("direction"), kindSectionId("shots")];
+    expect(room.store.get("order")).toEqual(["a", "b", "n", "s", ...titles]);
+    expect(room.storage().serverMade()).toEqual({ s: "ana", [titles[0]]: "ana", [titles[1]]: "ana" });
     expect((room.store.get("assets") as FakeMap).get("plate")).toEqual(asset("plate"));
     /* Atomik shows in the room, its cursor on the card it touched last. */
     expect(room.presence.at(-1)).toMatchObject({ userId: "particl-atomik", userInfo: { name: "Atomik", agent: true }, data: { doing: "Working on the board", drag: null } });
@@ -464,7 +471,7 @@ test("with no live room, a window folds in a server change with its own unsent e
     const saved = (await readTeamCanvas("prod-1"))!.canvas;
     const mine: TeamPatch = { upsertNodes: [scene("b", { x: 100, y: 1200, linked: ["a"], title: "Ana's title" })], fields: { b: ["title"] }, removeNodes: [], upsertAssets: [], order: null, at: 9 };
     const view = overlay({ nodes: saved.nodes, assets: saved.assets, order: ["a", "b"], removedIds: [] }, mine);
-    expect(view.nodes.a).toMatchObject({ x: 60, y: 70 });
-    expect(view.nodes.b).toMatchObject({ x: 460, y: 70, title: "Ana's title" });
+    expect(view.nodes.a).toMatchObject({ x: 60, y: 140 });
+    expect(view.nodes.b).toMatchObject({ x: 60, y: 400, title: "Ana's title" });
   });
 });

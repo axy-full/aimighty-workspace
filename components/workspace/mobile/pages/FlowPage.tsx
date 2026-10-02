@@ -5,6 +5,7 @@ import { cardLabel } from "@/lib/workbench/ref-kind";
 import type { Asset, CanvasNode } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
 import { flowChain } from "@/lib/workspace/mobile-templates";
+import { boardSections, isSectionNode, sectionedFlow } from "@/lib/workspace/rig-board";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { MobileRing, RING } from "../MobileRing";
@@ -19,6 +20,8 @@ import { useRig } from "../../rig/RigProvider";
  * The nodes, their order and their links are the real draft graph's, through
  * `flowChain` over `graphEdges` — the same data the desktop canvas positions.
  * Nothing is a fixture, and a graph with no scene still reads as a chain.
+ * Once the board has section titles (lib/workspace/rig-board.ts), what comes
+ * after the scene and its wires reads section by section, each title a heading.
  */
 
 function Media({ id, asset }: { id: string; asset: Asset | undefined }) {
@@ -57,10 +60,11 @@ export function FlowPage() {
   const project = rig.project;
   const nodes = useMemo(() => project?.nodes ?? [], [project]);
   const selId = state.selKind === "shot" ? state.selId : null;
-  const chain = useMemo(() => flowChain(nodes, selId), [nodes, selId]);
+  const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
+  const chain = useMemo(() => sectionedFlow(flowChain(nodes, selId), nodes, { assets }), [nodes, selId, assets]);
+  const counts = useMemo(() => new Map(boardSections(nodes, { assets }).map((s) => [s.id, s.members.length])), [nodes, assets]);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const shotsById = useMemo(() => new Map(rig.shots.map((shot) => [shot.id, shot])), [rig.shots]);
-  const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
 
   if (!project) return <p className="pxm-empty pxm-pad-x">{rig.status === "loading" ? "Loading the graph…" : "Open a project to see its flow."}</p>;
 
@@ -74,20 +78,31 @@ export function FlowPage() {
       {chain.map((step) => {
         const node = byId.get(step.id);
         if (!node) return null;
+        if (isSectionNode(node)) {
+          const count = counts.get(node.id) ?? 0;
+          return (
+            <div className="pxm-flow-section" key={step.id} data-node-id={step.id} data-section="">
+              <span className="pxm-flow-section-name" role="heading" aria-level={3}>{node.title}</span>
+              <span className="pxm-flow-section-count" data-functional-label="">{count === 1 ? "1 card" : `${count.toLocaleString("en-US")} cards`}</span>
+            </div>
+          );
+        }
         /* A reference reads as its kind (Cast, Environment, Element or Ref); any other card, as its type. */
         const label = cardLabel(node, project);
+        /* A locked master says so: its element is locked (the server's answer). */
+        const master = !!node.elementId && rig.masters.has(node.elementId);
         const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
         const asset = resolveAsset(node, nodes, assets);
         const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
         const text = shot ? shotNote(node) : (node.text ?? "").trim();
         const f = footer(node, shot);
         return (
-          <div className="pxm-flow-step" key={step.id} data-node-id={step.id} data-scene={step.scene ? "" : undefined}>
+          <div className="pxm-flow-step" key={step.id} data-node-id={step.id} data-scene={step.scene ? "" : undefined} data-master={master ? "locked" : undefined}>
             {step.wire ? <span className="pxm-flow-wire" data-wire={step.wire} aria-hidden="true" /> : null}
             <span className="pxm-flow-pin" data-scene={step.scene ? "" : undefined} aria-hidden="true" />
-            <div className="pxm-flow-card" role="group" aria-label={`${label}: ${node.title}`}>
+            <div className="pxm-flow-card" role="group" aria-label={`${label}${master ? " master" : ""}: ${node.title}`}>
               <div className="pxm-flow-kicker">
-                <span data-functional-label="">{label.toUpperCase()}</span>
+                <span data-functional-label="">{label.toUpperCase()}{master ? " · MASTER" : ""}</span>
                 <span data-functional-label="">{version}</span>
               </div>
               <div className="pxm-flow-body">

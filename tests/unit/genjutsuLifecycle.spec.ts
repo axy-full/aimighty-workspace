@@ -115,7 +115,9 @@ test("fresh estimate and credential checks precede the sole paid POST; status an
     const calls:string[]=[];let price="0.75";
     globalThis.fetch=async(url)=>{calls.push(String(url));return String(url).includes("/estimate/")?Response.json({usd:price}):Response.json({request_id:requestId,status_url:statusUrl,cancel_url:cancelUrl});};
     const out=await higgsfield.render(req);expect(calls).toHaveLength(2);expect(calls[1]).toBe("https://api.higgsfield.ai/higgsfield/genjutsu/motion-transfer/v1.0");
-    expect(out).toEqual({handle:{...handle(value),credentialFingerprint:req.params.higgsfieldCredentialFingerprint}});
+    // No correlation id in the answer: the one sent with the POST is kept beside the request id.
+    const {higgsfieldCorrelationId}=await import("../../lib/higgsfield");
+    expect(out).toEqual({handle:{...handle(value),credentialFingerprint:req.params.higgsfieldCredentialFingerprint,correlationId:higgsfieldCorrelationId(req.genId,"submit")}});
     price="0.76";calls.length=0;await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);expect(calls).toHaveLength(1);
     process.env.HF_CREDENTIALS="rotated:secret";calls.length=0;await expect(higgsfield.render(req)).rejects.toThrow(/Nothing was submitted/);expect(calls).toHaveLength(0);process.env.HF_CREDENTIALS="fixture:key";
     const accepted="handle" in out?out.handle:handle(value);

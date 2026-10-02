@@ -438,6 +438,7 @@ test("a Soul render the provider fails settles at zero, and its card says what t
   tenant("soul_render_failed", async (gen) => {
     const { reconcileHiggsfieldImage, loadJob, produce } = await import("../../lib/renderWork");
     const { getGeneration } = await import("../../lib/jobs");
+    const { withLedgerCharges } = await import("../../lib/usageLedger");
     const { engineFor } = await import("../../lib/engines");
     const { renderOutcome } = await import("../../lib/production/cast-render");
     await identity("soul_v2");
@@ -445,12 +446,19 @@ test("a Soul render the provider fails settles at zero, and its card says what t
     const genId = String(accepted.body.id);
     expect(await produce((await loadJob(genId))!)).toBeNull();
     const engine = engineFor("higgsfield"), poll = engine.poll;
-    engine.poll = async () => ({ status: "failed", imageUrl: null, videoUrl: null, totalTokens: null, error: "The connected account rejected this generation during moderation.", vendorStartedAt: null, vendorEndedAt: null, raw: {} });
+    /* The provider's own reply for a moderated request: its status says why (lib/engines/higgsfield.ts reads it so). */
+    engine.poll = async () => ({ status: "failed", imageUrl: null, videoUrl: null, totalTokens: null, error: "The connected account rejected this generation during moderation.", vendorStartedAt: null, vendorEndedAt: null, raw: { status: "nsfw" } });
     try { await reconcileHiggsfieldImage(genId); } finally { engine.poll = poll; }
     const failed = (await getGeneration(genId))!;
     expect(failed.status).toBe("failed");
     expect(failed.creditsBilled).toBe(0);
-    expect(renderOutcome(failed)).toBe("The connected account rejected this generation during moderation. Not billed.");
+    /* On the platform's key the provider's own billing stays private; the ledger speaks for the charge. */
+    expect(failed.failure).toMatchObject({ provider: "higgsfield", kind: "content_filter", payer: "platform", billing: null });
+    /* Before the ledger is read the line claims nothing about the charge; the route (GET /api/jobs/:id) adds the ledger's word. */
+    expect(renderOutcome(failed)).toBe("Refused by the content filter · Change the prompt or reference");
+    const [read] = await withLedgerCharges([failed]);
+    expect(read.failure?.charge).toEqual({ credits: 0, settled: true });
+    expect(renderOutcome(read)).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
   }));
 
 test("the Cast page's request and filing: a character, its own Soul ID, its family's model; old entries read-only; account Soul IDs need training again", async () => {
@@ -476,8 +484,22 @@ test("the Cast page's request and filing: a character, its own Soul ID, its fami
   expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"] } })).toEqual(["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"]);
   expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_b"] } })).toEqual(["gen_a"]);
   expect(renderedStills({ id: "gen_a", params: {} })).toEqual(["gen_a"]);
-  expect(renderOutcome({ status: "failed", error: "Stopped.", creditsBilled: 12 })).toBe("Stopped. 12 cr billed.");
-  expect(renderOutcome({ status: "cancelled", creditsBilled: null })).toBe("The render was cancelled.");
+  /* A failed render says what every other take says (lib/errors.ts failureLine): held while the reservation is open,
+     charged once settled, "Not billed" only when settled at nothing, the provider's own outcome on the workspace's key. */
+  const refused = { provider: "higgsfield", stage: "run", code: "nsfw", kind: "content_filter", message: null, billing: null, payer: "platform" } as const;
+  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 12, settled: false } } })).toBe("Refused by the content filter · 12 cr held · Change the prompt or reference");
+  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 12, settled: true } } })).toBe("Refused by the content filter · 12 cr charged · Change the prompt or reference");
+  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 0, settled: true } } })).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
+  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 0, settled: false } } })).toBe("Refused by the content filter · Settling · Change the prompt or reference");
+  expect(renderOutcome({ status: "failed", error: "Refused by the content filter", failure: refused })).toBe("Refused by the content filter · Change the prompt or reference");
+  expect(renderOutcome({ status: "failed", failure: { ...refused, payer: "own", billing: { state: "refunded", amount: 12, unit: "higgsfield_credits", basis: "hf-refund" } } }))
+    .toBe("Refused by the content filter · Higgsfield refunded 12 credits · Change the prompt or reference");
+  /* A held render discarded before it started: cancelled, and the receipt says nothing was kept. */
+  expect(renderOutcome({ status: "cancelled", failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: null, charge: { credits: 0, settled: true } } }))
+    .toBe("Cancelled · Not billed · Render again");
+  /* A record from before failures were kept: its reason, and no word on the charge. */
+  expect(renderOutcome({ status: "failed", error: "Stopped." })).toBe("Stopped.");
+  expect(renderOutcome({ status: "cancelled" })).toBe("The render was cancelled.");
   /* Built earlier on the account with a model the key has no family for: read-only. Never built, or Soul 2/Cinema: editable. */
   const built = { takes: [{ genId: "gen_hfc_1", at: "2026-09-24T00:00:00.000Z" }] };
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Soul Location");

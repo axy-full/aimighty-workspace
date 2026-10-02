@@ -575,7 +575,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         run({ method: "PUT", path: "/api/rig/elements/[id] {locked:true}" }, async (ctx, io) => {
           const ids = (io.unlocked as string[] | undefined) ?? [];
           for (const id of ids)
-            await call(ctx, `/api/rig/elements/${encodeURIComponent(id)}`, { method: "PUT", body: { locked: true } });
+            await call(ctx, `/api/rig/elements/${encodeURIComponent(id)}`, { method: "PUT", body: { locked: true, by: "atomik" } });
           return { detail: plural(ids.length, "element") + " locked", io: { locked: ids.length } };
         }),
       ),

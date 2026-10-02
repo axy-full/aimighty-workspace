@@ -1,8 +1,16 @@
 import { z } from 'zod';
 import { parseScreenplay, MAX_SCRIPT_CHARS } from './screenplay';
 import type { DevelopmentKind, DevelopmentResult, DevelopmentStage } from './development-types';
+import { readVerifyAnswer, verifyInstructions, type VerifySnapshot } from './verify-judge';
 
 export const DEVELOPMENT_STAGES: DevelopmentStage[] = ['draft', 'critique', 'refine'];
+/**
+ * The phases a kind runs. A Verify check is one judge call: its only phase is
+ * the last one, so its result is read where every kind's is (the refine step).
+ */
+export function developmentStages(kind: DevelopmentKind): DevelopmentStage[] {
+  return kind === 'verify' ? ['refine'] : DEVELOPMENT_STAGES;
+}
 export const DEVELOPMENT_RESULT_BYTES = 48_000;
 export const DEVELOPMENT_CRITIQUE_BYTES = 12_000;
 /**
@@ -162,7 +170,13 @@ export function developmentChunks(script: string): DevelopmentChunk[] {
   return chunks;
 }
 
-export function validateDevelopmentResult(value: unknown, kind: DevelopmentKind, chunk: DevelopmentChunk): DevelopmentResult {
+/** `verify`: the check's snapshot (what it asked and showed), to read the judge's answer against. */
+export function validateDevelopmentResult(value: unknown, kind: DevelopmentKind, chunk: DevelopmentChunk, verify?: VerifySnapshot): DevelopmentResult {
+  if (kind === 'verify') {
+    if (!verify) throw new Error('This check has no saved evidence to read its answer against.');
+    const result = readVerifyAnswer(value, verify);
+    return { summary: result.summary, recommendation: '', ideas: [], scenes: [], critique: [], assumptions: [], verify: result };
+  }
   if (kind === 'frames') {
     const result = developmentFramesSchema.parse(value);
     const wanted = chunk.segments.map((segment) => segment.id);
@@ -302,6 +316,7 @@ function beatsheetInstructions(stage: DevelopmentStage): string {
 }
 
 export function developmentInstructions(kind: DevelopmentKind, stage: DevelopmentStage): string {
+  if (kind === 'verify') return verifyInstructions();
   if (kind === 'write') return writerInstructions(stage);
   if (kind === 'beatsheet') return beatsheetInstructions(stage);
   if (kind === 'environment') return environmentInstructions(stage);

@@ -15,6 +15,8 @@ import { sendMail, mailConfigured } from "./mail";
 import { membershipRole, workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
+import { ProviderPoolBusyError } from "./generationRequests";
+import { POOL_MARK, SHARED_POOL, leavePool, poolPrecheck, queueForPool, releasePoolWaiters, waitingIn } from "./providerPool";
 
 /**
  * The hard stop at zero.
@@ -29,7 +31,12 @@ import { notify } from "./push";
  */
 export const HELD_LIMIT = 20;
 export type HeldWhy = "credits" | "slots";
-export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy };
+/**
+ * `pool`: waiting for a slot of the platform's shared provider key
+ * (lib/providerPool.ts) rather than of this workspace. Always with `why:
+ * "slots"`, so every screen that knows a slot wait shows it as one.
+ */
+export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy; pool?: typeof POOL_MARK };
 type Defer = (fn: () => Promise<void>) => void | Promise<void>;
 
 /**
@@ -56,6 +63,34 @@ export async function releaseAfterSettlement(): Promise<void> {
   } catch (error) {
     console.error("release after settlement:", (error as Error).message);
   }
+  /* The slot may have been the shared pool's: the take next in its line may be another workspace's. */
+  try {
+    await releasePoolWaiters();
+  } catch (error) {
+    console.error("shared pool after settlement:", (error as Error).message);
+  }
+}
+
+/** A take held for the shared pool: a slot wait, marked as the pool's. */
+export const poolHold = (info: HeldInfo): HeldInfo => ({ ...info, why: "slots", pool: POOL_MARK });
+
+/**
+ * Its reservation found the shared pool full after the take was written (two
+ * Generates raced for the last slot): park it as held, in the line, instead of
+ * failing it. Only while nothing was claimed or sent for it; false otherwise.
+ */
+export async function holdForPool(id: string, info: HeldInfo): Promise<boolean> {
+  const workspaceId = currentTenant()?.workspace?.id;
+  const held = poolHold(info);
+  const out = await db().execute({
+    sql: `UPDATE generations SET status='held', params=json_set(params, '$.held', json(?)), updated_at=?
+          WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL`,
+    args: [JSON.stringify(held), now(), id],
+  });
+  if (!out.rowsAffected) return false;
+  if (workspaceId) await queueForPool(SHARED_POOL, { id, workspaceId, queuedAt: held.at }).catch(() => {});
+  invalidate(PROJECTS_KEY);
+  return true;
 }
 
 const DISCARDED = "Discarded before it started. Nothing was charged.";
@@ -74,6 +109,9 @@ export async function discardHeldJob(id: string, tx?: Transaction): Promise<bool
     args: [DISCARDED, t, t, id],
   });
   if (out.rowsAffected) invalidate(PROJECTS_KEY);
+  /* Out of the shared pool's line too, if it stood in it. It held no slot, so none is released. */
+  const workspaceId = currentTenant()?.workspace?.id;
+  if (out.rowsAffected && workspaceId) await leavePool(id, workspaceId).catch(() => false);
   return out.rowsAffected > 0;
 }
 
@@ -112,6 +150,8 @@ type HeldRow = {
   /** `needs` is what it costs to start now; `heldAt` what it cost when it was held — the figure approved at Generate. */
   estUsd: number; estimateValid: boolean; needs: number; heldAt: number | null; why: HeldWhy;
   token?: { id: string; capUsd: number | null; capCredits?: number | null };
+  /** Waiting for the shared pool, and since when (its place in that line). */
+  pool: boolean; since: number;
 };
 
 /**
@@ -135,7 +175,7 @@ function shotCapExemption(adminReleasing: boolean): (author: string | null) => P
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
-    sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, params, token_id,
+    sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, created_at, params, token_id,
                  (SELECT cap_usd FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap,
                  (SELECT cap_credits FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap_credits
           FROM generations WHERE status = 'held' AND deleted = 0 ${only ? "AND id = ?" : ""}
@@ -170,6 +210,8 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       needs,
       heldAt: typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null,
       why: held.why === "slots" ? "slots" : "credits",
+      pool: held.why === "slots" && held.pool === POOL_MARK,
+      since: Number.isFinite(Number(held.at)) && Number(held.at) > 0 ? Number(held.at) : Number(row.created_at ?? 0) || now(),
       token: row.token_id ? {
         id: String(row.token_id),
         capUsd: row.token_cap == null ? null : Number(row.token_cap),
@@ -229,7 +271,15 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   let creditsStalled = false;
   let refusal: ReleaseRefusal | undefined;
   const refuse = (status: number, error: string, r: HeldRow) => { if (opts.only) refusal = { status, error, needs: r.needs, balance }; };
-  for (const r of rows) {
+  /* The shared pool's line (lib/providerPool.ts). A take in it that waits on
+     something of its own (a price, a cap, credits, its workspace's own limits)
+     steps out, so it never holds a free shared slot away from the next
+     workspace; it steps back in, keeping its first place, when it can start. */
+  const workspaceId = currentTenant()?.workspace?.id ?? null;
+  const outOfLine = async (r: HeldRow) => { if (r.pool && workspaceId) await leavePool(r.id, workspaceId).catch(() => false); };
+  const inLine = async (r: HeldRow) => { if (workspaceId) await queueForPool(SHARED_POOL, { id: r.id, workspaceId, queuedAt: r.since }).catch(() => {}); };
+  let stoppedAt = rows.length;
+  for (const [index, r] of rows.entries()) {
     /* An old or incomplete snapshot cannot authorize a free or guessed reservation. Keep the take intact. */
     if (!r.estimateValid) {
       const said = "This take's saved price is incomplete. Recreate it to get a current quote; this take is kept.";
@@ -238,6 +288,7 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
         args: [said, now(), r.id, said] }).catch(() => {});
       refused.add(r.id);
       plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
+      await outOfLine(r);
       continue;
     }
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
@@ -250,28 +301,51 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
         args: [said, now(), r.id, said] }).catch(() => {});
       refused.add(r.id);
       plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance);
+      await outOfLine(r);
       continue;
     }
     const short = r.why === "credits" && (creditsStalled || !plan.release.includes(r.id));
     /* A person's press hears the reason that stands even when a slot frees: short is short. */
     if (short && opts.only) { creditsStalled = true; refuse(402, stillShort(r.needs, balance), r); continue; }
-    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); break; }
+    if (running >= limits.concurrency) { refuse(409, SLOTS_BUSY, r); stoppedAt = index; break; }
     if (short) { creditsStalled = true; continue; }
+    /* In the shared pool's line: ask the line first (a read), so a take it would not admit reserves nothing.
+       The reservation asks again in its own write; only that answer counts. */
+    if (r.pool && workspaceId) {
+      const line = await poolPrecheck(SHARED_POOL, { id: r.id, workspaceId, at: now(), queuedAt: r.since }).catch(() => null);
+      if (line && !line.admit) { refuse(409, SLOTS_BUSY, r); await inLine(r); continue; }
+    }
     // The meter first: work the platform cannot bill does not start.
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
                     engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
                     { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
     } catch (e) {
+      /* Nothing else stops it, only a shared slot: it waits in that line (from its own hold time), unreserved and unsent. */
+      if (e instanceof ProviderPoolBusyError) {
+        refuse(409, SLOTS_BUSY, r);
+        if (!r.pool) {
+          await db().execute({ sql: `UPDATE generations SET params=json_set(params,'$.held.why','slots','$.held.pool',?), updated_at=? WHERE id=? AND status='held'`,
+            args: [POOL_MARK, now(), r.id] }).catch(() => {});
+          if (r.why === "credits") { refused.add(r.id); plan = planRelease(credits.filter((c) => !refused.has(c.id)), balance); }
+        }
+        await inLine(r);
+        continue;
+      }
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
       const status = e instanceof SpendReservationError ? e.status : 503;
       /* Short at the reservation (another take reserved credits meanwhile): said with the balance as it is now. */
       const left = status === 402 && opts.only ? ((await creditState().catch(() => null))?.balance ?? balance) : balance;
       refuse(status, status === 402 ? stillShort(r.needs, left) : e instanceof SpendReservationError ? e.message : "This take could not be started just now. Nothing was charged.", r);
       // A workspace-wide stop (every slot reserved, the hourly limit, a paused workspace) ends the pass.
-      if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) break;
+      if (!(e instanceof SpendReservationError) || !(e.perJob || e.status === 402)) { stoppedAt = index; break; }
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='held'",
         args: [e.message.slice(0, 600), now(), r.id] }).catch(() => {});
+      /* Out of the shared line: short of credits it now waits for credits (and says so), else for a person. */
+      if (r.pool && e.status === 402)
+        await db().execute({ sql: `UPDATE generations SET params=json_remove(json_set(params,'$.held.why','credits'),'$.held.pool'), updated_at=? WHERE id=? AND status='held'`,
+          args: [now(), r.id] }).catch(() => {});
+      await outOfLine(r);
       if (r.why === "credits") {
         // Only the balance stops the line. A take its own cap refuses spent
         // nothing, so the takes behind it are measured without it.
@@ -305,8 +379,25 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     released.push(r.id);
     running += 1;
   }
+  /* This workspace can start nothing more just now: its takes in the shared line step out rather than hold a slot
+     from the next workspace. Its next settlement (or the sync) asks again, and they step back in where they were. */
+  for (const r of rows.slice(stoppedAt)) await outOfLine(r);
+  if (!opts.only && workspaceId) await pruneLine(workspaceId).catch(() => {});
   if (released.length) invalidate(PROJECTS_KEY);
   return { released, short: rows.length - released.length, ...(refusal && !released.length ? { refused: refusal } : {}) };
+}
+
+/** The shared line's entries for takes no longer waiting in it here (discarded, released, hidden, gone) step out of it. */
+async function pruneLine(workspaceId: string): Promise<void> {
+  const ids = await waitingIn(workspaceId);
+  if (!ids.length) return;
+  const rs = await db().execute({
+    sql: `SELECT id FROM generations WHERE id IN (${ids.map(() => "?").join(",")}) AND deleted=0 AND status='held'
+            AND json_extract(params,'$.held.pool') IS NOT NULL`,
+    args: ids,
+  });
+  const still = new Set(rs.rows.map((r) => String(r.id)));
+  for (const id of ids) if (!still.has(id)) await leavePool(id, workspaceId);
 }
 
 function siteUrl(): string {

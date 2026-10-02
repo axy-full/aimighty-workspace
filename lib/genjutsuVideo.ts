@@ -8,7 +8,8 @@ import { isCinemaStudioModel, isHiggsfieldVideoModel } from "./cinemaStudioTypes
 import { cinemaStudioDeliveredUsd, cinemaStudioSettlementUsd } from "./cinemaStudio";
 import { restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
-import { HiggsfieldHttpError } from "./higgsfield";
+import { HiggsfieldHttpError, HiggsfieldKeyChangedError } from "./higgsfield";
+import { clearKeyChanged, markKeyChanged } from "./higgsfieldKeyAlerts";
 import { currentTenant, requireTenant } from "./tenant";
 import { withRecoveryJob } from "./recovery";
 import { workbenchTransaction } from "./workbench/records";
@@ -63,6 +64,8 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
       }
       if (!stored) {
         const state = await withAcceptedJobCredentials(id, "higgsfield", () => engineFor("higgsfield").poll!(handle));
+        /* The key it was sent on answered: any wait for a changed key is over. */
+        if (params.providerKeyChanged != null) await clearKeyChanged(id);
         if (state.status === "failed" || state.status === "cancelled") {
           if (original) throw new Error("Contradictory provider outcome");
           /* Its own status and words; its FAQ says failed and NSFW requests are refunded, and only completions billed. */
@@ -130,6 +133,11 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
       await settleHiggsfieldGenerationReceipt(id);
       invalidate(PROJECTS_KEY);
     } catch (error) {
+      /* The key this request was sent on is gone: nothing was asked. It waits, visibly, and the platform's admin is told. */
+      if (error instanceof HiggsfieldKeyChangedError) {
+        await markKeyChanged(id, (params.higgsfieldVideoHandle as RenderHandle | undefined)?.credentialFingerprint);
+        return;
+      }
       const message = error instanceof HiggsfieldHttpError && error.status === 507 ? error.message : safeFailure(String(row.model));
       await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?", args: [message, now(), id, token] });
       throw new Error(message);

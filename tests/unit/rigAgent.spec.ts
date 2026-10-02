@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import type { AdmissionActor } from "../../lib/admissionTypes";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { canvasNodeSchema } from "../../lib/workbench/studio-schema";
 import { isKnownNodeType } from "../../lib/workbench/node-graph";
@@ -12,7 +13,7 @@ import { IN_USE, PERSON_WINS, planCanvasOps, roomPatchFor } from "../../lib/work
 import {
   AGENT_KINDS, DryBoard, agentNodeId, boardSnapshot, cardShape, compilePlan, undoOps, wiresOf, type BoardSnapshot,
 } from "../../lib/workbench/rig-agent-plan";
-import { mockPlanCalls, mockPlannerModel, runPlanner, selectPlannerModel, PLANNER_STEPS } from "../../lib/workbench/rig-agent-planner";
+import { mockPlanCalls, mockPlannerModel, runPlanner, selectPlannerModel, MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_STEPS } from "../../lib/workbench/rig-agent-planner";
 
 /*
  * Atomik builds the board (plan PR 9): the planner's dry tools, the kinds a
@@ -125,11 +126,12 @@ test("the planner produces valid ops: the mock agent's plan compiles to canvas o
   const runId = "rar_aaaaaaaaaaaaaaaaaaaaaaaa";
   const existing = [scene("theirs", { x: 100, y: 100 })];
   const plan = compilePlan(outcome.draft, { runId, title: outcome.result.title, summary: outcome.result.summary, existing, assets: new Map([["captain", image("captain")], ["pier", image("pier", "Environment")]]) });
-  /* Batched per step: cast, environment, shots, wires, tidy; renders only as next steps. */
+  /* Batched per step: cast, environment, shots, wires, tidy; renders (each with the check of its take) only as next steps. */
   expect(plan.steps.map((s) => [s.tool, s.state, s.label])).toEqual([
     ["create", "proposed", "Cast · 2 cards"], ["create", "proposed", "Environment · 1 card"], ["create", "proposed", "Shot · 2 cards"],
     ["wire", "proposed", "Wires · 6 inputs"], ["tidy", "proposed", "Tidy the new cards"],
-    ["render", "next", "Render 01 — Opening · priced"], ["render", "next", "Render 02 — The turn · priced"],
+    ["render", "next", "Render 01 — Opening · priced"], ["verify", "next", "Check 01 — Opening against its masters"],
+    ["render", "next", "Render 02 — The turn · priced"], ["verify", "next", "Check 02 — The turn against its masters"],
   ]);
   expect(plan.steps.filter((s) => s.state === "next").every((s) => s.ops.length === 0)).toBe(true);
   /* Stable ids: the same run and key make the same card; another run another. */
@@ -288,7 +290,23 @@ async function seed(name: string) {
 }
 /* Never the default planner here: the scripted mock, whatever the environment says. */
 const mockPlan = async (snapshot: BoardSnapshot) => ({ ...(await runPlanner(snapshot, mockPlannerModel(snapshot))), model: "mock/rig-agent" });
-const deps = { access: async () => null, paceMs: 0, plan: mockPlan };
+/* After the build, a render is priced (a stand-in for the free preparation) and, in Ask mode, waits for a tap
+   (tests/unit/rigAgentRuns.spec.ts covers the money). Nothing here is ever sent. */
+const priceRender = async (body: Record<string, unknown>, actor: { user: { id: string } }) => ({
+  ok: true as const,
+  value: { version: 1 as const, kind: "video" as const, workspaceId: "ws", actorId: actor.user.id, request: body, compiled: { model: { provider: "byteplus" } }, quote: { estimatedCredits: 5, price: 5, unit: "cr" as const, fingerprint: "f".repeat(64) } },
+});
+const deps = {
+  access: async () => null, paceMs: 0, plan: mockPlan,
+  pricing: async () => ({ id: MOCK_PLANNER_MODEL, catalog: MOCK_PLANNER_CATALOG, direct: false }),
+  asOwner: async <T,>(owner: string, work: (actor: AdmissionActor) => Promise<T>) =>
+    work({ user: { id: owner, email: `${owner}@example.invalid`, name: owner, role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } }),
+  prepare: priceRender as never,
+  admit: async () => { throw new Error("A build test never sends a render."); },
+  defer: async () => {}, follow: async () => {},
+};
+/** The limit a person approves when asking. */
+const LIMIT = 500;
 
 test("a run: asked, planned to a proposal, approved as shown, built step by step; the executor is idempotent by op id", async () => {
   const { runInTenant } = await import("../../lib/tenant");
@@ -296,17 +314,21 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
   const agent = await import("../../lib/workbench/rig-agent");
   const { readTeamCanvas } = await import("../../lib/workbench/team-canvas");
   await runInTenant(await seed("run"), async () => {
-    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000001", goal: "The captain on the pier, two shots." });
-    expect(asked).toMatchObject({ state: "planning", mine: true, credits: 0, proposal: null });
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000001", goal: "The captain on the pier, two shots." , limit: LIMIT });
+    expect(asked).toMatchObject({ state: "planning", mine: true, credits: 0, proposal: null, money: { limit: LIMIT, mode: "ask", spent: 0 } });
     /* Asking again with the same request id is the same run; another request waits while this one plans. */
-    expect((await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000001", goal: "Again" })).id).toBe(asked.id);
-    await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "bo", requestId: "req-00000002", goal: "Mine" })).rejects.toThrow(/Open this project's Rig/);
-    await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000003", goal: "Another" })).rejects.toMatchObject({ status: 409 });
+    expect((await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000001", goal: "Again" , limit: LIMIT })).id).toBe(asked.id);
+    await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "bo", requestId: "req-00000002", goal: "Mine" , limit: LIMIT })).rejects.toThrow(/Open this project's Rig/);
+    await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000003", goal: "Another" , limit: LIMIT })).rejects.toMatchObject({ status: 409 });
     expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "awaiting_approval", more: false });
     const proposed = (await agent.rigAgentState("prod-1", "ana")).run!;
     expect(proposed.proposal).toMatchObject({ title: "2-shot board", cards: 4, wires: 4, tidy: true, next: ["Next: render 2 shots · priced, each one approved first"] });
     expect(proposed.proposal!.groups.map((g) => [g.label, g.titles])).toEqual([["Cast", ["The lead"]], ["Environment", ["The location"]], ["Shot", ["01 — Opening", "02 — The turn"]]]);
-    expect(proposed.steps.map((s) => s.state)).toEqual(["proposed", "proposed", "proposed", "proposed", "proposed", "next", "next"]);
+    expect(proposed.steps.map((s) => s.state)).toEqual(["proposed", "proposed", "proposed", "proposed", "proposed"]);
+    /* The renders the plan names come after the build, each with the check of its take. */
+    expect(proposed.paid.map((p) => [p.tool, p.state])).toEqual([["render", "next"], ["verify", "next"], ["render", "next"], ["verify", "next"]]);
+    /* The planning turn was metered into the run's limit. */
+    expect(proposed.money!.planning!.state).toBe("settled");
     /* Nothing is on the board until it is approved, and only the person who asked approves, as shown. */
     expect(Object.keys((await readTeamCanvas("prod-1"))!.canvas.nodes)).toEqual(["theirs"]);
     await expect(agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint: proposed.proposal!.fingerprint, userId: "bo" })).rejects.toMatchObject({ status: 403 });
@@ -316,10 +338,12 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
     expect(approved.state).toBe("running");
     /* A lost reply to that approval: the same answer, nothing twice. */
     expect((await agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint: proposed.proposal!.fingerprint, userId: "ana" })).id).toBe(asked.id);
-    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "done", more: false });
+    /* Built; then the first render is priced and, in Ask mode, waits for the person who asked. */
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
     const built = (await agent.rigAgentState("prod-1", "ana")).run!;
-    expect(built).toMatchObject({ state: "done", built: { cards: 4, wires: 4 }, held: [], canUndo: true, credits: 0 });
-    expect(built.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done", "next", "next"]);
+    expect(built).toMatchObject({ state: "needs_you", built: { cards: 4, wires: 4 }, held: [], canUndo: true, credits: proposed.credits });
+    expect(built.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done"]);
+    expect(built.paid.map((p) => p.state)).toEqual(["waiting", "next", "next", "next"]);
     const canvas = (await readTeamCanvas("prod-1"))!;
     const own = Object.entries(canvas.canvas.serverMade).filter(([, by]) => by === `agent:${asked.id}`).map(([id]) => id);
     expect(own.sort()).toEqual(["cast-1", "place-1", "shot-1", "shot-2"].map((key) => agentNodeId(asked.id, key)).sort());
@@ -330,14 +354,14 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
     /* A tick that applied its steps but died before recording them runs again: the same op ids change nothing. */
     await db().execute({ sql: "UPDATE rig_agent_steps SET state='queued' WHERE run_id=? AND state='done'", args: [asked.id] });
     await db().execute({ sql: "UPDATE rig_agent_runs SET state='running' WHERE id=?", args: [asked.id] });
-    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "done", more: false });
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
     const again = (await readTeamCanvas("prod-1"))!;
     expect(again.revision).toBe(canvas.revision);
     expect(again.canvas.nodes).toEqual(canvas.canvas.nodes);
     expect(await logged()).toEqual([1, 2, 3, 4, 5].map((seq) => `rig-agent:${asked.id}:${seq}`));
-    /* A done run is never ticked again. */
-    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "done", more: false });
-    /* Nothing in a build is paid: no step holds a request, a job or credits. */
+    /* A run waiting for a person is never ticked on by itself. */
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
+    /* Nothing in a build is paid, and no render was sent without its tap: no step holds a request, a job or credits. */
     const money = (await db().execute({ sql: "SELECT COUNT(*) AS n FROM rig_agent_steps WHERE run_id=? AND (request_key IS NOT NULL OR job_id IS NOT NULL OR credits_reserved IS NOT NULL OR credits_settled IS NOT NULL)", args: [asked.id] })).rows[0];
     expect(Number(money.n)).toBe(0);
   });
@@ -360,7 +384,7 @@ test("undo takes off only the run's own cards, softly, and says what a teammate'
     model: "mock/rig-agent",
   });
   await runInTenant(await seed("undo"), async () => {
-    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000010", goal: "Two shots." });
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000010", goal: "Two shots." , limit: LIMIT });
     await agent.advanceRigAgentRun(asked.id, { ...deps, plan });
     const fingerprint = (await agent.rigAgentState("prod-1", "ana")).run!.proposal!.fingerprint;
     await agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint, userId: "ana" });
@@ -408,7 +432,7 @@ test("a held operation is surfaced on the run card: a card locked after the prop
       ], result: { title: "Captain", summary: "The captain, into Ana's shot." } }))),
       model: "mock/rig-agent",
     });
-    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000020", goal: "The captain in my shot." });
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000020", goal: "The captain in my shot." , limit: LIMIT });
     await agent.advanceRigAgentRun(asked.id, { ...deps, plan: wiring });
     const fingerprint = (await agent.rigAgentState("prod-1", "ana")).run!.proposal!.fingerprint;
     /* Ana locks her shot before approving. */
@@ -438,11 +462,11 @@ test("the kill switch: off in production until the owner says go; off, nothing n
   process.env.RIG_AGENT_ENABLED = "1";
   try {
     await runInTenant(await seed("switch"), async () => {
-      const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000030", goal: "Two shots." });
+      const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000030", goal: "Two shots." , limit: LIMIT });
       await agent.advanceRigAgentRun(asked.id, deps);
       const fingerprint = (await agent.rigAgentState("prod-1", "ana")).run!.proposal!.fingerprint;
       process.env.RIG_AGENT_ENABLED = "0";
-      await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000031", goal: "More." })).rejects.toMatchObject({ status: 403, message: agent.RIG_AGENT_OFF });
+      await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000031", goal: "More." , limit: LIMIT })).rejects.toMatchObject({ status: 403, message: agent.RIG_AGENT_OFF });
       await expect(agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint, userId: "ana" })).rejects.toMatchObject({ status: 403 });
       process.env.RIG_AGENT_ENABLED = "1";
       await agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint, userId: "ana" });
@@ -452,9 +476,9 @@ test("the kill switch: off in production until the owner says go; off, nothing n
       const paused = await agent.rigAgentState("prod-1", "ana");
       expect(paused).toMatchObject({ enabled: false, run: { state: "paused", reason: agent.RIG_AGENT_OFF } });
       expect(Object.keys((await readTeamCanvas("prod-1"))!.canvas.nodes)).toEqual(["theirs"]);
-      /* Back on: the next tick resumes where it paused and finishes. */
+      /* Back on: the next tick resumes where it paused, builds, and waits for the first render's tap. */
       process.env.RIG_AGENT_ENABLED = "1";
-      expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "done", more: false });
+      expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
       /* Off again: undo still takes the build off. */
       process.env.RIG_AGENT_ENABLED = "0";
       const undone = await agent.undoRigAgent({ productionId: "prod-1", runId: asked.id, userId: "ana" });
@@ -462,7 +486,7 @@ test("the kill switch: off in production until the owner says go; off, nothing n
       expect(Object.keys((await readTeamCanvas("prod-1"))!.canvas.nodes)).toEqual(["theirs"]);
       /* A member who lost access: the build pauses with the reason, and stop still works. */
       process.env.RIG_AGENT_ENABLED = "1";
-      const next = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000032", goal: "One shot." });
+      const next = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000032", goal: "One shot." , limit: LIMIT });
       expect(await agent.advanceRigAgentRun(next.id, { ...deps, access: async () => "The person who asked for this build no longer has access to this workspace." })).toEqual({ state: "paused", more: false });
       expect((await agent.stopRigAgent({ productionId: "prod-1", runId: next.id, userId: "bo" })).state).toBe("stopped");
       expect(await agent.advanceRigAgentRun(next.id, deps)).toEqual({ state: "stopped", more: false });
@@ -476,9 +500,9 @@ test("a proposal nobody approved is replaced by a newer request; set aside, it b
   const { runInTenant } = await import("../../lib/tenant");
   const agent = await import("../../lib/workbench/rig-agent");
   await runInTenant(await seed("replace"), async () => {
-    const first = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000040", goal: "Two shots." });
+    const first = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000040", goal: "Two shots." , limit: LIMIT });
     await agent.advanceRigAgentRun(first.id, deps);
-    const second = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000041", goal: "One shot." });
+    const second = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000041", goal: "One shot." , limit: LIMIT });
     const { getRun } = await import("../../lib/workbench/rig-agent-store");
     const { db } = await import("../../lib/db");
     expect(await getRun(db(), first.id)).toMatchObject({ state: "stopped", reason: "A newer request replaced this proposal." });

@@ -1,5 +1,6 @@
 import type { TenantToken, TenantUser } from "./tenant";
 import type { GenerationRequest } from "./generationRequests";
+import type { RunSpend } from "./runLimit";
 
 /** These types have no runtime dependencies; pipeline snapshots stay server-side. */
 export type AdmissionActor = { user: TenantUser; token?: TenantToken };
@@ -40,6 +41,13 @@ export type AdmissionExecution = {
   defer: (work: () => Promise<unknown>) => void | Promise<void>;
   /** Internal server-only checkpoint; never supplied from an HTTP request. */
   checkpoint?: (value: AdmissionCheckpoint) => AdmissionReply | undefined;
+  /**
+   * Internal server-only, never from an HTTP request: the Atomik run this job counts toward.
+   * Its reservation checks the run's approved limit (lib/runLimit.ts), and a take that would be
+   * held (no credits, or no free slot) is refused instead: a held take could later start by
+   * itself, outside the run's limit.
+   */
+  run?: RunSpend;
 };
 export type AdmissionExecutor = (
   input: Record<string, unknown>,
