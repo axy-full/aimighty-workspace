@@ -14,7 +14,7 @@ import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservation
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
 import { textVendor } from "@/lib/openai-direct";
-import { ceilTenths, fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
+import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
@@ -134,12 +134,13 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   const lastNote = [...steps].reverse().map((s) => (s.purpose === "fix" && s.charge === "settled" && s.chargeId ? byId.get(s.chargeId) : undefined))
     .find((row) => !!row && !row.running && row.credits > 0)?.credits ?? null;
   const noteGuess = lastNote ?? ledger.noteEstimate ?? null;
-  /* Another fix is priced first, writing included: its figure is the shot's last fix render plus that writing (none without it). */
+  /* Another fix is priced first, writing included: its figure is the shot's last fix render plus that writing (none without
+     it), both credit figures as quoted and charged, added in whole tenths. */
   const choicePrices = (s: StepRow, choices: ShotChoice[]): Partial<Record<ShotChoice, number>> => {
     const prices: Partial<Record<ShotChoice, number>> = {};
     const fixRender = lastQuote(s, "fix");
     const of = {
-      fix: fixRender != null && noteGuess != null ? fromTenths(ceilTenths(fixRender) + ceilTenths(noteGuess)) : null,
+      fix: fixRender != null && noteGuess != null ? fromTenths(toTenths(fixRender) + toTenths(noteGuess)) : null,
       rerender: lastQuote(s, "take"), recheck: s.purpose === "verify" ? s.quoteCredits : null,
     };
     for (const choice of ["fix", "rerender", "recheck"] as const) if (choices.includes(choice) && of[choice] != null) prices[choice] = of[choice]!;
@@ -163,7 +164,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     const common = {
       seq: s.seq, title, label, round: s.round, state: s.state, pause: s.state === "paused" ? s.pause : null, reason: s.reason,
       resolution: s.resolution && s.resolvedAt ? { choice: s.resolution, at: s.resolvedAt } : null,
-      choices, prices: choicePrices(s, choices), fixNote: choices.includes("fix") && noteGuess != null ? fromTenths(ceilTenths(noteGuess)) : null,
+      choices, prices: choicePrices(s, choices), fixNote: choices.includes("fix") ? noteGuess : null,
       takeKind: s.request?.kind === "check" ? s.request.takeKind : s.request?.kind === "fix" ? s.request.take : null,
     };
     /* A check: its price (and what it holds), what it settled at, its verdict and scorecard, and the Verify card on the board. */

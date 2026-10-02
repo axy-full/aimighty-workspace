@@ -669,13 +669,13 @@ test("after two fixes that still fail, the shot is handed to the person who aske
        last fix's render plus the run's last charge for writing one — priced first, writing included. */
     const { runCharges } = await import("../../lib/generationRequests");
     const { stepChargeEventId } = await import("../../lib/workbench/rig-agent-charges");
-    const { ceilTenths, fromTenths } = await import("../../lib/runLimit");
+    const { fromTenths, toTenths } = await import("../../lib/runLimit");
     const fixes = run.paid.filter((p) => p.tool === "fix");
     const lastWriting = (await runCharges(runId)).find((c) => c.id === stepChargeEventId(runId, fixes[1].seq, 1))!;
     expect(lastWriting.credits).toBeGreaterThan(0);
     expect(fixes[1]).toMatchObject({ quote: await credits(0.3), note: { credits: lastWriting.credits, settled: true } });
-    expect(flagged.prices).toEqual({ fix: fromTenths(ceilTenths(await credits(0.3)) + ceilTenths(lastWriting.credits)), rerender: await credits(0.3) });
-    expect(flagged.fixNote).toBe(fromTenths(ceilTenths(lastWriting.credits)));
+    expect(flagged.prices).toEqual({ fix: fromTenths(toTenths(await credits(0.3)) + toTenths(lastWriting.credits)), rerender: await credits(0.3) });
+    expect(flagged.fixNote).toBe(lastWriting.credits);
     expect(flagged.reason).toBe("Atomik made 2 fixes and the take still fails Identity. Look at it and decide.");
     expect(run.reason).toBe(flagged.reason);
     expect(run.paid.filter((p) => p.tool === "fix").length).toBe(2);

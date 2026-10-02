@@ -8,7 +8,7 @@ import { engineMock } from "../mock";
 import { MODELS } from "../models";
 import { textVendor } from "../openai-direct";
 import { DEFAULT_AGENT, verifyJudge } from "../production/agent";
-import { ceilTenths, fromTenths, jobBand } from "../runLimit";
+import { jobBand } from "../runLimit";
 import { shotRequestInput } from "../workspace/rig-requests";
 import { rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
@@ -79,9 +79,10 @@ async function defaultWriterPrice(run: RunRow, models: () => Promise<CatalogMode
 
 /**
  * What writing a fix may cost, in credits, before anything is known of it: the writer's ceiling for a brief at its
- * longest (every move, the longest names and reasons, each character at three bytes), rounded up to a tenth. What a
- * person is shown for "try another fix" when the run has not been charged for writing one yet; null when the writer
- * has no model or no confirmed price, and then no fix is written either.
+ * longest (every move, the longest names and reasons, each character at three bytes), in credits as a text turn is
+ * quoted and charged (lib/credits.ts quotedCredits, so it follows the price and rounding of a credit). What a person
+ * is shown for "try another fix" when the run has not been charged for writing one yet; null when the writer has no
+ * model or no confirmed price, and then no fix is written either.
  */
 export async function fixNoteEstimate(run: RunRow, deps: Pick<FixDeps, "writerPrice" | "models"> = {}): Promise<number | null> {
   const price = await (deps.writerPrice ?? ((r: RunRow) => defaultWriterPrice(r, deps.models)))(run).catch(() => null);
@@ -95,7 +96,7 @@ export async function fixNoteEstimate(run: RunRow, deps: Pick<FixDeps, "writerPr
       if (usd != null) most = Math.max(most ?? 0, usd);
     }
   }
-  return most == null ? null : fromTenths(ceilTenths(quotedCredits(most, "text")));
+  return most == null ? null : quotedCredits(most, "text");
 }
 
 async function defaultWrite(brief: FixBrief, id: string): Promise<FixWriterOutcome> {

@@ -6,7 +6,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
-import { ceilTenths, fromTenths } from "../lib/runLimit";
+import { fromTenths, toTenths } from "../lib/runLimit";
 import type { TakeVerification } from "../lib/workbench/verify";
 
 /**
@@ -349,7 +349,7 @@ test("a clip checked on the board fails: Atomik writes fix 1, an edit of the cli
   /* Another fix is priced first, writing included: the last fix's render plus the run's last charge for writing one. */
   const writing = run.paid[4].note!;
   expect(writing.settled).toBe(true);
-  expect(flagged.prices.fix).toBe(fromTenths(ceilTenths(fix2.quote!) + ceilTenths(writing.credits!)));
+  expect(flagged.prices.fix).toBe(fromTenths(toTenths(fix2.quote!) + toTenths(writing.credits!)));
   await expect(handed.getByTestId("rig-agent-choices").locator("button")).toHaveText([
     "Open its Verify card", "Accept as is", `Try another fix · about ${cr(flagged.prices.fix!)}`, `Render again · about ${cr(take.quote!)}`, "Skip",
   ]);
