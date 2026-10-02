@@ -127,7 +127,7 @@ test("a legacy Crew room displays its recorded credit outcome without a dollar f
   await page.locator(".cw-session").filter({ hasText: GOAL }).click();
   await expect(page.getByTestId("crew-panel")).toContainText("No Particl charge");
   await expect(page.getByTestId("crew-panel")).not.toContainText("$");
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   expect(errors).toEqual([]);
 });
 

@@ -7,7 +7,7 @@ import type { DevelopmentJob, DevelopmentQuote, DevelopmentState } from "../lib/
 import type { TakeVerification } from "../lib/workbench/verify";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 /* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
-import { creditUsd } from "../lib/creditTerms";
+import { creditUsd, fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * A Rig Verify check through the real routes and both ledgers (plan PR 7):
@@ -56,8 +56,8 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
     expect(quote.estimateUsd).toBeUndefined();
     expect(JSON.stringify(quote)).not.toMatch(/usd/i);
     expect(await meterRows()).toHaveLength(0);
-    /* A start that did not see this price is refused. */
-    expect((await request.post("/api/workbench/development", { headers, data: { ...input, sourceHash: quote.sourceHash, maxCredits: quote.estimateCredits - 1 } })).status()).toBe(409);
+    /* A start that did not see this price is refused: one tenth below it (a check can cost less than a credit). */
+    expect((await request.post("/api/workbench/development", { headers, data: { ...input, sourceHash: quote.sourceHash, maxCredits: fromDeci(toDeci(quote.estimateCredits) - 1) } })).status()).toBe(409);
 
     const approved = { ...input, requestId: randomUUID(), sourceHash: quote.sourceHash, maxCredits: quote.estimateCredits };
     const started = await request.post("/api/workbench/development", { headers, data: approved });

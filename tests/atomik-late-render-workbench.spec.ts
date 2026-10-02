@@ -79,7 +79,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   const f = await seeded(page);
   await page.goto(await legacyShell(page, "/atomik?page=generate"));
   const cont = () => surfaceOf(page).getByRole("button", { name: /^Continue/ }).first();
-  await expect(cont()).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont()).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont()).toBeEnabled();
   const price = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
 
@@ -110,7 +110,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
     tenant.close();
   }
   await page.reload();
-  await expect(cont()).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont()).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   const reread = createClient({ url: f.tenantUrl, timeout: 10_000 });
   try {
     expect((await reread.execute({ sql: "SELECT status,error FROM atomik_steps WHERE id=?", args: [f.stepId] })).rows[0])
