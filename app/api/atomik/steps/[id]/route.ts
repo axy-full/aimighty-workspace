@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getStep, patchStep, stepForBrowser, StepEditError, type StepStatus } from "@/lib/atomik";
-import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
+import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 
 export const dynamic = "force-dynamic";
 
@@ -47,10 +47,9 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
     );
   }
 
-  /* A connected step's settings are its quote; its status moves only through
-     the connected route (which records what was spent). Rejecting it is fine. */
-  if (connectedMeta(cur.params) && (wantsEdit || b.genId !== undefined || (b.status !== undefined && b.status !== "rejected")))
-    return NextResponse.json({ error: "Ask Atomik for a new version of a connected step instead." }, { status: 409 });
+  /* A step planned on the connected account is kept read-only: Atomik no
+     longer approves, edits or runs anything there (lib/atomikAccountStep.ts). */
+  if (isAccountStep(cur)) return NextResponse.json({ error: ACCOUNT_STEP_NOTE, step: stepForBrowser(cur) }, { status: 409 });
 
   const status = STATUSES.includes(b.status) ? b.status as StepStatus : undefined;
   try {

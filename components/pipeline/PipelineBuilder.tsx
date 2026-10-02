@@ -344,8 +344,8 @@ export default function PipelineBuilder({
         </div>
       </fieldset>
       <p className={styles.note}>
-        Creating a run spends no credits. Each ready generation stage gets an
-        exact quote and a separate approval. Later stages wait for resolved
+        Creating a run spends no credits. Each ready generation stage gets its
+        own quote and approval. Later stages wait for resolved
         inputs; no whole-run charge is authorized.
       </p>
       <button

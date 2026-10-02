@@ -1,4 +1,4 @@
-import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { billCredits, billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 
 /** Private terms captured when a job reserves its budget. Never serialize these to a customer. */
 export type BillingTerms = { creditUsd: number; margin: number };
@@ -23,4 +23,16 @@ export function recordedBillingTerms(row: StoredTerms, kind: string, model: stri
 
 export function creditsAtTerms(cost: number, terms: BillingTerms): number {
   return billCreditsWith(cost, terms.margin, terms.creditUsd);
+}
+
+/**
+ * What an estimate is counted at before anything is reserved: a margin key
+ * (billCredits), or the exact terms the job's reservation and settlement will
+ * charge (currentBillingTerms). Given the terms, a quote, its approval ceiling
+ * and the checks before the reservation read the figure the meter will.
+ */
+export type EstimateTerms = string | BillingTerms | null | undefined;
+
+export function creditsFor(cost: number, terms: EstimateTerms): number {
+  return terms && typeof terms === "object" ? creditsAtTerms(cost, terms) : billCredits(cost, terms);
 }

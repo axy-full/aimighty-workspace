@@ -1,15 +1,18 @@
-import { GENJUTSU_MODELS, isGenjutsuModel } from "./genjutsuTypes";
+import { GENJUTSU_MODELS } from "./genjutsuTypes";
+import { CINEMA_STUDIO_MODEL_ID, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { platformDb, platformReady } from "./platform";
 import { db, now } from "./db";
 import { requireTenant } from "./tenant";
-import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { HIGGSFIELD_IMAGE_MODELS, isHiggsfieldImageModel, isSoulIdentityModel } from "./models";
 import type { RenderHandle } from "./engines/types";
 import { generationSettlementReady } from "./generationSettlement";
 
-const receiptModels = [SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, ...Object.values(GENJUTSU_MODELS)];
-const supported = (model: string) => isHiggsfieldImageModel(model) || isGenjutsuModel(model);
+/* Every Higgsfield still (Soul Character, Marketing Studio, Soul Standard / 2 / Cinema) and video (Genjutsu, Cinema Studio). */
+const receiptModels = [...HIGGSFIELD_IMAGE_MODELS, ...Object.values(GENJUTSU_MODELS), CINEMA_STUDIO_MODEL_ID];
+const receiptModelSlots = receiptModels.map(() => "?").join(",");
+const supported = (model: string) => isHiggsfieldImageModel(model) || isHiggsfieldVideoModel(model);
 let boot: Promise<void> | undefined;
-async function receiptsReady() {
+export async function receiptsReady() {
   await platformReady();
   boot ??= platformDb().execute(`CREATE TABLE IF NOT EXISTS higgsfield_generation_receipts (
     id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handle_json TEXT NOT NULL,
@@ -40,7 +43,7 @@ export async function settleHiggsfieldGenerationReceipt(id: string): Promise<boo
   await generationSettlementReady();
   const outcome = (await db().execute({
     sql: `SELECT g.status,s.event,s.settled_at FROM generations g JOIN generation_settlements s ON s.id=g.id
-      WHERE g.id=? AND g.provider='higgsfield' AND g.model IN (?,?,?,?) AND g.status IN ('succeeded','failed','cancelled')`,
+      WHERE g.id=? AND g.provider='higgsfield' AND g.model IN (${receiptModelSlots}) AND g.status IN ('succeeded','failed','cancelled')`,
     args: [id, ...receiptModels],
   })).rows[0];
   if (!outcome?.settled_at) return false;
@@ -59,12 +62,12 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
     args: [id, requireTenant().id] })).rows[0];
   if (!receipt) return;
   const row = (await db().execute({ sql: `SELECT params,status,model FROM generations
-    WHERE id=? AND provider='higgsfield' AND model IN (?,?,?,?) AND deleted=0`, args: [id, ...receiptModels] })).rows[0];
+    WHERE id=? AND provider='higgsfield' AND model IN (${receiptModelSlots}) AND deleted=0`, args: [id, ...receiptModels] })).rows[0];
   if (!row) throw new Error("An accepted connected-account request has no recoverable generation record.");
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
-  const key = isGenjutsuModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
-  if (!params.paidClaim || (row.model === SOUL_CHARACTER_MODEL_ID ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
+  const key = isHiggsfieldVideoModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
+  if (!params.paidClaim || (isSoulIdentityModel(String(row.model)) ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
       !supported(handle.model) || handle.model !== row.model || !handle.ref ||
       (params[key] && params[key].ref !== handle.ref))

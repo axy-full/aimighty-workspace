@@ -65,7 +65,8 @@ export async function writeGenerationOutcome(
   return result[0].rowsAffected > 0;
 }
 
-export async function deliverGenerationSettlement(id: string): Promise<void> {
+/** `releaseHeld: false`: a caller whose own request may be near its time limit (a transcription, lib/transcription.ts) leaves starting held takes to the next settlement or the sync. */
+export async function deliverGenerationSettlement(id: string, options: { releaseHeld?: boolean } = {}): Promise<void> {
   const delivered = await withRecoveryJob(requireTenant().id, id, async () => {
 
   await generationSettlementReady();
@@ -96,7 +97,9 @@ export async function deliverGenerationSettlement(id: string): Promise<void> {
      is where a freed slot (or a released reservation) starts what waited for
      it, rather than only the video polls and the ten-minute cron. Imported
      late: held.ts reaches back into the render paths that settle here. */
-  if (delivered) await (await import("./held")).releaseAfterSettlement();
+  if (delivered && options.releaseHeld !== false) await (await import("./held")).releaseAfterSettlement();
+  /* A take an Atomik run made: its step records how it ended, and the run is woken (rig/render.settled). */
+  if (delivered) await (await import("./workbench/rig-agent-settled")).rigRenderSettled(id).catch((error) => console.error("rig agent settlement:", (error as Error).message));
 }
 
 export type ReconcileResult = { attempted: number; failed: number };

@@ -1,0 +1,200 @@
+/* ── The phone's chrome, compacted (owner-approved, 27 September 2026). Below
+   768px the page gets most of the screen: the top bar is one glass island of
+   two rows (the mark or ‹ back, the context badge that opens the Suites and
+   Search, credits, the avatar; then the project switcher beside the page strip,
+   or Gen's own buttons), the page head is one line of the page's actions, and
+   the tab bar floats a little lower and slimmer. The same glass, colours, type
+   and tab bar as app/glass.css and app/flair.css; only tighter. The numbers
+   are measured by tests/hf-phone-chrome-workbench.spec.ts. Loaded last, so it
+   wins on equal specificity. ─────────────────────────────────────────────── */
+.gx {
+  /* The floating tab bar: its height, and its gap to the screen's foot (22px over a home indicator, as GLASS_SPEC §3 floats it; 10px where there is none). */
+  --ph-bar-h: 58px;
+  --ph-bar-gap: max(10px, calc(env(safe-area-inset-bottom, 0px) - 12px));
+  /* What a scroll region keeps clear under its last row: the bar, its gap and 12px of air. */
+  --ph-clear: calc(var(--ph-bar-h) + var(--ph-bar-gap) + 12px);
+  /* The fill of what opens from the header island (the Suites menu, the bar's project list). A blur inside a blurred
+     parent sees only that parent, never the page, so glass's see-through fill (app/glass.css) would leave the page
+     crisp under them: they take its colour, opaque. */
+  --ph-menu-fill: rgb(28, 28, 34);
+}
+
+/* Every width: the page head's toggles carry a glyph the phone shows, and a priced primary sets its price as its
+   own run of text; above 768px both read exactly as before (words only, one line). */
+.gx-hbtn--glyph > .gx-hbtn-glyph { display: none; }
+.gx .gx-pagehead .gx-primary[data-priced] { column-gap: 0; }
+.gx-menu-btn { display: none; }
+
+@media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
+  /* ── The island: row 1 is 44px of targets, row 2 the bar. The aurora and dots keep to its rounded edge. The error
+     page's static header (components/graphite/FaultPage) keeps its own layout: none of this reaches it. ── */
+  .gx .gx-header:not([data-static]) { margin: max(8px, env(safe-area-inset-top)) 10px 0; min-height: 0; padding: 4px 6px; gap: 6px; row-gap: 4px; z-index: 35; }
+  .gx .gx-header:not([data-static]) > .gx-aurora, .gx .gx-header:not([data-static]) > .gx-dots { border-radius: inherit; }
+  .gx .gx-header:not([data-static]) > .gx-baseline { left: 22px; right: 22px; }
+  .gx .gx-header:not([data-static]) > .gx-brand { min-width: 44px; justify-content: center; }
+  /* ‹ alone: the badge beside it names where it is. */
+  .gx .gx-header:not([data-static]) > .gx-back { width: 44px; justify-content: center; flex: none; }
+  .gx .gx-back-label, .gx .gx-hbtn--glyph > .gx-hbtn-label, .gx .gx-main > .gx-pagehead > .gx-hint, .gx .gx-bar .gx-pagehead > .gx-hint,
+  .gx .gx-main > .gx-pagehead:has(> .gx-seg) > .gx-h1, .gx .gx-bar .gx-pagehead > .gx-h1 {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  /* The context badge is the Suites button: it shrinks (never the credits) and says it opens. */
+  .gx .gx-menu-btn { display: inline-flex; align-items: center; gap: 2px; flex: 0 1 auto; min-width: 44px; height: 44px; padding: 0 2px 0 0; color: var(--gx-accent-text); }
+  .gx .gx-menu-btn > .gx-brand-mark { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; letter-spacing: .08em; }
+  .gx .gx-menu-btn > .gx-glyph { flex: none; transform: rotate(90deg); transition: transform .2s var(--om-ease); }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-menu-btn > .gx-glyph { transform: rotate(-90deg); }
+  .gx .gx-header:not([data-static]) > .gx-jobs { flex: 0 1 auto; min-width: 44px; overflow: hidden; }
+  .gx .gx-header:not([data-static]) > .gx-jobs > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Suites and Search, one tap away: closed, they wait behind the badge; open, a panel under the island. ── */
+  .gx .gx-header:not([data-static]):not([data-menu]) > .gx-seg, .gx .gx-header:not([data-static]):not([data-menu]) > .gx-search { display: none; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg {
+    position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; right: 0; width: auto; min-height: 0;
+    display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 60px 6px 6px;
+    border: var(--gl-edge); border-radius: 22px; background: var(--ph-menu-fill); box-shadow: var(--gl-spec), var(--gl-lift-dialog);
+    animation: om-pop .2s var(--om-ease) both;
+  }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg > .gx-seg-btn { min-height: 56px; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-search { position: absolute; z-index: 6; top: calc(100% + 14px); left: 6px; right: 6px; width: auto; min-width: 0; height: 48px; padding: 0 16px; justify-content: flex-start; animation: om-pop .2s var(--om-ease) both; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-search .gx-search-label { display: block; font-size: 15px; color: var(--gx-text-2); }
+
+  /* ── Row 2: the project switcher, then the page strip (or Gen's buttons); alone on Home and the Studio grid, with the meta at its end. ── */
+  .gx .gx-bar { order: 6; flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-width: 0; height: 44px; }
+  .gx .gx-bar > .gx-project { flex: 0 1 auto; min-width: 44px; max-width: 46%; min-height: 0; padding: 0; gap: 0; border: 0; }
+  .gx .gx-bar > .gx-project:only-child { flex: 1 1 auto; max-width: none; }
+  .gx .gx-bar > .gx-project:not(:only-child) .gx-project-meta { display: none; }
+  .gx .gx-bar .gx-project-btn { max-width: 100%; }
+  .gx .gx-bar .gx-popover { top: calc(100% + 10px); left: -6px; background: var(--ph-menu-fill); }
+  .gx .gx-bar > .gx-strip { flex: 1 1 0; min-width: 0; height: 44px; margin: 0; padding: 0 2px; justify-content: flex-start; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .05); box-shadow: none; backdrop-filter: none; }
+  .gx .gx-bar > .gx-strip > .gx-tab { padding: 0 10px; gap: 6px; }
+  /* The strip runs on past both ends: they fade, so a cut tab reads as more to swipe to. */
+  .gx .gx-bar > .gx-strip { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
+  .gx .gx-bar > .gx-pagehead { flex: 1 1 0; min-width: 0; min-height: 0; padding: 0; gap: 6px; flex-wrap: nowrap; justify-content: flex-end; border: 0; }
+
+  /* ── The page head: one line of the page's actions. The strip already names the page, so a view segment takes the
+     title's place; a primary sets its price under its action; Library and Inspector are their glyphs. ── */
+  .gx .gx-main > .gx-pagehead { min-height: 48px; padding: 0 12px; gap: 6px; border-bottom: 0; align-content: center; }
+  .gx .gx-main > .gx-pagehead > .gx-seg { order: -1; }
+  .gx .gx-main > .gx-pagehead > .gx-h1 { flex: 0 1 auto; min-width: 0; font-size: 22px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
+  .gx .gx-pagehead > .gx-seg--sm .gx-seg-btn { padding: 0 9px; font-size: 12.5px; }
+  .gx .gx-pagehead > .gx-reason { order: 10; flex: 1 1 100%; }
+  .gx .gx-hbtn--glyph { width: 44px; padding: 0; justify-content: center; }
+  .gx .gx-hbtn--glyph > .gx-hbtn-glyph { display: block; }
+  .gx .gx-pagehead .gx-primary[data-priced] { flex-direction: column; justify-content: center; row-gap: 1px; padding: 0 12px; line-height: 1.15; }
+  .gx .gx-pagehead .gx-primary[data-priced] .gx-go-sep { display: none; }
+  .gx .gx-pagehead .gx-primary .gx-go-price { font-size: 12px; }
+
+  /* ── The tab bar: the same floating capsule, 8px slimmer and resting lower; every region keeps it clear. ── */
+  .gx .gx-tabbar { bottom: var(--ph-bar-gap); height: var(--ph-bar-h); min-height: 0; padding: 5px; }
+  .gx .gx-stage, .gx .gx-ws, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .cw-room, .gx .cw-page { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
+  /* The clearance follows the page's last row: a page body is as tall as its content (it still fills a short page),
+     never held to the pane's height with the overflow running past the padding and the last row under the bar (#389). */
+  .gx .gx-stage > *, .gx .gx-stage > .gx-legacy.pxw { flex-shrink: 0; flex-basis: auto; }
+  .gx .gx-toast { bottom: calc(var(--ph-bar-h) + var(--ph-bar-gap) + 10px); }
+  /* The Rig's shots are the page: its Library (drag or + onto a shot) follows the list or the canvas instead of
+     pushing the canvas under the tab bar. */
+  .gx .gx-stage > .gx-legacy.pxw:has(> .pxw-rig-library) { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .gx .gx-stage > .gx-legacy.pxw > .pxw-rig-library { order: 1; margin: 12px 0 0; }
+  .gx .gx-stage > .gx-legacy.pxw:has(> .pxw-rig-library) > .pxw-content { min-height: max-content; }
+  .gx .gx-first .gx-gen-error { scroll-margin-bottom: 12px; }
+  /* Atomik's approval row (components/graphite/AtomikGate), under the island on every page while a run waits: a glass
+     row of its own, what it is on two lines at most and the plan's line on one, Not now and Approve (the exact quote) at its end. */
+  .gx .gx-gate { margin: 6px 10px 0; padding: 4px 4px 4px 14px; gap: 6px; flex-wrap: nowrap; border: var(--gl-edge); border-radius: 24px; background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec); }
+  .gx .gx-gate-text { flex: 1 1 0; gap: 0; }
+  .gx .gx-gate-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: normal; line-height: 1.3; }
+  /* Only the plan's own line (what the run does) is cut to one. A status, an error or a refusal is read whole: it can
+     name a price (a re-quote says the old one and the new), and a price is never cut. */
+  .gx .gx-gate[role="group"] .gx-gate-line:not([role]) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; }
+
+  /* ── Gen's sticky Generate: 4px over the bar (its offset counts from the stage's content box, which ends --ph-clear
+     up), and tighter: the 44px capsule GLASS_SPEC §2 names, and its one line. ── */
+  .gx .gx-gen-cta { bottom: -8px; padding: 6px 16px 4px; gap: 2px; }
+  .gx .gx-gen-go.gx-primary { min-height: 44px; }
+  .gx .gx-gen-cta > .gx-gen-foot { line-height: 1.25; }
+  /* Type filters scroll as a single row, leaving the files visible below them. */
+  .gx .gx-library { gap: 8px; padding: 8px 12px; }
+  .gx .gx-library > .gx-panel-head { min-height: 44px; align-items: center; }
+  .gx .gx-library > .gx-chips { flex-wrap: nowrap; overflow-x: auto; min-width: 0; min-height: 44px; scroll-padding-inline: 4px; }
+  .gx .gx-library > .gx-chips > .gx-chip { flex: none; }
+}
+
+/* A phone on its side uses the available width for one header row. Its page
+   keeps at least half the screen; there is no floating tab bar at this width. */
+@media (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
+  .gx { --ph-clear: 16px; }
+  .gx .gx-header:not([data-static]) {
+    height: auto; min-height: 52px; flex-wrap: nowrap; overflow: visible;
+    margin: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+    padding: 3px 6px; border: var(--gl-edge); border-radius: 22px;
+    background: var(--gl-panel); backdrop-filter: var(--gl-blur); box-shadow: var(--gl-spec), var(--gl-lift);
+  }
+  .gx .gx-header > .gx-brand > .gx-brand-name { display: none; }
+  .gx .gx-header > .gx-bar { order: 0; flex: 1 1 0; }
+  .gx .gx-header > .gx-spacer { display: none; }
+  .gx .gx-header > .gx-jobs, .gx .gx-header > .gx-credits, .gx .gx-header > .gx-avatar { order: 1; flex-shrink: 0; }
+  .gx .gx-header:not([data-static]) > .gx-jobs { max-width: 96px; }
+  .gx .gx-header:not(:has(> .gx-bar)) > .gx-spacer { display: block; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg { right: auto; width: 360px; padding-top: 54px; }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-search { right: auto; width: 348px; height: 44px; }
+  .gx .gx-header .gx-seg-btn > .gx-seg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .gx .gx-header .gx-seg-btn { flex-direction: column; gap: 3px; }
+  .gx .gx-header .gx-seg-btn .gx-sig { display: none; }
+  .gx .gx-main > .gx-pagehead { flex-wrap: nowrap; }
+  .gx .gx-avatar, .gx .gx-credits, .gx .gx-jobs { min-height: 44px; min-width: 44px; }
+  .gx .gx-stage { padding-top: 10px; }
+  .gx .gx-gen-cta { bottom: -8px; }
+  .gx .gx-toast { bottom: 12px; }
+  /* Use the width for two compact control rows above a real asset viewport. */
+  .gx .gx-library.gx-panel--overlay { width: min(640px, calc(100% - 20px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 44px 48px minmax(0, 1fr); gap: 6px 12px; }
+  .gx .gx-library > .gx-panel-head { grid-column: 1; grid-row: 1; min-width: 0; gap: 6px; }
+  .gx .gx-library > .gx-seg { grid-column: 2; grid-row: 1; min-width: 0; }
+  .gx .gx-library:not(:has(> .gx-seg)) > .gx-panel-head { grid-column: 1 / -1; }
+  .gx .gx-library > .gx-field { grid-column: 1; grid-row: 2; align-self: center; min-width: 0; }
+  .gx .gx-library > .gx-chips { grid-column: 2; grid-row: 2; align-self: center; }
+  /* The list fills the row under the controls and scrolls itself: graphite.css's short-screen fallback (a fixed
+     list height in a scrolling panel) would push it past the panel here and scroll both. */
+  .gx .gx-library.gx-panel--overlay > .gx-assets { grid-column: 1 / -1; grid-row: 3; height: auto; }
+  .gx .gx-library > .gx-tools, .gx .gx-library > .gx-banner { grid-column: 1 / -1; grid-row: 2 / -1; overflow-y: auto; }
+  .gx .gx-library > .gx-lib-foot { display: none; }
+}
+
+/* A portrait phone's single-line rows hold with any face (a wider fallback sans measured it): the words give way,
+   never a target or the credits. The context badge takes the room left in the header's first row and ellipsizes
+   before the avatar would wrap; a page head's title takes the room beside its buttons before one would wrap. */
+@media (max-width: 767px) {
+  .gx .gx-header:not([data-static]) > .gx-menu-btn { flex: 1 1 0; }
+  .gx .gx-header:not([data-static]) > .gx-spacer { flex-grow: 0; }
+  .gx .gx-main > .gx-pagehead:not(:has(> .gx-seg)) > .gx-h1 { flex: 1 1 0; }
+  .gx .gx-main > .gx-pagehead:not(:has(> .gx-seg)) > .gx-spacer { flex-grow: 0; }
+}
+
+/* The Library overlay keeps its whole column above the floating tab bar. The panel clears the bar, its gap and the
+   safe area under it (--ph-clear), so the asset list's window ends above the bar and the closing note under it is read
+   and tapped above the bar too. Inside it, the list and the tools keep no clearance of their own: left running on
+   under the bar, a tile half under it took a tap meant for it. */
+@media (max-width: 767px) {
+  .gx .gx-library.gx-panel--overlay { padding-bottom: var(--ph-clear); }
+  .gx .gx-library.gx-panel--overlay > .gx-assets, .gx .gx-library.gx-panel--overlay > .gx-tools { padding-bottom: 6px; scroll-padding-bottom: 0; }
+}
+
+/* A portrait approval row is too narrow for a re-quote's words beside two buttons: while it carries a status, the
+   words take the row's width and Not now and Approve (at the new figure) the line under them. */
+@media (max-width: 767px) {
+  .gx .gx-gate[role="group"]:has(.gx-gate-line[role="status"]) { flex-wrap: wrap; padding-top: 8px; }
+  .gx .gx-gate[role="group"]:has(.gx-gate-line[role="status"]) > .gx-gate-text { flex-basis: 100%; }
+  .gx .gx-gate[role="group"]:has(.gx-gate-line[role="status"]) > .gx-hbtn { margin-left: auto; }
+}
+
+/* ── The label floor, at every width: an eyebrow label reads at --gx-text-2. Its .45 tertiary ink composites to about
+   #6A6A6E on the dark ground, under the #7C7C84 floor tests/phoneFloors.ts now measures with the alpha, on a desktop
+   as on a phone. :where() keeps it at the base rule's weight, so an eyebrow tinted on purpose (Recreate's blue) keeps
+   its tint. ── */
+:where(.gx) .gx-eyebrow { color: var(--gx-text-2); }
+
+/* ── The target floor on any phone, either way up: a segmented option is 44px wide as well as tall. ── */
+@media (max-width: 767px), (pointer: coarse) {
+  /* :where() keeps this at the base rule's weight. A floor of its own takes away a flex item's floor of its words: the
+     option also never shrinks below them, so a row of options too wide for its track scrolls (Workspace's sections)
+     instead of laying words over each other. */
+  :where(.gx) .gx-seg-btn { min-width: 44px; flex-shrink: 0; }
+}

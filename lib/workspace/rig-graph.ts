@@ -1,4 +1,4 @@
-import { NODE_DEFS, canConnect } from "../workbench/node-graph";
+import { canConnect, nodeDef } from "../workbench/node-graph";
 import type { CanvasNode, Project } from "../workbench/studio";
 
 /**
@@ -13,12 +13,36 @@ export const GRAPH_PAD = 20;
 /** The design's canvas floor (1050×520); larger graphs grow it and the pane scrolls. */
 export const GRAPH_MIN = { width: 1050, height: 520 };
 
+/**
+ * A section title on the board (lib/workspace/rig-board.ts): a `note` card in
+ * `section` mode. `mode` is a free string, so older releases read it as a note.
+ */
+export const SECTION_MODE = "section";
+export function isSectionNode(node: Pick<CanvasNode, "type" | "mode">): boolean {
+  return node.type === "note" && node.mode === SECTION_MODE;
+}
+
+/** A section title spans the columns of its section: as wide as it was laid out, within the node's own bounds. */
+export const SECTION_WIDTH = { min: 220, max: 1200, made: 260 };
+
 /** Card width by node shape: 238 scene, 220 references, 254 direction/finishing — never wider than the saved node. */
-export function cardWidth(node: Pick<CanvasNode, "type" | "width">): number {
-  const shape = NODE_DEFS[node.type].shape;
+export function cardWidth(node: Pick<CanvasNode, "type" | "width" | "mode">): number {
+  if (isSectionNode(node)) return Math.min(SECTION_WIDTH.max, Math.max(SECTION_WIDTH.min, node.width || SECTION_WIDTH.made));
+  const shape = nodeDef(node.type).shape;
   if (shape === "scene") return 238;
   if (shape === "reference") return 220;
   return Math.min(254, Math.max(180, node.width || 254));
+}
+
+/**
+ * Card height by shape. Every card on the board is exactly this tall (the
+ * preview well, two lines of prompt and the footer fit it at every size), so
+ * the server's Tidy knows each card's box without drawing it.
+ */
+export const CARD_HEIGHT = { scene: 244, reference: 224, text: 200, operator: 204, flow: 204, section: 52 } as const;
+export function cardHeight(node: Pick<CanvasNode, "type" | "mode">): number {
+  if (isSectionNode(node)) return CARD_HEIGHT.section;
+  return CARD_HEIGHT[nodeDef(node.type).shape];
 }
 
 export type GraphCard = { id: string; left: number; top: number; width: number };

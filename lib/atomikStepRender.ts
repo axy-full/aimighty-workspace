@@ -1,18 +1,21 @@
 import type { Step } from "./atomik";
+import type { StepRef } from "./attachments";
+import { keyStepFamily, keyStepSource } from "./atomikKeySteps";
 
 /**
  * The render an approved Atomik step makes, as the ordinary routes take it.
  *
- * One builder for the three places that must agree on it: the free quote the
- * rail asks for before Continue is offered, the paid request Continue sends,
- * and the server's advance estimate for an audio step. A price is only true
- * for the exact body it was quoted on, so none of them builds its own.
+ * One builder for the places that must agree on it: the free quote the rail
+ * asks for before Continue is offered, the paid request Continue sends, the
+ * server's advance estimate for an audio step, and the planner's quote for a
+ * library step before it is proposed. A price is only true for the exact body
+ * it was quoted on, so none of them builds its own.
  *
  * `refine: false` because the planner already wrote the prompt to be rendered
  * exactly as written, and because the quote route prices without the prompt
  * writer: an unquoted paid rewrite has no place behind a priced button.
  *
- * Pure, and type-only in its imports, so the browser can use it.
+ * Pure, and its imports are pure, so the browser can use it.
  */
 export type StepRender = {
   /** Where Continue sends it. */
@@ -29,7 +32,15 @@ export function stepAudioTask(params: Record<string, unknown>): string {
   return typeof params.task === "string" && params.task ? params.task : "sound";
 }
 
-export function stepRender(step: Renderable, projectId: string | null): StepRender {
+/** Where a render files beyond its project: a transform files under the approver's own Studio project for it. */
+export type StepRenderContext = { workbenchProjectId?: string | null };
+
+/** A library step's stills as admission takes them: a saved identity and the reference role, nothing else. */
+const stillReferences = (refs: readonly StepRef[] | undefined) =>
+  (refs ?? []).filter((r) => r.role === "reference_image" && (r.uploadId || r.genId))
+    .map((r) => (r.genId ? { genId: r.genId, role: r.role } : { uploadId: r.uploadId!, role: r.role }));
+
+export function stepRender(step: Renderable, projectId: string | null, context: StepRenderContext = {}): StepRender {
   const seconds = Number(step.params.seconds) || undefined;
   if (step.kind === "audio")
     return {
@@ -37,6 +48,29 @@ export function stepRender(step: Renderable, projectId: string | null): StepRend
       quoteUrl: "/api/audio",
       body: { task: stepAudioTask(step.params), text: step.prompt, projectId, title: step.title, durationSeconds: seconds },
     };
+  /* A library step (lib/atomikKeySteps.ts), in the shape the transform and Marketing Studio forms send. */
+  const family = keyStepFamily(step.model);
+  if (family === "transform")
+    return {
+      url: "/api/generate",
+      quoteUrl: "/api/generate/quote",
+      body: {
+        prompt: step.prompt, model: step.model, task: "genjutsu", projectId,
+        ...(context.workbenchProjectId ? { workbenchProjectId: context.workbenchProjectId } : {}),
+        resolution: step.params.resolution, ...keyStepSource(step.params), references: stillReferences(step.refs), refine: false,
+      },
+    };
+  if (family === "marketing") {
+    const references = stillReferences(step.refs);
+    return {
+      url: "/api/generate",
+      quoteUrl: "/api/generate/quote",
+      body: {
+        prompt: step.prompt, model: step.model, projectId, ratio: step.params.ratio, resolution: step.params.resolution,
+        references: references.length ? references : undefined, marketing: step.params.marketing, refine: false,
+      },
+    };
+  }
   return {
     url: "/api/generate",
     quoteUrl: "/api/generate/quote",
@@ -47,8 +81,8 @@ export function stepRender(step: Renderable, projectId: string | null): StepRend
   };
 }
 
-/** A quote the admission route answered for one exact body. */
-export type StepQuote = { estimatedCredits: number; price: number; fingerprint: string | null };
+/** A quote the admission route answered for one exact body; `approximate` when the take settles on its delivered output (a 2.5 build). */
+export type StepQuote = { estimatedCredits: number; price: number; fingerprint: string | null; approximate?: true };
 
 /** The answer of /api/audio (quoteOnly) or /api/generate/quote, checked; null when it is not a usable quote. */
 export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): StepQuote | null {
@@ -60,7 +94,7 @@ export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): 
   if (v.unit !== "cr" && v.unit !== "usd") return null;
   /* /api/generate checks the compiled request against the quote's fingerprint; audio has none. */
   if (render.url === "/api/generate" && (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint))) return null;
-  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null };
+  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null, ...(v.approximate === true ? { approximate: true as const } : {}) };
 }
 
 /** A quote, or why there is none and whether asking again later could help. */
@@ -107,8 +141,8 @@ type Priced = Pick<Step, "status" | "estCostUsd" | "estCredits" | "billedCredits
  * the ledger billed for a step that ran, the checkpoint's live admission quote
  * when there is one, otherwise the estimate the server converted at the
  * engine's margin. In dollars it is the vendor's dollars the workspace pays.
- * A connected-account step is not in this unit at all; the caller prices it
- * in connected credits.
+ * An older step planned on the connected account is not in this unit at all;
+ * it is read-only and the caller gives it no price (lib/atomikAccountStep.ts).
  */
 export function stepPrice(step: Priced, inCredits: boolean, live: StepQuote | null = null): number | null {
   if (inCredits && step.status === "done" && typeof step.billedCredits === "number") return step.billedCredits;

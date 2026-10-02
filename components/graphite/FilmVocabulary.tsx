@@ -3,8 +3,8 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { createPortal } from "react-dom";
 import type { ComposerType } from "@/lib/workspace/composer";
 import {
-  FILM_CHIPS, chipOptions, chipValue, chipsFor, dropToken, extraRows, hashDefault, hashToken, isPicked, optionMatches, pickOption, vocabularyMatches,
-  type FilmChip, type FilmChipKey, type FilmHit, type FilmOption, type FilmSetup,
+  dropToken, filmBank, hashDefault, hashToken, isPicked, optionMatches,
+  type FilmHit, type FilmOption, type FilmSetup, type VocabChip, type VocabularyBank,
 } from "@/lib/workspace/film-vocabulary";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -13,23 +13,33 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * Direction, each Auto until picked; a chip opens a grid where every entry
  * shows its loop (the platform's neutral previews, GET /api/platform/previews)
  * or, where the bank makes none, a drawing of what it does. `#` in the words
- * opens the same bank as a typeahead.
+ * opens the same bank as a typeahead. An engine with documented controls of
+ * its own (Cinema Studio 4.0, lib/workspace/cinema-vocabulary.ts) passes its
+ * bank, and gets the same chips, grids and `#` for them.
  */
 
 const PREVIEW_PATH = "/api/platform/previews/";
 type Previews = { state: "idle" | "ready" | "error"; urls: Record<string, string> };
+/** What a long grid's search counts. */
+const SEARCH_NOUN: Record<string, string> = { camera: "moves", camera_movement: "moves", color_palette: "palettes" };
 
-export function FilmChips({ scope, type, setup, onChange }: {
+export function FilmChips({ scope, type, setup, onChange, bank, testId = "gen-film" }: {
   scope: string; type: ComposerType; setup: FilmSetup; onChange: (setup: FilmSetup) => void;
+  /** The vocabulary the chips offer; the film vocabulary's camera bank when absent. */
+  bank?: VocabularyBank;
+  /** The chips' test id, and each chip's prefix. */
+  testId?: string;
 }) {
-  const chips = chipsFor(type);
-  const extras = extraRows(setup, type);
-  const [open, setOpen] = useState<FilmChipKey | null>(null);
-  const buttons = useRef<Partial<Record<FilmChipKey, HTMLButtonElement | null>>>({});
+  const film = useMemo(() => filmBank(type), [type]);
+  const vocab = bank ?? film;
+  const chips = vocab.chips;
+  const extras = vocab.extras(setup);
+  const [open, setOpen] = useState<string | null>(null);
+  const buttons = useRef<Partial<Record<string, HTMLButtonElement | null>>>({});
   const scopedFetch = useScopedFetch(scope);
-  /* The loops are read once, when the Camera grid first opens (only moves and techniques have them). */
+  /* The loops are read once, when the grid that has them first opens (the film vocabulary's Camera: moves and techniques). */
   const [previews, setPreviews] = useState<Previews>({ state: "idle", urls: {} });
-  const wantsPreviews = open === "camera" && previews.state === "idle";
+  const wantsPreviews = open !== null && open === vocab.loops && previews.state === "idle";
   useEffect(() => {
     if (!wantsPreviews) return;
     let live = true;
@@ -54,16 +64,16 @@ export function FilmChips({ scope, type, setup, onChange }: {
     button?.focus({ preventScroll: true });
     button?.scrollIntoView({ block: "nearest" });
   };
-  const chip = open ? FILM_CHIPS.find((c) => c.key === open) ?? null : null;
+  const chip = open ? vocab.chips.find((c) => c.key === open) ?? null : null;
   return (
-    <div className="gx-fv" data-testid="gen-film">
-      <div className="gx-fv-chips" role="group" aria-label="Film vocabulary">
+    <div className="gx-fv" data-testid={testId}>
+      <div className="gx-fv-chips" role="group" aria-label={vocab.label}>
         {chips.map((c) => {
-          const value = chipValue(c, setup);
+          const value = vocab.value(c, setup);
           return (
             <button key={c.key} ref={(el) => { buttons.current[c.key] = el; }} type="button" className="gx-fv-chip" data-set={value.set || undefined}
               aria-haspopup="dialog" aria-expanded={open === c.key} aria-label={`${c.label}: ${value.text}`} title={`${c.label}: ${value.text}`}
-              onClick={() => setOpen(c.key)} data-testid={`gen-film-${c.key}`}>
+              onClick={() => setOpen(c.key)} data-testid={`${testId}-${c.key}`}>
               <span className="gx-fv-chip-label" aria-hidden="true">{c.label}</span>
               <span className="gx-fv-chip-value" aria-hidden="true">{value.text}</span>
             </button>
@@ -71,7 +81,7 @@ export function FilmChips({ scope, type, setup, onChange }: {
         })}
       </div>
       {extras.length ? (
-        <ul className="gx-fv-extras" aria-label="Also in the setup" data-testid="gen-film-extras">
+        <ul className="gx-fv-extras" aria-label="Also in the setup" data-testid={`${testId}-extras`}>
           {extras.map((x) => (
             <li key={x.row}>
               <span title={x.label}>{x.value}</span>
@@ -82,9 +92,9 @@ export function FilmChips({ scope, type, setup, onChange }: {
       ) : null}
       {chip ? createPortal(
         <div className="gx-veil" onClick={close} data-testid="gen-film-veil">
-          <FilmSheet chip={chip} setup={setup} previews={chip.key === "camera" ? previews : null}
+          <FilmSheet chip={chip} bank={vocab} setup={setup} previews={chip.key === vocab.loops ? previews : null}
             onRetry={() => setPreviews({ state: "idle", urls: {} })}
-            onPick={(o) => { onChange(pickOption(setup, chip, o)); close(); }} onClose={close} />
+            onPick={(o) => { onChange(vocab.pick(setup, chip, o)); close(); }} onClose={close} />
         </div>,
         document.querySelector(".gx") ?? document.body,
       ) : null}
@@ -92,9 +102,9 @@ export function FilmChips({ scope, type, setup, onChange }: {
   );
 }
 
-function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
-  chip: FilmChip; setup: FilmSetup;
-  /** The loops, for Camera; null elsewhere (the bank makes loops for moves and techniques only). */
+function FilmSheet({ chip, bank, setup, previews, onPick, onClose, onRetry }: {
+  chip: VocabChip; bank: VocabularyBank; setup: FilmSetup;
+  /** The loops, for the grid that has them (the film vocabulary's Camera); null elsewhere. */
   previews: Previews | null;
   onPick: (option: FilmOption | null) => void; onClose: () => void; onRetry: () => void;
 }) {
@@ -102,13 +112,13 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
   const dialog = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  const options = useMemo(() => chipOptions(chip), [chip]);
+  const options = useMemo(() => bank.options(chip), [bank, chip]);
   const shown = useMemo(() => options.filter((o) => optionMatches(o, query)), [options, query]);
   const searchable = options.length > 12;
-  const value = chipValue(chip, setup);
-  const groups = chip.key === "camera"
-    ? [{ key: "move", label: "Moves", items: shown.filter((o) => o.row === "move") }, { key: "technique", label: "Techniques", items: shown.filter((o) => o.row === "technique") }]
-    : [{ key: chip.rows[0], label: null, items: shown }];
+  /* A grid of names alone (a genre, an era, a palette) has an Auto of the same kind. */
+  const plain = options.length > 0 && options.every((o) => o.plain);
+  const value = bank.value(chip, setup);
+  const groups = bank.groups ? bank.groups(chip, shown) : [{ key: chip.rows[0], label: null, items: shown }];
 
   /* A pointer types into the search where there is one; otherwise the picked entry (or Auto) takes focus, in view. */
   useEffect(() => {
@@ -171,8 +181,8 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
     return <FilmTile key={`${o.row}:${o.value}`} option={o} picked={isPicked(setup, o)} url={url} loading={Boolean(previews && previews.state === "idle" && o.previewKey)} onPick={() => onPick(o)} />;
   };
   const auto = (
-    <button type="button" className="gx-fv-tile" aria-pressed={!value.set} onClick={() => onPick(null)} data-option="auto" data-testid="gen-film-auto">
-      <span className="gx-fv-media" data-preview="glyph"><Glyph row="auto" value="auto" /></span>
+    <button type="button" className="gx-fv-tile" aria-pressed={!value.set} onClick={() => onPick(null)} data-option="auto" data-plain={plain || undefined} data-testid="gen-film-auto">
+      {plain ? null : <span className="gx-fv-media" data-preview="glyph"><Glyph row="auto" value="auto" /></span>}
       <span className="gx-fv-name">Auto</span>
       <span className="gx-fv-aka">Engine decides</span>
     </button>
@@ -199,7 +209,7 @@ function FilmSheet({ chip, setup, previews, onPick, onClose, onRetry }: {
                 /* Enter takes the first match; one already held stays held (a pick again would put it back to Auto). */
                 if (e.key === "Enter" && !e.nativeEvent.isComposing && query.trim() && shown[0]) { e.preventDefault(); if (isPicked(setup, shown[0])) onClose(); else onPick(shown[0]); }
               }}
-              placeholder={`Search ${options.length} ${chip.key === "camera" ? "moves" : "entries"}`} aria-label={`Search ${chip.label.toLowerCase()}`}
+              placeholder={`Search ${options.length} ${SEARCH_NOUN[chip.key] ?? "entries"}`} aria-label={`Search ${chip.label.toLowerCase()}`}
               autoComplete="off" spellCheck={false} enterKeyHint="go" data-testid="gen-film-search" />
           </div>
         ) : null}
@@ -232,11 +242,13 @@ function FilmTile({ option, picked, url, loading, onPick }: { option: FilmOption
   return (
     <button type="button" className="gx-fv-tile" aria-pressed={picked} onClick={onPick} title={option.phrase}
       onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}
-      data-option={`${option.row}:${option.value}`}>
-      <span className="gx-fv-media" data-preview={loop ? "loop" : loading ? "loading" : "glyph"}>
-        <Glyph row={option.row} value={option.value} />
-        {loop ? <PreviewLoop url={loop} active={hover} onFail={() => setFailed(true)} /> : null}
-      </span>
+      data-option={`${option.row}:${option.value}`} data-plain={option.plain || undefined}>
+      {option.plain ? null : (
+        <span className="gx-fv-media" data-preview={loop ? "loop" : loading ? "loading" : "glyph"}>
+          <Glyph row={option.row} value={option.value} />
+          {loop ? <PreviewLoop url={loop} active={hover} onFail={() => setFailed(true)} /> : null}
+        </span>
+      )}
       <span className="gx-fv-name">{option.label}</span>
       {option.aka ? <span className="gx-fv-aka">{option.aka}</span> : null}
     </button>
@@ -288,9 +300,11 @@ function PreviewLoop({ url, active, onFail }: { url: string; active: boolean; on
  * hashtag or a number they are a new line and the next field, as ever. A pick
  * sets its chip and takes the `#word` out of the words.
  */
-export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSetup }: {
+export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSetup, bank }: {
   type: ComposerType; prompt: string; setup: FilmSetup; textarea: RefObject<HTMLTextAreaElement | null>;
   onPrompt: (prompt: string) => void; onSetup: (setup: FilmSetup) => void;
+  /** The vocabulary `#` offers; the film vocabulary's camera bank when absent. */
+  bank?: VocabularyBank;
 }) {
   const listId = useId();
   const [caret, setCaret] = useState<number | null>(null);
@@ -299,9 +313,11 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
   const [said, setSaid] = useState("");
   const pendingCaret = useRef<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const film = useMemo(() => filmBank(type), [type]);
+  const vocab = bank ?? film;
   const token = caret !== null && type !== "audio" ? hashToken(prompt, caret) : null;
   const tokenKey = token ? `${token.start}:${token.query}` : null;
-  const hits: FilmHit[] = token && tokenKey !== dismissed ? vocabularyMatches(token.query, type) : [];
+  const hits: FilmHit[] = token && tokenKey !== dismissed ? vocab.matches(token.query) : [];
   /* Nothing to offer, nothing shown: a hashtag in the words is left alone. */
   const open = hits.length > 0;
   /* The arrows' choice for what is typed now; else the one Enter would take unasked, if any. */
@@ -340,9 +356,10 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
 
   const pick = (hit: FilmHit) => {
     if (!token) return;
+    const chip = vocab.chips.find((c) => c.key === hit.chip);
+    if (!chip) return;
     const dropped = dropToken(prompt, token);
-    const chip = FILM_CHIPS.find((c) => c.key === hit.chip)!;
-    if (!isPicked(setup, hit)) onSetup(pickOption(setup, chip, hit));
+    if (!isPicked(setup, hit)) onSetup(vocab.pick(setup, chip, hit));
     pendingCaret.current = dropped.caret;
     setCaret(dropped.caret);
     onPrompt(dropped.text);
@@ -436,6 +453,13 @@ const MOTION: Record<string, string> = {
   pedup: "up", peddown: "down", crane: "craneup", cranedown: "cranedown", aerial: "cranedown",
   orbit: "orbit", arc: "arc", bullettime: "orbit", handheld: "wave", snorricam: "wave", topdown: "top", motioncontrol: "path", oner: "long",
   dollyzoom: "zolly", rackfocus: "focus",
+  /* Cinema Studio 4.0's documented movements (lib/cinemaStudioTypes.ts), drawn the same way as their bank counterparts. */
+  "robot-arm": "path", "tilt-up": "tiltup", "rack-focus": "focus", "tilt-down": "tiltdown", pov: "depth", "pan-left": "panleft",
+  "crane-up": "craneup", "pan-right": "panright", "crane-down": "cranedown", "side-tracking": "right", "pedestal-up": "up",
+  "pedestal-down": "down", tracking: "right", "drone-orbit": "orbit", "dolly-zoom": "zolly", "aerial-pullback": "out",
+  "static-shot": "static", "bullet-time": "orbit", "whip-pan": "panright", "slow-zoom-in": "zoomin", "arc-left": "arcleft",
+  "slow-zoom-out": "zoomout", "arc-right": "arc", "truck-right": "right", "dolly-in": "in", "truck-left": "left", "dolly-out": "out",
+  "slider-right": "right", "crush-zoom": "zoomin", "slider-left": "left", "helicopter-shot": "cranedown",
 };
 /* What sets a move apart from another drawn the same way: the subject's own travel, speed, a rig, the ground. */
 function moveMark(value: string): ReactNode {
@@ -447,12 +471,14 @@ function moveMark(value: string): ReactNode {
     case "lead": return acc(arrow(80, 54, 80, 68, 4));
     case "track": return acc(arrow(89, 45, 104, 45, 4));
     case "lowtrack": return line("M24 74H136");
-    case "bullettime": return <><circle cx="58" cy="45" r="7" className="gx-fv-g-dim" /><circle cx="102" cy="45" r="7" className="gx-fv-g-dim" /></>;
+    case "bullettime": case "bullet-time": return <><circle cx="58" cy="45" r="7" className="gx-fv-g-dim" /><circle cx="102" cy="45" r="7" className="gx-fv-g-dim" /></>;
     case "snorricam": return <>{line("M80 53V74")}<rect x="74" y="72" width="12" height="7" rx="2" className="gx-fv-g-cam" /></>;
     case "fpv": return <>{acc("M72 58L88 68M88 58L72 68")}{[[72, 58], [88, 58], [72, 68], [88, 68]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="3" className="gx-fv-g-acc" />)}</>;
-    case "crash": return line("M34 18l8 5M126 18l-8 5M34 72l8-5M126 72l-8-5");
-    case "whippan": return line("M44 37Q80 21 116 37M44 44Q80 28 116 44");
-    case "aerial": return <path d="M24 70L58 64L98 70L136 63V76H24Z" className="gx-fv-g-ground" />;
+    case "crash": case "crush-zoom": return line("M34 18l8 5M126 18l-8 5M34 72l8-5M126 72l-8-5");
+    case "whippan": case "whip-pan": return line("M44 37Q80 21 116 37M44 44Q80 28 116 44");
+    case "aerial": case "aerial-pullback": case "helicopter-shot": return <path d="M24 70L58 64L98 70L136 63V76H24Z" className="gx-fv-g-ground" />;
+    case "slow-zoom-in": case "slow-zoom-out": return line("M70 84h20");
+    case "slider-right": case "slider-left": return line("M30 74H130M34 70v8M126 70v8");
     default: return null;
   }
 }
@@ -568,6 +594,7 @@ function moveBody(kind: string): ReactNode {
     case "cranedown": return <>{frame}{subject}{d(`M44 22Q52 60 104 68${head(96, 68, 104, 68)}`)}</>;
     case "orbit": return <>{frame}{subject}<ellipse cx="80" cy="45" rx="44" ry="14" className="gx-fv-g-acc" strokeDasharray="4 4" />{d(arrow(112, 55, 124, 49))}</>;
     case "arc": return <>{frame}{subject}{d(`M38 45A42 14 0 0 0 122 45${head(117, 53, 122, 45)}`)}</>;
+    case "arcleft": return <>{frame}{subject}{d(`M122 45A42 14 0 0 1 38 45${head(43, 53, 38, 45)}`)}</>;
     case "wave": return <>{frame}{subject}{d("M34 64q8-8 16 0t16 0t16 0t16 0t16 0t14 0")}</>;
     case "top": return <>{frame}<circle cx="80" cy="45" r="22" className="gx-fv-g-acc" /><circle cx="80" cy="45" r="12" className="gx-fv-g-acc" />{subject}</>;
     case "path": return <>{frame}<path d="M32 66C56 20 92 70 128 24" className="gx-fv-g-acc" strokeDasharray="5 4" />{[[32, 66], [80, 45], [128, 24]].map(([x, y]) => <circle key={x} cx={x} cy={y} r="3.5" className="gx-fv-g-accfill" />)}</>;

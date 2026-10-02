@@ -1,5 +1,6 @@
 import {
   GENJUTSU_LIMITS,
+  GENJUTSU_RESOLUTIONS,
   genjutsuVariantForModel,
   type GenjutsuResolution,
 } from "@/lib/genjutsuTypes";
@@ -26,7 +27,7 @@ export function recreationSettings(take: Generation) {
     !record(params) ||
     !Array.isArray(params.references) ||
     params.references.length > GENJUTSU_LIMITS.maxImages + 1 ||
-    !["480p", "720p"].includes(String(params.resolution))
+    !(GENJUTSU_RESOLUTIONS as readonly string[]).includes(String(params.resolution))
   )
     throw Error(
       "The original source, reference order or quality settings were not retained for this take.",

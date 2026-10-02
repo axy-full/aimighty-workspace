@@ -459,6 +459,14 @@
   color: #ededea;
   text-decoration: underline;
 }
+/* A text button is a target like any other: on a phone, or wherever the pointer is a finger, it clears 44×44 (its
+   words stay 12px, centred in it) — Try again under a read that failed, Clear, Download original, Load more. */
+@media (max-width: 767px), (pointer: coarse) {
+  .suite-text-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
 .suite-run-list {
   margin-top: 24px;
 }

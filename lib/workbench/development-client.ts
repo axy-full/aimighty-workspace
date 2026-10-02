@@ -20,7 +20,7 @@ export async function developmentSourceHash(project: Project, kind: DevelopmentK
 export function developmentInput(record: PendingDevelopment): DevelopmentRequest {
   const input = JSON.parse(record.body) as DevelopmentRequest & { quoteOnly?: unknown };
   if (!input || input.projectId !== record.projectId || !/^[\w-]{8,100}$/.test(input.requestId) ||
-      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
+      !['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig', 'verify'].includes(input.kind) || !/^(anthropic|openai|spacexai)\//.test(input.model) ||
       (input.fromJobId != null && (input.kind !== 'write' || !/^wb_development_[a-f0-9-]+$/.test(input.fromJobId))) ||
       (input.fromBeats != null && (input.kind !== 'write' || input.fromBeats !== true || input.fromJobId != null)) ||
       (input.sketchAssetId != null && (input.kind !== 'sketch' || !/^[\w-]{1,100}$/.test(input.sketchAssetId))) ||
@@ -28,7 +28,10 @@ export function developmentInput(record: PendingDevelopment): DevelopmentRequest
       typeof input.effort !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceHash ?? '') ||
       !Number.isInteger(input.maxCredits) || input.maxCredits! < 0 || input.quoteOnly != null ||
       (input.maxUsd != null && (!Number.isFinite(input.maxUsd) || input.maxUsd < 0)) ||
-      (input.attachmentAssetIds != null && (!Array.isArray(input.attachmentAssetIds) || input.attachmentAssetIds.length > 4 || input.kind === 'condense' || !input.attachmentAssetIds.every((id) => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))))) {
+      (input.attachmentAssetIds != null && (!Array.isArray(input.attachmentAssetIds) || input.attachmentAssetIds.length > 4 || input.kind === 'condense' || input.kind === 'verify' || !input.attachmentAssetIds.every((id) => typeof id === 'string' && /^[\w-]{1,100}$/.test(id)))) ||
+      /* A Verify check's sampled stills: three at most, each a stored upload of the take it checks. */
+      (input.videoFrames != null && (input.kind !== 'verify' || !Array.isArray(input.videoFrames) || !input.videoFrames.length || input.videoFrames.length > 3 ||
+        !input.videoFrames.every((f) => f && typeof f.assetId === 'string' && /^[\w-]{1,100}$/.test(f.uploadId) && Number.isFinite(f.timeSeconds))))) {
     throw new Error('The saved development request cannot be verified. Review saved runs before starting another.');
   }
   return input;

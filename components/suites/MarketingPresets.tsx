@@ -4,8 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, RefreshCw, Search, Sparkles } from "lucide-react";
 import type { Project } from "@/lib/workbench/studio";
 import {
+  MARKETING_BUILDS,
+  marketingQualities,
+  marketingQualityFor,
   marketingReferenceIds,
   moleculrReferences,
+  type MarketingBuild,
   type MoleculrBrief,
   type MoleculrMarketing,
   type MoleculrGenerationOptions,
@@ -35,6 +39,11 @@ const emptyCatalog = (scope: string): Catalog => ({
   loaded: false,
 });
 const direct: MoleculrMarketing = { quality: "high", enhancePrompt: false };
+/** The same settings on another build (2.0 Alpha is the default and is left unnamed). */
+const onBuild = (
+  variant: MarketingBuild | undefined,
+): Pick<MoleculrMarketing, "variant"> =>
+  variant && variant !== "alpha" ? { variant } : {};
 
 export function MarketingPresets({
   project,
@@ -59,6 +68,7 @@ export function MarketingPresets({
   ) => void;
 }) {
   const settings = brief.marketing ?? direct;
+  const alpha = (settings.variant ?? "alpha") === "alpha";
   const [catalog, setCatalog] = useState<Catalog>(() => emptyCatalog(scope));
   const [query, setQuery] = useState("");
   const [productId, setProductId] = useState("");
@@ -182,7 +192,11 @@ export function MarketingPresets({
           disabled={!enabled}
           aria-pressed={!settings.enhancePrompt}
           onClick={() =>
-            onSettings({ quality: settings.quality, enhancePrompt: false })
+            onSettings({
+              ...onBuild(settings.variant),
+              quality: settings.quality,
+              enhancePrompt: false,
+            })
           }
         >
           Your direction
@@ -192,7 +206,11 @@ export function MarketingPresets({
           disabled={!enabled}
           aria-pressed={settings.enhancePrompt}
           onClick={() =>
-            onSettings({ ...settings, quality: "high", enhancePrompt: true })
+            onSettings({
+              ...settings,
+              quality: marketingQualityFor({ ...settings, enhancePrompt: true }),
+              enhancePrompt: true,
+            })
           }
         >
           Provider preset
@@ -208,7 +226,7 @@ export function MarketingPresets({
           {current.error}
           <button className="suite-text-button" onClick={() => void readPage()}>
             <RefreshCw size={14} />
-            Retry connection
+            Try again
           </button>
         </div>
       ) : !current.loaded ? (
@@ -239,7 +257,11 @@ export function MarketingPresets({
                 aria-pressed={item.id === settings.presetId}
                 onClick={() =>
                   onSettings({
-                    quality: "high",
+                    ...onBuild(settings.variant),
+                    quality: marketingQualityFor({
+                      ...settings,
+                      enhancePrompt: true,
+                    }),
                     enhancePrompt: true,
                     presetId: item.id,
                     presetName: item.name,
@@ -292,8 +314,11 @@ export function MarketingPresets({
             </strong>
             <p>
               One product image leads the composition. Add one cast image to
-              include a person. Presets use high quality; review the exact price
-              before generating.
+              include a person.{" "}
+              {alpha
+                ? "On 2.0 Alpha, presets use high quality."
+                : "On 2.5, presets keep the quality you choose."}{" "}
+              Review the estimate before generating.
             </p>
             {settings.presetId && !preset && (
               <p role="status">
@@ -360,20 +385,50 @@ export function MarketingPresets({
           )}
         </label>
         <label>
+          Build
+          <select
+            aria-label="Marketing Studio build"
+            value={settings.variant ?? "alpha"}
+            onChange={(event) => {
+              const variant = event.target.value as MarketingBuild;
+              onSettings({
+                ...onBuild(variant),
+                quality: marketingQualityFor({ ...settings, variant }),
+                enhancePrompt: settings.enhancePrompt,
+                ...(settings.presetId ? { presetId: settings.presetId } : {}),
+                ...(settings.presetName
+                  ? { presetName: settings.presetName }
+                  : {}),
+              });
+            }}
+          >
+            {MARKETING_BUILDS.map((build) => (
+              <option key={build.id} value={build.id}>
+                {build.label}
+              </option>
+            ))}
+          </select>
+          <small>
+            {alpha
+              ? "Priced live before generating."
+              : "Priced approximately; the delivered image settles it."}
+          </small>
+        </label>
+        <label>
           Image quality
           <select
-            value={settings.enhancePrompt ? "high" : settings.quality}
-            disabled={settings.enhancePrompt}
+            value={marketingQualityFor(settings)}
+            disabled={settings.enhancePrompt && alpha}
             onChange={(event) =>
               onSettings({
+                ...settings,
                 quality: event.target.value as MoleculrMarketing["quality"],
-                enhancePrompt: false,
               })
             }
           >
-            {["low", "medium", "high"].map((value) => (
-              <option key={value} value={value}>
-                {value.charAt(0).toUpperCase() + value.slice(1)}
+            {marketingQualities(settings.variant).map((quality) => (
+              <option key={quality.id} value={quality.id}>
+                {quality.label}
               </option>
             ))}
           </select>
@@ -402,7 +457,8 @@ export function MarketingPresets({
                 modelId: "higgsfield/marketing-studio-image",
                 ...(brief.creative ? { ratio: brief.creative.aspect } : {}),
                 marketing: {
-                  quality: settings.enhancePrompt ? "high" : settings.quality,
+                  ...onBuild(settings.variant),
+                  quality: marketingQualityFor(settings),
                   enhancePrompt: settings.enhancePrompt,
                   ...(settings.enhancePrompt && preset
                     ? { presetId: preset.id }

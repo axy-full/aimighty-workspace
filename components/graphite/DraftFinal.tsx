@@ -146,7 +146,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals }: {
       const fresh = await quoteFinal(scope, draft);
       if (fresh.credits !== price.credits) {
         setQuote({ key: quoteKey, value: fresh });
-        setNote(`${before}The price is now ${fresh.credits.toLocaleString("en-US")} cr. Approve again to make the final at that price.`);
+        setNote(`${before}The estimate is now about ${fresh.credits.toLocaleString("en-US")} cr. Approve again to make the final.`);
         return;
       }
       const out = await sendClaimedGeneration({

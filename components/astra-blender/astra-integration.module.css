@@ -6,3 +6,15 @@
 .panel>label{display:grid;gap:6px}
 .panel>label input,.panel>label select{width:100%;min-width:0;box-sizing:border-box;background:#18191d;color:#f2f2f4;border:1px solid #34353d;border-radius:8px;padding:8px;font:inherit}
 .panel summary,.panel p{overflow-wrap:anywhere}
+/* A touch screen at any width, and every phone: each control a 44px target (a checkbox by its label, a disclosure by its summary) and no text under 12px (tests/astra-phone-floors-workbench.spec.ts). */
+@media (max-width: 767px), (pointer: coarse) {
+  .toolbar .button, .panel .button { min-height: 44px; }
+  .panel.panel > label input, .panel.panel > label select { min-height: 44px; }
+  .panel details > summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
+  .referenceList label { min-height: 44px; }
+  .result small, .sourceCode { font-size: 12px; }
+}
+/* A phone, upright or on its side: 16px fields a phone does not zoom into. */
+@media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
+  .panel.panel textarea, .panel.panel > label input, .panel.panel > label select { font-size: 16px; }
+}

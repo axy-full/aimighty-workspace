@@ -57,8 +57,7 @@ import { useSuiteProject } from "./SuiteProjectContext";
 import { SyncedVideoComparison } from "./SyncedVideoComparison";
 import { ReferenceImagePreview } from "./ReferenceImagePreview";
 import { FrameExtractControls } from "./FrameExtractControls";
-import { ConsumerGenjutsu } from "./ConsumerGenjutsu";
-import { ConsumerShorts } from "./ConsumerShorts";
+import { ACCOUNT_RETIRED, HISTORY_KEPT } from "@/lib/shell/connected-capability";
 import { recreationProblem, recreationSettings } from "./subatomik-recreate";
 import styles from "./subatomik.module.css";
 import { SUBATOMIK_DIRECTIONS } from "./subatomik-directions";
@@ -134,7 +133,9 @@ function creativeDraft(value: unknown): CreativeDraft {
       typeof value.prompt === "string"
         ? value.prompt.slice(0, GENJUTSU_LIMITS.maxPromptChars)
         : "",
-    resolution: value.resolution === "480p" ? "480p" : "720p",
+    resolution: (GENJUTSU_RESOLUTIONS as readonly string[]).includes(String(value.resolution))
+      ? (value.resolution as GenjutsuResolution)
+      : "720p",
   };
 }
 function sourceUrl(value: Record<string, unknown>) {
@@ -149,19 +150,15 @@ const price = (quote: AdmissionQuote) =>
     ? `${quote.price.toLocaleString()} cr`
     : `$${quote.price.toFixed(2)}`;
 
-type BillingAccount = "particl" | "higgsfield";
-type ConnectionStatus = { connected?: boolean; requiresReconnect?: boolean };
-
 export default function SubatomikWorkspace({
   variant: requestedVariant,
   embedded = false,
-  onConnectedInput,
 }: {
   /** Set by a host that routes its own pages (the /workspace shell); otherwise read from `?page=`. */
   variant?: GenjutsuVariant;
   /** Hosted inside another page's chrome: no page title or suite header of its own. */
   embedded?: boolean;
-  /** The connected-account form's current quote input (ConsumerGenjutsu `onInput`). */
+  /** The connected-account form's quote input, when these pages ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
   onConnectedInput?: (input: ConsumerGenjutsuInput | null) => void;
 } = {}) {
   usePageTitle(embedded ? null : "Subatomik Viral Studio");
@@ -169,41 +166,14 @@ export default function SubatomikWorkspace({
     query = useSearchParams(),
     captured = useSuiteProject();
   const projectId = query.get("project") || captured.projectId;
-  // Shorts runs only on the connected account; the other pages are Genjutsu variants.
+  // Shorts ran only on the connected account; the other pages are Genjutsu variants.
   const shorts = query.get("page") === "shorts";
   const variant: GenjutsuVariant =
     requestedVariant ??
     (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");
-  // Billing is folded in silently: with a connected account the owner's
-  // connected credits are used by default. `?account=particl` is an explicit,
-  // unadvertised override to Particl workspace (Cloud) billing;
-  // `?account=higgsfield` remains valid for older links.
-  const requested = query.get("account");
-  const explicit: BillingAccount | null =
-    requested === "higgsfield"
-      ? "higgsfield"
-      : requested === "particl"
-        ? "particl"
-        : null;
-  const connection = useApi<ConnectionStatus>(
-    session.signedIn && session.owner && session.requestScope && !explicit
-      ? "/api/higgsfield/consumer/connection"
-      : null,
-    0,
-    session.requestScope,
-  );
-  const connected =
-    connection.data?.connected === true &&
-    connection.data.requiresReconnect !== true;
-  const account: BillingAccount | null = explicit
-    ? explicit
-    : !session.owner
-      ? "particl"
-      : connection.data || connection.error
-        ? connected
-          ? "higgsfield"
-          : "particl"
-        : null;
+  // Every project bills the Particl workspace: the connected account (and the
+  // `?account=higgsfield` links to it) went with the Higgsfield sign-in
+  // (lib/higgsfield-consumer/retired.ts), so nothing here reads it.
   const drafts = useApi<DraftResponse>(
     session.requestScope
       ? `/api/workbench/projects${projectId ? `?id=${encodeURIComponent(projectId)}` : ""}`
@@ -230,7 +200,7 @@ export default function SubatomikWorkspace({
               new.
             </p>
           </div>
-          <span className="suite-badge">{shorts || account === "higgsfield" ? "Connected account" : "Transform"}</span>
+          <span className="suite-badge">Transform</span>
         </header>}
         {!session.signedIn ? (
           <section className="suite-panel">
@@ -280,87 +250,20 @@ export default function SubatomikWorkspace({
         ) : (
           <>
             {shorts ? (
-              account === null ? (
-                <p role="status">Checking the connected account…</p>
-              ) : account === "higgsfield" ? (
-                <ConsumerShorts
-                  key={`${session.requestScope}:${project.id}:shorts`}
-                  project={project}
-                  scope={session.requestScope}
-                  refreshProject={drafts.refresh}
-                />
-              ) : (
-                <section className="suite-panel" aria-label="Shorts on the connected account">
-                  <h2>Shorts</h2>
-                  <p className={styles.hint}>
-                    {session.owner ? (
-                      <>Shorts run on the owner’s connected account. Connect one in <a href="/settings#engines">Workspace settings</a>.</>
-                    ) : (
-                      "Shorts run on the workspace owner’s connected account."
-                    )}
-                  </p>
-                </section>
-              )
-            ) : account === null ? (
-              <p role="status">Checking the connected account…</p>
-            ) : account === "higgsfield" ? (
-              <ConsumerGenjutsu
-                key={`${session.requestScope}:${project.id}:${variant}:consumer`}
+              <section className="suite-panel" aria-label="Shorts" data-testid="subatomik-shorts-retired">
+                <h2>Shorts</h2>
+                <p className={styles.hint}>
+                  Shorts ran on a signed-in Higgsfield account. {ACCOUNT_RETIRED}. {HISTORY_KEPT}
+                </p>
+              </section>
+            ) : (
+              <Studio
+                key={`${session.requestScope}:${project.id}:${variant}:particl`}
                 project={project}
                 scope={session.requestScope}
                 variant={variant}
                 refreshProject={drafts.refresh}
-                onInput={onConnectedInput}
               />
-            ) : (
-              <>
-                {session.owner && !explicit && (
-                  <p className={styles.hint} role="status">
-                    {connection.error
-                      ? "The connected account could not be checked, so this project bills the Particl workspace for now."
-                      : connection.data?.requiresReconnect
-                        ? "Reconnect your account in "
-                        : "No connected account yet. Connect one in "}
-                    {!connection.error && (
-                      <>
-                        <a href="/settings#engines">Workspace settings</a> to
-                        generate with connected credits. Until then this
-                        project bills the Particl workspace.
-                      </>
-                    )}
-                  </p>
-                )}
-                <Studio
-                  key={`${session.requestScope}:${project.id}:${variant}:particl`}
-                  project={project}
-                  scope={session.requestScope}
-                  variant={variant}
-                  refreshProject={drafts.refresh}
-                />
-              </>
-            )}
-            {account !== null && !shorts && (
-              <details className={styles.advanced}>
-                <summary>Advanced</summary>
-                <p>
-                  {account === "higgsfield"
-                    ? "This project generates with the owner’s connected credits."
-                    : "This project bills the Particl workspace."}{" "}
-                  {account === "higgsfield" ? (
-                    <Link
-                      href={`${suiteHref("subatomik", project.id, variant)}&account=particl`}
-                    >
-                      Use Particl workspace billing instead
-                    </Link>
-                  ) : session.owner ? (
-                    <Link
-                      href={`${suiteHref("subatomik", project.id, variant)}&account=higgsfield`}
-                    >
-                      Use connected credits instead
-                    </Link>
-                  ) : null}
-                </p>
-              </details>
             )}
           </>
         )}
@@ -384,8 +287,7 @@ function Studio({
     query = useSearchParams(),
     upload = useUploadFile(),
     money = useMoney();
-  // Studio only renders on the explicit `?account=particl` override or when
-  // no account is connected; keep that override on in-page navigation.
+  // An older link's `?account=particl` is kept on in-page navigation (it changes nothing now).
   const studioHref = (page: GenjutsuVariant) =>
     suiteHref("subatomik", project.id, page) +
     (query.get("account") === "particl" ? "&account=particl" : "");
@@ -530,7 +432,9 @@ function Studio({
           (asset.seconds < GENJUTSU_LIMITS.minSeconds ||
             asset.seconds > GENJUTSU_LIMITS.maxSeconds)
         )
-          throw Error("Choose a source clip between 1 and 30 seconds.");
+          throw Error(
+            `Choose a source clip between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds.`,
+          );
         draft.set((previous) => ({
           ...creativeDraft(previous),
           source: asset,
@@ -634,7 +538,7 @@ function Studio({
           source.seconds > GENJUTSU_LIMITS.maxSeconds)
       )
         throw Error(
-          "The saved source is outside the supported 1–30 second range.",
+          `The saved source is outside the supported ${GENJUTSU_LIMITS.minSeconds}–${GENJUTSU_LIMITS.maxSeconds} second range.`,
         );
       intake.current = references;
       draft.set({
@@ -1000,8 +904,9 @@ function Studio({
                 within the shot.
               </li>
               <li>
-                <strong>Select the original.</strong> Use one 1–30 second source
-                video from this workspace, or upload your own.
+                <strong>Select the original.</strong> Use one{" "}
+                {GENJUTSU_LIMITS.minSeconds}–{GENJUTSU_LIMITS.maxSeconds} second
+                source video from this workspace, or upload your own.
               </li>
               <li>
                 <strong>Set the visual direction.</strong> Add up to eight
@@ -1019,18 +924,6 @@ function Studio({
                 then recreate with a fresh quote or send it to Edit.
               </li>
             </ol>
-            <p>
-              <a
-                className="suite-text-button"
-                href="https://higgsfield.ai/ai/video?model=genjutsu"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                External motion library <ArrowUpRight size={12} />
-              </a>{" "}
-              opens the provider’s external preset gallery. Its presets are not
-              an embedded Particl catalog.
-            </p>
           </details>
           <fieldset disabled={blocked} className={styles.form}>
             <div
@@ -1041,7 +934,10 @@ function Studio({
             >
               <div className={styles.row}>
                 <strong>Source video</strong>
-                <span>1–30 seconds</span>
+                <span>
+                  {GENJUTSU_LIMITS.minSeconds}–{GENJUTSU_LIMITS.maxSeconds}{" "}
+                  seconds
+                </span>
               </div>
               {previewSource ? (
                 <>

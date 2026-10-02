@@ -1,4 +1,6 @@
-import { DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
+import { GENJUTSU_MODELS } from "./genjutsuTypes";
+import { guessKind, unfence } from "./atomikMemoryText";
 
 /**
  * Mocked engines, for development and tests. No Node imports here: the
@@ -43,17 +45,70 @@ export function mockDone(id: string, delayMs = 3000): boolean {
 export const mockStartedAt = (id: string): number => Number(id.split("_").pop()) || Date.now();
 
 /**
- * A canned chat completion, shaped like the gateway's, for the three
- * things the app asks a text model for.
+ * The mocked planner's library steps (lib/atomikKeySteps.ts): a brief that
+ * asks for a transform or a campaign still, in a project whose library the
+ * planner was shown, gets them, citing the first clip and still by handle —
+ * so the plan, its prices and an approval can be watched without a vendor.
+ * Anything else, or a library with nothing to work from, gets none.
  */
-export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "shots", requestBody: string): { ok: boolean; status: number; text: string } {
+function mockLibrarySteps(asked: string, preamble: string): Record<string, unknown>[] {
+  const offered = (id: string) => preamble.includes(`  ${id} — `);
+  const clip = /^(V\d+) \| video\b/m.exec(preamble)?.[1];
+  const still = /^(S\d+) \| still\b/m.exec(preamble)?.[1];
+  const preset = /preset/i.test(asked) ? /^(P\d+) \| /m.exec(preamble)?.[1] : undefined;
+  const out: Record<string, unknown>[] = [];
+  const swap = /object swap/i.test(asked);
+  const transform = GENJUTSU_MODELS[swap ? "object-swap" : "motion-transfer"];
+  if (/motion transfer|object swap|transform/i.test(asked) && offered(transform) && clip && still)
+    out.push({ kind: "video", title: swap ? "Mocked swap" : "Mocked motion transfer", prompt: swap ? "Swap the bottle for the product in the reference still." : "Carry the clip's movement onto the figure in the reference still.",
+      model: transform, source: clip, references: [still], resolution: "720p" });
+  if (/marketing|campaign/i.test(asked) && offered(MARKETING_IMAGE_MODEL_ID))
+    out.push({ kind: "image", title: "Mocked campaign still", prompt: "The product on a clean studio sweep, soft key light from the left.",
+      model: MARKETING_IMAGE_MODEL_ID, references: still ? [still] : [], quality: "high", ratio: "1:1", resolution: "2k", ...(preset && still ? { preset } : {}),
+      /* A brief that names a 2.5 build gets it, at extra-high quality. */
+      ...(/sunburst/i.test(asked) ? { build: "sunburst", quality: "xhigh" } : /flare|2\.5/i.test(asked) ? { build: "flare", quality: "xhigh" } : {}) });
+  return out;
+}
+
+/**
+ * The mocked reader's proposals for Memory (lib/atomikMemoryRead.ts): one
+ * entry per line of the fenced text, sorted by what it talks about. Like a
+ * careless model, it proposes every line — amounts included — so the server's
+ * own amounts-only filter is what keeps them out.
+ */
+function mockMemoryEntries(asked: string): { kind: string; text: string }[] {
+  return unfence(asked).split(/\n+/)
+    .map((line) => line.replace(/^(?:[-*•]+|\d{1,3}[.)])\s+/, "").replace(/\*\*|__|`/g, "").trim())
+    .filter((line) => line.length >= 3 && !/^#{1,6}\s/.test(line) && !/:$/.test(line))
+    .slice(0, 30)
+    .map((text) => ({ kind: guessKind(text), text }));
+}
+
+/**
+ * A canned chat completion, shaped like the gateway's, for the things the
+ * app asks a text model for.
+ */
+export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory", requestBody: string): { ok: boolean; status: number; text: string } {
   let lastUser = "";
+  let asked = "", preamble = "";
   try {
     const j = JSON.parse(requestBody) as { messages?: { role: string; content: string }[] };
     lastUser = [...(j.messages ?? [])].reverse().find((m) => m.role === "user")?.content ?? "";
+    /* A turn's last message may carry pictures beside its words: only the words are read. */
+    const words = (content: unknown) => typeof content === "string" ? content
+      : Array.isArray(content) ? content.map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "")).join(" ") : "";
+    asked = words(lastUser);
+    preamble = words((j.messages ?? []).find((m) => m.role === "user" && words(m.content).startsWith("ENGINES YOU MAY CHOOSE"))?.content);
   } catch { /* an unreadable body still gets a reply */ }
+  const library = kind === "turn" ? mockLibrarySteps(asked, preamble) : [];
   const content =
-    kind === "turn" ? JSON.stringify({
+    kind === "turn" && library.length ? JSON.stringify({
+      title: "Mocked library steps",
+      say: "Mocked: library steps from this project's own media, each priced before it is shown.",
+      activity: ["read the brief", "read the library"],
+      propose: library,
+    })
+    : kind === "turn" ? JSON.stringify({
       title: "Mocked production",
       say: "Mocked: one shot, so the pipeline can be watched end to end without a vendor.",
       activity: ["read the brief", "chose one engine"],
@@ -61,6 +116,7 @@ export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "sho
          mock answers the same way, so the whole path can be watched. */
       propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p", attachments: /ATTACHED:/.test(requestBody) }],
     })
+    : kind === "memory" ? JSON.stringify({ entries: mockMemoryEntries(asked) })
     : kind === "idea" ? JSON.stringify({ logline: `Mocked logline for: ${lastUser.replace(/^NOTE:\s*/i, "").slice(0, 120)}`, tone: ["mocked", "quiet", "30s"] })
     : kind === "scene" ? JSON.stringify({ title: "Mocked scene", secs: 6, prose: "Mocked: the scene, rewritten — the same beat, one clear action, the cast where they were." })
     : kind === "shots" ? JSON.stringify({ shots: [

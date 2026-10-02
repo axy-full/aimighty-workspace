@@ -18,7 +18,7 @@ import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
 import * as tools from "../../lib/higgsfield-consumer/tools";
 import * as records from "../../lib/higgsfield-consumer/marketing-records";
-import { BuildInFlightError } from "../../lib/higgsfield-consumer/build-records";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +60,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/jobs": { ConsumerJobError },
     /* The standalone guard runs inside the quote service (tests/unit/generationConsumerService.spec.ts); the route maps its refusal. */
     "@/lib/higgsfield-consumer/marketing-records": { ConsumerSetupError: records.ConsumerSetupError },
+    "@/lib/higgsfield-consumer/retired": retired,
     "@/lib/higgsfield-consumer/video-contract": { ConsumerVideoError },
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
@@ -150,51 +151,56 @@ test("generation requests cannot adopt another workspace, user, origin or incomp
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]); expect(f.connections).toEqual([]);
 });
 
-test("owner catalogue, quote, exact approval and status receive server-derived identity and the captured project", async () => {
+/** Every action that prices, starts or builds work on the connected account, or reads its catalogue,
+ * characters, elements or styles: retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */
+const second = "33333333-3333-4333-8333-333333333333";
+const retiredBodies = [
+  listing, { ...listing, refresh: true, type: "video" }, quote, { ...quote, composer: "gen" }, submit,
+  { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key, second], batchId: "b_k1abc2", composer: "gen" },
+  { action: "submit-batch", draftId: "draft-1", ids: [key, second], workspaceId: wallet, credits: 18 },
+  { action: "explainer-presets" }, { action: "explainer-presets", refresh: true },
+  { action: "characters" }, { action: "characters-plan" },
+  { action: "characters-create", name: "Mira", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { genId: "gen_3" }, { genId: "gen_4" }, { uploadId: "up_5" }] },
+  { action: "elements" }, { action: "elements-create", name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" },
+];
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+}
+
+test("every new-work action answers 410 before any limit or service; status and the saved jobs still reach the service with server-derived identity", async () => {
   const f = await fixture();
-  const catalogueResponse = await f.request("POST", listing, { origin: "https://particl.example" });
-  expect(catalogueResponse.status).toBe(200);
-  expect(await catalogueResponse.json()).toEqual({ catalogue: f.models });
-  expect((await f.request("POST", { ...listing, refresh: true, type: "video" })).status).toBe(200);
-  /* The Gen composer names itself on its quote, so Gen can pick its own takes back up later. */
-  const marked = { ...quote, composer: "gen" };
-  for (const body of [quote, marked, submit, status]) {
-    const response = await f.request("POST", body, { origin: "https://particl.example" });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(await response.json()).toHaveProperty("job");
-  }
+  for (const body of retiredBodies) await expectRetired(await f.request("POST", body, { origin: "https://particl.example" }));
+  expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  /* What a job already running needs: its status, and the project's saved jobs (the collector's list). */
+  const polled = await f.request("POST", status, { origin: "https://particl.example" });
+  expect(polled.status).toBe(200);
+  expect(polled.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(polled.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(await polled.json()).toHaveProperty("job");
   const response = await f.request("GET", undefined, { query: "?draftId=draft-1&userId=other&workspaceId=other" });
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { types: ["image", "video", "audio", "3d"], tools: tools.CONNECTED_TOOLS.map((tool) => ({ name: tool.name, label: tool.label, outputType: tool.outputType, sourceKind: tool.sourceKind, extraKinds: tool.extraKinds, models: tool.models })), promptLimit: 5000, maxMedias: 30, maxMediaBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false } });
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
-    { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "catalogue", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key, { composer: null }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key, { composer: "gen" }], workspace: "workspace" },
-    { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([listing, { ...listing, refresh: true, type: "video" }, quote, marked, submit, status].map((body) => [`hf-consumer-generation:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6, 60_000]));
+  expect(f.limits).toEqual([["hf-consumer-generation:workspace:owner:status", 30, 60_000]]);
 });
 
-test("strict generation schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {
+test("a stale tab's retired request gets the plain answer even when its body no longer matches; the status and check schemas stay strict", async () => {
   const f = await fixture();
-  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, action: "cancel" }, { ...quote, userId: "other" }, { ...quote, workspaceId: wallet },
-    { ...quote, draftId: "../foreign" }, { ...quote, draftId: "x".repeat(201) }, { ...quote, idempotencyKey: "bad" },
-    ...[{ type: "gif" }, { model: "../x" }, { model: "" }, { prompt: "a".repeat(5001) }, { parameters: { get_cost: false, ...input.parameters } , extra: 1 }, { parameters: { "bad key": 1 } }, { parameters: { nested: { a: 1 } } },
-      { parameters: null }, { medias: [{ role: "image_references", source: { url: "https://provider.invalid/still.png" } }] },
-      { medias: [{ role: "image_references", source: { uploadId: "a", genId: "b" } }] }, { medias: [{ role: "Bad Role", source: { uploadId: "a" } }] },
-      { medias: [{ role: "image_references", source: { uploadId: "a" } }, { role: "mask", source: { uploadId: "a" } }] },
-      { medias: Array.from({ length: 31 }, (_, i) => ({ role: "image_references", source: { uploadId: `image-${i}` } })) },
-      { medias: [{ role: "image_references", source: { uploadId: "../secret" } }] }, { count: 2 }, { use_unlim: true }].map((patch) => ({ ...quote, input: { ...input, ...patch } })),
-    { ...quote, composer: "ads" }, { ...quote, composer: true }, { ...status, composer: "gen" },
-    { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "9" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
-    { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...listing, type: "gif" }, { ...listing, refresh: "yes" }, { ...listing, model: "x" },
-    { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" }, { action: "explainer-presets", refresh: "yes" }, { action: "resolve-explainer-preset" }];
+  /* Retired actions: whatever else the body holds, the answer is the retirement, never "review the request". */
+  const staleRetired = [{ ...quote, userId: "other" }, { ...quote, idempotencyKey: "bad" }, { ...quote, input: { ...input, model: "../x" } },
+    { ...submit, credits: -1 }, { ...submit, input }, { ...listing, type: "gif" }, { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" },
+    { action: "characters", refresh: true }, { action: "characters-create", name: "Mira", type: "soul_2", sources: [] }, { action: "elements-create", name: "x".repeat(33), category: "prop", sources: [{ genId: "g" }] },
+    { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key] }, { action: "submit-batch", draftId: "draft-1", ids: [key], workspaceId: wallet, credits: 0 }];
+  for (const body of staleRetired) await expectRetired(await f.request("POST", body));
+  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, action: "cancel" }, { action: "resolve-explainer-preset" },
+    { ...status, composer: "gen" }, { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...status, id: "bad" }, { ...status, draftId: "../foreign" },
+    { action: "check-batch", draftId: "draft-1", ids: [key] }, { action: "check-batch", draftId: "draft-1", ids: ["bad", second] }, { action: "check-batch", draftId: "draft-1", ids: [key, second], credits: 18 }];
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
@@ -213,19 +219,19 @@ test("generation body validation bounds actual UTF8 bytes and reports malformed 
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test("suspension prevents generation dispatch, while catalogue and status remain readable and limits block all service calls", async () => {
+test("a paused workspace can still read a running job; limits block status, and a retired action never reaches the limits", async () => {
   const f = await fixture(), original = f.store();
   f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
-  expect((await f.request("POST", submit)).status).toBe(423); expect(f.calls).toEqual([]);
+  await expectRetired(await f.request("POST", submit));
   expect((await f.request("POST", status)).status).toBe(200);
-  expect((await f.request("POST", listing)).status).toBe(200);
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "catalogue"]);
+  expect((await f.request("POST", { action: "check-batch", draftId: "draft-1", ids: [key, second] })).status).toBe(200);
+  expect(f.calls.map((call) => call.name)).toEqual(["status", "check-batch"]);
   f.setStore(original); f.limit();
-  for (const body of [listing, quote, submit, status]) {
-    const response = await f.request("POST", body);
-    expect(response.status).toBe(429); expect(await response.text()).not.toContain("PRIVATE_RATE_STATE");
-  }
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "catalogue"]);
+  const limited = await f.request("POST", status);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain("PRIVATE_RATE_STATE");
+  for (const body of [listing, quote, submit]) await expectRetired(await f.request("POST", body));
+  expect(f.calls.map((call) => call.name)).toEqual(["status", "check-batch"]);
+  expect(f.limits.map((args) => args[0])).toEqual(["hf-consumer-generation:workspace:owner:status", "hf-consumer-generation:workspace:owner:check-batch", "hf-consumer-generation:workspace:owner:status"]);
 });
 
 test("generation errors preserve bounded categories and never expose provider or storage details", async () => {
@@ -250,114 +256,15 @@ test("generation errors preserve bounded categories and never expose provider or
   }
 });
 
-test("the explainer style listing is an owner read with its own limit; it carries no generation or resolve action", async () => {
+test("a batch whose submit reply was lost is still checked (never a paid call); pricing and sending a batch are retired", async () => {
   const f = await fixture();
-  const response = await f.request("POST", { action: "explainer-presets" });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ explainer: { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] } });
-  expect((await f.request("POST", { action: "explainer-presets", refresh: true })).status).toBe(200);
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["explainer", ["owner", { refresh: false }]], ["explainer", ["owner", { refresh: true }]]]);
-  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:explainer-presets", 12], ["hf-consumer-generation:workspace:owner:explainer-presets", 12]]);
-});
-
-test("the characters listing is an owner read with the catalogue's limit; it carries nothing but the action", async () => {
-  const f = await fixture();
-  const response = await f.request("POST", { action: "characters" });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] });
-  expect((await f.request("POST", { action: "characters", refresh: true })).status).toBe(400);
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["characters", ["owner"]]]);
-  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters", 12]]);
-});
-
-test("the Soul ID build: the plan gate is an owner read; the create needs render, carries exactly name · type · 5–20 sources, and is rate-limited hardest", async () => {
-  const f = await fixture();
-  const plan = await f.request("POST", { action: "characters-plan" });
-  expect(plan.status).toBe(200);
-  expect(await plan.json()).toEqual({ plan: { connected: true, available: true, plan: "Pro", paid: true } });
-  const sources = [{ uploadId: "up_1" }, { uploadId: "up_2" }, { genId: "gen_3" }, { genId: "gen_4" }, { uploadId: "up_5" }];
-  const create = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
-  expect(create.status).toBe(200);
-  expect(await create.json()).toEqual({ build: { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } } });
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["plan", ["owner"]], ["build", ["owner", { name: "Mira", type: "soul_cinematic", sources, projectId: null }]]]);
-  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:characters-plan", 12], ["hf-consumer-generation:workspace:owner:characters-create", 3]]);
-  /* Four stills, a blank name, an unknown type or a stray field are refused before anything is read. */
-  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources: sources.slice(0, 4) })).status).toBe(400);
-  expect((await f.request("POST", { action: "characters-create", name: "  ", type: "soul_2", sources })).status).toBe(400);
-  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul", sources })).status).toBe(400);
-  expect((await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_2", sources, images: [] })).status).toBe(400);
-  expect(f.calls).toHaveLength(2);
-  /* The same build already sent (it may be on the account): a plain 409 the card shows, never a second send. */
-  f.fail(new BuildInFlightError());
-  const again = await f.request("POST", { action: "characters-create", name: "Mira", type: "soul_cinematic", sources });
-  expect(again.status).toBe(409);
-  expect(await again.json()).toEqual({ code: "build_in_flight", error: "This build was already sent and may have been accepted, so it is not sent again." });
-});
-
-test("reference elements: the list is an owner read; the create needs render, carries name · category · 1–8 sources, and is rate-limited hardest", async () => {
-  const f = await fixture();
-  const list = await f.request("POST", { action: "elements" });
-  expect(list.status).toBe(200);
-  expect(await list.json()).toEqual({ connected: true, available: true, elements: [{ elementId: "el_1", name: "Fox", category: "character", previewUrl: null }] });
-  const create = await f.request("POST", { action: "elements-create", name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" });
-  expect(create.status).toBe(200);
-  expect(await create.json()).toEqual({ build: { state: "created", element: { elementId: "el_2", name: "Harbour", category: "environment", previewUrl: null } } });
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["elements", ["owner"]], ["element-build", ["owner", { name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" }]]]);
-  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:elements", 12], ["hf-consumer-generation:workspace:owner:elements-create", 3]]);
-  /* A name over the account's 32 characters, an unknown category, no source or a remote URL are refused before anything is read. */
-  expect((await f.request("POST", { action: "elements-create", name: "x".repeat(33), category: "prop", sources: [{ genId: "g" }] })).status).toBe(400);
-  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "vehicle", sources: [{ genId: "g" }] })).status).toBe(400);
-  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [] })).status).toBe(400);
-  expect((await f.request("POST", { action: "elements-create", name: "Lamp", category: "prop", sources: [{ url: "https://x.example/a.png" }] })).status).toBe(400);
-  expect(f.calls).toHaveLength(2);
-});
-
-test("the quote service's standalone refusal answers 409 setup_not_particl with its own safe words", async () => {
-  const f = await fixture();
-  const input_ = { ...input, parameters: { ...input.parameters, product_ids: ["acct_p1"] } };
-  f.fail(Object.assign(new records.ConsumerSetupError(), { cause: new Error("PRIVATE_ACCOUNT_DETAIL") }));
-  const response = await f.request("POST", { ...quote, input: input_ }, { origin: "https://particl.example" });
-  expect(response.status).toBe(409);
-  expect(await response.json()).toEqual({ code: "setup_not_particl", error: new records.ConsumerSetupError().message });
-  /* The route hands the whole input to the service, which runs the guard before anything is priced. */
-  expect(f.calls.map((call) => call.name)).toEqual(["quote"]);
-  expect(JSON.stringify(f.calls[0].args)).toContain("acct_p1");
-});
-
-test("takes 2–4: one batch quote, one exact-sum submit behind the render gate, and a check that never spends, each strictly shaped", async () => {
-  const f = await fixture(), original = f.store();
-  const second = "33333333-3333-4333-8333-333333333333";
-  const quoteBatch = { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key, second], batchId: "b_k1abc2", composer: "gen" };
-  const submitBatch = { action: "submit-batch", draftId: "draft-1", ids: [key, second], workspaceId: wallet, credits: 18 };
   const checkBatch = { action: "check-batch", draftId: "draft-1", ids: [key, second] };
-  for (const [body, answer] of [[quoteBatch, "jobs"], [submitBatch, "jobs"], [checkBatch, "state"]] as const) {
-    const response = await f.request("POST", body, { origin: "https://particl.example" });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(await response.json()).toHaveProperty(answer);
-  }
-  expect(f.calls.map((call) => [call.name, call.args])).toEqual([
-    ["quote-batch", ["owner", "draft-1", input, [key, second], { batchId: "b_k1abc2", composer: "gen" }]],
-    ["submit-batch", ["owner", "draft-1", [key, second], { workspaceId: wallet, credits: 18 }]],
-    ["check-batch", ["owner", "draft-1", [key, second]]],
-  ]);
-  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([
-    ["hf-consumer-generation:workspace:owner:quote-batch", 6], ["hf-consumer-generation:workspace:owner:submit-batch", 6], ["hf-consumer-generation:workspace:owner:check-batch", 30],
-  ]);
-  const three = ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
-  const malformed = [
-    { ...quoteBatch, idempotencyKeys: [key] }, { ...quoteBatch, idempotencyKeys: [key, second, ...three] }, { ...quoteBatch, idempotencyKeys: [key, "bad"] },
-    { ...quoteBatch, batchId: "batch-1" }, { ...quoteBatch, batchId: "b_UPPER1" }, { ...quoteBatch, composer: "ads" }, { ...quoteBatch, ids: [key, second] },
-    { ...submitBatch, ids: [key] }, { ...submitBatch, ids: [key, second, ...three] }, { ...submitBatch, credits: 0 }, { ...submitBatch, credits: -9 }, { ...submitBatch, credits: "18" },
-    { ...submitBatch, credits: 400001 }, { ...submitBatch, workspaceId: "bad" }, { ...submitBatch, id: key }, { ...submitBatch, input },
-    { ...checkBatch, ids: [key] }, { ...checkBatch, ids: ["bad", second] }, { ...checkBatch, credits: 18 },
-  ];
-  for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 160)).toBe(400);
-  expect(f.calls).toHaveLength(3);
-  /* A paused workspace sends nothing, but can still price, and still ask what became of a batch. */
-  f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
-  expect((await f.request("POST", submitBatch)).status).toBe(423);
-  expect((await f.request("POST", checkBatch)).status).toBe(200);
-  expect((await f.request("POST", quoteBatch)).status).toBe(200);
-  expect(f.calls.slice(3).map((call) => call.name)).toEqual(["check-batch", "quote-batch"]);
+  const response = await f.request("POST", checkBatch, { origin: "https://particl.example" });
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toHaveProperty("state");
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["check-batch", ["owner", "draft-1", [key, second]]]]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:check-batch", 30]]);
+  for (const body of retiredBodies.filter((b) => b.action === "quote-batch" || b.action === "submit-batch")) await expectRetired(await f.request("POST", body));
+  expect(f.calls).toHaveLength(1);
 });

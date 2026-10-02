@@ -1,24 +1,41 @@
-import type { ConsumerGenjutsuInput } from "@/lib/higgsfield-consumer/genjutsu-contract";
-import { connectedFailureText } from "@/lib/higgsfield-consumer/generation-client";
-import { canProgress, isOpen, resumePhase } from "@/lib/higgsfield-consumer/resume";
+import { GENJUTSU_LIMITS, GENJUTSU_MODELS, GENJUTSU_RESOLUTIONS, genjutsuVariantForModel, type GenjutsuVariant } from "@/lib/genjutsuTypes";
+import type { Generation } from "@/lib/jobs";
+import { failedChip } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
+import type { MediaIdentity } from "@/lib/genjutsuRequest";
+import type { DispatchRequest } from "@/lib/workspace/generate-submit";
 import type { LibraryEntry } from "@/lib/workspace/library";
+import type { TakeStage, TakeStatus } from "@/lib/workspace/takes";
 
 /**
- * Viral = Genjutsu (FINAL_SPEC §1 step 3). Pure: the two variants behind the
- * Motion Transfer and Object Swap pages, the well's rule (exactly one source
- * video 4–30 s at index 0, then up to 30 ordered reference images), what
- * blocks the primary in the prototype's words, and the input the existing
- * `genjutsu-service` takes. The price is the account's live estimate and
- * nothing else — a stale or missing one blocks submit.
+ * Viral = Genjutsu (FINAL_SPEC §1 step 3), on Particl's API key for every
+ * workspace and every member. Pure: the two variants behind the Motion
+ * Transfer and Object Swap pages, the well's rule (exactly one source video
+ * of 4–30 s, then 1–8 ordered reference images: the API's own limits), what
+ * blocks the primary, and the request the shared dispatch sends
+ * (lib/workspace/generate-submit.ts: POST /api/generate/quote, then POST
+ * /api/generate with the approved ceiling). The price on the button is that
+ * quote — the provider's live estimate through Particl's credit terms, shown
+ * as an estimate ("about N cr") — and nothing else: a missing one blocks.
+ *
+ * The resolutions and the reference cap are the key route's own
+ * (lib/genjutsuTypes.ts), so the page offers exactly what admission accepts.
+ *
+ * History is read from the project's Library only: the key's takes, and the
+ * runs made earlier on the owner's connected account, which the Library keeps
+ * as ordinary takes once collected (their `generations` rows). Nothing here
+ * reads the account, and nothing starts a run there.
  */
 export const VIRAL_PAGES = { motion: "motion-transfer", swap: "object-swap" } as const;
 export type ViralPage = keyof typeof VIRAL_PAGES;
-export const VIRAL_RESOLUTIONS = ["480p", "720p", "1080p"] as const;
-export type ViralResolution = (typeof VIRAL_RESOLUTIONS)[number];
-export const SOURCE_SECONDS = { min: 4, max: 30 } as const;
-export const REFERENCE_MAX = 30;
-/** How long a quote may be leaned on (the service's own lifetime is five minutes). */
-export const ESTIMATE_LIFETIME_MS = 5 * 60_000;
+/** What the key route renders (lib/genjutsuTypes.ts): 480p, 720p and 1080p, each at the provider's live estimate. */
+export const VIRAL_RESOLUTIONS: readonly string[] = GENJUTSU_RESOLUTIONS;
+export type ViralResolution = string;
+/** The documented source window (lib/genjutsuTypes.ts): at least 4 s, at most 30 s. Object Swap's pixel floor is admission's to say. */
+export const SOURCE_SECONDS = { min: GENJUTSU_LIMITS.minSeconds, max: GENJUTSU_LIMITS.maxSeconds } as const;
+/** The API takes 1–8 reference images. */
+export const REFERENCE_MAX = GENJUTSU_LIMITS.maxImages;
+export const PROMPT_MAX = GENJUTSU_LIMITS.maxPromptChars;
 
 export const VIRAL_COPY = {
   motion: {
@@ -35,7 +52,7 @@ export const VIRAL_COPY = {
     promptPlaceholder: "Replace the bottle with the Glow serum; keep the hands as filmed.",
     verb: "Swap object",
   },
-  mediaLabel: "Source video · 4–30 s, then up to 30 ordered reference images",
+  mediaLabel: `Source video · ${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s, then up to ${REFERENCE_MAX} ordered reference images`,
   mediaHint: "Drag one source video and your reference images from the Library",
 } as const;
 
@@ -69,133 +86,166 @@ export function moveReference(state: ViralState, id: string, dir: -1 | 1): Viral
 }
 
 /**
- * Why the primary is off; null when the well is complete. Prototype copy
- * first, then the account's needs. `account` is set while the account has
- * not been read (being read, or the read failed) — then that is the reason,
- * never a connect hint the account may not need.
+ * Why the primary is off; null when the well is complete. A project whose
+ * production is not linked yet cannot file a take (admission files every
+ * transform to the saved project), so that is said before the well.
  */
-export function viralBlock(state: ViralState, extra: { connected: boolean; owner: boolean; hasProject: boolean; account?: string | null }): string | null {
+export function viralBlock(state: ViralState, extra: { hasProject: boolean; saved: boolean }): string | null {
   if (!extra.hasProject) return "Open a project first.";
-  if (extra.account) return extra.account;
-  if (!extra.owner) return "Only the workspace owner can run the connected account.";
-  if (!extra.connected) return "Connect the account in Workspace › Engines.";
-  if (!state.source) return "Add one source video (4–30 s).";
+  if (!extra.saved) return "Save this project first.";
+  if (!state.source) return `Add one source video (${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s).`;
   if (!state.references.length) return "Add at least one reference image.";
+  if (state.references.length > REFERENCE_MAX) return `Up to ${REFERENCE_MAX} reference images: remove ${state.references.length - REFERENCE_MAX}.`;
+  if (state.prompt.trim().length > PROMPT_MAX) return `Keep the direction under ${PROMPT_MAX.toLocaleString("en-US")} characters.`;
+  if (!VIRAL_RESOLUTIONS.includes(state.resolution)) return `Choose ${VIRAL_RESOLUTIONS.join(", ")}.`;
   return null;
 }
 
-export function genjutsuInput(page: ViralPage, state: ViralState): ConsumerGenjutsuInput | null {
+/** The composer's input: the source apart, then the stills in the order they are sent. Also the page's Atomik plan request. */
+export type ViralInput = { variant: GenjutsuVariant; resolution: string; prompt: string; source: MediaIdentity; references: MediaIdentity[] };
+const identity = (m: ViralMedia): MediaIdentity => (m.origin === "upload" ? { uploadId: m.sourceId } : { genId: m.sourceId });
+export function genjutsuInput(page: ViralPage, state: ViralState): ViralInput | null {
   if (!state.source) return null;
-  const identity = (m: ViralMedia) => (m.origin === "upload" ? { uploadId: m.sourceId } : { genId: m.sourceId });
   return { variant: VIRAL_PAGES[page], resolution: state.resolution, prompt: state.prompt.trim(), source: identity(state.source), references: state.references.map(identity) };
 }
 
-/** A live estimate is one for exactly this input, still inside its lifetime. */
-export function estimateLive(estimate: { key: string; expiresAt: number } | null, key: string, now: number): boolean {
-  return Boolean(estimate && estimate.key === key && estimate.expiresAt > now);
+/**
+ * The request the shared dispatch prices and sends: the key model for the
+ * variant, filed to the saved project (no shot), the draft named so admission
+ * can confirm it belongs to the person sending it.
+ */
+export function viralRequest(input: ViralInput, project: { id: string; productionProjectId: string }): DispatchRequest {
+  return {
+    endpoint: "/api/generate",
+    input: {
+      prompt: input.prompt,
+      kind: "video",
+      model: { id: GENJUTSU_MODELS[input.variant] },
+      mapping: { productionProjectId: project.productionProjectId },
+      ratio: "adaptive",
+      resolution: input.resolution,
+      duration: 0,
+      references: input.references.map((reference) => ({ ...reference, role: "reference_image" })),
+      genjutsu: { source: input.source, workbenchProjectId: project.id },
+    },
+  };
 }
-export function estimateReason(estimate: { key: string; expiresAt: number; credits: number | null; error: string | null } | null, key: string, now: number): string | null {
-  if (!estimate || estimate.key !== key) return "Waiting for the account's estimate…";
-  if (estimate.error) return estimate.error;
-  if (estimate.credits == null) return "The account returned no estimate. Nothing was sent.";
-  if (estimate.expiresAt <= now) return "The estimate expired. A fresh one is being read.";
-  return null;
+
+/* ── The estimate (lib/shell/key-estimate.ts: the same words on every key-route composer) ── */
+export { aboutCredits, estimateLive, estimateReason, type KeyEstimate as ViralEstimate } from "./key-estimate";
+
+/* ── Takes (this project's transforms, from its Library) ─────────────── */
+export type RunTone = "idle" | "waiting" | "active" | "failed" | "done";
+/**
+ * Runs made earlier on the owner's connected account, as the Library keeps
+ * them once collected: `generations` rows on the account's own model ids,
+ * params.task "genjutsu" (the same source, stills and resolution as a key
+ * take). Read-only history; the ids are data here, never a way to start one.
+ */
+const ACCOUNT_GENJUTSU_MODELS: Readonly<Record<string, GenjutsuVariant>> = { hf_mult_motion_control: "motion-transfer", hf_mult_replace_object: "object-swap" };
+/** Which transform a take is, on the key or from the account; null for anything else. */
+export function transformVariant(model: string, params?: Record<string, unknown> | null): GenjutsuVariant | null {
+  const key = genjutsuVariantForModel(model);
+  if (key) return key;
+  const earlier = ACCOUNT_GENJUTSU_MODELS[model];
+  return earlier && params?.task === "genjutsu" ? earlier : null;
+}
+/** One transform take, as the Library holds it. */
+export type ViralTake = {
+  id: string; variant: GenjutsuVariant; resolution: string; prompt: string; refs: number;
+  /** Made earlier on the owner's connected account (read-only history). */
+  account: boolean;
+  status: TakeStatus; stage: TakeStage | null; cancelled: boolean; failedUnbilled: boolean; needs: number | null; reason: string | null;
+  /** A failed take: what happened, what the provider did with the charge, and the next step (lib/errors.ts), when on record. */
+  failure: TakeFailure | null; failureLine: string | null;
+  /** Billed credits once settled; null in flight (the ledger has not settled it) and for account runs. */
+  credits: number | null;
+  /** The stored result, once it can be shown. */
+  url: string | null;
+  createdAt: number; createdBy: string; generation: Generation;
+};
+const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+/** This project's transform takes, newest first; beside a composer, only its own variant. */
+export function viralTakes(entries: readonly LibraryEntry[], variant: GenjutsuVariant | null = null): ViralTake[] {
+  const out: ViralTake[] = [];
+  for (const entry of entries) {
+    if (entry.asset.origin !== "generation") continue;
+    const g = entry.asset.value;
+    const params = record(g.params) ? g.params : {};
+    const kind = transformVariant(g.model, params);
+    if (!kind || (variant && kind !== variant)) continue;
+    const refs = Array.isArray(params.references) ? params.references.filter((r) => record(r) && r.role === "reference_image").length : 0;
+    const t = entry.take;
+    out.push({
+      id: g.id, variant: kind, resolution: typeof params.resolution === "string" ? params.resolution : "", prompt: typeof params.rawPrompt === "string" ? params.rawPrompt : g.prompt ?? "",
+      refs, account: !genjutsuVariantForModel(g.model),
+      status: t.status, stage: t.stage ?? null, cancelled: Boolean(t.cancelled), failedUnbilled: Boolean(t.failedUnbilled), needs: t.needs ?? null, reason: t.reason ?? null,
+      failure: t.failure ?? null, failureLine: t.failureLine ?? null,
+      credits: t.credits, url: entry.media === "video" ? entry.url : null, createdAt: g.createdAt, createdBy: g.createdBy, generation: g,
+    });
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+export const takeDone = (take: Pick<ViralTake, "status">) => take.status !== "rendering" && take.status !== "held" && take.status !== "failed";
+export const takeInFlight = (take: Pick<ViralTake, "status">) => take.status === "rendering" || take.status === "held";
+/**
+ * A take's state in words. A failed take's chip says what became of the
+ * charge only when that is on record — Particl's ledger, or the provider's
+ * own word (lib/errors.ts failedChip): "Failed · not billed", "Failed ·
+ * refunded", else just "Failed". Never a blanket promise.
+ */
+export function takeWords(take: Pick<ViralTake, "status" | "stage" | "cancelled" | "needs" | "failure">): { label: string; tone: RunTone } {
+  if (take.status === "held") return { label: take.needs != null ? `Held · needs ${take.needs.toLocaleString("en-US")} cr` : "Held · needs credits", tone: "waiting" };
+  if (take.status === "rendering") return take.stage === "queued" ? { label: "Queued", tone: "waiting" } : take.stage === "held" ? { label: "Held", tone: "waiting" } : { label: "Rendering", tone: "active" };
+  if (take.status === "failed") return { label: failedChip(take.failure, take.cancelled), tone: take.cancelled ? "idle" : "failed" };
+  return { label: "Done", tone: "done" };
+}
+/** Still waiting its turn at the provider, so it can be cancelled: a key take, by the person who sent it or an admin (the route decides). */
+export function canCancel(take: Pick<ViralTake, "status" | "stage" | "createdBy" | "generation" | "account">, me: { userId?: string | null; role: string | null }): boolean {
+  if (take.account || take.status !== "rendering" || take.stage !== "queued" || take.generation.status !== "queued") return false;
+  return me.role === "owner" || me.role === "admin" || (Boolean(me.userId) && me.userId === take.createdBy);
+}
+/** The saved original of a take, as a download link (the media route names the file). */
+export const downloadHref = (origin: "upload" | "generation", id: string) => `/api/${origin === "upload" ? "uploads" : "media"}/${encodeURIComponent(id)}?download=1`;
+
+/** A take's recipe, for Recreate: its variant, source and ordered stills (Library ids), direction and resolution. */
+export type TakeRecipe = { variant: GenjutsuVariant; source: string; references: string[]; prompt: string; resolution: string };
+const saved = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+const libraryId = (value: Record<string, unknown>): string | null =>
+  saved(value.genId) === saved(value.uploadId) ? null : saved(value.genId) ? `generation:${value.genId}` : `upload:${value.uploadId}`;
+/**
+ * A take's own recipe as admission kept it — the key's takes and the account's
+ * collected runs keep the same fields — or why it cannot be read. Library ids
+ * (`upload:<id>` / `generation:<id>`), resolved against the project's Library
+ * by the page, which also says what the key route cannot carry (more than
+ * eight stills, a size it does not offer).
+ */
+export function takeRecipe(take: Pick<ViralTake, "generation">): TakeRecipe | { error: string } {
+  const g = take.generation, params = record(g.params) ? g.params : null;
+  const variant = transformVariant(g.model, params);
+  if (!variant || !params || !Array.isArray(params.references) || typeof params.resolution !== "string")
+    return { error: "The original source, reference order or quality settings were not kept for this take." };
+  const sourceGenId = params.sourceGenId ?? g.sourceGenId, sourceUploadId = params.sourceUploadId;
+  if (saved(sourceGenId) === saved(sourceUploadId)) return { error: "The original source was not kept for this take." };
+  const source = saved(sourceGenId) ? `generation:${sourceGenId}` : `upload:${sourceUploadId}`;
+  const references: string[] = [];
+  for (const reference of params.references) {
+    if (!record(reference)) return { error: "A saved reference is incomplete." };
+    const id = libraryId(reference);
+    if (!id) return { error: "A saved reference has an unclear identity." };
+    /* The source rides among a key take's references as its video; it is the source, not a still. */
+    if (reference.role === "reference_video" && id === source) continue;
+    if (reference.role !== "reference_image" || references.includes(id)) return { error: "The saved reference order could not be read." };
+    references.push(id);
+  }
+  const prompt = typeof params.rawPrompt === "string" ? params.rawPrompt : g.prompt;
+  if (typeof prompt !== "string") return { error: "The original direction was not kept for this take." };
+  return { variant, source, references, prompt, resolution: params.resolution };
 }
 
 export const HISTORY_ACTIONS = ["Recreate", "Compare", "Send to Edit"] as const;
-
-/* ── Runs ─────────────────────────────────────────────────────────────── */
-export type RunStatus = "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
-export type RunTone = "idle" | "waiting" | "active" | "failed" | "done";
-/** Every state the account reports, in the words a person reads — never the raw code. */
-export const RUN_STATUS: Record<RunStatus, { label: string; tone: RunTone }> = {
-  quoted: { label: "Estimate", tone: "idle" },
-  dispatching: { label: "Queued", tone: "waiting" },
-  accepted: { label: "Rendering", tone: "active" },
-  uncertain: { label: "Checking", tone: "waiting" },
-  failed: { label: "Failed · not billed", tone: "failed" },
-  completed: { label: "Done", tone: "done" },
-};
-/**
- * A run's state in words. A failed run says whether it was billed, as Gen and
- * Business do (lib/higgsfield-consumer/resume.ts): a render the account
- * refused was not; a result it finished that Particl could not keep may have
- * been, and its receipt is saved.
- */
-export function runStatus(status: string, failureCode?: string | null): { label: string; tone: RunTone } {
-  if (status === "failed") return { label: resumePhase({ status, failureCode }).label, tone: "failed" };
-  return RUN_STATUS[status as RunStatus] ?? RUN_STATUS.uncertain;
-}
-/** A job the account may still settle: never re-sent, only polled until it completes or fails. */
-export const PENDING_STATUSES = ["dispatching", "accepted", "uncertain"] as const;
-/** Sent and not settled yet: read again until the account settles it; never sent twice (the test Gen and Business use). */
-export const runInFlight = (status: string) => isOpen(status);
-/**
- * In flight with nothing that can move it on its own: a dispatch the account
- * never acknowledged, or a check with no receipt to reconcile — the jobs Gen
- * and Business stop following too (resume.ts, canProgress). Read a few times,
- * then left for the person to check again.
- */
-export const runCannotSettle = (job: { status: string; providerReceipt?: unknown }) => runInFlight(job.status) && !canProgress(job);
-/** The one visible line under an in-flight run (never only a tooltip). */
-export const RUN_NOTE: Partial<Record<RunStatus, string>> = { dispatching: "Sending to the account", uncertain: "Confirming · never sent twice" };
-export const STALLED_NOTE = { unconfirmed: "Not confirmed yet · never sent twice", gone: "Could not be read" } as const;
-/** A finished run whose original is not in the project, in words. */
-export function originalNote(job: { originalAvailable?: boolean; originalAvailability?: string }): string | null {
-  if (job.originalAvailable) return null;
-  return job.originalAvailability === "deleted" ? "Archived" : "Original unavailable";
-}
 export const VARIANT_NAME: Record<string, string> = { "motion-transfer": "Motion Transfer", "object-swap": "Object Swap" };
-
-type Run = { id: string; status: string; createdAt: number; updatedAt?: number };
-/* How far along a run is. A run only ever moves forward (dispatching → uncertain → accepted → settled). */
-const RANK: Record<string, number> = { quoted: 0, dispatching: 1, uncertain: 2, accepted: 3, failed: 4, completed: 4 };
-const fresher = (a: Run, b: Run) => {
-  const ra = RANK[a.status] ?? 2, rb = RANK[b.status] ?? 2;
-  return ra !== rb ? ra > rb : (a.updatedAt ?? 0) >= (b.updatedAt ?? 0);
-};
-/**
- * Fresh runs over the ones on hand: one row per job, the fresher copy wins —
- * the one further along, else the later-updated — so a read that started
- * before a run landed never sets it back. Newest first. An estimate is never
- * a run, so a quoted row never shows.
- */
-export function mergeRuns<T extends Run>(fresh: T[], current: T[]): T[] {
-  const byId = new Map<string, T>();
-  for (const job of current) byId.set(job.id, job);
-  for (const job of fresh) { const had = byId.get(job.id); if (!had || fresher(job, had)) byId.set(job.id, job); }
-  return listedJobs([...byId.values()])
-    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-}
-
-type Listed = { id: string; status: string };
-/** History and Recent list what ran; a read-only estimate (`quoted`) is not a result. */
-export function listedJobs<T extends Listed>(jobs: readonly T[]): T[] {
-  return jobs.filter((job) => job.status !== "quoted");
-}
-/** The jobs to poll: the one submitted here first, then every listed job still pending. */
-export function pendingJobIds(jobs: readonly Listed[], running: string | null): string[] {
-  const ids = jobs.filter((job) => (PENDING_STATUSES as readonly string[]).includes(job.status)).map((job) => job.id);
-  return running && !ids.includes(running) ? [running, ...ids] : ids;
-}
-
-/** The composer's run, as the page tracks it. */
-export type ViralRun<J extends Listed> = { phase: "idle" } | { phase: "submitting"; job: J } | { phase: "running"; job: J } | { phase: "done"; job: J } | { phase: "failed"; job: J | null; error: string };
-/** Why the account's run failed, in the Gen and Business composers' words: a refused render is not billed; a result it finished that could not be kept may have been. */
-export const viralFailure = (job: { failureCode?: string | null }) => connectedFailureText(job);
-/**
- * Where a status read leaves the composer's run: the job submitted here, and
- * also one whose submit reply was lost (shown failed) that the list then
- * shows the account took — it is rendering after all.
- */
-export function runAfterStatus<J extends Listed & { failureCode?: string | null }>(current: ViralRun<J>, job: J): ViralRun<J> {
-  const mine = (current.phase === "running" || current.phase === "failed") && current.job?.id === job.id;
-  if (!mine) return current;
-  if (job.status === "completed") return { phase: "done", job };
-  if (job.status === "failed") return { phase: "failed", job, error: viralFailure(job) };
-  if ((PENDING_STATUSES as readonly string[]).includes(job.status)) return { phase: "running", job };
-  return current;
-}
 
 /**
  * Compare's two players on one clock: a seek on one is mirrored onto the

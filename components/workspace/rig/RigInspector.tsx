@@ -9,9 +9,11 @@ import { shotInputs, shotPreviewAsset, shotVersions, stepDuration } from "@/lib/
 import { shotNotesOnly, type RigShot } from "@/lib/workspace/shots";
 import { useShotEstimate } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { InspTab } from "@/lib/workspace/types";
 import { Field, Input, Kicker, Segmented, Select } from "../ui";
 import { useRig } from "./RigProvider";
+import { VerifyShotEntry } from "./RigVerify";
 import { RIG_NO_PROJECT, rigLoadState } from "@/lib/workspace/rig-load-state";
 import { BranchFromTake, ShotAttach, ShotInputs, ShotPrompt, WireShot } from "@/components/graphite/production/RigExtras";
 import { SECTION_EVENT } from "@/lib/shell/production-tools";
@@ -116,7 +118,9 @@ function ShotInspector({ shot }: { shot: RigShot }) {
      confirms it within seconds. */
   const [discarded, setDiscarded] = useState<ReadonlySet<string>>(() => new Set());
   const jobs = useMemo(() => discarded.size
-    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined } : job)
+    ? rig.jobs.map((job) => discarded.has(job.id) && job.status === "held" ? { ...job, status: "cancelled", creditsBilled: 0, error: undefined,
+        failure: { provider: null, stage: null, code: "cancelled", kind: "canceled", message: null, billing: null, payer: null,
+          charge: { credits: 0, settled: true } } satisfies TakeFailure } : job)
     : rig.jobs, [rig.jobs, discarded]);
   const versions = useMemo(() => shotVersions(project, shot.id, jobs), [project, shot.id, jobs]);
   const tab = state.inspTab;
@@ -336,6 +340,7 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
       </button>
       {error ? <p className="pxw-insp-error" role="alert">{error}</p> : null}
       {!error && (rig.notice || rig.blocked) ? <p className="pxw-insp-notice" role="status">{rig.notice ?? rig.blocked}</p> : null}
+      <VerifyShotEntry shot={shot} />
       <button type="button" className="pxw-link-button pxw-insp-delete" disabled={locked} title={locked ? "Unlock this shot to delete it." : undefined}
         onClick={remove} data-testid="rig-delete-shot">{confirmDelete ? "Delete this shot and the inputs only it uses?" : "Delete shot"}</button>
     </div>

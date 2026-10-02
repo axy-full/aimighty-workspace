@@ -13,6 +13,7 @@ import { ConsumerJobError } from '../../lib/higgsfield-consumer/jobs';
 import * as contract from '../../lib/higgsfield-consumer/video-contract';
 import { ConsumerOriginalError } from '../../lib/higgsfield-consumer/video-original';
 import * as records from '../../lib/higgsfield-consumer/marketing-records';
+import * as retired from '../../lib/higgsfield-consumer/retired';
 
 const key = '11111111-1111-4111-8111-111111111111';
 const wallet = '22222222-2222-4222-8222-222222222222';
@@ -60,6 +61,7 @@ async function fixture() {
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
     /* The standalone guard runs inside the quote service (tests/unit/higgsfieldConsumerVideoService.spec.ts); the route maps its refusal. */
     '@/lib/higgsfield-consumer/marketing-records': { ConsumerSetupError: records.ConsumerSetupError },
+    '@/lib/higgsfield-consumer/retired': retired,
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
@@ -121,44 +123,41 @@ test('captured workspace/account, browser origin and MFA guards run before every
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test('owner actions pass resolved tenant identity and only validated arguments to the service', async () => {
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  expect(await response.json()).toEqual({ code: 'retired', error: retired.SIGN_IN_RETIRED_MESSAGE });
+}
+const setup = { action: 'setup', types: ['avatar', 'hook'] };
+
+test('quote, rehearsal, submit and the setup read answer 410 before any limit or service; status and the saved jobs still reach the service', async () => {
   const f = await fixture();
-  const bodies = [quote, { action: 'quote-rehearsal', idempotencyKey: key }, submit, status];
-  for (const body of bodies) {
-    const response = await f.request('POST', body, { origin: 'https://particl.example' });
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(await response.json()).toHaveProperty('job');
-  }
+  for (const body of [quote, { action: 'quote-rehearsal', idempotencyKey: key }, submit, setup, { action: 'setup' }])
+    await expectRetired(await f.request('POST', body, { origin: 'https://particl.example' }));
+  expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  const polled = await f.request('POST', status, { origin: 'https://particl.example' });
+  expect(polled.status).toBe(200);
+  expect(polled.headers.get('Cache-Control')).toBe('private, no-store');
+  expect(polled.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  expect(await polled.json()).toHaveProperty('job');
   expect((await f.request('GET', undefined, { query: '?draftId=draft-1&userId=other&workspaceId=other' })).status).toBe(200);
   const listing = await f.request('GET');
   expect(listing.status).toBe(200); expect(listing.headers.get('Cache-Control')).toBe('private, no-store');
   expect(await listing.json()).toEqual({ jobs: [f.job] });
   expect(f.calls).toEqual([
-    { name: 'quote', args: ['owner', 'draft-1', input, key], workspace: 'workspace' },
-    { name: 'rehearsal', args: ['owner'], workspace: 'workspace' },
-    { name: 'quote', args: ['owner', 'rehearsal-draft', input, key], workspace: 'workspace' },
-    { name: 'submit', args: [{ userId: 'owner', draftId: 'draft-1', id: key }, submit], workspace: 'workspace' },
     { name: 'status', args: [{ userId: 'owner', draftId: 'draft-1', id: key }], workspace: 'workspace' },
     { name: 'list', args: ['owner', 'draft-1'], workspace: 'workspace' },
     { name: 'list', args: ['owner', undefined], workspace: 'workspace' },
   ]);
-  expect(f.limits).toEqual(bodies.map(body => [`hf-consumer-video:workspace:owner:${body.action}`, body.action === 'status' ? 30 : 6, 60_000]));
+  expect(f.limits).toEqual([['hf-consumer-video:workspace:owner:status', 30, 60_000]]);
 });
 
-test('strict action schemas reject caller identities, provider overrides and malformed bounds before service/rate access', async () => {
+test('a stale tab\'s retired request gets the plain answer whatever its body; the status schema stays strict', async () => {
   const f = await fixture();
-  const malformed = [null, [], {}, { ...quote, action: 'generate' }, { ...quote, userId: 'other' }, { ...quote, workspaceId: wallet },
-    { ...quote, draftId: '../foreign' }, { ...quote, draftId: 'x'.repeat(201) }, { ...quote, idempotencyKey: 'not-a-uuid' },
-    /* FINAL_SPEC §2.1: medias and durations ≥ 4 are part of the contract now; a malformed media, a role the model lacks, and out-of-range durations are still refused here. */
-    ...[{ model: 'other' }, { get_cost: false }, { use_unlim: true }, { medias: [{ id: 'not-a-uuid', role: 'image' }] }, { medias: [{ id: '11111111-1111-4111-8111-111111111111', role: 'poster' }] },
-      { hookId: 'h1', adReferenceId: 'r1' }, { productIds: ['p1'], webProductIds: ['w1'] }, { prompt: ' ' }, { prompt: 'a'.repeat(5001) },
-      { duration: 3 }, { duration: 121 }, { duration: 12.5 }, { duration: '15' }, { resolution: '4k' }, { aspectRatio: 'bogus' }, { generateAudio: 'true' }]
-      .map(patch => ({ ...quote, input: { ...input, ...patch } })),
-    { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: '10' }, { ...submit, workspaceId: 'bad' },
-    { ...submit, id: 'bad' }, { ...submit, input }, { ...status, tool: 'generate_video' },
-    { action: 'quote-rehearsal', idempotencyKey: key, input }, { action: 'quote-rehearsal', idempotencyKey: key, draftId: 'foreign' }];
+  const staleRetired = [{ ...quote, userId: 'other' }, { ...quote, idempotencyKey: 'not-a-uuid' }, { ...quote, input: { ...input, duration: 3 } },
+    { ...submit, credits: -1 }, { ...submit, input }, { action: 'quote-rehearsal', idempotencyKey: key, draftId: 'foreign' }, { action: 'setup', types: ['bogus'] }];
+  for (const body of staleRetired) await expectRetired(await f.request('POST', body));
+  const malformed = [null, [], {}, { ...quote, action: 'generate' }, { ...status, tool: 'generate_video' }, { ...status, userId: 'other' }, { ...status, id: 'bad' }, { ...status, draftId: '../foreign' }];
   for (const body of malformed) expect((await f.request('POST', body)).status, JSON.stringify(body).slice(0, 180)).toBe(400);
   for (const id of ['', '../other', 'a'.repeat(201)]) expect((await f.request('GET', undefined, { query: `?draftId=${encodeURIComponent(id)}` })).status).toBe(400);
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
@@ -177,19 +176,19 @@ test('JSON and wire-byte validation returns 400 or 413 without admitting a servi
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test('suspended owners cannot dispatch but can review saved jobs; rate limits precede service calls', async () => {
+test('a paused owner can still read a running job; limits block status, and a retired action never reaches the limits', async () => {
   const f = await fixture(), original = f.store();
   f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: 'Paused' } });
-  expect((await f.request('POST', submit)).status).toBe(423);
+  await expectRetired(await f.request('POST', submit));
   expect(f.calls).toEqual([]);
   expect((await f.request('POST', status)).status).toBe(200);
   expect(f.calls.map(call => call.name)).toEqual(['status']);
   f.setStore(original); f.limit();
-  for (const body of [quote, { action: 'quote-rehearsal', idempotencyKey: key }, submit, status]) {
-    const response = await f.request('POST', body);
-    expect(response.status).toBe(429); expect(await response.text()).not.toContain('private limit detail');
-  }
+  const limited = await f.request('POST', status);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain('private limit detail');
+  for (const body of [quote, { action: 'quote-rehearsal', idempotencyKey: key }, submit]) await expectRetired(await f.request('POST', body));
   expect(f.calls.map(call => call.name)).toEqual(['status']);
+  expect(f.limits.map(args => args[0])).toEqual(['hf-consumer-video:workspace:owner:status', 'hf-consumer-video:workspace:owner:status']);
 });
 
 test('known failures preserve actionable status while unknown service details remain private', async () => {
@@ -198,7 +197,7 @@ test('known failures preserve actionable status while unknown service details re
     [new ConsumerJobError('quote_expired'), 409], [new ConsumerJobError('capacity'), 409], [new contract.ConsumerVideoError('quote_changed'), 409],
     [new Error('private provider token and response'), 503]] as const) {
     f.fail(error);
-    const response = await f.request('POST', quote);
+    const response = await f.request('POST', { action: 'status', draftId: 'draft-1', id: key });
     expect(response.status).toBe(status);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(await response.text()).not.toContain('private provider token');
@@ -216,13 +215,4 @@ test('original collection errors remain recoverable and expose only fixed safe c
     expect(await response.json()).toEqual({ code: `original_${code}`, error: error.message });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   }
-});
-
-test('the quote service\'s standalone refusal answers 409 setup_not_particl with its own safe words', async () => {
-  const f = await fixture();
-  f.fail(Object.assign(new records.ConsumerSetupError(), { cause: new Error('PRIVATE_ACCOUNT_DETAIL') }));
-  const response = await f.request('POST', { ...quote, input: { ...input, mode: 'ugc', productIds: ['acct_p1'] } }, { origin: 'https://particl.example' });
-  expect(response.status).toBe(409);
-  expect(await response.json()).toEqual({ code: 'setup_not_particl', error: new records.ConsumerSetupError().message });
-  expect(f.calls.map((call) => call.name)).toEqual(['quote']);
 });

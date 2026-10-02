@@ -51,12 +51,34 @@ export const MOLECULR_FORMATS = [
   },
 ] as const;
 export type MoleculrFormat = (typeof MOLECULR_FORMATS)[number]["id"];
+export type MarketingBuild = "alpha" | "flare" | "sunburst";
+export type MarketingQuality = "low" | "medium" | "high" | "xhigh" | "max";
 export type MoleculrMarketing = {
-  quality: "low" | "medium" | "high";
+  /** The Marketing Studio Image build; absent means 2.0 Alpha. */
+  variant?: MarketingBuild;
+  quality: MarketingQuality;
   enhancePrompt: boolean;
   presetId?: string;
   presetName?: string;
 };
+/** Marketing Studio Image builds, as the pickers name them. 2.5 builds are priced approximately. */
+export const MARKETING_BUILDS: readonly { id: MarketingBuild; label: string }[] = [
+  { id: "alpha", label: "2.0 Alpha" },
+  { id: "flare", label: "2.5 Flare" },
+  { id: "sunburst", label: "2.5 Sunburst" },
+];
+const QUALITY_LABELS: Record<MarketingQuality, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+/** The qualities a build offers: 2.0 Alpha stops at high; the 2.5 builds add extra high and max. */
+export function marketingQualities(build: MarketingBuild | undefined): { id: MarketingQuality; label: string }[] {
+  const ids: MarketingQuality[] = (build ?? "alpha") === "alpha" ? ["low", "medium", "high"] : ["low", "medium", "high", "xhigh", "max"];
+  return ids.map((id) => ({ id, label: QUALITY_LABELS[id] }));
+}
+/** 2.0 Alpha enhances at high quality only; a 2.5 build keeps the chosen quality. */
+export function marketingQualityFor(settings: Pick<MoleculrMarketing, "variant" | "quality" | "enhancePrompt">): MarketingQuality {
+  const alpha = (settings.variant ?? "alpha") === "alpha";
+  if (alpha && settings.enhancePrompt) return "high";
+  return alpha && (settings.quality === "xhigh" || settings.quality === "max") ? "high" : settings.quality;
+}
 export type MoleculrGenerationOptions = {
   modelId?: string;
   marketing?: Omit<MoleculrMarketing, "presetName">;
@@ -67,6 +89,8 @@ export type MoleculrGenerationOptions = {
   firstFrameAssetId?: string;
   soulIdentityId?: string;
   soulStrength?: number;
+  /** Cinema Studio 4.0's creative controls the node's take was made with (lib/cinemaStudioTypes.ts); absent is every control on Auto. */
+  cinema?: Partial<Record<string, string>>;
 };
 export type MoleculrBrief = {
   referenceAd?: ReferenceAdConfig;

@@ -7,7 +7,7 @@ import styles from "./studio.module.css";
 
 export const metadata: Metadata = {
   title: "Production Studio",
-  description: "The Particl Production Studio: ten stages from brief to delivery, each agentic step run by the agent you pick and quoted before it spends.",
+  description: "The Particl Production Studio: ten stages from brief to delivery, each agentic step run by the agent you pick.",
 };
 
 /*
@@ -25,40 +25,40 @@ type Stage = { title: string; text: string; chips: string[]; subs?: Sub[] };
 
 const STAGES: Stage[] = [
   { title: "Brief & Script",
-    text: "One stage for the brief and the script. The agent you pick writes the script from the brief, draft → critique → refine, quoted first; send notes for another draft until you approve one. Screenplay or ad-film mode; PDF (up to 400 pages), TXT or Fountain in, with local OCR and per-page review for scans.",
+    text: "One stage for the brief and the script. The agent you pick writes the script from the brief, draft → critique → refine; send notes for another draft until you approve one. Screenplay or ad-film mode; PDF (up to 400 pages), TXT or Fountain in, with local OCR and per-page review for scans.",
     chips: ["Brief", "Script editor", "Draft → critique → refine", "Notes → redraft → approve", "Import · PDF · TXT · Fountain · OCR", "Ad-film mode", "Claude · Grok · OpenAI"] },
   { title: "Beats & Shots",
     text: "The agent breaks the approved script into scenes, beats and shots: a beat sheet you edit by hand, and the script can be redrafted to play the edited beats. Or upload a beat sheet PDF instead. Acts on a board or a graph; the shots feed Storyboards.",
     chips: ["Scenes", "Beats", "Shots", "Acts", "Board · Graph", "Beat sheet PDF", "Redraft from beats"] },
   { title: "Storyboards",
-    text: "A frame for every shot on the beat sheet. The agent writes the prompts; frames render as live action, a coloured sketch or a black-and-white sketch, each quoted on its button. Upload a rough drawing and the agent reads it, so the frame keeps its blocking.",
+    text: "A frame for every shot on the beat sheet. The agent writes the prompts; frames render as live action, a coloured sketch or a black-and-white sketch. Upload a rough drawing and the agent reads it, so the frame keeps its blocking.",
     chips: ["Frame prompts", "Live action", "Coloured sketch", "B&W sketch", "Line drawings", "Revise selected", "Frames → Rig"] },
   { title: "Environment",
-    text: "Where the world is built, before the cast. The rules every place shares, then each place, from the beat sheet, the agent or by hand, with plates rendered here at a quoted price, uploaded or taken from the library. Plates are filed as Environment for the Rig and Gen.",
+    text: "Where the world is built, before the cast. The rules every place shares, then each place, from the beat sheet, the agent or by hand, with plates rendered here, uploaded or taken from the library. Plates are filed as Environment for the Rig and Gen.",
     chips: ["World rules", "Places", "Plates", "Render · Upload · Library", "References · up to 6", "Filed as Environment"] },
   { title: "Cast & Elements",
-    text: "The cast list comes free from the beat sheet, or from the agent with a prompt per entry. Every character and element is built with a Soul model on the connected account, billed there, and saved in the library as Cast or Elements.",
+    text: "The cast list comes from the beat sheet, or from the agent with a prompt per entry. Characters, environments and props keep their names, prompts and reference images in one list.",
     chips: [],
     subs: [
-      { tag: "CAST", text: "Characters from a prompt and a reference image. A Soul ID keeps the identity across builds; upscale or remove the background, and pick the build that stands for the character.",
-        chips: ["Soul Cinema", "Soul 2", "Soul Cast", "Soul ID", "Upscale", "Remove background"] },
-      { tag: "ELEMENTS · ENVIRONMENT", text: "Environments and props, built the same way, a place with Soul Location. Save any build as a reference element the account keeps for reuse.",
-        chips: ["Environment", "Prop", "Soul Location", "Reference element"] },
+      { tag: "CAST", text: "Characters from a prompt and a reference image.",
+        chips: ["Prompt", "Reference image"] },
+      { tag: "ELEMENTS · ENVIRONMENT", text: "Environments and props, listed the same way.",
+        chips: ["Environment", "Prop"] },
     ] },
   { title: "Astra 3D",
-    text: "Blocking before rendering. A 3D scene editor, with objects, project pictures and GLB models, lights, the camera and keyframes, plus bounded planner proposals, reviewed native Blender scripts and quoted cloud renders: a PNG still, the .blend and, where it exports, a GLB. Send a render to the Rig as a new shot’s first frame.",
+    text: "Blocking before rendering. A 3D scene editor, with objects, project pictures and GLB models, lights, the camera and keyframes, plus bounded planner proposals, reviewed native Blender scripts and cloud renders: a PNG still, the .blend and, where it exports, a GLB. Send a render to the Rig as a new shot’s first frame.",
     chips: ["Scene editor", "Templates", "GLB in", "Proposals", "Native Blender", "Render · PNG · .blend · GLB", "Portable export", "Send to Rig"] },
   { title: "Rig",
-    text: "Resolves references, quotes each shot and dispatches it to a video engine. Build one shot per storyboard frame; each takes a prompt of up to 20,000 characters, notes, inputs from uploads, the library, earlier shots and the cast, and a first frame. List or canvas; the canvas is shared with the team.",
+    text: "Resolves references and dispatches each shot to a video engine. Build one shot per storyboard frame; each takes a prompt of up to 20,000 characters, notes, inputs from uploads, the library, earlier shots and the cast, and a first frame. List or canvas; the canvas is shared with the team.",
     chips: ["Build from Storyboards", "Prompt · 20,000 characters", "Inputs", "First frame", "List · Canvas", "Team canvas", "Build another rig"] },
   { title: "Takes",
-    text: "Every take of the project first, then every asset by type. A video take opens in Seedance Edit and a still is re-edited from an instruction, each priced before it renders; any take goes to the cut or starts another rig. Transcribe a take, speakers apart, with subtitles.",
+    text: "Every take of the project first, then every asset by type. A video take opens in Seedance Edit and a still is re-edited from an instruction; any take goes to the cut or starts another rig. Transcribe a take, speakers apart, with subtitles.",
     chips: ["Generations", "All assets", "Seedance Edit · 2.5 · 2.0", "Re-edit a still", "Transcribe · .srt", "Add to the cut", "Build a rig"] },
   { title: "Edit & Sound",
-    text: "Assembles the takes, then writes dialogue, effects and music against the cut. Voice-over, sound effects and music land at the playhead, quoted first; change a voice or dub one language at a time. Sixty-four timed clips with gain, pan, fades, mute and solo, mixed on the device to a stereo 48 kHz WAV.",
+    text: "Assembles the takes, then writes dialogue, effects and music against the cut. Voice-over, sound effects and music land at the playhead; change a voice or dub one language at a time. Sixty-four timed clips with gain, pan, fades, mute and solo, mixed on the device to a stereo 48 kHz WAV.",
     chips: ["The cut", "Assembly", "Dialogue", "Sound effects", "Music", "Change voice", "Dub", "Upload a track", "Mix · 64 clips", "WAV · 48 kHz"] },
   { title: "Deliver",
-    text: "Delivery runs against the spec saved on the project: 24, 25 or 30 fps, where a new rate retimes the cut, and 16:9, 9:16, 1:1 or 4:5. The final movie renders in the browser as MP4 or WebM at 720p or 1080p, up to three minutes and 200 MB, with no credits spent. The package carries a CMX3600 straight-cut EDL, FCPXML, Premiere XML, the source media and a manifest.",
+    text: "Delivery runs against the spec saved on the project: 24, 25 or 30 fps, where a new rate retimes the cut, and 16:9, 9:16, 1:1 or 4:5. The final movie renders in the browser as MP4 or WebM at 720p or 1080p, up to three minutes and 200 MB. The package carries a CMX3600 straight-cut EDL, FCPXML, Premiere XML, the source media and a manifest.",
     chips: ["24 · 25 · 30 fps", "16:9 · 9:16 · 1:1 · 4:5", "Final movie · MP4 · WebM · ≤ 3 min", "EDL · CMX3600", "FCPXML · Premiere XML", "Package · ≤ 200 MB"] },
 ];
 
@@ -73,10 +73,10 @@ const NOTES: [string, string][] = [
 const ASSETS = [
   { src: "/campaign/environment.webp", width: 1672, height: 941, position: "50% 50%", alt: "The mirrored dunes, an environment plate",
     kind: "PLACE · PLATE 2", state: "SELECTED", tone: styles.green, name: "The mirrored dunes",
-    line: "Environment plate · Warm daylight", acts: ["Price another plate", "Upload a plate"] },
-  { src: "/campaign/character.webp", width: 1536, height: 1024, position: "50% 20%", alt: "The traveller, a character build",
-    kind: "CAST · BUILD 1", state: "SOUL ID", tone: styles.blue, name: "The traveller",
-    line: "Soul Cinema · Three views", acts: ["Price another build", "Price: upscale"] },
+    line: "Environment plate · Warm daylight", acts: ["Upload a plate"] },
+  { src: "/campaign/character.webp", width: 1536, height: 1024, position: "50% 20%", alt: "The traveller, a character reference",
+    kind: "CAST · CHARACTER", state: "REFERENCE", tone: styles.blue, name: "The traveller",
+    line: "Reference image · Three views", acts: ["Replace reference"] },
 ];
 
 const pad = (i: number) => String(i + 1).padStart(2, "0");
@@ -87,7 +87,7 @@ export default function StudioPage() {
       <SuiteHeader
         eyebrow="02 · Particl Production Studio"
         title="Ten stages from brief to delivery."
-        lead="The production studio. Every stage reads and writes the same project, from the brief to the final cut, and every paid step shows its cost on the button before it runs."
+        lead="The production studio. Every stage reads and writes the same project, from the brief to the final cut."
         pages={STAGES.map((stage) => stage.title)}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
@@ -99,7 +99,7 @@ export default function StudioPage() {
         <Cols col={420} style={{ gap: "clamp(32px, 5vw, 72px)" }}>
           <div className={styles.left}>
             <Head eyebrow="Stages" title="One project. One library."
-              lead="Pick the agent once, Claude, Grok or OpenAI, and every agentic step uses it, each quoted before it spends. Every render, upload and build lands in the project’s library." />
+              lead="Pick the agent once, Claude, Grok or OpenAI, and every agentic step uses it. Every render, upload and build lands in the project’s library." />
             <ol className={styles.stages}>
               {STAGES.map((stage, i) => (
                 <li key={stage.title} className={styles.stage}>

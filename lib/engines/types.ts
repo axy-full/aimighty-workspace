@@ -25,6 +25,9 @@ export type StillRenderRequest = {
   soulReferenceId?: string;
   soulCredentialFingerprint?: string;
   soulStrength?: number;
+  /** Soul Standard / Soul 2 / Soul Cinema: stills per request (1 or 4), and the live estimate admission quoted for it. */
+  soulBatch?: number;
+  soulVendorCostUsd?: number;
   kind: "image"; genId: string; model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 };
 export type AudioRenderRequest = {
@@ -33,7 +36,9 @@ export type AudioRenderRequest = {
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 
 /** An asynchronous job at the vendor: what to ask after, and where. */
-export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string };
+export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string;
+  /** Beside `ref` (the provider's request_id): the submission's correlation id, for the provider's support. Platform desk only. */
+  correlationId?: string };
 
 /** Bytes back from a synchronous engine, with what it charged. */
 export type Produced = {
@@ -46,14 +51,16 @@ export type PollResult = {
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   videoUrl: string | null; totalTokens: number | null; error: string | null;
   imageUrl?: string | null;
+  /** Every still a finished batch request delivered (Soul renders make 1 or 4), the first being `imageUrl`. */
+  imageUrls?: string[] | null;
   vendorStartedAt: number | null; vendorEndedAt: number | null; raw: unknown;
   /** The vendor's own charge for a finished job, when it states one (xAI); checked against the quote before it is billed. */
   costUsd?: number | null;
 };
 
-export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 /** A chat call by its parts, so the instruction can be marked cacheable (brief 1.8). */
-export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 
 /** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
 export type EnhanceRequest = {

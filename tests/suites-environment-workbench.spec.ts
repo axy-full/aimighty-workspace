@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
@@ -15,8 +15,10 @@ import { newProject } from "../lib/workbench/studio";
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HUT - NIGHT\n\nMara watches.\n";
 const png = (fill: string) => sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="${fill}"/></svg>`)).png().toBuffer();
+const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
 
-async function setup(page: Page) {
+/** `first`: what the first scene says in place of the harbour at dusk. */
+async function setup(page: Page, first: { heading?: string } = {}) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
@@ -30,7 +32,7 @@ async function setup(page: Page) {
   project.production = {
     scriptApproval: { at: new Date().toISOString(), source: "hand", sha256 },
     beats: { scriptSha256: sha256, updatedAt: new Date().toISOString(), scenes: [
-      { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [], characters: ["Fox"], locations: ["Frozen harbour"], props: [] },
+      { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [], characters: ["Fox"], locations: ["Frozen harbour"], props: [], ...first },
       { id: "scene-b", heading: "INT. HUT - NIGHT", summary: "Mara watches", beats: [{ id: "beat-b", text: "Mara watches" }], shots: [], characters: ["Mara"], locations: ["Hut"], props: [] },
     ] },
   };
@@ -105,5 +107,57 @@ test("Environment: places from the beat sheet and the agent, a plate uploaded, a
   await third.locator(".pd-frame-image").scrollIntoViewIfNeeded();
   await expect(third.locator(".pd-frame-image img")).toBeVisible();
   await expect(page.getByTestId("environment-counts")).toHaveText("3 places · 3 with a plate");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * "Add N places from the beat sheet" appended the list its render counted.
+ * When the agent's world landed between that render and the click, React ran
+ * the handler from the render before, and a place both listed was added
+ * twice. The click now decides on the list as it is when its update applies.
+ * This test keeps the button's click handler from the render before the
+ * agent's places landed and runs it after them: that order, every time.
+ */
+test("Add places from the beat sheet clicked from a render before the agent's places landed lists each place once", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
+  test.setTimeout(150_000);
+  /* The agent names its place after the first scene's heading: here the beat sheet's own "Frozen harbour". */
+  const { errors, read } = await setup(page, { heading: "Frozen harbour" });
+  const add = page.getByTestId("environment-from-beats");
+  const status = page.getByTestId("environment-stage").locator(".pd-save");
+  const names = async () => ((await read()).production?.environment?.entries ?? []).map((e: { name: string }) => e.name);
+  await expect(add).toHaveText("Add 2 places from the beat sheet");
+  await hydrated(add);
+  /* The button's click handler as rendered now, while there are no places. */
+  await add.evaluate((el) => {
+    const props = (el as unknown as Record<string, { onClick: () => void }>)[Object.keys(el).find((k) => k.startsWith("__reactProps"))!];
+    (window as unknown as { staleAdd: () => void }).staleAdd = props.onClick;
+  });
+
+  await page.getByTestId("environment-agent-estimate").click();
+  await expect(page.getByTestId("environment-agent-quote")).toContainText("agent steps");
+  await page.getByTestId("environment-agent-start").click();
+  await expect.poll(names, { timeout: 60_000 }).toEqual(["Frozen harbour"]);
+  /* The button counts only what is still missing. */
+  await expect(add).toHaveText("Add 1 place from the beat sheet");
+  await expect(status).toHaveText(/^Saved/);
+
+  /* The click lands now, with that earlier render's two places: only the hut is added. */
+  await page.evaluate(() => (window as unknown as { staleAdd: () => void }).staleAdd());
+  await expect(page.getByTestId("environment-entry")).toHaveCount(2);
+  await expect.poll(names).toEqual(["Frozen harbour", "Hut"]);
+  await expect(add).toHaveText("Add 0 places from the beat sheet");
+  await expect(add).toBeDisabled();
+  await expect(status).toHaveText(/^Saved/);
+
+  /* Once more from that render: nothing is missing, so nothing changes — no edit, and the page still says Saved. */
+  const after = await page.evaluate(async () => {
+    (window as unknown as { staleAdd: () => void }).staleAdd();
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    return document.querySelector("[data-testid='environment-stage'] .pd-save")?.textContent ?? "";
+  });
+  expect(after).toMatch(/^Saved/);
+  await expect(page.getByTestId("environment-entry")).toHaveCount(2);
+  expect(await names()).toEqual(["Frozen harbour", "Hut"]);
   expect(errors).toEqual([]);
 });

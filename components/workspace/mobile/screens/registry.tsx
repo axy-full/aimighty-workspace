@@ -1,13 +1,14 @@
 "use client";
 import type { ComponentType } from "react";
 import type { Project } from "@/lib/workbench/studio";
+import { ACCOUNT_RETIRED, HISTORY_KEPT } from "@/lib/shell/connected-capability";
+import { pageDef } from "@/lib/workspace/pages";
 import { MOBILE_TEMPLATES, templateFor, type MobileTemplate } from "@/lib/workspace/mobile-templates";
 import type { PageId } from "@/lib/workspace/types";
 import type { MobilePrimary } from "../MobileActionBar";
 import { AccordionPage } from "../pages/AccordionPage";
 import { CastCardsPage, TakesCardsPage } from "../pages/CardsPages";
 import { EditSoundPage } from "../pages/EditSoundPage";
-import { FormPage } from "../pages/FormPage";
 import { RigTemplate } from "../pages/RigTemplate";
 import { RowsPage } from "../pages/RowsPage";
 
@@ -46,6 +47,19 @@ export type MobilePageDef = {
   primary?: (ctx: MobilePageContext) => MobilePrimary | null;
 };
 
+/**
+ * The form template (Motion and Swap) priced and ran its transform on the
+ * connected Higgsfield account. That sign-in is retired
+ * (lib/higgsfield-consumer/retired.ts), so the page says so and nothing is read.
+ */
+function RetiredFormPage({ page }: MobilePageProps) {
+  return (
+    <div className="pxm-pad-x pxm-pad-top" data-template="form" data-testid="mobile-form-retired">
+      <p className="pxm-note">{pageDef(page).title} ran on a signed-in Higgsfield account. {ACCOUNT_RETIRED}. {HISTORY_KEPT}</p>
+    </div>
+  );
+}
+
 /** One component per template; a page's entry is chosen by MOBILE_TEMPLATES. */
 const BODIES: Record<MobileTemplate, ComponentType<MobilePageProps>> = {
   shots: RigTemplate,
@@ -53,7 +67,7 @@ const BODIES: Record<MobileTemplate, ComponentType<MobilePageProps>> = {
   cards: CastCardsPage,
   rows: RowsPage,
   accordion: AccordionPage,
-  form: FormPage,
+  form: RetiredFormPage,
   edit: EditSoundPage,
 };
 

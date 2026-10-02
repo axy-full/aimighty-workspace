@@ -69,7 +69,7 @@ test("Brief & Script: the agent, the prompt from the project, the Library's tool
   expect(errors).toEqual([]);
 });
 
-test("Storyboards sends an empty project to Beats; Astra 3D and Deliver render their groups and keep their workflows above", async ({ page }, info) => {
+test("Storyboards sends an empty project to Beats; Astra 3D and Deliver render their groups and carry no connected workflow", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const errors = await open(page, "boards");
   /* Storyboards is the Production agent's own stage: with no beat sheet yet it sends the director to Beats. */
@@ -88,8 +88,9 @@ test("Storyboards sends an empty project to Beats; Astra 3D and Deliver render t
   await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "deliver");
   await expect(page.getByTestId("stage-group")).toHaveCount(2);
   await expect(page.getByTestId("stage-facts")).toContainText("No shots yet");
-  await expect(page.getByTestId("workflow-reframe")).toBeVisible();
-  /* The Social cuts card was a description of the reframe workflow above it; the workflow stays, the card goes. */
+  /* Social cuts (the account's reframe) went with the Higgsfield sign-in: neither the workflow nor its card is here. */
+  await expect(page.getByTestId("page-workflows")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-reframe")).toHaveCount(0);
   await expect(page.getByTestId("stage-view").locator(".gx-stage-card[data-card='Social cuts']")).toHaveCount(0);
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "package");
   expect(errors).toEqual([]);

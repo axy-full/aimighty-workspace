@@ -14,13 +14,17 @@
  * what is actually rendering; a ring appears only for a row that carries a
  * real 0–1 figure. Money is the ledger's (lib/usageLedgerTerms): the price as
  * it was approved and reserved, what was charged once it settled, and "not
- * billed" only where the ledger shows nothing charged.
+ * billed" only where the ledger shows nothing charged — or, on a workspace
+ * that pays its vendors, only where the provider's own recorded word says so.
  */
 import type { GenPreset } from "./shell/recipe";
 import { failureKind } from "./jobState";
+import { failedChip, failureCopy, failureUncharged } from "./errors";
+import { accountFailure, type ProviderOutcome, type TakeFailure } from "./providerOutcome";
 import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-consumer/resume";
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
+import { KEY_CHANGED_LABEL, KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from "./sharedKeyTerms";
 
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
@@ -108,7 +112,8 @@ function ownLine(message: string | null | undefined): string | null {
 /**
  * Why a take failed, in one line (the take cards' words: lib/jobState
  * failureKind reads the row's own). It never claims a refund: whether it was
- * billed is the label's to say, from the ledger.
+ * billed is the label's to say, from the ledger. A failure its provider
+ * answered for reads in the typed words instead (typedReason).
  */
 export function failureLine(error: string | null | undefined, params?: unknown): string {
   const raw = clean(error);
@@ -122,6 +127,14 @@ export function failureLine(error: string | null | undefined, params?: unknown):
     default: return ownLine(raw) ?? "It did not render";
   }
 }
+/**
+ * A failure its provider answered for (lib/providerOutcome.ts), in the typed
+ * words the take cards use (lib/errors.ts): refused settings are not the
+ * content filter, and the engine's own account running dry is not this
+ * workspace's balance. Null when no provider answered: the row's words speak.
+ */
+export const typedReason = (failure: TakeFailure | null | undefined): string | null =>
+  failure?.provider != null ? failureCopy(failure.kind, failure.payer).what : null;
 const mediaOf = (kind: string | null | undefined, id: string | null | undefined) =>
   id && (kind === "image" || kind === "video") ? `/api/media/${encodeURIComponent(id)}` : null;
 const kindOf = (value: unknown): TrayJob["kind"] => (value === "video" || value === "image" || value === "audio" ? value : "other");
@@ -135,6 +148,8 @@ export type EngineRow = {
   id: string; kind: string; model: string; prompt: string; title: string | null; status: string;
   params: Record<string, unknown>; storedUrl: string | null; error: string | null;
   createdAt: number; settledAt?: number | null; projectName: string | null;
+  /** A failed take's recorded outcome, as lib/jobs made it safe for this viewer. */
+  failure?: TakeFailure | null;
 };
 /**
  * The take's money, read off the ledger on the server (lib/jobsTray.server):
@@ -155,7 +170,7 @@ export type EngineRecreate = { preset: GenPreset } | { blocked: string } | null;
 
 export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: string | null = null, recreate: EngineRecreate = null): TrayJob {
   const params = row.params ?? {};
-  const held = (params.held ?? null) as { why?: string } | null;
+  const held = (params.held ?? null) as { why?: string; pool?: string } | null;
   /* Named the way the Library and Takes name it: its title, else its words. */
   const name = shortName(clean(row.title) || clean(row.prompt), 60) || "Untitled take";
   const base = {
@@ -165,8 +180,10 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
   const takeId = `generation:${row.id}`;
   const reserved = amount(money.reserved, money.unit);
   const charged = amount(money.charged, money.unit);
-  /* A settled take the ledger shows at zero: nothing was charged for it. */
-  const unbilled = money.charged === 0;
+  /* Credits: a settled take the ledger shows at zero was not charged (Particl's own receipt). Dollars: the money is
+     the workspace's own with its vendor, and a recorded zero is only Particl's metering — a refused request may still
+     be charged — so only the provider's recorded word (refunded, not charged) says it was not. */
+  const unbilled = money.unit === "cr" ? money.charged === 0 : failureUncharged(row.failure);
   const again = (): Pick<TrayJob, "action" | "preset" | "takeId"> =>
     recreate && "preset" in recreate ? { action: "recreate", preset: recreate.preset } : { action: "open", takeId };
   switch (row.status) {
@@ -178,7 +195,7 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "failed":
       return {
         ...base, stage: "failed", tone: "red", settledAt: row.settledAt ?? null,
-        label: unbilled ? "Failed · not billed" : "Failed", reason: failureLine(row.error, params), price: charged, ...again(),
+        label: unbilled ? "Failed · not billed" : "Failed", reason: typedReason(row.failure) ?? failureLine(row.error, params), price: charged, ...again(),
       };
     case "cancelled": {
       /* Discarded while held: the person's own doing, not a failure, and nothing was reserved for it. */
@@ -192,7 +209,7 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "held": {
       /* Held for a slot is a place in the line, and starts on its own; held for credits waits for a Release or a top-up. */
       if (held?.why === "slots")
-        return { ...base, stage: "queued", label: "Queued", tone: "blue", reason: "Waiting for a free slot", price: amount(money.needs, money.unit) ?? reserved };
+        return { ...base, stage: "queued", label: "Queued", tone: "blue", reason: held.pool === POOL_MARK ? POOL_REASON : "Waiting for a free slot", price: amount(money.needs, money.unit) ?? reserved };
       const needs = money.unit === "cr" && money.needs ? money.needs : null;
       /* A reason of its own written by a refused release (a cap): the label already says what credits it needs. */
       const kind = row.error ? failureKind(row.error) : "unknown";
@@ -205,8 +222,11 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
       };
     }
     case "running":
+      /* Sent on a provider key that is gone: it waits, never failed or sent again, while that is sorted out. */
+      if (waitsOnChangedKey(params)) return { ...base, stage: "confirming", label: KEY_CHANGED_LABEL, tone: "amber", reason: KEY_CHANGED_REASON, price: reserved };
       return { ...base, stage: "rendering", label: "Rendering", tone: "blue", price: reserved };
     default:
+      if (waitsOnChangedKey(params)) return { ...base, stage: "confirming", label: KEY_CHANGED_LABEL, tone: "amber", reason: KEY_CHANGED_REASON, price: reserved };
       return { ...base, stage: "queued", label: "Queued", tone: "blue", price: reserved };
   }
 }
@@ -220,6 +240,8 @@ export type AccountRow = {
   hasReceipt: boolean; setAside: boolean;
   prompt: string | null; modelId: string | null; outputType: string | null; toolLabel: string | null;
   originalId: string | null; originalKind: string | null; projectName: string | null;
+  /** A failed job: what the account said (lib/providerOutcome.ts); its charge stays unknown until its own ledger names one. */
+  outcome?: ProviderOutcome | null;
 };
 
 const WORKFLOW_NAME: Record<string, string> = {
@@ -256,10 +278,13 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
     case "failed": {
       const kept = row.failureCode === "invalid_result";
       const action: TrayAction | null = preset ? "recreate" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
+      /* The account's own reason when it gave one; "refunded" or "charged" only once its own ledger names the job. */
+      const failure = row.outcome ? accountFailure(row.outcome, row.failureCode) : null;
       return {
         ...base, stage: "failed", tone: "red", settledAt: row.updatedAt, action, ...(preset ? { preset } : {}),
-        label: kept ? phase.label : "Failed",
-        reason: kept ? "The account finished it, but the result could not be kept. Its receipt is saved." : "The connected account reported it as failed.",
+        label: kept ? phase.label : failedChip(failure),
+        reason: kept ? "The account finished it, but the result could not be kept. Its receipt is saved."
+          : failure ? failureCopy(failure.kind, failure.payer).what : "The connected account reported it as failed.",
         /* Finished on the account but not kept: the approved figure may have been spent. Refused: no figure is claimed either way. */
         price: kept ? quoted : null,
       };

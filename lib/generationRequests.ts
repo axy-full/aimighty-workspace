@@ -1,5 +1,5 @@
 import { acceptRecoveryJobTx } from "./recovery";
-import type { InStatement } from "@libsql/client";
+import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -16,11 +16,23 @@ import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
+import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
+import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
   constructor(message: string, public readonly status: number, public readonly perJob = false) { super(message); this.name = "SpendReservationError"; }
+}
+/**
+ * The shared provider pool has no slot for this take yet (lib/providerPool.ts).
+ * Nothing was reserved: callers hold the take in the line instead of failing it.
+ */
+export class ProviderPoolBusyError extends SpendReservationError {
+  constructor(public readonly pool: string, public readonly why: "pool" | "share" | "line") {
+    super("Every shared render slot is taken. The take waits in line and starts when a slot frees.", 409, true);
+    this.name = "ProviderPoolBusyError";
+  }
 }
 
 const bootstrapped = new Map<string, Promise<void>>();
@@ -73,6 +85,16 @@ export type GenerationRequestOptions = { atomicBinding?: boolean };
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
 export const STALE_CLAIM_MS = 30 * 60_000;
+/**
+ * A transcription answers inside its own request, whose route stops at 300 s
+ * (maxDuration, app/api/audio/transcribe/route.ts): twice that, no request
+ * can still be running it. Its claim is answered by then (lib/transcription.ts),
+ * and its meter event, still `running` if the request was killed, holds no job
+ * slot: nothing is running. Its credits stay held until what became of it is known.
+ */
+export const TRANSCRIPTION_STALE_MS = 10 * 60_000;
+/** A transcription's meter event (transcriptionEventId, lib/transcription.ts). */
+const TRANSCRIPTION_EVENT = /^stt_/;
 
 /**
  * With atomic binding, a claim that names no job proves no job exists — so
@@ -170,6 +192,23 @@ export async function withGenerationRequestData(
   }
 }
 
+/**
+ * Give a claim that has no reply yet its final one, for a route whose work
+ * answers in its reply rather than with a job (transcription): once no request
+ * can still be running it, what it left behind is written as its answer, so a
+ * request under the key is answered with that and never runs. False when the
+ * claim already has a reply (its own, which stands) or does not exist.
+ */
+export async function completeGenerationRequest(input: { userId: string; key: string; status: number; reply: Record<string, unknown> }): Promise<boolean> {
+  await generationRequestsReady();
+  const done = await db().execute({
+    sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=?
+          WHERE user_id=? AND request_key=? AND response_json IS NULL`,
+    args: [JSON.stringify(input.reply), input.status, now(), input.userId, input.key],
+  });
+  return done.rowsAffected > 0;
+}
+
 /** What a paid request sent under an Idempotency-Key became, from its claim (checkGenerationRequest). */
 export type GenerationRequestCheck =
   /** It reached the server and made this job. The job's own status says how it went: a refused charge fails it, unbilled. */
@@ -245,8 +284,44 @@ async function reservationsReady(): Promise<void> {
   reservationReady ??= (async () => {
     await platformReady();
     await platformDb().execute(`CREATE TABLE IF NOT EXISTS generation_reservations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, token_id TEXT)`);
+    /* Additive: the run a job counts toward (an Atomik run's approved limit) and its band (lib/runLimit.ts). */
+    const columns = new Set((await platformDb().execute("PRAGMA table_info(generation_reservations)")).rows.map((row) => String(row.name)));
+    for (const [column, type] of [["run_id", "TEXT"], ["run_band", "INTEGER"]] as const) {
+      if (columns.has(column)) continue;
+      try { await platformDb().execute(`ALTER TABLE generation_reservations ADD COLUMN ${column} ${type}`); }
+      catch (error) { if (!/duplicate column/i.test(String(error))) throw error; }
+    }
+    await platformDb().execute(`CREATE INDEX IF NOT EXISTS idx_generation_reservations_run ON generation_reservations(workspace_id, run_id) WHERE run_id IS NOT NULL`);
   })().catch((error) => { reservationReady = undefined; throw error; });
   await reservationReady;
+}
+
+/** A job refused because it would pass its run's approved limit (lib/runLimit.ts): nothing was reserved or sent. */
+export const RUN_LIMIT_REACHED = "This would pass the limit approved for this run. Nothing was charged.";
+
+/** What one of a run's jobs counts toward its limit: its bill in credits, or on the workspace's own keys its dollars counted in credits (quotedCredits). */
+function runCredits(row: { paid: boolean; billed: number; costUsd: number }): number {
+  return row.paid ? row.billed : row.costUsd > 0 ? billCreditsWith(row.costUsd, 1, creditUsd()) : 0;
+}
+
+/**
+ * The run's jobs as the ledger has them (every reservation that named the run), for its limit and its card.
+ * `platform` is the transaction to read in (the reservation's own), or the platform database.
+ */
+export async function runCharges(runId: string, options: { except?: string; workspaceId?: string; platform?: Pick<Client, "execute"> | Transaction } = {}): Promise<(RunCharge & { id: string; status: string })[]> {
+  await reservationsReady();
+  const ws = options.workspaceId ?? requireTenant().id;
+  const rows = await (options.platform ?? platformDb()).execute({
+    sql: `SELECT m.id,m.status,m.billed_credits,m.engine_cost_usd,m.paid_by_platform,r.run_band FROM generation_reservations r
+          JOIN meter_events m ON m.id=r.id AND m.workspace_id=r.workspace_id
+          WHERE r.workspace_id=? AND r.run_id=? AND r.id<>?`,
+    args: [ws, runId, options.except ?? ""],
+  });
+  return rows.rows.map((r) => ({
+    id: String(r.id), status: String(r.status), running: String(r.status) === "running",
+    credits: runCredits({ paid: Boolean(Number(r.paid_by_platform)), billed: Number(r.billed_credits ?? 0), costUsd: Number(r.engine_cost_usd ?? 0) }),
+    band: r.run_band == null ? 1 : Number(r.run_band),
+  }));
 }
 
 type Baseline = { id: string; projectId: string | null; shotId: string | null; tokenId: string | null; cost: number; credits: number; createdAt: number; status: string; deleted: boolean };
@@ -263,6 +338,13 @@ type ReservationOptions = {
   /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
    * a held take's release decides from its author instead of whoever's request released it. */
   shotCapExempt?: boolean;
+  /**
+   * The run this job counts toward (an Atomik run on a Rig board): refused when the run's
+   * settled and in-flight jobs, at their worst case, plus this one would pass the limit a
+   * person approved for it (lib/runLimit.ts), or when the run may no longer spend. Recorded
+   * on the reservation, so every paid action of the run carries its id.
+   */
+  run?: RunSpend;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -280,6 +362,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const paid = paidByPlatformEngine(event.engine);
   await ready();
   await reservationsReady();
+  /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
+  const pool = sharedPoolOf(event);
+  if (pool) await providerPoolReady();
   const cap = projectId ? await projectCap(projectId) : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
@@ -298,6 +383,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
     credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
+  /* A run that was stopped or switched off reserves nothing: asked last, just before the write (it reads the
+     workspace's own database, which is never read inside the platform's write). */
+  const stopped = options.run ? await options.run.live?.() : null;
+  if (stopped) throw new SpendReservationError(stopped, 409, true);
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
@@ -328,7 +417,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
       else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
     }
-    const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")).length;
+    const gone = now() - TRANSCRIPTION_STALE_MS;
+    const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")
+      && !(TRANSCRIPTION_EVENT.test(r.id) && r.createdAt < gone)).length;
     const recent = [...merged.values()].filter((r) => r.status !== "held" && r.createdAt >= now() - 3_600_000).length;
     if (recent >= limits.rendersPerHour) throw new SpendReservationError("This workspace has reached its hourly job limit, including reserved jobs. Try again later.", 429);
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
@@ -361,9 +452,28 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const needs = creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms);
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
+    /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's
+       jobs have settled, what its jobs in flight could still settle at, and this job at its worst. */
+    if (options.run) {
+      const job = runCredits({ paid, billed, costUsd: cost });
+      const verdict = runLimitVerdict({
+        limitTenths: toTenths(options.run.limitCredits),
+        tally: runTally(await runCharges(options.run.id, { except: event.id, workspaceId: ws.id, platform: tx })),
+        jobTenths: toTenths(job),
+        band: options.run.band,
+      });
+      if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
+    }
+    /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its
+       reservation commit together, and the slot is free again the moment the reservation stops running. */
+    if (pool) {
+      const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
+      if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
+    }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
       args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
-    await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, args: [event.id, ws.id, options.token?.id ?? null] });
+    await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? Math.max(1, Math.round(options.run.band)) : null] });
   });
 }

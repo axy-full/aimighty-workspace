@@ -1,13 +1,18 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { NODE_DEFS, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
-import type { Asset, CanvasNode } from "@/lib/workbench/studio";
+import { nodeDef, operationsFor, resolveAsset } from "@/lib/workbench/node-graph";
+import { REF_KIND_LABELS, refKindOf } from "@/lib/workbench/ref-kind";
+import { uid, type Asset, type CanvasNode, type RefKind } from "@/lib/workbench/studio";
 import { mediaBands } from "@/lib/workspace/format";
-import { edgePath, graphEdges, graphLayout, GRAPH_PAD, type Box } from "@/lib/workspace/rig-graph";
+import { cardHeight, cardWidth, edgePath, graphEdges, graphLayout, GRAPH_PAD, type Box } from "@/lib/workspace/rig-graph";
+import { addBoardCard, BOARD_GRID, boardSections, cardStatus, dragShown, dropCard, isSectionNode, withBoardText, type CardTone } from "@/lib/workspace/rig-board";
+import { BoardEditor, BoardTools, EditButton, SectionCard, type BoardField } from "./RigBoard";
 import { canDropOnShot, dropOnShot } from "@/lib/shell/drop-targets";
 import { isShotNode, shotNote, type RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRig } from "./RigProvider";
+import { VerifyCardLine } from "./RigVerify";
+import { isVerifyCard } from "@/lib/workbench/verify";
 import { rigLoadState } from "@/lib/workspace/rig-load-state";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
@@ -33,43 +38,57 @@ function Media({ id, asset, height, badge }: { id: string; asset: Asset | undefi
   );
 }
 
-function footer(node: CanvasNode, shot: RigShot | undefined) {
-  if (node.type === "grade") {
-    const active = operationsFor(node).filter((op) => op.enabled).length;
-    return { dot: "var(--pxw-blue-ink)", label: `${active} active ${active === 1 ? "tool" : "tools"}` };
-  }
-  const status = shot?.status ?? node.status;
-  const dot = status === "approved" ? "var(--pxw-green)" : status === "ready" || status === "queued" ? "var(--pxw-atomik-gold)" : "var(--pxw-label-floor)";
-  return { dot, label: node.role || NODE_DEFS[node.type].role };
-}
+/** The preview well's height by card shape: a take, a source or what a finishing card works on, at a glance. */
+const WELL = { scene: 96, reference: 72, operator: 56, flow: 56 } as const;
+const TONE: Record<CardTone, string> = { green: "var(--pxw-green)", gold: "var(--pxw-atomik-gold)", red: "var(--pxw-red-ink)", blue: "var(--pxw-blue-ink)", floor: "var(--pxw-label-floor)" };
 
-function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWireInto }: {
-  node: CanvasNode; shot: RigShot | undefined; asset: Asset | undefined; selected: boolean; wiring: boolean;
-  onSelect: () => void; onWireFrom: () => void; onWireInto: () => void;
+function Card({ node, kind, shot, asset, selected, wiring, master, editing, onSelect, onWireFrom, onWireInto, onEdit, onCommit, onCancel }: {
+  node: CanvasNode; kind: RefKind | null; shot: RigShot | undefined; asset: Asset | undefined; selected: boolean; wiring: boolean; editing: boolean;
+  /** A locked master (its element is locked): the one source of truth for this character, place or product. */
+  master: boolean;
+  onSelect: () => void; onWireFrom: () => void; onWireInto: () => void; onEdit: () => void; onCommit: (value: string) => void; onCancel: () => void;
 }) {
-  const def = NODE_DEFS[node.type];
+  const def = nodeDef(node.type);
   const isShot = !!shot;
+  /* A note is its words: edited right on the card. */
+  const note = node.type === "note";
   const text = isShot ? shotNote(node) : (node.text ?? "").trim();
-  const media = def.shape === "scene" || def.shape === "reference" || node.type === "media";
+  const well = def.shape === "text" ? null : WELL[def.shape];
   const grade = node.type === "grade" ? operationsFor(node).find((op) => op.kind === "grade") : undefined;
-  const f = footer(node, shot);
+  const status = cardStatus(node, shot?.status, !!asset);
   const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
   return (
     <>
-      {isShot ? (
-        <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} />
-      ) : null}
-      <span className="pxw-graph-kicker"><span>{def.label.toUpperCase()}</span><span>{version}</span></span>
-      {media ? <Media id={node.id} asset={asset} height={def.shape === "scene" ? 88 : 66} badge={isShot && selected} /> : null}
+      {/* Every card is picked (and dragged) by its face: a shot into the shot Inspector, any other card into the Card Inspector. */}
+      <button type="button" className="pxw-graph-hit" aria-pressed={selected} aria-label={`Select ${node.title}`} onClick={onSelect} onDoubleClick={note && !node.locked ? onEdit : undefined} />
+      {/* A reference says what it is to the production (Cast, Environment, Element or Ref), and a locked master says so; a shot, its type and number; any other card, its type. */}
+      <span className="pxw-graph-kicker">
+        <span className="pxw-graph-kicker-label">
+          {kind ? <span className="pxw-graph-kind" data-functional-label="">{REF_KIND_LABELS[kind].toUpperCase()}{master ? <span className="pxw-graph-master"> · MASTER</span> : null}</span> : <span data-functional-label="">{def.label.toUpperCase()}</span>}
+          {shot ? <span className="pxw-graph-code" data-functional-label="">{String(shot.index).padStart(2, "0")}</span> : null}
+        </span>
+        {note ? null : <span data-functional-label="">{version}</span>}
+      </span>
+      {note && !editing && !node.locked ? <EditButton label={`Edit note ${node.title}`} onEdit={onEdit} /> : null}
+      {well ? <Media id={node.id} asset={asset} height={well} badge={isShot && selected} /> : null}
       <span className="pxw-graph-title">{node.title}</span>
-      {grade ? (
+      {/* A Verify card says what its check found, and whether it still is about these masters. */}
+      {isVerifyCard(node) ? <VerifyCardLine node={node} /> : null}
+      {editing ? (
+        <BoardEditor field="text" value={node.text ?? ""} label={`Note: ${node.title}`} onCommit={onCommit} onCancel={onCancel} />
+      ) : grade ? (
         <span className="pxw-graph-readouts">
           {([["B", "brightness"], ["C", "contrast"], ["S", "saturation"]] as const).map(([k, v]) => (
             <span key={k}><span>{k}</span><span>{String(grade.values[v] ?? 100)}</span></span>
           ))}
         </span>
-      ) : text ? <span className="pxw-graph-desc">{text}</span> : null}
-      <span className="pxw-graph-foot"><span className="pxw-dot" style={{ width: 5, height: 5, background: f.dot }} /><span>{f.label}</span></span>
+      ) : text ? <span className={note ? "pxw-graph-desc pxw-graph-note-text" : "pxw-graph-desc"}>{text}</span>
+        : note ? <span className="pxw-graph-desc pxw-graph-note-text pxw-graph-placeholder">Nothing written yet.</span> : null}
+      <span className="pxw-graph-foot">
+        <span className="pxw-dot" style={{ width: 5, height: 5, background: TONE[status.tone] }} />
+        {status.word ? <span className="pxw-graph-state" data-tone={status.tone} data-functional-label="">{status.word}</span> : null}
+        {status.detail ? <span className="pxw-graph-detail" data-functional-label="">{status.detail}</span> : null}
+      </span>
       <button type="button" className="pxw-graph-port pxw-graph-port--in" aria-label={`Connect into ${node.title}`} data-armed={wiring || undefined} onClick={onWireInto} />
       <button type="button" className="pxw-graph-port pxw-graph-port--out" aria-label={`Connect from ${node.title}`} onClick={onWireFrom} />
     </>
@@ -78,6 +97,8 @@ function Card({ node, shot, asset, selected, wiring, onSelect, onWireFrom, onWir
 
 /** The height of the zoom cluster's strip at the bottom of the board (cluster 44 + inset 12). */
 const ZOOM_STRIP = 56;
+/** The space Fit keeps around the fitted cards (lib/viewport.ts fitView's margin). */
+const FIT_MARGIN = 48;
 
 /** The pane the board scrolls in: the nearest ancestor that really scrolls (a wrapper that grows with its content computes overflow-y:auto too), else the outermost one that could. */
 function boardPane(el: HTMLElement): HTMLElement | null {
@@ -102,7 +123,8 @@ export function RigGraph() {
   const shotsById = useMemo(() => new Map(rig.shots.map((s) => [s.id, s])), [rig.shots]);
   const [dropOver, setDropOver] = useState<string | null>(null);
   const assets = useMemo(() => (project ? [...project.assets, ...(project.sharedAssets ?? [])] : []), [project]);
-  const selId = state.selKind === "shot" ? state.selId : null;
+  /* The picked card: a shot, or any other card on the canvas. */
+  const selId = state.selKind === "shot" || state.selKind === "node" ? state.selId : null;
 
   const [wireFrom, setWireFrom] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -142,12 +164,16 @@ export function RigGraph() {
     const box = surface.current?.getBoundingClientRect();
     return box ? { x: box.width / 2, y: box.height / 2 } : { x: 0, y: 0 };
   };
+  const tools = useRef<HTMLDivElement | null>(null);
   const fit = useCallback(() => {
     const root = canvas.current, box = surface.current?.getBoundingClientRect();
     if (!root || !box) return;
     const boxes = Array.from(root.querySelectorAll<HTMLElement>("[data-node-id]")).map((el) => ({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }));
-    /* Fit into the board above the zoom cluster's strip, so no fitted node sits under it. */
-    setView(fitView(boxes, { w: box.width, h: box.height - ZOOM_STRIP }));
+    /* Fit into the board above the zoom cluster's strip, and below the add buttons at its top-left: the fit's own margin
+       clears most of them, so only what reaches past it is kept free (a phone's board is short). No fitted node sits under either. */
+    const top = tools.current ? Math.max(0, tools.current.offsetTop + tools.current.offsetHeight + 4 - FIT_MARGIN) : 0;
+    const fitted = fitView(boxes, { w: box.width, h: box.height - ZOOM_STRIP - top }, FIT_MARGIN);
+    setView({ ...fitted, pan: { x: fitted.pan.x, y: fitted.pan.y + top } });
   }, [setView]);
   /* A native wheel listener (React's is passive, so it could not stop the page zooming):
      pinch or ⌘/ctrl-wheel zooms about the cursor, a plain wheel pans. */
@@ -157,6 +183,8 @@ export function RigGraph() {
     surface.current = el;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      /* A note being written scrolls its own words. */
+      if ((e.target as HTMLElement | null)?.closest?.(".pxw-graph-editor")) return;
       e.preventDefault();
       const box = el.getBoundingClientRect();
       const at = { x: e.clientX - box.left, y: e.clientY - box.top };
@@ -173,7 +201,7 @@ export function RigGraph() {
   const gesture = useRef<{ kind: "pan"; from: { x: number; y: number }; view: View } | { kind: "pinch"; view: View; dist: number; mid: { x: number; y: number } } | null>(null);
   const onSurfaceDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    const onCard = !!target.closest(".pxw-graph-node, .pxw-graph-zoom");
+    const onCard = !!target.closest(".pxw-graph-node, .pxw-graph-zoom, .pxw-graph-tools");
     pointers.current.set(e.pointerId, surfacePoint(e));
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
@@ -263,15 +291,20 @@ export function RigGraph() {
     if (e.button !== 0 || !(e.target as HTMLElement).closest(".pxw-graph-hit")) return;
     press.current = { id, x: e.clientX, y: e.clientY, moved: false };
   };
+  /* The cards as drawn now, for a drag to measure from. */
+  const placed = useRef(new Map<string, CanvasNode>());
+  useEffect(() => { placed.current = new Map(nodes.map((n) => [n.id, n])); }, [nodes]);
   useEffect(() => {
     const move = (e: PointerEvent) => {
       const p = press.current;
       if (!p) return;
       const z = viewRef.current.zoom;
       if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return;
-      const dx = Math.round((e.clientX - p.x) / z), dy = Math.round((e.clientY - p.y) / z);
+      const travel = { dx: Math.round((e.clientX - p.x) / z), dy: Math.round((e.clientY - p.y) / z) };
       p.moved = true;
-      const next = { id: p.id, dx, dy };
+      /* The card shows where it will land: on the 20 px grid, or exactly under the pointer with Alt held. */
+      const from = placed.current.get(p.id);
+      const next = { id: p.id, ...(from ? dragShown(from, travel, e.altKey) : travel) };
       setDrag(next);
       presence({ drag: next });
     };
@@ -287,7 +320,8 @@ export function RigGraph() {
       window.setTimeout(() => { justDragged.current = false; }, 0);
       setDrag(null);
       presence({ drag: null });
-      const refusal = rig.apply((proj) => ({ ...proj, nodes: proj.nodes.map((n) => (n.id === p.id ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
+      /* It lands on the grid (Alt: where it was let go), and let go under a section's title it joins that section. */
+      const refusal = rig.apply((proj) => dropCard(proj, p.id, { dx, dy }, e.altKey));
       if (refusal) setMessage(refusal);
     };
     /* A touch that turns into a scroll cancels the press; nothing moves. */
@@ -333,6 +367,52 @@ export function RigGraph() {
     return () => observer.disconnect();
   }, [measure, nodes]);
 
+  /* ── Tidy: the server lays the board out for everyone at once (free) ── */
+  const [tidying, setTidying] = useState(false);
+  const tidy = async () => {
+    if (tidying) return;
+    setTidying(true);
+    setWireFrom(null);
+    setMessage(null);
+    const outcome = await rig.team.tidy();
+    setTidying(false);
+    if (!outcome.ok) { setMessage(outcome.error); return; }
+    const done = [
+      outcome.moved ? `${outcome.moved.toLocaleString("en-US")} ${outcome.moved === 1 ? "card" : "cards"} moved` : null,
+      outcome.sections ? `${outcome.sections.toLocaleString("en-US")} ${outcome.sections === 1 ? "section" : "sections"} added` : null,
+    ].filter(Boolean);
+    setMessage(done.length ? `Tidied for everyone · ${done.join(" · ")} · free` : "Already tidy · nothing moved");
+    /* The tidied board, in view: once the moved cards have been laid out. */
+    if (done.length) requestAnimationFrame(() => requestAnimationFrame(fit));
+  };
+
+  /* ── The board's own cards: sections and notes, added and edited right on the canvas (free) ── */
+  const [editing, setEditing] = useState<{ id: string; field: BoardField } | null>(null);
+  const counts = useMemo(() => new Map(boardSections(nodes, { assets }).map((s) => [s.id, s.members.length])), [nodes, assets]);
+  /** A note or a section title where the board is looked at now, ready to type into. */
+  const addCard = (kind: "note" | "section") => {
+    const box = surface.current?.getBoundingClientRect();
+    if (!box) return;
+    const v = viewRef.current;
+    const size = kind === "section" ? { w: 260, h: cardHeight({ type: "note", mode: "section" }) } : { w: cardWidth({ type: "note", width: 254 }), h: cardHeight({ type: "note" }) };
+    /* The middle of what the board shows, in the canvas's own units (cards are drawn from the top-left card, at the padding). */
+    const at = {
+      x: (box.width / 2 - v.pan.x) / v.zoom - GRAPH_PAD + (origin?.x ?? 0) - size.w / 2,
+      y: (box.height / 2 - v.pan.y) / v.zoom - GRAPH_PAD + (origin?.y ?? 0) - size.h / 2,
+    };
+    const id = uid("node");
+    setWireFrom(null);
+    const refusal = rig.apply((p) => addBoardCard(p, kind, at, id));
+    setMessage(refusal);
+    if (!refusal) setEditing({ id, field: kind === "section" ? "title" : "text" });
+  };
+  const commitEdit = (value: string) => {
+    const at = editing;
+    setEditing(null);
+    if (!at) return;
+    setMessage(rig.apply((p) => withBoardText(p, at.id, at.field, value)));
+  };
+
   useEffect(() => {
     if (!wireFrom) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setWireFrom(null); setMessage(null); } };
@@ -349,6 +429,9 @@ export function RigGraph() {
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const shotCount = rig.shots.length;
+  /* The dots are the snap grid: on the board's own multiples of 20, wherever the top-left card sits. */
+  const offset = (v: number) => (((GRAPH_PAD - v) % BOARD_GRID) + BOARD_GRID) % BOARD_GRID;
+  const grid = { x: offset(origin?.x ?? 0), y: offset(origin?.y ?? 0) };
   const wireInto = (target: string) => {
     if (!wireFrom) { setMessage("Choose the node to connect from first: its right-hand port."); return; }
     const refusal = rig.connect(wireFrom, target);
@@ -370,7 +453,7 @@ export function RigGraph() {
           ref={attachSurface}
           data-testid="rig-graph-surface"
           data-zoom={Math.round(view.zoom * 100)}
-          style={{ height: sized?.height ?? undefined, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px`, backgroundPosition: `${view.pan.x}px ${view.pan.y}px` }}
+          style={{ height: sized?.height ?? undefined, backgroundSize: `${BOARD_GRID * view.zoom}px ${BOARD_GRID * view.zoom}px`, backgroundPosition: `${view.pan.x + grid.x * view.zoom}px ${view.pan.y + grid.y * view.zoom}px` }}
           onPointerDown={onSurfaceDown}
           onPointerMove={onSurfaceMove}
           onPointerUp={onSurfaceUp}
@@ -404,7 +487,12 @@ export function RigGraph() {
           {layout.cards.map((card) => {
             const node = byId.get(card.id)!;
             const shot = isShotNode(node) ? shotsById.get(node.id) : undefined;
-            const selected = !!shot && shot.id === selId;
+            const kind = refKindOf(node, project);
+            const master = !!node.elementId && rig.masters.has(node.elementId);
+            const def = nodeDef(node.type);
+            const section = isSectionNode(node);
+            const selected = card.id === selId && (state.selKind === "node" ? !shot : !!shot);
+            const edit = editing?.id === card.id ? editing.field : null;
             /* A Library asset dropped on a shot node is filed on that shot, as on the list's row (text/plain = asset id). */
             const dropAsset = Boolean(shot);
             /* Mine while I drag it; a teammate's while they drag it. */
@@ -416,15 +504,19 @@ export function RigGraph() {
                 className="pxw-graph-node"
                 data-node-id={card.id}
                 data-ctx={`node:${card.id}`}
-                data-shape={NODE_DEFS[node.type].shape}
+                data-shape={def.shape}
+                data-section={section || undefined}
+                data-editing={edit || undefined}
+                data-ref-kind={kind ?? undefined}
+                data-master={master ? "locked" : undefined}
                 data-selected={selected || undefined}
                 data-wiring={wireFrom === card.id || undefined}
                 data-drop={dropOver === card.id || undefined}
                 data-moving={moving ? true : undefined}
                 data-peer={watcher ? watcher.name : undefined}
                 role="group"
-                aria-label={`${NODE_DEFS[node.type].label}: ${node.title}`}
-                style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
+                aria-label={`${kind ? REF_KIND_LABELS[kind] : section ? "Section" : def.label}${master ? " master" : ""}: ${node.title}`}
+                style={{ left: card.left + (moving?.dx ?? 0), top: card.top + (moving?.dy ?? 0), width: card.width, height: cardHeight(node), ...(watcher ? { outline: `2px solid ${watcher.color}`, outlineOffset: 3 } : {}) }}
                 onPointerDown={node.locked ? undefined : (e) => startDrag(card.id, e)}
                 onClickCapture={(e) => { if (justDragged.current) { justDragged.current = false; e.stopPropagation(); e.preventDefault(); } }}
                 onDragOver={dropAsset ? (e) => { if (canDropOnShot(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(card.id); } } : undefined}
@@ -432,16 +524,35 @@ export function RigGraph() {
                 onDrop={dropAsset && shot ? (e) => { setDropOver(null); if (dropOnShot(e.dataTransfer, { nodeId: shot.id, name: shot.name })) e.preventDefault(); } : undefined}
               >
                 {watcher ? <span className="pxw-graph-peer" style={{ background: watcher.color }}>{watcher.name}</span> : null}
-                <Card
-                  node={node}
-                  shot={shot}
-                  asset={resolveAsset(node, nodes, assets)}
-                  selected={selected}
-                  wiring={!!wireFrom && wireFrom !== card.id}
-                  onSelect={() => rig.select(node.id)}
-                  onWireFrom={() => { setWireFrom(card.id); setMessage(null); }}
-                  onWireInto={() => wireInto(card.id)}
-                />
+                {section ? (
+                  <SectionCard
+                    node={node}
+                    count={counts.get(node.id) ?? 0}
+                    selected={selected}
+                    editing={edit === "title"}
+                    onSelect={() => rig.select(node.id)}
+                    onEdit={() => { setWireFrom(null); setEditing({ id: node.id, field: "title" }); }}
+                    onCommit={commitEdit}
+                    onCancel={() => setEditing(null)}
+                  />
+                ) : (
+                  <Card
+                    node={node}
+                    kind={kind}
+                    shot={shot}
+                    asset={resolveAsset(node, nodes, assets)}
+                    selected={selected}
+                    wiring={!!wireFrom && wireFrom !== card.id}
+                    master={master}
+                    editing={edit === "text"}
+                    onSelect={() => rig.select(node.id)}
+                    onWireFrom={() => { setWireFrom(card.id); setMessage(null); }}
+                    onWireInto={() => wireInto(card.id)}
+                    onEdit={() => { setWireFrom(null); setEditing({ id: node.id, field: "text" }); }}
+                    onCommit={commitEdit}
+                    onCancel={() => setEditing(null)}
+                  />
+                )}
               </div>
             );
           })}
@@ -452,11 +563,15 @@ export function RigGraph() {
             </span>
           ))}
         </div>
+        <div ref={tools} className="pxw-graph-tools-strip">
+          <BoardTools onAdd={addCard} />
+        </div>
         <div className="pxw-graph-zoom" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom out" data-testid="rig-zoom-out" onClick={() => setView((v) => stepZoom(v, -1, centre()))}>−</button>
           <button type="button" aria-label="Reset zoom to 100%" data-testid="rig-zoom-level" onClick={() => setView((v) => resetZoom(v, centre()))}>{Math.round(view.zoom * 100)}%</button>
           <button type="button" aria-label="Zoom in" data-testid="rig-zoom-in" onClick={() => setView((v) => stepZoom(v, 1, centre()))}>+</button>
           <button type="button" aria-label="Fit every node" data-testid="rig-zoom-fit" onClick={fit}>Fit</button>
+          <button type="button" aria-label="Tidy the board for everyone, free" title="Lay the board out for everyone · free" data-testid="rig-tidy" disabled={tidying || rig.team.mode === "off"} onClick={() => void tidy()}>{tidying ? "Tidying…" : "Tidy"}</button>
         </div>
         </div>
         <p className="pxw-graph-note">

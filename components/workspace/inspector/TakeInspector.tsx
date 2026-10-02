@@ -32,6 +32,7 @@ export function TakeInspector({ state, scope, project }: InspectorBodyProps) {
       ? take.sha256 ? [{ label: "Integrity", value: "sha256 ✓", tone: "green" as const, title: take.sha256 }] : []
       : [{ label: "Settled cost", value: take.status === "rendering" || take.status === "held" ? "Not settled" : take.failedUnbilled ? "Not billed" : takeCost(take), tone: "blue" as const }]),
     { label: "Status", value: takeStatus(take).label },
+    ...(take.failureLine ? [{ label: "Why", value: take.failureLine }] : []),
   ];
   const download = asset.origin === "generation" ? `/api/media/${encodeURIComponent(asset.value.id)}?download=1` : `/api/uploads/${encodeURIComponent(asset.value.id)}?download=1`;
   return (
