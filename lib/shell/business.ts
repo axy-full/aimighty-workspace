@@ -243,10 +243,15 @@ export const PRESET_KEY = "particl-business-preset";
 export const PRESET_TTL_MS = 120_000;
 export type BusinessPage = "ads" | "dtc";
 export type SetupPreset = { page: BusinessPage; type: SetupType; id: string; name: string; at: number };
-/** What each page can take from Setup. */
+/**
+ * What each page can take from Setup. Image ads runs Marketing Studio Image
+ * on Particl's API key (lib/shell/image-ads.ts): its stills are this
+ * project's own, so it takes nothing from the connected account's setup, and
+ * Setup offers no "Use in Image ads".
+ */
 export const PRESET_TYPES: Record<BusinessPage, readonly SetupType[]> = {
   ads: ["avatar", "product", "hook", "setting", "ad_reference"],
-  dtc: ["product", "brand_kit", "image_style"],
+  dtc: [],
 };
 const PRESET_ID = /^[A-Za-z0-9_-]{1,200}$/;
 export function presetFor(item: SetupItem, page: BusinessPage, now: number): SetupPreset {

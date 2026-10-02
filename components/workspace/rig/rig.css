@@ -6,7 +6,8 @@
 .pxw .pxw-rig-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 11px; margin-bottom: 3px; background: transparent; border: 1px solid transparent; }
 .pxw .pxw-rig-row:hover { background: var(--pxw-row-hover); }
 .pxw .pxw-rig-row[aria-pressed="true"] { background: var(--pxw-blue-selected-row); border-color: var(--pxw-selected); }
-.pxw .pxw-rig-num { width: 22px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-faintest); }
+/* Labels on the Rig (numbers, notes, metas, hints) read at the #7C7C84 floor: the brief's floor, never the design's fainter greys. */
+.pxw .pxw-rig-num { width: 22px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-label-floor); }
 .pxw .pxw-rig-head .pxw-rig-num { font-size: 9.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-rig-thumb-col { width: 58px; flex: none; }
 .pxw .pxw-rig-thumb { width: 58px; height: 33px; border-radius: 6px; overflow: hidden; position: relative; display: flex; flex-direction: column; flex: none; }
@@ -19,7 +20,7 @@
 .pxw .pxw-rig-row[aria-pressed="true"] .pxw-rig-name { color: var(--pxw-primary); }
 .pxw .pxw-rig-role-line { display: flex; align-items: center; gap: 7px; margin-top: 3px; min-width: 0; }
 .pxw .pxw-rig-role { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11.5px; white-space: nowrap; }
-.pxw .pxw-rig-note { flex: 1; min-width: 0; font-size: 12px; color: var(--pxw-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-rig-note { flex: 1; min-width: 0; font-size: 12px; color: var(--pxw-label-floor); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-look { width: 130px; flex: none; font-size: 12px; color: var(--pxw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-engine { width: 96px; flex: none; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-rig-dur { width: 44px; flex: none; text-align: right; font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
@@ -53,10 +54,11 @@
 .pxw .pxw-graph-node[data-shape="flow"] { padding: 13px; }
 .pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1); }
 .pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
-.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer) { pointer-events: none; position: relative; }
+.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer):not(.pxw-graph-live) { pointer-events: none; position: relative; }
 .pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
 .pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
-.pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
+/* A card's kicker and footer are labels people read (its type, version, state and role): at the label floor, never under it. */
+.pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-label-floor); }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
 /* A reference's kind (Cast, Environment, Element, Ref) is a label people read and act on: above the label floor. */
 .pxw .pxw-graph-kind { color: var(--pxw-muted); }
@@ -72,24 +74,73 @@
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-title,
 .pxw .pxw-graph-node[data-shape="operator"] .pxw-graph-title { font-weight: 560; margin-top: 9px; }
 .pxw .pxw-graph-node[data-selected] .pxw-graph-title { font-size: 13.5px; font-weight: 580; }
-.pxw .pxw-graph-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--pxw-faint); line-height: 1.4; margin-top: 4px; }
-.pxw .pxw-graph-node[data-selected] .pxw-graph-desc { color: var(--pxw-dimmer); }
+.pxw .pxw-graph-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--pxw-label-floor); line-height: 1.4; margin-top: 4px; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-desc { color: var(--pxw-muted); }
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-desc { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 6px; }
 .pxw .pxw-graph-readouts { display: flex; gap: 6px; margin-top: 10px; }
 .pxw .pxw-graph-readouts > span { flex: 1; display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 7px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
 .pxw .pxw-graph-readouts > span > span:last-child { color: var(--pxw-near-primary); }
-.pxw .pxw-graph-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-graph-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-graph-port { position: absolute; top: 50%; width: 11px; height: 11px; margin-top: -5.5px; border-radius: 50%; background: var(--pxw-ground); border: 1.5px solid var(--pxw-hover-border); z-index: 1; }
 .pxw .pxw-graph-port--in { left: -6px; }
 .pxw .pxw-graph-port--out { right: -6px; }
 .pxw .pxw-graph-port:hover,
 .pxw .pxw-graph-port[data-armed] { border-color: var(--pxw-blue); background: var(--pxw-blue-selected-row); }
 .pxw .pxw-graph-status { margin: 0 0 12px; font-size: 12px; color: var(--pxw-amber-ink); }
-.pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-faint); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
+.pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-label-floor); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
+
+/* ── The board: every card its shape's height, sections, notes, the add buttons (lib/workspace/rig-board.ts) ── */
+/* The height is set on the card (rig-graph CARD_HEIGHT, which the server's Tidy lays out by): the words give way, the footer keeps the bottom. */
+.pxw .pxw-graph-node { box-sizing: border-box; }
+.pxw .pxw-graph-node > .pxw-graph-kicker,
+.pxw .pxw-graph-node > .pxw-graph-media,
+.pxw .pxw-graph-node > .pxw-graph-title,
+.pxw .pxw-graph-node > .pxw-graph-readouts,
+.pxw .pxw-graph-node > .pxw-graph-foot { flex: none; }
+.pxw .pxw-graph-desc { flex: 0 1 auto; min-height: 0; -webkit-line-clamp: 2; }
+.pxw .pxw-graph-foot { margin-top: auto; padding-top: 8px; min-width: 0; }
+.pxw .pxw-graph-kicker-label { display: inline-flex; gap: 7px; min-width: 0; }
+.pxw .pxw-graph-code { color: var(--pxw-muted); }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-code { color: #7fb6ff; }
+.pxw .pxw-graph-state { flex: none; color: var(--pxw-muted); font-weight: 560; }
+.pxw .pxw-graph-state[data-tone="red"] { color: var(--pxw-red-ink); }
+.pxw .pxw-graph-detail { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-graph-state + .pxw-graph-detail::before { content: "·"; margin-right: 6px; }
+/* A note is its words: more of them show, as written (line breaks kept). */
+.pxw .pxw-graph-node[data-shape="text"] .pxw-graph-note-text { -webkit-line-clamp: 5; white-space: pre-line; overflow-wrap: anywhere; }
+.pxw .pxw-graph-placeholder { color: var(--pxw-label-floor); font-style: normal; }
+/* The pencil on a note or a section title; the words it edits, in place. */
+.pxw .pxw-graph-edit { position: absolute; top: 6px; right: 6px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border-radius: 8px; border: 1px solid var(--pxw-control-border); background: var(--pxw-control); color: var(--pxw-muted); cursor: pointer; }
+.pxw .pxw-graph-edit:hover { color: var(--pxw-primary); border-color: var(--pxw-blue); }
+.pxw .pxw-graph-editor { position: relative; z-index: 2; display: block; box-sizing: border-box; width: 100%; flex: 1 1 auto; min-height: 0; margin-top: 6px; padding: 6px 8px; resize: none; border-radius: 8px; border: 1px solid var(--pxw-blue); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 12.5px; line-height: 1.5; outline: none; cursor: text; }
+/* A section title: a heading on the board, not a card — its name, what it holds, and a rule that spans its columns. */
+.pxw .pxw-graph-node[data-section],
+.gx .pxw .pxw-graph-node[data-section] { justify-content: flex-end; padding: 0 40px 8px 2px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.16); border-radius: 0; box-shadow: none; backdrop-filter: none; }
+.pxw .pxw-graph-node[data-section][data-selected],
+.gx .pxw .pxw-graph-node[data-section][data-selected] { background: rgba(10, 132, 255, 0.08); border: 0; border-bottom: 1.5px solid var(--pxw-blue); border-radius: 8px 8px 0 0; box-shadow: none; }
+.pxw .pxw-graph-node[data-section] .pxw-graph-hit { border-radius: 8px 8px 0 0; }
+.pxw .pxw-graph-node[data-section] .pxw-graph-edit { top: 4px; }
+.pxw .pxw-graph-section-name { display: block; font-size: 20px; font-weight: 620; line-height: 1.2; letter-spacing: -0.02em; color: var(--pxw-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-graph-section-count { display: block; margin-top: 3px; font-family: var(--pxw-mono); font-size: 11px; letter-spacing: 0.08em; color: var(--pxw-label-floor); }
+.pxw .pxw-graph-node[data-section] .pxw-graph-editor { flex: none; height: 30px; margin: 0; padding: 2px 6px; font-size: 18px; font-weight: 600; line-height: 1.2; }
+/* Add to the board: a pill at the board's top-left, clear of the zoom cluster at its bottom-right. */
+.pxw .pxw-graph-tools-strip { position: absolute; left: 12px; top: 12px; z-index: 7; }
+.pxw .pxw-graph-tools { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
+.pxw .pxw-graph-tools button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; cursor: pointer; }
+.pxw .pxw-graph-tools button:hover { background: rgba(255, 255, 255, 0.08); }
+.pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
+@media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
+/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in app/production.css, whose 44 px rules stop at
+   759 px wide): on any touch screen, a landscape phone included, its head link, group chips and "+" are thumb-sized targets. */
+@media (pointer: coarse) {
+  .gx .pxw-rig-library .pxw-rig-library-head .pxw-link-button,
+  .gx .pxw-rig-library .pxw-rig-library-groups button { min-height: 44px; min-width: 44px; }
+  .gx .pxw-rig-library .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
+}
 
 /* ── Inspector: shot ──────────────────────────────────────────────────── */
 .pxw .pxw-insp-output { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
-.pxw .pxw-insp-output-label { font-size: 11.5px; color: var(--pxw-faint); }
+.pxw .pxw-insp-output-label { font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-preview { position: relative; aspect-ratio: 16 / 9; border-radius: 11px; overflow: hidden; display: flex; flex-direction: column; background: var(--pxw-control); }
 .pxw .pxw-insp-preview > span:not(.pxw-insp-playhead) { display: block; }
 .pxw .pxw-insp-preview > video,
@@ -103,20 +154,20 @@
 .pxw .pxw-insp-tabs .pxw-seg-item { padding: 6px; font-size: 12.5px; font-weight: 530; gap: 6px; }
 .pxw .pxw-insp-tab-count { font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-kicker-row { display: flex; align-items: baseline; justify-content: space-between; margin: 20px 0 10px; }
-.pxw .pxw-insp-owner { font-size: 11.5px; color: var(--pxw-faint); }
+.pxw .pxw-insp-owner { font-size: 11.5px; color: var(--pxw-label-floor); }
 .pxw .pxw-insp-section { display: block; margin: 20px 0 10px; }
 .pxw .pxw-insp-fieldcard { border-radius: 11px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); overflow: hidden; margin-bottom: 11px; }
 .pxw .pxw-insp-fieldcard-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--pxw-inner-rule); font-size: 12.5px; color: var(--pxw-muted); }
 .pxw .pxw-insp-fieldcard-head > span:last-child { color: var(--pxw-near-primary); }
 .pxw .pxw-insp-fieldcard textarea { width: 100%; display: block; padding: 11px 12px; background: transparent; border: none; font-size: 13px; line-height: 1.5; outline: none; color: var(--pxw-primary); }
-.pxw .pxw-insp-fieldcard textarea::placeholder { color: var(--pxw-faintest); }
+.pxw .pxw-insp-fieldcard textarea::placeholder { color: var(--pxw-label-floor); }
 .pxw .pxw-insp-field { margin-bottom: 11px; }
 .pxw .pxw-insp-pair { display: flex; gap: 9px; }
 .pxw .pxw-insp-pair > * { flex: 1; min-width: 0; }
 .pxw .pxw-insp-estimate { padding: 11px 12px; border-radius: 10px; background: #0a0e14; border: 1px solid #16212e; }
 .pxw .pxw-insp-estimate-row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--pxw-dimmer); }
 .pxw .pxw-insp-estimate-value { font-family: var(--pxw-mono); font-size: 15px; font-weight: 620; color: var(--pxw-blue-ink); }
-.pxw .pxw-insp-estimate-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faintest); margin-top: 6px; }
+.pxw .pxw-insp-estimate-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-label-floor); margin-top: 6px; }
 .pxw .pxw-insp-generate { width: 100%; text-align: center; margin-top: 11px; padding: 10px; border-radius: 10px; background: var(--pxw-blue); color: #fff; font-size: 13px; font-weight: 570; }
 .pxw .pxw-insp-generate:hover:not(:disabled) { background: var(--pxw-blue-hover); }
 .pxw .pxw-insp-generate:disabled { background: var(--pxw-control); color: var(--pxw-dimmer); border: 1px solid var(--pxw-control-border); }
@@ -127,9 +178,9 @@
 .pxw .pxw-insp-row-thumb > span { flex: 1; display: block; }
 .pxw .pxw-insp-row-text { flex: 1; min-width: 0; }
 .pxw .pxw-insp-row-name { display: block; font-size: 12.5px; font-weight: 530; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pxw .pxw-insp-row-kind { display: block; font-size: 11px; color: var(--pxw-faint); margin-top: 2px; }
+.pxw .pxw-insp-row-kind { display: block; font-size: 11px; color: var(--pxw-label-floor); margin-top: 2px; }
 .pxw .pxw-insp-row-v { font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-label-floor); flex: none; }
-.pxw .pxw-insp-add { border: 1px dashed var(--pxw-dashed); border-radius: 11px; padding: 16px; text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--pxw-faint); line-height: 1.5; text-wrap: pretty; }
+.pxw .pxw-insp-add { border: 1px dashed var(--pxw-dashed); border-radius: 11px; padding: 16px; text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--pxw-label-floor); line-height: 1.5; text-wrap: pretty; }
 .pxw .pxw-insp-add > a { display: inline-block; margin-top: 9px; font-size: 13px; font-weight: 570; color: var(--pxw-blue-ink); }
 .pxw .pxw-insp-version { display: flex; align-items: center; gap: 11px; padding: 10px 11px; border-radius: 10px; margin-bottom: 6px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); }
 .pxw .pxw-insp-version[data-current] { border-color: var(--pxw-selected); }
@@ -137,7 +188,7 @@
 .pxw .pxw-insp-version[data-current] .pxw-insp-version-v { color: var(--pxw-blue-ink); }
 .pxw .pxw-insp-version[data-state="failed"] .pxw-insp-version-label { color: var(--pxw-red-ink); }
 .pxw .pxw-insp-version-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faint); flex: none; }
+.pxw .pxw-insp-version-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-label-floor); flex: none; }
 @media (max-width: 759px) { .pxw .pxw-insp-version .pxw-link-button { min-height: 44px; } }
 
 /* ── Inspector: a card that is not a shot (a reference, a note, a look board) ── */
@@ -159,6 +210,26 @@
 .pxw .pxw-card-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .pxw .pxw-card-users > .pxw-link-button { font-size: 12.5px; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── Card Inspector: the master lock and the cut-out ── */
+.pxw [data-section="master"] .pxw-inspector-note,
+.pxw [data-section="cutout"] .pxw-inspector-note,
+.pxw [data-testid="card-lock-history"] .pxw-inspector-note { margin-top: 6px; }
+.pxw .pxw-master-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; }
+.pxw .pxw-master-badge { font-family: var(--pxw-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pxw-amber-ink); }
+.pxw .pxw-master-by { font-size: 12px; color: var(--pxw-muted); overflow-wrap: anywhere; }
+/* Full width, and the words wrap rather than run off a narrow Inspector: an action with a price is never cut. */
+.pxw .pxw-master-button { margin-top: 10px; width: 100%; justify-content: center; white-space: normal; text-align: center; }
+.pxw .pxw-master-unlock { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.pxw .pxw-master-label { font-size: 12px; color: var(--pxw-muted); }
+.pxw .pxw-master-unlock textarea { width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13px; line-height: 1.45; }
+.pxw .pxw-master-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.pxw .pxw-master-actions > .pxw-btn { white-space: normal; text-align: center; justify-content: center; }
+.pxw .pxw-lock-event .pxw-lock-line { white-space: normal; overflow-wrap: anywhere; }
+.pxw .pxw-cutout-quote { margin-top: 6px; }
+.pxw .pxw-cutout-price { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-body); overflow-wrap: anywhere; }
+/* A locked master says so on its card, in the kind's own colour. */
+.pxw .pxw-graph-master { color: inherit; }
+
 /* Delete shot: quiet until needed, red when it matters. */
 .pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
@@ -174,6 +245,20 @@
 .pxw .pxw-team[data-mode="live"] .pxw-team-dot { background: #30D158; box-shadow: 0 0 0 3px rgba(48, 209, 88, .18); }
 .pxw .pxw-team-peer { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); color: var(--pxw-text, #fff); }
 .pxw .pxw-team-peer i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; }
+/* An old board coming across (components/workspace/rig/RigImport.tsx): what is happening, then what came across. */
+.pxw .pxw-import { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--pxw-control-border); background: var(--pxw-card); }
+.pxw .pxw-import-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--pxw-atomik-gold); }
+.pxw .pxw-import[data-phase="done"] .pxw-import-dot { background: #30D158; }
+.pxw .pxw-import[data-phase="failed"] .pxw-import-dot { background: #FF6961; }
+.pxw .pxw-import-text { flex: 1 1 220px; min-width: 0; }
+.pxw .pxw-import-line { margin: 0; font-size: 13px; line-height: 1.45; color: var(--pxw-primary); overflow-wrap: anywhere; }
+.pxw .pxw-import-note { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--pxw-muted); overflow-wrap: anywhere; }
+.pxw .pxw-import-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.pxw .pxw-import-actions > .pxw-btn { min-height: 36px; justify-content: center; }
+@media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-import-actions > .pxw-btn { min-height: 44px; min-width: 44px; font-size: 13px; }
+  .pxw .pxw-import-note { font-size: 12px; }
+}
 
 /* ── Phones and touch (the Suites are the site on every device) ──────────
    The shot list stacks instead of forcing the design's 800px table, and the
@@ -206,7 +291,14 @@
   .pxw .pxw-graph-kicker,
   .pxw .pxw-graph-badge,
   .pxw .pxw-graph-readouts > span,
+  .pxw .pxw-graph-section-count,
   .pxw .pxw-graph-foot { font-size: 12px; }
+  /* The board's own buttons are thumb-sized, and a field never makes a phone zoom in. */
+  .pxw .pxw-graph-edit { width: 44px; height: 44px; top: 2px; right: 2px; }
+  .pxw .pxw-graph-node[data-section],
+  .gx .pxw .pxw-graph-node[data-section] { padding-right: 50px; }
+  .pxw .pxw-graph-node[data-section] .pxw-graph-edit { top: 2px; }
+  .pxw .pxw-graph-editor { font-size: 16px; }
   .pxw .pxw-graph-node .pxw-graph-port,
   .gx .pxw .pxw-graph-node .pxw-graph-port { width: 44px; height: 44px; margin-top: -22px; border: 16.5px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1.5px var(--pxw-hover-border); }
   /* The glass port's blur (app/glass.css) paints the whole border box: over a 44px target it is a frosted halo, not a dot. */
@@ -248,6 +340,11 @@
   .pxw [data-inspector-body="node"] .pxw-insp-version-v,
   .pxw [data-inspector-body="node"] .pxw-insp-version-meta { font-size: 12px; }
   .pxw [data-inspector-body="node"] button { min-height: 44px; min-width: 44px; }
+  /* A phone keyboard never zooms the page to type a reason. */
+  .pxw [data-inspector-body="node"] textarea { font-size: 16px; min-height: 64px; }
+  .pxw [data-inspector-body="node"] .pxw-master-badge,
+  .pxw [data-inspector-body="node"] .pxw-master-by,
+  .pxw [data-inspector-body="node"] .pxw-master-label { font-size: 12px; }
   .pxw [data-inspector-body="shot"] select,
   .pxw [data-inspector-body="shot"] input,
   .pxw [data-inspector-body="shot"] textarea { font-size: 16px; }
@@ -263,6 +360,29 @@
 .pxw .pxw-agent-kicker { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: .13em; color: var(--pxw-label-floor); }
 .pxw .pxw-agent-state { font-size: 13px; font-weight: 600; color: var(--pxw-primary); }
 .pxw .pxw-agent-free { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--pxw-green-ink); background: var(--pxw-green-tint); }
+/* What a run has spent of its limit: a price is never cut short, so the chip wraps to its own line instead. */
+.pxw .pxw-agent-spend { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--pxw-primary); background: rgba(255, 255, 255, .06); border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-agent-limit, .pxw .pxw-agent-raise { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.pxw .pxw-agent-limit-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--pxw-secondary); white-space: nowrap; }
+.pxw .pxw-agent-number { width: 96px; min-height: 34px; box-sizing: border-box; padding: 0 8px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.pxw .pxw-agent-mode { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pxw .pxw-agent-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pxw .pxw-agent-option { min-height: 34px; padding: 4px 12px; border-radius: 9px; border: 1px solid var(--pxw-control-border); background: transparent; color: var(--pxw-secondary); font: inherit; font-size: 13px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.pxw .pxw-agent-option[aria-checked="true"] { border-color: var(--pxw-blue); background: var(--pxw-blue-tint); color: var(--pxw-primary); font-weight: 600; }
+.pxw .pxw-agent-option:hover:not([aria-checked="true"]) { background: rgba(255, 255, 255, .06); }
+.pxw .pxw-agent-money { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-secondary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pxw .pxw-agent-money > span { white-space: nowrap; }
+.pxw .pxw-agent-mode-line { color: var(--pxw-muted); }
+.pxw .pxw-agent-needs { margin: 0; padding: 8px 10px; border-radius: 9px; font-size: 12.5px; line-height: 1.45; color: var(--pxw-amber-ink); background: var(--pxw-amber-tint); overflow-wrap: anywhere; }
+.pxw .pxw-agent-renders { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pxw .pxw-agent-render { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--pxw-card-border); min-width: 0; }
+.pxw .pxw-agent-render[data-state="paused"], .pxw .pxw-agent-render[data-state="waiting"] { border-color: var(--pxw-blue-tint-border); }
+.pxw .pxw-agent-render-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; min-width: 0; }
+.pxw .pxw-agent-render-title { font-size: 13px; font-weight: 600; color: var(--pxw-primary); overflow-wrap: anywhere; min-width: 0; }
+.pxw .pxw-agent-render-price { font-size: 12.5px; font-weight: 600; color: var(--pxw-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pxw .pxw-agent-render[data-state="done"] .pxw-agent-render-price { color: var(--pxw-green-ink); }
+.pxw .pxw-agent-render-state { margin: 0; font-size: 12.5px; color: var(--pxw-muted); overflow-wrap: anywhere; }
+.pxw .pxw-agent-render[data-state="failed"] .pxw-agent-render-state { color: var(--pxw-amber-ink); }
 .pxw .pxw-agent-body, .pxw .pxw-agent-last, .pxw .pxw-agent-proposal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pxw .pxw-agent-body { gap: 8px; }
 .pxw .pxw-agent-proposal { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--pxw-blue-tint-border); background: var(--pxw-blue-tint); }
@@ -299,5 +419,8 @@
 @media (max-width: 767px), (pointer: coarse) {
   .pxw .pxw-agent-primary, .pxw .pxw-agent-quiet { min-height: 44px; min-width: 44px; }
   /* 16px keeps a phone from zooming into the field. */
-  .pxw .pxw-agent-goal { font-size: 16px; }
+  .pxw .pxw-agent-goal, .pxw .pxw-agent-number { font-size: 16px; }
+  .pxw .pxw-agent-number { min-height: 44px; }
+  .pxw .pxw-agent-option { min-height: 44px; min-width: 44px; flex: 1 1 140px; }
+  .pxw .pxw-agent-primary { white-space: normal; text-align: center; }
 }

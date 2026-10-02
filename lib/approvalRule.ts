@@ -17,6 +17,22 @@ export function cleanShotCap(v: unknown): number {
   return Number.isFinite(n) && n >= 1 ? Math.min(n, 1_000_000) : 50;
 }
 
+/**
+ * SOW §7A guardrail 4, the platform's approval line: any single job estimated above this price needs the
+ * workspace's cost approval rule, whatever the workspace's own setting. It is a price, so in credits it
+ * follows the price of a credit (the SOW's "200 cr" is this line at a credit's US$0.10), and the same
+ * line reads as fewer credits when a credit costs more.
+ * Its single source: change the line here. Atomik's Rig runs use it as the most one job may cost without
+ * asking (lib/workbench/rig-agent-limits.ts); nothing else enforces it yet.
+ */
+export const JOB_APPROVAL_LINE_USD = 20;
+
+/** Guardrail 4 in credits at a price of a credit, in whole tenths (rounded down: a job exactly at the line is not above it). */
+export function jobApprovalLineCredits(perCredit: number): number {
+  if (!(Number.isFinite(perCredit) && perCredit > 0)) return 0;
+  return Math.floor((JOB_APPROVAL_LINE_USD / perCredit) * 10 + 1e-9) / 10;
+}
+
 /** What the composer says under the price, or nothing when anyone may press. */
 export function ruleLine(rule: ApprovalRule, cap: number, credits: (n: number) => string): string {
   if (rule === "cap") return `Over ${credits(cap)} on a shot needs an admin.`;

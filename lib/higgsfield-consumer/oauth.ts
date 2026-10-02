@@ -107,8 +107,8 @@ export function consumerClientMetadata() {
     token_endpoint_auth_method: "none",
   };
 }
-/** Back to Workspace › Engines in the Suites shell, where the connection is made (components/graphite/ConnectedAccountRow.tsx). */
-export function consumerCallbackLocation(code: "connected" | ErrorCode) {
+/** Back to Workspace › Engines in the Suites shell, which shows the account's row (components/graphite/ConnectedAccountRow.tsx). Since the sign-in was retired the callback only ever says `retired`. */
+export function consumerCallbackLocation(code: "connected" | "retired" | ErrorCode) {
   return `${consumerConfiguration().origin}/suites?view=workspace&tab=engines&higgsfield=${encodeURIComponent(code)}`;
 }
 export const consumerSessionHash = hashConsumerSecret;

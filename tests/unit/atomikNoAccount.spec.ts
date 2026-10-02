@@ -152,15 +152,13 @@ test("no Atomik code calls the connected step route, the recipes route or the ac
   expect(client).not.toMatch(/readConnectedWorkflow|workflowRead|get_workflow_bundle_file/);
 });
 
-test("the plans Atomik runs on a page never quote, submit or poll on the account", async () => {
+test("the plans Atomik runs on a page never read, quote, submit or poll on the account", async () => {
   const { PLANS, PLAN_PAGES } = await import("../../lib/workspace/plans");
   for (const page of PLAN_PAGES)
-    for (const item of PLANS[page].steps) {
-      const route = item.executor.backend.path;
-      if (!route.includes("/api/higgsfield/consumer/")) continue;
-      /* Only Compare still reads results already kept on the project, with a GET. */
-      expect(`${page} ${item.executor.backend.method}`, item.label).toBe("compare GET");
-    }
+    for (const item of PLANS[page].steps)
+      expect(item.executor.backend.path, `${page}: ${item.label}`).not.toContain("/api/higgsfield/consumer/");
+  /* Compare reads the takes kept in the project's Library, the account's past runs among them, with a GET. */
+  expect(PLANS.compare.steps[0].executor.backend).toEqual({ method: "GET", path: "/api/workbench/library?source=generations" });
   /* Motion Transfer and Object Swap run on the API-key transform engines through /api/generate. */
   for (const page of ["motion", "swap"] as const) {
     const paths = PLANS[page].steps.map((item) => item.executor.backend.path);

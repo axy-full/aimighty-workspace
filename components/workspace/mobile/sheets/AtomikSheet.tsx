@@ -6,7 +6,7 @@ import { formatCredits } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import type { MobileSheetBodyProps } from "./registry";
-import { ownerBadgeNote, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
+import { ACCOUNT_RETIRED, runsOnOwnerAccount } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 
 /**
@@ -106,7 +106,7 @@ export function AtomikSheet({}: MobileSheetBodyProps) {
       {run?.status === "failed" && run.error ? <p className="pxm-problem" role="alert">{run.error}</p> : null}
       {atomik.state.notice && !run ? <p className="pxm-problem" role="alert">{atomik.state.notice}</p> : null}
 
-      {ownerRun ? <p className="pxm-plan-reason" data-testid="atomik-owner-run">{ownerBadgeNote(capability.ownerName)}.</p> : plan ? (
+      {ownerRun ? <p className="pxm-plan-reason" data-testid="atomik-owner-run">{ACCOUNT_RETIRED}.</p> : plan ? (
         <div className="pxm-plan-foot">
           <span className="pxm-plan-price" data-paid={plan.paid || undefined} data-testid="mobile-atomik-price">{priceText(plan, run)}</span>
           <span className="pxm-grow" />

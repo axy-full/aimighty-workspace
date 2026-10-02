@@ -21,6 +21,7 @@ import { useConfirm } from "@/lib/shell/use-confirm";
 import { generationRequestBody } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import type { SoulIdentity } from "@/lib/workbench/soul-identity";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
@@ -37,7 +38,7 @@ import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
 
 const EMPTY: Cast = { entries: [] };
-type Generation = { id: string; status: string; error?: string | null; creditsBilled?: number | null; params?: unknown };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null; params?: unknown };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
 const modelLabel = (id: string | null | undefined) => { try { return id ? getModel(id).label : "Soul"; } catch { return "Soul"; } };
 

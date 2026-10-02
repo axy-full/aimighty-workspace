@@ -471,6 +471,33 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_versions_attr ON attribute_versions(attribute_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_versions_element ON attribute_versions(element_id)`,
+  /* Every lock and unlock of an element, append-only (the agentic Rig's
+     locked masters, lib/masters.ts). The element row keeps only its last
+     state; this keeps the history the SOW asks for ("explicit and logged"):
+     who, when, why (an unlock always says why), whether Atomik did it and
+     for which run, and a snapshot of what the lock froze, each attribute's
+     current version with the sha256 of its source, so a source that changed
+     under a lock can be told. Rows are only ever added. */
+  `CREATE TABLE IF NOT EXISTS element_lock_events (
+     id            TEXT PRIMARY KEY,
+     element_id    TEXT NOT NULL,
+     /* lock | unlock */
+     action        TEXT NOT NULL,
+     /* the person: their user id (for Atomik, the person it acted for, or '') */
+     by_user       TEXT NOT NULL DEFAULT '',
+     by_name       TEXT NOT NULL DEFAULT '',
+     /* 'atomik' when Atomik did it, else NULL */
+     agent         TEXT,
+     agent_run     TEXT,
+     reason        TEXT NOT NULL DEFAULT '',
+     /* {attributeId: {versionId, sha256, kind}} */
+     snapshot      TEXT NOT NULL DEFAULT '{}',
+     /* the canvas card it was locked from, when it was */
+     production_id TEXT,
+     node_id       TEXT,
+     at            INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_lock_events_element ON element_lock_events(element_id, at)`,
   /* What one shot points at. A wire lands on a slot, not on a node, so the
      slot and its ordinal are the address: a shot holding two characters has
      character 0 and character 1, and each is bound on its own.
@@ -900,6 +927,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("users", `deleted_at INTEGER`);
       // What this person wants to be told about, in this workspace (brief 2.7).
       await addColumn("users", `notify TEXT`);
+      // The sha256 of a version's source, recorded the first time a master lock
+      // froze it (lib/masters.ts): null until then, never rewritten after.
+      await addColumn("attribute_versions", `sha256 TEXT`);
       // What a person handed the agent with a message, and what a step carries forward.
       await addColumn("atomik_messages", `attachments TEXT`);
       await addColumn("atomik_messages", `effort TEXT`);
@@ -1089,6 +1119,10 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          only; every existing one needs the ALTER. */
       await addColumn("ledger_checks", `balance_credits INTEGER`);
       await addColumn("ledger_checks", `spend_credits INTEGER`);
+      /* An old Rig board opened in the new Rig (lib/workbench/board-import.ts): when its cards last came across, and
+         the production whose team canvas holds them. The board's own nodes, wires and updated_at are never written. */
+      await addColumn("boards", `imported_at INTEGER`);
+      await addColumn("boards", `imported_to TEXT`);
       if (opts.legacy) {
       /* Re-assert the super admin on every boot. A guarantee checked only at
          the point of use can be undone by a direct database edit or a bug in

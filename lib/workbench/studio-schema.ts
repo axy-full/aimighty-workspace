@@ -22,6 +22,9 @@ const cinemaControlsSchema = z.object(Object.fromEntries(CINEMA_STUDIO_CONTROLS.
 /** The most a reserved node field (master, verify, agent) may hold, as JSON. */
 export const RESERVED_NODE_FIELD_CHARS = 8000;
 const reservedFits = (value: unknown) => JSON.stringify(value).length <= RESERVED_NODE_FIELD_CHARS;
+/** An imported card's record of the old board's inputs into it: at most as many as an old board could hold wires (lib/boards.ts). */
+export const IMPORTED_INPUTS = 400;
+export const IMPORTED_NODE_FIELD_CHARS = 64_000;
 const asset = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -110,6 +113,19 @@ const node = z.object({
   mode: z.string().max(100).optional(),
   status: z.enum(["draft", "review", "approved"]).optional(),
   activeInput: z.string().max(100).optional(),
+  /* A card brought across from an old Rig board, written only by its import (lib/workbench/board-import-model.ts): where
+     the card came from and the old board's inputs into it already handled. Bounded, and never media: a draft save checks
+     every media reference a card holds. */
+  imported: z.looseObject({
+    board: z.string().max(100).optional(),
+    node: z.string().max(200).optional(),
+    kind: z.string().max(40).optional(),
+    element: z.string().max(40).optional(),
+    shot: z.string().max(100).optional(),
+    dx: z.number().finite().optional(),
+    dy: z.number().finite().optional(),
+    inputs: z.array(z.looseObject({ from: z.string().max(200), slot: z.string().max(120).optional(), held: z.string().max(200).optional() })).max(IMPORTED_INPUTS).optional(),
+  }).refine((value) => JSON.stringify(value).length <= IMPORTED_NODE_FIELD_CHARS).optional(),
   /* The agentic Rig (owner, 28 September). Declared before anything writes them: this object drops a key it does not
      declare, the team canvas saves what it parsed, and a field an edit names but the parse dropped is taken off the
      canvas (team-canvas-model nodeAfterEdit), so an undeclared field would be lost on the first save. */
@@ -125,6 +141,10 @@ const node = z.object({
     last: z.looseObject({ id: z.string().max(200).optional(), takeId: z.string().max(200).optional(), verdict: z.string().max(40).optional(), at: z.number().finite().optional() }).optional(),
   }).refine(reservedFits).optional(),
   agent: z.looseObject({ runId: z.string().max(200).optional(), key: z.string().max(200).optional() }).refine(reservedFits).optional(),
+  /* The Rig board's sections (lib/workspace/rig-board.ts): the section title card a person filed this card under.
+     Declared before anything writes it, for the same reason as the fields above. A section title itself is a `note`
+     card whose `mode` is "section" (a free string already), so it needs no field of its own. */
+  section: z.string().min(1).max(100).optional(),
   /* Rig shot fields (optional; absent on every older draft). Shape only here:
      the catalogue clamp lives in lib/workspace so a catalogue change can never
      make an existing draft unsaveable. */

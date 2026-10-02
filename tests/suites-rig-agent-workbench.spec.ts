@@ -66,7 +66,7 @@ const kindsOn = async (tab: Page) => {
 const canvasOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, CanvasNode>; removedIds: string[]; serverMade: Record<string, string> } | null };
 const agentOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
-  (await api.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1`, { headers }).then((r) => r.json())) as { agent: { enabled: boolean; run: { id: string; state: string; proposal: { fingerprint: string } | null; built: { cards: number; wires: number }; undo: { removed: number; kept: number } | null; credits: number } | null } };
+  (await api.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1`, { headers }).then((r) => r.json())) as { agent: { enabled: boolean; run: { id: string; state: string; proposal: { fingerprint: string } | null; built: { cards: number; wires: number }; undo: { removed: number; kept: number } | null; credits: number } | null; ask?: unknown } };
 const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
 /** Every text in the run card at 12px or more. */
 const smallInCard = (tab: Page) => tab.evaluate(() => {
@@ -117,11 +117,16 @@ test("ask Atomik for a board: it proposes the cards and wires, free; approved, t
   for (const tab of [page, second]) await expect.poll(() => cardIds(tab), { timeout: 30_000 }).toEqual(["theirs"]);
   await expect.poll(async () => Object.keys((await canvasOf(page.request, headers, productionId)).canvas?.nodes ?? {})).toEqual(["theirs"]);
 
-  /* Ask. The card says building is free before anything is asked. */
+  /* Ask. The card says what asking costs before anything is asked: planning is priced into a limit the person sets
+     (the workspace's approval line by default); placing cards is free. */
   const card = page.getByTestId("rig-agent");
   await expect(card).toBeVisible();
-  await expect(card.getByTestId("rig-agent-free")).toHaveText("Free");
   await expect(card.getByTestId("rig-agent-state")).toHaveText("Build the board");
+  await expect(card.getByTestId("rig-agent-terms")).toContainText("Planning is priced and counts toward this limit (up to about ");
+  await expect(card.getByTestId("rig-agent-terms")).toContainText("Placing cards is free.");
+  await expect(card.getByTestId("rig-agent-propose")).toHaveText(/^Propose a board · up to about [\d.,]+ cr$/);
+  await expect(card.getByTestId("rig-agent-limit")).not.toHaveValue("");
+  await expect(card.getByTestId("rig-agent-mode-ask")).toHaveAttribute("aria-checked", "true");
   await floors(page, "ask", phone);
   await (await reach(page, "rig-agent-goal")).fill("The captain on the pier at dawn, two shots.");
   await (await reach(page, "rig-agent-propose")).click();
@@ -146,14 +151,15 @@ test("ask Atomik for a board: it proposes the cards and wires, free; approved, t
 
   /* Approve: the build lands step by step, and both windows show it. */
   await (await reach(page, "rig-agent-approve")).click();
-  await expect(card.getByTestId("rig-agent-built")).toHaveText("Built · 4 cards · 4 wires · free", { timeout: 30_000 });
   for (const tab of [page, second]) {
-    await expect.poll(async () => (await cardIds(tab)).length, { timeout: 20_000 }).toBe(5);
+    await expect.poll(async () => (await cardIds(tab)).length, { timeout: 30_000 }).toBe(5);
     await expect.poll(() => kindsOn(tab)).toEqual(["CAST", "ENVIRONMENT"]);
   }
   await expect(second.getByTestId("rig-team-agent")).toContainText("Atomik · built on the board", { timeout: 15_000 });
-  /* The priced renders stay a next step: shown, never run. */
-  await expect(card.getByTestId("rig-agent-next")).toHaveText("Next: render 2 shots · priced, each one approved first");
+  /* Then the first render is priced and waits for the person who asked: nothing renders without that tap. */
+  await expect(card.getByTestId("rig-agent-state")).toHaveText("Needs you", { timeout: 30_000 });
+  await expect(card.getByTestId("rig-agent-renders").locator("li[data-tool='render']").first()).toHaveAttribute("data-state", "waiting");
+  await expect(card.getByTestId("rig-agent-render")).toHaveText(/^Render · about [\d.,]+ cr$/);
   const built = await canvasOf(page.request, headers, productionId);
   const made = Object.entries(built.canvas!.serverMade).filter(([, by]) => by.startsWith("agent:")).map(([id]) => id);
   expect(made).toHaveLength(4);
@@ -182,37 +188,42 @@ test("the Atomik build API: free, checked, scoped to this workspace and producti
   const { draft, headers, productionId } = await setUp(page, "Build API");
   const api = page.request;
   expect((await api.patch("/api/workbench/team-canvas", { headers, data: { productionId, upsertNodes: [shot("theirs", "Ana's opening", 100, 100)], removeNodes: [], upsertAssets: [], order: ["theirs"] } })).ok()).toBe(true);
-  expect(await agentOf(api, headers, productionId)).toEqual({ agent: { enabled: true, run: null } });
+  expect(await agentOf(api, headers, productionId)).toEqual({ agent: { enabled: true, run: null, ask: null } });
   const post = (data: Record<string, unknown>, withScope = true) => api.post("/api/workbench/team-canvas", { ...(withScope ? { headers } : {}), data: { productionId, ...data } });
-  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001" })).status()).toBe(400);
-  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots.", productionId: "not-here" })).status()).toBe(404);
-  expect((await post({ action: "agent.plan", projectId: "someone-else", requestId: "req-api-00000001", goal: "Two shots." })).status()).toBe(404);
-  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots." }, false)).status()).toBe(409);
-  const asked = await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots." });
+  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", limit: 500 })).status()).toBe(400);
+  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots." })).status()).toBe(400);
+  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots.", limit: 500, productionId: "not-here" })).status()).toBe(404);
+  expect((await post({ action: "agent.plan", projectId: "someone-else", requestId: "req-api-00000001", goal: "Two shots.", limit: 500 })).status()).toBe(404);
+  expect((await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots.", limit: 500 }, false)).status()).toBe(409);
+  const asked = await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots.", limit: 500 });
   expect(asked.status()).toBe(202);
   const first = await asked.json();
-  expect(first).toMatchObject({ agent: { enabled: true, run: { state: "planning", credits: 0 } }, credits: 0 });
+  expect(first).toMatchObject({ agent: { enabled: true, run: { state: "planning", credits: 0, money: { limit: 500, mode: "ask", spent: 0 } } } });
   const runId = first.agent.run.id as string;
   /* The same request again is the same run. */
-  expect((await (await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots." })).json()).agent.run.id).toBe(runId);
+  expect((await (await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000001", goal: "Two shots.", limit: 500 })).json()).agent.run.id).toBe(runId);
   await expect.poll(async () => (await agentOf(api, headers, productionId)).agent.run?.state, { timeout: 20_000 }).toBe("awaiting_approval");
   const proposed = (await agentOf(api, headers, productionId)).agent.run!;
   expect((await post({ action: "agent.approve", runId, fingerprint: "0".repeat(64) })).status()).toBe(409);
   expect((await post({ action: "agent.approve", runId: "rar_000000000000000000000000", fingerprint: proposed.proposal!.fingerprint })).status()).toBe(404);
   const approved = await post({ action: "agent.approve", runId, fingerprint: proposed.proposal!.fingerprint });
   expect(approved.status()).toBe(200);
-  expect(await approved.json()).toMatchObject({ agent: { run: { state: "running", credits: 0 } }, credits: 0 });
-  await expect.poll(async () => (await agentOf(api, headers, productionId)).agent.run?.state, { timeout: 20_000 }).toBe("done");
-  expect((await agentOf(api, headers, productionId)).agent.run).toMatchObject({ built: { cards: 4, wires: 4 }, credits: 0 });
+  /* Planning was metered into the run's limit; building is free. */
+  const planned = (await approved.json()).agent.run;
+  expect(planned).toMatchObject({ state: "running", money: { planning: { state: "settled" } } });
+  expect(planned.credits).toBeGreaterThan(0);
+  /* Built; then the first render waits for its tap (Ask). */
+  await expect.poll(async () => (await agentOf(api, headers, productionId)).agent.run?.state, { timeout: 30_000 }).toBe("needs_you");
+  expect((await agentOf(api, headers, productionId)).agent.run).toMatchObject({ built: { cards: 4, wires: 4 }, credits: planned.credits });
   expect(Object.keys((await canvasOf(api, headers, productionId)).canvas!.nodes)).toHaveLength(5);
-  /* A stop on a finished build changes nothing; undo takes the build off once. */
-  expect((await (await post({ action: "agent.stop", runId })).json()).agent.run.state).toBe("done");
+  /* Stop: nothing more is sent; undo takes the build off once. */
+  expect((await (await post({ action: "agent.stop", runId })).json()).agent.run.state).toBe("stopped");
   const undone = await (await post({ action: "agent.undo", runId })).json();
-  expect(undone).toMatchObject({ agent: { run: { undo: { removed: 4, kept: 0 }, canUndo: false } }, credits: 0 });
+  expect(undone).toMatchObject({ agent: { run: { undo: { removed: 4, kept: 0 }, canUndo: false } } });
   expect(Object.keys((await canvasOf(api, headers, productionId)).canvas!.nodes)).toEqual(["theirs"]);
   expect((await (await post({ action: "agent.undo", runId })).json()).agent.run.undo).toEqual(undone.agent.run.undo);
   /* A proposal set aside builds nothing. */
-  const again = await (await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000002", goal: "One shot." })).json();
+  const again = await (await post({ action: "agent.plan", projectId: draft.id, requestId: "req-api-00000002", goal: "One shot.", limit: 500 })).json();
   await expect.poll(async () => (await agentOf(api, headers, productionId)).agent.run?.state, { timeout: 20_000 }).toBe("awaiting_approval");
   const declined = await (await post({ action: "agent.decline", runId: again.agent.run.id })).json();
   expect(declined.agent.run).toMatchObject({ state: "stopped", built: { cards: 0, wires: 0 }, canUndo: false });

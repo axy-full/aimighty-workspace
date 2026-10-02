@@ -8,8 +8,9 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../lib/wo
  * The remaining page-supplied plan requests (workspace redesign follow-up):
  * Marketing Studio publishes the bodies its existing paid flow sends, so its
  * Atomik plan reaches its gate with a live quote; Boards has no such body and
- * stays refused; Shorts ran only on the signed-in account, which Atomik no
- * longer uses (28 September 2026), so its plan refuses whatever the form holds.
+ * stays refused; Shorts ran on the Higgsfield account, whose sign-in is
+ * retired, so its page says so, and its plan refuses: no API-key engine makes
+ * a set of shorts.
  *
  * Every test here proves the same two things: the plan becomes runnable only
  * from real page state, and NOTHING is dispatched before the approval. The
@@ -282,28 +283,19 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   expect(state.errors).toEqual([]);
 });
 
-test("Shorts' plan refuses whatever the form holds: no API-key engine makes a set of shorts, so nothing is quoted or sent", async ({ page }, info) => {
+test("Shorts ran on the Higgsfield account: its page says the sign-in is retired, and its plan refuses without asking anything", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   const state = await fixture(page, project);
   await page.goto(url(project.id, "subatomik", "shorts"));
   await expect(page.getByTestId("page-title")).toHaveText("Shorts");
-  const panel = page.getByRole("region", { name: "Shorts on the connected account", exact: true });
-  await expect(panel.getByRole("heading", { name: "Shorts", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-page-body="shorts"]')).toContainText("Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  await expect(page.getByRole("region", { name: "Shorts on the connected account", exact: true })).toHaveCount(0);
 
   await openAtomik(page);
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Make a set of shorts");
-  await expect(page.getByTestId("atomik-reason")).toContainText("no API-key engine makes a set of shorts");
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
-  await page.keyboard.press("Escape");
-
-  /* A source and a style on the form change nothing: the plan never quotes on the account. */
-  await panel.getByRole("button", { name: "Load styles", exact: true }).click();
-  await page.locator('[data-library-id="upload:launch-original"]').getByRole("button", { name: "Use as reference", exact: true }).click();
-  await expect(panel.getByRole("group", { name: "Source video", exact: true })).toContainText("Launch cut.mp4 · 31 s");
-  await panel.getByRole("combobox", { name: "Style", exact: true }).selectOption(`cms:${presetId}`);
-
-  await openAtomik(page);
+  /* Atomik no longer runs anything on the account: no API-key engine makes a set of shorts, so nothing is quoted or sent. */
+  await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
   await expect(page.getByTestId("atomik-reason")).toContainText("no API-key engine makes a set of shorts");
   await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   await expect(page.getByTestId("atomik-gate")).toHaveCount(0);

@@ -103,8 +103,9 @@ async function gateRowUp(page: Page) {
   await expect(page.getByTestId("atomik-gate")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Skills|Tools/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText(/^(Skills|Tools & connections)$/);
+  /* Tools & connections alone: the strip's Skills is another page now (saved skills, `saved-skills`). */
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Tools$/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText(/^Tools & connections$/);
   await expect(page.getByTestId("suites-atomik-gate")).toBeVisible();
 }
 

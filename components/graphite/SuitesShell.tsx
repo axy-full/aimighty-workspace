@@ -35,6 +35,7 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
 import { MemoryView } from "./atomik/MemoryView";
+import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -45,8 +46,6 @@ import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
 import { Glyph } from "./icons";
-import { WorkflowHosts } from "./tools/WorkflowHost";
-import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
@@ -426,11 +425,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
                         {firstRunAbove}
-                        {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
-                          <div className="gx-extras" data-testid="page-workflows">
-                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
-                          </div>
-                        ) : null}
                         {shell.page.id === "astra" ? <AstraOutputs /> : null}
                         <StageView page={shell.page.legacy.page} project={project} scope={scope} />
                       </div>
@@ -439,14 +433,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
-                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
                       {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                        {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
-                          <div className="gx-extras" data-testid="page-workflows">
-                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
-                          </div>
-                        ) : null}
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>

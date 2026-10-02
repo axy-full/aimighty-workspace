@@ -1,7 +1,9 @@
-import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel } from "ai";
+import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type LanguageModelUsage } from "ai";
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
+import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
+import { directTextCostUsd, sdkTextUsage } from "../openai-direct";
 import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type BoardSnapshot, type PlanDraft } from "./rig-agent-plan";
 
 /*
@@ -33,7 +35,8 @@ export const plannerResultSchema = z.object({
 export type PlannerResult = z.infer<typeof plannerResultSchema>;
 
 export class PlannerError extends Error {
-  constructor(message: string) { super(message); this.name = "PlannerError"; }
+  /** What the turn used before it failed, when the model answered: recorded as the platform's cost, never billed. */
+  constructor(message: string, readonly stepUsage?: LanguageModelUsage[]) { super(message); this.name = "PlannerError"; }
 }
 
 export function plannerInstructions(): string {
@@ -56,7 +59,64 @@ export function plannerMessage(snapshot: BoardSnapshot): string {
   ].join("\n");
 }
 
-export type PlannerOutcome = { draft: PlanDraft; result: PlannerResult; usage: { inputTokens: number; outputTokens: number; steps: number } };
+export type PlannerOutcome = {
+  draft: PlanDraft; result: PlannerResult;
+  usage: { inputTokens: number; outputTokens: number; steps: number };
+  /** Each model call's own usage, as the provider reported it: a call is priced on its own (context tiers are per call). */
+  stepUsage?: LanguageModelUsage[];
+};
+
+/* ── What a planning turn may cost (plan §5.5: planning is metered into the run's limit) ── */
+
+/** Room for the tool definitions the planner sends with every call, in bytes. */
+const TOOL_SCHEMA_BYTES = 8_000;
+/** Room for one short tool answer (`{ ok: true }`, or the problem to fix), in bytes. */
+const TOOL_ANSWER_BYTES = 256;
+
+/**
+ * The most one planning turn can use, in tokens per call, from what it is sent. UTF-8 bytes stand
+ * in for tokens (a tokenizer never makes more tokens than bytes). Each call carries the
+ * instructions, the request with the board, the tool definitions, every answer so far (the
+ * board once more, and a short answer per tool call) and the earlier calls' own output.
+ */
+export function plannerBounds(snapshot: BoardSnapshot): { perCallInputTokens: number; outputTokens: number; calls: number } {
+  const sent = Buffer.byteLength(plannerInstructions() + plannerMessage(snapshot), "utf8") + TOOL_SCHEMA_BYTES + 512;
+  const answers = Buffer.byteLength(JSON.stringify(snapshot), "utf8") + PLANNER_TOOL_CALLS * TOOL_ANSWER_BYTES;
+  const earlier = (PLANNER_STEPS - 1) * PLANNER_MAX_OUTPUT_TOKENS;
+  return { perCallInputTokens: sent + answers + earlier, outputTokens: PLANNER_MAX_OUTPUT_TOKENS, calls: PLANNER_STEPS };
+}
+
+/** The planning turn's ceiling in the model's dollars (reserved before it starts), or null when the model has no confirmed price. */
+export function plannerCeilingUsd(model: CatalogModel, snapshot: BoardSnapshot, directOpenAI = false): number | null {
+  const bounds = plannerBounds(snapshot);
+  const perCall = textQuoteCostUsd(model, bounds.perCallInputTokens, bounds.outputTokens, directOpenAI);
+  return perCall == null || !Number.isFinite(perCall) || perCall < 0 ? null : perCall * bounds.calls;
+}
+
+/** What the turn used, in the model's dollars: each call at its own reported usage. Null when any call's usage is missing. */
+export function plannerCostUsd(model: CatalogModel, steps: readonly LanguageModelUsage[] | undefined, directOpenAI = false): number | null {
+  if (!steps?.length || steps.length > PLANNER_STEPS) return null;
+  let total = 0;
+  for (const usage of steps) {
+    const reported = sdkTextUsage(usage, directOpenAI);
+    const input = reported.prompt_tokens, output = reported.completion_tokens;
+    if (![input, output].every((n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) return null;
+    const cost = directOpenAI ? directTextCostUsd(model, reported) : textCostUsd(model, input as number, output as number);
+    if (cost == null || !Number.isFinite(cost) || cost < 0) return null;
+    total += cost;
+  }
+  return total;
+}
+
+/**
+ * The mock planner's price (ENGINE_MOCK=1 only): a language model's rate, so a mocked planning turn
+ * is reserved, settled and counted like a real one. Nothing is sent anywhere.
+ */
+export const MOCK_PLANNER_CATALOG: CatalogModel = {
+  id: MOCK_PLANNER_MODEL, name: "Atomik (mock)", owner: "mock", type: "language", description: "The scripted planner used under ENGINE_MOCK=1.",
+  contextWindow: 400_000, maxTokens: PLANNER_MAX_OUTPUT_TOKENS, pricing: { input: "0.000003", output: "0.000015" },
+  inputModalities: ["text"], outputModalities: ["text"], tags: [], supportedParameters: [],
+};
 
 /** One bounded planning turn: the dry tools, at most three model steps, the last with no tools. */
 export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, options: { abortSignal?: AbortSignal } = {}): Promise<PlannerOutcome> {
@@ -100,12 +160,17 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
     abortSignal: options.abortSignal ?? AbortSignal.timeout(PLANNER_TIMEOUT_MS),
   });
   if (over) throw new PlannerError("Atomik's plan went past its limit. Ask for a smaller board.");
+  const stepUsage = generated.steps.map((step) => step.usage);
   let result: PlannerResult;
   try { result = plannerResultSchema.parse(generated.output); }
-  catch { throw new PlannerError("Atomik did not finish its proposal. Ask again."); }
+  catch { throw new PlannerError("Atomik did not finish its proposal. Ask again.", stepUsage); }
   const draft = board.draft();
-  if (!draft.cards.length && !draft.wires.length) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.");
-  return { draft, result, usage: { inputTokens: generated.totalUsage.inputTokens ?? 0, outputTokens: generated.totalUsage.outputTokens ?? 0, steps: generated.steps.length } };
+  if (!draft.cards.length && !draft.wires.length) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.", stepUsage);
+  return {
+    draft, result,
+    usage: { inputTokens: generated.totalUsage.inputTokens ?? 0, outputTokens: generated.totalUsage.outputTokens ?? 0, steps: generated.steps.length },
+    stepUsage,
+  };
 }
 
 /**
@@ -152,7 +217,12 @@ export function mockPlanCalls(snapshot: BoardSnapshot): { calls: MockCall[]; res
   };
 }
 
-const usage = { inputTokens: { total: 0, noCache: 0, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 0, text: 0, reasoning: undefined } };
+/** What the mock reports it used: a token for every four bytes it was sent and wrote, as a provider would count them. */
+function mockUsage(sent: unknown, wrote: unknown) {
+  const input = Math.ceil(Buffer.byteLength(JSON.stringify(sent) ?? "", "utf8") / 4);
+  const output = Math.ceil(Buffer.byteLength(JSON.stringify(wrote) ?? "", "utf8") / 4);
+  return { inputTokens: { total: input, noCache: input, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: output, text: output, reasoning: undefined } };
+}
 
 /** A scripted planner for ENGINE_MOCK=1 and the tests: the first step calls the tools, the last answers. No provider. */
 export function mockPlannerModel(snapshot: BoardSnapshot, script = mockPlanCalls(snapshot)): LanguageModelV4 {
@@ -166,9 +236,10 @@ export function mockPlannerModel(snapshot: BoardSnapshot, script = mockPlanCalls
       const tools = (options.tools?.length ?? 0) > 0 && options.toolChoice?.type !== "none";
       if (!answered && tools && script.calls.length) {
         const content: LanguageModelV4Content[] = script.calls.map((c, i) => ({ type: "tool-call", toolCallId: `mock-${i}`, toolName: c.tool, input: JSON.stringify(c.input) }));
-        return { content, finishReason: { unified: "tool-calls", raw: undefined }, usage, warnings: [] };
+        return { content, finishReason: { unified: "tool-calls", raw: undefined }, usage: mockUsage(options.prompt, content), warnings: [] };
       }
-      return { content: [{ type: "text", text: JSON.stringify(script.result) }], finishReason: { unified: "stop", raw: undefined }, usage, warnings: [] };
+      const content: LanguageModelV4Content[] = [{ type: "text", text: JSON.stringify(script.result) }];
+      return { content, finishReason: { unified: "stop", raw: undefined }, usage: mockUsage(options.prompt, content), warnings: [] };
     },
     async doStream() { throw new Error("The mock planner does not stream."); },
   };

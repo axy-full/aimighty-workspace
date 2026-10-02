@@ -11,16 +11,34 @@ import {
 import { activityFromAgentJobs, activityFromJobs, mergeActivity, nextLine, loadActivity } from "../../lib/workspace/activity";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { idempotencyKey } from "../../lib/workspace/plan-helpers";
+import { genjutsuSourceUrl, isGenjutsuTake } from "../../lib/genjutsuTypes";
 
 /* ------------------------------------------------------------ mock backend */
 
 type Call = { method: string; path: string; body: Record<string, unknown> | null; headers: Record<string, string> };
 
+type LibraryTake = { id: string; projectId: string | null; model: string; status: string; storedUrl: string | null; sourceGenId: string | null; params: Record<string, unknown>; createdAt: number };
+/**
+ * The project's Library as GET /api/workbench/library lists it, newest first
+ * (lib/jobs.ts Generation, the fields Compare reads): a still, a transform
+ * that failed, one still rendering, one of another production, a finished
+ * transform made on the API key, and an older one made on the connected
+ * account (collected into the Library with `params.task` "genjutsu").
+ */
+const LIBRARY: LibraryTake[] = [
+  { id: "still-1", projectId: "prod-1", model: "image-a", status: "succeeded", storedUrl: "/media/still-1.png", sourceGenId: null, params: {}, createdAt: 900 },
+  { id: "swap-failed", projectId: "prod-1", model: "higgsfield-genjutsu-object-swap", status: "failed", storedUrl: null, sourceGenId: null, params: { task: "genjutsu", sourceUploadId: "u1" }, createdAt: 800 },
+  { id: "motion-running", projectId: "prod-1", model: "higgsfield-genjutsu-motion-transfer", status: "running", storedUrl: null, sourceGenId: null, params: { task: "genjutsu", sourceUploadId: "u1" }, createdAt: 700 },
+  { id: "motion-other", projectId: "prod-other", model: "higgsfield-genjutsu-motion-transfer", status: "succeeded", storedUrl: "/media/motion-other.mp4", sourceGenId: null, params: { task: "genjutsu", sourceUploadId: "u9" }, createdAt: 650 },
+  { id: "motion-key", projectId: "prod-1", model: "higgsfield-genjutsu-motion-transfer", status: "succeeded", storedUrl: "/media/motion-key.mp4", sourceGenId: null, params: { task: "genjutsu", sourceUploadId: "u1" }, createdAt: 600 },
+  { id: "swap-account", projectId: "prod-1", model: "hf_mult_replace_object", status: "succeeded", storedUrl: "/media/swap-account.mp4", sourceGenId: null, params: { task: "genjutsu", sourceGenId: "clip-1", consumerJobId: "job-1", consumerCreditUnit: "higgsfield_credits" }, createdAt: 500 },
+];
+
 /**
  * A fetch that answers the existing routes' documented shapes. `price` is
  * read at call time so a test can move it between quote and approve.
  */
-function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null; approved?: number } = {}) {
+function backend(options: { price?: () => number; hold?: (path: string, body: Record<string, unknown> | null) => Promise<void> | null; approved?: number; takes?: LibraryTake[] } = {}) {
   const calls: Call[] = [];
   const price = options.price ?? (() => 18);
   let job = 0;
@@ -45,18 +63,14 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return body?.quoteOnly
         ? json({ estimatedCredits: price(), price: price(), unit: "cr" })
         : json({ id: `aud-${(job += 1)}`, status: "running", estimatedCredits: price() });
-    if (bare === "/api/higgsfield/consumer/genjutsu" || bare === "/api/higgsfield/consumer/generation" || bare === "/api/higgsfield/consumer/shorts") {
-      if (method === "GET")
-        return json({
-          jobs: [
-            { id: "done-1", status: "completed", originalAvailable: true, input: { source: { uploadId: "u1" } }, result: { original: { asset: { url: "/api/media/g1" } } }, quoteCredits: 10, quoteExpiresAt: null, workspaceId: "w" },
-            { id: "open-1", status: "uncertain", quoteCredits: 10, quoteExpiresAt: null, workspaceId: "w" },
-          ],
-        });
-      if (body?.action === "quote")
-        return json({ job: { id: `q-${(job += 1)}`, status: "quoted", quoteCredits: price(), quoteExpiresAt: Date.now() + 5 * 60_000, workspaceId: "wallet-1", workspaceName: "Main wallet" } });
-      if (body?.action === "submit") return json({ job: { id: body.id, status: "accepted", quoteCredits: body.credits, workspaceId: body.workspaceId } });
-      if (body?.action === "status") return json({ job: { id: body.id, status: "completed" } });
+    /* Nothing answers the connected account's routes: no plan may call one. */
+    if (bare === "/api/workbench/library" && method === "GET") {
+      const query = new URLSearchParams(path.split("?")[1]);
+      /* The real route takes exactly one project and one source (lib/workbench/project-library.ts), and an id is a lookup of one take. */
+      if (query.getAll("projectId").length !== 1 || query.get("source") !== "generations")
+        return json({ error: "Choose one Studio project and asset source." }, 400);
+      const takes = options.takes ?? LIBRARY, id = query.get("id");
+      return json({ generations: id ? takes.filter((take) => take.id === id) : takes.slice(0, Number(query.get("limit") ?? 60)), nextPageCursor: null });
     }
     if (bare === "/api/workbench/development") {
       if (method === "GET" && !path.includes("requestId")) return json({ configured: true, models: [{ id: "text-model" }], jobs: [] });
@@ -164,7 +178,8 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 /* ------------------------------------------------------------------ registry */
 
 /* Generate, Shorts and History ran only on the signed-in account, which Atomik no longer uses. */
-const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts", "history"].sort();
+/* History is not here: it reads the project's Library and each transform take still rendering (free). */
+const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources", "generate", "shorts"].sort();
 const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
 
 test("the registry has exactly one plan for each of the 24 workspace pages", () => {
@@ -377,14 +392,91 @@ for (const [page, model] of [["motion", "higgsfield-genjutsu-motion-transfer"], 
     expect(engine.getState().completed[page]).toBe(true);
   });
 
-test("no plan quotes, submits or polls on the connected account; only Compare reads the results already kept", () => {
+test("no plan reads, quotes, submits or polls on the connected account's routes; Compare reads the project's Library", () => {
   for (const page of PLAN_PAGES)
-    for (const step of PLANS[page].steps) {
-      const path = step.executor.backend.path;
-      if (!path.startsWith("/api/higgsfield/consumer/")) continue;
-      expect(page, `${page}: ${step.label}`).toBe("compare");
-      expect(step.executor.backend.method, `${page}: ${step.label}`).toBe("GET");
-    }
+    for (const step of PLANS[page].steps)
+      expect(step.executor.backend.path, `${page}: ${step.label}`).not.toMatch(/^\/api\/higgsfield\/consumer\//);
+  expect(PLANS.compare.steps.map((step) => [step.executor.backend.method, step.executor.backend.path])).toEqual([
+    ["GET", "/api/workbench/library?source=generations"],
+    ["LOCAL", "comparison pair"],
+  ]);
+});
+
+/* Compare: free, for every member — the Library's own record of a transform take, never a provider or an account. */
+test("Compare pairs the newest finished transform take of this production with its source, from one Library read and nothing else", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const engine = engineFor(context(fetcher));
+  expect(PLANS.compare.paid).toBe(false);
+  expect(engine.start("compare")).toEqual({ ok: true, action: "started" });
+  await until(() => engine.getState().run?.status === "done", "done");
+  expect(engine.getState().run?.details).toEqual({ 0: "1 take", 1: "paired" });
+  expect(engine.getState().completed.compare).toBe(true);
+  expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /api/workbench/library?projectId=draft-1&source=generations&limit=500"]);
+  expect(dispatches()).toEqual([]);
+
+  /* A still, a failed take, one still rendering and one of another production are passed over. */
+  const [load, pair] = PLANS.compare.steps;
+  if (load.executor.type !== "call" || pair.executor.type !== "call") throw new Error("Compare's steps are reads.");
+  const loaded = await load.executor.run(context(fetcher), {});
+  expect((loaded.io?.compareTake as LibraryTake).id).toBe("motion-key");
+  expect((await pair.executor.run(context(fetcher), loaded.io ?? {})).io).toEqual({
+    comparison: { source: "/api/uploads/u1", result: "/api/media/motion-key?stream=1" },
+  });
+});
+
+test("Compare opens a take a request names, a run made earlier on the connected account included, and says so when none is finished", async () => {
+  const [load, pair] = PLANS.compare.steps;
+  if (load.executor.type !== "call" || pair.executor.type !== "call") throw new Error("Compare's steps are reads.");
+  const { fetcher, calls } = backend();
+  const named = (jobId: string) => context(fetcher, { ...fullRequest(), compare: { jobId } });
+
+  /* The account's run is in the Library already; its source is the take it was made from. */
+  const account = await load.executor.run(named("swap-account"), {});
+  expect(calls.at(-1)?.path).toBe("/api/workbench/library?projectId=draft-1&source=generations&id=swap-account");
+  expect((await pair.executor.run(named("swap-account"), account.io ?? {})).io).toEqual({
+    comparison: { source: "/api/media/clip-1", result: "/api/media/swap-account?stream=1" },
+  });
+  /* The take's own source column wins over its params, as the page's player reads it. */
+  const moved = backend({ takes: [{ ...LIBRARY[4], sourceGenId: "cut-2" }] });
+  const take = await load.executor.run(context(moved.fetcher), {});
+  expect((await pair.executor.run(context(moved.fetcher), take.io ?? {})).io).toEqual({
+    comparison: { source: "/api/media/cut-2", result: "/api/media/motion-key?stream=1" },
+  });
+
+  /* A named take that is not a finished transform of this production is refused, never swapped for another. */
+  for (const jobId of ["swap-failed", "motion-running", "motion-other", "still-1", "gone"])
+    await expect(load.executor.run(named(jobId), {}), jobId).rejects.toThrow("No finished transform take with a stored original to compare yet.");
+  /* Nothing finished yet: the run fails with the reason and nothing else is read. */
+  const empty = backend({ takes: LIBRARY.filter((item) => item.status !== "succeeded" || item.projectId !== "prod-1" || item.model === "image-a") });
+  const engine = engineFor(context(empty.fetcher));
+  engine.start("compare");
+  await until(() => engine.getState().run?.status === "failed", "failed");
+  expect(engine.getState().run?.error).toBe("No finished transform take with a stored original to compare yet.");
+  expect(empty.calls).toHaveLength(1);
+  expect([...calls, ...moved.calls, ...empty.calls].every((call) => call.path.startsWith("/api/workbench/library?"))).toBe(true);
+});
+
+test("a transform take's source is a media or upload route for a safe id only, and the account's past runs count as transform takes", () => {
+  expect(genjutsuSourceUrl({ sourceGenId: "clip-1", sourceUploadId: "u1" })).toBe("/api/media/clip-1");
+  expect(genjutsuSourceUrl({ sourceUploadId: "u1" })).toBe("/api/uploads/u1");
+  for (const bad of ["../etc", "a/b", "", "x".repeat(161), 7, null])
+    expect(genjutsuSourceUrl({ sourceGenId: bad, sourceUploadId: bad }), String(bad)).toBeNull();
+  expect(isGenjutsuTake({ model: "higgsfield-genjutsu-object-swap" })).toBe(true);
+  expect(isGenjutsuTake({ model: "hf_mult_motion_control", params: { task: "genjutsu" } })).toBe(true);
+  expect(isGenjutsuTake({ model: "hf_mult_motion_control", params: null })).toBe(false);
+  expect(isGenjutsuTake({ model: "image-a", params: { task: "edit" } })).toBe(false);
+});
+
+test("Viral History's plan reads the project's Library and each transform take still rendering — never the connected account", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const engine = engineFor(context(fetcher));
+  engine.start("history");
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "history");
+  expect(engine.getState().run!.error).toBeNull();
+  /* Of the Library's takes (LIBRARY above), the one transform on the key still rendering is read; the failed one, the finished ones and the account's are not. */
+  expect(calls.map((call) => call.path.split("?")[0])).toEqual(["/api/workbench/library", "/api/jobs/motion-running"]);
+  expect(engine.getState().session[0].label).toBe("1 take checked");
+  expect(dispatches()).toHaveLength(0);
 });
 
 test("audio stems dispatch with maxCredits equal to each approved quote", async () => {
@@ -615,13 +707,12 @@ test("a failed planning run says what it was charged, never that it was not bill
   ]);
 });
 
-test("generate, shorts and history refuse with their reason and read or send nothing, even with the old account data present", async () => {
+test("generate and shorts refuse with their reason and read or send nothing, even with the old account data present", async () => {
   const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
   const reasons = {
     generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
     shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
-    history: "Not runnable yet — reconciling needed the signed-in account.",
   } as const;
   for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {
     expect(PLANS[page].runnable(context(fetcher)), page).toEqual({ ok: false, reason });

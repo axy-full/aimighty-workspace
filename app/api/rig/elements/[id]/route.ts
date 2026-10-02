@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
-import { getElement, elementUsage, overridesOf, setElementLock } from "@/lib/elements";
+import { getElement, elementUsage, overridesOf, type ElementFull } from "@/lib/elements";
+import { lockHistory, lockMaster, masterCheck, MasterLockError, unlockMaster, type LockBy } from "@/lib/masters";
+import { requireTenant } from "@/lib/tenant";
+import { TeamCanvasError } from "@/lib/workbench/team-canvas";
+import { MediaSourceError } from "@/lib/mediaBindings";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 /**
  * One element and everything it reaches (brief 3, surface 2b). The id is the
@@ -91,7 +96,7 @@ async function stagesFor(elementId: string, projectId: string | null): Promise<{
   return { visual, audio };
 }
 
-export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -99,6 +104,12 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   const { id } = await params;
   const element = await getElement(id);
   if (!element) return NextResponse.json({ error: "No such element." }, { status: 404 });
+
+  /* The Rig's Card Inspector: the master's lock, its history, and whether its source is still what the lock froze. */
+  if (new URL(req.url).searchParams.get("view") === "lock") {
+    const [history, check] = await Promise.all([lockHistory(id), masterCheck(id)]);
+    return NextResponse.json({ element: lockSummary(element), history, check }, { headers: { "Cache-Control": "no-store" } });
+  }
 
   const [usage, overrides, stages] = await Promise.all([
     elementUsage(id),
@@ -109,26 +120,72 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   return NextResponse.json({ element, usage, overrides, stages });
 });
 
+const CARD_ID = /^[A-Za-z0-9_-]{1,100}$/;
+/** The Rig card a lock comes from: its production and the card's id. */
+function canvasCard(value: unknown): { productionId: string; nodeId: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  return typeof v.productionId === "string" && CARD_ID.test(v.productionId) && typeof v.nodeId === "string" && CARD_ID.test(v.nodeId)
+    ? { productionId: v.productionId, nodeId: v.nodeId }
+    : null;
+}
+
+function lockSummary(element: Pick<ElementFull, "id" | "name" | "kind" | "projectId" | "locked" | "lockedAt">) {
+  return { id: element.id, name: element.name, kind: element.kind, projectId: element.projectId, locked: element.locked, lockedAt: element.lockedAt };
+}
+
+/**
+ * The lock: `{ locked, reason?, canvas?: { productionId, nodeId }, by? }`.
+ *
+ * Locking is free and anyone in the workspace may do it; Atomik's plan says so
+ * (`by: "atomik"`) and is recorded as Atomik. From a Rig card (`canvas`), the
+ * card becomes the master: it is mirrored into an element when it has none
+ * (the id is then `new`), its source becomes the element's current version,
+ * and the lock record lands on the card for everyone (lib/masters.ts).
+ * Unlocking needs a signed-in admin and a reason; Atomik never unlocks. Every
+ * lock and unlock is kept in the element's history.
+ */
 export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
   await ready();
 
   const { id } = await params;
-  const element = await getElement(id);
-  if (!element) return NextResponse.json({ error: "No such element." }, { status: 404 });
-
-  const body = await req.json().catch(() => ({}));
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const locked = (body as any)?.locked;
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown> | null;
+  const locked = body?.locked;
   if (typeof locked !== "boolean") {
     return NextResponse.json({ error: "Say whether it is locked." }, { status: 400 });
   }
-  if (locked === element.locked) return NextResponse.json({ ok: true, unchanged: true });
+  const canvas = canvasCard(body?.canvas);
+  if (body?.canvas !== undefined && !canvas) return NextResponse.json({ error: "Name the card to lock." }, { status: 400 });
+  /* A card's lock writes the team canvas: the same scope rule as any canvas edit. */
+  if (canvas) {
+    const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, true);
+    if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  }
+  const elementId = id === "new" ? null : id;
+  if (!elementId && !(locked && canvas)) return NextResponse.json({ error: "No such element." }, { status: 404 });
 
   /* Spends nothing and re-renders nothing: a lock is a rule about what may
-     change later, not a change itself. Who did it and when are kept, because
-     the brief's own line is that unlocking is explicit and logged. */
-  await setElementLock(id, locked, got.user.email);
-  return NextResponse.json({ ok: true, locked, by: got.user.email, at: now() });
+     change later, not a change itself. Who did it, when and (for an unlock)
+     why are kept, because the brief's own line is that unlocking is explicit
+     and logged. */
+  const by: LockBy = {
+    userId: got.user.id, name: got.user.name || got.user.email, email: got.user.email, admin: got.user.role === "admin",
+    token: !!got.token, agent: body?.by === "atomik" ? { runId: null } : null,
+  };
+  try {
+    const result = locked
+      ? await lockMaster({ elementId, canvas }, by)
+      : await unlockMaster({ elementId: elementId!, reason: body?.reason, canvas }, by);
+    return NextResponse.json({
+      ok: true, locked, unchanged: result.unchanged, by: got.user.email, at: now(),
+      element: lockSummary(result.element), event: result.event, node: result.node, revision: result.revision, sha256: result.sha256,
+    });
+  } catch (error) {
+    if (error instanceof MasterLockError || error instanceof TeamCanvasError) return NextResponse.json({ error: error.message }, { status: error.status });
+    /* The card's picture is no longer in the library: nothing was locked. */
+    if (error instanceof MediaSourceError) return NextResponse.json({ error: error.message }, { status: 409 });
+    throw error;
+  }
 });

@@ -16,6 +16,7 @@ import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-origi
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as tools from "../../lib/higgsfield-consumer/voice-tools";
+import * as retired from "../../lib/higgsfield-consumer/retired";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,7 @@ async function fixture(options: { analysis?: boolean } = {}) {
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/catalogue": catalogue,
     "@/lib/higgsfield-consumer/voice-tools": tools,
+    "@/lib/higgsfield-consumer/retired": retired,
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/voice-tool-service": {
@@ -127,21 +129,23 @@ test("voice tool requests cannot adopt another workspace, user, origin or incomp
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]); expect(f.connections).toEqual([]);
 });
 
-test("owner voices, quote, exact approval and status receive server-derived identity, and the capability list keeps analysis off", async () => {
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ code: "retired", error: retired.SIGN_IN_RETIRED_MESSAGE });
+}
+const dubbing = { ...quote, input: { tool: "dubbing", source: { genId: "take" }, targetLanguage: "fra" } };
+
+test("voices, quote and submit answer 410 before any limit or service; status and the saved jobs still reach the service, and the capability list keeps analysis off", async () => {
   const f = await fixture();
-  const listing = await f.request("POST", voices, { origin: "https://particl.example" });
-  expect(listing.status).toBe(200);
-  expect(await listing.json()).toEqual({ voices: f.listing });
-  expect((await f.request("POST", { ...voices, refresh: true })).status).toBe(200);
-  for (const body of [quote, submit, status]) {
-    const response = await f.request("POST", body, { origin: "https://particl.example" });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(await response.json()).toHaveProperty("job");
-  }
-  const dubbing = { ...quote, input: { tool: "dubbing", source: { genId: "take" }, targetLanguage: "fra" } };
-  expect((await f.request("POST", dubbing)).status).toBe(200);
+  for (const body of [voices, { ...voices, refresh: true }, quote, dubbing, submit])
+    await expectRetired(await f.request("POST", body, { origin: "https://particl.example" }));
+  expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  const polled = await f.request("POST", status, { origin: "https://particl.example" });
+  expect(polled.status).toBe(200);
+  expect(polled.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(polled.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(await polled.json()).toHaveProperty("job");
   const response = await f.request("GET", undefined, { query: "?draftId=draft-1&userId=other&workspaceId=other" });
   expect(response.status).toBe(200);
   const body = await response.json();
@@ -155,42 +159,29 @@ test("owner voices, quote, exact approval and status receive server-derived iden
   expect(JSON.stringify(body.capabilities).toLowerCase()).not.toContain("higgsfield");
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
-    { name: "voices", args: ["owner", { refresh: false }], workspace: "workspace" },
-    { name: "voices", args: ["owner", { refresh: true }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", input, key], workspace: "workspace" },
-    { name: "submit", args: [{ userId: "owner", draftId: "draft-1", id: key }, submit], workspace: "workspace" },
     { name: "status", args: [{ userId: "owner", draftId: "draft-1", id: key }], workspace: "workspace" },
-    { name: "quote", args: ["owner", "draft-1", dubbing.input, key], workspace: "workspace" },
     { name: "list", args: ["owner", "draft-1"], workspace: "workspace" },
   ]);
-  expect(f.limits).toEqual([voices, { ...voices, refresh: true }, quote, submit, status, dubbing].map((body) => [`hf-consumer-audio-tools:workspace:owner:${body.action}`, body.action === "status" ? 30 : body.action === "voices" ? 12 : 6, 60_000]));
+  expect(f.limits).toEqual([["hf-consumer-audio-tools:workspace:owner:status", 30, 60_000]]);
 });
 
-test("an analysis quote is refused while the flag is off and admitted only when it is on", async () => {
+test("an analysis quote is retired whether or not the platform flag is on", async () => {
   const analysis = { ...quote, input: { tool: "video_analysis", source: { uploadId: "clip-original" } } };
-  const off = await fixture();
-  const refused = await off.request("POST", analysis);
-  expect(refused.status).toBe(403);
-  expect(await refused.json()).toMatchObject({ code: "analysis_disabled" });
-  expect(off.calls).toEqual([]); expect(off.limits).toEqual([]);
-  const on = await fixture({ analysis: true });
-  expect((await on.request("POST", analysis)).status).toBe(200);
-  expect(on.calls.map((call) => call.name)).toEqual(["quote"]);
-  const capabilities = (await (await on.request("GET", undefined, { query: "?draftId=draft-1" })).json()).capabilities;
+  for (const f of [await fixture(), await fixture({ analysis: true })]) {
+    await expectRetired(await f.request("POST", analysis));
+    expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
+  }
+  const capabilities = (await (await (await fixture({ analysis: true })).request("GET", undefined, { query: "?draftId=draft-1" })).json()).capabilities;
   expect(capabilities.analysis).toBe(true);
-  expect(capabilities.tools.map((tool: { name: string }) => tool.name)).toEqual(["voice_change", "dubbing", "video_analysis", "reframe"]);
 });
 
-test("strict voice tool schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {
+test("a stale tab's retired request gets the plain answer whatever its body; the status schema stays strict", async () => {
   const f = await fixture();
-  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, action: "cancel" }, { ...quote, userId: "other" }, { ...quote, workspaceId: wallet },
-    { ...quote, draftId: "../foreign" }, { ...quote, draftId: "x".repeat(201) }, { ...quote, idempotencyKey: "bad" },
-    ...[{ tool: "virality_predictor" }, { tool: "dubbing" }, { targetLanguage: "fra" }, { voice: { id: "x", type: "custom" } }, { voice: { id: "", type: "preset" } }, { prompt: "hi" }, { get_cost: true },
-      { source: { url: "https://provider.invalid/clip.mp4" } }, { source: { uploadId: "a", genId: "b" } }, { source: { uploadId: "../secret" } }, { video_id: key }, { count: 2 }]
-      .map((patch) => ({ ...quote, input: { ...input, ...patch } })),
-    { ...quote, input: { tool: "dubbing", source: { uploadId: "a" }, targetLanguage: "fr" } }, { ...quote, input: { tool: "dubbing", source: { uploadId: "a" } } },
-    { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "12" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
-    { ...status, tool: "voice_change" }, { ...status, userId: "other" }, { ...voices, cursor: "x" }, { ...voices, refresh: "yes" }, { ...voices, size: 5 }];
+  const staleRetired = [{ ...quote, userId: "other" }, { ...quote, idempotencyKey: "bad" }, { ...quote, input: { ...input, source: { url: "https://provider.invalid/clip.mp4" } } },
+    { ...quote, input: { tool: "dubbing", source: { uploadId: "a" } } }, { ...submit, credits: -1 }, { ...submit, input }, { ...voices, cursor: "x" }, { ...voices, refresh: "yes" }];
+  for (const body of staleRetired) await expectRetired(await f.request("POST", body));
+  const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, action: "cancel" },
+    { ...status, tool: "voice_change" }, { ...status, userId: "other" }, { ...status, id: "bad" }, { ...status, draftId: "../foreign" }];
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
@@ -209,19 +200,19 @@ test("voice tool body validation bounds actual UTF8 bytes and reports malformed 
   expect(f.calls).toEqual([]); expect(f.limits).toEqual([]);
 });
 
-test("suspension prevents voice tool dispatch, while voices and status remain readable and limits block all service calls", async () => {
+test("a paused workspace can still read a running job; limits block status, and a retired action never reaches the limits", async () => {
   const f = await fixture(), original = f.store();
   f.setStore({ ...original, workspace: { ...original.workspace!, suspendedAt: 1, suspendedReason: "Paused" } });
-  expect((await f.request("POST", submit)).status).toBe(423); expect(f.calls).toEqual([]);
+  await expectRetired(await f.request("POST", submit)); expect(f.calls).toEqual([]);
   expect((await f.request("POST", status)).status).toBe(200);
-  expect((await f.request("POST", voices)).status).toBe(200);
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "voices"]);
+  await expectRetired(await f.request("POST", voices));
+  expect(f.calls.map((call) => call.name)).toEqual(["status"]);
   f.setStore(original); f.limit();
-  for (const body of [voices, quote, submit, status]) {
-    const response = await f.request("POST", body);
-    expect(response.status).toBe(429); expect(await response.text()).not.toContain("PRIVATE_RATE_STATE");
-  }
-  expect(f.calls.map((call) => call.name)).toEqual(["status", "voices"]);
+  const limited = await f.request("POST", status);
+  expect(limited.status).toBe(429); expect(await limited.text()).not.toContain("PRIVATE_RATE_STATE");
+  for (const body of [voices, quote, submit]) await expectRetired(await f.request("POST", body));
+  expect(f.calls.map((call) => call.name)).toEqual(["status"]);
+  expect(f.limits.map((args) => args[0])).toEqual(["hf-consumer-audio-tools:workspace:owner:status", "hf-consumer-audio-tools:workspace:owner:status"]);
 });
 
 test("voice tool errors preserve bounded categories and never expose provider or storage details", async () => {
