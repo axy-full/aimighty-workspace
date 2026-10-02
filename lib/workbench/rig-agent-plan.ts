@@ -417,8 +417,8 @@ export type RigAgentPaidStepView = {
   seq: number;
   tool: "render" | "verify" | "fix";
   title: string;
-  /** A fix: which fix of its shot it is; a check: the fix whose take it checks. Null otherwise. */
-  fix: number | null;
+  /** A step added live: its round on the shot (a fix, a render again, or the check of what that made). Null for the plan's own steps. */
+  round: number | null;
   state: RigAgentStepState;
   /** The approximate price before it runs ("about N cr"). */
   quote: number | null;
@@ -441,7 +441,29 @@ export type RigAgentPaidStepView = {
   canRender: boolean;
   /** The approval a tap gives: the price the card shows. */
   fingerprint: string | null;
+  /** What it is, in words: the shot, "Check · <shot>", "Fix 2 · <shot>", "Render again · <shot>". */
+  label: string;
+  /** A check: what its job holds while it runs, when that is more than its price. */
+  hold: number | null;
+  /** A check's verdict and scorecard, once it has them (never a vendor, a model or a cost). */
+  verdict: "pass" | "fail" | "needs_you" | null;
+  scorecard: { line: string; checks: { check: string; verdict: "pass" | "fail" | "unsure"; reasons: string[] }[] } | null;
+  /** A fix: the edit it renders, once written. */
+  edit: string | null;
+  /** A check: the shot's Verify card on the board (a clip is checked there). */
+  card: string | null;
+  /** What a person decided for this shot, and when (who is said in `reason`). */
+  resolution: { choice: ShotChoice; at: number } | null;
+  /** A shot that waits for a person: what the person who asked may do now. */
+  choices: ShotChoice[];
 };
+
+/**
+ * What a person may do for a shot whose check needs them (plan §6): take it as it is (never marked
+ * verified), try another fix (priced), render it again (priced, through the run), check it again, or skip it.
+ */
+export type ShotChoice = "accept" | "fix" | "rerender" | "recheck" | "skip";
+export const SHOT_CHOICES: readonly ShotChoice[] = ["accept", "fix", "rerender", "recheck", "skip"];
 export type RigAgentProposalView = {
   title: string; summary: string;
   groups: { kind: AgentKind; label: string; titles: string[] }[];

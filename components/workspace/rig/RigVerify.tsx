@@ -4,7 +4,7 @@ import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { useAgentChoice } from "@/components/graphite/production/AgentBar";
 import { useAgentRuns } from "@/components/graphite/production/use-agent-runs";
 import { timeAgo } from "@/lib/format";
-import { familyModels } from "@/lib/production/agent";
+import { verifyJudge } from "@/lib/production/agent";
 import { useMoney } from "@/lib/price";
 import { forgetAtomikVideoFrames, prepareAtomikVideoFrames, staleAtomikFrames } from "@/lib/workbench/atomik-video-frames";
 import type { DevelopmentJob, DevelopmentQuote } from "@/lib/workbench/development-types";
@@ -120,8 +120,7 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
   const runs = useAgentRuns({ scope: rig.scope, projectId: project.id, save: rig.save });
   const agent = useAgentChoice(runs.models);
   /* The judge: the Production agent's own choice when it can see; else the newest of its family that can, else any that can. */
-  const judge = agent.model?.vision ? agent.model : familyModels(runs.models, agent.choice.family).find((m) => m.vision) ?? runs.models.find((m) => m.vision) ?? null;
-  const effort = judge && judge.id === agent.model?.id ? agent.effort : "auto";
+  const { model: judge, effort } = verifyJudge(runs.models, agent.choice);
   /* The stored check a press of Verify found (read free): said while the card still shows that check. */
   const [freeFor, setFreeFor] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);

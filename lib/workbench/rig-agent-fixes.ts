@@ -1,4 +1,5 @@
 import { EDIT_MOVES, getTask, sourceProblem } from "../tasks";
+import type { LiveStep, StepRow } from "./rig-agent-store";
 import { CHECK_MASTER, VERIFY_CHECKS, VERIFY_CHECK_LABELS, type MasterKind, type Verdict, type VerifyCheck, type VerifyCheckResult } from "./verify";
 
 /*
@@ -98,6 +99,24 @@ export function fixMoveFor(result: Pick<VerifyCheckResult, "check" | "reasons">,
   return { check: result.check, task: take.kind === "video" ? "video-edit" : "still-edit", move, template: templateOf(move), master: CHECK_MASTER[result.check], source: "failed-take" };
 }
 
+/** A fix as a step keeps it (its check and move), as the fix writer and the edit are made from it. */
+export function fixMove(check: VerifyCheck, move: FixMoveId, take: TakeKind): FixMove {
+  return { check, task: take === "video" ? "video-edit" : "still-edit", move, template: templateOf(move), master: CHECK_MASTER[check], source: "failed-take" };
+}
+
+/**
+ * The fix a person asks for ("try another fix"): the most important failed check that has a targeted
+ * fix on this take, whatever else the scorecard says (the person has looked); null when none has one.
+ */
+export function personFix(checks: readonly Pick<VerifyCheckResult, "check" | "verdict" | "reasons">[], take: FixTake): { fix: FixMove; reasons: string[] } | null {
+  for (const check of VERIFY_CHECKS) {
+    const result = checks.find((c) => c.check === check && c.verdict === "fail");
+    const fix = result ? fixMoveFor(result, take) : null;
+    if (result && fix) return { fix, reasons: result.reasons.map((r) => r.trim()).filter(Boolean).slice(0, 3) };
+  }
+  return null;
+}
+
 /** Why a shot goes to a person instead of being fixed. */
 export type HandOver = "unsure" | "no-fix" | "fixes-used" | "cannot-fix";
 
@@ -151,16 +170,35 @@ export function afterCheck(input: { verdict: Verdict; checks: readonly VerifyChe
   return { kind: "fix", n: input.fixes + 1, fix: choice.fix, reasons: choice.reasons };
 }
 
-/** The steps a shot's fix n adds while the run is live: the fix, then the check of the fixed take. */
-export function fixSteps(nodeId: string, title: string, n: number): { tool: "fix" | "verify"; purpose: "fix" | "verify"; label: string; nodeId: string; fix: number }[] {
-  if (!Number.isInteger(n) || n < 1) throw new Error("A fix is numbered from 1.");
+/** What a round on a shot makes: its k-th fix (an edit of the failed take), or a render again (a person's choice). */
+export type RoundKind = { kind: "fix"; fix: number } | { kind: "rerender" };
+
+/** The steps round n on a shot adds while the run is live: what it makes, then the check of that take. */
+export function roundSteps(nodeId: string, title: string, round: number, made: RoundKind): LiveStep[] {
+  if (!Number.isInteger(round) || round < 1) throw new Error("A round is numbered from 1.");
+  if (made.kind === "fix") {
+    if (!Number.isInteger(made.fix) || made.fix < 1) throw new Error("A fix is numbered from 1.");
+    return [
+      { tool: "fix", purpose: "fix", label: `Fix ${made.fix} · ${title}`, nodeId, round },
+      { tool: "verify", purpose: "verify", label: `Check fix ${made.fix} · ${title}`, nodeId, round },
+    ];
+  }
   return [
-    { tool: "fix", purpose: "fix", label: `Fix ${n} · ${title}`, nodeId, fix: n },
-    { tool: "verify", purpose: "verify", label: `Check fix ${n} · ${title}`, nodeId, fix: n },
+    { tool: "render", purpose: "take", label: `Render again · ${title}`, nodeId, round },
+    { tool: "verify", purpose: "verify", label: `Check again · ${title}`, nodeId, round },
   ];
 }
 
-/** How many fixes a shot has had in this run (each fix step added, whatever became of it). */
-export function fixesOf(steps: readonly { purpose: string; nodeId: string | null; fix: number | null }[], nodeId: string): number {
-  return steps.reduce((most, s) => (s.purpose === "fix" && s.nodeId === nodeId && s.fix != null ? Math.max(most, s.fix) : most), 0);
+type Counted = readonly Pick<StepRow, "purpose" | "nodeId" | "state">[];
+/**
+ * The fixes that count toward MAX_AUTO_FIXES on a shot: those whose take landed. A fix the provider
+ * failed does not count (the shot then waits for a person, and nothing is retried on its own).
+ */
+export function landedFixes(steps: Counted, nodeId: string): number {
+  return steps.filter((s) => s.purpose === "fix" && s.nodeId === nodeId && s.state === "done").length;
+}
+
+/** The number the shot's next fix is called by: every fix it has had in this run, plus one. */
+export function nextFixNumber(steps: readonly Pick<StepRow, "purpose" | "nodeId">[], nodeId: string): number {
+  return steps.filter((s) => s.purpose === "fix" && s.nodeId === nodeId).length + 1;
 }

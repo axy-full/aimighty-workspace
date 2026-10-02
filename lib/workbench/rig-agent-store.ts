@@ -3,6 +3,7 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import { db, now, ready } from "@/lib/db";
 import type { PreparedAdmission } from "../admissionTypes";
 import type { CanvasOp, OpOutcome } from "./canvas-ops-model";
+import type { AgentChoice } from "../production/agent";
 import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
 
 /*
@@ -25,11 +26,14 @@ import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, Step
  *    job it made, and the credits reserved and settled for it. A run records
  *    the limit a person approved for it and every change to that limit.
  *  - A take that fails its check is fixed by new steps added while the run is
- *    live (insertLiveSteps): a fix (`fix` = its number on that shot) and the
- *    check of the fixed take, appended after the plan's own steps. A shot's
- *    fix n exists once (a unique index). A step's own paid text (the fix
- *    writer's turn) is reserved, settled or released like the planning turn:
- *    `charge_id` names its meter event and `charge` says where it stands.
+ *    live (insertLiveSteps), appended after the plan's own steps: a round on
+ *    its shot — a fix (an edit of the failed take) or, when a person asks, a
+ *    render again — and the check of what it made. `round` numbers a shot's
+ *    rounds; a shot's round n exists once (a unique index). A step's own paid
+ *    text (the fix writer's turn) is reserved, settled or released like the
+ *    planning turn: `charge_id` names its meter event and `charge` says where
+ *    it stands. A check keeps its verdict and scorecard; a person's decision
+ *    on a shot that needs them is kept with who made it and when.
  */
 
 type Executor = Pick<Client, "execute"> | Transaction;
@@ -96,17 +100,19 @@ const SCHEMA = [
 
 /** Additive columns for paid work, on tables an earlier version may already have made. */
 const COLUMNS: Record<string, [string, string][]> = {
-  rig_agent_runs: [["limits", "TEXT"], ["plan_charge", "TEXT"]],
+  rig_agent_runs: [["limits", "TEXT"], ["plan_charge", "TEXT"], ["notified_at", "INTEGER"], ["agent", "TEXT"]],
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
-    ["fix", "INTEGER"], ["charge_id", "TEXT"], ["charge", "TEXT"],
+    ["round", "INTEGER"], ["charge_id", "TEXT"], ["charge", "TEXT"],
+    ["hold_credits", "REAL"], ["request", "TEXT"], ["verdict", "TEXT"], ["scorecard", "TEXT"],
+    ["resolution", "TEXT"], ["resolved_by", "TEXT"], ["resolved_at", "INTEGER"],
   ],
 };
 const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_rig_agent_steps_job ON rig_agent_steps(job_id) WHERE job_id IS NOT NULL`,
-  /* A shot's fix n, and the check of it, each exist once: adding them again changes nothing. */
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_rig_agent_steps_fix ON rig_agent_steps(run_id, node_id, purpose, fix) WHERE fix IS NOT NULL`,
+  /* A shot's round n, and the check of it, each exist once: adding them again changes nothing. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_rig_agent_steps_round ON rig_agent_steps(run_id, node_id, purpose, round) WHERE round IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_rig_agent_steps_charge ON rig_agent_steps(charge) WHERE charge='reserved'`,
 ];
 
@@ -165,8 +171,35 @@ export type RunRow = {
   perJobCap: number | null;
   limits: LimitRecord[];
   planCharge: PlanCharge | null;
+  /** When the person who asked was last told the run needs them (one notice per wait, never a stream). */
+  notifiedAt: number | null;
+  /** The Production agent the person who asked had chosen (family, model, effort): a check's judge and the fix writer follow it. */
+  agent: AgentChoice | null;
   leaseUntil: number; wakeAt: number | null; createdAt: number; updatedAt: number;
 };
+
+/** A check's development request as priced (server-only), or a fix's written edit. */
+export type StepRequest =
+  | { kind: "check"; cardId: string; take: string; takeKind: "image" | "video"; body: Record<string, unknown> }
+  | {
+      kind: "fix"; check: string; move: string;
+      /** The edit as the engine receives it, once the fix writer has written it ("" until then). */
+      prompt: string;
+      /** The master the edit carries as its reference (its media identity), and its name. */
+      master: string | null; masterTitle: string | null;
+      reasons: string[];
+      /** The take it edits (its generation), and whether it is a still or a clip. */
+      source: string; take: "image" | "video";
+    };
+/** A check's scorecard as a run keeps it. */
+export type StepScorecard = {
+  line: string;
+  checks: { check: string; verdict: "pass" | "fail" | "unsure"; reasons: string[] }[];
+  /** The masters it was checked against (their kind, name and media identity): what a fix carries as its reference. */
+  masters?: { kind: string; title: string; identity: string }[];
+};
+/** A person's decision on a shot whose check needs them. */
+export type StepResolution = "accept" | "fix" | "rerender" | "recheck" | "skip";
 
 export type StepRow = {
   id: string; runId: string; seq: number; tool: StepTool; label: string; purpose: string; nodeId: string | null;
@@ -174,12 +207,24 @@ export type StepRow = {
   attempt: number; ops: CanvasOp[]; opId: string | null; state: RigAgentStepState; result: OpOutcome[] | null;
   /**
    * The saved request key of the paid attempt now being sent: `rig-agent:<runId>:<nodeId>:take:<attempt>`
-   * for a render, `rig-agent:<runId>:<nodeId>:fix:<fix>:<attempt>` for a fix, and for a check the
-   * request id of its development job.
+   * for the plan's render, `…:take:<round>:<attempt>` for a render again, `…:fix:<round>:<attempt>` for
+   * a fix, and for a check the request id of its development job.
    */
   requestKey: string | null;
-  /** A fix step: which fix of its shot it is (1, 2, …); on a check, the fix whose take it checks. Null for the plan's own steps. */
-  fix: number | null;
+  /** A step added live: which round on its shot it is (1, 2, …) — a fix or a render again, and the check of what that made. Null for the plan's own steps. */
+  round: number | null;
+  /** A check: what its job holds while it runs (its ceiling), when more than it is quoted at. */
+  holdCredits: number | null;
+  /** A check's development request as priced (server-only), or a fix's written edit. */
+  request: StepRequest | null;
+  /** A check's verdict, once it has one. */
+  verdict: "pass" | "fail" | "needs_you" | null;
+  /** A check's scorecard (no pictures, no cost): each check's verdict and what the judge saw. */
+  scorecard: StepScorecard | null;
+  /** What a person decided for a shot that needed them, who, and when. */
+  resolution: StepResolution | null;
+  resolvedBy: string | null;
+  resolvedAt: number | null;
   /** The meter event of this step's own paid text (the fix writer's turn), once one may have been reserved. */
   chargeId: string | null;
   /** Where that charge stands: reserved while the turn may run, then settled at what it used, or released. */
@@ -216,6 +261,7 @@ function runOf(r: Record<string, unknown>): RunRow {
     undoneAt: num(r.undone_at), undoneBy: str(r.undone_by), undo: parse<UndoRecord | null>(r.undo, null),
     capCredits: num(r.cap_credits), perJobCap: num(r.per_job_cap), limits: parse<LimitRecord[]>(r.limits, []),
     planCharge: r.plan_charge === "reserved" || r.plan_charge === "settled" || r.plan_charge === "released" ? r.plan_charge : null,
+    notifiedAt: num(r.notified_at), agent: parse<AgentChoice | null>(r.agent, null),
     leaseUntil: Number(r.lease_until ?? 0), wakeAt: num(r.wake_at), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
@@ -230,11 +276,17 @@ function stepOf(r: Record<string, unknown>): StepRow {
     approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), approvedFingerprint: str(r.approved_fingerprint),
     reason: str(r.reason), pause: PAUSE_KINDS.includes(r.pause as PauseKind) ? (r.pause as PauseKind) : null, settledAt: num(r.settled_at),
     outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
-    fix: num(r.fix), chargeId: str(r.charge_id),
+    round: num(r.round), chargeId: str(r.charge_id),
     charge: r.charge === "reserved" || r.charge === "settled" || r.charge === "released" ? r.charge : null,
+    holdCredits: num(r.hold_credits), request: parse<StepRequest | null>(r.request, null),
+    verdict: r.verdict === "pass" || r.verdict === "fail" || r.verdict === "needs_you" ? r.verdict : null,
+    scorecard: parse<StepScorecard | null>(r.scorecard, null),
+    resolution: RESOLUTIONS.includes(r.resolution as StepResolution) ? (r.resolution as StepResolution) : null,
+    resolvedBy: str(r.resolved_by), resolvedAt: num(r.resolved_at),
     updatedAt: Number(r.updated_at ?? 0),
   };
 }
+const RESOLUTIONS: readonly StepResolution[] = ["accept", "fix", "rerender", "recheck", "skip"];
 
 const rows = async (executor: Executor, statement: InStatement) => (await executor.execute(statement)).rows as unknown as Record<string, unknown>[];
 
@@ -277,13 +329,15 @@ export async function insertRun(tx: Transaction, run: {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number;
   /** The limit the person approved as they asked, the mode, and the per-job line then in force. */
   limit: { credits: number; mode: RigAgentMode; jobCeiling: number };
+  /** The Production agent they had chosen, for the run's checks and fixes. */
+  agent?: AgentChoice | null;
 }) {
   const limits: LimitRecord[] = [{ credits: run.limit.credits, mode: run.limit.mode, jobCeiling: run.limit.jobCeiling, by: run.owner, at: run.at }];
   await tx.execute({
-    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,state,lease_until,wake_at,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?)`,
+    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,agent,state,lease_until,wake_at,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?)`,
     args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, run.limit.mode, run.limit.credits, run.limit.jobCeiling,
-      JSON.stringify(limits), run.model, run.at, run.at, run.at],
+      JSON.stringify(limits), run.model, run.agent ? JSON.stringify(run.agent) : null, run.at, run.at, run.at],
   });
 }
 
@@ -291,7 +345,7 @@ type RunPatch = Partial<{
   state: RigAgentState; reason: string | null; plan: CompiledPlan; plan_fingerprint: string; usage: PlanUsage; model: string;
   planning_started_at: number; approved_at: number; approved_by: string; finished_at: number;
   undone_at: number; undone_by: string; undo: UndoRecord; wake_at: number | null;
-  cap_credits: number; limits: LimitRecord[]; plan_charge: PlanCharge;
+  cap_credits: number; limits: LimitRecord[]; plan_charge: PlanCharge; notified_at: number | null;
 }>;
 
 /**
@@ -323,28 +377,33 @@ export async function insertSteps(tx: Transaction, runId: string, plan: Compiled
   }
 }
 
-/** A step added while the run is live: a shot's fix n, or the check of its fixed take. */
-export type LiveStep = { tool: "fix" | "verify"; purpose: "fix" | "verify"; label: string; nodeId: string; fix: number };
+/** A step added while the run is live: a round on a shot (a fix, or a render again) or the check of what it made. */
+export type LiveStep = { tool: "fix" | "render" | "verify"; purpose: "fix" | "take" | "verify"; label: string; nodeId: string; round: number };
 
 /**
  * Adds steps to a live run, after every step it has (in the order given), inside the caller's write
- * transaction. A step already there — the same shot's fix n, or the check of it — is kept as it is
+ * transaction. A step already there — the same shot's round n, or the check of it — is kept as it is
  * and not added again, so asking twice adds once. Answers the steps as stored, in the order given.
  */
 export async function insertLiveSteps(tx: Transaction, runId: string, steps: readonly LiveStep[], at: number): Promise<StepRow[]> {
   const out: StepRow[] = [];
   for (const step of steps) {
-    const found = (await rows(tx, { sql: "SELECT * FROM rig_agent_steps WHERE run_id=? AND node_id=? AND purpose=? AND fix=?", args: [runId, step.nodeId, step.purpose, step.fix] }))[0];
+    const found = (await rows(tx, { sql: "SELECT * FROM rig_agent_steps WHERE run_id=? AND node_id=? AND purpose=? AND round=?", args: [runId, step.nodeId, step.purpose, step.round] }))[0];
     if (found) { out.push(stepOf(found)); continue; }
     const seq = Number((await rows(tx, { sql: "SELECT COALESCE(MAX(seq),0)+1 AS seq FROM rig_agent_steps WHERE run_id=?", args: [runId] }))[0].seq);
     await tx.execute({
-      sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,node_id,attempt,prepared,op_id,state,fix,created_at,updated_at)
+      sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,node_id,attempt,prepared,op_id,state,round,created_at,updated_at)
             VALUES(?,?,?,?,?,?,?,0,'[]',NULL,'next',?,?,?)`,
-      args: [`${runId}:${seq}`, runId, seq, step.tool, step.label, step.purpose, step.nodeId, step.fix, at, at],
+      args: [`${runId}:${seq}`, runId, seq, step.tool, step.label, step.purpose, step.nodeId, step.round, at, at],
     });
     out.push((await getStep(tx, runId, seq))!);
   }
   return out;
+}
+
+/** The next round on a shot: one after the highest it has had in this run. */
+export async function nextRound(executor: Executor, runId: string, nodeId: string): Promise<number> {
+  return Number((await rows(executor, { sql: "SELECT COALESCE(MAX(round),0)+1 AS n FROM rig_agent_steps WHERE run_id=? AND node_id=?", args: [runId, nodeId] }))[0].n);
 }
 
 /** The op id a build step applies under: the same step applied again changes nothing (applyCanvasOps). */
@@ -368,6 +427,8 @@ type StepPatch = Partial<{
   band: number | null; approved_at: number | null; approved_by: string | null; approved_fingerprint: string | null;
   reason: string | null; pause: PauseKind | null; settled_at: number | null; outcome: StepRow["outcome"];
   charge_id: string | null; charge: PlanCharge | null;
+  hold_credits: number | null; request: StepRequest | null; verdict: StepRow["verdict"]; scorecard: StepScorecard | null;
+  resolution: StepResolution | null; resolved_by: string | null; resolved_at: number | null;
 }>;
 
 /**

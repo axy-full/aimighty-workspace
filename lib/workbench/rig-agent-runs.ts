@@ -1,12 +1,9 @@
-import { createHash } from "node:crypto";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission, PrepareAdmissionResult } from "../admissionTypes";
 import { preparedClaimFingerprint } from "../admissionSupport";
-import { creditState } from "../credits";
 import { db, now } from "../db";
 import { DRAFT_RESOLUTION } from "../draftFinal";
-import { checkGenerationRequest, runCharges, RUN_LIMIT_REACHED } from "../generationRequests";
-import { platformDb, platformReady } from "../platform";
-import { fromTenths, jobBand, runLimitVerdict, runTally, toTenths, type RunSpend } from "../runLimit";
+import { checkGenerationRequest, RUN_LIMIT_REACHED } from "../generationRequests";
+import { jobBand, toTenths, type RunSpend } from "../runLimit";
 import { requireTenant } from "../tenant";
 import { shotEngine } from "../workspace/engines";
 import { shotReferenceAssets, shotReferenceRole } from "../workspace/rig";
@@ -16,12 +13,17 @@ import { generationRequestBody, type GenerationReference } from "./generation-re
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { mapNodeShot, readDraft } from "./records";
 import { releaseStepCharge } from "./rig-agent-charges";
+import { advanceCheck, closeCheck, type CheckDeps } from "./rig-agent-checks";
+import { advanceFixNext, type FixDeps } from "./rig-agent-fix-steps";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
-import { creditFigure, type RigAgentState, type RigAgentStepState } from "./rig-agent-plan";
+import {
+  AUTO_PURPOSES, CONTINUE, LIVE_JOB, MAX_SEND_ATTEMPTS, PAID_PURPOSES, PENDING_CHECK_MS, RENDER_CHECK_MS, SLOT_WAIT_MS, STOPPED_UNSENT, TERMINAL,
+  checkSubject, creditsShort, figure, jobOf, limitProblem, meterOf, needsYou, pause, runSpend, stepRequestKey, stepTitle, stepWhat, stop, wakeIn, waitScope,
+  type Moved, type PaidContext, type PaidTick,
+} from "./rig-agent-moves";
 import { getRun, patchRun, patchStep, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
 import { readTeamCanvas } from "./team-canvas";
 import { withTeamCanvas } from "./team-canvas-model";
-import type { VerifyCheckResult } from "./verify";
 
 /*
  * Atomik renders drafts inside a limit a person approved (plan §5.5, §6, §8; PR 10).
@@ -76,93 +78,20 @@ import type { VerifyCheckResult } from "./verify";
  * Work in flight is followed first, so one paid step is in flight at a time.
  */
 
-/** A node id as a key part: itself when plain, else a digest of it. */
-const nodeKey = (nodeId: string) => (/^[A-Za-z0-9._-]{1,64}$/.test(nodeId) ? nodeId : "n" + createHash("sha256").update(nodeId).digest("hex").slice(0, 16));
 
-/** A render's durable request key: saved on its step before anything is sent. */
-export function requestKeyFor(runId: string, nodeId: string, attempt: number): string {
-  return `rig-agent:${runId}:${nodeKey(nodeId)}:take:${attempt}`;
-}
 
-/** A fix's durable request key, per send attempt: its shot, which fix it is, and which attempt at sending it. */
-export function fixRequestKey(runId: string, nodeId: string, fix: number, attempt: number): string {
-  return `rig-agent:${runId}:${nodeKey(nodeId)}:fix:${fix}:${attempt}`;
-}
+export {
+  AUTO_PURPOSES, MAX_SEND_ATTEMPTS, PAID_PURPOSES, PENDING_CHECK_MS, RENDER_CHECK_MS, SLOT_WAIT_MS, STOPPED_UNSENT,
+  checkRequestId, checkSubject, fixRequestKey, limitProblem, requestKeyFor, retakeRequestKey, stepRequestKey, stepTitle, stepWhat, waitScope,
+  type PaidContext, type PaidTick, type WaitScope,
+} from "./rig-agent-moves";
 
-/** The durable request key a paid step's attempt is sent under: a fix's own, otherwise its render's. */
-export function stepRequestKey(runId: string, step: Pick<StepRow, "purpose" | "nodeId" | "fix">, attempt: number): string {
-  if (!step.nodeId) throw new Error("A paid step names its card.");
-  if (step.purpose === "fix") {
-    if (!step.fix || step.fix < 1) throw new Error("A fix step carries its number.");
-    return fixRequestKey(runId, step.nodeId, step.fix, attempt);
-  }
-  return requestKeyFor(runId, step.nodeId, attempt);
-}
-
-/**
- * The request id a check's development job is started under (development request ids allow letters,
- * digits, `_` and `-` only): the run, its shot, which take it checks (0 for the render, n for fix n)
- * and the attempt. Saved on the check's step before its job is started, so a lost reply finds the
- * same job, which is checked and charged once.
- */
-export function checkRequestId(runId: string, nodeId: string, fix: number, attempt: number): string {
-  const node = createHash("sha256").update(nodeId).digest("hex").slice(0, 12);
-  return `rigv_${runId.replace(/^rar_/, "")}_${node}_${fix}_${attempt}`;
-}
-
-/** The steps after the build that may spend: renders, checks of their takes, and fixes. */
-export const PAID_PURPOSES = ["take", "verify", "fix"] as const;
-
-/** How many times one render's request may be sent under new keys (each earlier one proven never admitted or refused unbilled). */
-export const MAX_SEND_ATTEMPTS = 8;
-/** How soon a render in flight is looked at again, when nothing wakes the run sooner. */
-export const RENDER_CHECK_MS = 15_000;
-/** How soon a request still being accepted, or whose reply was lost, is asked about again. */
-export const PENDING_CHECK_MS = 5_000;
-/** How soon a render refused for want of a free slot is tried again. */
-export const SLOT_WAIT_MS = 30_000;
-const LIVE_JOB = new Set(["queued", "running", "held"]);
-const TERMINAL: readonly RigAgentStepState[] = ["done", "failed", "skipped"];
-/** A render a stop let go of before it was sent (or that its reservation refused once the stop landed). */
-export const STOPPED_UNSENT = "Stopped before it was sent. Nothing was charged.";
 const INCOMPLETE_RECORD = "This render's request record is incomplete, so nothing more is sent for it. Press Price again, skip it, or stop.";
+/** A check whose take never landed (it failed, or was skipped): nothing to check. */
+export const NOTHING_TO_CHECK = "Nothing to check: its take did not land. Nothing was charged.";
 const MISMATCHED_RECORD = "This render's record does not match what was approved, so nothing more is sent for it. Press Price again, skip it, or stop.";
 
-/**
- * THE VERIFY SEAM (plan PR 7, lane rig-verify): checking a take against its masters is a paid
- * development kind (`verify`) that is not in this build yet. Until it lands this is null: a check
- * step is shown ("Verify arrives in the next update"), never run and never charged. When it lands,
- * set it to a function that quotes the check, reserves it inside the run's limit (`run`, whose
- * live() refuses the reservation once the run has stopped), and answers pass, fail or needs-you for
- * the take, with the scorecard's checks (what a fix is chosen from).
- *
- * A check in flight is recorded on its step so a stop and the cron can follow it (closeEndedSteps):
- * `sending` with `request_key` = checkRequestId(…), saved before its job is started, then
- * `rendering` with `job_id` = its development job, which ends and settles on its own.
- */
-export type RigVerify = (input: { runId: string; nodeId: string; takeId: string; owner: string; run: RunSpend }) =>
-  Promise<{ state: "pass" | "fail" | "needs_you" | "pending"; credits: number | null; reason: string | null; checks?: VerifyCheckResult[] }>;
-export const RIG_AGENT_VERIFY: RigVerify | null = null;
-export const VERIFY_LATER = "Verify arrives in the next update.";
 
-/** Where a step that waits for a person holds things up: its own shot (the run carries on with the others), or the whole run. */
-export type WaitScope = "shot" | "run";
-
-/**
- * The owner's choice: a shot whose check needs a person — unsure, failed with no targeted fix, or
- * failed after its fixes — is flagged, and the run carries on with its other shots. Every other
- * wait holds the whole run, as before: a render waiting for its tap or over the per-job line, the
- * run's limit, the balance, an admin, a refusal, a price or a record to fix.
- */
-export function waitScope(kind: PauseKind): WaitScope {
-  return kind === "check" ? "shot" : "run";
-}
-
-/**
- * What Auto may send without a tap (plan §8): drafts of the plan's renders. Whether a check or a
- * fix may also run without one is the owner's to decide; until then each waits for a tap, in Auto too.
- */
-export const AUTO_PURPOSES: readonly string[] = ["take"];
 
 /**
  * THE LOCK SEAM (plan PR 4, #476): Atomik may lock a master a plan names, never unlock one. Until
@@ -173,11 +102,6 @@ export const AUTO_PURPOSES: readonly string[] = ["take"];
  */
 export type RigLock = (input: { runId: string; productionId: string; nodeId: string; owner: { userId: string; name: string; admin: boolean } }) => Promise<{ unchanged: boolean }>;
 export const RIG_AGENT_LOCK: RigLock | null = null;
-
-export type PaidTick = { state: RigAgentState | null; more: boolean; waitFor?: { genId: string } };
-type Moved = { kind: "continue" } | { kind: "stop"; tick: PaidTick };
-const CONTINUE: Moved = { kind: "continue" };
-const stop = (tick: PaidTick): Moved => ({ kind: "stop", tick });
 
 export type PaidDeps = {
   /** Work as the person who asked, restored from live membership (default: the pipelines' own restore). */
@@ -192,17 +116,10 @@ export type PaidDeps = {
   follow?: (jobId: string) => Promise<void>;
   /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
   ceiling?: () => Promise<number>;
-  /** The check of a take (default: RIG_AGENT_VERIFY, the seam; null while checks are not in this build). */
-  verify?: RigVerify | null;
-};
-
-export type PaidContext = {
-  deadline: number;
-  enabled: () => boolean;
-  offReason: string;
-  pausedWakeMs: number;
-  /** Renews the run's lease before each step (throws when it was lost). */
-  renew: () => Promise<void>;
+  /** The checks of the run's takes: the development framework's dependencies (the tests script the judge here). */
+  checks?: CheckDeps;
+  /** The fix writer (the tests script it here). */
+  fixes?: FixDeps;
 };
 
 async function defaultAsOwner<T>(owner: string, work: (actor: AdmissionActor) => Promise<T>): Promise<T> {
@@ -231,64 +148,10 @@ async function defaultFollow(jobId: string) {
   if (gen && LIVE_JOB.has(gen.status)) await syncGeneration(gen).catch(() => { /* the next look tries again */ });
 }
 
-const figure = (credits: number) => `${creditFigure(credits)} cr`;
-
-/** The shot a paid step is about, as the plan named it. */
-export function stepTitle(run: Pick<RunRow, "plan">, step: Pick<StepRow, "nodeId" | "label">): string {
-  return run.plan?.next.find((n) => n.id === step.nodeId)?.title
-    ?? step.label.replace(/^(?:Check fix \d+ · |Fix \d+ · |Render |Check )/, "").replace(/ · priced$/, "").replace(/ against its masters$/, "");
-}
-
-/** What the run needs a person for: said on the run card, and it waits there (needs_you). */
-async function needsYou(run: RunRow, reason: string): Promise<Moved> {
-  await patchRun(db(), run.id, { state: "needs_you", reason, wake_at: null }, ["running"]);
-  return stop({ state: (await getRun(db(), run.id))?.state ?? "needs_you", more: false });
-}
-
-/**
- * A step waits for a person, with the reason. One whose wait holds only its shot (waitScope) lets
- * the run carry on with the others; any other holds the run.
- */
-async function pause(run: RunRow, step: StepRow, reason: string, kind: PauseKind, from: readonly RigAgentStepState[]): Promise<Moved> {
-  if (!(await patchStep(db(), step.id, { state: "paused", reason, pause: kind }, from))) return CONTINUE;
-  return waitScope(kind) === "shot" ? CONTINUE : needsYou(run, reason);
-}
-
-async function wakeIn(run: RunRow, ms: number, tick: PaidTick): Promise<Moved> {
-  await patchRun(db(), run.id, { wake_at: now() + ms }, ["running"]);
-  return stop(tick);
-}
-
-/* ── The run's limit and the balance, before anything is approved or sent ── */
-
-/** Why this render does not fit under the run's limit now, or null. The reservation checks it again under its write lock. */
-export async function limitProblem(run: Pick<RunRow, "id" | "capCredits">, quote: number, band: number): Promise<string | null> {
-  if (run.capCredits == null) return "This run has no approved limit, so nothing in it is paid.";
-  const tally = runTally(await runCharges(run.id));
-  const verdict = runLimitVerdict({ limitTenths: toTenths(run.capCredits), tally, jobTenths: toTenths(quote), band });
-  if (verdict.ok) return null;
-  const could = band > 1 ? ` and may settle at up to ${figure(quote * band)}` : "";
-  return `The next render is about ${figure(quote)}${could}; this run's limit of ${figure(run.capCredits)} leaves about ${figure(fromTenths(verdict.leftTenths))}. Raise the limit, skip this render, or stop.`;
-}
 
 /** Why the balance cannot pay for this render now (credit workspaces), or null. Admission's own wall decides in the end. */
 async function creditsProblem(admission: PreparedAdmission): Promise<string | null> {
-  if (admission.quote.unit !== "cr") return null;
-  const state = await creditState();
-  if (!state || state.balance >= admission.quote.estimatedCredits) return null;
-  return `Not enough credits: the next render is about ${figure(admission.quote.estimatedCredits)} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
-}
-
-/** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
-function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | "offReason">): RunSpend {
-  return {
-    id: run.id, limitCredits: run.capCredits ?? 0, band,
-    live: async () => {
-      if (!ctx.enabled()) return ctx.offReason;
-      const fresh = await getRun(db(), run.id);
-      return fresh?.state === "running" ? null : "This run was stopped before this render was sent. Nothing was charged.";
-    },
-  };
+  return admission.quote.unit !== "cr" ? null : creditsShort(admission.quote.estimatedCredits);
 }
 
 /* ── Pricing a render: the body the Rig's own Generate sends ─────────── */
@@ -347,25 +210,20 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
 /** What the run does next with its paid steps: move one on, wait for a person, or nothing is left. */
 export type PaidMove = { kind: "step"; step: StepRow } | { kind: "wait"; step: StepRow } | { kind: "done" };
 
-/** The take a check reads: its shot's latest render or fix before it. */
-export function checkSubject(steps: readonly StepRow[], check: Pick<StepRow, "nodeId" | "seq">): StepRow | null {
-  return [...steps].reverse().find((s) => (s.purpose === "take" || s.purpose === "fix") && s.nodeId === check.nodeId && s.seq < check.seq) ?? null;
-}
 
-const verifierOf = (deps: PaidDeps): RigVerify | null => (deps.verify === undefined ? RIG_AGENT_VERIFY : deps.verify);
 
 /**
  * The run's next paid move, in step order (the plan's steps, then those added while it ran):
  *  1. work in flight — a request being sent, a take rendering, a check running — is followed
  *     first, so one paid step is in flight at a time;
  *  2. otherwise the first step that can move: a render or fix that has not ended, a check whose
- *     take landed, a lock (a check or a lock once its seam lands). A step paused for the whole run
- *     is that move: the run waits for a person. A shot held by a wait of its own (waitScope) is
- *     passed over, and the other shots carry on;
+ *     take landed (or whose fix the provider did not render: its shot then waits for a person), a
+ *     lock once its seam lands. A step paused for the whole run is that move: the run waits for a
+ *     person. A shot held by a wait of its own (waitScope) is passed over, and the others carry on;
  *  3. when nothing else can move and a shot waits for a person, the run waits (for the first);
  *  4. otherwise nothing is left: the run is done.
  */
-export function nextPaidMove(steps: readonly StepRow[], seams: { verify: boolean; lock: boolean } = { verify: !!RIG_AGENT_VERIFY, lock: !!RIG_AGENT_LOCK }): PaidMove {
+export function nextPaidMove(steps: readonly StepRow[], seams: { verify: boolean; lock: boolean } = { verify: true, lock: !!RIG_AGENT_LOCK }): PaidMove {
   const open = steps.filter((s) => (PAID_PURPOSES as readonly string[]).includes(s.purpose) || s.purpose === "lock")
     .filter((s) => !TERMINAL.includes(s.state) && (s.purpose !== "verify" || seams.verify) && (s.purpose !== "lock" || seams.lock));
   const flying = open.find((s) => s.state === "sending" || s.state === "rendering");
@@ -380,8 +238,11 @@ export function nextPaidMove(steps: readonly StepRow[], seams: { verify: boolean
       waiting ??= step;
       continue;
     }
-    /* A check waits for its take to land; one whose take never does (failed, skipped) never runs. */
-    if (step.purpose === "verify" && step.state !== "paused" && checkSubject(steps, step)?.state !== "done") continue;
+    /* A check waits for its take to land; one whose render never does (failed, skipped) never runs. A fix the provider failed hands its shot to a person. */
+    if (step.purpose === "verify" && step.state !== "paused") {
+      const subject = checkSubject(steps, step);
+      if (subject?.state !== "done" && !(subject?.purpose === "fix" && subject.state === "failed")) continue;
+    }
     return { kind: "step", step };
   }
   return waiting ? { kind: "wait", step: waiting } : { kind: "done" };
@@ -406,8 +267,10 @@ export async function advancePaidSteps(runId: string, ctx: PaidContext, deps: Pa
     }
     await ctx.renew();
     /* A run asked before limits spends nothing after its build. */
-    const move: PaidMove = run.capCredits == null ? { kind: "done" } : nextPaidMove(await stepsOf(db(), run.id), { verify: !!verifierOf(deps), lock: !!RIG_AGENT_LOCK });
+    const move: PaidMove = run.capCredits == null ? { kind: "done" } : nextPaidMove(await stepsOf(db(), run.id), { verify: true, lock: !!RIG_AGENT_LOCK });
     if (move.kind === "done") {
+      /* A check whose take never landed has nothing to check: let go, nothing charged. */
+      await db().execute({ sql: "UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE run_id=? AND purpose='verify' AND state='next'", args: [NOTHING_TO_CHECK, now(), run.id] });
       const finished = await patchRun(db(), run.id, { state: "done", reason: null, finished_at: now(), wake_at: null }, ["running"]);
       return { state: finished ? "done" : (await getRun(db(), run.id))?.state ?? null, more: false };
     }
@@ -424,10 +287,10 @@ async function advanceStep(run: RunRow, step: StepRow, ctx: PaidContext, deps: P
   /* Paused for the whole run: the run waits for a person (a shot's own wait never reaches here). */
   if (step.state === "paused") return needsYou(run, step.reason ?? "This render waits for you.");
   if (step.purpose === "lock") return lockStep(run, step);
-  if (step.purpose === "verify") return verifyStep(run, step, ctx, deps);
-  /* A fix is never priced as a fresh render of its shot: only from its edit, which this build does not write yet. */
+  if (step.purpose === "verify") return advanceCheck(run, step, ctx, deps.checks ?? {});
+  /* A fix is written, then priced as an edit of the failed take — never as a fresh render of its shot. */
   if (step.purpose === "fix" && step.state === "next")
-    return pause(run, step, `Atomik does not fix takes in this build yet. Look at ${stepTitle(run, step)} and decide.`, "check", ["next"]);
+    return advanceFixNext(run, step, ctx, { fix: deps.fixes ?? {}, asOwner: deps.asOwner ?? defaultAsOwner, prepare: deps.prepare ?? defaultPrepare });
   switch (step.state) {
     case "next": return price(run, step, deps);
     case "waiting": return gate(run, step, deps);
@@ -473,7 +336,7 @@ async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> 
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const what = step.purpose === "fix" && step.fix ? `Fix ${step.fix} for ${title}` : title;
+  const what = stepWhat(run, step);
   const why = !auto ? `${what} is ready to render · about ${figure(step.quoteCredits)}.`
     : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(step.quoteCredits)}. Render it, skip it, or stop.`
     : `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
@@ -514,17 +377,6 @@ async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps
   return recordReply(run, sending, reply);
 }
 
-/** What the ledger shows for a job: its meter row (null: never reserved). */
-async function meterOf(jobId: string): Promise<{ status: string; credits: number } | null> {
-  await platformReady();
-  const row = (await platformDb().execute({ sql: "SELECT status,billed_credits FROM meter_events WHERE workspace_id=? AND id=?", args: [requireTenant().id, jobId] })).rows[0];
-  return row ? { status: String(row.status), credits: Number(row.billed_credits ?? 0) } : null;
-}
-
-async function jobOf(jobId: string): Promise<{ status: string; error: string | null } | null> {
-  const row = (await db().execute({ sql: "SELECT status,error FROM generations WHERE id=?", args: [jobId] })).rows[0];
-  return row ? { status: String(row.status), error: row.error == null ? null : String(row.error) } : null;
-}
 
 async function recordReply(run: RunRow, step: StepRow, reply: AdmissionReply): Promise<Moved> {
   const body = reply.body ?? {};
@@ -629,66 +481,6 @@ export async function closeEndedSteps(run: RunRow): Promise<void> {
   }
 }
 
-/** A check's development job, as its step follows it: its state, and whether its ledger is settled. */
-type CheckJob = { id: string; status: string; settled: boolean };
-async function checkJobOf(owner: string, by: { requestId: string } | { jobId: string }): Promise<CheckJob | null> {
-  const exists = (await db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workbench_development_jobs'")).rows.length > 0;
-  if (!exists) return null;
-  const row = ("jobId" in by
-    ? await db().execute({ sql: "SELECT id,status,settled FROM workbench_development_jobs WHERE id=? AND owner=?", args: [by.jobId, owner] })
-    : await db().execute({ sql: "SELECT id,status,settled FROM workbench_development_jobs WHERE owner=? AND request_id=?", args: [owner, by.requestId] })).rows[0];
-  return row ? { id: String(row.id), status: String(row.status), settled: Number(row.settled ?? 0) === 1 } : null;
-}
-
-const INCOMPLETE_CHECK = "This check's record is incomplete, so nothing more is sent for it.";
-
-/** A check in flight when its run ended: followed through its job, never started again. */
-async function closeCheck(run: RunRow, step: StepRow): Promise<void> {
-  let jobId = step.jobId;
-  if (step.state === "sending") {
-    if (!step.requestKey) {
-      await patchStep(db(), step.id, { state: "paused", pause: "record", reason: INCOMPLETE_CHECK }, ["sending"]);
-      return;
-    }
-    const job = await checkJobOf(run.owner, { requestId: step.requestKey });
-    /* Never started: nothing was reserved, and a start that comes late is refused at its reservation (the run has ended). */
-    if (!job) {
-      await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["sending"]);
-      return;
-    }
-    /* Still being admitted: asked about again by the cron. */
-    if (job.status === "queued") return;
-    if (!(await patchStep(db(), step.id, { state: "rendering", job_id: job.id, reason: null }, ["sending"]))) return;
-    jobId = job.id;
-  }
-  if (!jobId) {
-    await patchStep(db(), step.id, { state: "paused", pause: "record", reason: INCOMPLETE_CHECK }, ["rendering"]);
-    return;
-  }
-  const job = await checkJobOf(run.owner, { jobId });
-  if (!job) {
-    await patchStep(db(), step.id, { state: "paused", pause: "record", reason: INCOMPLETE_CHECK }, ["rendering"]);
-    return;
-  }
-  /* Still running, or its charge still settling: the cron looks again. */
-  if (job.status === "queued" || job.status === "running" || !job.settled) return;
-  const charge = await meterOf(job.id);
-  if (job.status === "succeeded") {
-    await patchStep(db(), step.id, { state: "done", credits_settled: charge?.credits ?? 0, settled_at: now(), reason: null, outcome: null }, ["rendering"]);
-    return;
-  }
-  /* Its reservation refused it (the run had ended): nothing was reserved or charged. */
-  if (!charge) {
-    await patchStep(db(), step.id, { state: "skipped", reason: STOPPED_UNSENT }, ["rendering"]);
-    return;
-  }
-  const outcome: StepRow["outcome"] = charge.status === "running" ? "unknown" : charge.credits > 0 ? "charged" : "not_billed";
-  await patchStep(db(), step.id, {
-    state: "failed", credits_settled: outcome === "unknown" ? null : charge.credits, settled_at: now(), outcome,
-    reason: job.status === "uncertain" ? "The check could not be confirmed, so its estimate is held for review." : "The check did not finish.",
-  }, ["rendering"]);
-}
-
 async function closeSend(run: RunRow, step: StepRow): Promise<void> {
   if (!step.requestKey || !step.admission) {
     await patchStep(db(), step.id, { state: "paused", pause: "record", reason: INCOMPLETE_RECORD }, ["sending"]);
@@ -760,28 +552,6 @@ export async function recordTakeEnd(step: Pick<StepRow, "id">, jobId: string, jo
   if (!recorded && outcome !== "unknown")
     await patchStep(db(), step.id, { credits_settled: charge!.credits, outcome }, ["failed"]);
   return recorded;
-}
-
-/**
- * The check of a take (plan PR 7): run through its seam once it lands; until then shown, never run,
- * never charged. A pass is done. Anything else — unsure, or failed — flags this shot for a person,
- * and the run carries on with its other shots (waitScope).
- */
-async function verifyStep(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps): Promise<Moved> {
-  const verify = verifierOf(deps);
-  if (!verify || !step.nodeId) return CONTINUE;
-  const from: RigAgentStepState[] = ["next", "waiting", "rendering"];
-  const take = checkSubject(await stepsOf(db(), run.id), step);
-  if (take?.state !== "done") return CONTINUE;
-  if (!take.jobId) return pause(run, step, `${stepTitle(run, step)}'s take is not on record, so it is not checked. Look at it and decide.`, "check", from);
-  const verdict = await verify({ runId: run.id, nodeId: step.nodeId, takeId: take.jobId, owner: run.owner, run: runSpend(run, 1, ctx) });
-  if (verdict.state === "pending") return wakeIn(run, RENDER_CHECK_MS, { state: "running", more: false });
-  if (verdict.state === "pass") {
-    await patchStep(db(), step.id, { state: "done", credits_settled: verdict.credits, reason: verdict.reason }, from);
-    return CONTINUE;
-  }
-  if (verdict.credits != null) await patchStep(db(), step.id, { credits_settled: verdict.credits }, from);
-  return pause(run, step, verdict.reason ?? `${stepTitle(run, step)} did not pass its check. Look at it and decide.`, "check", from);
 }
 
 /** A master the plan names (plan PR 4): locked through its seam once #476 lands; until then a person's next step. */
