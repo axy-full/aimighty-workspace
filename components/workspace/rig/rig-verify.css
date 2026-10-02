@@ -3,12 +3,16 @@
    12px or more and targets 44px or more. */
 
 /* ── On the canvas ── */
-.pxw .pxw-graph-verify { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; min-width: 0; }
+/* The verdict, then what it found: one flow of words, two lines at most. It stands where a description would on the
+   board's fixed-height card (lib/workspace/rig-graph.ts CARD_HEIGHT; the description shows in the Card Inspector), and
+   gives way like one: it never pushes the footer into the card's padding or out of the card. */
+.pxw .pxw-graph-verify { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; flex: 0 1 auto; min-height: 0; min-width: 0; margin-top: 4px; font-size: 11.5px; line-height: 1.35; color: var(--pxw-muted); overflow-wrap: anywhere; }
 .pxw .pxw-graph-verify-verdict { font-size: 10.5px; font-weight: 650; letter-spacing: .04em; color: var(--pxw-muted); }
 .pxw .pxw-graph-verify[data-verdict="pass"] .pxw-graph-verify-verdict { color: var(--pxw-green-ink); }
 .pxw .pxw-graph-verify[data-verdict="fail"] .pxw-graph-verify-verdict { color: var(--pxw-red-ink); }
 .pxw .pxw-graph-verify[data-verdict="needs_you"] .pxw-graph-verify-verdict { color: var(--pxw-amber-ink); }
-.pxw .pxw-graph-verify-detail { font-size: 11.5px; line-height: 1.35; color: var(--pxw-muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pxw .pxw-graph-verify-detail { color: var(--pxw-muted); }
+.pxw .pxw-graph-verify-verdict + .pxw-graph-verify-detail::before { content: "· "; }
 .pxw .pxw-graph-verify[data-standing^="older"] .pxw-graph-verify-detail { color: var(--pxw-amber-ink); }
 
 /* ── The shot Inspector's way in ── */
@@ -55,6 +59,7 @@
 .pxw .pxw-verify-button { white-space: normal; max-width: 100%; min-height: 34px; text-align: center; justify-content: center; line-height: 1.3; }
 
 @media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-graph-verify,
   .pxw .pxw-graph-verify-verdict,
   .pxw .pxw-graph-verify-detail { font-size: 12px; }
   .pxw .pxw-verify-button { min-height: 44px; min-width: 44px; }
