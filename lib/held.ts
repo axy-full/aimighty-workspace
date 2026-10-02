@@ -78,6 +78,9 @@ export const poolHold = (info: HeldInfo): HeldInfo => ({ ...info, why: "slots", 
  * Its reservation found the shared pool full after the take was written (two
  * Generates raced for the last slot): park it as held, in the line, instead of
  * failing it. Only while nothing was claimed or sent for it; false otherwise.
+ * A place in the line that could not be written is said on the server: the
+ * take is held all the same, and its workspace's next release pass
+ * (releaseHeldJobs) puts it in the line at its first place.
  */
 export async function holdForPool(id: string, info: HeldInfo): Promise<boolean> {
   const workspaceId = currentTenant()?.workspace?.id;
@@ -88,7 +91,10 @@ export async function holdForPool(id: string, info: HeldInfo): Promise<boolean> 
     args: [JSON.stringify(held), now(), id],
   });
   if (!out.rowsAffected) return false;
-  if (workspaceId) await queueForPool(SHARED_POOL, { id, workspaceId, queuedAt: held.at }).catch(() => {});
+  if (workspaceId)
+    await queueForPool(SHARED_POOL, { id, workspaceId, queuedAt: held.at }).catch((error) => {
+      console.error(`held ${id}: not queued in the shared pool's line —`, `${(error as Error).message}; the next release pass re-queues it`);
+    });
   invalidate(PROJECTS_KEY);
   return true;
 }

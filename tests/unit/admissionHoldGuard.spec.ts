@@ -232,6 +232,44 @@ for (const kind of ["still", "video"] as const)
     await raced.done();
   });
 
+/* ── A hold whose place in the line could not be written ───────────── */
+
+test("a held take whose place in the shared line could not be written is said on the server, and the next release pass puts it in the line", async () => {
+  pool("1", "1");
+  const realPool = await import("../../lib/providerPool");
+  const realHeld = await import("../../lib/held");
+  /* The database refuses the line's write; the hold's own write goes through. */
+  const held = load<typeof import("../../lib/held")>("lib/held.ts", {
+    "./providerPool": { ...realPool, queueForPool: async () => { throw new Error("SQLITE_BUSY: database is locked"); } },
+  });
+  const other = await register("unqueued_other"), ws = await register("unqueued");
+  await occupy(other, "unqueued_other_running");
+  const id = `unqueued_${RUN}`;
+  const { db, ready } = await import("../../lib/db");
+  await inside(ws, async () => {
+    await ready();
+    await db().execute({
+      sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,billed_to,task)
+            VALUES(?,'image','higgsfield',?,'A bottle on a plinth',?,'running','owner',?,?,'higgsfield','generate')`,
+      args: [id, MARKETING, JSON.stringify({ ratio: "3:4", resolution: "2k" }), Date.now(), Date.now()],
+    });
+  });
+  const { value: parked, logged } = await errorsDuring(() => inside(ws, () => held.holdForPool(id, realHeld.heldInfo(0.31, "image", MARKETING, "slots"))));
+  // Held all the same, nothing reserved or sent; out of the line for now, and said once, with the take's id.
+  expect(parked).toBe(true);
+  expect(await take(ws, id)).toMatchObject({ status: "held" });
+  expect(await metered(id)).toBeUndefined();
+  expect(await line(id)).toBeUndefined();
+  expect(logged).toEqual([`held ${id}: not queued in the shared pool's line — SQLITE_BUSY: database is locked; the next release pass re-queues it`]);
+  // Its workspace's next release pass (lib/held.ts releaseHeldJobs) puts it in the line; the pool is still full, so nothing starts.
+  const sent: string[] = [];
+  await inside(ws, () => realHeld.releaseHeldJobs({ defer: async () => { sent.push(id); } }));
+  expect(sent).toEqual([]);
+  expect(await line(id)).toMatchObject({ admitted_at: null, left_at: null });
+  expect(await metered(id)).toBeUndefined();
+  await release(other, "unqueued_other_running");
+});
+
 /* ── The trained-likeness still's reservation ──────────────────────── */
 
 test("a trained-likeness still cancelled a moment before its reservation is refused stays cancelled, and the reply says so", async () => {
