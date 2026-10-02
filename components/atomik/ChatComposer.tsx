@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { unkeptReason, type SkillView } from "@/lib/atomikSkillsText";
 import { useAtomik } from "./AtomikProvider";
+import { creditsFigure } from "@/lib/creditTerms";
 import { EffortPicker, ModelPicker, effortLabel, thinkingModelName } from "./ModelPicker";
 import { ComposerSkillDialogs, SaveSkillButton, SkillHints, sayAboutChat, skillOptionId, useComposerSkills, useSkillNotice } from "./skills/ComposerSkills";
 
@@ -51,12 +52,12 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
       }}
       style={{height:inputHeight}} className="w-full min-w-0 rounded-card border border-border-mid bg-card px-3 text-[16px] text-ink placeholder:text-ink-muted" />
     {command && <p data-testid="atomik-skill-command" className="text-[12px] leading-relaxed text-ink-body [overflow-wrap:anywhere]">/{command.skill.slug} plans its steps for nothing; each is then priced and waits for your Continue.</p>}
-    {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">{thinkingModelName(a.quote.model, a.models)} · {effortLabel(a.quote.effort, a.models.find(model => model.id === a.quote?.model))} · up to {a.quote.estimateCredits} cr</p>}
+    {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">{thinkingModelName(a.quote.model, a.models)} · {effortLabel(a.quote.effort, a.models.find(model => model.id === a.quote?.model))} · up to {creditsFigure(a.quote.estimateCredits)} cr</p>}
     {a.quoteError && !recovering && !command && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
     {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request with its saved model, effort and price.</p>}
     <button type="submit" disabled={a.busy || waiting || !a.draftText.trim() || (!recovering && !a.quote && !command)}
       className="flex min-h-11 w-full items-center justify-center rounded-ctl border border-border-mid bg-action hover:bg-action-hover px-3 text-[13px] font-medium text-on-action [overflow-wrap:anywhere] disabled:opacity-50">
-      {a.busy ? "Sending…" : recovering ? "Recover saved request" : command ? `Run /${command.skill.slug}` : waiting ? "Reading skills…" : a.quote ? `Send · ${a.quote.estimateCredits} cr estimated` : a.quoting ? "Estimating…" : a.quoteError ? "Estimate unavailable" : "Send"}
+      {a.busy ? "Sending…" : recovering ? "Recover saved request" : command ? `Run /${command.skill.slug}` : waiting ? "Reading skills…" : a.quote ? `Send · ${creditsFigure(a.quote.estimateCredits)} cr estimated` : a.quoting ? "Estimating…" : a.quoteError ? "Estimate unavailable" : "Send"}
     </button>
   </form>
   <ComposerSkillDialogs api={skills.api} running={running} saving={saving} chat={a.chat ? { id: a.chat.id, projectId: a.chat.projectId } : null}

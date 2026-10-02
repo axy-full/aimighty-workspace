@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
 import type { RigAgentMode, RigAgentPaidStepView, RigAgentRunView, RigAgentState } from "@/lib/workbench/rig-agent-plan";
-import { creditFigure, isRunLimitAmount } from "@/lib/runLimit";
+import { TENTHS_PER_CREDIT, creditFigure, isRunLimitAmount, toTenths } from "@/lib/runLimit";
 import { chargeSentence } from "@/lib/errors";
 import { useRig } from "./RigProvider";
 
@@ -142,7 +142,11 @@ export function RigAgentCard() {
   const showCompose = agent.enabled && terminal;
   const money = run?.money ?? null;
   const limited = run?.paid.find((p) => p.state === "paused" && p.pause === "limit") ?? null;
-  const raiseTo = money && limited ? Math.ceil(money.limit + Math.max(0, (limited.worst ?? limited.quote ?? 0) - money.left)) : null;
+  /* The next whole credit that covers the paused job, summed in whole tenths: a float sum of tenths drifts past a whole
+     number (11.000000000000002) and would ask for a credit more than it needs. */
+  const raiseTo = money && limited
+    ? Math.ceil((toTenths(money.limit) + Math.max(0, toTenths(limited.worst ?? limited.quote ?? 0) - toTenths(money.left))) / TENTHS_PER_CREDIT)
+    : null;
 
   return (
     <section className="pxw-agent" data-testid="rig-agent" aria-label="Atomik on the board" data-state={run?.state ?? "idle"}>

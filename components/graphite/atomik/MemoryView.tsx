@@ -7,6 +7,7 @@ import { useShell } from "@/lib/shell/state";
 import { useIdentities } from "@/lib/workspace/identities";
 import { usePaidAction } from "@/lib/usePaidAction";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { creditsFigure, isCreditAmount } from "@/lib/creditTerms";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import {
   IMPORT_FROM, MEMORY_KIND_LABEL, MEMORY_KINDS, MEMORY_LIMITS, REF_SOURCE_LABEL, TEXT_KINDS, amountRefusal, brandKitPicks, castRef, mentionsMoney, refSource, soulRef,
@@ -508,7 +509,7 @@ type ReadReply = { id: string; model: string; entries: ImportedEntry[]; skipped:
 const READ_URL = "/api/atomik/memory/read";
 
 /** A price as the workspace pays it: credits, or the vendor's dollars for a workspace on its own keys. */
-const priced = (credits: number, usd?: number) => (usd === undefined ? `about ${credits} cr` : `about $${usd.toFixed(3)}`);
+const priced = (credits: number, usd?: number) => (usd === undefined ? `about ${creditsFigure(credits)} cr` : `about $${usd.toFixed(3)}`);
 
 /**
  * Atomik reads the text and proposes entries: priced first with an
@@ -543,7 +544,7 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
       try {
         const response = await scoped(READ_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, quoteOnly: true }), signal: controller.signal, cache: "no-store" });
         const value = (await response.json().catch(() => null)) as (ReadQuote & { error?: string }) | null;
-        if (!response.ok || !value || typeof value.model !== "string" || !Number.isInteger(value.estimateCredits)) throw new Error(value?.error || "The price could not be read.");
+        if (!response.ok || !value || typeof value.model !== "string" || !isCreditAmount(value.estimateCredits)) throw new Error(value?.error || "The price could not be read.");
         if (!controller.signal.aborted) setQuote({ key: quoteKey, value });
       } catch (error) {
         if (!controller.signal.aborted) setQuote({ key: quoteKey, error: failed(error, "The price could not be read.") });
@@ -590,7 +591,7 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
   };
   if (!open && !pending && !reply) return null;
   const value = reply?.value;
-  const billed = value ? (value.credits != null ? `${value.credits} cr` : value.costUsd != null ? `$${value.costUsd.toFixed(3)}` : null) : null;
+  const billed = value ? (value.credits != null ? `${creditsFigure(value.credits)} cr` : value.costUsd != null ? `$${value.costUsd.toFixed(3)}` : null) : null;
   return (
     <div className="am-read" data-testid="memory-read">
       {value ? (
@@ -638,7 +639,7 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
           <h3 className="am-read-title">Read with Atomik</h3>
           <p className="tc-note">Atomik reads the text above{shownQuote?.value ? ` with ${thinkingModelName(shownQuote.value.model)}` : ""} and proposes entries for you to tick. Nothing is kept until you tick it.</p>
           {shownQuote?.value ? (
-            <p className="tc-note" data-testid="memory-read-estimate">{priced(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, with up to {shownQuote.value.estimateUsd === undefined ? `${shownQuote.value.estimateCredits} cr` : "that"} reserved until it finishes.</p>
+            <p className="tc-note" data-testid="memory-read-estimate">{priced(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, with up to {shownQuote.value.estimateUsd === undefined ? `${creditsFigure(shownQuote.value.estimateCredits)} cr` : "that"} reserved until it finishes.</p>
           ) : shownQuote?.error ? (
             <LoadBanner banner={{ tone: "error", message: shownQuote.error }} onRetry={() => setRound((r) => r + 1)} testId="memory-read-quote-error" compact />
           ) : <p className="tc-note" role="status">Pricing…</p>}

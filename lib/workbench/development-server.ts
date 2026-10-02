@@ -15,7 +15,7 @@ import { assertMeterFunding, meter, type MeterEvent } from '../meter';
 import { platformDb, platformReady } from '../platform';
 import { billingTransaction } from '../billingLedger';
 import { vendorKey } from '../vendorKeys';
-import { billCredits } from '../creditTerms';
+import { billCredits, isCreditAmount, toDeci } from '../creditTerms';
 import { paidByPlatform } from '../platformSpend';
 import { engineMock } from '../mock';
 import { requireTenant, type TenantToken } from '../tenant';
@@ -30,7 +30,6 @@ import type { Project } from './studio';
 import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
 import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
 import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
-import { isCreditAmount, toDeci } from "../creditTerms";
 
 /** The production's stored Verify checks, read by the development route (GET ?verifications=1). */
 export { listVerifications } from './verify-server';

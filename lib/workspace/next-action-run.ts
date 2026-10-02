@@ -1,4 +1,5 @@
 import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
+import { toDeci } from "../creditTerms";
 import { failureLine } from "../errors";
 import type { Generation } from "../jobs";
 import { movedOn, poll, type Poller } from "../poll";
@@ -109,7 +110,8 @@ export async function pressNext(options: {
     if (error instanceof NextRefusal) return { state: "refused", note: `${before}${error.message}`, detail: error.detail };
     return { state: "unknown", note: `${before}The price could not be checked. Nothing was sent; try again in a moment.` };
   }
-  if (fresh.credits !== shown) return { state: "repriced", credits: fresh.credits, note: `${before}${repricedNote(label, fresh.credits)}` };
+  /* Compared in whole tenths: the shown figure came back from the page as a number. */
+  if (toDeci(fresh.credits) !== toDeci(shown)) return { state: "repriced", credits: fresh.credits, note: `${before}${repricedNote(label, fresh.credits)}` };
   const out = await sendClaimedGeneration({
     scope, storageId, storage, credits: fresh.credits,
     body: { ...body, maxCredits: fresh.credits, quoteFingerprint: fresh.fingerprint },
