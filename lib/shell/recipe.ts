@@ -1,6 +1,6 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
-import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
+import { AUDIO_SECONDS, soundOffered, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
 import { cleanCinemaControls, isCinemaStudioModel } from "../cinemaStudioTypes";
 
 /**
@@ -314,7 +314,7 @@ export function recipeChips(input: {
       : { key: "draft", label: "Draft", value: "Draft → full take", state: "changed", why: `${model.label} has no draft mode` });
   if (picks.generateAudio)
     chips.push(settings.generateAudio ? { key: "sound", label: "Sound", value: "With sound", state: "kept" }
-      : { key: "sound", label: "Sound", value: "With sound → silent", state: "changed", why: sameModel ? "Changed here" : `${model.label} has no Sound switch here` });
+      : { key: "sound", label: "Sound", value: "With sound → silent", state: "changed", why: sameModel && soundOffered(model) ? "Changed here" : `${model.label} has no Sound switch here` });
 
   if (picks.soulId) {
     const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");

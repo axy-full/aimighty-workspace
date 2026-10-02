@@ -392,7 +392,7 @@ async function setup() {
     });
     return { uploadId: id, role: kind === "image" ? "reference_image" : kind === "video" ? "reference_video" : "reference_audio" };
   }
-  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "A lighthouse keeper waits on the pier", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: true, projectId: "project", refine: false, ...patch });
+  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "A lighthouse keeper waits on the pier", ratio: "16:9", resolution: "720p", duration: 5, projectId: "project", refine: false, ...patch });
   const post = (value: Record<string, unknown>, key: string) => handler.POST(new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(value) }));
   const rows = async () => (await database.db().execute({ sql: "SELECT * FROM generations WHERE model=?", args: [CINEMA_STUDIO_MODEL_ID] })).rows;
   return { admission, upload, body, post, rows, dispatches, db: database.db };

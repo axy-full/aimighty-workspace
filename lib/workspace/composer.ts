@@ -61,6 +61,8 @@ export type ComposerModel = {
   untested?: string[];
   /** Workspace video engines with draft mode (lib/draftFinal.ts): Gen offers "Draft first · 480p". */
   draft?: true;
+  /** Cinema Studio's Sound switch is offered in this workspace (GET /api/workbench/engines › sound). */
+  sound?: true;
 };
 
 /** A project file picked as a reference: already saved, so it is cited by id. */
@@ -298,7 +300,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 /* ── Model lists ──────────────────────────────────────────────────────── */
 
 /** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
-export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null; /** An approximate figure: shown as "about". */ approximate?: true };
+export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null; /** An approximate figure: shown as "about". */ approximate?: true;
+  /** The figure is for a take with sound (Cinema Studio's Sound switch on). */ sound?: true };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
@@ -319,6 +322,8 @@ export type EngineRow = {
   rate?: EngineRate | null;
   /** The engine has draft mode (lib/models.ts › supportsDraft). */
   draft?: boolean;
+  /** Cinema Studio's Sound switch is offered here: its sound is priced, or this is the house workspace (lib/cinemaSoundPricing.ts). */
+  sound?: boolean;
 };
 
 /** A row of the connected account's catalogue, as the composer reads it (the CLI's `model get` shape). */
@@ -362,6 +367,7 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ...(engine.rate ? { rate: engine.rate } : {}),
       ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
       ...(engine.draft && engine.kind === "video" ? { draft: true as const } : {}),
+      ...(engine.sound && engine.kind === "video" ? { sound: true as const } : {}),
     }));
   if (audio?.configured) {
     /* Sound and music are ElevenLabs'; a workspace on Grok Voice alone speaks only. */
@@ -463,11 +469,12 @@ export const draftOffered = (model: Pick<ComposerModel, "draft" | "resolutions">
   Boolean(model?.draft && model.resolutions?.includes(DRAFT_RESOLUTION));
 
 /**
- * Whether the composer offers a Sound switch for this engine: Cinema Studio 4.0 on this workspace's credits. Its
- * takes are silent unless the switch is on. The switch is its own choice: a sound reference never turns it on.
+ * Whether the composer offers a Sound switch for this engine: Cinema Studio 4.0 on this workspace's credits, where the
+ * engines route says sound is offered (once its cost is priced, or in the house workspace). Its takes are silent unless
+ * the switch is on. The switch is its own choice: a sound reference never turns it on.
  */
-export const soundOffered = (model: Pick<ComposerModel, "id" | "type" | "connected"> | null | undefined): boolean =>
-  Boolean(model && !model.connected && model.type === "video" && isCinemaStudioModel(model.id));
+export const soundOffered = (model: Pick<ComposerModel, "id" | "type" | "connected" | "sound"> | null | undefined): boolean =>
+  Boolean(model && !model.connected && model.type === "video" && isCinemaStudioModel(model.id) && model.sound);
 
 /** The settings a workspace engine renders with: its own first allowed values, the project's aspect where it fits. */
 export function composerSettings(model: ComposerModel | null, projectAspect?: string, picks: ComposerPicks = {}): ComposerSettings {

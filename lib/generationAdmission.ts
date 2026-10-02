@@ -2,6 +2,7 @@ import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/ge
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
@@ -483,6 +484,10 @@ export async function executeGenerationAdmission(
     // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
     if (cinema && !cinemaStudioEnabled())
       return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
+    /* Its Sound switch is offered only once sound is priced, and in the house workspace, which is metered at cost
+       (lib/cinemaSoundPricing.ts). Anywhere else a take asked for with sound stops here: nothing reserved or sent. */
+    if (cinema && model.supportsAudio && Boolean(body.generateAudio ?? false) && !cinemaSoundOffered(requireTenant()))
+      return admissionReply({ error: CINEMA_SOUND_UNAVAILABLE }, { status: 400 });
     /* Cinema Studio's creative controls: only its documented parameters and values, only on its own engine.
        They direct the shot and never enter the price (lib/cinemaStudio.ts). */
     if (body.cinema != null && !cinema)
@@ -1996,6 +2001,8 @@ export async function executeGenerationAdmission(
         duration: params.duration,
         hasVideoInput,
         inputSeconds: hasVideoInput ? inputSeconds : undefined,
+        /* With sound, what its measured charge adds (lib/cinemaSoundPricing.ts). */
+        generateAudio: params.generateAudio,
       });
       if (usd == null)
         return admissionReply({ error: "Cinema Studio has no confirmed price for these settings." }, { status: 400 });

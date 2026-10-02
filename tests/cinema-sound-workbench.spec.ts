@@ -8,13 +8,23 @@ import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Cinema Studio 4.0's Sound switch, in Gen and in the canvas dialog, and its
- * Movement on Auto. The switch is off by default and stays off when a WAV
- * sound is attached as a reference; turning it on asks for the price again
- * (the button shows no figure until the fresh one lands) and Generate then
- * sends `generateAudio`. With Movement on Auto the words go exactly as typed
- * and no movement is sent: the camera is the model's. Nothing reaches a paid
- * route: a Gen press stops at its re-quote, the dialog's submission is
- * mocked, and every other paid route fails the test.
+ * Movement on Auto.
+ *
+ * The switch is offered only where the engines route says Cinema Studio's
+ * sound is (its cost is priced privately, or this is the house workspace).
+ * Most tests set that answer themselves on the engines list, so they hold on
+ * any server: where sound is offered, the switch is off by default, stays off
+ * when a WAV sound is attached as a reference, and turning it on asks for the
+ * price again (the button shows no figure until the fresh one lands) and the
+ * figure with sound is its own; Generate then sends `generateAudio`. Where it
+ * is not offered, there is no switch and nothing asks for sound. Two tests
+ * follow the server's own answer instead, so the same spec checks a server
+ * whose sound is priced and one whose sound is not.
+ *
+ * With Movement on Auto the words go exactly as typed and no movement is
+ * sent: the camera is the model's. Nothing reaches a paid route: a Gen press
+ * stops at its re-quote, the dialog's submission is mocked, and every other
+ * paid route fails the test.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -22,6 +32,9 @@ const SHOTS = ["workbench-390x844", "workbench-1440x900"];
 const CINEMA = "higgsfield-cinema-studio-4.0";
 const SEEDANCE = "dreamina-seedance-2-5-260628";
 const WORDS = "a lighthouse keeper climbs the spiral stairs";
+const UNAVAILABLE = "Sound isn't available for Cinema Studio yet.";
+/** Where the engines list says Cinema Studio's sound is offered: as the test sets it, or as the server answers. */
+type Offer = "offered" | "not offered" | "server";
 
 /* Test fixtures only. */
 const ROOM = upload({ id: "room-tone", filename: "Room tone.wav", mime: "audio/wav", kind: "audio", durationS: 6, width: null, height: null });
@@ -92,7 +105,7 @@ function gate() {
 
 /* ── Gen ─────────────────────────────────────────────────────────────── */
 
-async function openGen(page: Page, generations: ReturnType<typeof generation>[] = []) {
+async function openGen(page: Page, generations: ReturnType<typeof generation>[] = [], offer: Offer = "offered") {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -100,16 +113,26 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await mockLibrary(page, { uploads: [ROOM], generations });
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   await page.route(/\/api\/uploads\/room-tone\/metadata$/, (route) => route.fulfill({ json: { upload: ROOM } }));
-  /* The composer's price reads (GET, never a charge). Cinema Studio's is approximate, and the same with sound or
-     without: its published formula names no charge for sound. A read for sound can be held by the test. */
   const reads: URLSearchParams[] = [];
   let hold: Promise<void> | null = null;
-  await page.route(/\/api\/workbench\/engines\?.*model=/, async (route) => {
-    const query = new URL(route.request().url()).searchParams;
-    reads.push(query);
-    if (query.get("audio") === "1" && hold) await hold;
-    return route.fulfill({ json: query.get("model") === CINEMA ? { credits: 31, approximate: true } : { credits: 12 } });
-  });
+  if (offer !== "server") {
+    /* The engines list, as the server writes it, with Cinema Studio's sound offered or not as the test says. */
+    await page.route(/\/api\/workbench\/engines(\?.*)?$/, async (route) => {
+      if (new URL(route.request().url()).searchParams.has("model")) return route.fallback();
+      const response = await route.fetch();
+      const json = await response.json() as { models?: { id: string; sound?: boolean }[] };
+      for (const row of json.models ?? []) if (row.id === CINEMA) { if (offer === "offered") row.sound = true; else delete row.sound; }
+      return route.fulfill({ response, json });
+    });
+    /* The composer's price reads (GET, never a charge). Cinema Studio's is approximate, and a take with sound has its
+       own figure (what sound's measured charge adds). A read for sound can be held by the test. */
+    await page.route(/\/api\/workbench\/engines\?.*model=/, async (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      reads.push(query);
+      if (query.get("audio") === "1" && hold) await hold;
+      return route.fulfill({ json: query.get("model") === CINEMA ? { credits: query.get("audio") === "1" ? 36 : 31, approximate: true } : { credits: 12 } });
+    });
+  }
   /* Generate's own re-quote is where a press would first spend: recorded and refused, so nothing runs. */
   const priced: Record<string, unknown>[] = [];
   await page.route("**/api/generate/quote", (route) => {
@@ -185,7 +208,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
   expect(errors).toEqual([]);
 });
 
-test("Gen: turning Sound on asks for the price again, Generate sends it, and turning it off asks again", async ({ page }, info) => {
+test("Gen: turning Sound on asks for the price again, at the figure for a take with sound; Generate sends it, and turning it off asks again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, priced, reads, holdSound } = await openGen(page);
   const phone = PHONES.includes(info.project.name);
@@ -209,7 +232,8 @@ test("Gen: turning Sound on asks for the price again, Generate sends it, and tur
   expect(await dimText(page, '[data-testid="gen-sound-option"]', ".gx-eyebrow, .gx-toggle span"), "switch text under #7C7C84 when on").toEqual([]);
   held.open();
   holdSound(null);
-  await expect(go).toHaveText("Generate · about 31 cr");
+  /* The fresh figure is the one for a take with sound. */
+  await expect(go).toHaveText("Generate · about 36 cr");
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "gen-sound-on");
 
@@ -244,7 +268,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await expect(chip).toHaveText("With sound");
   await expect(chip).toHaveAttribute("data-state", "kept");
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.get("audio") === "1")).toBe(true);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · about 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · about 36 cr");
   await shot(page, info, "gen-sound-recreate");
   /* Turned off here: the card says so, and Generate sends a silent take. */
   await sound.scrollIntoViewIfNeeded();
@@ -261,9 +285,81 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   expect(errors).toEqual([]);
 });
 
+test("Gen, where sound is not offered: Cinema Studio has no Sound switch, a Recreate of a take made with sound comes back silent and says why, and nothing asks for sound", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, priced, reads } = await openGen(page, [TAKE()], "not offered");
+  await pickModel(page, /^Cinema Studio 4\.0/);
+  await expect(page.getByTestId("gen-cinema-camera_movement")).toBeVisible();
+  await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
+  await expect(page.getByTestId("gen-sound-toggle")).toHaveCount(0);
+  /* Recreate of a take made with sound: the switch cannot come back here, and the card says so. */
+  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_sound']").click();
+  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  const chip = page.getByTestId("gen-recipe-chips").locator("[data-chip='sound']");
+  await expect(chip).toHaveText("With sound → silent");
+  await expect(chip).toHaveAttribute("data-state", "changed");
+  await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Cinema Studio 4.0 has no Sound switch here");
+  await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
+  const go = page.getByTestId("gen-generate");
+  await expect(go).toHaveText("Generate · about 31 cr");
+  expect(reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
+  expect(await noOverflow(page)).toBe(true);
+  await shot(page, info, "gen-sound-not-offered");
+  await go.click();
+  await expect.poll(() => priced.length).toBe(1);
+  expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS });
+  expect(priced[0]).not.toHaveProperty("generateAudio");
+  expect(errors).toEqual([]);
+});
+
+test("Gen follows the server's own answer: the Sound switch shows only where the server offers Cinema Studio's sound, and the figures are the server's", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const { errors, priced } = await openGen(page, [], "server");
+  const listed = await (await page.request.get("/api/workbench/engines")).json() as { models: { id: string; sound?: boolean }[] };
+  const offered = listed.models.find((row) => row.id === CINEMA)?.sound === true;
+  /* The page's own price reads, answered by the server. */
+  const answer = (audio: boolean) => page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/workbench/engines" && url.searchParams.get("model") === CINEMA && (url.searchParams.get("audio") === "1") === audio;
+  });
+  const silentRead = answer(false);
+  await pickModel(page, /^Cinema Studio 4\.0/);
+  await page.getByTestId("gen-prompt").fill(WORDS);
+  const silentResponse = await silentRead;
+  const silent = await silentResponse.json() as { credits: number };
+  const go = page.getByTestId("gen-generate");
+  await expect(go).toHaveText(`Generate · about ${silent.credits} cr`);
+  if (!offered) {
+    await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
+    /* Asked for by hand, sound is refused by the price read and by admission alike, before anything is reserved or sent. */
+    const url = new URL(silentResponse.url());
+    url.searchParams.set("audio", "1");
+    const read = await page.request.get(url.pathname + url.search);
+    expect(read.status()).toBe(400);
+    expect(await read.json()).toEqual({ error: UNAVAILABLE });
+    const quote = await page.request.post("/api/generate/quote", { data: { model: CINEMA, prompt: WORDS, ratio: "16:9", resolution: "720p", duration: 5, refine: false, generateAudio: true } });
+    expect(quote.status()).toBe(400);
+    expect(await quote.json()).toEqual({ error: UNAVAILABLE });
+  } else {
+    /* Offered: on, the server prices the take with sound, and that figure is the button's. */
+    const loudRead = answer(true);
+    const sound = page.getByTestId("gen-sound-toggle");
+    await sound.scrollIntoViewIfNeeded();
+    await sound.click();
+    const loud = await (await loudRead).json() as { credits: number };
+    expect(loud.credits).toBeGreaterThanOrEqual(silent.credits);
+    await expect(go).toHaveText(`Generate · about ${loud.credits} cr`);
+    await go.click();
+    await expect.poll(() => priced.length).toBe(1);
+    expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS, generateAudio: true });
+  }
+  expect(errors).toEqual([]);
+});
+
 /* ── The canvas dialog ───────────────────────────────────────────────── */
 
-async function canvas(page: Page) {
+async function canvas(page: Page, offer: Offer = "offered") {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -282,7 +378,8 @@ async function canvas(page: Page) {
   const reads: URLSearchParams[] = [];
   let hold: Promise<void> | null = null;
   const engines = [
-    { id: CINEMA, label: "Cinema Studio 4.0", kind: "video", family: "cinema-studio", resolutions: ["720p", "480p"], ratios: ["16:9"], durations: [5], maxReferenceImages: 30, maxReferenceVideos: 10 },
+    { id: CINEMA, label: "Cinema Studio 4.0", kind: "video", family: "cinema-studio", resolutions: ["720p", "480p"], ratios: ["16:9"], durations: [5], maxReferenceImages: 30, maxReferenceVideos: 10,
+      ...(offer === "offered" ? { sound: true } : {}) },
     { id: SEEDANCE, label: "Seedance 2.5", kind: "video", family: "seedance-2", resolutions: ["720p"], ratios: ["16:9"], durations: [5], maxReferenceImages: 9, maxReferenceVideos: 3 },
   ];
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
@@ -296,10 +393,12 @@ async function canvas(page: Page) {
       return json({ project, revision, projects: [{ id: project.id, name: project.name }], productions: [] });
     }
     if (path === "/api/workbench/engines") {
+      /* The server's own list and figures, where the test follows the server. */
+      if (offer === "server") return route.continue();
       if (!url.searchParams.has("model")) return json({ models: engines });
       reads.push(url.searchParams);
       if (url.searchParams.get("audio") === "1" && hold) await hold;
-      return json(url.searchParams.get("model") === CINEMA ? { credits: 35, approximate: true } : { credits: 3 });
+      return json(url.searchParams.get("model") === CINEMA ? { credits: url.searchParams.get("audio") === "1" ? 40 : 35, approximate: true } : { credits: 3 });
     }
     if (path === "/api/generate/check" && req.method() === "POST") return json({ state: "absent" });
     if (path === "/api/generate" && req.method() === "POST") {
@@ -335,7 +434,7 @@ async function openNode(page: Page) {
   return page.getByRole("dialog", { name: "Generate a new take", exact: true });
 }
 
-test("the canvas dialog: Sound is off with the node's WAV bound; on, the price is read again and the take is sent with sound", async ({ page }, info) => {
+test("the canvas dialog, where sound is offered: Sound is off with the node's WAV bound; on, the price is read again, at the figure for a take with sound, and the take is sent with sound", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const f = await canvas(page);
   const phone = PHONES.includes(info.project.name);
@@ -362,7 +461,7 @@ test("the canvas dialog: Sound is off with the node's WAV bound; on, the price i
   expect(size, "switch text under 12px").toBeGreaterThanOrEqual(12);
   expect(await noOverflow(page)).toBe(true);
 
-  /* On: no figure until the fresh read for sound answers, then that figure. */
+  /* On: no figure until the fresh read for sound answers, then that figure: the one for a take with sound. */
   const held = gate();
   f.holdSound(held.shut);
   const before = f.reads.length;
@@ -372,7 +471,7 @@ test("the canvas dialog: Sound is off with the node's WAV bound; on, the price i
   await expect(dialog.getByRole("button", { name: "Loading estimate…", exact: true })).toBeDisabled();
   held.open();
   f.holdSound(null);
-  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 40 cr", exact: true });
   await expect(generate).toBeEnabled();
   expect(f.reads.at(-1)?.getAll("uploadId")).toEqual(["room-upload"]);
   await sound.scrollIntoViewIfNeeded();
@@ -380,7 +479,7 @@ test("the canvas dialog: Sound is off with the node's WAV bound; on, the price i
 
   await generate.click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 35, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 40, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   await expect(dialog).toHaveCount(0);
   /* The node's first input is the WAV, so the inspector's monitor holds that sound, at full volume. The node's own mode
      ("Video") is not a volume; read as one, it threw and stopped the page. */
@@ -388,7 +487,7 @@ test("the canvas dialog: Sound is off with the node's WAV bound; on, the price i
   expect(f.errors).toEqual([]);
 });
 
-test("the canvas dialog: off, the take goes silent with its sound reference, and with Movement on Auto the words go as typed with no movement", async ({ page }, info) => {
+test("the canvas dialog, where sound is offered: off, the take goes silent with its sound reference, and with Movement on Auto the words go as typed with no movement", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const f = await canvas(page);
   const dialog = await openNode(page);
@@ -416,5 +515,40 @@ test("the canvas dialog: off, the take goes silent with its sound reference, and
   expect(f.submissions[0]).toMatchObject({ model: CINEMA, prompt: direction, refine: false, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
   expect(f.submissions[0]).not.toHaveProperty("cinema");
+  expect(f.errors).toEqual([]);
+});
+
+test("the canvas dialog, where sound is not offered: no Sound switch with the node's WAV bound, and the take goes silent with it", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const f = await canvas(page, "not offered");
+  const dialog = await openNode(page);
+  await expect(dialog.getByRole("combobox", { name: "Generation engine" })).toHaveValue(CINEMA);
+  await expect(dialog.getByRole("group", { name: "Cinema Studio controls" })).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
+  await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveCount(0);
+  await expect(dialog.getByTestId("dialog-cinema-sound")).toHaveCount(0);
+  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  await expect(generate).toBeEnabled();
+  expect(f.reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
+  expect(await noOverflow(page)).toBe(true);
+  await shot(page, info, "dialog-sound-not-offered");
+  await generate.click();
+  await expect.poll(() => f.submissions.length).toBe(1);
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, maxCredits: 35, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).not.toHaveProperty("generateAudio");
+  expect(f.errors).toEqual([]);
+});
+
+test("the canvas dialog follows the server's own answer: its Sound switch shows only where the server offers Cinema Studio's sound", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const f = await canvas(page, "server");
+  const listed = await (await page.request.get("/api/workbench/engines")).json() as { models: { id: string; sound?: boolean }[] };
+  const offered = listed.models.find((row) => row.id === CINEMA)?.sound === true;
+  const dialog = await openNode(page);
+  await dialog.getByRole("combobox", { name: "Generation engine" }).selectOption(CINEMA);
+  await expect(dialog.getByRole("group", { name: "Cinema Studio controls" })).toBeVisible();
+  await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveCount(offered ? 1 : 0);
+  if (offered) await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveAttribute("aria-checked", "false");
+  expect(f.submissions).toEqual([]);
   expect(f.errors).toEqual([]);
 });

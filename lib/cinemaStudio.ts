@@ -5,6 +5,7 @@ import { imagePath, videoPath, uploadPath, usingBlob, presignedReadUrl } from ".
 import { estimateCostUsd, listRate } from "./vendorPricing";
 import { costUsd } from "./models";
 import type { PricingWatch } from "./higgsfieldPricingWatch";
+import { cinemaSoundPricing, cinemaSoundUsd } from "./cinemaSoundPricing";
 /** The deploy-time switch, beside the engine it switches (defined with the rates in lib/vendorRates.ts). */
 export { cinemaStudioEnabled } from "./vendorRates";
 import {
@@ -17,7 +18,7 @@ import {
   readCinemaControls,
 } from "./cinemaStudioTypes";
 
-type QuoteParams = Pick<VideoParams, "resolution" | "ratio" | "duration" | "hasVideoInput" | "inputSeconds">;
+type QuoteParams = Pick<VideoParams, "resolution" | "ratio" | "duration" | "hasVideoInput" | "inputSeconds" | "generateAudio">;
 
 const oneOf = (values: readonly string[], value: unknown) => typeof value === "string" && values.includes(value);
 function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "duration">): boolean {
@@ -41,12 +42,16 @@ function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "dur
  * engine's contract.
  *
  * The creative controls (camera, lens, aperture, movement, era, genre, light,
- * pacing, palette), sound references and the Sound switch (generate_audio)
- * are not in the formula: the published text counts only seconds and pixels,
- * names no charge for sound, and says image and audio references do not count
- * as video input. So they are not read here, and choosing them leaves the
- * quote and the dispatch re-price exactly where they were. Should the
- * published text change, the pricing watch below flags it.
+ * pacing, palette) and sound references are not in the formula: the published
+ * text counts only seconds and pixels and says image and audio references do
+ * not count as video input. So they are not read here, and choosing them
+ * leaves the quote and the dispatch re-price exactly where they were. Should
+ * the published text change, the pricing watch below flags it.
+ *
+ * The Sound switch (generate_audio) is not in the published text either. A take
+ * asked for with sound adds what the provider's measured charge for sound says
+ * (lib/cinemaSoundPricing.ts), on the generated seconds; until that is set it
+ * adds nothing, and only the house workspace may ask for sound at all.
  */
 export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
   if (settingsProblem(params)) return null;
@@ -56,17 +61,22 @@ export function cinemaStudioQuoteUsd(params: QuoteParams): number | null {
     return null;
   const estimate = estimateCostUsd(CINEMA_STUDIO_MODEL_ID, params.resolution, params.ratio, params.duration,
     inputSeconds, Boolean(params.hasVideoInput));
-  return estimate && Number.isFinite(estimate.net) && estimate.net > 0 ? estimate.net : null;
+  if (!estimate || !Number.isFinite(estimate.net) || !(estimate.net > 0)) return null;
+  if (!params.generateAudio) return estimate.net;
+  const output = estimateCostUsd(CINEMA_STUDIO_MODEL_ID, params.resolution, params.ratio, params.duration, 0, Boolean(params.hasVideoInput));
+  if (!output || !Number.isFinite(output.net)) return null;
+  return estimate.net + cinemaSoundUsd(cinemaSoundPricing(), { seconds: params.duration, outputUsd: output.net });
 }
 
 /**
  * What the provider bills for a delivered take: the same published formula on
  * the output's measured frame and length, plus the quoted reference seconds,
- * at the rate the clip input set. Null when the output cannot be measured.
+ * at the rate the clip input set, and, for a take made with sound, what sound
+ * adds on the delivered seconds. Null when the output cannot be measured.
  */
 export function cinemaStudioDeliveredUsd(delivered: {
   resolution: string; width: number; height: number; seconds: number;
-  hasVideoInput?: boolean; inputSeconds?: number;
+  hasVideoInput?: boolean; inputSeconds?: number; generateAudio?: boolean;
 }): number | null {
   if (![delivered.width, delivered.height, delivered.seconds].every(n => Number.isFinite(n) && n > 0)) return null;
   const inputSeconds = delivered.hasVideoInput ? Number(delivered.inputSeconds) : 0;
@@ -74,7 +84,10 @@ export function cinemaStudioDeliveredUsd(delivered: {
   const rate = listRate(CINEMA_STUDIO_MODEL_ID, delivered.resolution, Boolean(delivered.hasVideoInput));
   if (rate == null) return null;
   const tokens = Math.ceil(((inputSeconds + delivered.seconds) * delivered.width * delivered.height * 24) / 1024);
-  return costUsd(tokens, rate);
+  const usd = costUsd(tokens, rate);
+  if (!delivered.generateAudio) return usd;
+  const outputUsd = costUsd(Math.ceil((delivered.seconds * delivered.width * delivered.height * 24) / 1024), rate);
+  return usd + cinemaSoundUsd(cinemaSoundPricing(), { seconds: delivered.seconds, outputUsd });
 }
 
 /**

@@ -2,17 +2,22 @@ import { withTenant, requireUser } from '@/lib/auth';
 import { modelConfigured } from '@/lib/providers';
 import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
+import { requireTenant } from '@/lib/tenant';
+import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
 
 export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
   const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
+  /* Cinema Studio's Sound switch: offered once its sound is priced, and in the house workspace (lib/cinemaSoundPricing.ts). */
+  const soundHere = cinemaSoundOffered(requireTenant());
   const listed = (at: RateAt, refs: ReferencePrices | null) => configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations, untestedResolutions: model.untestedResolutions,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined,
     /* Draft mode (lib/draftFinal.ts): Gen offers a 480p draft first on these. */
     draft: model.supportsDraft || undefined,
+    sound: (model.cinemaStudio && soundHere) || undefined,
     /* The model sheet's row: what the engine is for in Gen, whether its takes carry sound, and its price (credits only, nothing reserved). */
     use: workbenchUse(model), audio: rendersSound(model) || undefined, rate: refs ? workbenchRate(model, at, refs) : null }));
   const headers = { 'Cache-Control': 'no-store' };
@@ -22,7 +27,7 @@ export const GET = withTenant(async (req: Request) => {
        and uploadId/genId/imageRefs its references — each engine then resolves them as composerSettings does. */
     const text = (name: string) => { const v = q.get(name); return v && v.length <= 24 ? v : undefined; };
     const pickDuration = Number(q.get('pickDuration'));
-    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}), ...(q.get('pickDraft') === '1' ? { draft: true } : {}) } };
+    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}), ...(q.get('pickDraft') === '1' ? { draft: true } : {}), ...(q.get('pickSound') === '1' ? { generateAudio: true } : {}) }, soundOffered: soundHere };
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
     const imageRefs = Number(q.get('imageRefs') || 0);
     /* References that cannot be priced leave every rate empty: Generate then says why. */
@@ -45,8 +50,9 @@ export const GET = withTenant(async (req: Request) => {
     if (Number(q.get('unresolvedVideoRefs') || 0) > 0) throw new MediaQuoteError('Upload the bound reference video from your device before estimating this take.');
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
     const refPrices = await referencePrices(references, Number(q.get('imageRefs') || q.get('refs') || 0));
-    /* `audio=1`: the take is asked for with sound (Cinema Studio's Sound switch); priced as the engine bills it. */
-    const quote = quoteWorkbenchMedia(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1' }, refPrices);
+    /* `audio=1`: the take is asked for with sound (Cinema Studio's Sound switch); priced as the engine bills it, and
+       refused for Cinema Studio where its sound is not offered. */
+    const quote = quoteWorkbenchMedia(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1', soundOffered: soundHere }, refPrices);
     return Response.json({ models, ...quote }, { headers });
   } catch (error) {
     return Response.json({ error: error instanceof MediaQuoteError ? error.message : 'The reference estimate could not be read.' }, { status: error instanceof MediaQuoteError ? error.status : 500, headers });

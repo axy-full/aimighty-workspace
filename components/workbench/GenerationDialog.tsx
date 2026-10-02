@@ -39,6 +39,8 @@ type Model = {
   maxReferenceVideos: number;
   soulIdentity?: boolean;
   marketing?: boolean;
+  /** Cinema Studio's Sound switch is offered in this workspace (GET /api/workbench/engines › sound). */
+  sound?: boolean;
 };
 export type MarketingGenerationOptions = { variant?: MarketingBuild; quality: MarketingQuality; enhancePrompt: boolean; presetId?: string };
 export type GenerationTarget = {
@@ -174,6 +176,8 @@ function TakeDialog({
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   /* Cinema Studio 4.0 also takes the node's sounds as references (WAV uploads; the server checks each). */
   const cinemaModel = kind === "video" && model != null && isCinemaStudioModel(model.id);
+  /* Its Sound switch, where this workspace is offered it (once its sound is priced, or in the house workspace). */
+  const soundModel = cinemaModel && model?.sound === true;
   const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind)), [target.refs, project.assets, project.sharedAssets]);
@@ -198,7 +202,7 @@ function TakeDialog({
   const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
     voiceId: speechVoiceId, modelId: speechModelId }));
   /* Sound on is another request: it is priced (and approved) again. Off, the key is as it always was. */
-  const withSound = cinemaModel && sound;
+  const withSound = soundModel && sound;
   const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(withSound ? { sound: true } : {}), ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
   const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
@@ -366,8 +370,8 @@ function TakeDialog({
         firstFrameAssetId: firstFrameId,
         soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
         /* Price-neutral: the approximate quote is the same with or without them (lib/cinemaStudio.ts). The Sound
-           switch goes only when it is on; the price on the button was read for it. */
-        ...(cinemaModel ? { cinema: cleanCinemaControls(cinema), generateAudio: sound } : {}),
+           switch goes only when it is on and offered; the price on the button was read for it. */
+        ...(cinemaModel ? { cinema: cleanCinemaControls(cinema), generateAudio: withSound } : {}),
       }));
       const proposed: PendingGeneration = { key: crypto.randomUUID(), body, credits: cost!, endpoint: kind === "audio" ? "/api/audio" : "/api/generate" };
       const claim = claimPendingGeneration(window.localStorage, storageId, proposed);
@@ -579,7 +583,7 @@ function TakeDialog({
           </div>}
           {/* Cinema Studio's Sound switch: off unless turned on here, whatever sounds the node is bound to. Turning it on
               or off reads the price again before Generate. */}
-          {cinemaModel && <button type="button" role="switch" className="cinema-sound" aria-checked={sound} disabled={busy || !!pending}
+          {soundModel && <button type="button" role="switch" className="cinema-sound" aria-checked={sound} disabled={busy || !!pending}
             onClick={() => setSound(on => !on)} data-testid="dialog-cinema-sound">
             <span className="cinema-sound-dot" aria-hidden="true" /><span>With sound</span>
           </button>}
