@@ -18,7 +18,7 @@ import { advanceFixNext, type FixDeps } from "./rig-agent-fix-steps";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
 import {
   AUTO_PURPOSES, CONTINUE, LIVE_JOB, MAX_SEND_ATTEMPTS, PAID_PURPOSES, PENDING_CHECK_MS, RENDER_CHECK_MS, SLOT_WAIT_MS, STOPPED_UNSENT, TERMINAL,
-  checkSubject, creditsShort, figure, jobOf, limitProblem, meterOf, needsYou, pause, runSpend, stepRequestKey, stepTitle, stepWhat, stop, wakeIn, waitScope,
+  checkSubject, creditsShort, failedRound, figure, jobOf, limitProblem, meterOf, needsYou, pause, runSpend, stepRequestKey, stepTitle, stepWhat, stop, wakeIn, waitScope,
   type Moved, type PaidContext, type PaidTick,
 } from "./rig-agent-moves";
 import { getRun, patchRun, patchStep, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
@@ -238,10 +238,10 @@ export function nextPaidMove(steps: readonly StepRow[], seams: { verify: boolean
       waiting ??= step;
       continue;
     }
-    /* A check waits for its take to land; one whose render never does (failed, skipped) never runs. A fix the provider failed hands its shot to a person. */
+    /* A check waits for its take to land; one whose render never does (failed, skipped) never runs. A fix, or a render again, the provider failed hands its shot to a person. */
     if (step.purpose === "verify" && step.state !== "paused") {
       const subject = checkSubject(steps, step);
-      if (subject?.state !== "done" && !(subject?.purpose === "fix" && subject.state === "failed")) continue;
+      if (subject?.state !== "done" && !failedRound(subject)) continue;
     }
     return { kind: "step", step };
   }

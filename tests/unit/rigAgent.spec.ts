@@ -322,7 +322,11 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
     await expect(agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId: "req-00000003", goal: "Another" , limit: LIMIT })).rejects.toMatchObject({ status: 409 });
     expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "awaiting_approval", more: false });
     const proposed = (await agent.rigAgentState("prod-1", "ana")).run!;
-    expect(proposed.proposal).toMatchObject({ title: "2-shot board", cards: 4, wires: 4, tidy: true, next: ["Next: render 2 shots · priced, each one approved first"] });
+    expect(proposed.proposal).toMatchObject({ title: "2-shot board", cards: 4, wires: 4, tidy: true, next: [
+      "Next: render 2 shots · priced, each one approved first",
+      "Then each take is checked against its masters · priced, each one approved first",
+      "A failed check gets at most 2 fixes · each priced and approved first",
+    ] });
     expect(proposed.proposal!.groups.map((g) => [g.label, g.titles])).toEqual([["Cast", ["The lead"]], ["Environment", ["The location"]], ["Shot", ["01 — Opening", "02 — The turn"]]]);
     expect(proposed.steps.map((s) => s.state)).toEqual(["proposed", "proposed", "proposed", "proposed", "proposed"]);
     /* The renders the plan names come after the build, each with the check of its take. */

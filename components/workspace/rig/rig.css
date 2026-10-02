@@ -383,6 +383,19 @@
 .pxw .pxw-agent-render[data-state="done"] .pxw-agent-render-price { color: var(--pxw-green-ink); }
 .pxw .pxw-agent-render-state { margin: 0; font-size: 12.5px; color: var(--pxw-muted); overflow-wrap: anywhere; }
 .pxw .pxw-agent-render[data-state="failed"] .pxw-agent-render-state { color: var(--pxw-amber-ink); }
+/* A check's verdict, a fix's edit, and a shot that waits for a person's decision (plan PR 11). */
+.pxw .pxw-agent-render[data-flagged] { border-color: color-mix(in srgb, var(--pxw-amber-ink) 40%, var(--pxw-card-border)); }
+.pxw .pxw-agent-render[data-flagged] .pxw-agent-render-state { color: var(--pxw-amber-ink); }
+.pxw .pxw-agent-render[data-verdict="pass"]:not([data-flagged]) .pxw-agent-render-state { color: var(--pxw-green-ink); }
+.pxw .pxw-agent-edit { margin: 0; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, .04); font-size: 12.5px; line-height: 1.45; color: var(--pxw-secondary); overflow-wrap: anywhere; }
+.pxw .pxw-agent-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; line-height: 1.45; min-width: 0; }
+.pxw .pxw-agent-checks li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+.pxw .pxw-agent-check-name { font-weight: 600; color: var(--pxw-primary); }
+.pxw .pxw-agent-check-verdict { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: .04em; color: var(--pxw-amber-ink); }
+.pxw .pxw-agent-checks li[data-verdict="fail"] .pxw-agent-check-verdict { color: var(--pxw-red-ink); }
+.pxw .pxw-agent-check-why { flex: 1 1 100%; color: var(--pxw-muted); overflow-wrap: anywhere; }
+.pxw .pxw-agent-choices { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; min-width: 0; }
+.pxw .pxw-agent-choices > button { max-width: 100%; white-space: normal; text-align: center; }
 .pxw .pxw-agent-body, .pxw .pxw-agent-last, .pxw .pxw-agent-proposal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pxw .pxw-agent-body { gap: 8px; }
 .pxw .pxw-agent-proposal { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--pxw-blue-tint-border); background: var(--pxw-blue-tint); }

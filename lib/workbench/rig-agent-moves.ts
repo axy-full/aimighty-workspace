@@ -189,6 +189,15 @@ export function checkSubject(steps: readonly StepRow[], check: Pick<StepRow, "no
   return [...steps].reverse().find((s) => (s.purpose === "take" || s.purpose === "fix") && s.nodeId === check.nodeId && s.seq < check.seq) ?? null;
 }
 
+/**
+ * A render the run added for a shot — a fix, or a render again a person asked for — that the
+ * provider did not render: never one of the fixes that count, never retried on its own; the shot
+ * goes to a person. (A failed take of the plan's own render ends as it did: its check never runs.)
+ */
+export function failedRound(step: Pick<StepRow, "purpose" | "round" | "state"> | null): boolean {
+  return !!step && (step.purpose === "fix" || step.purpose === "take") && step.round != null && step.state === "failed";
+}
+
 /** What the ledger shows for a job: its meter row (null: never reserved). */
 export async function meterOf(jobId: string): Promise<{ status: string; credits: number } | null> {
   await platformReady();

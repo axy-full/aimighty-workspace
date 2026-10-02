@@ -450,12 +450,21 @@ export type RigAgentPaidStepView = {
   scorecard: { line: string; checks: { check: string; verdict: "pass" | "fail" | "unsure"; reasons: string[] }[] } | null;
   /** A fix: the edit it renders, once written. */
   edit: string | null;
+  /** A fix: its note (Atomik writing the edit), charged on its own inside the run's limit — while it is written, then what it settled at. */
+  note: { credits: number | null; settled: boolean } | null;
   /** A check: the shot's Verify card on the board (a clip is checked there). */
   card: string | null;
   /** What a person decided for this shot, and when (who is said in `reason`). */
   resolution: { choice: ShotChoice; at: number } | null;
   /** A shot that waits for a person: what the person who asked may do now. */
   choices: ShotChoice[];
+  /**
+   * What a choice that spends is likely to cost ("about N cr"): what the shot's last one was priced at, when it
+   * has one. A fix and a check are priced again before they run, and a fix always asks for a tap at its price.
+   */
+  prices: Partial<Record<ShotChoice, number>>;
+  /** What the take is (a check's subject, or what a fix edits): a still or a clip. */
+  takeKind: "image" | "video" | null;
 };
 
 /**
@@ -495,7 +504,7 @@ export { creditFigure };
 
 /**
  * The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next.
- * In Auto, the renders say how much one may cost without asking.
+ * In Auto, the renders and the checks say how much one may cost without asking; a fix always asks.
  */
 export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pick<RigAgentMoneyView, "mode" | "jobCeiling"> | null): RigAgentProposalView {
   const groups = AGENT_KINDS.map((kind) => ({ kind, label: AGENT_KIND_LABELS[kind], titles: plan.cards.filter((c) => c.kind === kind).map((c) => c.title) })).filter((g) => g.titles.length);
@@ -504,6 +513,11 @@ export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pi
     ...(renders ? [money?.mode === "auto"
       ? `Next: render ${plural(renders, "shot")} · priced; drafts up to about ${creditFigure(money.jobCeiling)} cr each run on their own`
       : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
+    /* Plan §6: each take is checked against its masters, and a failed check gets at most two targeted fixes (PR 11). */
+    ...(renders ? [money?.mode === "auto"
+      ? `Then each take is checked against its masters · priced; checks up to about ${creditFigure(money.jobCeiling)} cr run on their own`
+      : "Then each take is checked against its masters · priced, each one approved first",
+    "A failed check gets at most 2 fixes · each priced and approved first"] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];
   return { title: plan.title, summary: plan.summary, groups, cards: plan.cards.length, wires: plan.wires.length, tidy: plan.tidy, next, fingerprint };

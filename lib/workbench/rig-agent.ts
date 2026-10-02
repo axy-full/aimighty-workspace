@@ -29,8 +29,8 @@ import {
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
 import { closeChargeIntent, PAID_TEXT_TIMEOUT_MS, releaseStepCharge, releaseTextCharge } from "./rig-agent-charges";
 import { parseAgent, type AgentChoice } from "@/lib/production/agent";
-import { landedFixes, nextFixNumber, personFix, roundSteps } from "./rig-agent-fixes";
-import { whenNeedsYou } from "./rig-agent-moves";
+import { nextFixNumber, personFix, roundSteps } from "./rig-agent-fixes";
+import { failedRound, whenNeedsYou } from "./rig-agent-moves";
 import { advancePaidSteps, checkSubject, closeEndedSteps, PAID_PURPOSES, stepTitle, STOPPED_UNSENT, type PaidDeps } from "./rig-agent-runs";
 import {
   activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertLiveSteps, insertRun, insertSteps, latestRun, looseCharges, looseStepCharges, looseSteps, newRunId, nextRound, patchRun,
@@ -123,6 +123,22 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   };
   const mine = run.owner === viewer;
   const asking = run.state === "needs_you" || run.state === "running";
+  /* What a choice is likely to cost: what the shot's last render, fix or check was priced at. */
+  const lastQuote = (s: StepRow, purpose: StepRow["purpose"]) =>
+    [...steps].reverse().find((x) => x.nodeId === s.nodeId && x.purpose === purpose && x.quoteCredits != null)?.quoteCredits ?? null;
+  const choicePrices = (s: StepRow, choices: ShotChoice[]): Partial<Record<ShotChoice, number>> => {
+    const prices: Partial<Record<ShotChoice, number>> = {};
+    const of = { fix: lastQuote(s, "fix"), rerender: lastQuote(s, "take"), recheck: s.purpose === "verify" ? s.quoteCredits : null };
+    for (const choice of ["fix", "rerender", "recheck"] as const) if (choices.includes(choice) && of[choice] != null) prices[choice] = of[choice]!;
+    return prices;
+  };
+  /* A fix's note (Atomik writing its edit): its own charge, inside the run's limit. */
+  const noteOf = (s: StepRow): RigAgentPaidStepView["note"] => {
+    if (s.purpose !== "fix" || !s.chargeId || !s.charge) return null;
+    const row = byId.get(s.chargeId);
+    if (s.charge === "reserved") return { credits: row ? row.credits : null, settled: false };
+    return row && !row.running && row.credits > 0 ? { credits: row.credits, settled: true } : null;
+  };
   const live = ACTIVE_STATES.includes(run.state);
   const paid: RigAgentPaidStepView[] = steps.filter((s) => (PAID_PURPOSES as readonly string[]).includes(s.purpose)).map((s) => {
     const title = stepTitle(run, s);
@@ -130,10 +146,12 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     const open = s.state === "waiting" || s.state === "paused";
     /* A shot that waits for a person (its check, or its fix, could not go on): the person who asked decides. */
     const flagged = s.state === "paused" && s.pause === "check";
+    const choices = mine && flagged && live ? shotChoices(s, steps) : [];
     const common = {
       seq: s.seq, title, label, round: s.round, state: s.state, pause: s.state === "paused" ? s.pause : null, reason: s.reason,
       resolution: s.resolution && s.resolvedAt ? { choice: s.resolution, at: s.resolvedAt } : null,
-      choices: mine && flagged && live ? shotChoices(s) : [],
+      choices, prices: choicePrices(s, choices),
+      takeKind: s.request?.kind === "check" ? s.request.takeKind : s.request?.kind === "fix" ? s.request.take : null,
     };
     /* A check: its price (and what it holds), what it settled at, its verdict and scorecard, and the Verify card on the board. */
     if (s.purpose === "verify") {
@@ -142,9 +160,11 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       return {
         ...common, tool: "verify", quote: s.quoteCredits, worst: s.holdCredits ?? s.quoteCredits,
         hold: s.holdCredits != null && s.quoteCredits != null && s.holdCredits > s.quoteCredits ? s.holdCredits : null,
-        charged: s.creditsSettled, outcome: s.outcome, charge: null,
+        charged: s.creditsSettled, outcome: s.outcome, charge: null, note: null,
         verdict: s.verdict, scorecard: s.scorecard ? { line: s.scorecard.line, checks: s.scorecard.checks } : null, edit: null, card: request?.cardId ?? null,
-        canRender: mine && s.state === "waiting" && asking && !!fingerprint, fingerprint: s.state === "waiting" ? fingerprint : null,
+        /* Tapped at its price while it waits; once paused (the limit, the balance), approved again at that price or priced afresh. */
+        canRender: mine && asking && (s.state === "waiting" ? !!fingerprint : s.state === "paused" && !flagged),
+        fingerprint: open && !flagged ? fingerprint : null,
       };
     }
     const charge = s.jobId ? byId.get(s.jobId) : undefined;
@@ -160,6 +180,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
       hold: null, charged, outcome, charge: ledger, verdict: null, scorecard: null, card: null,
       edit: s.request?.kind === "fix" && s.request.prompt ? s.request.prompt : null,
+      note: noteOf(s),
       canRender: mine && open && asking && !flagged, fingerprint: open && !flagged && s.admission ? s.admission.quote.fingerprint : null,
     };
   });
@@ -181,11 +202,14 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
 /**
  * What the person who asked may do for a shot that waits for them: a flagged check — take it as it is,
  * another fix (when a failed check has a targeted fix), render it again, check it again (when it has
- * no verdict yet), or skip it; a fix that could not go on — another fix, render it again, take the
- * take as it is, or skip it.
+ * no verdict yet), or skip it; a check whose fix (or render again) the provider did not render — take
+ * the take as it is, that fix again, render it again, or skip it (nothing new to check); a fix that
+ * could not go on — another fix, render it again, take the take as it is, or skip it.
  */
-function shotChoices(step: StepRow): ShotChoice[] {
+function shotChoices(step: StepRow, steps: readonly StepRow[]): ShotChoice[] {
   if (step.purpose === "verify") {
+    const subject = checkSubject(steps, step);
+    if (failedRound(subject)) return ["accept", ...(subject?.request?.kind === "fix" ? ["fix" as const] : []), "rerender", "skip"];
     const kind = step.request?.kind === "check" ? step.request.takeKind : null;
     const fixable = !!(step.verdict && step.scorecard && kind && personFix(step.scorecard.checks as Parameters<typeof personFix>[0], { kind }));
     return ["accept", ...(fixable ? ["fix" as const] : []), "rerender", ...(step.verdict ? [] : ["recheck" as const]), "skip"];
@@ -543,8 +567,17 @@ export async function resolveRigAgentShot(input: { productionId: string; runId: 
     const decided = { resolution: input.choice, resolved_by: input.userId, resolved_at: at, pause: null };
     const steps = await stepsOf(tx, run.id);
     const title = stepTitle(run, step);
+    /* A check whose fix (or render again) the provider did not render: the take it keeps is the one its shot's last check found. */
+    const lost = step.purpose === "verify" ? checkSubject(steps, step) : null;
+    const unchecked = step.purpose === "verify" && !step.verdict && !failedRound(lost);
+    const verdict = step.purpose === "fix" ? "fail"
+      : failedRound(lost) ? [...steps].reverse().find((s) => s.purpose === "verify" && s.nodeId === step.nodeId && s.seq < step.seq && s.verdict)?.verdict ?? null
+      : step.verdict;
+    /* What the take was found to be, in words: never "verified". */
+    const kept = verdict === "fail" ? "failed" : verdict === "needs_you" ? "unsure" : null;
     const fixPlan = (): Extract<NonNullable<StepRow["request"]>, { kind: "fix" }> | null => {
       if (step.request?.kind === "fix") return { ...step.request, prompt: "" };
+      if (failedRound(lost)) return lost?.request?.kind === "fix" ? { ...lost.request, prompt: "" } : null;
       const subject = checkSubject(steps, step);
       const kind = step.request?.kind === "check" ? step.request.takeKind : null;
       const chosen = step.scorecard && kind ? personFix(step.scorecard.checks as Parameters<typeof personFix>[0], { kind }) : null;
@@ -555,13 +588,14 @@ export async function resolveRigAgentShot(input: { productionId: string; runId: 
     switch (input.choice) {
       case "accept":
         await patchStep(tx, step.id, { ...decided, state: step.purpose === "verify" ? "done" : "skipped",
-          reason: step.purpose === "verify" && !step.verdict ? `Accepted by ${name} without its check.` : `Accepted by ${name} despite a failed check.` }, ["paused"]);
+          reason: kept ? `Accepted by ${name} despite ${kept === "failed" ? "a failed" : "an unsure"} check.` : `Accepted by ${name} without its check.` }, ["paused"]);
         break;
       case "skip":
-        await patchStep(tx, step.id, { ...decided, state: "skipped", reason: `Skipped by ${name}. The take keeps ${step.purpose === "verify" && !step.verdict ? "no check" : "its failed check"}.` }, ["paused"]);
+        await patchStep(tx, step.id, { ...decided, state: "skipped", reason: `Skipped by ${name}. The take keeps ${kept ? `its ${kept} check` : "no check"}.` }, ["paused"]);
         break;
       case "recheck":
         if (step.purpose !== "verify" || step.verdict) throw new RigAgentError("This take's check is done. Accept it, fix it, render it again, or skip it.", 409);
+        if (!unchecked) throw new RigAgentError("Nothing new rendered for this shot, so there is nothing to check. Accept the take, render it again, or skip it.", 409);
         await patchStep(tx, step.id, { ...decided, state: "next", reason: null }, ["paused"]);
         break;
       case "fix": {

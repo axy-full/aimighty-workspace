@@ -480,7 +480,6 @@ async function tickTo(runId: string, deps: Deps, options: { tapRenders?: boolean
 
 test("Auto: a still shot's render asks (a still has no draft); its take is then checked on its own inside the run's limit — the run makes the shot's Verify card on the board, the check is charged under the run's id — and a pass is done", async () => {
   await inRun("check-pass", async (ws) => {
-    const agent = await import("../../lib/workbench/rig-agent");
     const { readTeamCanvas } = await import("../../lib/workbench/team-canvas");
     const { runCharges } = await import("../../lib/generationRequests");
     const { agentNodeId } = await import("../../lib/workbench/rig-agent-plan");
@@ -577,7 +576,10 @@ test("a clean fail adds fix 1: written by the fix writer (metered like planning)
     expect(fixStep).toMatchObject({ charge: "settled", round: 1, chargeId: stepChargeEventId(runId, fixStep.seq, 1) });
     expect(await meterRow(fixStep.chargeId!)).toMatchObject({ status: "succeeded" });
     expect(await intent(fixStep.chargeId!)).toBe("resolved");
-    expect((await runCharges(runId)).some((c) => c.id === fixStep.chargeId)).toBe(true);
+    const note = (await runCharges(runId)).find((c) => c.id === fixStep.chargeId)!;
+    expect(note.credits).toBeGreaterThan(0);
+    /* The card shows what writing it cost, and that the take it edits is a still. */
+    expect(fix).toMatchObject({ note: { credits: note.credits, settled: true }, takeKind: "image" });
     expect(r.calls).toHaveLength(1);
     /* One tap: the fix renders under its own key; the fixed take is checked and passes. */
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: fix.seq, fingerprint: fix.fingerprint, userId: OWNER });
@@ -611,7 +613,9 @@ test("after two fixes that still fail, the shot is handed to the person who aske
     expect(await tickTo(runId, deps, { tapRenders: true })).toEqual({ state: "needs_you", more: false });
     let run = await view();
     const flagged = run.paid.at(-1)!;
-    expect(flagged).toMatchObject({ tool: "verify", state: "paused", pause: "check", verdict: "fail", choices: ["accept", "fix", "rerender", "skip"] });
+    expect(flagged).toMatchObject({ tool: "verify", state: "paused", pause: "check", verdict: "fail", choices: ["accept", "fix", "rerender", "skip"], takeKind: "image" });
+    /* What the choices that spend are likely to cost: what the shot's last fix and render were priced at. */
+    expect(flagged.prices).toEqual({ fix: await credits(0.3), rerender: await credits(0.3) });
     expect(flagged.reason).toBe("Atomik made 2 fixes and the take still fails Identity. Look at it and decide.");
     expect(run.reason).toBe(flagged.reason);
     expect(run.paid.filter((p) => p.tool === "fix").length).toBe(2);
@@ -686,7 +690,6 @@ test("the other decisions: another fix (priced, it asks, no cap), render again t
 
 test("a clip waits for the board: the run asks a person to check it there; once a check of that take is stored, the run reads it free and carries on — its fix is a Seedance Edit of the clip with the master attached", async () => {
   await inRun("clip", async (ws) => {
-    const agent = await import("../../lib/workbench/rig-agent");
     const { boardFor, takeOf } = await import("../../lib/workbench/rig-agent-checks");
     const { verifyKeyOf } = await import("../../lib/workbench/verify");
     const { verifyKeyHashes, verifyReady } = await import("../../lib/workbench/verify-server");
@@ -764,6 +767,51 @@ test("a fix the provider fails is not one of the two: its shot waits for a perso
     expect(r.calls).toHaveLength(2);
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     expect(r.calls).toHaveLength(2);
+    /* The person decides: take it as it is, that fix again, render it again, or skip it. Nothing new rendered, so nothing to check again. */
+    expect(flagged.choices).toEqual(["accept", "fix", "rerender", "skip"]);
+    await expect(agent.resolveRigAgentShot({ productionId: "prod-1", runId, seq: flagged.seq, choice: "recheck", userId: OWNER, name: "Ana" })).rejects.toMatchObject({ status: 409 });
+    const failedFix = (await stepsOf(runId)).find((s) => s.purpose === "fix")!;
+    await agent.resolveRigAgentShot({ productionId: "prod-1", runId, seq: flagged.seq, choice: "fix", userId: OWNER, name: "Ana" });
+    expect(await tickTo(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const again = (await stepsOf(runId)).filter((s) => s.purpose === "fix");
+    expect(again.map((s) => [s.label, s.state])).toEqual([["Fix 1 · 01 — Opening", "failed"], ["Fix 2 · 01 — Opening", "waiting"]]);
+    /* The same fix of the same take, written again (and asking for a tap at its price). */
+    expect(again[1].request).toMatchObject({ ...failedFix.request!, prompt: "Replace the person's face with Mira as in the reference picture" });
+    expect(r.calls).toHaveLength(2);
+  });
+});
+
+test("a render again the provider fails hands its shot back to the person who asked: accepted as is, the take keeps what its last check found", async () => {
+  await inRun("rerender-failed", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const r = renders(ws, () => 0.3);
+    const j = judge({ "01 — Opening": [{ identity: 0.6 }] });
+    const deps = await depsFor(ws, r, { checks: { development: j.development } });
+    const runId = await approvedRun(deps, { limit: 500, mode: "auto", shots: 1 });
+    await stillShots(runId);
+    expect(await tickTo(runId, deps, { tapRenders: true })).toEqual({ state: "needs_you", more: false });
+    const unsure = (await view()).paid[1];
+    expect(unsure).toMatchObject({ verdict: "needs_you", choices: ["accept", "rerender", "skip"], prices: { rerender: await credits(0.3) } });
+    await agent.resolveRigAgentShot({ productionId: "prod-1", runId, seq: unsure.seq, choice: "rerender", userId: OWNER, name: "Ana" });
+    /* Its render again is tapped and sent; the provider fails it, unbilled. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const retake = (await view()).paid.find((p) => p.label === "Render again · 01 — Opening")!;
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: retake.seq, fingerprint: retake.fingerprint, userId: OWNER });
+    const tick = await agent.advanceRigAgentRun(runId, deps);
+    await settleTake(tick.waitFor!.genId, "failed", 0);
+    expect(await tickTo(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const run = await view();
+    const flagged = run.paid.at(-1)!;
+    expect(flagged).toMatchObject({ label: "Check again · 01 — Opening", state: "paused", pause: "check", verdict: null, choices: ["accept", "rerender", "skip"] });
+    expect(flagged.reason).toBe("Rendering 01 — Opening again did not work. Nothing was charged. Look at the take and decide.");
+    expect(run.reason).toBe(flagged.reason);
+    /* Never sent again on its own. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(r.calls).toHaveLength(2);
+    /* Accepted as is: the take it keeps was found unsure, and the words say so. */
+    const accepted = await agent.resolveRigAgentShot({ productionId: "prod-1", runId, seq: flagged.seq, choice: "accept", userId: OWNER, name: "Ana" });
+    expect(accepted.paid.at(-1)).toMatchObject({ state: "done", reason: "Accepted by Ana despite an unsure check." });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
   });
 });
 

@@ -11,7 +11,7 @@ import { readDraft, workbenchTransaction } from "./records";
 import { afterCheck, landedFixes, nextFixNumber, roundSteps } from "./rig-agent-fixes";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
 import {
-  AUTO_PURPOSES, CONTINUE, MAX_SEND_ATTEMPTS, PENDING_CHECK_MS, STOPPED_UNSENT, checkRequestId, checkSubject, creditsShort, figure, limitProblem,
+  AUTO_PURPOSES, CONTINUE, MAX_SEND_ATTEMPTS, PENDING_CHECK_MS, STOPPED_UNSENT, checkRequestId, checkSubject, creditsShort, failedRound, figure, limitProblem,
   meterOf, needsYou, pause, stepTitle, stop, wakeIn, type Moved, type PaidContext,
 } from "./rig-agent-moves";
 import { agentNodeId, type RigAgentStepState } from "./rig-agent-plan";
@@ -132,9 +132,11 @@ const FROM_NEXT: RigAgentStepState[] = ["next"];
 async function priceCheck(run: RunRow, step: StepRow, deps: CheckDeps): Promise<Moved> {
   const steps = await stepsOf(db(), run.id);
   const subject = checkSubject(steps, step);
-  /* A fix the provider did not render: this shot waits for a person (it never counts as one of the fixes, and is never retried on its own). */
-  if (subject?.purpose === "fix" && subject.state === "failed")
-    return pause(run, step, `${/^Fix \d+/.exec(subject.label)?.[0] ?? "The fix"} for ${stepTitle(run, step)} did not render. ${outcomeWords(subject)} Look at the take and decide.`, "check", FROM_NEXT);
+  /* A fix (or a render again) the provider did not render: this shot waits for a person (it never counts as one of the fixes, and is never retried on its own). */
+  if (subject && failedRound(subject)) {
+    const what = subject.purpose === "fix" ? `${/^Fix \d+/.exec(subject.label)?.[0] ?? "The fix"} for ${stepTitle(run, step)} did not render.` : `Rendering ${stepTitle(run, step)} again did not work.`;
+    return pause(run, step, `${what} ${outcomeWords(subject)} Look at the take and decide.`, "check", FROM_NEXT);
+  }
   if (subject?.state !== "done") return CONTINUE;
   if (!subject.jobId) return pause(run, step, `${stepTitle(run, step)}'s take is not on record, so it is not checked. Look at it and decide.`, "check", FROM_NEXT);
   const take = await takeOf(subject.jobId);
