@@ -246,7 +246,9 @@ async function withCredits<T>(fn: (ws: TenantWorkspace) => Promise<T>, credits =
   const { platformReady, platformDb } = await import("../../lib/platform");
   const ws = workspace(true);
   await platformReady();
-  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES(?,?,?,'manual',0)", args: [`grant_${ws.id}`, ws.id, credits] });
+  const { creditUsd } = await import("../../lib/creditTerms");
+  /* In today's credits, saying so (unit_usd): a grant row without one is a legacy US$0.10 grant. */
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at,unit_usd) VALUES(?,?,?,'manual',0,?)", args: [`grant_${ws.id}`, ws.id, credits, creditUsd()] });
   return inTenant(ws, () => fn(ws), person("u_reader"));
 }
 async function meterOf(workspaceId: string) {
@@ -258,11 +260,12 @@ test("the paid read is quoted first, runs only at the approved price, is charged
   const m = await import("../../lib/atomikMemory");
   const read = await import("../../lib/atomikMemoryRead");
   const { db } = await import("../../lib/db");
+  const { fromDeci, isCreditAmount, toDeci } = await import("../../lib/creditTerms");
   await withCredits(async (ws) => {
-    /* The quote: an approximate price in credits, and nothing claimed, reserved or sent. */
+    /* The quote: an approximate price in credits (whole tenths), and nothing claimed, reserved or sent. */
     const quote = await read.quoteMemoryRead({ text: PASTE, model: READER.id }, READER);
     expect(quote).toMatchObject({ model: READER.id });
-    expect(quote.estimateCredits).toBeGreaterThan(1);
+    expect(isCreditAmount(quote.estimateCredits) && quote.estimateCredits > 0.1).toBe(true);
     expect(await meterOf(ws.id)).toEqual([]);
     if ((await db().execute("SELECT name FROM sqlite_master WHERE name = 'paid_text_jobs'")).rows.length)
       expect(Number((await db().execute("SELECT COUNT(*) AS n FROM paid_text_jobs")).rows[0].n)).toBe(0);
@@ -284,7 +287,7 @@ test("the paid read is quoted first, runs only at the approved price, is charged
         { kind: "rule", text: "Always end on the board" }, { kind: "brand", text: "brand colours are teal and warm sand" }, { kind: "reference", text: "The hero still" },
       ] }));
     };
-    await expect(read.runMemoryRead({ text: PASTE, model: READER.id, maxCredits: quote.estimateCredits - 1, projectId: null, createdBy: "u_reader" }, { model: READER, submit }))
+    await expect(read.runMemoryRead({ text: PASTE, model: READER.id, maxCredits: fromDeci(toDeci(quote.estimateCredits) - 1), projectId: null, createdBy: "u_reader" }, { model: READER, submit }))
       .rejects.toMatchObject({ status: 409 });
     expect(calls).toBe(0);
     expect(await meterOf(ws.id)).toEqual([]);
@@ -301,7 +304,8 @@ test("the paid read is quoted first, runs only at the approved price, is charged
     expect(event).toMatchObject({ id: done.id, status: "succeeded" });
     expect(Number(event.engine_cost_usd)).toBeCloseTo(0.01, 6);
     expect(Number(event.billed_credits)).toBe(done.credits);
-    expect(done.credits).toBeGreaterThanOrEqual(1);
+    /* In whole tenths, never below the 0.1 credit minimum. */
+    expect(isCreditAmount(done.credits) && done.credits >= 0.1).toBe(true);
     expect(done.credits).toBeLessThan(quote.estimateCredits);
     const job = (await db().execute({ sql: "SELECT kind,status,cost_usd FROM paid_text_jobs WHERE id = ?", args: [done.id] })).rows[0];
     expect([job.kind, job.status, Number(job.cost_usd)]).toEqual(["memory", "succeeded", 0.01]);
@@ -379,7 +383,7 @@ test("the read route: Atomik's models only, the approved price required, a lost 
     const answer = (await first.json()) as { id: string; entries: { kind: string; text: string }[]; skipped: { money: number }; credits: number | null };
     expect(answer.entries.map((e) => e.text)).toEqual(["Brand colours are teal and warm sand", "Our audience is skaters in coastal towns", "A premium price point, never discount-led", "Always end on the board"]);
     expect(answer.skipped.money).toBe(1);
-    expect(answer.credits).toBeGreaterThanOrEqual(1);
+    expect(answer.credits).toBeGreaterThanOrEqual(0.1);
     expect(sent).toBe(1);
     /* The reply was lost: the same request under its key answers the same, and is not read or charged again. */
     const again = await post(body, { "Idempotency-Key": "memory-read-once" });

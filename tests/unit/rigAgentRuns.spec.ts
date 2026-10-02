@@ -218,6 +218,8 @@ async function settleTake(jobId: string, status: "succeeded" | "failed", usd: nu
   await deliverGenerationSettlement(jobId);
 }
 const credits = async (usd: number) => (await import("../../lib/creditTerms")).billCredits(usd, "mock");
+/** A balance less some charges, in whole tenths as the ledger counts them (0.4 + 0.3 never drifts to 0.7000000000000001). */
+const minus = (from: number, ...charges: number[]) => (Math.round(from * 10) - charges.reduce((t, c) => t + Math.round(c * 10), 0)) / 10;
 
 /* ── The reservation enforces the limit, under its write lock ─────────── */
 
@@ -238,7 +240,7 @@ test("the reservation enforces a run's limit: over it nothing is reserved and th
     expect(await meterRow("gen_limit_over")).toBeNull();
     /* One that meets it exactly lands. */
     await reserveGenerationSpend(job("gen_limit_b", 0.6), { run: run() });
-    expect(await balance(ws)).toBe(before - a - b);
+    expect(await balance(ws)).toBe(minus(before, a, b));
     const rows = (await platformDb().execute({ sql: "SELECT id,run_id,run_band FROM generation_reservations WHERE workspace_id=? ORDER BY id", args: [ws.id] })).rows.map((r) => [String(r.id), r.run_id, Number(r.run_band)]);
     expect(rows).toEqual([["gen_limit_a", "rar_aaaaaaaaaaaaaaaaaaaaaaaa", 1], ["gen_limit_b", "rar_aaaaaaaaaaaaaaaaaaaaaaaa", 1]]);
     expect((await runCharges("rar_aaaaaaaaaaaaaaaaaaaaaaaa")).map((c) => [c.id, c.running, c.credits]).sort()).toEqual([["gen_limit_a", true, a], ["gen_limit_b", true, b]]);
@@ -348,7 +350,7 @@ test("planning is metered into the run's limit: reserved at its ceiling while it
     expect(after!.credits).toBeGreaterThan(0);
     expect(after!.credits).toBeLessThanOrEqual(ceilingCredits);
     expect(after!.usd).toBeGreaterThan(0);
-    expect(await balance(ws)).toBe(start - after!.credits);
+    expect(await balance(ws)).toBe(minus(start, after!.credits));
     expect((await runCharges(runId)).map((c) => c.id)).toEqual([agent.planEventId(runId)]);
     const { platformDb } = await import("../../lib/platform");
     expect((await platformDb().execute({ sql: "SELECT state FROM recovery_intents WHERE id=?", args: [agent.planEventId(runId)] })).rows[0]?.state).toBe("resolved");
@@ -361,7 +363,7 @@ test("planning is metered into the run's limit: reserved at its ceiling while it
     expect(await agent.advanceRigAgentRun(tight.id, deps)).toEqual({ state: "failed", more: false });
     expect((await view()).reason).toMatch(/Planning this board may cost up to about .* cr, more than this run's limit of 0\.1 cr/);
     expect(await meterRow(agent.planEventId(tight.id))).toBeNull();
-    expect(await balance(ws)).toBe(start - after!.credits);
+    expect(await balance(ws)).toBe(minus(start, after!.credits));
   });
 });
 
@@ -461,7 +463,7 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     run = await view();
     expect(run.paid[0]).toMatchObject({ state: "done", charged: await credits(0.3) });
     expect(run.paid[2]).toMatchObject({ state: "waiting", quote: await credits(0.45), canRender: true });
-    expect(await balance(ws)).toBe(afterPlan - (await credits(0.3)));
+    expect(await balance(ws)).toBe(minus(afterPlan, await credits(0.3)));
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[2].seq, fingerprint: run.paid[2].fingerprint, userId: OWNER });
     await agent.advanceRigAgentRun(runId, deps);
     const job2 = (await renderRows())[1];
@@ -472,7 +474,7 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     expect(run.paid.filter((p) => p.tool === "render").map((p) => [p.state, p.charged])).toEqual([["done", await credits(0.3)], ["done", await credits(0.45)]]);
     const spent = (await meterRow(agent.planEventId(runId)))!.credits + (await credits(0.3)) + (await credits(0.45));
     expect(run.money).toMatchObject({ spent, inFlight: 0 });
-    expect(await balance(ws)).toBe(afterPlan - (await credits(0.3)) - (await credits(0.45)));
+    expect(await balance(ws)).toBe(minus(afterPlan, await credits(0.3), await credits(0.45)));
     /* Every paid action carries the run's id: the planning turn and both takes. */
     const { runCharges } = await import("../../lib/generationRequests");
     expect((await runCharges(runId)).map((c) => c.id).sort()).toEqual([agent.planEventId(runId), job1.id, job2.id].sort());
@@ -755,7 +757,7 @@ test("a failed take records what the provider did with the charge — not billed
     const afterPlan = await balance(ws);
     await agent.advanceRigAgentRun(runId, deps);
     const [a] = await renderRows();
-    expect(await balance(ws)).toBe(afterPlan - (await credits(0.3)));
+    expect(await balance(ws)).toBe(minus(afterPlan, await credits(0.3)));
     /* The provider refused it and charged nothing: the reservation comes back. */
     await settleTake(a.id, "failed", 0);
     expect(await balance(ws)).toBe(afterPlan);
@@ -768,7 +770,7 @@ test("a failed take records what the provider did with the charge — not billed
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
     run = await view();
     expect(run.paid[2]).toMatchObject({ state: "failed", outcome: "charged", charged: await credits(0.2), charge: { credits: await credits(0.2), settled: true } });
-    expect(await balance(ws)).toBe(afterPlan - (await credits(0.2)));
+    expect(await balance(ws)).toBe(minus(afterPlan, await credits(0.2)));
   });
 });
 
