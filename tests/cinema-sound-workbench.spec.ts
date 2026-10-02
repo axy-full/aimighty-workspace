@@ -338,7 +338,11 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
     const read = await page.request.get(url.pathname + url.search);
     expect(read.status()).toBe(400);
     expect(await read.json()).toEqual({ error: UNAVAILABLE });
-    const quote = await page.request.post("/api/generate/quote", { data: { model: CINEMA, prompt: WORDS, ratio: "16:9", resolution: "720p", duration: 5, refine: false, generateAudio: true } });
+    const me = await (await page.request.get("/api/me")).json() as { id: string; workspace: { id: string } };
+    const quote = await page.request.post("/api/generate/quote", {
+      headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
+      data: { model: CINEMA, prompt: WORDS, ratio: "16:9", resolution: "720p", duration: 5, refine: false, generateAudio: true },
+    });
     expect(quote.status()).toBe(400);
     expect(await quote.json()).toEqual({ error: UNAVAILABLE });
   } else {
