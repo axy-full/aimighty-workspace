@@ -202,7 +202,8 @@ test("a completed request stores the full master and settles the saved price aft
       const gen = (await getGeneration(genId))!;
       expect(gen.status).toBe("succeeded");
       expect(gen.storedUrl).toBe(`/api/media/${genId}`);
-      expect(gen.costUsd).toBe(0.12);
+      expect(gen.costUsd).toBeNull();
+      expect(gen.creditsBilled).toBe(2);
       const saved = await readFile(output);
       const original = await fixtureBytes("still.png");
       expect(await sharp(saved).raw().toBuffer()).toEqual(await sharp(original).raw().toBuffer());

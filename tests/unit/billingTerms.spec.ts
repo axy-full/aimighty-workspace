@@ -79,5 +79,5 @@ test("a reservation cannot be reassigned to another organisation or funding sour
   const event = { id: "scope", kind: "video" as const, engine: "byteplus", model: "fixture-model", status: "running" as const, engineCostUsd: 1 };
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
   await expect(runInTenant(workspace("studio_b"), () => reserveGenerationSpend(event))).rejects.toThrow("another workspace");
-  await expect(runInTenant({ ...workspace("studio_a"), keys: { ark: "fake-key" } }, () => reserveGenerationSpend(event))).rejects.toThrow("funding or engine changed");
+  await expect(runInTenant(workspace("studio_a"), () => reserveGenerationSpend({ ...event, engine: "fal" }))).rejects.toThrow("funding or engine changed");
 });

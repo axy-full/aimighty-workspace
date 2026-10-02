@@ -152,6 +152,9 @@ async function customerFixture(page: Page) {
         engines: [],
         models: { featured: [], rest: [] },
       });
+    /* The production's Atomik threads (the rail's Threads row), and the archived ones: none here. */
+    if (path === "/api/atomik/threads" && request.method() === "GET")
+      return json({ threads: [] });
     if (path === "/api/projects") return json({ projects: [] });
     if (path === "/api/me")
       return json({

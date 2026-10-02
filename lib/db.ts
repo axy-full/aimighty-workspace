@@ -286,6 +286,7 @@ const SCHEMA = [
      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
      scope       TEXT NOT NULL DEFAULT 'render',
      cap_usd     REAL,
+     cap_credits INTEGER,
      last_used   INTEGER,
      created_at  INTEGER NOT NULL,
      revoked_at  INTEGER
@@ -749,6 +750,8 @@ const SCHEMA = [
      deleted     INTEGER NOT NULL DEFAULT 0
    )`,
   `CREATE INDEX IF NOT EXISTS idx_atomik_chats_created ON atomik_chats(created_at DESC)`,
+  /* A project's threads, newest activity first (lib/atomikThreads.ts). */
+  `CREATE INDEX IF NOT EXISTS idx_atomik_chats_project ON atomik_chats(project_id, updated_at DESC)`,
   `CREATE TABLE IF NOT EXISTS atomik_messages (
      id         TEXT PRIMARY KEY,
      chat_id    TEXT NOT NULL,
@@ -938,6 +941,12 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       // Who took a step to render it, and which approval this is: its render's Idempotency-Key is per approval (lib/atomik.ts › stepRequestKey).
       await addColumn("atomik_steps", `claimed_by TEXT`);
       await addColumn("atomik_steps", `attempt INTEGER NOT NULL DEFAULT 0`);
+      /* Threads (lib/atomikThreads.ts): a chat is one of its project's threads. Archive hides one, by whom and
+         when, and Restore clears it; nothing is deleted. A step's render key names its thread (lib/atomik.ts ›
+         threadStepRequestKey), written by the approval that claims it; older approvals keep the key they had. */
+      await addColumn("atomik_chats", `archived_at INTEGER`);
+      await addColumn("atomik_chats", `archived_by TEXT`);
+      await addColumn("atomik_steps", `request_key TEXT`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
       await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
       // Consent to train on a face, stored with the identity (brief 1.3).
@@ -1009,6 +1018,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         });
         await c.execute({ sql: `UPDATE projects SET production_id = ?, step = ? WHERE id = ?`, args: [pid, step, String(r.id)] });
       }
+      await addColumn("api_tokens", "cap_credits INTEGER");
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
         `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,

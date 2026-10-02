@@ -43,7 +43,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const ws = requireTenant();
-  if (!creditsApply(ws)) return NextResponse.json({ error: "This workspace pays its vendors directly; there is nothing to top up." }, { status: 400 });
+  if (!creditsApply(ws)) return NextResponse.json({ error: "The house workspace is never billed in credits; there is nothing to top up." }, { status: 400 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin asks for credits." }, { status: 403 });
   /* A provider this deployment cannot check out through takes no request: nothing is left waiting on the desk. */
   if (!checkoutReady()) return NextResponse.json({ error: "Buying credits is not set up on this deployment yet. Nothing was requested." }, { status: 503 });

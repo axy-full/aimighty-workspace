@@ -39,8 +39,8 @@ test("spend, billed and failures are summed per workspace, engine health per eng
      workspace is in fact losing money — which the old figure hid. */
   expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 0.5)).toBeCloseTo(-0.743, 3);
   const wb = by.get("ws_b")!;
-  expect(wb.billedCredits).toBe(0); // its own key paid
-  expect(wb.engineCostUsd).toBe(0); // not the platform's money
+  expect(wb.billedCredits).toBe(43); // saved workspace keys do not bypass managed billing
+  expect(wb.engineCostUsd).toBeCloseTo(2.864, 6);
   const health = await engineHealth(0);
   const seed = health.find((h) => h.model === sd)!;
   expect(seed.jobs).toBe(3); expect(seed.failed).toBe(1);

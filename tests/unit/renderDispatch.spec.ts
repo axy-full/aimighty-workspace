@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,7 +35,7 @@ function workspace(name: string): TenantWorkspace {
 }
 async function insert(id: string) {
   const { db, ready } = await import("../../lib/db");
-  await ready();
+  await ready(); await fundFixtureWorkspace();
   await db().execute({
     sql: "INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google','gemini-3.1-flash-image','test','{}','running',?,?)",
     args: [id, Date.now(), Date.now()],

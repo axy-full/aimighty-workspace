@@ -1,6 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createClient } from "@libsql/client";
-import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { signInLocally } from "./helpers/workbenchLocal";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 const usage = {
@@ -26,11 +25,7 @@ const activity = {
 };
 
 async function fixture(page: Page, options: { initialError?: boolean; truncated?: boolean } = {}) {
-  const { workspace } = await signInLocally(page.request);
-  // Only this newly-created local fixture workspace changes unit. No keys are read or configured.
-  const db = createClient({ url: localPlatformDbUrl(), timeout: 2_000 });
-  try { await db.execute({ sql: "UPDATE workspaces SET uses_platform_keys = 0 WHERE id = ?", args: [workspace.id] }); }
-  finally { db.close(); }
+  await signInLocally(page.request);
   const me = await page.request.get("/api/me").then(response => response.json());
   const scope = workbenchScopeFor(me.workspace.id, me.id);
   const consumer: { path: string; method: string; scope: string | undefined }[] = [];
@@ -76,12 +71,12 @@ async function fixture(page: Page, options: { initialError?: boolean; truncated?
 }
 const activityTab = (page: Page) => page.getByRole("button", { name: "My connected-account activity", exact: true });
 const activityPanel = (page: Page) => page.getByRole("region", { name: "My connected-account activity", exact: true });
-const standardSpend = (page: Page) => page.locator(".management-stat").filter({ hasText: "Recorded spend · all time" });
+const standardSpend = (page: Page) => page.locator(".management-stat").filter({ hasText: "Credits used · all time" });
 
-test("The connected account quote commitments load only on demand and stay separate from dollar usage", async ({ page }, info) => {
+test("The connected account quote commitments load only on demand and stay separate from recorded Particl charges", async ({ page }, info) => {
   const state = await fixture(page);
   await page.goto("/usage");
-  await expect(standardSpend(page)).toContainText("$12.34");
+  await expect(standardSpend(page)).toContainText("123 cr");
   await expect(activityTab(page)).toBeVisible();
   expect(state.consumer).toEqual([]);
   await activityTab(page).click();
@@ -108,7 +103,7 @@ test("The connected account quote commitments load only on demand and stay separ
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Activity ledger", exact: true })).toBeVisible();
   await expect(panel).toHaveCount(0);
-  await expect(standardSpend(page)).toContainText("$12.34");
+  await expect(standardSpend(page)).toContainText("123 cr");
   expect(state.activityReads).toBe(mountedReads);
   expect(state.consumer.every(call => call.method === "GET" && call.path === "/api/higgsfield/consumer/activity")).toBe(true);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
@@ -128,7 +123,7 @@ test("activity errors need an explicit retry and never trigger provider discover
   expect(state.activityReads).toBe(failedReads + 1);
   await expect(activityPanel(page).getByRole("alert")).toHaveCount(0);
   await page.getByRole("button", { name: "Overview", exact: true }).click();
-  await expect(standardSpend(page)).toContainText("$12.34");
+  await expect(standardSpend(page)).toContainText("123 cr");
   expect(state.consumer.every(call => call.method === "GET" && call.path === "/api/higgsfield/consumer/activity")).toBe(true);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

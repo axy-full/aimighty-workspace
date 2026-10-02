@@ -367,6 +367,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const pool = sharedPoolOf(event);
   if (pool) await providerPoolReady();
   const cap = projectId ? await projectCap(projectId) : null;
+  // Retain a pre-migration spending ceiling until the owner sets a credit cap.
+  // Its private unit never appears in the refusal sent to customers.
+  const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
   const shotCap = event.shotId && !shotCapExempt && cleanRule(await getSetting("approvalRule")) === "cap"
@@ -435,6 +438,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms) : cost + (baseline.get(event.id)?.cost ?? 0),
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
+    }
+    if (legacyCap?.cap_credits == null && legacyCap?.cap_usd != null) {
+      const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + r.cost, 0);
+      const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: cost + (baseline.get(event.id)?.cost ?? 0), rule,
+        unlocked: Boolean(legacyCap.cap_unlocked), warnPct: 80, unit: "$" });
+      if (!verdict.allow) throw new SpendReservationError("This job exceeds the project's saved spending cap. Ask an admin to review its credit cap.", 409, true);
     }
     if (options.token?.capUsd != null) {
       /* In what the workspace pays, as the admission check reads it (tokenSpendThisMonth): a

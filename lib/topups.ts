@@ -7,6 +7,7 @@ import { releaseHeldJobs } from "./held";
 import { sendMail, mailConfigured } from "./mail";
 import { notify } from "./push";
 import { billingTransaction, syncBillingLedger } from "./billingLedger";
+import { HOUSE_NOT_BILLED, isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * Top-up requests: a workspace asks for a pack, the platform answers.
@@ -60,6 +61,7 @@ export async function listTopups(workspaceId: string, limit = 20): Promise<Topup
 }
 
 export async function requestTopup(opts: { workspaceId: string; packId: string; requestedBy: string; note?: string }): Promise<TopupRequest> {
+  if (isHouseWorkspace({ id: opts.workspaceId })) throw new Error(HOUSE_NOT_BILLED);
   const pack = packById(opts.packId);
   if (!pack) throw new Error("No such pack.");
   await platformReady();
@@ -156,6 +158,8 @@ export async function decideTopupCredits(opts: { id: string; action: "approve" |
     if (!nextStatus(req.status, opts.action)) throw new Error(`This request was already ${req.status}.`);
     // Nobody can open a deleted workspace: its credits wait for a restore. Declining still works.
     if (opts.action === "approve") {
+      // The house workspace is never given credits (lib/houseWorkspace.ts). Declining still works.
+      if (isHouseWorkspace({ id: req.workspaceId })) throw new Error(HOUSE_NOT_BILLED);
       const ws = await tx.execute({ sql: `SELECT deleted_at FROM workspaces WHERE id=?`, args: [req.workspaceId] });
       if (ws.rows[0]?.deleted_at != null) throw new Error("This workspace was deleted. Restore it before approving its top-up.");
     }

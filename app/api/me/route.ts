@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { creditState } from "@/lib/credits";
+import { creditState, creditsApply } from "@/lib/credits";
 import { requireUser, isPlatformOwner, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
 import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
-import { creditsApply } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +28,12 @@ export const GET = withTenant(async function GET() {
     workspaces: store?.workspaces ?? [],
     credits: await creditState().catch(() => null),
     /* The rates this browser may see, already in the unit this workspace
-       pays in. A workspace on the platform's keys is handed credits; one on
-       its own keys is handed the dollars it actually pays its vendors. The
-       vendor's dollars and the margin never cross the wire together, which is
-       what §2 means by margin never being shown. */
-    rates: buildRateTable(creditsApply(store?.workspace) ? "cr" : "usd"),
+       pays in. Every workspace is handed credits, except the house workspace
+       (lib/houseWorkspace.ts), which is never billed in credits and reads the
+       engines' dollars, as its layout and shell already do (creditsApply).
+       The vendor's dollars and the margin never cross the wire together,
+       which is what §2 means by margin never being shown. */
+    rates: buildRateTable(creditsApply(store?.workspace) || !store?.workspace ? "cr" : "usd"),
     models: store?.workspace ? await effectiveModels().catch(() => null) : null,
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });

@@ -8,6 +8,7 @@ import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 test("real local routes persist a single generated take and isolate another workspace", async ({ request, playwright }) => {
   const signed = await signInLocally(request); // refuses any non-local or non-mock deployment before writes
   const me = await request.get("/api/me").then(response => response.json());
+  expect(me.rates.unit).toBe("cr");
   const scopeHeaders = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   await db.execute({
@@ -84,6 +85,7 @@ test("real local routes persist a single generated take and isolate another work
   try {
     await signInLocally(outsider);
     const otherMe = await outsider.get("/api/me").then(response => response.json());
+    expect(otherMe.rates.unit).toBe("cr");
     const otherHeaders = { "X-Workbench-Scope": `particl-active-${otherMe.workspace.id}-${otherMe.id}` };
     expect((await outsider.get(url).then(response => response.json())).project).toBeNull();
     expect((await outsider.post("/api/workbench/projects", { headers: otherHeaders, data: { action: "map-shot", projectId: draft.id, nodeId: "api-shot" } })).status()).toBe(404);
@@ -93,6 +95,17 @@ test("real local routes persist a single generated take and isolate another work
     expect((await outsider.get(`/api/media/${generation.id}?download=1`)).status()).toBe(404);
     expect((await outsider.get(`/api/workbench/preview/generation/${generation.id}`)).status()).toBe(404);
     expect((await outsider.get(jobsUrl).then(response => response.json())).generations).toEqual([]);
+    expect((await outsider.get(`/api/jobs/${generation.id}?sync=0`, { headers: otherHeaders })).status()).toBe(404);
+    expect((await outsider.get(`/api/jobs/${generation.id}?sync=0`, { headers: scopeHeaders })).status()).toBe(409);
+    for (const source of ["uploads", "generations"]) {
+      const libraryUrl = `/api/workbench/library?projectId=${draft.id}&source=${source}`;
+      expect((await outsider.get(libraryUrl, { headers: otherHeaders })).status()).toBe(404);
+      expect((await outsider.get(libraryUrl, { headers: scopeHeaders })).status()).toBe(409);
+    }
+    expect((await outsider.get(`/api/media/${generation.id}?stream=1`, { headers: { Range: "bytes=0-31" } })).status()).toBe(404);
+    // The denied reads do not change the original studio's take or access.
+    expect((await request.get(`/api/jobs/${generation.id}?sync=0`, { headers: scopeHeaders })).status()).toBe(200);
+    expect((await request.get(`/api/media/${generation.id}?download=1`)).status()).toBe(200);
   } finally {
     await outsider.dispose();
   }

@@ -38,6 +38,30 @@ async function rpc(token: string, method: string, params: Record<string, unknown
   return handleCrewMcp(new Request("https://studio.example.test/api/mcp", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }));
 }
 
+test("shared studios read only recorded Crew credits, including legacy rooms, without rewriting settlement", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { readSession, listSessions, releaseRound } = await import("../../lib/crew/store");
+  const a = await fixture(), b = await fixture();
+  await runInTenant(a.workspace, async () => {
+    await releaseRound(a.owner, a.session.id, { spendUsd: 7.25, spendCr: null });
+    const legacy = await readSession(a.owner, a.session.id);
+    expect(legacy?.spendCr).toBeNull();
+    expect(legacy).not.toHaveProperty("spendUsd");
+    expect((await listSessions(a.owner, "same-project-id"))[0]).not.toHaveProperty("spendUsd");
+    const before = (await db().execute({ sql: "SELECT spend_usd,spend_cr FROM crew_sessions WHERE id=?", args: [a.session.id] })).rows[0];
+    expect(before).toMatchObject({ spend_usd: 7.25, spend_cr: null });
+    await releaseRound(a.owner, a.session.id, { spendUsd: .75, spendCr: 12 });
+    expect(await readSession(a.owner, a.session.id)).toMatchObject({ spendCr: 12, roundsRun: 2 });
+    expect(await readSession(a.owner, a.session.id)).not.toHaveProperty("spendUsd");
+    expect((await db().execute({ sql: "SELECT spend_usd,spend_cr FROM crew_sessions WHERE id=?", args: [a.session.id] })).rows[0]).toMatchObject({ spend_usd: 8, spend_cr: 12 });
+  });
+  await runInTenant(b.workspace, async () => {
+    expect(await readSession(a.owner, a.session.id)).toBeNull();
+    expect(await listSessions(a.owner, "same-project-id")).toEqual([]);
+  });
+});
+
 test("Crew MCP binds immutable context to one room and exposes no paid or cross-workspace tools", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { issueCrewMcp } = await import("../../lib/crew/mcp");

@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import {test,expect} from '@playwright/test';
 import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -13,7 +14,7 @@ process.env.ENGINE_MOCK='1';
 function workspace(name:string,keys:Record<string,string>={}):TenantWorkspace{return {id:'ws_'+name,slug:name,name,legacy:true,dbUrl:`file:${path.join(dir,name+'.db')}`,dbToken:null,keys,usesPlatformKeys:false,allowanceUsd:null,gatewayKeyId:null,ownerId:'owner',createdAt:0,suspendedAt:null,suspendedReason:null,flaggedAt:null,flagNote:null,concurrency:null,rendersPerHour:null,storageQuotaBytes:null,deletedAt:null};}
 async function makeJob(genId:string,provider:'byteplus'|'fal'|'xai'='byteplus'):Promise<VideoJob>{
  const {db,ready,now}=await import('../../lib/db');const {getModel}=await import('../../lib/models');const {getTask}=await import('../../lib/tasks');const {meter}=await import('../../lib/meter');
- await ready();const model=getModel(provider==='fal'?'fal-ai/kling-video/v3/standard':provider==='xai'?'grok-imagine-video-1.5':'dreamina-seedance-2-0-260128');
+ await ready(); await fundFixtureWorkspace();const model=getModel(provider==='fal'?'fal-ai/kling-video/v3/standard':provider==='xai'?'grok-imagine-video-1.5':'dreamina-seedance-2-0-260128');
  const params={ratio:'16:9',resolution:'720p',duration:5,watermark:false};
  await db().execute({sql:`INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_at,updated_at) VALUES(?,'video',?,'Test',?,'queued',?,'generate',?,?)`,args:[genId,model.id,JSON.stringify(params),provider,now(),now()]});
  const {billedTo}=await import('../../lib/providers');
@@ -99,6 +100,7 @@ test('a refused submission starts the take that waited for its slot, not the ten
 
 test('the real xAI and fal adapters report refusals and unsent requests as rejected, never as uncertain',async()=>{
  const {runInTenant}=await import('../../lib/tenant');const {submitVideoJob}=await import('../../lib/submitVideo');const {platformDb}=await import('../../lib/platform');
+ const oldXai=process.env.XAI_API_KEY, oldFal=process.env.FAL_KEY; process.env.XAI_API_KEY='unit-test-key'; process.env.FAL_KEY='unit-test-key';
  const originalFetch=globalThis.fetch;const posts:string[]=[];
  let reply:()=>Response=()=>Response.json({error:{message:'unused'}},{status:500});
  globalThis.fetch=async(input:RequestInfo|URL)=>{posts.push(String(input));return reply();};
@@ -118,6 +120,7 @@ test('the real xAI and fal adapters report refusals and unsent requests as rejec
    expect(result).toMatchObject({ok:false});if(!result.ok){expect(result.cls).not.toBe('uncertain');expect(result.error).toContain('up to 720p');}
    expect(posts).toHaveLength(2);expect(await reserved(guided.genId)).toBe(0);
   });
+  delete process.env.XAI_API_KEY;
   await runInTenant(workspace('real_xai_unkeyed'),async()=>{
    const unkeyed=await makeJob('gen_real_xai_unkeyed','xai');
    expect(await submitVideoJob(unkeyed)).toMatchObject({ok:false});expect(posts).toHaveLength(2);expect(await reserved(unkeyed.genId)).toBe(0);
@@ -127,7 +130,7 @@ test('the real xAI and fal adapters report refusals and unsent requests as rejec
    const broke=await makeJob('gen_real_fal_402','fal');
    expect(await submitVideoJob(broke)).toMatchObject({ok:false,cls:'fatal'});expect(posts).toHaveLength(3);expect(await reserved(broke.genId)).toBe(0);
   });
- }finally{globalThis.fetch=originalFetch;process.env.ENGINE_MOCK='1';}
+ }finally{if(oldXai===undefined)delete process.env.XAI_API_KEY;else process.env.XAI_API_KEY=oldXai;if(oldFal===undefined)delete process.env.FAL_KEY;else process.env.FAL_KEY=oldFal;globalThis.fetch=originalFetch;process.env.ENGINE_MOCK='1';}
 });
 
 test('handle writes retry safely, and committed writes with lost acknowledgments recover without resubmitting',async()=>{

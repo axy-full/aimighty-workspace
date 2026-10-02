@@ -250,7 +250,7 @@ test("a reservation takes a slot in its own write: a full share or pool reserves
   await inside(b, async () => (await import("../../lib/meter")).meter({ id: "res_b_google", kind: "image", engine: "google", model: "gemini-3-pro-image", status: "succeeded", engineCostUsd: 0.2 }));
 });
 
-test("a slot nobody closed stops counting after its time; the governor switched off admits everything; an own key never enters the pool", async () => {
+test("a slot nobody closed stops counting after its time; the governor switched off admits everything; a saved own key never takes a take out of the pool", async () => {
   pool("1");
   const { platformDb } = await import("../../lib/platform");
   const { SLOT_STALE_MS, poolDesk, sharedPoolOf } = await import("../../lib/providerPool");
@@ -266,14 +266,15 @@ test("a slot nobody closed stops counting after its time; the governor switched 
   await reserve(ws, "stale_3");
   for (const id of ["stale_1", "stale_2", "stale_3"]) await settle(ws, id, "succeeded");
 
-  // A workspace on its own provider key runs on its own account: it never takes a platform slot.
+  // A key a workspace saved never funds new work (lib/vendorKeys.ts): its renders run on the platform's key, so they take
+  // a platform slot like any other.
   pool("1");
   process.env.ENGINE_MOCK = "0";
   const before = process.env.HF_CREDENTIALS;
   process.env.HF_CREDENTIALS = "platform-id:platform-secret";
   try {
     expect(await inside(ws, async () => sharedPoolOf({ engine: "higgsfield", kind: "video" }))).toBe("higgsfield");
-    expect(await inside({ ...ws, keys: { higgsfield: "own-id:own-secret" } }, async () => sharedPoolOf({ engine: "higgsfield", kind: "image" }))).toBeNull();
+    expect(await inside({ ...ws, keys: { higgsfield: "own-id:own-secret" } }, async () => sharedPoolOf({ engine: "higgsfield", kind: "image" }))).toBe("higgsfield");
     // Training and other kinds are not renders on the pool.
     expect(await inside(ws, async () => sharedPoolOf({ engine: "higgsfield", kind: "training" }))).toBeNull();
     expect(await inside(ws, async () => sharedPoolOf({ engine: "byteplus", kind: "video" }))).toBeNull();

@@ -1,5 +1,7 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
@@ -136,11 +138,17 @@ test("project and token ceilings include in-flight reservations", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   await runInTenant(workspace("caps", false), async () => {
+    await fundFixtureWorkspace();
     await ready();
     await db().execute(`INSERT INTO projects(id,name,created_at,cap_usd) VALUES('p_cap','Cap',0,1)`);
     await reserveGenerationSpend({ id: "gen_cap_a", projectId: "p_cap", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 });
     await expect(reserveGenerationSpend({ id: "gen_cap_b", projectId: "p_cap", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 })).rejects.toThrow(/cap/);
-    const token = { id: "token_unit", capUsd: 1 };
+    /* A dollar ceiling set before credits is measured in what the workspace now pays: credits billed at
+       the price of a credit, at the job's own terms (never the vendor's dollars). One job fits, two do not. */
+    const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
+    const { creditUsd } = await import("../../lib/creditTerms");
+    const perJob = creditsAtTerms(.7, currentBillingTerms("video", "mock")) * creditUsd();
+    const token = { id: "token_unit", capUsd: perJob * 1.5 };
     await reserveGenerationSpend({ id: "gen_token_a", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 }, { token });
     await expect(reserveGenerationSpend({ id: "gen_token_b", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: .7 }, { token })).rejects.toThrow(/token/);
   });
@@ -157,6 +165,7 @@ test("text and media share the atomic concurrency gate", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const ws = { ...workspace("shared-slots", false), concurrency: 1 };
   await runInTenant(ws, async () => {
+    await fundFixtureWorkspace();
     await reserveGenerationSpend({ id: "text_slot", kind: "text", engine: "vercel", model: "mock", status: "running", engineCostUsd: 0.01 });
     await expect(reserveGenerationSpend({ id: "video_slot", kind: "video", engine: "byteplus", model: "mock", status: "running", engineCostUsd: 1 })).rejects.toThrow(/slot/);
   });
@@ -456,4 +465,122 @@ test("POST /api/generate/check fingerprints the request exactly as POST /api/gen
     expect((await ask({ key: "route-bad-2", endpoint: "/api/generate", body: JSON.stringify(body) }, { "X-Workbench-Scope": workbenchScopeFor(ws.id, "u_other") })).status).toBe(409);
     expect((await db().execute("SELECT COUNT(*) AS n FROM generation_requests WHERE request_key LIKE 'route-bad-%'")).rows[0].n).toBe(0);
   });
+});
+
+
+test("shared engines isolate studio balances and credit token ceilings across concurrent jobs", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { creditState } = await import("../../lib/credits");
+  const { tokenCreditUsage } = await import("../../lib/tokenUsage");
+  const { grantCredits } = await import("../../lib/platform");
+  const { billCredits } = await import("../../lib/creditTerms");
+  const a = workspace("managed-org-a", false), b = workspace("managed-org-b", false);
+  a.keys.openai = "retained-tenant-a"; b.keys.openai = "retained-tenant-b";
+  a.keys.higgsfield = "retained-hf-a"; b.keys.higgsfield = "retained-hf-b";
+  const prior = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "shared-unit-key";
+  const priorHiggsfield = process.env.HF_CREDENTIALS; process.env.HF_CREDENTIALS = "shared-hf-unit:fixture-secret";
+  try {
+    const price = billCredits(1, "text");
+    await grantCredits(a.id, price * 3, "Fixture", null, "manual");
+    await grantCredits(b.id, price * 3, "Fixture", null, "manual");
+    const token = { id: "same-token-id", capUsd: null, capCredits: price };
+    await runInTenant(a, async () => {
+      expect(vendorKey("openai")).toBe("shared-unit-key");
+      expect(vendorKey("higgsfield")).toBe("shared-hf-unit:fixture-secret");
+      const jobs = await Promise.allSettled(["managed-a-first", "managed-a-second"].map(id => reserveGenerationSpend({ id, kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token })));
+      expect(jobs.filter(job => job.status === "fulfilled")).toHaveLength(1);
+      expect(jobs.filter(job => job.status === "rejected")).toHaveLength(1);
+      expect((await creditState())?.balance).toBe(price * 2);
+      expect((await tokenCreditUsage(0)).get(token.id)).toBe(price);
+    });
+    await runInTenant(b, async () => {
+      expect(vendorKey("openai")).toBe("shared-unit-key");
+      expect(vendorKey("higgsfield")).toBe("shared-hf-unit:fixture-secret");
+      expect((await creditState())?.balance).toBe(price * 3);
+      expect((await tokenCreditUsage(0)).get(token.id)).toBeUndefined();
+      await reserveGenerationSpend({ id: "managed-b-first", kind: "text", engine: "openai", model: "fixture", status: "running", engineCostUsd: 1 }, { token });
+      expect((await tokenCreditUsage(0)).get(token.id)).toBe(price);
+    });
+    expect(a.keys.openai).toBe("retained-tenant-a"); expect(b.keys.openai).toBe("retained-tenant-b");
+  } finally {
+    if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior;
+    if (priorHiggsfield === undefined) delete process.env.HF_CREDENTIALS; else process.env.HF_CREDENTIALS = priorHiggsfield;
+  }
+});
+
+
+test("accepted own-key jobs keep their collection key without changing new work or another studio", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const previous = process.env.FAL_KEY;
+  process.env.FAL_KEY = "shared-fal-unit-key";
+  const a = { ...workspace("accepted-a"), keys: { fal: "original-a" } };
+  const b = { ...workspace("accepted-b"), keys: { fal: "original-b" } };
+  try {
+    await platformReady();
+    for (const [ws, funded] of [[a, 0], [b, 1]] as const)
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',?,?,?)",
+        args: [`${ws.id}-collection`, ws.id, funded, Date.now(), Date.now()] });
+    await Promise.all([a, b].map((ws) => runInTenant(ws, async () => {
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+      await withAcceptedJobCredentials(`${ws.id}-collection`, "fal", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        expect(vendorKey("fal")).toBe(ws.id === a.id ? "original-a" : "shared-fal-unit-key");
+        await runInTenant(b, async () => expect(vendorKey("fal")).toBe("shared-fal-unit-key"));
+      });
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+    })));
+    await runInTenant(a, async () => {
+      await withAcceptedJobCredentials("pre-meter-history", "fal", async () => expect(vendorKey("fal")).toBe("original-a"));
+      await expect(withAcceptedJobCredentials(`${a.id}-collection`, "fal", async () => { throw new Error("collector failed"); })).rejects.toThrow("collector failed");
+      expect(vendorKey("fal")).toBe("shared-fal-unit-key");
+    });
+    await runInTenant({ ...a, keys: {} }, async () => {
+      let called = false;
+      await expect(withAcceptedJobCredentials(`${a.id}-collection`, "fal", async () => { called = true; })).rejects.toThrow("original connection is unavailable");
+      expect(called).toBe(false);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;
+  }
+});
+
+test("the house workspace's accepted jobs are collected with the deployment's keys; another keyless workspace's own-key job is not", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { vendorKey } = await import("../../lib/vendorKeys");
+  const { withAcceptedJobCredentials } = await import("../../lib/acceptedJobCredentials");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const previous = process.env.FAL_KEY;
+  process.env.FAL_KEY = "shared-fal-unit-key";
+  /* The house workspace (lib/houseWorkspace.ts): no keys of its own, never billed in credits. */
+  const house = { ...workspace("house-inflight", false), id: HOUSE_WORKSPACE_ID, usesPlatformKeys: true };
+  /* The same shape under any other id: the legacy flag does not make a workspace the house. */
+  const flagged = { ...workspace("legacy-inflight", false), usesPlatformKeys: true };
+  const tag = randomUUID().slice(0, 8);
+  try {
+    await platformReady();
+    /* Metered as not platform-paid, although it ran on the deployment's keys: before the deploy and after it. */
+    for (const ws of [house, flagged])
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,paid_by_platform,created_at,updated_at) VALUES(?,?, 'video','fal','fixture','running',0,?,?)",
+        args: [`${ws.id}-inflight-${tag}`, ws.id, Date.now(), Date.now()] });
+    await runInTenant(house, async () => {
+      const keys: (string | null)[] = [];
+      await withAcceptedJobCredentials(`${house.id}-inflight-${tag}`, "fal", async () => { keys.push(vendorKey("fal")); });
+      /* An older job with no meter row reads the same way. */
+      await withAcceptedJobCredentials(`${house.id}-pre-meter-${tag}`, "fal", async () => { keys.push(vendorKey("fal")); });
+      expect(keys).toEqual(["shared-fal-unit-key", "shared-fal-unit-key"]);
+    });
+    await runInTenant(flagged, async () => {
+      let called = false;
+      await expect(withAcceptedJobCredentials(`${flagged.id}-inflight-${tag}`, "fal", async () => { called = true; })).rejects.toThrow("original connection is unavailable");
+      expect(called).toBe(false);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.FAL_KEY; else process.env.FAL_KEY = previous;
+  }
 });

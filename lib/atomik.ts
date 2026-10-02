@@ -79,7 +79,7 @@ export type Step = {
    *  admission bills it, and what the ledger billed once it ran. */
   estCredits?: number | null;
   billedCredits?: number | null;
-  /** The Idempotency-Key this approval's render is sent under (stepRequestKey): one per approval. */
+  /** The Idempotency-Key this approval's render is sent under: one per approval, naming the thread (threadStepRequestKey). */
   requestKey?: string;
 };
 
@@ -105,6 +105,9 @@ export type Chat = {
   createdAt: number; updatedAt: number;
   /** Only for a workspace that pays in credits (getChat): what planning was billed. */
   textCredits?: number;
+  /** A thread hidden from its project's list (lib/atomikThreads.ts), and who hid it; restored, both are null. */
+  archivedAt?: number | null;
+  archivedBy?: string | null;
 };
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -126,7 +129,7 @@ const toStep = (r: Row): Step => ({
   estCostUsd: r.est_cost_usd == null ? null : Number(r.est_cost_usd),
   error: r.error ? String(r.error) : null,
   createdAt: Number(r.created_at ?? 0),
-  requestKey: stepRequestKey(String(r.id), Number(r.attempt ?? 0)),
+  requestKey: stepKeyOf(r),
 });
 
 const toMessage = (r: Row): Message => ({
@@ -154,6 +157,8 @@ const toChat = (r: Row): Chat => {
     status: String(r.status ?? "idle") as ChatStatus,
     textCostUsd: Number(r.text_cost_usd ?? 0), createdBy: String(r.created_by ?? ""),
     createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
+    archivedAt: r.archived_at == null ? null : Number(r.archived_at),
+    archivedBy: r.archived_by ? String(r.archived_by) : null,
   };
 };
 
@@ -191,12 +196,14 @@ export function stepForBrowser(step: Step): Step {
 export async function listChats(limit = 40): Promise<(Chat & { needsApproval: boolean })[]> {
   await ready();
   /* A step planned on the connected account can no longer be approved, so it
-     never makes a chat wait for one (lib/atomikAccountStep.ts). */
+     never makes a chat wait for one (lib/atomikAccountStep.ts). An archived
+     thread is hidden (lib/atomikThreads.ts): its project's Atomik never
+     opens on it by itself. */
   const rs = await db().execute({
     sql: `SELECT c.*, EXISTS(
             SELECT 1 FROM atomik_steps s WHERE s.chat_id = c.id AND s.status = 'proposed' AND s.model NOT LIKE 'connected:%'
           ) AS needs
-          FROM atomik_chats c WHERE c.deleted = 0
+          FROM atomik_chats c WHERE c.deleted = 0 AND c.archived_at IS NULL
           ORDER BY c.updated_at DESC LIMIT ?`,
     args: [Math.min(Math.max(1, limit), 100)],
   });
@@ -347,9 +354,13 @@ export async function claimStep(stepId: string, userId?: string): Promise<Step |
   await ready();
   const rs = await db().execute({
     /* A step settled back to proposed carries why; approving it again clears that. Each approval
-       is a new attempt, so its render goes under a key of its own (stepRequestKey), and records
-       who took it: that person's claim on the key is what a stranded render is fenced by. */
-    sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?, attempt = attempt + 1, claimed_by = ?
+       is a new attempt, so its render goes under a key of its own, and records who took it: that
+       person's claim on the key is what a stranded render is fenced by. The key names the step's
+       thread (threadStepRequestKey), so two threads of one project never share one; it is written
+       with the claim, from the row's own chat and the new attempt (the right side reads the row
+       as it was). */
+    sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?, attempt = attempt + 1, claimed_by = ?,
+            request_key = 'atomik-step:' || chat_id || ':' || id || CASE WHEN attempt + 1 > 1 THEN ':' || (attempt + 1) ELSE '' END
           WHERE id = ? AND status = 'proposed'`,
     args: [now(), userId ?? null, stepId],
   });
@@ -372,6 +383,24 @@ export async function getStep(stepId: string): Promise<Step | null> {
  * again must not reuse it. The first approval keeps the key it always had.
  */
 export const stepRequestKey = (stepId: string, attempt = 1) => (attempt > 1 ? `atomik-step:${stepId}:${attempt}` : `atomik-step:${stepId}`);
+/**
+ * The key an approval made since threads sends its render under: the step's
+ * thread, then the step, then the attempt from the second approval on
+ * (`atomik-step:<thread>:<step>`, `…:2`). claimStep writes it with the claim.
+ */
+export const threadStepRequestKey = (chatId: string, stepId: string, attempt = 1) =>
+  `atomik-step:${chatId}:${stepId}${attempt > 1 ? `:${attempt}` : ""}`;
+/**
+ * The key this step's current approval went under. The stored one is trusted
+ * only when it is this attempt's thread key: an approval taken by a version
+ * that wrote none (before threads, or mid-deploy) kept the step's own key, and
+ * that is the one its render was sent and fenced under.
+ */
+function stepKeyOf(r: Row): string {
+  const attempt = Number(r.attempt ?? 0);
+  const threaded = threadStepRequestKey(String(r.chat_id), String(r.id), attempt);
+  return r.request_key != null && String(r.request_key) === threaded ? threaded : stepRequestKey(String(r.id), attempt);
+}
 /** The fingerprint a stranded render's key is fenced under: no request is ever sent with it. */
 const STRANDED_FENCE = "atomik-step:stranded";
 

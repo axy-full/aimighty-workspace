@@ -3,6 +3,7 @@ import { db } from "./db";
 import { billedTo, type ProviderId } from "./providers";
 import type { VendorKeyName } from "./vendorKeys";
 import { platformDb, platformReady } from './platform';
+import { isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * What the platform has paid for a workspace.
@@ -19,18 +20,27 @@ const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
   xai: ["xai"],
 };
 
-/** Does this vendor's bill land on the platform for the current workspace? */
+/**
+ * Is this vendor's bill charged to the current workspace, in credits?
+ *
+ * Every workspace runs on the platform's engines, and every one is charged
+ * for them in credits except the house workspace (lib/houseWorkspace.ts).
+ * Its jobs are metered at the engines' cost with `paid_by_platform = 0` and
+ * no credits, as they always have been; the meter row is what decides how an
+ * accepted job is collected (lib/acceptedJobCredentials.ts), so the flag
+ * keeps that meaning.
+ */
 export function paidByPlatform(name: VendorKeyName): boolean {
+  void name;
   const ws = currentTenant()?.workspace;
-  if (!ws || ws.legacy || !ws.usesPlatformKeys) return false;
-  return !ws.keys[name];
+  return Boolean(ws) && !isHouseWorkspace(ws);
 }
 
 /** Native compute has no workspace BYOK credentials. Disabled platform funding fails admission. */
 export function paidByPlatformEngine(engine: string): boolean {
   if (engine === "vercel-sandbox") {
     const ws = currentTenant()?.workspace;
-    return Boolean(ws && !ws.legacy && ws.usesPlatformKeys);
+    return Boolean(ws) && !isHouseWorkspace(ws);
   }
   return paidByPlatform(vendorKeyNameFor(engine));
 }

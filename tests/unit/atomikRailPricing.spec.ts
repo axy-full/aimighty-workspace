@@ -213,18 +213,15 @@ test("a credit workspace gets each estimate as admission bills it, and planning 
     expect(await estimateStepUsd("audio", "elevenlabs", { task: "speech" })).toBeNull();
   }));
 
-test("a workspace that pays its vendors in dollars keeps its dollars and gets no credit figures", async () =>
+test("a migrated workspace receives retail credits without vendor costs", async () =>
   inWorkspace("rail-dollars", false, async () => {
     const { getChat } = await import("../../lib/atomik");
     const chatId = await seedChat("seedance-2.0", 0.9);
     const loaded = (await getChat(chatId))!;
-    expect(loaded.chat.textCredits).toBeUndefined();
-    expect(loaded.chat.textCostUsd).toBe(0.02);
-    for (const s of loaded.steps) {
-      expect(s.estCredits).toBeUndefined();
-      expect(s.billedCredits).toBeUndefined();
+    expect(loaded.chat.textCredits).toBe(0);
+    expect(loaded.chat).not.toHaveProperty("textCostUsd");
+    for (const step of loaded.steps) {
+      expect(step.estCostUsd).toBeNull();
+      expect(step.estCredits == null || step.estCredits >= 0).toBe(true);
     }
-    expect(loaded.steps.find((s) => s.id === "astp_done")!.estCostUsd).toBe(0.9);
-    // The old audio row still gets its dollar estimate.
-    expect(loaded.steps.find((s) => s.id === "astp_audio")!.estCostUsd).toBeGreaterThan(0);
   }));

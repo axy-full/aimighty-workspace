@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -331,7 +332,8 @@ test("a held or queued take rebuilds its sound reference from its row, as the so
   };
   try {
     await runInTenant(workspace("cinema_controls_rows"), async () => {
-      await ready();
+      /* Every workspace pays in credits: these takes are reserved from this fixture's own funds. */
+      await ready(); await fundFixtureWorkspace();
       await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,duration_s,created_at) VALUES('room','room.wav','audio/wav','wav',64,'s','/api/uploads/room','audio',6,0)");
       await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,duration_s,created_at) VALUES('look','look.png','image/png','png',64,'s','/api/uploads/look','image',NULL,0)");
       const usd = cinemaStudioQuoteUsd(settings())!;

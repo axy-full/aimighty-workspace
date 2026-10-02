@@ -135,6 +135,7 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     await meter({ ...video, id: id("failed_paid"), status: "failed", engineCostUsd: 0.5 });
     /* On the workspace's own key: no credits, whatever the vendor charged. */
     await meter({ id: id("own_key"), kind: "image", engine: "openai", model: "gpt-image-2.5-flare", status: "succeeded", engineCostUsd: 0.0421, createdBy: "u_editor" });
+    await platformDb().execute({ sql: "UPDATE meter_events SET paid_by_platform=0,billed_credits=0 WHERE id=?", args: [id("own_key")] });
   });
   const at = Date.now();
   /* A failed agent run as PR #398's `unbilled` meter event writes it: the vendor's cost kept, nothing billed. */
@@ -223,41 +224,66 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
   });
 });
 
-test("a dollar workspace reads its takes in dollars; the connected account's and the demo's are not among them", async () => {
+/**
+ * Takes a workspace recorded in its engines' dollars, with what each provider
+ * said of the failures on the workspace's own key. Run inside the workspace.
+ */
+async function seedDollarTakes(): Promise<void> {
+  const { db, ready } = await import("../../lib/db");
+  await ready();
+  await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_producer','producer@example.test','Producer','x','admin',0)" });
+  const gen = "INSERT INTO generations(id,model,prompt,params,status,kind,provider,cost_usd,refine_cost_usd,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
+  const t = Date.now();
+  const rows: [string, string, string, number | null, number | null, number][] = [
+    ["d_charged", "{}", "succeeded", 1.25, 0.05, t - 1000],
+    /* A zero refinement is known; the render charge still is not. */
+    ["d_failed", "{}", "failed", null, 0, t - 2000],
+    /* Discarded while held: never sent, so nothing could be charged (lib/held.ts). */
+    ["d_cancelled", JSON.stringify({ discardedAt: t - 3000 }), "cancelled", 0, null, t - 3000],
+    /* Refused at submit and recorded at zero by Particl: the provider's reply said nothing of a charge. */
+    ["d_refused", "{}", "failed", 0, null, t - 3100],
+    /* The provider's own rule for this reply: not charged. */
+    ["d_not_charged", "{}", "failed", 0, null, t - 3200],
+    ["d_running", "{}", "running", null, null, t - 4000],
+    ["d_held", "{}", "held", null, null, t - 5000],
+    ["d_unpriced", "{}", "succeeded", null, null, t - 6000],
+    ["d_connected", JSON.stringify({ consumerCreditUnit: "higgsfield_credits", consumerCredits: 75 }), "succeeded", null, null, t - 7000],
+    [`gen_hfc_${"a".repeat(40)}`, "{}", "succeeded", null, null, t - 8000],
+    /* The starter production's demo take: a price on paper, nobody rendered or paid for it. */
+    ["d_demo", JSON.stringify({ demo: true }), "succeeded", 2.5, null, t - 9000],
+  ];
+  for (const [key, params, status, cost, refine, at] of rows)
+    await db().execute({ sql: gen, args: [key, "dreamina-seedance-2-5-260628", "a harbour", params, status, "video", "byteplus", cost, refine, "u_producer", at, at] });
+  /* What fal said, on the workspace's own key: a 422 "may still be charged"; a server error is never charged. */
+  const { falErrorOutcome, serializeOutcome } = await import("../../lib/providerOutcome");
+  for (const [key, said] of [["d_refused", falErrorOutcome(422, { detail: [{ type: "image_too_large", msg: "Image too large" }] })], ["d_not_charged", falErrorOutcome(503, "Service unavailable")]] as const)
+    await db().execute({ sql: "UPDATE generations SET provider_outcome=? WHERE id=?", args: [serializeOutcome({ ...said, funding: "own" }), key] });
+}
+
+test("a migrated workspace never invents a historical credit charge from vendor costs", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { usageLedgerPage, parseLedgerQuery, ledgerCsv } = await import("../../lib/usageLedger");
   const ws = workspace("dollars", false);
   const q = (s = "") => parseLedgerQuery(new URLSearchParams(`rows=1${s}`)) as Exclude<ReturnType<typeof parseLedgerQuery>, { error: string }>;
   await runInTenant(ws, async () => {
-    const { db, ready } = await import("../../lib/db");
-    await ready();
-    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_producer','producer@example.test','Producer','x','admin',0)" });
-    const gen = "INSERT INTO generations(id,model,prompt,params,status,kind,provider,cost_usd,refine_cost_usd,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
-    const t = Date.now();
-    const rows: [string, string, string, number | null, number | null, number][] = [
-      ["d_charged", "{}", "succeeded", 1.25, 0.05, t - 1000],
-      /* A zero refinement is known; the render charge still is not. */
-      ["d_failed", "{}", "failed", null, 0, t - 2000],
-      /* Discarded while held: never sent, so nothing could be charged (lib/held.ts). */
-      ["d_cancelled", JSON.stringify({ discardedAt: t - 3000 }), "cancelled", 0, null, t - 3000],
-      /* Refused at submit and recorded at zero by Particl: the provider's reply said nothing of a charge. */
-      ["d_refused", "{}", "failed", 0, null, t - 3100],
-      /* The provider's own rule for this reply: not charged. */
-      ["d_not_charged", "{}", "failed", 0, null, t - 3200],
-      ["d_running", "{}", "running", null, null, t - 4000],
-      ["d_held", "{}", "held", null, null, t - 5000],
-      ["d_unpriced", "{}", "succeeded", null, null, t - 6000],
-      ["d_connected", JSON.stringify({ consumerCreditUnit: "higgsfield_credits", consumerCredits: 75 }), "succeeded", null, null, t - 7000],
-      [`gen_hfc_${"a".repeat(40)}`, "{}", "succeeded", null, null, t - 8000],
-      /* The starter production's demo take: a price on paper, nobody rendered or paid for it. */
-      ["d_demo", JSON.stringify({ demo: true }), "succeeded", 2.5, null, t - 9000],
-    ];
-    for (const [key, params, status, cost, refine, at] of rows)
-      await db().execute({ sql: gen, args: [key, "dreamina-seedance-2-5-260628", "a harbour", params, status, "video", "byteplus", cost, refine, "u_producer", at, at] });
-    /* What fal said, on the workspace's own key: a 422 "may still be charged"; a server error is never charged. */
-    const { falErrorOutcome, serializeOutcome } = await import("../../lib/providerOutcome");
-    for (const [key, said] of [["d_refused", falErrorOutcome(422, { detail: [{ type: "image_too_large", msg: "Image too large" }] })], ["d_not_charged", falErrorOutcome(503, "Service unavailable")]] as const)
-      await db().execute({ sql: "UPDATE generations SET provider_outcome=? WHERE id=?", args: [serializeOutcome({ ...said, funding: "own" }), key] });
+    await seedDollarTakes();
+    const page = await usageLedgerPage(q(), admin("u_producer"));
+    expect(page.unit).toBe("credits");
+    expect(page.rows).toEqual([]); // No historical Particl ledger entries were recorded.
+    expect(JSON.stringify(page)).not.toMatch(/"usd"|"costUsd"/);
+    expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,credits,failure");
+  });
+});
+
+test("the house workspace reads its takes in dollars; the connected account's and the demo's are not among them", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const { usageLedgerPage, parseLedgerQuery, ledgerCsv } = await import("../../lib/usageLedger");
+  /* The one workspace never billed in credits (lib/houseWorkspace.ts): its spend is read at the engines' cost. */
+  const ws: TenantWorkspace = { ...workspace("house", false), id: HOUSE_WORKSPACE_ID, legacy: true };
+  const q = (s = "") => parseLedgerQuery(new URLSearchParams(`rows=1${s}`)) as Exclude<ReturnType<typeof parseLedgerQuery>, { error: string }>;
+  await runInTenant(ws, async () => {
+    await seedDollarTakes();
     const page = await usageLedgerPage(q(), admin("u_producer"));
     expect(page.unit).toBe("usd");
     expect(page.rows.map((r) => [r.id, r.state])).toEqual([

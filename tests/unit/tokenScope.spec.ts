@@ -34,6 +34,7 @@ test("actual token GET, POST and DELETE refuse read and render bearers before da
     throw new Error("A bearer must not reach token storage");
   };
   const dependencies: Record<string, unknown> = {
+    "@/lib/tokenUsage": { tokenCreditUsage: async () => new Map() },
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/auth": { ...auth, withTenant: (handler: Handler) => handler },
     "@/lib/tenant": tenant,

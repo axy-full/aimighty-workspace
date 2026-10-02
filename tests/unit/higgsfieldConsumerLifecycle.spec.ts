@@ -54,7 +54,8 @@ test("the existing grace-period purge deletes the consumer tenant ledger and own
       files.push(file);
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, `original-${id}`);
-      const job = await runInTenant(workspace, async () => {
+      // Seed the historical consumer record under its original funding policy.
+      const job = await runInTenant({ ...workspace, usesPlatformKeys: false }, async () => {
         await ready();
         clients.push(db());
         await db().execute({

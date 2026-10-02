@@ -59,7 +59,7 @@ async function auth(ws: TenantWorkspace) {
 }
 
 test("Usage and its summary keep hidden takes and chats as spent, and a reading counts text down", async () => {
-  const ws = workspace("ws_usage", false);
+  const ws = workspace(`money_routes_usage_${path.basename(dir)}`, false);
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { recordCheck } = await import("../../lib/reconcile");
@@ -76,7 +76,7 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     "@/lib/storageCost": { storageLedger: async () => null },
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
-    "@/lib/creditUsage": { creditUsage: async () => ({}), creditUsageSummary: async () => ({}) },
+    "@/lib/creditUsage": await import("../../lib/creditUsage"),
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/creditTerms": await import("../../lib/creditTerms"),
@@ -91,31 +91,29 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     await ready();
     const take = `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd,refine_model,refine_cost_usd,deleted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`;
     await db().batch([
-      { sql: take, args: ["g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
-      { sql: take, args: ["g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
-      { sql: take, args: ["g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
-      { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('c1',?,?,1,0.2)`, args: [reading, reading] },
-      { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('m1','c1','assistant',0.2,?)`, args: [reading + 1_000] },
+      { sql: take, args: ["money-g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
+      { sql: take, args: ["money-g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
+      { sql: take, args: ["money-g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
+      { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('money-c1',?,?,1,0.2)`, args: [reading, reading] },
+      { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('money-m1','money-c1','assistant',0.2,?)`, args: [reading + 1_000] },
     ]);
+    const { platformReady, platformDb } = await import("../../lib/platform");
+    await platformReady();
+    for (const [id, kind, engine, cost, credits] of [["money-g1", "video", "byteplus", 1, 15], ["money-g2", "video", "byteplus", .5, 8], ["money-g3", "text", "vercel", .03, 1], ["money-m1", "text", "vercel", .2, 3]] as const)
+      await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,?,?,'fixture','succeeded',?,?,1,?,?)", args: [id, ws.id, kind, engine, cost, credits, reading, reading] });
     await recordCheck({ provider: "vercel", balanceUsd: 10, spendUsd: 2, balanceCredits: null, spendCredits: null, note: "", checkedAt: reading, userId: "owner" });
   });
 
   const body = await (await usage(new Request("http://localhost/api/usage"))).json();
-  expect(body.recent.find((row: { id: string }) => row.id === "g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
+  expect(body.recent.find((row: { id: string }) => row.id === "money-g1").params).toEqual({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12 });
   expect(JSON.stringify(body)).not.toContain("private-test-");
-  const byteplus = body.vendors.find((v: { id: string }) => v.id === "byteplus");
-  // The deleted take was paid for: it stays spent.
-  expect(byteplus.renderSpend).toBeCloseTo(1.5, 6);
-  const vercel = body.vendors.find((v: { id: string }) => v.id === "vercel");
-  // The hidden chat's turn and the prompt written after the reading both come off the reading.
-  expect(vercel.promptSpend).toBeCloseTo(0.23, 6);
-  expect(vercel.anchor.sinceUsd).toBeCloseTo(0.23, 6);
-  expect(vercel.remaining).toBeCloseTo(10 - 0.23, 6);
-  expect(vercel.spent).toBeCloseTo(2 + 0.23, 6);
-
+  expect(body.unit).toBe("credits");
+  expect(body.credits.used).toBe(27);
+  expect(body.vendors.every((vendor: Record<string, unknown>) => !("remaining" in vendor) && !("anchor" in vendor))).toBe(true);
   const brief = await (await summary(new Request("http://localhost/api/usage/summary"))).json();
-  expect(brief.spentUsd).toBeCloseTo(1.53, 6);
-  // A hidden take is not rendering, whatever its row says.
+  expect(brief.spentCredits).toBe(27);
+  expect(brief.promptSpendCredits).toBe(4);
+  expect(brief).not.toHaveProperty("spentUsd");
   expect(brief.pending).toBe(0);
 });
 
@@ -171,11 +169,11 @@ test("drafted shots and a rewritten scene carry credits to a credit workspace an
   expect(JSON.stringify(one)).not.toMatch(/usd/i);
 });
 
-test("a workspace that pays its vendors keeps the writing's dollars, and no take is priced by the route", async () => {
+test("a migrated workspace receives retail credits and no vendor amounts", async () => {
   const { shots } = await writerRoutes(workspace("ws_writer_usd", false), SHOTS);
   const drafted = await (await shots(post("http://localhost/api/atomik/shots/draft", { projectId: "p1", scene: 1 }))).json();
-  expect(drafted.costUsd).toBeCloseTo(0.4, 6);
-  expect(drafted.writingCredits).toBeUndefined();
+  expect(drafted.costUsd).toBeUndefined();
+  expect(drafted.writingCredits).toBe(6);
   expect(drafted.sceneUsd).toBeUndefined();
   expect(drafted.shots.every((s: Record<string, unknown>) => !("takeUsd" in s))).toBe(true);
 });

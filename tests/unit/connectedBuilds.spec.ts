@@ -222,6 +222,8 @@ async function buildServices() {
   const state = {
     mode: "created" as "created" | "pending" | "refused" | "uncertain" | "not_sent",
     creates: 0,
+    imports: 0,
+    accessReads: 0,
     list: [] as unknown[],
     reads: [] as { wanted: string[]; paging: boolean }[],
   };
@@ -241,7 +243,8 @@ async function buildServices() {
   const deps: Record<string, unknown> = {
     "@/lib/tenant": tenant,
     "@/lib/db": database,
-    "./oauth": { ConsumerOAuthError: oauth.ConsumerOAuthError, getConsumerAccess: async () => ({ accessToken: "fixture-private-access", generation: "g" }) },
+    "./jobs": await import("../../lib/higgsfield-consumer/jobs"),
+    "./oauth": { ConsumerOAuthError: oauth.ConsumerOAuthError, getConsumerAccess: async () => { state.accessReads++; return { accessToken: "fixture-private-access", generation: "g" }; } },
     "./mcp": {
       CONNECTED_LIBRARY_GETS: 20, CONNECTED_LIBRARY_PAGES: 5,
       readConnectedPlannerReads: async () => [],
@@ -250,7 +253,7 @@ async function buildServices() {
       listConsumerCharacters: listing,
       listConsumerElements: listing,
     },
-    "./generation-sources": { resolveConsumerGenerationSources: async (input: { medias: unknown[] }) => input.medias.map((_, i) => ({ url: `https://fixtures.particl.invalid/still-${i}.png` })) },
+    "./generation-sources": { resolveConsumerGenerationSources: async (input: { medias: unknown[] }) => { state.imports++; return input.medias.map((_, i) => ({ url: `https://fixtures.particl.invalid/still-${i}.png` })); } },
     "./soul-build": await import("../../lib/higgsfield-consumer/soul-build"),
     "./element-parse": await import("../../lib/higgsfield-consumer/element-parse"),
     "./character-records": await import("../../lib/higgsfield-consumer/character-records"),
@@ -270,6 +273,17 @@ async function buildServices() {
   };
 }
 const soulSources = [{ uploadId: "a" }, { uploadId: "b" }, { uploadId: "c" }, { uploadId: "d" }, { uploadId: "e" }];
+
+test("managed workspaces refuse provider-wallet builds before access, media or paid submission", async () => {
+  const f = await buildServices();
+  await f.tenant.runInTenant({ ...workspace(), usesPlatformKeys: true }, async () => {
+    await expect(f.characters.buildConnectedCharacter("owner", { name: "Mira", type: "soul_2", sources: soulSources }))
+      .rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
+    await expect(f.elements.buildConnectedElement("owner", { name: "Harbour", category: "environment", description: "", sources: [{ uploadId: "a" }] }))
+      .rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
+    expect(f.state).toMatchObject({ accessReads: 0, imports: 0, creates: 0 });
+  });
+});
 
 test("every way a Soul ID build ends is kept in the ledger; one accepted without an id is matched to the account's list later", async () => {
   const f = await buildServices();

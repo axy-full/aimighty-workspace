@@ -1,26 +1,33 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInLocally } from './helpers/workbenchLocal';
+import { password, signupInvite } from './helpers/identityAdmin';
 
 const verified = {
   configured: true, auth: 'verified', readyIdentityAvailable: true, error: null,
-  estimates: { '720p': { status: 'quoted', usd: 0.03 }, '1080p': { status: 'quoted', usd: 0.06 } },
+  estimates: { '720p': { status: 'quoted', credits: 3 }, '1080p': { status: 'quoted', credits: 6 } },
 };
-async function fixture(page: Page, legacy = false) {
+async function fixture(page: Page, superAdmin = true) {
   await signInLocally(page.request);
-  const me = await page.request.get('/api/me').then(response => response.json());
-  const scope = `particl-active-${me.workspace.id}-${me.id}`;
-  let mode = legacy ? 'legacy' : 'own', saved = !legacy;
-  let checks = 0, saves = 0, result: unknown = verified, status = 200;
-  await page.route('**/api/workspaces/keys', async route => {
-    const request = route.request();
-    if (request.method() === 'PUT') {
-      expect(request.headers()['x-workbench-scope']).toBe(scope);
-      expect(request.postDataJSON()).toEqual({ name:'higgsfield', value:'replacement-id:replacement-secret' });
-      saves++; saved = true;
-      return route.fulfill({ json:{ ok:true, name:'higgsfield', masked:'…cret' } });
+  if (superAdmin) {
+    const email = 'platform-owner@example.test';
+    let login = await page.request.post('/api/auth/login', { data: { email, password } });
+    if (!login.ok()) {
+      const code = await signupInvite(email);
+      const signup = await page.request.post('/api/auth/signup', { data: { code, name: 'Platform owner', email, workspace: 'Engine verification', password, accept: true } });
+      if (!signup.ok()) {
+        // Another browser worker may have just created this shared local owner.
+        login = await page.request.post('/api/auth/login', { data: { email, password } });
+        expect(login.ok(), await login.text()).toBe(true);
+      }
     }
-    expect(request.method()).toBe('GET');
-    return route.fulfill({ json:{ mode, keyring:true, keys:[{name:'higgsfield',set:saved,masked:saved?'…1234':null}] } });
+  }
+  const me = await page.request.get('/api/me').then(response => response.json());
+  expect(me.superAdmin).toBe(superAdmin);
+  const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  let checks = 0, saved = true, result: unknown = verified, status = 200;
+  await page.route('**/api/workspaces/keys', route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json:{ mode:'platform', managed:true, keyring:true, keys:[{name:'higgsfield',set:saved,masked:null}] } });
   });
   await page.route('**/api/workspaces/keys/higgsfield/verify', route => {
     expect(route.request().method()).toBe('POST');
@@ -30,70 +37,55 @@ async function fixture(page: Page, legacy = false) {
     return route.fulfill({ status, json:result });
   });
   await page.route(/\/api\/(generate|soul\/identities|identities\/.+\/train)$/, route => {
-    if (route.request().method() === 'POST') throw new Error('Connection verification must not start training or generation.');
+    if (route.request().method() === 'POST') throw new Error('Verification must not start training or generation.');
     return route.fallback();
   });
-  const card = () => page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Connected identity account',exact:true})});
-  return { card, checks:()=>checks, saves:()=>saves, reply:(value:unknown,code=200)=>{result=value;status=code;}, useOwnWithoutKey:()=>{mode='own';saved=false;} };
+  const card = () => page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Identity engine',exact:true})});
+  return { card, checks:()=>checks, reply:(value:unknown,code=200)=>{result=value;status=code;}, unavailable:()=>{saved=false;} };
 }
 
-test('The connected account verification is manual, scoped and invalidated by credential edits, with safe success and error results', async ({page},info) => {
-  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded connection UI coverage');
+test('platform management verifies manually with retail credit estimates and safe error results', async ({page},info) => {
   const f = await fixture(page);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/settings#engines');
-  const card=f.card();
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeEnabled();
+  const card=f.card(), verify=card.getByRole('button',{name:'Verify connection',exact:true});
+  await expect(verify).toBeEnabled();
   await expect(card).toContainText('No training or generation credits are spent.');
+  await expect(card.getByRole('textbox')).toHaveCount(0);
   expect(f.checks()).toBe(0);
   f.reply({...verified,providerReferenceId:'private-reference-not-for-ui',credentials:'private-key-not-for-ui'});
-  await card.getByRole('button',{name:'Verify connection',exact:true}).click();
-  await expect(card.getByRole('status')).toContainText('Authentication verified');
-  await expect(card).toContainText('720p: $0.03 estimate');
-  await expect(card).toContainText('1080p: $0.06 estimate');
+  expect((await verify.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await verify.click();
+  await expect(card.getByLabel('Identity account verification result')).toContainText('Authentication verified');
+  await expect(card).toContainText('720p: 3 credits estimated');
+  await expect(card).toContainText('1080p: 6 credits estimated');
   await expect(card).not.toContainText('private-reference-not-for-ui');
   await expect(card).not.toContainText('private-key-not-for-ui');
+  await expect(card).not.toContainText('$');
   expect(f.checks()).toBe(1);
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({path:info.outputPath('higgsfield-verification-success.png'),animations:'disabled'});
-  await card.getByRole('textbox',{name:'Identity account API key ID',exact:true}).fill('replacement-id');
-  await expect(card.getByText('Authentication verified',{exact:true})).toHaveCount(0);
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeDisabled();
-  await card.getByLabel('Identity account API key secret',{exact:true}).fill('replacement-secret');
-  await card.getByRole('button',{name:'Save identity account',exact:true}).click();
-  await expect(card.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toHaveValue('');
-  await expect(card.getByLabel('Identity account API key secret',{exact:true})).toHaveValue('');
-  expect(f.saves()).toBe(1);expect(f.checks()).toBe(1);
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeEnabled();
   f.reply({configured:true,auth:'rejected',readyIdentityAvailable:false,error:'authentication_rejected',estimates:{'720p':{status:'skipped',error:'authentication_rejected'},'1080p':{status:'skipped',error:'authentication_rejected'}}});
-  await card.getByRole('button',{name:'Verify connection',exact:true}).click();
+  await verify.click();
   await expect(card.getByRole('alert')).toContainText('Authentication rejected');
-  await expect(card).not.toContainText('$0.03 estimate');
+  await expect(card).not.toContainText('3 credits estimated');
   f.reply({error:'Too many connection checks. Try again later.'},429);
-  await card.getByRole('button',{name:'Verify connection',exact:true}).click();
+  await verify.click();
   await expect(card.getByRole('alert')).toHaveText('Too many connection checks. Try again later.');
   expect(f.checks()).toBe(3);
+  f.unavailable(); await page.reload();
+  await expect(verify).toBeDisabled();
+  await expect(card).toContainText('Configure the shared engine in the private deployment settings');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   expect(errors).toEqual([]);
 });
 
-test('legacy platform connections can be checked without credential fields and explain skipped estimates',async({page},info)=>{
-  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded legacy connection UI coverage');
-  const f=await fixture(page,true);
-  f.reply({...verified,readyIdentityAvailable:false,estimates:{'720p':{status:'skipped',error:'no_ready_identity'},'1080p':{status:'skipped',error:'no_ready_identity'}}});
+test('studio owners see managed availability without account-wide probes or credential controls', async ({page}) => {
+  const f=await fixture(page,false);
   await page.goto('/settings#engines');const card=f.card();
-  await expect(card).toContainText('This workspace uses the platform’s identity account.');
-  await expect(card.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toHaveCount(0);
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeEnabled();
+  await expect(card).toContainText('Identity engine available');
+  await expect(card).toContainText('Generations use your organisation’s Particl credits.');
+  await expect(card.getByRole('textbox')).toHaveCount(0);
+  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toHaveCount(0);
   expect(f.checks()).toBe(0);
-  await card.getByRole('button',{name:'Verify connection',exact:true}).click();
-  await expect(card.getByRole('status')).toContainText('Authentication verified');
-  await expect(card).toContainText('720p: Not checked — No ready identity was found in the first results page.');
-  await expect(card).toContainText('No training or generation was started.');
-  await card.scrollIntoViewIfNeeded();
-  await page.screenshot({path:info.outputPath('higgsfield-legacy-verification.png'),animations:'disabled'});
-  f.useOwnWithoutKey();await page.reload();
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeDisabled();
-  await expect(card).toContainText('Save your own identity account to verify it.');
-  expect(f.checks()).toBe(1);
 });

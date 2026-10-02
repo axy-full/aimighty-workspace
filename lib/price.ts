@@ -5,8 +5,8 @@
  *
  * A workspace on the platform's keys buys credits, and every figure it
  * sees is in credits at the engine's margin, rounded up to a tenth — the rule
- * the metering layer bills by. The studio's own workspace and one on its
- * own keys pay their vendors in dollars and see dollars. A list is summed
+ * the metering layer bills by. The house workspace (lib/houseWorkspace.ts)
+ * is never billed in credits and sees the engines' dollars. A list is summed
  * take by take, never rounded once at the end; a server aggregate carries
  * both units and the hook picks the workspace's.
  */
@@ -65,17 +65,12 @@ export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 export function useMoney(): Money {
   const { rates } = useSession();
   return useMemo<Money>(() => {
-    /* Dollars, for a workspace that pays its vendors in them. The figures
-       arrive already in dollars — the server built the table that way — so
-       nothing here converts and nothing here knows a margin.
-       
-       THE UNIT IS THE TABLE'S, and only the table's. This used to read
-       `!credits || rates.unit === "usd"`, which meant a VISITOR — who has no
-       credit balance because they have no workspace — got the dollar
-       formatter applied to a credit table. The signed-out composer read
-       "$39.81" for a shot that costs 40 credits: not the vendor's dollars,
-       not the price, just a credit figure with a dollar sign in front of it.
-       A balance says what somebody HAS; it was never what they pay in. */
+    /* Dollars, for the house workspace alone (lib/houseWorkspace.ts): it is
+       never billed in credits and reads its spend at the engines' cost. The
+       server decides the table's unit and hands "usd" to no other workspace,
+       and the figures arrive already in dollars, so nothing here converts and
+       nothing here knows a margin. THE UNIT IS THE TABLE'S, and only the
+       table's: a visitor or a credit workspace is never given this formatter. */
     if (rates.unit === "usd") {
       const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
       return {
@@ -90,6 +85,8 @@ export function useMoney(): Money {
         approx: (n) => usd(n, 0),
       };
     }
+    // A table in any other unit must never expose or relabel vendor costs.
+    const currentTable = rates.unit === "cr";
     /* Credits. Every figure that reaches this hook is ALREADY in credits:
        estimates come off the rate table the server converted, and a finished
        take's credits come off the ledger, which did the conversion when it
@@ -104,14 +101,14 @@ export function useMoney(): Money {
     const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,
-      price: (n) => cr(whole(n)),
-      rate: (n) => `${n.toFixed(1)} cr`,
+      price: (n) => currentTable ? cr(whole(n)) : "Quote unavailable",
+      rate: (n) => currentTable ? `${n.toFixed(1)} cr` : "Quote unavailable",
       take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : cr(takeCredits(g)); },
       takeCredits,
       sum: (list) => sumWithProviderCreditQuotes(list, standard => cr(standard.reduce((a, g) => a + takeCredits(g), 0))),
       of: (v) => cr(ofCredits(v)),
       each: (v, n) => (n > 0 ? cr(ofCredits(v) / n) : "—"),
-      approx: (n) => `≈ ${cr(whole(n))}`,
+      approx: (n) => currentTable ? `≈ ${cr(whole(n))}` : "Quote unavailable",
     };
   }, [rates]);
 }

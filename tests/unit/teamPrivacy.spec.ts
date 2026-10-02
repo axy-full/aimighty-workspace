@@ -126,19 +126,26 @@ test("credit workspace team response omits provider spend even for a platform ow
   );
 });
 
-for (const [label, options] of [
-  ["legacy internal dollars", { legacy: true }],
-  ["workspace-owned vendor keys", { platformKeys: false }],
-] as const) {
-  test(`${label} keeps its existing dollar spend without changing units`, async () => {
-    const { GET, queries } = teamRoute(options);
-    const body = await (await GET()).json();
-    expect(body.users[0]).toMatchObject({ clips: 4, spend: 47.123456789 });
-    expect(queries.find((query) => query.source === "tenant")?.sql).toContain(
-      "cost_usd",
-    );
-  });
-}
+/* The house workspace (lib/houseWorkspace.ts; this fixture's `legacy` case
+   carries its id) is never billed in credits, so it keeps its own dollars. */
+test("the house workspace keeps its team's dollar spend without changing units", async () => {
+  const { GET, queries } = teamRoute({ legacy: true });
+  const body = await (await GET()).json();
+  expect(body.users[0]).toMatchObject({ clips: 4, spend: 47.123456789 });
+  expect(queries.find((query) => query.source === "tenant")?.sql).toContain(
+    "cost_usd",
+  );
+});
+
+test("workspace-owned vendor keys use the credit ledger without revealing vendor spend", async () => {
+  const { GET, queries } = teamRoute({ platformKeys: false });
+  const body = await (await GET()).json();
+  expect(body.users[0]).toMatchObject({ clips: 4 });
+  expect(body.users[0]).not.toHaveProperty("spend");
+  expect(queries.find((query) => query.source === "tenant")?.sql).not.toContain(
+    "cost_usd",
+  );
+});
 
 test("an internal-test flag alone does not expose costs in a credit workspace", async () => {
   const { GET } = teamRoute({ internalTest: true });

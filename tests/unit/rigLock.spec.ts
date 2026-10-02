@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -608,6 +609,8 @@ test("Atomik builds, a master is locked (by Atomik for Ana, and by Ana), then th
     const deps = { access: async () => null, paceMs: 0, plan };
     /* Asked with a limit for the run (#484): the planning turn is metered into it, at the mock planner's price. This plan
        names no render, so the build is the whole run and nothing after it is priced or sent. */
+    /* Every workspace pays in credits: the planning turn is reserved from this fixture's own funds. */
+    await fundFixtureWorkspace();
     const asked = await agent.askRigAgent({ productionId: "prod-masters", draftId: "draft-masters", userId: "ana", requestId: "req-masters-01", goal: "The captain at her desk.", limit: 500 });
     await agent.advanceRigAgentRun(asked.id, deps);
     const fingerprint = (await agent.rigAgentState("prod-masters", "ana")).run!.proposal!.fingerprint;
