@@ -1,4 +1,5 @@
-import { requireOwner, withTenant } from "@/lib/auth";
+import { billCredits } from "@/lib/creditTerms";
+import { requireSuperAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { takeAccountLimit, AccountError } from "@/lib/accountDb";
 import { verifyHiggsfieldConnection } from "@/lib/higgsfieldVerification";
@@ -8,16 +9,9 @@ export const maxDuration = 45;
 const headers = { "Cache-Control": "private, no-store" };
 export const POST = withTenant(
   async () => {
-    const owner = await requireOwner();
+    const owner = await requireSuperAdmin();
     if (owner.response) return owner.response;
     const workspace = requireTenant();
-    // A customer's owner may inspect only their own provider account. The
-    // legacy studio owner may verify the deployment's Secret configuration.
-    if (!workspace.legacy && !workspace.keys.higgsfield)
-      return Response.json(
-        { error: "Connect your own identity account to verify it." },
-        { status: 403, headers },
-      );
     try {
       await takeAccountLimit(
         `higgsfield-verify:${workspace.id}:${owner.user.id}`,
@@ -35,7 +29,11 @@ export const POST = withTenant(
         { status: 503, headers },
       );
     }
-    return Response.json(await verifyHiggsfieldConnection(), { headers });
+    const result = await verifyHiggsfieldConnection();
+    return Response.json({ ...result, estimates: Object.fromEntries(Object.entries(result.estimates).map(([resolution, estimate]) => {
+      const { usd, ...status } = estimate;
+      return [resolution, { ...status, ...(usd == null ? {} : { credits: billCredits(usd, "higgsfield-ai/soul/character") }) }];
+    })) }, { headers });
   },
   { requireRequestScope: true },
 );

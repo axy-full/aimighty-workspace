@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -281,7 +282,8 @@ async function seed(name: string) {
   const ws = workspace(name);
   const project: Project = { ...newProject("Harbour"), id: "draft-1", productionProjectId: "prod-1", assets: [image("captain")] };
   await runInTenant(ws, async () => {
-    await ready();
+    /* Every workspace pays in credits: the run's planning turn is reserved from this fixture's own funds. */
+    await ready(); await fundFixtureWorkspace();
     await db().execute("INSERT INTO projects(id,name,created_at) VALUES('prod-1','Harbour',0)");
     await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["ana:draft-1", "ana", "draft-1", "Harbour", JSON.stringify(project)] });
     await patchTeamCanvas("prod-1", { upsertNodes: [scene("theirs", { x: 100, y: 100, title: "Ana's shot" })], removeNodes: [], upsertAssets: [], order: ["theirs"] }, "ana");

@@ -455,6 +455,25 @@ restored `workbench_team_canvas` by the first window that opens it. Never
 delete rows to "clear" the outbox; a row that cannot be pushed only stays
 pending, and the saved canvas is already correct.
 
+### Atomik threads
+
+A project's Atomik threads are rows of `atomik_chats`, which every tenant
+snapshot already includes with `atomik_messages` and `atomik_steps`: a project
+with several threads has several chats with the same `project_id`, each with
+its own messages and steps (lib/atomikThreads.ts). Three columns are added in
+place the first time a workspace is read, so older snapshots simply lack them
+and their chats read as before, the first becoming the project's thread 1.
+`atomik_chats.archived_at` and `archived_by` say a thread was archived and by
+whom: a flag, never a delete, and Restore clears both. `atomik_steps.request_key`
+is the Idempotency-Key a step's latest approval rendered under, naming its
+thread (`atomik-step:<thread>:<step>`, then `:<attempt>` from the second
+approval on); a step approved before threads keeps its own key
+(`atomik-step:<step>`). Restore the rows as they are. Never clear
+`request_key`, `attempt` or `claimed_by` to "unstick" a step: a running step is
+settled from the render request filed under that key when its thread's plan is
+next read. Never delete a thread to tidy a project; archive hides it, and
+Restore brings it back with everything in it.
+
 ### Atomik board runs
 
 Every tenant snapshot includes `rig_agent_runs` and `rig_agent_steps`: each

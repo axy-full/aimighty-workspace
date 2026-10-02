@@ -232,11 +232,11 @@ test('an engine the workspace pays for with its own key never stands for what it
       await ready();
       for (let i = 0; i < 4; i++) await take('video', KLING, { resolution: '1080p', ratio: '16:9', duration: 5 });
       await take('video', SEEDANCE, { resolution: '720p', ratio: '16:9', duration: 5 });
-      expect(paidFromBalance(model(KLING))).toBe(false);
+      expect(paidFromBalance(model(KLING))).toBe(true);
       expect(paidFromBalance(model(SEEDANCE))).toBe(true);
       const reach = await workspaceReach(400, DEFAULT_MODELS, paidFromBalance);
-      expect(reach.video).toMatchObject({ basis: 'usual', engine: SEEDANCE, resolution: '720p' });
-      expect(rateCard(paidFromBalance)[0].rows.some((r) => r.engine === KLING)).toBe(false);
+      expect(reach.video).toMatchObject({ basis: 'usual', engine: KLING, resolution: '1080p' });
+      expect(rateCard(paidFromBalance)[0].rows.some((r) => r.engine === KLING)).toBe(true);
     });
   } finally {
     if (mock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = mock;

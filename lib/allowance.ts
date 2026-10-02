@@ -4,6 +4,7 @@ import { paidByPlatform, platformSpendSince } from "./platformSpend";
 import type { VendorKeyName } from "./vendorKeys";
 import type { EstimateTerms } from "./billingTerms";
 import { cycleBounds } from "./cycle";
+import { isHouseWorkspace } from "./houseWorkspace";
 
 export { paidByPlatform, platformSpendSince } from "./platformSpend";
 
@@ -27,10 +28,10 @@ export function defaultAllowanceUsd(): number | null {
 
 export { vendorKeyNameFor, renderKeyNameFor } from "./platformSpend";
 
-/** The workspace's monthly cap on the platform's keys, or null when none applies. */
+/** The workspace's monthly cap on the platform's keys, or null when none applies. The house workspace has none (lib/houseWorkspace.ts). */
 export function allowanceUsd(): number | null {
   const ws = currentTenant()?.workspace;
-  if (!ws || ws.legacy || !ws.usesPlatformKeys) return null;
+  if (!ws || isHouseWorkspace(ws)) return null;
   return ws.allowanceUsd ?? defaultAllowanceUsd();
 }
 

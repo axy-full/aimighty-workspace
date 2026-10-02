@@ -56,7 +56,7 @@ test("a workspace on its own keys keeps the dollars that are its own, and is not
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("own-keys-map", false), async () => {
     const gen = rowToGeneration(heldRow("gen_own", "held", "slots"));
-    expect(gen.params.held).toEqual({ why: "slots", estUsd: EST_USD });
+    expect(gen.params.held).toEqual({ why: "slots", needs: 21 });
   });
 });
 

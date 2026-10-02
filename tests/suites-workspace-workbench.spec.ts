@@ -160,8 +160,8 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
 
   await tabs.getByRole("tab", { name: "Engines" }).click();
   await expect(page.getByTestId("ws-engine")).toHaveCount(2);
-  await expect(page.getByTestId("ws-engine").first()).toContainText("connected");
-  await expect(page.getByTestId("ws-engine").nth(1)).toContainText("platform key");
+  await expect(page.getByTestId("ws-engine").first()).toContainText("Available");
+  await expect(page.getByTestId("ws-engine").nth(1)).toContainText("Unavailable");
   await expect(page.getByTestId("ws-engines")).not.toContainText("Verify checks");
   /* The Higgsfield sign-in is retired: no grant held and nothing running, so no account row, and no developer-API check. */
   await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");

@@ -115,17 +115,10 @@ export function usageRows(body: UsageBody | null): { unit: "cr" | "$"; rows: Usa
 
 /* ── Engines ─────────────────────────────────────────────────────────── */
 
-/**
- * GET /api/workspaces/keys `mode`: the studio's own workspace runs on the
- * deployment ("legacy") and stores no keys; a new workspace borrows the
- * platform's ("platform"); one on its own keys reaches only what it added
- * ("own") — lib/vendorKeys.ts returns null for the rest.
- */
+/** Legacy mode values are accepted for cached clients, but no workspace edits vendor keys. */
 export type KeyMode = "legacy" | "platform" | "own";
-export function keyStatus(mode: KeyMode | undefined, set: boolean): { label: string; canConnect: boolean } {
-  if (mode === "legacy") return { label: "deployment key", canConnect: false };
-  if (set) return { label: "connected", canConnect: true };
-  return mode === "own" ? { label: "not connected", canConnect: true } : { label: "platform key", canConnect: true };
+export function keyStatus(_mode: KeyMode | undefined, set: boolean): { label: string; canConnect: boolean } {
+  return { label: set ? "Available" : "Unavailable", canConnect: false };
 }
 
 /** The connected account's sign-in address, accepted only when it is the account's own authorize page. */

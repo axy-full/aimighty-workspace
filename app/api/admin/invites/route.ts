@@ -12,7 +12,8 @@ import { defaultAllowanceUsd } from "@/lib/allowance";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
-import { meterByWorkspace, marginUsd, engineSpansSince } from "@/lib/meter";
+import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
+import { HOUSE_WORKSPACE_ID, isHouseWorkspace } from "@/lib/houseWorkspace";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 14;
@@ -35,6 +36,11 @@ export const GET = recoveryRoute(async function GET() {
                FROM workspaces w LEFT JOIN accounts a ON a.id = w.owner_id ORDER BY (w.deleted_at IS NOT NULL), w.created_at`),
   ]);
   const spend = await meterByWorkspace(now() - 30 * 86_400_000).catch(() => new Map());
+  /* The house workspace is never billed in credits (lib/houseWorkspace.ts), so
+     the platform-funded figures above leave it out. Its jobs are metered at the
+     engines' cost all the same, and this desk is the one place beside its own
+     Usage page that reads them. */
+  const house = await meterSummary(HOUSE_WORKSPACE_ID, now() - 30 * 86_400_000).catch(() => null);
   /* One grouped query for every workspace's bought-versus-given split, beside
      the one that already reads every workspace's spend. This endpoint is
      polled by the console; a per-workspace call here would be a scan a minute
@@ -67,10 +73,13 @@ export const GET = recoveryRoute(async function GET() {
     defaultAllowanceUsd: defaultAllowanceUsd(),
     invites: invites.rows.map((r: any) => ({ code: r.code, email: r.email, name: r.name, note: r.note, createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0) })),
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
-    workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), deletedAt: r.deleted_at == null ? null : Number(r.deleted_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
+    workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: true, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), deletedAt: r.deleted_at == null ? null : Number(r.deleted_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
       grants: (() => { const g = split.get(String(r.id)); return { paid: g?.paid ?? 0, free: g?.free ?? 0 }; })(),
       planId: asPlanId(r.plan_id),
+      house: isHouseWorkspace({ id: String(r.id) }),
       spend30: (() => {
+        if (isHouseWorkspace({ id: String(r.id) }))
+          return house?.jobs ? { jobs: house.jobs, failed: house.failed, running: house.running, engineCostUsd: house.engineCostUsd, billedCredits: 0, marginUsd: null, atCost: true } : null;
         const m = spend.get(String(r.id));
         if (!m) return null;
         const g = split.get(String(r.id));

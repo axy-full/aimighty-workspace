@@ -5,7 +5,7 @@ import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 
 function workspace(key?: string): TenantWorkspace { return { id: randomUUID(), slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:unused', dbToken: null, keys: key ? { openai: key } : {}, usesPlatformKeys: false, allowanceUsd: null, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null, gatewayKeyId: null, ownerId: 'owner', createdAt: 0 }; }
 test('direct model verification is read-only, exact and credential-scoped', async () => {
-  const old = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
+  const old = process.env.ENGINE_MOCK, oldKey = process.env.OPENAI_API_KEY; delete process.env.ENGINE_MOCK; delete process.env.OPENAI_API_KEY;
   try {
     let calls = 0;
     const first = workspace('unit-' + randomUUID()), second = workspace('unit-' + randomUUID());
@@ -14,23 +14,26 @@ test('direct model verification is read-only, exact and credential-scoped', asyn
       expect(JSON.stringify(init?.headers)).toContain(calls === 1 ? first.keys.openai : second.keys.openai);
       return Response.json({ data: [{ id: calls === 1 ? 'gpt-6-astra' : 'gpt-4.1' }, { id: 'https://wrong.invalid' }] });
     };
+    process.env.OPENAI_API_KEY = first.keys.openai;
     const one = await runInTenant(first, () => openAIConnection(false, fetcher));
     expect(one.verified).toBe(true); expect(one.models).toEqual(['gpt-6-astra']);
     expect(await runInTenant(first, () => openAIConnection(false, fetcher))).toEqual(one);
+    process.env.OPENAI_API_KEY = second.keys.openai;
     expect((await runInTenant(second, () => openAIConnection(false, fetcher))).models).toEqual(['gpt-4.1']);
     expect(calls).toBe(2);
     expect(JSON.stringify(one)).not.toContain(first.keys.openai);
-  } finally { if (old === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = old; }
+  } finally { if (oldKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = oldKey; if (old === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = old; }
 });
 test('mock, disconnected and rejected keys cannot advertise live model access', async () => {
-  const old = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
+  const old = process.env.ENGINE_MOCK, oldKey = process.env.OPENAI_API_KEY; delete process.env.ENGINE_MOCK; delete process.env.OPENAI_API_KEY;
   try {
     const noCall: typeof fetch = async () => { throw new Error('must not call'); };
     expect((await runInTenant(workspace(), () => openAIConnection(true, noCall))).configured).toBe(false);
+    process.env.OPENAI_API_KEY = 'unit-rejected-' + randomUUID();
     const rejected = await runInTenant(workspace('unit-' + randomUUID()), () => openAIConnection(true, async () => new Response('private provider error', { status: 403 })));
     expect(rejected).toMatchObject({ configured: true, verified: false, models: [] });
     expect(rejected.error).not.toContain('private provider');
     process.env.ENGINE_MOCK = '1';
     expect((await runInTenant(workspace('unit-' + randomUUID()), () => openAIConnection(true, noCall))).verified).toBe(false);
-  } finally { if (old === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = old; }
+  } finally { if (oldKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = oldKey; if (old === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = old; }
 });

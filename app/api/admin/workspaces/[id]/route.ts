@@ -6,6 +6,7 @@ import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorks
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
+import { HOUSE_NOT_BILLED, isHouseWorkspace } from "@/lib/houseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +34,15 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   }
   const markKeys = ["suspended", "reason", "flagged", "note"];
   if (ws.deletedAt && Object.keys(body).some((k) => !markKeys.includes(k))) return NextResponse.json({ error: "This workspace was deleted. Restore it before changing it." }, { status: 409 });
-  /* The studio's own workspace pays its vendors directly, so an allowance, a
-     mode or a credit grant means nothing there. Everything else — suspending
-     it, its limits, its flags, and whether it is the platform's test
-     workspace — applies to it like any other. */
-  const moneyKeys = ["allowanceUsd", "grantCredits", "mode"];
-  if (ws.legacy && moneyKeys.some((k) => k in body)) {
-    return NextResponse.json({ error: "The studio's own workspace has no allowance — it is the platform." }, { status: 400 });
-  }
+  if ("mode" in body && body.mode !== "platform")
+    return NextResponse.json({ error: "All workspaces use Particl credits and managed engines." }, { status: 400 });
+  /* The house workspace is never billed in credits (lib/houseWorkspace.ts): a
+     grant or an allowance means nothing there. Everything else — suspending
+     it, its limits, its flags, its plan, and whether it is the platform's
+     test workspace — applies to it like any other. Checked before anything
+     is written, so a mixed request changes nothing. */
+  if (isHouseWorkspace(ws) && ["grantCredits", "allowanceUsd"].some((k) => k in body))
+    return NextResponse.json({ error: HOUSE_NOT_BILLED }, { status: 400 });
   const out: Record<string, unknown> = { ok: true };
   if ("suspended" in body) {
     const on = Boolean(body.suspended);

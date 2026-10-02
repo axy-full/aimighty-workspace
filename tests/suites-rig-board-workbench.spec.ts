@@ -258,6 +258,55 @@ test("cards read at a glance: preview, kind or type (a shot its number), state a
   expect(errors).toEqual([]);
 });
 
+test("a Verify card: its verdict and what it found stand where a description would, two whole lines at most, and the footer keeps the card's bottom", async ({ page }, info) => {
+  /* Two Verify cards whose detail runs to two lines (a shot with no take yet; nothing wired at all), both with words a
+     person wrote, on rig-tidy's fixed-height Review card: unpicked and picked (a thicker border, a bigger title). */
+  const base = fixture("Mirror study", "ws-board");
+  const words = "Compare the face and the wardrobe with the masters before the edit.";
+  const verify = { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } };
+  const { errors } = await openMocked(page, [...base.nodes,
+    card("check", "Verify · The opening", "review", 1200, 0, { width: 254, text: words, linked: ["open", "mira"], verify }),
+    card("loose", "Verify · nothing wired yet", "review", 1200, 320, { width: 220, text: words, verify }),
+  ]);
+  const graph = page.getByTestId("rig-graph");
+  await expect(node(page, "check").locator(".pxw-graph-verify-detail")).toHaveText("The opening has no take yet. Generate one first.");
+  await expect(node(page, "loose").locator(".pxw-graph-verify-detail")).toHaveText("Wire a shot into this card: its take is what gets checked.");
+  for (const picked of [false, true]) {
+    if (picked) {
+      await node(page, "loose").locator(".pxw-graph-hit").click();
+      await expect(node(page, "loose")).toHaveAttribute("data-selected", "true");
+      /* The words a person wrote are not lost: the Card Inspector shows them above the check. */
+      if (await page.getByTestId("inspector").isVisible()) await expect(page.locator('[data-inspector-body="node"] .pxw-card-text')).toHaveText(words);
+      await closeOverlay(page);
+    }
+    const cards = await graph.locator('.pxw-graph-node[data-node-id="check"], .pxw-graph-node[data-node-id="loose"]').evaluateAll((els) => els.map((el) => {
+      const card = el as HTMLElement, box = card.getBoundingClientRect(), z = box.height / card.offsetHeight, cs = getComputedStyle(card);
+      /* The card's content box on screen: inside its border and its padding. */
+      const inner = { top: box.top + (parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop)) * z, bottom: box.bottom - (parseFloat(cs.borderBottomWidth) + parseFloat(cs.paddingBottom)) * z };
+      const outside = Array.from(card.children).filter((child) => !child.matches(".pxw-graph-port, .pxw-graph-peer, .pxw-graph-hit, .pxw-graph-live")).flatMap((child) => {
+        const r = child.getBoundingClientRect();
+        return r.height && (r.bottom > inner.bottom + 0.5 * z || r.top < inner.top - 0.5 * z) ? [`${child.className} ends ${((r.bottom - inner.bottom) / z).toFixed(1)}px past the padding`] : [];
+      });
+      const line = card.querySelector<HTMLElement>(".pxw-graph-verify")!;
+      const lines = line.getBoundingClientRect().height / z / parseFloat(getComputedStyle(line).lineHeight);
+      return { id: card.dataset.nodeId!, picked: card.dataset.selected === "true", height: card.offsetHeight, outside, lines: Math.round(lines * 100) / 100, descriptions: card.querySelectorAll(".pxw-graph-desc").length };
+    }));
+    for (const c of cards) {
+      expect(c.height, `${c.id} is a Review card's height`).toBe(CARD_HEIGHT.flow);
+      expect(c.outside, `${c.id}${c.picked ? " (picked)" : ""}: nothing in it reaches its padding`).toEqual([]);
+      /* Whole lines: the verdict's flow is never cut through a line, and never runs past two. */
+      expect(c.lines, `${c.id}: the verdict and its detail in whole lines`).toBe(Math.round(c.lines));
+      expect(c.lines, `${c.id}: two lines at most`).toBeLessThanOrEqual(2);
+      expect(c.descriptions, `${c.id}: its check stands where the description would`).toBe(0);
+    }
+  }
+  expect(await dimLabels(page, '[data-testid="rig-graph"]'), "labels under #7C7C84").toEqual([]);
+  if (PHONES.includes(info.project.name)) for (const id of ["check", "loose"]) expect(await smallTextIn(node(page, id)), `${id}: text under 12px`).toEqual([]);
+  expect(await sideways(page), "sideways scroll").toEqual([]);
+  if (["workbench-390x844", "workbench-1440x900"].includes(info.project.name)) await node(page, "check").screenshot({ path: info.outputPath(`rig-verify-card-${info.project.name}.png`), animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
 test("a note is added and written right on the board, a section title is added and named there, and both reach the team canvas", async ({ page }, info) => {
   const { errors, store, team } = await openMocked(page);
   const graph = page.getByTestId("rig-graph");

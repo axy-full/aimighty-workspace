@@ -404,6 +404,8 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   await useCard(page, "upload:motion-original");
   await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeDisabled();
   expect(f.quotes).toHaveLength(0);
+  /* The page takes one asset at a time (a drop while another is still being added is refused): the source is in first. */
+  await expect(page.getByLabel("Transform source preview")).toHaveAttribute("src", "/api/uploads/motion-original");
   await dropIdentity(
     page,
     page.getByLabel("Transform reference drop area"),
@@ -642,6 +644,8 @@ test("queued cancellation remains pending until the existing job confirms it", a
   const f = await fixture(page);
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=particl"));
   await useCard(page, "upload:motion-original");
+  // One asset at a time: the source is in before the reference is dropped.
+  await expect(page.getByLabel("Transform source preview")).toHaveAttribute("src", "/api/uploads/motion-original");
   await dropIdentity(page, page.getByLabel("Transform reference drop area"), "wardrobe-original", "upload");
   await page
     .getByRole("button", { name: "Review transform cost", exact: true })

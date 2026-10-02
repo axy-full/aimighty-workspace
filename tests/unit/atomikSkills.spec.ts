@@ -296,8 +296,10 @@ test("a skill run files proposals that each wait at their checkpoint: nothing is
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => { calls.push(String(input)); throw new Error("no network in a skill run"); }) as typeof fetch;
   try {
+    const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
     for (const credits of [true, false]) {
-      await inTenant(workspace({ credits }), async () => {
+      /* Every workspace pays in credits but the house (lib/houseWorkspace.ts), which reads its engines' dollars. */
+      await inTenant(credits ? workspace({ credits }) : { ...workspace({ credits }), id: HOUSE_WORKSPACE_ID }, async () => {
         const { ready } = await import("../../lib/db");
         await ready();
         await rows("INSERT INTO projects(id, name, created_at) VALUES ('p1', 'Launch', 0)");

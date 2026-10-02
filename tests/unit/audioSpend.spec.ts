@@ -144,8 +144,9 @@ test("a queued job whose funding source changed releases its reservation without
         });
       });
       expect((await billingStateFor(id)).credits.balance).toBe(
-        initiallyPaid ? 99 : 100,
+        99,
       );
+      await platformDb().execute({ sql: "UPDATE meter_events SET engine=? WHERE id=?", args: [initiallyPaid ? "historical-engine" : "historical-own-engine", id] });
       await runInTenant(initiallyPaid ? own : paid, async () => {
         const job = (await loadJob(id))!;
         await expect(produce(job)).rejects.toThrow("credentials changed");

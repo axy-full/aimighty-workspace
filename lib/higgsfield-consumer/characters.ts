@@ -6,6 +6,7 @@
  * never an instruction.
  */
 import { requireTenant } from "@/lib/tenant";
+import { requireConsumerFunding } from "./jobs";
 import { getConsumerAccess, ConsumerOAuthError } from "./oauth";
 import { readConnectedPlannerReads, createConsumerCharacter, listConsumerCharacters, CONNECTED_LIBRARY_GETS, CONNECTED_LIBRARY_PAGES, type ConsumerCharacterCreate } from "./mcp";
 import { ready } from "@/lib/db";
@@ -98,6 +99,7 @@ export async function connectedPlan(userId: string): Promise<ConnectedPlan> {
  * price control there is, because the account offers no cost tool for training.
  */
 export async function buildConnectedCharacter(userId: string, input: ConsumerCharacterCreate & { sources: SoulBuildSource[]; projectId?: string | null }): Promise<SoulBuildOutcome> {
+  requireConsumerFunding();
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) throw new ConsumerOAuthError("reconnect_required");
   await ready();

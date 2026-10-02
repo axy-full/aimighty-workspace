@@ -19,8 +19,11 @@ const secret = "fixture-key-id:fixture-key-secret";
 process.env.HF_CREDENTIALS = secret;
 const id = "31a51537-0563-4bcf-bc5a-f99f2979759f";
 const originalFetch = globalThis.fetch;
+let priorSuperAdmin: string | undefined;
+test.beforeEach(() => { priorSuperAdmin = process.env.SUPER_ADMIN_EMAIL; });
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (priorSuperAdmin === undefined) delete process.env.SUPER_ADMIN_EMAIL; else process.env.SUPER_ADMIN_EMAIL = priorSuperAdmin;
   process.env.ENGINE_MOCK = "0";
   process.env.HF_CREDENTIALS = secret;
 });
@@ -229,6 +232,7 @@ test("estimate returns only positive authoritative USD and fixed errors while pr
 
 /** Real withTenant/requireOwner execution; only session lookup and outbound helper are fixtures. */
 async function routeFixture() {
+  process.env.SUPER_ADMIN_EMAIL = "platform-fixture@example.test";
   const auth = await import("../../lib/auth");
   const tenant = await import("../../lib/tenant");
   let store = {
@@ -236,7 +240,7 @@ async function routeFixture() {
     user: {
       id: "owner",
       name: "Owner",
-      email: "owner@example.test",
+      email: "platform-fixture@example.test",
       role: "admin",
       owner: true,
     },
@@ -281,8 +285,9 @@ async function routeFixture() {
     limited = false;
   const limits: unknown[][] = [];
   const dependencies: Record<string, unknown> = {
-    "@/lib/auth": { ...auth, withTenant: wrapperExports.withTenant },
+    "@/lib/auth": { ...auth, withTenant: wrapperExports.withTenant, requireSuperAdmin: async () => tenant.currentTenant()?.user ? auth.requireSuperAdmin() : { response: Response.json({ error: "Not signed in" }, { status: 401 }) } },
     "@/lib/tenant": tenant,
+    "@/lib/creditTerms": await import("../../lib/creditTerms"),
     "@/lib/accountDb": {
       AccountError,
       takeAccountLimit: async (...args: unknown[]) => {
@@ -358,8 +363,8 @@ test("actual verify route rejects missing/stale scope, wrong origin, unauthorize
   expect((await route.post(validScope, "https://other.invalid")).status).toBe(
     403,
   );
-  route.setStore({ ...original, user: { ...original.user!, owner: false } });
-  expect((await route.post(validScope)).status).toBe(403);
+  route.setStore({ ...original, user: { ...original.user!, id: "another-owner", email: "another@example.test", owner: true } });
+  expect((await route.post(workbenchScopeFor("workspace", "another-owner"))).status).toBe(403);
   route.setStore({ workspace: null, user: null });
   expect((await route.post()).status).toBe(401);
   for (const scope of ["read", "render"] as const) {
@@ -373,44 +378,18 @@ test("actual verify route rejects missing/stale scope, wrong origin, unauthorize
   expect(route.limits).toHaveLength(0);
 });
 
-test("legacy owner and explicit BYOK owner can verify, but customers cannot probe shared deployment credentials", async () => {
-  const route = await routeFixture();
-  const original = route.getStore();
-  const legacy = await route.post(validScope);
-  expect(legacy.status).toBe(200);
-  expect(legacy.headers.get("Cache-Control")).toBe("private, no-store");
-  route.setStore({
-    ...original,
-    workspace: {
-      ...original.workspace!,
-      legacy: false,
-      keys: {},
-      usesPlatformKeys: true,
-    },
-  });
-  const shared = await route.post(validScope);
-  expect(shared.status).toBe(403);
-  expect(await shared.json()).toEqual({
-    error: "Connect your own identity account to verify it.",
-  });
-  route.setStore({
-    ...original,
-    workspace: {
-      ...original.workspace!,
-      legacy: false,
-      keys: { higgsfield: secret },
-    },
-  });
-  expect((await route.post(validScope)).status).toBe(200);
-  expect(route.checks()).toBe(2);
-  expect(route.limits).toEqual(
-    Array.from({ length: 2 }, () => [
-      "higgsfield-verify:workspace:owner",
-      5,
-      300000,
-    ]),
-  );
-  route.limit();
+test("only the platform owner can probe shared credentials, independent of workspace key history", async () => {
+  const route = await routeFixture(), original = route.getStore();
+  const response = await route.post(validScope);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(JSON.stringify(await response.json())).not.toMatch(/"usd"|credentialFingerprint/);
+  for (const keys of [{}, { higgsfield: secret }] as Record<string, string>[]) {
+    route.setStore({ ...original, user: { ...original.user!, id: "customer", email: "customer@example.test" }, workspace: { ...original.workspace!, legacy: false, keys, usesPlatformKeys: true } });
+    expect((await route.post(workbenchScopeFor("workspace", "customer"))).status).toBe(403);
+  }
+  expect(route.checks()).toBe(1);
+  route.setStore(original); route.limit();
   expect((await route.post(validScope)).status).toBe(429);
-  expect(route.checks()).toBe(2);
+  expect(route.checks()).toBe(1);
 });

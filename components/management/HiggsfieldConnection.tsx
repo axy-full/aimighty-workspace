@@ -8,7 +8,7 @@ import { ManagementCard, ManagementNotice } from "./ManagementPage";
 
 type KeyState = { mode: string; keyring: boolean; keys: { name: string; set: boolean; masked: string | null }[] };
 type CheckProblem = 'no_ready_identity' | 'authentication_rejected' | 'rate_limited' | 'model_unavailable' | 'invalid_response' | 'provider_unavailable' | 'mock_mode';
-type Estimate = { status: 'quoted' | 'skipped' | 'unavailable'; usd?: number; error?: CheckProblem };
+type Estimate = { status: 'quoted' | 'skipped' | 'unavailable'; credits?: number; error?: CheckProblem };
 type Verification = {
   configured: boolean;
   auth: 'verified' | 'rejected' | 'unavailable' | 'not_configured' | 'mock';
@@ -22,7 +22,7 @@ const authLabels: Record<Verification['auth'], string> = {
   mock: 'Local mock mode — provider not contacted',
 };
 const problemLabels: Record<CheckProblem | 'missing_configuration', string> = {
-  missing_configuration: 'Save a workspace connection or ask the platform operator to configure the identity account.',
+  missing_configuration: 'The identity engine is temporarily unavailable. Contact Particl support.',
   authentication_rejected: 'The identity account did not accept the saved credentials.',
   rate_limited: 'The check was rate limited. Try again later.',
   provider_unavailable: 'The identity account is temporarily unavailable. Try again later.',
@@ -40,17 +40,16 @@ function validVerification(value: unknown): value is Verification {
     const estimate = result.estimates?.[resolution as keyof Verification['estimates']];
     return estimate && ['quoted', 'skipped', 'unavailable'].includes(estimate.status)
       && (estimate.error === undefined || Object.hasOwn(problemLabels, estimate.error))
-      && (estimate.status !== 'quoted' || (typeof estimate.usd === 'number' && Number.isFinite(estimate.usd) && estimate.usd > 0));
+      && (estimate.status !== 'quoted' || (typeof estimate.credits === 'number' && Number.isFinite(estimate.credits) && estimate.credits > 0));
   });
 }
 
-/** Secrets only travel once to the owner's encrypted connection endpoint. */
+/** Shared engine status; only platform management can probe account-wide identities. */
 export default function HiggsfieldConnection() {
-  const { requestScope } = useSession();
-  const { data, error, refresh } = useApi<KeyState>("/api/workspaces/keys", 0, requestScope);
+  const { requestScope, superAdmin } = useSession();
+  const { data, error } = useApi<KeyState>("/api/workspaces/keys", 0, requestScope);
   const scopedFetch = useScopedFetch();
-  const [keyId, setKeyId] = useState(""), [secret, setSecret] = useState("");
-  const [busy, setBusy] = useState<'save' | 'verify' | null>(null), [message, setMessage] = useState("");
+  const [busy, setBusy] = useState<'verify' | null>(null);
   const [verification, setVerification] = useState<Verification | null>(null), [verificationError, setVerificationError] = useState('');
   const active = useRef(true), inFlight = useRef(false), revision = useRef(0);
   useEffect(() => {
@@ -59,30 +58,14 @@ export default function HiggsfieldConnection() {
     return () => { active.current = false; currentRevision.current++; };
   }, []);
   const key = data?.keys.find(item => item.name === "higgsfield");
-  const edited = !!(keyId || secret);
-  const canVerify = data?.mode === 'legacy' || !!key?.set;
+  const canVerify = superAdmin && !!key?.set;
 
   function invalidateCheck() {
-    revision.current++; setVerification(null); setVerificationError(''); setMessage('');
-  }
-
-  async function save() {
-    if (inFlight.current || !keyId.trim() || !secret.trim()) return;
-    inFlight.current = true; invalidateCheck(); setBusy('save');
-    try {
-      const response = await scopedFetch("/api/workspaces/keys", { method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "higgsfield", value: `${keyId.trim()}:${secret.trim()}` }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The connection could not be saved.");
-      if (!active.current) return;
-      setKeyId(""); setSecret(""); refresh();
-      setMessage("Identity account saved. Open Characters or Elements in Studio to create an identity.");
-    } catch (cause) { if (active.current) setMessage(cause instanceof Error ? cause.message : "The connection could not be saved."); }
-    finally { inFlight.current = false; if (active.current) setBusy(null); }
+    revision.current++; setVerification(null); setVerificationError('');
   }
 
   async function verify() {
-    if (inFlight.current || edited || !data || !canVerify) return;
+    if (inFlight.current || !data || !canVerify) return;
     inFlight.current = true; invalidateCheck(); const attempt = revision.current; setBusy('verify');
     try {
       const response = await scopedFetch('/api/workspaces/keys/higgsfield/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
@@ -95,23 +78,13 @@ export default function HiggsfieldConnection() {
     } finally { inFlight.current = false; if (active.current) setBusy(null); }
   }
 
-  return <ManagementCard title="Connected identity account" description="Create reusable character likenesses from portrait references. Your workspace key is encrypted and only its masked ending is returned.">
-    {!data ? <p role="status">{error ? "Connection settings could not be loaded." : "Loading connection…"}</p>
-      : data.mode === "legacy" ? <p>This workspace uses the platform’s identity account. The platform operator can configure it in the deployment’s private environment.</p>
-      : !data.keyring ? <p>Ask the platform operator to enable encrypted workspace connections.</p>
-      : <form onSubmit={event => { event.preventDefault(); void save(); }} className="space-y-4">
-        <p className="text-sm text-mute">{key?.set ? `Workspace connection saved · ${key.masked}` : <>Add the API key ID and secret from your <a href="https://cloud.higgsfield.ai/api-keys" target="_blank" rel="noreferrer">provider console</a>.</>}</p>
-        {key?.set && <p className="text-sm text-mute">Existing identities stay tied to this connection. Changing it pauses their use until the original connection is restored.</p>}
-        <label className="management-field">API key ID<input aria-label="Identity account API key ID" autoComplete="off" spellCheck={false} value={keyId} onChange={event => { invalidateCheck(); setKeyId(event.target.value); }} disabled={!!busy} /></label>
-        <label className="management-field">API key secret<input aria-label="Identity account API key secret" type="password" autoComplete="new-password" value={secret} onChange={event => { invalidateCheck(); setSecret(event.target.value); }} disabled={!!busy} /></label>
-        <button className="management-button primary" type="submit" disabled={!!busy || !keyId.trim() || !secret.trim()}>{busy === 'save' ? "Saving…" : "Save identity account"}</button>
-      </form>}
-    {message && <p role="status">{message}</p>}
-    {data && <div className="mt-5 space-y-3">
+  return <ManagementCard title="Identity engine" description="Create reusable character likenesses from portrait references. Generations use your organisation’s Particl credits.">
+    {!data ? <p role="status">{error ? "Engine status could not be loaded." : "Loading engine status…"}</p>
+      : <p role="status">{key?.set ? "Identity engine available" : "Identity engine temporarily unavailable"}</p>}
+    {data && superAdmin && <div className="mt-5 space-y-3">
       <p className="text-sm text-mute">Check the saved connection and available identity render price estimates. No training or generation credits are spent.</p>
-      <button className="management-button" type="button" disabled={!!busy || edited || !canVerify} onClick={() => void verify()}>{busy === 'verify' ? 'Verifying connection…' : 'Verify connection'}</button>
-      {!canVerify && <p className="text-sm text-mute">Save your own identity account to verify it.</p>}
-      {edited && <p className="text-sm text-mute">Save or clear your credential edits before checking the saved connection.</p>}
+      <button className="management-button" style={{ minHeight: 44 }} type="button" disabled={!!busy || !canVerify} onClick={() => void verify()}>{busy === 'verify' ? 'Verifying connection…' : 'Verify connection'}</button>
+      {!canVerify && <p className="text-sm text-mute">Configure the shared engine in the private deployment settings to verify it.</p>}
       {verificationError && <ManagementNotice error>{verificationError}</ManagementNotice>}
       {verification && <ManagementNotice error={verification.auth === 'rejected' || verification.auth === 'unavailable' || verification.auth === 'not_configured'}>
         <div className="space-y-2" aria-label="Identity account verification result">
@@ -119,7 +92,7 @@ export default function HiggsfieldConnection() {
           {verification.error && <p>{problemLabels[verification.error]}</p>}
           {(['720p','1080p'] as const).map(resolution => {
             const estimate = verification.estimates[resolution];
-            return <p key={resolution}><strong>{resolution}:</strong> {estimate.status === 'quoted' ? `$${estimate.usd!.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')} estimate` : `${estimate.status === 'skipped' ? 'Not checked' : 'Estimate unavailable'} — ${estimate.error ? problemLabels[estimate.error] : 'No estimate was returned.'}`}</p>;
+            return <p key={resolution}><strong>{resolution}:</strong> {estimate.status === 'quoted' ? `${estimate.credits} credits estimated` : `${estimate.status === 'skipped' ? 'Not checked' : 'Estimate unavailable'} — ${estimate.error ? problemLabels[estimate.error] : 'No estimate was returned.'}`}</p>;
           })}
           <p>No training or generation was started. This check does not enable the rendering model.</p>
         </div>
