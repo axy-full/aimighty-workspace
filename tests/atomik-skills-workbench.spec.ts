@@ -3,6 +3,8 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { legacyShell } from "./helpers/legacyShell";
 import { mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject } from "../lib/workbench/studio";
@@ -38,8 +40,8 @@ async function signedIn(page: Page, api: APIRequestContext = page.request, joine
   let tenantUrl: string;
   try {
     if (!joined) await platform.execute({
-      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
-      args: [randomUUID(), workspace.id, 2000, "Local mock Atomik skills", "admin", "test", Date.now()],
+      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)",
+      args: [randomUUID(), workspace.id, 2000, "Local mock Atomik skills", "admin", "test", Date.now(), creditUsd()],
     });
     tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [workspace.id] })).rows[0].db_url);
   } finally { platform.close(); }
@@ -114,7 +116,7 @@ async function books(w: World) {
 
 const isPhone = (page: Page) => page.viewportSize()!.width < 760;
 const surfaceOf = (page: Page) => (isPhone(page) ? page.getByRole("dialog", { name: "Atomik" }) : page.getByRole("complementary", { name: "Atomik" }));
-const creditsIn = (text: string | null) => Number(/(\d[\d,]*) cr/.exec(text ?? "")?.[1].replace(/,/g, "") ?? NaN);
+const creditsIn = (text: string | null) => Number(/(\d[\d,]*(?:\.\d)?) cr/.exec(text ?? "")?.[1].replace(/,/g, "") ?? NaN);
 
 /** No sideways scroll; nothing off either edge; no serif; on a phone every target 44px; labels never dimmer than #7C7C84. */
 async function floors(page: Page, root: string, phone: boolean) {
@@ -285,7 +287,7 @@ test("the composer saves a run as a skill; / runs it with new words; its first s
   await expect(run.getByTestId("skill-param-setting")).toHaveValue("a rooftop at dusk");
   const steps = run.getByTestId("skill-run-step");
   await expect(steps).toHaveCount(2);
-  await expect(run.getByTestId("skill-run-price").first()).toHaveText(/^about \d+ cr$/);
+  await expect(run.getByTestId("skill-run-price").first()).toHaveText(/^about \d[\d,]*(?:\.\d)? cr$/);
   await expect(run.getByTestId("skill-run-total")).toContainText("about");
   await floors(page, '[data-testid="skill-dialog"]', phone);
   await shot(page, "skills-run");
@@ -496,7 +498,7 @@ test("the Skills page runs a skill with new words: planning is free, and its fir
   /* A value stands where its phrase stood, word for word: "beach at sunset" follows "a" in the skate pass. */
   await form.getByTestId("skill-param-setting").fill("harbour wall at noon");
   await expect(form.getByTestId("skill-run-step")).toHaveCount(2);
-  await expect(form.getByTestId("skill-run-price").first()).toHaveText(/^about \d+ cr$/);
+  await expect(form.getByTestId("skill-run-price").first()).toHaveText(/^about \d[\d,]*(?:\.\d)? cr$/);
   await floors(page, '[data-testid="skill-detail"]', phone);
   await clearOfTabBar(page, '[data-testid="skill-detail"]');
   await shot(page, "skills-page-run");
@@ -507,7 +509,7 @@ test("the Skills page runs a skill with new words: planning is free, and its fir
   await expect(approval.getByTestId("skill-plan-step")).toHaveCount(2, { timeout: 30_000 });
   await expect(approval.getByTestId("skill-plan-step").first()).toHaveAttribute("data-status", "proposed");
   const go = approval.getByTestId("skill-continue");
-  await expect(go).toHaveText(/^Continue · about \d+ cr$/, { timeout: 60_000 });
+  await expect(go).toHaveText(/^Continue · about \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   const quoted = creditsIn(await go.textContent());
   expect(generated).toEqual([]);
   const planned = (await books(w)).steps.filter((s) => s.status === "proposed");
