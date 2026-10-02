@@ -1,4 +1,0 @@
-/* The rail on a short screen (a phone on its side, 844×390): its pinned footer, the ask and Send (and in the
-   expanded rail, Continue), shrinks and scrolls inside the rail instead of running under the page's dock below
-   it. With room to spare nothing changes: the footer keeps its natural height. */
-.rail > footer { flex-shrink: 1; min-height: 0; overflow-y: auto; }
