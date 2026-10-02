@@ -57,8 +57,8 @@ export type CheckDeps = {
   development?: Partial<DevelopmentDependencies>;
 };
 
-type Board = { project: Project; card: CanvasNode; subject: VerifySubject; title: string };
-type Failed = { reason: string; pause: PauseKind };
+export type Board = { project: Project; card: CanvasNode; subject: VerifySubject; title: string };
+export type Failed = { reason: string; pause: PauseKind };
 const isFailed = (value: Board | Failed): value is Failed => "reason" in value;
 const ASKED_FROM_GONE = "The project this run was asked from is no longer here.";
 const NOT_ON_RECORD = "This check's record is incomplete, so nothing more is sent for it.";
@@ -84,7 +84,7 @@ export async function takeOf(jobId: string): Promise<TakeRow | null> {
  * the shot's Verify card (made on the canvas by the run when it has none), and the take filed on its
  * shot as that shot's take.
  */
-async function boardFor(run: RunRow, step: StepRow, take: TakeRow): Promise<Board | Failed> {
+export async function boardFor(run: RunRow, step: StepRow, take: TakeRow): Promise<Board | Failed> {
   const title = stepTitle(run, step);
   const draft = await readDraft(run.owner, run.draftId);
   if (!draft || draft.project.productionProjectId !== run.productionId) return { reason: ASKED_FROM_GONE, pause: "refused" };
