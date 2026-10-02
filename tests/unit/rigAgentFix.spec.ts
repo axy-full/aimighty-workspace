@@ -518,6 +518,13 @@ test("Auto: a still shot's render asks (a still has no draft); its take is then 
   });
 });
 
+test("why a check asks: in Ask at its price; in Auto only when it may hold more than the per-job line, said as its price or as what it holds", async () => {
+  const { checkAskWords } = await import("../../lib/workbench/rig-agent-checks");
+  expect(checkAskWords("ask", "01 — Opening", 1.2, 6, 200)).toBe("01 — Opening is ready to check · about 1.2 cr.");
+  expect(checkAskWords("auto", "01 — Opening", 3, 9, 2)).toBe("01 — Opening's check is about 3 cr, over the 2 cr a check may cost without asking. Check it, skip it, or stop.");
+  expect(checkAskWords("auto", "01 — Opening", 1.5, 9, 2)).toBe("01 — Opening's check is about 1.5 cr but holds up to 9 cr while it runs, over the 2 cr a check may hold without asking. Check it, skip it, or stop.");
+});
+
 test("Ask: a check waits for one tap at its price; a tap at another price is refused; then it runs once", async () => {
   await inRun("check-ask", async (ws) => {
     const agent = await import("../../lib/workbench/rig-agent");

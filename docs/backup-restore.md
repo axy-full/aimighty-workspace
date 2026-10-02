@@ -478,6 +478,20 @@ themselves live in the platform ledger: each reservation names its run
 limit is counted from there. Never delete runs, steps or reservations; an undo
 takes a build's cards off the canvas softly and records itself on the run.
 
+The checks of a run's takes and the fixes of a failed check are steps too.
+A check records its price and what it may hold, its approval, the development
+job it ran as (a check of a take is the same stored check the board reads, in
+`take_verifications`), its verdict and scorecard, and what it settled at. A
+fix records the edit it renders, its round on its shot, its own request key,
+and the charge for its note (Atomik writing the edit: `charge_id` and
+`charge`, an event in the platform ledger named for the run). A shot a person
+decided for records the decision, who made it and when; the run records the
+Production agent the person chose and when it last told them it needs them.
+These columns are added to an older table when the workspace next uses it.
+After a restore, a check whose job was started is followed through that job
+and never started again, and a fix note left reserved is released unbilled at
+the next tick and never written again on its own: the shot waits for a person.
+
 ### Atomik skills
 
 Every tenant snapshot includes `atomik_skills` and `atomik_skill_versions`:

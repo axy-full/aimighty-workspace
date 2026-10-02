@@ -178,6 +178,17 @@ async function priceCheck(run: RunRow, step: StepRow, deps: CheckDeps): Promise<
 
 const fingerprintOf = (step: Pick<StepRow, "request">) => (step.request?.kind === "check" && typeof step.request.body.sourceHash === "string" ? step.request.body.sourceHash : null);
 
+/**
+ * Why a check waits for a tap: in Ask, every check asks at its price; in Auto, only one that may hold more than the
+ * per-job line while it runs — said as its price when that is over the line too, else as what it holds.
+ */
+export function checkAskWords(mode: RunRow["mode"], title: string, quote: number, hold: number, line: number): string {
+  if (mode !== "auto") return `${title} is ready to check · about ${figure(quote)}.`;
+  return toTenths(quote) > toTenths(line)
+    ? `${title}'s check is about ${figure(quote)}, over the ${figure(line)} a check may cost without asking. Check it, skip it, or stop.`
+    : `${title}'s check is about ${figure(quote)} but holds up to ${figure(hold)} while it runs, over the ${figure(line)} a check may hold without asking. Check it, skip it, or stop.`;
+}
+
 async function gateCheck(run: RunRow, step: StepRow): Promise<Moved> {
   const fingerprint = fingerprintOf(step);
   if (!fingerprint || step.quoteCredits == null) {
@@ -198,10 +209,7 @@ async function gateCheck(run: RunRow, step: StepRow): Promise<Moved> {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const title = stepTitle(run, step);
-  const why = run.mode === "auto"
-    ? `${title}'s check is about ${figure(step.quoteCredits)}, over the ${figure(line)} a check may cost without asking. Check it, skip it, or stop.`
-    : `${title} is ready to check · about ${figure(step.quoteCredits)}.`;
+  const why = checkAskWords(run.mode, stepTitle(run, step), step.quoteCredits, hold, line);
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
 }

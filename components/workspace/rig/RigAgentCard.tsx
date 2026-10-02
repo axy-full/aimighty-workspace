@@ -360,6 +360,9 @@ function priceOf(p: RigAgentPaidStepView): string {
       return p.quote != null ? `about ${cr(p.quote)}` : "Priced before it runs";
     return "Not charged";
   }
+  /* A fix that never rendered (skipped, or its shot handed to a person): only its note, if one was written, was charged. */
+  if (p.tool === "fix" && (p.state === "skipped" || (p.state === "paused" && p.pause === "check")))
+    return p.note?.settled && p.note.credits ? `${cr(p.note.credits)} settled` : "Not charged";
   if (p.state === "done") return p.charged != null ? `${cr(p.charged)} settled` : "Settling";
   /* A failed take: what Particl's own ledger holds for it (the provider's outcome as the ledger recorded it). */
   if (p.state === "failed") return p.charge ? chargeSentence(p.charge) : "Settling";
@@ -418,7 +421,7 @@ function PaidRow({ run, p, busy, onRender, onSkip, onChoose, onOpen }: { run: Ri
       </p>
       {p.tool !== "verify" && p.reason && (p.state === "paused" || p.state === "failed" || p.state === "approved") ? <p className="pxw-agent-note" data-testid="rig-agent-render-reason">{p.reason}</p> : null}
       {p.tool === "fix" && p.edit ? <p className="pxw-agent-edit" data-testid="rig-agent-edit">{p.edit}</p> : null}
-      {/* Owner's decision (Q4): a clip's fix is an edit, which has no draft: full quality, priced on the clip it edits. */}
+      {/* The owner's choice: a clip's fix is an edit, which has no draft: full quality, priced on the clip it edits. */}
       {p.tool === "fix" && p.takeKind === "video" && before ? <p className="pxw-agent-note" data-testid="rig-agent-fix-terms">An edit has no draft: it renders at full quality, priced on the clip it edits.</p> : null}
       {hold != null ? <p className="pxw-agent-note" data-testid="rig-agent-hold">Up to {cr(hold)} held while it runs.</p> : null}
       {rows.length ? (
@@ -432,7 +435,7 @@ function PaidRow({ run, p, busy, onRender, onSkip, onChoose, onOpen }: { run: Ri
           ))}
         </ul>
       ) : null}
-      {flagged && (p.choices.length || p.card) ? (
+      {flagged && ((onChoose && p.choices.length) || (p.card && onOpen)) ? (
         <div className="pxw-agent-choices" role="group" aria-label={`Decide for ${p.title}`} data-testid="rig-agent-choices">
           {p.card && onOpen ? (
             <button type="button" className="pxw-agent-quiet" data-testid="rig-agent-open-card" onClick={() => onOpen(p.card!)}>Open its Verify card</button>
