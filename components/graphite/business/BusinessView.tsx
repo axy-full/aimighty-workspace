@@ -7,15 +7,23 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { connectedOriginal, type ConnectedJob } from "@/lib/higgsfield-consumer/generation-client";
 import {
-  AD_ASPECTS, AD_DURATIONS, AD_FORMATS_COPY, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, DTC_BATCH, DTC_COPY, DTC_PRODUCTS_MAX, DTC_QUALITIES, IMAGE_AD_ENGINES, IMAGE_AD_RESOLUTIONS, INITIAL_ADS, INITIAL_IMAGE_ADS, isDtc,
-  PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, draftKey, imageAdsBlock, imageAdsFromPreset, imageAdsMedias,
-  isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, pruneImageAds, restoreAds, restoreImageAds, withAdReference, withImageStill, withMode, withProductId, withSetup, withStill,
-  type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type ImageAdsState, type SetupItem, type SetupPreset, type SetupType,
+  AD_ASPECTS, AD_DURATIONS, AD_MEDIA_MAX, AD_MEDIA_ROLES, AD_MODES, AD_RESOLUTIONS, ADS_MODEL, INITIAL_ADS,
+  PRESET_KEY, PRESET_TYPES, SETUP_TYPES, adsBlock, adsChipState, adsFromPreset, adsMedias, adsParameters, clampedDuration, draftKey,
+  isOwnedSetup, parsePreset, presetFor, presetSpent, pruneAds, restoreAds, withAdReference, withMode, withProductId, withSetup, withStill,
+  type AdMediaRole, type AdMode, type AdStill, type AdsState, type BusinessPage, type SetupItem, type SetupPreset, type SetupType,
 } from "@/lib/shell/business";
+import {
+  IMAGE_AD_ASPECTS, IMAGE_AD_BUILDS, IMAGE_AD_MAX, IMAGE_AD_PROMPT_MAX, IMAGE_AD_RESOLUTIONS, INITIAL_IMAGE_AD, PRESET_STILLS_MAX,
+  imageAdBlock, imageAdBuild, imageAdRequest, qualityLabel, qualityOff, restoreImageAd, withBuild, withPreset, withProductStill, type ImageAdState,
+} from "@/lib/shell/image-ads";
+import { aboutCredits, estimateReason } from "@/lib/shell/key-estimate";
 import { useShell } from "@/lib/shell/state";
+import { useKeyTake } from "@/lib/shell/use-key-take";
 import { useOpenTake } from "@/lib/shell/use-open-take";
-import { MarketingTemplateBrowser, MarketingTemplateCreator } from "@/components/suites/MarketingTemplates";
 import { useBusiness, type CatalogueModel } from "@/lib/shell/use-business";
+import type { Generation } from "@/lib/jobs";
+import { useSession } from "@/lib/session";
+import { PresetPicker } from "./PresetPicker";
 import { composerBusy, connectedJobKey, useConnectedJob, type ConnectedJobState } from "@/lib/shell/use-connected-job";
 import { useResumedConnectedJobs } from "@/lib/shell/use-resumed-jobs";
 import { shortName } from "@/lib/higgsfield-consumer/resume";
@@ -29,25 +37,34 @@ import { OwnerRunCard } from "../OwnerRunCard";
 
 /**
  * Business = Marketing Studio (FINAL_SPEC §2): Ads on
- * `marketing_studio_video`, Image ads on `marketing_studio_image`, and Setup.
- * Both composers ride the catalogue-generation route (quote → the exact
- * price on the button → submit with that price → poll), which validates
- * every parameter against the account's live schema and imports the
- * reference stills before the quote.
+ * `marketing_studio_video`, Image ads on Marketing Studio Image, and Setup.
+ *
+ * Image ads runs on Particl's API key for every workspace and every member
+ * (lib/shell/image-ads.ts), through the one workspace-credit path — the
+ * estimate on the button, then one send at that figure — and reads nothing
+ * of the connected account. Ads and Setup still ride the owner's connected
+ * account (the catalogue-generation route: quote → the price on the button →
+ * submit with that price → poll), which validates every parameter against the
+ * account's live schema and imports the reference stills before the quote.
  *
  * Particl is standalone: a product or a setting is a still from this
- * project's Library (picked, dropped or uploaded); avatars, hooks, settings
- * and ad styles are the engine's presets; the account's own library is never
+ * project's Library (picked, dropped or uploaded); avatars, hooks and
+ * settings are the engine's presets; the account's own library is never
  * listed (lib/higgsfield-consumer/marketing-records.ts).
  */
 const cr = (n: number) => `${n.toLocaleString("en-US")} cr`;
 
 export function BusinessView({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "dtc" | "setup" }) {
+  /* Image ads: Particl's API key, for everyone — nothing of the connected account is read for it. */
+  if (page === "dtc") return <ImageAdsView scope={scope} project={project} />;
+  return <AccountBusiness scope={scope} project={project} page={page} />;
+}
+
+function AccountBusiness({ scope, project, page }: { scope: string; project: Project | null; page: "ads" | "setup" }) {
   const business = useBusiness(scope);
-  /* Business runs only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19) — on the first paint, from the session. */
+  /* Ads and Setup run only on the owner's account: a member gets the one card, with Gen on this workspace's credits (idea 19) — on the first paint, from the session. */
   if (business.connection?.owner === false) return <OwnerRunCard surface="business" scope={scope} aspect={project?.aspect} page />;
   if (page === "setup") return <SetupView business={business} />;
-  if (page === "dtc") return <ImageAdsView scope={scope} project={project} business={business} />;
   return <AdsView scope={scope} project={project} business={business} />;
 }
 
@@ -367,10 +384,8 @@ function useEarlierJobs(project: Project | null, job: ReturnType<typeof useConne
   }));
   return { rows, dismiss: resumed.dismiss };
 }
-/* Ads run one engine, so an ad is named by its prompt; Image ads say which of their two engines made it. */
+/* Ads run one engine, so an ad is named by its prompt. */
 const adName = (job: ConnectedJob) => shortName(job.input.prompt, 80) || job.model.name;
-const imageAdName = (job: ConnectedJob) => [job.model.name, shortName(job.input.prompt, 60)].filter(Boolean).join(" · ");
-const IMAGE_AD_MODELS = IMAGE_AD_ENGINES.map(([id]) => id as string);
 
 function priceLabel(state: ConnectedJobState, verb: string, blocked: string | null) {
   if (blocked) return verb;
@@ -589,122 +604,107 @@ function AdsView({ scope, project, business }: { scope: string; project: Project
   );
 }
 
-/* ── Image ads ───────────────────────────────────────────────────────── */
-function ImageAdsView({ scope, project, business }: { scope: string; project: Project | null; business: Business }) {
+/* ── Image ads (Particl's API key) ───────────────────────────────────── */
+/** Setup picks do not ride on Image ads: its stills are this project's own, sent by identity. */
+const keepCurrent = <T,>(_preset: SetupPreset | null, current: T): T => current;
+function ImageAdsView({ scope, project }: { scope: string; project: Project | null }) {
   const shell = useShell();
+  const session = useSession();
   const library = useProjectLibrary(scope, project?.id ?? null);
-  const [raw, set] = useComposerDraft("dtc", scope, project?.id ?? null, INITIAL_IMAGE_ADS, restoreImageAds, imageAdsFromPreset);
-  useSpentPreset("dtc");
-  const s = useMemo(() => pruneImageAds(raw, business.setup.reads), [raw, business.setup.reads]);
-  const job = useConnectedJob(project?.id ?? null, "dtc", scope);
-  const earlier = useEarlierJobs(project, job, "dtc", IMAGE_AD_MODELS, imageAdName);
-  const dtc = isDtc(s);
-  const model: CatalogueModel | undefined = business.models[s.engine];
-  const connected = business.connection?.connected ?? false;
-  /* DTC needs the account's styles (the ad formats), brand kits and products; read once the engine is chosen. */
-  const readSetup = business.readSetup, hasStyles = Boolean(business.setup.reads.image_style), setupLoading = business.setup.loading, setupFailed = Boolean(business.setup.error);
-  useEffect(() => { if (dtc && connected && !hasStyles && !setupLoading && !setupFailed) void readSetup([...PRESET_TYPES.dtc]); }, [dtc, connected, hasStyles, setupLoading, setupFailed, readSetup]);
-  const styles = business.setup.reads.image_style ? business.setup.reads.image_style.items.length : null;
-  const sent = imageAdsMedias(s);
-  const aspects = (model?.aspectRatios?.length ? model.aspectRatios : ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "16:9", "21:9"]) as readonly string[];
-  const resolutions = (model?.parameters?.find((p) => p.name === "resolution")?.options as string[] | undefined) ?? IMAGE_AD_RESOLUTIONS;
-  const blocked = (project ? accountReason(business) : null) ?? imageAdsBlock(s, { connected, hasProject: Boolean(project), styles }) ?? business.modelBlock(s.engine);
-  const input: ConsumerGenerationInput | null = useMemo(() => project && !blocked ? {
-    type: "image", model: s.engine, prompt: s.prompt.trim(),
-    parameters: {
-      aspect_ratio: s.aspect, resolution: s.resolution,
-      ...(isDtc(s) ? { style_id: s.styleId!, quality: s.quality, batch_size: s.batch, ...(s.brandKitId ? { brand_kit_id: s.brandKitId } : {}), ...(s.productIds.length ? { product_ids: s.productIds } : {}) } : {}),
-    },
-    medias: imageAdsMedias(s).map((m) => ({ role: "image", source: m.id.startsWith("generation:") ? { genId: m.id.slice("generation:".length) } : { uploadId: m.id.slice("upload:".length) } })),
-  } as ConsumerGenerationInput : null, [project, blocked, s]);
-  const inputKey = JSON.stringify(input);
-  const quoteJob = job.quote, quotedFor = job.quotedFor, phase = job.state.phase;
-  /* Nothing is priced while a job is resumed, submitted or rendering; after a finished take, Price again prices the next one. */
+  const [s, set] = useComposerDraft<ImageAdState>("dtc", scope, project?.id ?? null, INITIAL_IMAGE_AD, restoreImageAd, keepCurrent);
+  const take = useKeyTake(scope, project?.id ?? null, "business:image-ads");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
+  const production = project?.productionProjectId ?? null;
+  const blocked = imageAdBlock(s, { hasProject: Boolean(project), saved: Boolean(production) });
+  const request = useMemo(() => (!blocked && production ? imageAdRequest(s, { productionProjectId: production }) : null), [blocked, production, s]);
+  const key = JSON.stringify(request);
+  /* The estimate: read for exactly this request, again when it changes or ages; never while a press is being sent or followed. */
+  const quote = take.quote, estimateKey = take.estimate?.key, estimateExpires = take.estimate?.expiresAt ?? 0, phase = take.run.phase;
+  const busy = phase === "submitting" || phase === "running";
   useEffect(() => {
-    if (!input || quotedFor === inputKey || composerBusy(phase)) return;
-    const timer = setTimeout(() => void quoteJob(input, inputKey), 700);
+    if (!request || busy) return;
+    if (estimateKey === key && estimateExpires > now) return;
+    const timer = setTimeout(() => void quote(request, key), 700);
     return () => clearTimeout(timer);
-  }, [input, inputKey, quoteJob, quotedFor, phase]);
-  const products = business.setup.reads.product?.items ?? [];
-  const room = AD_MEDIA_MAX - (sent.length - s.medias.length);
+  }, [request, key, quote, estimateKey, estimateExpires, now, busy]);
+  const reason = blocked ?? estimateReason(take.estimate, key, now);
+  const credits = !reason && take.estimate?.key === key ? take.estimate.credits : null;
+  const estimateFailed = Boolean(!blocked && take.estimate?.key === key && take.estimate.error);
+  const build = imageAdBuild(s.build);
+  /* With a preset, a build that fixes the quality greys the others, with the reason. */
+  const presetOff = s.preset && build.presetQuality ? qualityOff(s, "") : null;
+  /* The well holds the stills after the product: with a preset, one more at most. */
+  const wellMax = Math.max(0, (s.preset ? PRESET_STILLS_MAX : IMAGE_AD_MAX) - (s.productStill ? 1 : 0));
+  const run = take.run;
+  const running = run.phase === "running" ? run : null;
+  const label = run.phase === "submitting" ? "Submitting…" : running ? "Rendering…" : credits != null ? `Generate image · ${aboutCredits(credits)}` : "Generate image";
+  const runningWords = running ? (running.held ? "Held · it starts when credits arrive" : running.generation?.status === "queued" ? "Queued" : "Rendering") : null;
+  const mayCancel = running?.generation?.status === "queued" && (session.role === "owner" || session.role === "admin" || session.userId === running.generation.createdBy);
   return (
     <div className="gx-gen bz gx-enter" data-testid="image-ads-view">
       <section className="gx-gen-card" aria-label="Image ads">
-        <ResumedJobRows rows={earlier.rows} label="Image ads from earlier" onDismiss={earlier.dismiss} onOpen={() => shell.goSuite("studio", "takes")} testId="dtc-earlier" />
-        <div className="gx-gen-row" data-testid="dtc-engine">
-          <span className="gx-eyebrow" data-functional-label="">Engine</span>
-          <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Image ads engine">
-            {IMAGE_AD_ENGINES.map(([id, label]) => (
-              <button key={id} type="button" role="tab" className="gx-seg-btn" aria-selected={s.engine === id} onClick={() => set({ ...s, engine: id })} data-testid={`dtc-engine-${id}`}><span>{label}</span></button>
-            ))}
-          </div>
-          {dtc ? <p className="gx-hint" data-testid="dtc-copy">{DTC_COPY}</p> : null}
-        </div>
-        {business.setup.error && dtc ? <ReadProblem error={business.setup.error} busy={setupLoading} onRetry={() => void readSetup([...PRESET_TYPES.dtc])} testId="dtc-setup-error" /> : null}
-        {dtc ? (<>
-          <SetupPicker label="Style" note="the ad format · required, no default" type="image_style" business={business} value={s.styleId} onPick={(id) => set({ ...s, styleId: id })} testId="dtc-style" />
-          <SetupPicker label="Brand kit" note="optional · a completed kit" type="brand_kit" business={business} value={s.brandKitId} onPick={(id) => set({ ...s, brandKitId: id })} testId="dtc-brand-kit" />
-          {products.length ? (
-            <div className="gx-gen-row" data-testid="dtc-products">
-              <Label label="Products" note={`made in Particl · up to ${DTC_PRODUCTS_MAX}`} />
-              <div className="gx-chips" role="group" aria-label="Products">
-                {products.map((p) => {
-                  const on = s.productIds.includes(p.id);
-                  return <button key={p.id} type="button" className="gx-chip" aria-pressed={on} title={p.meta} onClick={() => set({ ...s, productIds: on ? s.productIds.filter((id) => id !== p.id) : [...s.productIds, p.id].slice(0, DTC_PRODUCTS_MAX) })}>{p.name}</button>;
-                })}
-              </div>
-            </div>
-          ) : null}
-          <Chips label="Quality" note="affects cost" options={DTC_QUALITIES} value={s.quality} onPick={(v) => set({ ...s, quality: v })} testId="dtc-quality" />
-          <div className="gx-gen-row" data-testid="dtc-batch">
-            <span className="gx-eyebrow" data-functional-label="">Batch<span className="bz-note"> · {DTC_BATCH.min}–{DTC_BATCH.max} images per job · cost scales</span></span>
-            <div className="gx-stepper" role="group" aria-label="Images per job">
-              <button type="button" aria-label="Fewer" disabled={s.batch <= DTC_BATCH.min} onClick={() => set({ ...s, batch: s.batch - 1 })}>–</button>
-              <span data-testid="dtc-batch-count">{s.batch}</span>
-              <button type="button" aria-label="More" disabled={s.batch >= DTC_BATCH.max} onClick={() => set({ ...s, batch: s.batch + 1 })}>+</button>
-            </div>
-          </div>
-        </>) : null}
-        <Connection business={business} testId="dtc-connect" />
-        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="rides first among the references" testId="dtc-product"
-          still={s.productStill} onStill={(still) => set(withImageStill(s, still))} />
-        <Chips label="Aspect" options={aspects} value={s.aspect} onPick={(v) => set({ ...s, aspect: v })} testId="dtc-aspect" />
-        <Chips label="Resolution" options={resolutions} value={s.resolution} onPick={(v) => set({ ...s, resolution: v as ImageAdsState["resolution"] })} testId="dtc-resolution" />
+        <p className="bz-intro">Campaign stills built from your own product shots. Pick a preset to have the ad built around the product.</p>
+        {/* 2.0 Alpha is priced live; a 2.5 build approximately, and the delivered image settles it (Moleculr's words). */}
+        <Chips label="Model" note={build.approximate ? "priced approximately; the delivered image settles it" : "priced live before generating"}
+          options={IMAGE_AD_BUILDS.map((b) => [b.id, b.label] as const)} value={s.build} onPick={(id) => set(withBuild(s, id))} testId="image-ad-build" />
+        <StillSlot scope={scope} projectId={project?.id ?? null} library={library} label="Product" note="sent first · a preset starts from it" testId="image-ad-product"
+          still={s.productStill} onStill={(still) => set(withProductStill(s, still))} />
+        <PresetPicker scope={scope} value={s.preset} onPick={(preset) => set(withPreset(s, preset))} />
+        <Chips label="Quality" note={presetOff && build.presetQuality ? `${qualityLabel(build.presetQuality).toLowerCase()} with a preset` : "affects cost"}
+          options={build.qualities.map((q) => [q, qualityLabel(q)] as const)} value={s.quality} onPick={(q) => set({ ...s, quality: q })}
+          disabled={(q) => Boolean(qualityOff(s, q))} why={presetOff} testId="image-ad-quality" />
+        <Chips label="Aspect" options={IMAGE_AD_ASPECTS} value={s.aspect} onPick={(v) => set({ ...s, aspect: v })} testId="image-ad-aspect" />
+        <Chips label="Size" options={IMAGE_AD_RESOLUTIONS} value={s.resolution} onPick={(v) => set({ ...s, resolution: v })} testId="image-ad-resolution" />
         <div className="gx-gen-row">
           <span className="gx-eyebrow" data-functional-label="">Prompt</span>
-          <PromptAttach scope={scope} projectId={project?.id} testId="dtc-attach" onAttach={async (attached) => { const { stills, note } = await attachStills(scope, attached, sent.length, AD_MEDIA_MAX); if (stills.length) set({ ...s, medias: [...s.medias, ...stills.map((m) => ({ id: m.id, name: m.name }))] }); return note; }}><textarea className="gx-textarea" aria-label="Prompt" rows={4} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="dtc-prompt" /></PromptAttach>
+          <PromptAttach scope={scope} projectId={project?.id} testId="image-ad-attach" onAttach={async (attached) => { const { stills, note } = await attachStills(scope, attached, s.medias.length, wellMax); if (stills.length) set({ ...s, medias: [...s.medias, ...stills] }); return note; }}>
+            <textarea className="gx-textarea" aria-label="Prompt" rows={4} maxLength={IMAGE_AD_PROMPT_MAX} placeholder="Bold hero shot on marble…" value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="image-ad-prompt" />
+          </PromptAttach>
         </div>
-        <Well scope={scope} projectId={project?.id} medias={s.medias.map((m) => ({ ...m, sourceId: m.id.replace(/^(upload|generation):/, ""), origin: m.id.startsWith("generation:") ? "generation" : "upload", url: m.id.startsWith("generation:") ? `/api/media/${m.id.slice(11)}` : `/api/uploads/${m.id.replace(/^upload:/, "")}` }))} roles={["image"]} max={room} hint={`Reference media · ≤ ${AD_MEDIA_MAX}`}
-          onAdd={(m) => set({ ...s, medias: [...s.medias, { id: m.id, name: m.name }] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
-        {blocked ? <p className="gx-reason" id="bz-blocked2" data-testid="dtc-blocked">{blocked}</p> : null}
-        {blocked && business.catalogueStalled ? <CatalogueAgain business={business} /> : null}
-        <JobError job={job} testId="dtc-error" />
-        <RunProblem state={job.state} testId="dtc-problem" />
-        <PriceAgain job={job} blocked={blocked} testId="dtc-requote" />
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(blocked) || job.state.phase !== "quoted" || job.quotedFor !== inputKey} aria-describedby={blocked ? "bz-blocked2" : undefined} onClick={() => void job.submit(inputKey)} data-testid="dtc-generate">
-          {priceLabel(job.state, "Generate image", blocked)}
-        </button>
-      </section>
-      {latestTake(job) ? <LatestTake job={latestTake(job)!} testId="dtc-done" scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
-      {/* Ad formats: the account's Marketing Studio templates, through the existing template client (browse → pick → create at the quoted price). */}
-      <section className="gx-gen-card bz-formats" aria-label={AD_FORMATS_COPY.title} data-testid="ad-formats">
-        <div className="gx-gen-row">
-          <span className="gx-eyebrow" data-functional-label="">Connected · Marketing Studio templates</span>
-          <h2 className="gx-workflow-title">{AD_FORMATS_COPY.title}</h2>
-          <p className="gx-hint">{AD_FORMATS_COPY.line}</p>
-        </div>
-        {project ? (
-          <div className="pxw gx-legacy" data-testid="ad-formats-client">
-            <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
-            <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={connected && business.connection?.owner !== false} />
+        <Well scope={scope} projectId={project?.id} medias={s.medias} roles={["image"]} max={wellMax} hint={s.preset ? "One more still · optional (a model shot)" : `More stills · optional · up to ${IMAGE_AD_MAX} with the product`}
+          onAdd={(m) => set({ ...s, medias: [...s.medias, m] })} onRemove={(id) => set({ ...s, medias: s.medias.filter((m) => m.id !== id) })} />
+        {reason ? (
+          <div className="gx-retry">
+            <p className="gx-reason" id="bz-blocked2" data-testid="image-ad-blocked">{reason}</p>
+            {estimateFailed && request ? <button type="button" className="gx-hbtn" onClick={() => void take.quote(request, key)} data-testid="image-ad-retry">Try again</button> : null}
           </div>
-        ) : <p className="gx-reason" role="status">Save your project first.</p>}
+        ) : null}
+        {run.phase === "failed" ? <p className="gx-gen-error" role="alert" data-testid="image-ad-error">{run.error}</p> : null}
+        {take.note ? <p className="gx-gen-note" role="status" data-testid="image-ad-note">{take.note}</p> : null}
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy} aria-describedby={reason ? "bz-blocked2" : undefined}
+          onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="image-ad-generate">{label}</button>
+        {credits != null ? <p className="gx-gen-foot" data-testid="image-ad-foot">{build.approximate ? "An approximate price · the delivered image settles it" : "An estimate from the live price"} · filed to this project’s takes</p> : null}
+        {running ? (
+          <div className="bz-running" role="status" data-testid="image-ad-running">
+            <span className="gx-gen-note">{runningWords} · {aboutCredits(running.credits)}</span>
+            {mayCancel ? <button type="button" className="gx-hbtn" disabled={take.cancelling === running.jobId} onClick={() => void take.cancel(running.jobId)} data-testid="image-ad-cancel">{take.cancelling === running.jobId ? "Cancelling…" : "Cancel"}</button> : null}
+          </div>
+        ) : null}
       </section>
-      <section className="gx-gen-results" aria-label="About">
-        <div className="gx-gen-results-head"><span className="gx-panel-title">{dtc ? "DTC Ads" : "Marketing Studio Image"}</span></div>
-        <p className="cw-dim">{dtc ? "A style is required; a completed brand kit is optional; up to four products; 1–20 images per job. Priced by the account before it runs." : "Aspect auto needs a reference still; a prompt or at least one reference is required. Priced by the account before it runs."}</p>
-      </section>
+      {run.phase === "done" ? <LatestKeyTake generation={run.generation} scope={scope} project={project} onLibrary={() => shell.openLibrary("assets")} /> : null}
     </div>
+  );
+}
+
+/** The finished still beside the composer (below it on a phone), with the way into Takes. */
+function LatestKeyTake({ generation, scope, project, onLibrary }: { generation: Generation; scope: string; project: Project | null; onLibrary: () => void }) {
+  const { openTake, opening } = useOpenTake(scope, project);
+  const url = generation.storedUrl ?? `/api/media/${encodeURIComponent(generation.id)}`;
+  return (
+    <section className="gx-gen-results bz-latest" aria-label="Latest take" data-testid="image-ad-done">
+      <div className="gx-gen-results-head">
+        <span className="gx-panel-title">Latest take</span>
+        <span className="bz-done-actions">
+          <button type="button" className="gx-hbtn" disabled={opening !== null} onClick={() => void openTake(generation.id, generation.id, generation.createdAt)} data-testid="image-ad-done-open">{opening ? "Opening…" : "Open in Takes"}</button>
+          <button type="button" className="gx-hbtn" onClick={onLibrary}>Open Library</button>
+        </span>
+      </div>
+      <div className="bz-latest-media" data-testid="image-ad-done-take">
+        <LazyMedia url={url} kind="image" alt="Latest take" name="Latest take" className="gx-lazy" />
+      </div>
+      <p className="gx-gen-note" role="status">Rendered and filed to this project.</p>
+    </section>
   );
 }
 

@@ -16,12 +16,23 @@ import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
+import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
   constructor(message: string, public readonly status: number, public readonly perJob = false) { super(message); this.name = "SpendReservationError"; }
+}
+/**
+ * The shared provider pool has no slot for this take yet (lib/providerPool.ts).
+ * Nothing was reserved: callers hold the take in the line instead of failing it.
+ */
+export class ProviderPoolBusyError extends SpendReservationError {
+  constructor(public readonly pool: string, public readonly why: "pool" | "share" | "line") {
+    super("Every shared render slot is taken. The take waits in line and starts when a slot frees.", 409, true);
+    this.name = "ProviderPoolBusyError";
+  }
 }
 
 const bootstrapped = new Map<string, Promise<void>>();
@@ -351,6 +362,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const paid = paidByPlatformEngine(event.engine);
   await ready();
   await reservationsReady();
+  /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
+  const pool = sharedPoolOf(event);
+  if (pool) await providerPoolReady();
   const cap = projectId ? await projectCap(projectId) : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
@@ -449,6 +463,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
         band: options.run.band,
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
+    }
+    /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its
+       reservation commit together, and the slot is free again the moment the reservation stops running. */
+    if (pool) {
+      const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
+      if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
     }
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,

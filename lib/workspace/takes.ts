@@ -5,6 +5,7 @@ import type { TakeFailure } from "../providerOutcome";
 import { engineLabel } from "./engines";
 import { heldNeeds } from "./release";
 import { DRAFT_RESOLUTION, FINAL_RESOLUTION, finalOf, isDraft } from "../draftFinal";
+import { KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from "../sharedKeyTerms";
 
 /**
  * The Takes page: the project library (GET /api/workbench/library →
@@ -108,7 +109,9 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const sha = typeof g.params.originalSha256 === "string" && SHA.test(g.params.originalSha256) ? g.params.originalSha256 : null;
     const stage = status === "rendering" ? takeStage(g) : null;
     const needs = heldForCredits ? heldNeeds(g.params) : null;
-    const why = failed ? failureReason(g) : heldForCredits ? heldBlock(g) ?? heldReason(g.params) : stage === "queued" && g.status === "held" ? heldReason(g.params) : null;
+    const why = failed ? failureReason(g) : heldForCredits ? heldBlock(g) ?? heldReason(g.params) : stage === "queued" && g.status === "held" ? heldReason(g.params)
+      /* Sent on a provider key that is gone: it waits (lib/sharedKeyTerms.ts), never failed or sent again for it. */
+      : !settled && waitsOnChangedKey(g.params) ? { reason: KEY_CHANGED_REASON } : null;
     const of = finalOf(g.params);
     const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
@@ -127,7 +130,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
 }
 
 type Row = { status: string; error?: string | null; params?: Record<string, unknown> | null; failure?: TakeFailure | null };
-type HeldParams = { held?: { needs?: unknown; why?: unknown } };
+type HeldParams = { held?: { needs?: unknown; why?: unknown; pool?: unknown } };
 
 /** Held for slots is a place in the line (Queued); held for credits waits on a top-up (Held). */
 export function takeStage(g: Pick<Row, "status" | "params">): TakeStage {
@@ -139,7 +142,7 @@ export function takeStage(g: Pick<Row, "status" | "params">): TakeStage {
 /** "Needs 12 cr" for a take parked at zero (lib/held.ts heldInfo), or the slot it waits for. */
 export function heldReason(params: Row["params"]): { reason: string; detail?: string } {
   const held = (params as HeldParams | null | undefined)?.held;
-  if (held?.why === "slots") return { reason: "Waiting for a free slot" };
+  if (held?.why === "slots") return { reason: held.pool === POOL_MARK ? POOL_REASON : "Waiting for a free slot" };
   const needs = heldNeeds(params);
   return needs == null ? { reason: "Waiting for credits" } : { reason: needsLine(needs), detail: "Starts on its own when credits arrive." };
 }

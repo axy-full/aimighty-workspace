@@ -16,6 +16,7 @@ import {
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
   pollConsumerMarketingVideo,
 } from "@/lib/higgsfield-consumer/video-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,6 +30,8 @@ const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }
 /** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
 const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
+/** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing, rehearsing and starting a marketing video, and reading the account's setup lists. `status` and the saved jobs (GET) stay. */
+const RETIRED = new Set(["quote", "quote-rehearsal", "submit", "setup"]);
 function problem(error: unknown) {
   if (error instanceof ConsumerOriginalError)
     return Response.json({ code: `original_${error.code}`, error: error.message }, {
@@ -61,6 +64,7 @@ export const POST = withTenant(async (req: Request) => {
   const owner = await requireOwner(); if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 24000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success) return Response.json({ error: "Review the marketing video request." }, { status: 400, headers });
     const body = parsed.data;

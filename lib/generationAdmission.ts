@@ -77,7 +77,12 @@ import {
   heldCount,
   notifyHeld,
   HELD_LIMIT,
+  holdForPool,
+  poolHold,
+  type HeldInfo,
 } from "@/lib/held";
+import { POOL_QUEUED, SHARED_POOL, poolAdmission, queueForPool, releasePoolWaiters, type PoolVerdict } from "@/lib/providerPool";
+import { POOL_BUSY_FOR_RUN } from "@/lib/sharedKeyTerms";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
@@ -110,6 +115,7 @@ import {
   claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
+  ProviderPoolBusyError,
 } from "@/lib/generationRequests";
 
 import type {
@@ -291,6 +297,30 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
       ...(shotSpec ? { shotSpec } : {}),
     },
   };
+}
+
+/**
+ * Generate parked a take behind the platform's shared provider pool: it joins
+ * the pool's line (from the moment it was held) and the person hears it is
+ * queued. Nothing was reserved or sent; it starts, once, when a slot frees.
+ * When slots are free but other takes are ahead of it, the line is asked to
+ * move now rather than at the next settlement.
+ */
+async function inPoolLine(
+  genId: string,
+  hold: HeldInfo,
+  verdict: PoolVerdict | null,
+  defer: AdmissionExecution["defer"],
+  alreadyQueued = false,
+): Promise<AdmissionReply> {
+  if (!alreadyQueued)
+    await queueForPool(SHARED_POOL, { id: genId, workspaceId: requireTenant().id, queuedAt: hold.at }).catch(() => {});
+  if (verdict && !verdict.admit && verdict.why === "line")
+    await Promise.resolve(defer(async () => { await releasePoolWaiters(); })).catch(() => {});
+  return admissionReply(
+    { id: genId, status: "held", held: true, why: "slots", notices: [POOL_QUEUED] },
+    { status: 202 },
+  );
 }
 
 /**
@@ -1365,6 +1395,10 @@ export async function executeGenerationAdmission(
         return admissionReply({ error: limStill.error }, { status: 429 });
       if (!holdStill && !limStill.allow)
         holdStill = heldInfo(estStillUsd, "image", modelId, "slots");
+      /* On the platform's shared provider key, a take also needs a slot of its pool (lib/providerPool.ts). */
+      const lineStill = holdStill ? null : await poolAdmission(billedTo(model.provider), "image", requireTenant().id);
+      if (lineStill && !lineStill.admit)
+        holdStill = poolHold(heldInfo(estStillUsd, "image", modelId, "slots"));
       const quotaStill = await checkQuota(0);
       if (!quotaStill.allow)
         return admissionReply({ error: quotaStill.error }, { status: 507 });
@@ -1575,6 +1609,7 @@ export async function executeGenerationAdmission(
       });
       invalidate(PROJECTS_KEY);
       if (holdStill) {
+        if (holdStill.pool) return inPoolLine(genId, holdStill, lineStill, options.defer);
         if (holdStill.why === "slots") {
           return admissionReply(
             {
@@ -1623,13 +1658,19 @@ export async function executeGenerationAdmission(
           { token: got.token, run: options.run },
         );
       } catch (e) {
+        /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
+           run's take never waits held (it could start later by itself, outside the run's approved limit): it is
+           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+        const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estStillUsd, "image", modelId, "slots") : null;
+        if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+        const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
         await db().execute({
           sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-          args: [(e as Error).message, now(), genId],
+          args: [error, now(), genId],
         });
         invalidate(PROJECTS_KEY);
         return admissionReply(
-          { id: genId, status: "failed", error: (e as Error).message },
+          { id: genId, status: "failed", error },
           { status: e instanceof SpendReservationError ? e.status : 503 },
         );
       }
@@ -2011,6 +2052,9 @@ export async function executeGenerationAdmission(
     if (!lim.allow && lim.why === "rate")
       return admissionReply({ error: lim.error }, { status: 429 });
     if (!hold && !lim.allow) hold = heldInfo(estUsd, "video", modelId, "slots");
+    /* On the platform's shared provider key, a take also needs a slot of its pool (lib/providerPool.ts). */
+    const line = hold ? null : await poolAdmission(billedTo(model.provider ?? "byteplus"), "video", requireTenant().id);
+    if (line && !line.admit) hold = poolHold(heldInfo(estUsd, "video", modelId, "slots"));
     const quota = await checkQuota(0);
     if (!quota.allow)
       return admissionReply({ error: quota.error }, { status: 507 });
@@ -2236,6 +2280,7 @@ export async function executeGenerationAdmission(
 
     invalidate(PROJECTS_KEY);
     if (hold) {
+      if (hold.pool) return inPoolLine(genId, hold, line, options.defer);
       if (hold.why === "slots") {
         return admissionReply(
           {
@@ -2279,13 +2324,19 @@ export async function executeGenerationAdmission(
         { token: got.token, run: options.run },
       );
     } catch (e) {
+      /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
+         run's take never waits held (it could start later by itself, outside the run's approved limit): it is
+         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+      const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estUsd, "video", modelId, "slots") : null;
+      if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+      const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
       await db().execute({
         sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-        args: [(e as Error).message, now(), genId],
+        args: [error, now(), genId],
       });
       invalidate(PROJECTS_KEY);
       return admissionReply(
-        { id: genId, status: "failed", error: (e as Error).message },
+        { id: genId, status: "failed", error },
         { status: e instanceof SpendReservationError ? e.status : 503 },
       );
     }

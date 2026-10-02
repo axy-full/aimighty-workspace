@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
+import { kindSectionId } from "../lib/workspace/rig-board";
 
 /**
  * Server-made changes appear live for everyone (plan §5, PR 5). The server
@@ -21,8 +22,11 @@ const shot = (id: string, title: string, x: number, y: number, linked: string[] 
 });
 /* Drafted scattered: b takes a as its input; c stands alone. */
 const board = () => [shot("a", "Harbour wide", 900, 700), shot("b", "The encounter", 100, 1200, ["a"]), shot("c", "Departure", 1500, 100)];
-/* Tidied (columns by input depth, rows in order): a (60,70), b (460,70), c (60,448); on the graph, shifted to the top-left card. */
-const TIDIED = { a: { left: 20, top: 20 }, b: { left: 420, top: 20 }, c: { left: 20, top: 398 } };
+/* Tidied by sections (lib/workspace/rig-board.ts): the Shots title made at (60,60), a (60,140), b (60,400), c (60,660), shots down
+   their column in canvas order; on the graph, shifted to the top-left card (the title). */
+const SHOTS = kindSectionId("shots");
+const TIDIED = { a: { left: 20, top: 100 }, b: { left: 20, top: 360 }, c: { left: 20, top: 620 }, [SHOTS]: { left: 20, top: 20 } };
+const TIDIED_AT = { a: [60, 140], b: [60, 400], c: [60, 660], [SHOTS]: [60, 60] };
 const DRAFTED = { a: { left: 820, top: 620 }, b: { left: 20, top: 1120 }, c: { left: 1420, top: 20 } };
 
 async function setUp(page: Page, name: string) {
@@ -36,37 +40,54 @@ async function setUp(page: Page, name: string) {
   return { draft, headers, productionId: productionProjectId };
 }
 
+/**
+ * The Rig window's canvas, shown. A development server still compiling routes on their first use can reload an open
+ * tab, and the Rig then opens on its list, which says "Team canvas" too: every step is retried together, so the canvas
+ * is shown again rather than waited on.
+ */
+async function showCanvas(tab: Page) {
+  const board = tab.getByTestId("rig-graph-surface");
+  await expect(async () => {
+    if (!(await board.isVisible())) await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await expect(board).toBeVisible({ timeout: 5_000 });
+    await expect(tab.getByTestId("rig-team")).toContainText("Team canvas", { timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
+}
+
 /** One Rig window on the project's graph, joined to its team canvas. */
 async function openRig(tab: Page, draftId: string, errors: string[]) {
   await forbidPaidWork(tab);
   tab.on("pageerror", (error) => errors.push(error.message));
   await tab.goto(`/suites?suite=studio&page=rig&project=${draftId}`);
-  await expect(tab.getByTestId("rig-team")).toContainText("Team canvas");
-  await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  await expect(tab.getByTestId("rig-graph-surface")).toBeVisible();
+  await showCanvas(tab);
 }
 
 const places = (tab: Page) => tab.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node[data-node-id]"))
   .map((el) => [el.dataset.nodeId!, { left: Number.parseFloat(el.style.left), top: Number.parseFloat(el.style.top) }])));
+/** The cards' places, read on the canvas: shown again first when a reload left the Rig on its list. */
+const shownPlaces = async (tab: Page) => { await showCanvas(tab); return places(tab); };
 const canvasOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, CanvasNode> } | null; server: { what: string } | null };
 
 const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
 
-/** Scrolls the board's pane until a control of its zoom cluster sits above a phone's fixed tab bar. */
+/** Scrolls the board's pane until a control of its zoom cluster sits above a phone's fixed tab bar (the canvas shown again first, as showCanvas does). */
 async function reach(tab: Page, testId: string) {
   const control = tab.getByTestId(testId);
-  await control.scrollIntoViewIfNeeded();
-  await tab.evaluate((id) => {
-    const el = document.querySelector(`[data-testid="${id}"]`)!;
-    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-    const floor = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : innerHeight;
-    const box = el.getBoundingClientRect();
-    if (box.bottom <= floor - 8) return;
-    let pane = el.parentElement;
-    while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
-    (pane ?? document.scrollingElement!).scrollTop += box.bottom - (floor - 8);
-  }, testId);
+  await expect(async () => {
+    if (!(await tab.getByTestId("rig-graph-surface").isVisible())) await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
+    await control.scrollIntoViewIfNeeded({ timeout: 5_000 });
+    await tab.evaluate((id) => {
+      const el = document.querySelector(`[data-testid="${id}"]`)!;
+      const bar = document.querySelector<HTMLElement>(".gx-tabbar");
+      const floor = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : innerHeight;
+      const box = el.getBoundingClientRect();
+      if (box.bottom <= floor - 8) return;
+      let pane = el.parentElement;
+      while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
+      (pane ?? document.scrollingElement!).scrollTop += box.bottom - (floor - 8);
+    }, testId);
+  }).toPass({ timeout: 60_000 });
   return control;
 }
 
@@ -77,17 +98,17 @@ test("a Tidy the server makes appears live in two open Rig windows, with Atomik 
   await openRig(page, draft.id, errors);
   await openRig(second, draft.id, errors);
   /* Both windows show the board as drafted, and the team canvas holds it. */
-  for (const tab of [page, second]) await expect.poll(() => places(tab)).toEqual(DRAFTED);
+  for (const tab of [page, second]) await expect.poll(() => shownPlaces(tab)).toEqual(DRAFTED);
   await expect.poll(async () => Object.keys((await canvasOf(page.request, headers, productionId)).canvas?.nodes ?? {}).sort()).toEqual(["a", "b", "c"]);
 
   /* Neither window asks: the server tidies (as a teammate's Tidy or Atomik would). Free, and no live room locally. */
   const tidied = await page.request.post("/api/workbench/team-canvas", { headers, data: { action: "tidy", productionId, opId: `e2e-${Date.now().toString(36)}` } });
   expect(tidied.ok(), await tidied.text()).toBe(true);
-  expect(await tidied.json()).toMatchObject({ moved: 3, live: "off", credits: 0 });
+  expect(await tidied.json()).toMatchObject({ moved: 3, sections: 1, live: "off", credits: 0 });
 
   /* Both windows fold it in within a check or two, and say who did it. */
   for (const tab of [page, second]) {
-    await expect.poll(() => places(tab), { timeout: 15_000 }).toEqual(TIDIED);
+    await expect.poll(() => shownPlaces(tab), { timeout: 15_000 }).toEqual(TIDIED);
     await expect(tab.getByTestId("rig-team-agent")).toContainText("Atomik · tidied the board");
     expect(await noSideways(tab), "no sideways scroll").toBe(true);
   }
@@ -100,7 +121,7 @@ test("a Tidy the server makes appears live in two open Rig windows, with Atomik 
   /* What the windows save next carries the tidied places, never the drafted ones back over them. */
   await page.waitForTimeout(1500);
   const nodes = (await canvasOf(page.request, headers, productionId)).canvas!.nodes;
-  expect(Object.fromEntries(Object.entries(nodes).map(([id, n]) => [id, [n.x, n.y]]))).toEqual({ a: [60, 70], b: [460, 70], c: [60, 448] });
+  expect(Object.fromEntries(Object.entries(nodes).map(([id, n]) => [id, [n.x, n.y]]))).toEqual(TIDIED_AT);
   if (info.project.name === "workbench-1440x900") await second.screenshot({ path: info.outputPath("tidy-second-window-1440x900.png"), animations: "disabled" });
   if (info.project.name === "workbench-390x844") await second.screenshot({ path: info.outputPath("tidy-second-window-390x844.png"), animations: "disabled" });
   expect(errors).toEqual([]);
@@ -112,7 +133,7 @@ test("pressing Tidy in one window lays the board out in the other too; the butto
   const second = await context.newPage();
   await openRig(page, draft.id, errors);
   await openRig(second, draft.id, errors);
-  for (const tab of [page, second]) await expect.poll(() => places(tab)).toEqual(DRAFTED);
+  for (const tab of [page, second]) await expect.poll(() => shownPlaces(tab)).toEqual(DRAFTED);
   await expect.poll(async () => Object.keys((await canvasOf(page.request, headers, productionId)).canvas?.nodes ?? {}).length).toBe(3);
 
   const tidy = await reach(page, "rig-tidy");
@@ -123,9 +144,9 @@ test("pressing Tidy in one window lays the board out in the other too; the butto
     expect(await smallTargets(page, ".pxw-graph-zoom"), "zoom cluster targets under 44×44").toEqual([]);
   }
   await tidy.click();
-  await expect(page.getByTestId("rig-graph")).toContainText("Tidied for everyone · 3 cards moved · free");
-  await expect.poll(() => places(page)).toEqual(TIDIED);
-  await expect.poll(() => places(second), { timeout: 15_000 }).toEqual(TIDIED);
+  await expect(page.getByTestId("rig-graph")).toContainText("Tidied for everyone · 3 cards moved · 1 section added · free");
+  await expect.poll(() => shownPlaces(page)).toEqual(TIDIED);
+  await expect.poll(() => shownPlaces(second), { timeout: 15_000 }).toEqual(TIDIED);
   await expect(second.getByTestId("rig-team-agent")).toContainText("Atomik · tidied the board");
   /* A second press has nothing left to move. */
   await (await reach(page, "rig-tidy")).click();
@@ -153,13 +174,13 @@ test("an edit made in one window while the server tidies is kept: the fold lays 
   await expect.poll(async () => {
     const b = (await canvasOf(page.request, headers, productionId)).canvas!.nodes.b;
     return [b.x, b.y, b.durationS];
-  }, { timeout: 15_000 }).toEqual([460, 70, 6]);
+  }, { timeout: 15_000 }).toEqual([60, 400, 6]);
   /* The first window folds both in. The second folds the tidy in too, and still shows its own edit. */
-  await expect.poll(() => places(page), { timeout: 15_000 }).toEqual(TIDIED);
+  await expect.poll(() => shownPlaces(page), { timeout: 15_000 }).toEqual(TIDIED);
   await expect(second.getByTestId("rig-team-agent")).toContainText("Atomik · tidied the board", { timeout: 15_000 });
   await expect(second.getByTestId("shot-duration")).toHaveText("6s");
-  await second.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  await expect.poll(() => places(second)).toEqual(TIDIED);
+  await showCanvas(second);
+  await expect.poll(() => shownPlaces(second)).toEqual(TIDIED);
   expect(errors).toEqual([]);
 });
 
@@ -177,15 +198,15 @@ test("the canvas action API: Tidy is free, checked, scoped to this workspace, an
   expect((await api.post("/api/workbench/team-canvas", { data: { action: "tidy", productionId, opId: "abcdefgh" } })).status()).toBe(409);
   const opId = `api-${Date.now().toString(36)}`;
   const first = await api.post("/api/workbench/team-canvas", { headers, data: { action: "tidy", productionId, opId } }).then((r) => r.json());
-  expect(first).toEqual({ revision: 2, moved: 3, live: "off", credits: 0 });
+  expect(first).toEqual({ revision: 2, moved: 3, sections: 1, live: "off", credits: 0 });
   /* The same press arriving twice: the same answer, and the canvas does not move again. */
   expect(await api.post("/api/workbench/team-canvas", { headers, data: { action: "tidy", productionId, opId } }).then((r) => r.json())).toEqual(first);
   const light = await head();
   expect(light).toMatchObject({ head: true, revision: 2, server: { what: "tidy", agent: false } });
   const full = await canvasOf(api, headers, productionId);
   expect(full.server).toEqual(light.server);
-  expect(Object.fromEntries(Object.entries(full.canvas!.nodes).map(([id, n]) => [id, [n.x, n.y]]))).toEqual({ a: [60, 70], b: [460, 70], c: [60, 448] });
+  expect(Object.fromEntries(Object.entries(full.canvas!.nodes).map(([id, n]) => [id, [n.x, n.y]]))).toEqual(TIDIED_AT);
   /* A new press on a tidy board: nothing to move, and no news for open windows. */
-  expect(await api.post("/api/workbench/team-canvas", { headers, data: { action: "tidy", productionId, opId: `${opId}-again` } }).then((r) => r.json())).toEqual({ revision: 2, moved: 0, live: "off", credits: 0 });
+  expect(await api.post("/api/workbench/team-canvas", { headers, data: { action: "tidy", productionId, opId: `${opId}-again` } }).then((r) => r.json())).toEqual({ revision: 2, moved: 0, sections: 0, live: "off", credits: 0 });
   expect((await head()).server).toEqual(light.server);
 });

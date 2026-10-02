@@ -12,8 +12,9 @@ import { expectFloors } from "./phoneFloors";
  * 05-mobile "Page templates").
  *
  * What it proves: each template renders from seeded data at all three phone
- * viewports, the shot list opens the Inspector sheet, the Form blocks on a stale
- * quote WITHOUT a single paid request, the accordion opens one section at a time,
+ * viewports, the shot list opens the Inspector sheet, the Form pages (which ran
+ * on the retired Higgsfield sign-in) say so and send nothing, the accordion opens
+ * one section at a time,
  * and the three floors hold on every page — nothing under 12px, no target under
  * 44×44, and the last row of every scroller clearing the pinned block. At 1440
  * and 1920 the desktop pages are unchanged.
@@ -366,111 +367,25 @@ test("the accordion opens one section at a time", async ({ page }, info) => {
   expect(errors).toEqual([]);
 });
 
-test("the form blocks on a stale quote, and sends nothing", async ({ page }, info) => {
+test("the form pages (Motion Transfer, Object Swap) ran on the Higgsfield account: they say its sign-in is retired, and read and send nothing", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const state = await open(page);
-  const capture = info.project.name === "workbench-390x844";
-
-  await goTo(page, "motion", "subatomik");
-  await expect(page.getByTestId("mobile-form")).toBeVisible();
-  /* Nothing chosen yet: the quote is missing and the primary says so. */
-  await expect(page.getByTestId("mobile-form-quote-figure")).toHaveText("—");
-  await expect(page.getByTestId("mobile-primary")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("mobile-action-reason")).toContainText("source video");
-
-  /* Choose the project's own source video: now a quote exists for exactly this
-     composition — and it has aged out, so it still blocks and prints no figure. */
-  await page.getByTestId("mobile-form-source").click();
-  await page.locator(`[data-pick="upload:${CLIP.id}"]`).click();
-  await expect(page.getByTestId("mobile-form-source")).toContainText("wind-test.mp4");
-  await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "expired");
-  await expect(page.getByTestId("mobile-form-quote-figure")).toHaveText("—");
-  await expect(page.getByTestId("mobile-form-quote-note")).toContainText("aged out");
-  await expect(page.getByTestId("mobile-action-reason")).toContainText("aged out");
-  await expect(page.getByTestId("mobile-primary")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("mobile-primary")).not.toContainText("142");
-
-  /* The reference strip keeps its order, and the resolution is the form's. */
-  await page.getByTestId("mobile-form-add-ref").click();
-  await page.locator(`[data-pick="upload:${STILL.id}"]`).click();
-  await expect(page.locator(".pxm-ref-index")).toHaveText(["01"]);
-  await page.getByTestId("mobile-form-prompt").fill("Hold the camera move exactly as filmed.");
-  await page.locator('[data-res="1080p"]').click();
-  await expect(page.locator('[data-res="1080p"]')).toHaveAttribute("aria-pressed", "true");
-  /* The composition changed, so the old estimate no longer applies at all. */
-  await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "changed");
-  if (capture) await page.screenshot({ path: info.outputPath("form-motion-390x844.png"), animations: "disabled" });
-  await floors(page, "form");
-
-  /* Pressing the blocked primary says why and dispatches nothing. It is
-     aria-disabled, not disabled, so a thumb still reaches it — and gets the
-     reason rather than silence. `force` is what that tap is. */
-  await page.getByTestId("mobile-primary").click({ force: true });
-  await expect(page.locator(".pxw-toast")).toContainText(/estimate/i);
-  expect(state.paid).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("the form takes its own live estimate on the phone, and still submits only through the plan's gate", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  const state = await open(page, { quotes: true });
-
-  await goTo(page, "motion", "subatomik");
-  await page.getByTestId("mobile-form-source").click();
-  await page.locator(`[data-pick="upload:${CLIP.id}"]`).click();
-  await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "expired");
-  /* The control says what it does: the originals go to the connected account to be priced. */
-  const take = page.getByTestId("mobile-form-estimate");
-  await expect(take).toHaveText("Copy originals · get estimate");
-  await take.click();
-  await expect(page.getByTestId("mobile-form-quote")).toHaveAttribute("data-quote", "ready");
-  await expect(page.getByTestId("mobile-form-quote-figure")).toHaveText("150 cr");
-  /* Exactly the route's quote body, for exactly this composition, with an idempotency key. */
-  expect(state.quotes).toHaveLength(1);
-  expect(state.quotes[0]).toMatchObject({ action: "quote", draftId: PROJECT, input: STALE_INPUT });
-  expect(String(state.quotes[0].idempotencyKey)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  /* The recovery record goes once the estimate is in; with a usable estimate there is nothing more to take. */
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.endsWith(":attempts:quote")))).toEqual([]);
-  await expect(take).toHaveCount(0);
-  await expect(page.getByTestId("mobile-primary")).not.toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("mobile-primary")).toContainText("150");
-  await floors(page, "form with an estimate");
-  /* Taking an estimate is not a submission. */
-  expect(state.paid).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("an estimate the route cannot confirm keeps its request: the next press reuses the key, and only a discard lets it go", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  const state = await open(page, { quotes: "uncertain" });
-  const records = () =>
-    page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.endsWith(":attempts:quote")).map(([, value]) => JSON.parse(value) as { key: string }));
-
-  await goTo(page, "motion", "subatomik");
-  await page.getByTestId("mobile-form-source").click();
-  await page.locator(`[data-pick="upload:${CLIP.id}"]`).click();
-  const take = page.getByTestId("mobile-form-estimate");
-  await expect(take).toHaveText("Copy originals · get estimate");
-  await take.click();
-  await expect(page.getByTestId("mobile-form-estimate-error")).toContainText("could not be confirmed");
-  /* Originals may already be copied: the record (the desktop's own) survives, and the control finishes the SAME request. */
-  expect((await records()).map((r) => r.key)).toEqual([state.quotes[0].idempotencyKey]);
-  await expect(take).toHaveText("Finish the last estimate");
-  await take.click();
-  await expect.poll(() => state.quotes.length).toBe(2);
-  expect(state.quotes[1].idempotencyKey).toBe(state.quotes[0].idempotencyKey);
-  await expect(take).toHaveText("Finish the last estimate");
-  await floors(page, "form with a request to finish");
-  /* Only the person's discard lets it go; after it, a new estimate is a new request. */
-  await page.getByTestId("mobile-form-estimate-discard").click();
-  expect(await records()).toEqual([]);
-  await expect(take).toHaveText("Copy originals · get estimate");
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/higgsfield/consumer/") && !(request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation")) asked.push(`${request.method()} ${url.pathname}`);
+  });
+  for (const [pageId, title] of [["motion", "Motion Transfer"], ["swap", "Object Swap"]] as const) {
+    await goTo(page, pageId, "subatomik");
+    const retired = page.getByTestId("mobile-form-retired");
+    await expect(retired).toHaveText(`${title} ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.`);
+    await expect(page.getByTestId("mobile-form")).toHaveCount(0);
+    await expect(page.getByTestId("mobile-form-estimate")).toHaveCount(0);
+    await floors(page, `${pageId} retired`);
+  }
+  expect(asked, "nothing asks the account").toEqual([]);
   expect(state.paid).toEqual([]);
   expect(errors).toEqual([]);
 });

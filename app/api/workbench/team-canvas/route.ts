@@ -5,8 +5,9 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
 import { collabConfigured } from "@/lib/collab";
+import { db } from "@/lib/db";
 import {
-  patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
+  masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
@@ -40,6 +41,7 @@ function failure(error: unknown) {
  * whether building is switched on, the newest run on this production (its limit, what it has
  * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
  * progress, what asking would cost: the suggested limit, the per-job line, and planning's price.
+ * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
  */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
@@ -63,6 +65,7 @@ export const GET = withTenant(async (req: Request) => {
       revision: saved?.revision ?? 0,
       room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
       server,
+      locks: saved ? [...(await masterLocks(db(), saved.canvas))] : [],
     }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
@@ -83,7 +86,14 @@ export const PATCH = withTenant(async (req: Request) => {
     const saved = await patchTeamCanvas(productionId, patch, who.userId!);
     /* A card the server made that this edit only implied taking off stays: the live room is told to keep it. */
     if (saved.held.length) scheduleCanvasPush(productionId);
-    return Response.json({ revision: saved.revision }, { headers: NO_STORE });
+    /* Writes that would have changed a locked master did not land; the rest of the edit did. `held` says which,
+       with the card (or asset) as the canvas holds it, so the window puts it back. */
+    const held = saved.masterHolds.map((h) => ({
+      ...h,
+      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: saved.canvas.nodes[h.nodeId] } : {}),
+      ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
+    }));
+    return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
 
@@ -117,9 +127,12 @@ const actionSchema = z.discriminatedUnion("action", [
 /**
  * A server action on the canvas. None of these requests charges anything itself.
  *
- *  - `tidy` lays the whole board out (columns by input depth, rows in canvas
- *    order; locked cards stay where they are) for everyone at once. `opId`
- *    names the press, so a retry of the same press changes nothing twice. Free.
+ *  - `tidy` lays the whole board out by sections (lib/workspace/rig-board.ts:
+ *    a block of columns per section under its title, rows in canvas order;
+ *    locked cards stay where they are) for everyone at once, making any kind's
+ *    section title the board lacks. `opId` names the press, so a retry of the
+ *    same press changes nothing twice. `moved`: cards it moved; `sections`:
+ *    section titles it made. Free.
  *  - `agent.*` is Atomik on the board (lib/workbench/rig-agent.ts): ask for a
  *    board with the limit approved for the run (Atomik proposes the cards and
  *    wires; its planning is metered into that limit), approve the proposal as
@@ -141,8 +154,8 @@ export const POST = withTenant(async (req: Request) => {
     if (action.action === "tidy") {
       await requireProduction(action.productionId);
       const result = await applyCanvasOps(action.productionId, { opId: `tidy:${userId}:${action.opId}`, ops: [{ kind: "tidy" }], author: userId, what: "tidy" });
-      const moved = result.outcomes.flatMap((o) => o.nodeIds).length;
-      return Response.json({ revision: result.revision, moved, live: result.live, credits: 0 }, { headers: NO_STORE });
+      const count = (kind: string) => result.outcomes.filter((o) => o.kind === kind).flatMap((o) => o.nodeIds).length;
+      return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
     }
     const { productionId } = action;
     const run =

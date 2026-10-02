@@ -1,3 +1,5 @@
+import { failureLine } from "../errors";
+import type { TakeFailure } from "../providerOutcome";
 import type { GenerationBodyInput } from "../workbench/generation-request";
 import type { SoulIdentity } from "../workbench/soul-identity";
 import type { Project } from "../workbench/studio";
@@ -40,11 +42,16 @@ export function renderedStills(generation: { id: string; params?: unknown }): st
 }
 
 /**
- * What a render that did not finish says, from its own record: the reason,
- * then what the ledger kept for it — never a blanket "not billed".
+ * What a render that did not finish says: the failure line every other take
+ * prints (lib/errors.ts failureLine) — what happened, what Particl's ledger
+ * holds for it or what the provider did with the charge ("12 cr held" while
+ * its reservation is open, "12 cr charged", "Not billed" only once settled at
+ * nothing; nothing when neither has said), then the next step. A record with
+ * no failure on it (an older row) gives its reason alone — never a blanket
+ * "not billed".
  */
-export function renderOutcome(generation: { status: string; error?: string | null; creditsBilled?: number | null }): string {
-  const reason = generation.error?.trim() || (generation.status === "cancelled" ? "The render was cancelled." : "The render did not finish.");
-  const billed = generation.creditsBilled;
-  return typeof billed !== "number" ? reason : billed > 0 ? `${reason} ${billed.toLocaleString("en-US")} cr billed.` : `${reason} Not billed.`;
+export function renderOutcome(generation: { status: string; error?: string | null; failure?: TakeFailure | null }): string {
+  const cancelled = generation.status === "cancelled";
+  if (generation.failure) return failureLine(generation.failure, { cancelled }).text;
+  return generation.error?.trim() || (cancelled ? "The render was cancelled." : "The render did not finish.");
 }

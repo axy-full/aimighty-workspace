@@ -138,7 +138,7 @@ export function AtomikHost({
   children: ReactNode;
 }) {
   const { state: ws, dispatch, toast } = useWorkspace();
-  const { owner, ownerName } = useConnectedCapability(scope, { read: false });
+  const { owner } = useConnectedCapability(scope, { read: false });
   const projectId = ws.projectId;
   const productionId = project && project.id === projectId ? project.productionProjectId ?? null : null;
 
@@ -199,7 +199,7 @@ export function AtomikHost({
     [projectId, productionId, request, fetcher, project?.name, project?.script, ws.lists.shots, ws.lists.takes],
   );
 
-  const plans = useMemo(() => ownerAccountPlans(withRequestGate(PLANS, providedKeys.get), owner, ownerName), [providedKeys, owner, ownerName]);
+  const plans = useMemo(() => ownerAccountPlans(withRequestGate(PLANS, providedKeys.get), owner), [providedKeys, owner]);
   /* One engine per project: a run never outlives its project into another one's context. */
   const engine = useMemo(
     () => new AtomikRunEngine({ plans, context: () => ({ projectId: null, data: {}, fetch: fetcher }) }),
