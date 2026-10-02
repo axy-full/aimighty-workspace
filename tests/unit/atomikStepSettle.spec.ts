@@ -197,7 +197,9 @@ test("a stranded step's render key is fenced before the step is proposed again: 
     const { db } = await import("../../lib/db");
     await chat("c2", "u_owner");
     await step({ id: "late", chat: "c2" });
-    expect(await claimStep("late", "u_taker")).toMatchObject({ status: "running" });
+    /* The approval's render key names the step's thread (threadStepRequestKey). */
+    const taken = (await claimStep("late", "u_taker"))!;
+    expect(taken).toMatchObject({ status: "running", requestKey: "atomik-step:c2:late" });
     /* Two minutes on, no render has arrived: the step goes back to proposed, and nothing was sent. */
     expect(await reconcileRunningSteps("c2", Date.now() + STRANDED_CLAIM_MS + 1000)).toBe(1);
     expect(await getStep("late")).toMatchObject({ status: "proposed", genId: null });
@@ -205,14 +207,14 @@ test("a stranded step's render key is fenced before the step is proposed again: 
     let ran = 0;
     const body = { prompt: "A slow push-in on a kitchen table.", model: SEEDANCE, projectId: null, maxCredits: 14 };
     const admit = (key: string, user: string) => withGenerationRequest(render(key, body), user, async () => { ran++; return Response.json({ id: `gen_${ran}`, status: "queued" }, { status: 202 }); }, { atomicBinding: true });
-    const late = await admit(stepRequestKey("late"), "u_taker");
+    const late = await admit(taken.requestKey!, "u_taker");
     expect({ status: late.status, complete: late.headers.get("Idempotency-Status"), admitted: ran }).toEqual({ status: 409, complete: "complete", admitted: 0 });
     expect(await late.json()).toMatchObject({ code: "set_aside" });
     expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(0);
     expect(await getStep("late")).toMatchObject({ status: "proposed" });
     /* Approving again takes a key of its own; its render is admitted, once. */
     const again = (await claimStep("late", "u_taker"))!;
-    expect(again.requestKey).toBe("atomik-step:late:2");
+    expect(again.requestKey).toBe("atomik-step:c2:late:2");
     expect((await admit(again.requestKey!, "u_taker")).status).toBe(202);
     expect(ran).toBe(1);
     /* A step taken before takers were recorded is fenced for its chat's owner. */

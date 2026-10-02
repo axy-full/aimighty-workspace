@@ -176,7 +176,8 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   const sent = await render;
   const job = await sent.json();
   expect(sent.status(), JSON.stringify(job)).toBe(202);
-  expect(sent.request().headers()["idempotency-key"]).toMatch(/^atomik-step:astp_/);
+  /* Its key names the step's thread, then the step (lib/atomik.ts › threadStepRequestKey). */
+  expect(sent.request().headers()["idempotency-key"]).toMatch(/^atomik-step:ach_[A-Za-z0-9_]+:astp_[A-Za-z0-9_]+$/);
   expect(sent.request().postDataJSON()).toMatchObject({
     model: MOTION, task: "genjutsu", projectId: f.production, workbenchProjectId: f.draft, sourceUploadId: f.clip,
     references: [{ uploadId: f.still, role: "reference_image" }], maxCredits: price, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), refine: false,
