@@ -549,7 +549,13 @@ test("the canvas dialog follows the server's own answer: its Sound switch shows 
   const listed = await (await page.request.get("/api/workbench/engines")).json() as { models: { id: string; sound?: boolean }[] };
   const offered = listed.models.find((row) => row.id === CINEMA)?.sound === true;
   const dialog = await openNode(page);
-  await dialog.getByRole("combobox", { name: "Generation engine" }).selectOption(CINEMA);
+  /* The server's list arrives after the dialog opens and picks its default engine: choose Cinema Studio once it is there. */
+  const engine = dialog.getByRole("combobox", { name: "Generation engine" });
+  await expect(engine.locator(`option[value="${CINEMA}"]`)).toHaveCount(1);
+  await expect(async () => {
+    await engine.selectOption(CINEMA);
+    await expect(engine).toHaveValue(CINEMA, { timeout: 1_000 });
+  }).toPass();
   await expect(dialog.getByRole("group", { name: "Cinema Studio controls" })).toBeVisible();
   await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveCount(offered ? 1 : 0);
   if (offered) await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveAttribute("aria-checked", "false");
