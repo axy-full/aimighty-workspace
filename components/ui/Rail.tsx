@@ -17,6 +17,9 @@ import type { ReactNode } from "react";
  * column, so the footer is reached inside it instead of running on under
  * what follows the rail (a page's dock). Only there: elsewhere the resize
  * handle straddles the rail's edge, and a scrolling box would clip it.
+ * There the body keeps its natural height (it still fills what room is
+ * left) and does not scroll on its own, so what is in it scrolls with the
+ * rail rather than in a strip squeezed down to the body's padding.
  */
 export const RAIL_WIDTHS = { compact: 300, expanded: 420 } as const;
 
@@ -37,7 +40,7 @@ export default function Rail({ width, resizeHandle, header, footer, children, la
       className={`ui-rail flex h-full flex-none flex-col border-l border-border-mid text-ink [@media(max-height:500px)]:overflow-y-auto ${className}`}>
       {resizeHandle}
       <header className={`flex h-[52px] flex-none items-center gap-[8px] border-b border-border ${wide ? "px-[16px]" : "px-[14px]"}`}>{header}</header>
-      <div className={`flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto ${wide ? "px-[16px] pb-[12px] pt-[14px]" : "p-[14px]"}`}>{children}</div>
+      <div className={`flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto [@media(max-height:500px)]:flex-[1_0_auto] [@media(max-height:500px)]:overflow-y-visible ${wide ? "px-[16px] pb-[12px] pt-[14px]" : "p-[14px]"}`}>{children}</div>
       {footer && (
         <footer className={`flex flex-none gap-[8px] border-t border-border pt-[10px] ${wide ? "flex-col px-[16px] pb-[16px]" : "px-[14px] pb-[14px]"}`}>{footer}</footer>
       )}
