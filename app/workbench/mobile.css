@@ -31,3 +31,13 @@
 @media(max-width:759px){
  .ps.ps-dialog,.ps.asset-editor-dialog{--tw-translate-x:0px!important;--tw-translate-y:0px!important}
 }
+
+/* A dialog on a phone, or anywhere the pointer is a finger (844×390 is wider than the phone layout above): every
+   target clears 44px. Its selects (Generate, Engine, First frame, Size, Aspect, Seconds) were 42px from the desk's
+   `.ps select`; the close button was 40px on a phone and 15px at 844×390, where the Generate button was 40px too.
+   The close keeps its corner clear of the title. */
+@media (max-width:767px),(pointer:coarse){
+ .ps.ps-dialog select,.ps.ps-dialog .btn{min-height:44px}
+ .ps.ps-dialog [data-slot=dialog-close]{width:44px;height:44px;top:12px;right:12px;display:flex;align-items:center;justify-content:center}
+ .ps.ps-dialog [data-slot=dialog-title]{padding-right:40px}
+}

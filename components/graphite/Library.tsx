@@ -65,7 +65,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
   const production = shell.view === "suite" && shell.suite.id === "studio" ? PRODUCTION_TOOLS[shell.page.id] : undefined;
   /* Atomik › Tools & connections has no tool cards: its legacy page id's cards are the old Skills registry's.
      Nor has Atomik › Memory: it shares Agent's backing page, and Agent's cards are not about it. */
-  const toolsPage = shell.view === "suite" && shell.suite.id === "atomik" && (shell.page.id === "skills" || shell.page.id === "memory");
+  const toolsPage = shell.view === "suite" && shell.suite.id === "atomik" && (shell.page.id === "skills" || shell.page.id === "memory" || shell.page.id === "saved-skills");
   const groups = production ? production.map((group) => ({ title: group.title, items: group.items })) : toolsPage ? [] : libraryFor(shell.page.legacy.page);
   const tools = libraryCount(groups);
   /* A Production stage's live draft files new Cast and Elements before the shell's copy is re-read. */

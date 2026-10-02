@@ -79,6 +79,34 @@ async function probe(page: Page) {
     };
   });
 }
+/**
+ * The dev server's live reload is held for every test here. On a dev server
+ * still compiling routes on their first use, the dev client applies what
+ * compiled by refreshing the page and then, for some updates, reloading it.
+ * A reload wipes the page's record above, restarts the pace the page was
+ * keeping and drops the paused clock, so the fresh page's first read looks like
+ * an extra one. The client's socket (/_next/hmr) still connects, and every
+ * message reaches the page except the ones that apply a change: builds and
+ * syncs, refreshes, reloads and Turbopack updates. The rest pass, React's debug
+ * data for the page among them (the page does not hydrate without it). A
+ * production build has no such socket.
+ */
+const DEV_UPDATES = new Set(["building", "built", "sync", "serverComponentChanges", "serverOnlyChanges", "clientChanges", "middlewareChanges", "staticParamsChanged", "devPagesManifestUpdate", "addedPage", "removedPage", "reloadPage", "turbopack-message"]);
+test.beforeEach(async ({ page }) => {
+  await page.routeWebSocket(/\/_next\/hmr(\?|$)/, (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((message) => {
+      if (typeof message === "string") {
+        try {
+          if (DEV_UPDATES.has((JSON.parse(message) as { type?: string }).type ?? "")) return;
+        } catch {
+          /* Not JSON: passed on as it came. */
+        }
+      }
+      socket.send(message);
+    });
+  });
+});
 const record = (page: Page) => page.evaluate(() => (window as unknown as { __sent: Sent[] }).__sent);
 /** Status reads the page sent (the connected account's `status` action, or GET /api/jobs/:id), oldest first. */
 async function statusReads(page: Page, id?: string): Promise<Sent[]> {

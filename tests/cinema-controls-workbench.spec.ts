@@ -445,7 +445,9 @@ test("the canvas dialog offers Cinema Studio's nine controls, each Auto; picks g
   expect(await dimText(page, '[data-testid="dialog-cinema"]', "[data-functional-label], select"), "control text under #7C7C84").toEqual([]);
   const sizes = await controls.evaluate((el) => Array.from(el.querySelectorAll<HTMLElement>("span, select")).map((n) => Number.parseFloat(getComputedStyle(n).fontSize)));
   expect(Math.min(...sizes), "control text under 12px").toBeGreaterThanOrEqual(12);
-  if (phone) expect(await smallTargets(page, '[data-testid="dialog-cinema"]'), "control targets under 44×44").toEqual([]);
+  /* On touch every target in the dialog clears 44×44, not only the Cinema controls: the type and engine selects, Size,
+     Aspect, Seconds, First frame, the direction, the Generate button and the close button. */
+  if (phone) expect(await smallTargets(page, ".ps-dialog"), "dialog targets under 44×44").toEqual([]);
   await controls.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, info, "dialog-cinema");
 

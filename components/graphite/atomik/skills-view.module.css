@@ -1,0 +1,47 @@
+/* Atomik › Skills (SkillsView.tsx): Memory's cards and rows (app/graphite.css › .tc, .am), with the
+   few layouts they lack. Controls are the shell's own (.gx-hbtn, .gx-primary, .gx-field, .gx-seg),
+   which are 44px on a phone. A price never wraps or truncates. */
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; padding: 4px 0 12px; }
+.search { flex: 1 1 220px; min-width: 0; width: auto; }
+.name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.command { font-family: var(--gx-mono); font-size: 12.5px; color: var(--gx-accent-text); overflow-wrap: anywhere; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.back { align-self: flex-start; }
+.detailHead { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px 0 10px; }
+.detailTitle { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 4px 0 12px; }
+
+.steps { display: flex; flex-direction: column; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 4px 12px; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
+.stepN { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); padding-top: 2px; }
+.stepBody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stepTitle { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.meta { font-size: 12.5px; line-height: 1.45; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.prompt { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.price { font-family: var(--gx-mono); font-size: 12.5px; white-space: nowrap; flex: none; text-align: right; }
+.params { display: flex; flex-direction: column; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.param { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--gx-hair); font-size: 13px; }
+.paramKey { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+
+/* Editing: one block per step, fields stacked. */
+.form { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 4px 0 12px; }
+.label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12.5px; color: var(--gx-text-2); }
+.editStep { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; min-width: 0; }
+.editParam { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; min-width: 0; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.confirm { flex: 1 1 100%; font-size: 12.5px; color: var(--gx-text-2); }
+
+/* The run in Atomik: its steps, and the checkpoint with Continue. */
+.checkpoint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px 0 4px; border-top: 1px solid var(--gx-hair); }
+.checkpointLine { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.status { font-size: 12px; color: var(--gx-text-2); }
+
+@media (max-width: 767px) {
+  .step { grid-template-columns: 22px minmax(0, 1fr); }
+  .step > .price { grid-column: 2; text-align: left; }
+  .param, .editParam { grid-template-columns: minmax(0, 1fr); }
+  .actions > button, .bar > button { flex: 1 1 140px; justify-content: center; }
+  .search { flex-basis: 100%; }
+}

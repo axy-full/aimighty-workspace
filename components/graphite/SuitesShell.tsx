@@ -35,6 +35,7 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
 import { MemoryView } from "./atomik/MemoryView";
+import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -432,7 +433,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
-                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
                       {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
