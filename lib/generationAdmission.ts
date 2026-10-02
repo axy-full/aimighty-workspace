@@ -83,7 +83,7 @@ import {
   type HeldInfo,
 } from "@/lib/held";
 import { POOL_QUEUED, SHARED_POOL, poolAdmission, queueForPool, releasePoolWaiters, type PoolVerdict } from "@/lib/providerPool";
-import { POOL_BUSY_FOR_RUN } from "@/lib/sharedKeyTerms";
+import { POOL_BUSY_UNSENT } from "@/lib/sharedKeyTerms";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
@@ -1573,10 +1573,12 @@ export async function executeGenerationAdmission(
       if (soulRender && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before rendering with a Soul ID." }, { status: 400 });
       /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
-         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks.
+         A take the shared pool would hold is refused in the pool's words, never with this workspace's own
+         slot counts: those have room, and the pool is shared by every workspace on the platform's key. */
       if (holdStill && options.run)
         return admissionReply(
-          { error: holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
+          { error: holdStill.pool ? POOL_BUSY_UNSENT : holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
           { status: holdStill.why === "slots" ? 409 : 402 },
         );
 
@@ -1665,10 +1667,12 @@ export async function executeGenerationAdmission(
       } catch (e) {
         /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
            run's take never waits held (it could start later by itself, outside the run's approved limit): it is
-           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
+           could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
+           charged — never that it waits in line. */
         const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estStillUsd, "image", modelId, "slots") : null;
         if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
-        const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
+        const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
         await db().execute({
           sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
           args: [error, now(), genId],
@@ -2169,10 +2173,12 @@ export async function executeGenerationAdmission(
       if (stopped) return stopped;
     }
     /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
-       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks.
+       A take the shared pool would hold is refused in the pool's words, never with this workspace's own
+       slot counts: those have room, and the pool is shared by every workspace on the platform's key. */
     if (hold && options.run)
       return admissionReply(
-        { error: hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
+        { error: hold.pool ? POOL_BUSY_UNSENT : hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
         { status: hold.why === "slots" ? 409 : 402 },
       );
 
@@ -2336,10 +2342,12 @@ export async function executeGenerationAdmission(
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
          run's take never waits held (it could start later by itself, outside the run's approved limit): it is
-         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
+         could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
+         charged — never that it waits in line. */
       const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estUsd, "video", modelId, "slots") : null;
       if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
-      const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
+      const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
       await db().execute({
         sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
         args: [error, now(), genId],

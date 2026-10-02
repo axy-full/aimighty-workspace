@@ -199,14 +199,16 @@ export default function SuiteHome() {
                 </Link>
               </div>
             </div>
+            {/* A read that failed says "Try again": "Retry" is a take's paid re-render. */}
             {drafts.error ? (
               <div className="suite-alert" role="alert">
                 {drafts.error}{" "}
                 <button
+                  type="button"
                   className="suite-text-button"
                   onClick={() => void drafts.refresh()}
                 >
-                  Retry
+                  Try again
                 </button>
               </div>
             ) : !drafts.data ? (
