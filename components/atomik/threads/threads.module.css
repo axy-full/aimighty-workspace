@@ -76,8 +76,6 @@
 
 @media (max-width: 767px), (pointer: coarse) {
   .primary { min-height: 44px; font-size: 14px; }
-  /* The shared composer's Send is 2.75rem, 41px on this 15px root: a full 44px target here. */
-  .composer button[type="submit"] { min-height: 44px; }
 }
 @media (max-width: 600px) {
   .page { padding: 14px; }
