@@ -27,9 +27,10 @@ async function seeded(page: Page) {
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
+    /* Granted at the price of a credit this deployment serves, so the balance holds GRANT of today's credits. */
     await db.execute({
-      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
-      args: [randomUUID(), signed.workspace.id, GRANT, "Local credit-value fixture", "admin", "test", Date.now()],
+      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)",
+      args: [randomUUID(), signed.workspace.id, GRANT, "Local credit-value fixture", "admin", "test", Date.now(), Number(me.rates.creditUsd)],
     });
   } finally {
     db.close();
@@ -98,7 +99,7 @@ test("the phone's credit slot carries the rate in its own tooltip", async ({ pag
   await page.goto(`/workspace?project=${project.id}&suite=particl`);
   const slot = page.getByTestId("mobile-credits");
   await expect(slot).toBeVisible();
-  await expect(slot).toHaveText(/^[\d,]+ cr$/);
+  await expect(slot).toHaveText(/^\d[\d,]*(?:\.\d)? cr$/);
   /* The figure and the unit it is in, in one place: the balance is where most
      people meet the credit, and a figure in an undefined unit is not a figure. */
   await expect(slot).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);
@@ -115,7 +116,7 @@ test("the desktop top bar's balance carries the same rate, from the same field",
   await page.goto(`/workspace?project=${project.id}&suite=particl`);
   const credits = page.getByTestId("workspace-credits");
   await expect(credits).toBeVisible();
-  await expect(credits).toHaveText(/^[\d,]+ cr$/);
+  await expect(credits).toHaveText(/^\d[\d,]*(?:\.\d)? cr$/);
   /* Since #269 the desktop slot is the same always-mounted label as the
      phone's, so it carries the same title — one rate, one sentence. */
   await expect(credits).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);

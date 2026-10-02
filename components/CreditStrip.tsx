@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
+import { creditsFigure } from "@/lib/creditTerms";
 
 /**
  * A vendor's credit, on the page that spends it. Reads the same cheap
@@ -27,7 +28,7 @@ export default function CreditStrip({ vendor, className = "" }: { vendor: string
   const left = credits ? (v.remainingCredits ?? 0) : v.remaining;
   const added = credits ? (v.addedCredits ?? 0) : v.added;
   const spent = credits ? (v.spentCredits ?? 0) : v.spent;
-  const fmt = (n: number) => (credits ? `${Math.round(n).toLocaleString()} cr` : usd(n, 2));
+  const fmt = (n: number) => (credits ? `${creditsFigure(n)} cr` : usd(n, 2));
   const empty = added === 0 && spent === 0;
   const over = left < 0;
   return (

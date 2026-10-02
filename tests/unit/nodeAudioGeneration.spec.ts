@@ -8,7 +8,7 @@ test('node sound, music and speech quote exactly the parameters later submitted'
 });
 test('invalid audio estimates cannot authorize a paid request',()=>{
  expect(validAudioQuote({estimatedCredits:12})).toBe(true);
- for(const value of [null,undefined,-1,0.5,Infinity,'12']) expect(validAudioQuote({estimatedCredits:value})).toBe(false);
+ for(const value of [null,undefined,-1,0.55,Infinity,'12']) expect(validAudioQuote({estimatedCredits:value})).toBe(false);
 });
 /* Each speech model reads in its own vendor's voices: Grok Voice never gets an ElevenLabs voice, nor the reverse. */
 const both={configured:true,vendors:{elevenlabs:true,xai:true},speechModels:[{id:'eleven_multilingual_v2',label:'Multilingual v2'},{id:'grok-tts',label:'Grok Voice'}],

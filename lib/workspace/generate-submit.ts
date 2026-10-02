@@ -10,6 +10,7 @@ import {
 import { rememberWorkspaceQuote } from "./last-quote";
 import { dispatchGate, neutralCopy } from "./rig";
 import { announceJob } from "../shell/jobs-bus";
+import { isCreditAmount } from "../creditTerms";
 
 /**
  * THE workspace-credit dispatch: re-quote the exact body that will be sent,
@@ -370,7 +371,7 @@ export async function settleStoredRequest(options: {
     return { state: "unknown", reason: "The price could not be checked. Nothing was sent; try again in a moment." };
   }
   const credits = fresh.estimatedCredits, price = fresh.price, unit = fresh.unit;
-  if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price) || price < 0 || (unit !== "cr" && unit !== "usd"))
+  if (!isCreditAmount(credits) || typeof price !== "number" || !Number.isFinite(price) || price < 0 || (unit !== "cr" && unit !== "usd"))
     return { state: "unknown", reason: "The price could not be checked. Nothing was sent; try again in a moment." };
   if (unit === options.approved.unit && sameAmount(price, options.approved.price, unit)) return { state: "resend" };
   return { state: "repriced", price, unit, credits };

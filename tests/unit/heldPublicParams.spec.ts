@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /**
  * A held take's snapshot carries the vendor's dollars (`estUsd`) beside the
@@ -14,7 +15,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-held-public-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 function workspace(name: string, credits: boolean): TenantWorkspace {
@@ -30,7 +31,7 @@ function workspace(name: string, credits: boolean): TenantWorkspace {
 const EST_USD = 1.37;
 const heldRow = (id: string, status: string, why: "credits" | "slots") => ({
   id, kind: "video", provider: "byteplus", model: "dreamina-seedance-2-0-260128", prompt: "test", status,
-  params: JSON.stringify({ ratio: "16:9", duration: 5, held: { estUsd: EST_USD, needs: 21, at: 1, why } }),
+  params: JSON.stringify({ ratio: "16:9", duration: 5, held: { estUsd: EST_USD, needs: 20.6, at: 1, why } }),
   created_at: 0, updated_at: 0,
 });
 const leaksDollars = (value: unknown) => {
@@ -45,7 +46,7 @@ test("a held take in a credit workspace reaches the browser with its credits and
     // A discarded held take is cancelled with its snapshot still on it.
     for (const [status, why] of [["held", "credits"], ["held", "slots"], ["cancelled", "credits"]] as const) {
       const gen = rowToGeneration(heldRow(`gen_${status}_${why}`, status, why));
-      expect(gen.params).toEqual({ ratio: "16:9", duration: 5, held: { why, needs: 21 } });
+      expect(gen.params).toEqual({ ratio: "16:9", duration: 5, held: { why, needs: 20.6 } });
       expect(leaksDollars(gen)).toBe(false);
     }
   });
@@ -56,7 +57,8 @@ test("a workspace on its own keys keeps the dollars that are its own, and is not
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("own-keys-map", false), async () => {
     const gen = rowToGeneration(heldRow("gen_own", "held", "slots"));
-    expect(gen.params.held).toEqual({ why: "slots", needs: 21 });
+    /* #425: a saved own key no longer exempts it, so it is sent its price in credits, in tenths (20.6, not 21). */
+    expect(gen.params.held).toEqual({ why: "slots", needs: 20.6 });
   });
 });
 
@@ -81,7 +83,7 @@ test("GET-path reads strip the dollars while the release still meters the take f
       args: [row.id, row.kind, row.provider, row.model, row.prompt, row.params, row.status, Date.now(), Date.now()],
     });
     const one = await getGeneration(row.id);
-    expect(one?.params.held).toEqual({ why: "credits", needs: 21 });
+    expect(one?.params.held).toEqual({ why: "credits", needs: 20.6 });
     expect(leaksDollars(one)).toBe(false);
     expect(leaksDollars(await listGenerations())).toBe(false);
 

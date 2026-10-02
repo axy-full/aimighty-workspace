@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * POST /api/prompt/enhance through the real authenticated route and the real
@@ -39,14 +40,16 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
     const quoted = await ask({ prompt, mode: "video", quoteOnly: true });
     expect(quoted.ok(), await quoted.text()).toBe(true);
     const quote = await quoted.json() as { model: string; estimateCredits: number; estimateUsd?: number };
-    expect(quote.estimateCredits).toBeGreaterThanOrEqual(1);
+    /* In tenths of a credit, never less than one tenth. */
+    expect(quote.estimateCredits).toBeGreaterThanOrEqual(0.1);
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
 
     /* No price seen, or a lower one than the live quote: refused before any spend. */
     const unquoted = await ask({ prompt, mode: "video" });
     expect(unquoted.status()).toBe(409);
-    const stale = await ask({ prompt, mode: "video", maxCredits: quote.estimateCredits - 1 });
+    /* One tenth under the quote (credits are charged in tenths), and never below zero. */
+    const stale = await ask({ prompt, mode: "video", maxCredits: fromDeci(Math.max(0, toDeci(quote.estimateCredits) - 1)) });
     expect(stale.status()).toBe(409);
     expect(await events()).toHaveLength(0);
 
@@ -60,7 +63,7 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
     expect(result.prompt).toContain("@Image1");
     const settled = await events();
     expect(settled).toHaveLength(1);
-    expect(Number(settled[0].credits)).toBeGreaterThanOrEqual(1);
+    expect(Number(settled[0].credits)).toBeGreaterThanOrEqual(0.1);
     expect(Number(settled[0].credits)).toBeLessThanOrEqual(quote.estimateCredits);
 
     /* The same key replays the answer; it does not buy a second one. */

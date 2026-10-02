@@ -4,7 +4,8 @@ import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { createClient, type Client } from "@libsql/client";
-import { isPaidKind, type GrantKind } from "./creditTerms";
+import { creditUsd, isPaidKind, type GrantKind } from "./creditTerms";
+import { roundToTenth } from "./creditUnits";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
@@ -411,6 +412,10 @@ export function platformReady(): Promise<void> {
       await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
       await addColumn("meter_events", "credit_usd REAL");
       await addColumn("meter_events", "credit_margin REAL");
+      /* The price of a credit a grant, or a pack asked for, was recorded at.
+         NULL is the legacy US$0.10: every row written before this column. */
+      await addColumn("credit_grants", "unit_usd REAL");
+      await addColumn("topup_requests", "unit_usd REAL");
       /* Reporting content is open to anybody — a victim must not need an
          account — so the counting has to be by something an anonymous caller
          still has. Salted and truncated, the same shape access_requests
@@ -600,9 +605,10 @@ export async function grantCreditsBatch(
     // Bootstrap before inserting so a first paid pack cannot be mistaken for
     // an old, non-expiring grant. Its clock starts when management grants it.
     for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
+    // In today's credits, to a tenth, and saying so: a grant keeps the unit it was given in.
     for(const r of rows)await tx.execute({
-      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
-      args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
+      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at, unit_usd) VALUES (?,?,?,?,?,?,?,?)`,
+      args: [newId("cg"), r.workspaceId, roundToTenth(r.credits), r.note.slice(0, 200), r.kind, r.by, ts, creditUsd()],
     });
     for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
   });

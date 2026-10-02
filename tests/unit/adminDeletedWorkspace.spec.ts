@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import * as creditTerms from "../../lib/creditTerms";
 import path from "node:path";
 import ts from "typescript";
 import * as houseWorkspace from "../../lib/houseWorkspace";
@@ -15,6 +16,8 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/recovery": { recoveryRoute: (handler: unknown) => handler },
     "@/lib/plans": { asPlanId: (v: unknown) => (v === "studio" ? v : null) },
+    // Pure: the real check that a grant is a whole number of tenths.
+    "@/lib/creditTerms": creditTerms,
     "@/lib/auth": {
       requireSuperAdmin: async () => ({ user: { id: "platform-owner" } }),
     },

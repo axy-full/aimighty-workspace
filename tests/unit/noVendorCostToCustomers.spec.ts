@@ -8,6 +8,7 @@ import {
   loadRouteModule, marginCreditFindings, secretFindings, vendorCostFindings, vendorFigures,
   type Finding, type ScanOptions,
 } from "../helpers/vendorCostScan";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* Vendor cost figures never reach a customer of a workspace on the
    platform's keys (lib/creditTerms.ts: "margin ... never shown"). Every
@@ -21,7 +22,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-no-vendor-cost-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 /** What the vendors charged, each ending in a sixth decimal of 1 so every sum of them is recognisable. */

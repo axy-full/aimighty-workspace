@@ -83,12 +83,12 @@ async function books(tenantUrl: string, workspaceId: string) {
 const phone = (page: Page) => page.viewportSize()!.width < 760;
 const surfaceOf = (page: Page) => (phone(page) ? page.getByRole("dialog", { name: "Atomik" }) : page.getByRole("complementary", { name: "Atomik" }));
 const noSideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-const creditsIn = (text: string | null) => Number(/(\d[\d,]*) cr/.exec(text ?? "")?.[1].replace(/,/g, "") ?? NaN);
+const creditsIn = (text: string | null) => Number(/(\d[\d,]*(?:\.\d)?) cr/.exec(text ?? "")?.[1].replace(/,/g, "") ?? NaN);
 
 /** Ask Atomik in the open rail (or sheet): wait for the planning estimate for this production, then send at it. */
 async function ask(page: Page, surface: Locator, brief: string, production: string) {
   const field = surface.getByRole("textbox", { name: "Ask Atomik" });
-  const send = surface.getByRole("button", { name: /^Send · \d+ cr estimated/ });
+  const send = surface.getByRole("button", { name: /^Send · \d[\d,]*(?:\.\d)? cr estimated/ });
   /* Typed once the composer is live (a page compiled cold may still be hydrating, which resets the field), and
      sent only at the estimate asked for with the production on screen, so the chat is filed under it. */
   await expect(async () => {
@@ -135,9 +135,9 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   const still = rows.filter({ hasText: "Marketing Studio Image" });
   await expect(transform).toHaveAttribute("data-library-step", "transform");
   await expect(still).toHaveAttribute("data-library-step", "marketing");
-  await expect(transform).toContainText(/\d+ cr/);
+  await expect(transform).toContainText(/\d[\d,]*(?:\.\d)? cr/);
   /* Until its own checkpoint quote, the still reads as the estimate it is. */
-  await expect(still).toContainText(/about \d+ cr/);
+  await expect(still).toContainText(/about \d[\d,]*(?:\.\d)? cr/);
   await expect(page.getByText("priced at checkpoint", { exact: true }).filter({ visible: true })).toHaveCount(0);
   /* Each row is really on screen once scrolled to (never squeezed or covered), and its price is never clipped. */
   for (const row of await rows.all()) {
@@ -155,7 +155,7 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   const card = checkpointOf(page);
   await expect(card.getByText(/Works on Dance\.mp4 and 1 still from the library\./).first()).toBeVisible();
   const cont = card.getByRole("button", { name: /^Continue/ }).first();
-  await expect(cont).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
   const price = creditsIn(await cont.textContent());
   expect(price).toBeGreaterThan(0);
@@ -193,7 +193,7 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
 
   /* The plan moves on: the campaign still is the checkpoint now, at its own live price; nothing ran on its own. */
   const next = checkpointOf(page).getByRole("button", { name: /^Continue/ }).first();
-  await expect(next).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(next).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(next).toBeEnabled();
   await expect(checkpointOf(page).getByText(/Uses 1 still from the library\./).first()).toBeVisible();
   expect((await books(f.tenantUrl, f.workspaceId)).jobs).toHaveLength(1);
@@ -214,9 +214,9 @@ test("a 2.5 campaign still reads about its price at Continue, and the approved s
   /* A 2.5 build settles on its delivered image: its price reads as the estimate it is, at the checkpoint too. */
   const card = checkpointOf(page);
   const cont = card.getByRole("button", { name: /^Continue/ }).first();
-  await expect(cont).toContainText(/about \d+ cr/, { timeout: 60_000 });
+  await expect(cont).toContainText(/about \d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
-  await expect(rows.first()).toContainText(/about \d+ cr/);
+  await expect(rows.first()).toContainText(/about \d[\d,]*(?:\.\d)? cr/);
   await expect(card.getByText(/Uses 1 still from the library, on 2\.5 Flare\./).first()).toBeVisible();
   const price = creditsIn(await cont.textContent());
   expect(price).toBeGreaterThan(0);

@@ -3,15 +3,15 @@ import { creditUsd } from "./creditTerms";
 /**
  * Credit packs: what a workspace buys (SOW §7A).
  *
- *   Starter   $50     500
- *   Team      $200  2,000 + 200
- *   Studio    $500  5,000 + 750
- *   Agency  $2,000 20,000 + 4,000
+ *   Starter   $49.60    62
+ *   Team      $200     250 + 25
+ *   Studio    $500     625 + 94
+ *   Agency  $2,000   2,500 + 500
  *
- * **The unit never moves.** §7A: "Unit stays $0.10. Discount only through
+ * **The unit never moves.** §7A: "Unit stays $0.80. Discount only through
  * bonus credits, capped at 20%." So a pack's price is its bought credits at
- * `creditUsd()` and nothing else — $50, $200, $500, $2,000 fall straight out
- * of the table — and the discount is credits given on top rather than a
+ * `creditUsd()` and nothing else — $49.60, $200, $500, $2,000 fall straight
+ * out of the table — and the discount is credits given on top rather than a
  * cheaper credit. Both halves matter: a credit is the platform's unit of
  * account, every job is billed against it, and the per-engine margins in
  * `creditTerms.ts` are set against it. A rate that moved with the pack would
@@ -41,11 +41,14 @@ export type Pack = {
 
 export type Size = { id: string; label: string; credits: number; bonus?: number };
 
+/* One row per pack, so changing a pack is one line. Priced at $0.80 a credit:
+   the $0.10-era dollar prices kept, credits divided by eight. Half a credit
+   cannot be sold, so Starter is 62 credits ($49.60) rather than $50. */
 const DEFAULT_PACKS: Size[] = [
-  { id: "starter", label: "Starter", credits: 500, bonus: 0 },
-  { id: "team", label: "Team", credits: 2000, bonus: 200 },
-  { id: "studio", label: "Studio", credits: 5000, bonus: 750 },
-  { id: "agency", label: "Agency", credits: 20000, bonus: 4000 },
+  { id: "starter", label: "Starter", credits: 62, bonus: 0 },
+  { id: "team", label: "Team", credits: 250, bonus: 25 },
+  { id: "studio", label: "Studio", credits: 625, bonus: 94 },
+  { id: "agency", label: "Agency", credits: 2500, bonus: 500 },
 ];
 
 /** §7A guardrail 2: "Bonus credits never exceed 20% of a pack." */
@@ -79,15 +82,20 @@ export function pricePack(s: Size, per: number): Pack {
   const usd = Math.round(credits * per * 100) / 100;
   return {
     id: s.id, label: s.label, credits, bonus, total, usd,
-    /* Not rounded to cents: at 24,000 credits this is a rate, not a price,
-       and rounding $0.0833 to $0.08 would misstate the ladder by 4%. */
+    /* Not rounded to cents: at 3,000 credits this is a rate, not a price,
+       and rounding $0.6667 to $0.67 would misstate the ladder. */
     perCredit: total > 0 ? usd / total : 0,
   };
 }
 
-let _packs: Pack[] | null = null;
+/* Kept per rate and override, so the table moves with CREDIT_USD even inside
+   one process (a test that prices a credit differently) rather than serving
+   whatever rate first asked. */
+let _packs: { per: number; override: string | undefined; list: Pack[] } | null = null;
 export function packs(): Pack[] {
-  if (_packs) return _packs;
+  const per = creditUsd();
+  const override = process.env.CREDIT_PACKS;
+  if (_packs && _packs.per === per && _packs.override === override) return _packs.list;
   let sizes = DEFAULT_PACKS;
   try {
     const raw = process.env.CREDIT_PACKS ? (JSON.parse(process.env.CREDIT_PACKS) as unknown) : null;
@@ -102,9 +110,8 @@ export function packs(): Pack[] {
       if (clean.length) sizes = clean;
     }
   } catch { /* an unreadable override keeps the defaults */ }
-  const per = creditUsd();
-  _packs = sizes.map((s) => pricePack(s, per));
-  return _packs;
+  _packs = { per, override, list: sizes.map((s) => pricePack(s, per)) };
+  return _packs.list;
 }
 
 export function packById(id: string): Pack | null {

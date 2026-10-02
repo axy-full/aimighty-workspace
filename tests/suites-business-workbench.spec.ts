@@ -3,6 +3,8 @@ import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
@@ -107,7 +109,7 @@ async function openImageAds(page: Page, playwright: PlaywrightWorkerArgs["playwr
     await ownerApi.dispose();
   }
   const mode = await platform(async (db) => {
-    await db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, 5000, "Image ads key fixture", "manual", "test", Date.now()] });
+    await db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, 5000, "Image ads key fixture", "manual", "test", Date.now(), creditUsd()] });
     return Number((await db.execute({ sql: "SELECT uses_platform_keys FROM workspaces WHERE id=?", args: [workspaceId] })).rows[0].uses_platform_keys);
   });
   expect(mode, "a managed workspace: the platform's keys, paid in credits").toBe(1);
@@ -136,7 +138,7 @@ async function uploadProduct(page: Page) {
   await page.getByTestId("image-ad-product-file").setInputFiles({ name: "serum.webp", mimeType: "image/webp", buffer: readFileSync("public/campaign/hero.webp") });
   await expect(page.getByTestId("image-ad-product-name")).toHaveText("serum.webp", { timeout: 60_000 });
 }
-const pricedImage = /^Generate image · about \d[\d,]* cr$/;
+const pricedImage = /^Generate image · about \d[\d,]*(?:\.\d)? cr$/;
 async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
@@ -167,7 +169,7 @@ test("Image ads runs Marketing Studio Image on the API key: the product first, t
   if (["workbench-360x640", "workbench-390x844", "workbench-844x390"].includes(info.project.name))
     expect(await smallTargets(page, '[data-testid="image-ads-view"]'), "44px targets").toEqual([]);
   await noSideScroll(page);
-  const shown = Number((await page.getByTestId("image-ad-generate").innerText()).match(/about ([\d,]+) cr/)![1].replace(/,/g, ""));
+  const shown = Number((await page.getByTestId("image-ad-generate").innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   await page.getByTestId("image-ad-generate").click();
   const done = page.getByTestId("image-ad-done");
   await expect(done).toContainText("Rendered and filed to this project.", { timeout: 90_000 });
@@ -202,7 +204,7 @@ test("Image ads on a 2.5 build: Flare at extra high names its variant, is priced
   if (["workbench-360x640", "workbench-390x844", "workbench-844x390"].includes(info.project.name))
     expect(await smallTargets(page, '[data-testid="image-ads-view"]'), "44px targets").toEqual([]);
   await noSideScroll(page);
-  const shown = Number((await page.getByTestId("image-ad-generate").innerText()).match(/about ([\d,]+) cr/)![1].replace(/,/g, ""));
+  const shown = Number((await page.getByTestId("image-ad-generate").innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   await page.getByTestId("image-ad-generate").click();
   const done = page.getByTestId("image-ad-done");
   await expect(done).toContainText("Rendered and filed to this project.", { timeout: 90_000 });

@@ -1,4 +1,4 @@
-import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
+import { billCreditsWith, marginFor, creditUsd, margins, creditsFigure, fromDeci, toDeci } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
 import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
@@ -13,7 +13,7 @@ import { heldMessage } from "./held";
  *
  * Two things make a quote, and both matter:
  *
- *   the number   what the work costs, in whole credits
+ *   the number   what the work costs, in credits to a tenth
  *   the verdict  whether this person, in this production, may press it
  *
  * A number without a verdict is how a producer gets a priced button that
@@ -85,7 +85,7 @@ export type QuoteLine = {
 };
 
 export type Quote = {
-  /** Whole credits, the only number a workspace ever sees. */
+  /** Credits, to a tenth: the only number a workspace ever sees. */
   totalCredits: number;
   /** The per-unit price, and only when every unit really is the same price. */
   unitCredits: number | null;
@@ -128,7 +128,8 @@ export const liveTerms = (): Terms => ({ perCredit: creditUsd(), table: margins(
  */
 export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
   const lines: QuoteLine[] = [];
-  let totalCredits = 0;
+  // In whole tenths: a total of many lines is exact, never 0.30000000000000004.
+  let totalDeci = 0;
   let usd = 0;
   let count = 0;
 
@@ -145,13 +146,15 @@ export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
          than quietly skip the wall. */
       platformPays: u.platformPays !== false,
     });
-    totalCredits += credits;
+    totalDeci += toDeci(credits);
     usd += u.usd * n;
     count += n;
   }
 
-  const per = lines.length ? lines[0].credits / lines[0].count : 0;
-  const uniform = lines.length > 0 && lines.every((l) => l.credits === per * l.count);
+  const perDeci = lines.length ? toDeci(lines[0].credits) / lines[0].count : 0;
+  const uniform = lines.length > 0 && lines.every((l) => toDeci(l.credits) === perDeci * l.count);
+  const per = perDeci / 10;
+  const totalCredits = fromDeci(totalDeci);
 
   return {
     totalCredits,
@@ -213,7 +216,7 @@ export type Context = {
   isAdmin: boolean;
 };
 
-const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
+const fmt = (n: number): string => `${creditsFigure(n)} cr`;
 
 export function verdictOf(q: Quote, c: Context): Verdict {
   /* A choice that spends nothing is never gated. Leaving existing takes alone
@@ -276,8 +279,9 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      the balance covers; a vendor the workspace holds its own key for costs it
      no credits and is not weighed here at all. */
   if (c.balance != null) {
-    const needs = q.lines.reduce((n, l) => n + (l.platformPays ? l.credits : 0), 0);
-    if (needs > 0 && c.balance < needs) {
+    /* Summed and compared in whole tenths: 0.1 + 0.2 is 0.3, and a balance of exactly 0.3 covers it. */
+    const needs = fromDeci(q.lines.reduce((n, l) => n + (l.platformPays ? toDeci(l.credits) : 0), 0));
+    if (needs > 0 && toDeci(c.balance) < toDeci(needs)) {
       return {
         allow: true, gate: "held", notice,
         line: heldMessage(needs, c.balance),

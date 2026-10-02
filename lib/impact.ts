@@ -19,7 +19,7 @@ import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, type PublicQuote, 
  * Rule five of the design: nothing re-renders silently, and any edit to a
  * shared element opens this first. So this answers one question — which shots
  * does this reach, and what would each of them cost — and answers it in the
- * only unit a workspace has, whole credits, with the verdict that says whether
+ * only unit a workspace has, credits to a tenth, with the verdict that says whether
  * the button may be pressed at all.
  *
  * Tenant-scoped throughout: every read is db(), which is the workspace in

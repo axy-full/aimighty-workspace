@@ -1,4 +1,5 @@
 import type { Step } from "./atomik";
+import { isCreditAmount } from "./creditTerms";
 import type { StepRef } from "./attachments";
 import { keyStepFamily, keyStepSource } from "./atomikKeySteps";
 
@@ -89,7 +90,7 @@ export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): 
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   const credits = v.estimatedCredits, price = v.price, fingerprint = v.fingerprint;
-  if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0) return null;
+  if (!isCreditAmount(credits)) return null;
   if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
   if (v.unit !== "cr" && v.unit !== "usd") return null;
   /* /api/generate checks the compiled request against the quote's fingerprint; audio has none. */

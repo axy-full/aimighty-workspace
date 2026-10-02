@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { buildRateTable } from "../lib/rateTable.server";
 import { takeCost } from "../lib/breakdownCost";
+import { chargedCredits } from "../lib/shotListCost";
+import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
 
 /* Money on two screens, at every size: the printable statement leads back to
    where statements are listed, and drafted shots are priced in credits as
@@ -58,19 +60,22 @@ test("drafted shots are priced in credits per take, as they bill", async ({ page
   /* A scene's action only asks for its quote once it is on screen, which on a
      short landscape phone is below the fold. */
   await page.getByRole("button", { name: /^Draft shots/ }).scrollIntoViewIfNeeded();
-  const draft = page.getByRole("button", { name: /^Draft shots · \d+ cr reserved$/ });
+  const draft = page.getByRole("button", { name: /^Draft shots · \d[\d,]*(?:\.\d)? cr reserved$/ });
   await draft.click();
   const proposal = page.locator(".ak-proposal");
   await expect(proposal).toBeVisible({ timeout: 60_000 });
 
   const rates = buildRateTable("cr");
-  /* One take, as the ledger bills it: whole credits, rounded up per take. */
-  const take = (planned: number, engine: string) => Math.max(1, Math.ceil(takeCost(rates, planned, engine) - 1e-9));
+  /* One take, as the ledger bills it: tenths of a credit, rounded up per take. */
+  const take = (planned: number, engine: string) => chargedCredits(takeCost(rates, planned, engine));
   const seedance = take(5, "seedance"), kling = take(4, "kling");
-  expect(seedance).toBeGreaterThan(0);
-  await expect(proposal.getByText(`5s · Seedance · ${seedance} cr`)).toBeVisible();
-  await expect(proposal.getByText(`4s · Kling · ${kling} cr`)).toBeVisible();
-  await expect(proposal).toContainText(`SCENE ≈ ${seedance + kling} cr AT ONE TAKE EACH · WRITING 1 cr`);
+  /* The rate card's Seedance 2.5, 5s 1080p line at US$0.80 a credit (SOW §7A). */
+  expect(seedance).toBe(5.4);
+  await expect(proposal.getByText(`5s · Seedance · ${creditsFigure(seedance)} cr`)).toBeVisible();
+  await expect(proposal.getByText(`4s · Kling · ${creditsFigure(kling)} cr`)).toBeVisible();
+  /* The scene adds takes in whole tenths; writing is billed like any job, at least a tenth. */
+  const scene = creditsFigure(fromDeci(toDeci(seedance) + toDeci(kling)));
+  await expect(proposal).toContainText(new RegExp(`SCENE ≈ ${scene.replace(".", "\\.")} cr AT ONE TAKE EACH · WRITING \\d[\\d,]*(?:\\.\\d)? cr`));
   await expect(proposal).not.toContainText("$");
   const width = await overflow(page);
   expect(width.scrollWidth).toBe(width.clientWidth);
@@ -135,7 +140,7 @@ test("a scene's action scrolled into view is quoted, even when a busy page hands
   await last.scrollIntoViewIfNeeded();
   /* One hand-over, off screen then in view. The newest is where the action is: it asks for its quote. */
   await expect(action).toHaveAttribute("data-looks", "[[false,true]]");
-  await expect(last).toHaveText(/^Draft shots · \d+ cr reserved$/, { timeout: 60_000 });
+  await expect(last).toHaveText(/^Draft shots · \d[\d,]*(?:\.\d)? cr reserved$/, { timeout: 60_000 });
   expect(quoted).toContain(scenes.length);
   expect(ran).toEqual([]);
 });

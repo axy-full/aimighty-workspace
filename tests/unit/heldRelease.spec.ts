@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /**
  * Held takes: discarding one is free, a finished take of any engine starts
@@ -15,7 +16,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-held-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 function workspace(name: string, concurrency: number): TenantWorkspace {
@@ -210,11 +211,11 @@ test("the balance still stops the credits line in order, even for a smaller take
     await held("gen_order_slot", { why: "slots", at: t });
     await held("gen_order_first", { why: "credits", at: t + 1 });
     /* Held at the price it was quoted (a moved price is a person's to approve, so it would wait anyway). */
-    await held("gen_order_small", { why: "credits", at: t + 2, estUsd: 0.1, needs: 2 });
+    await held("gen_order_small", { why: "credits", at: t + 2, estUsd: 0.1, needs: 1.5 });
     const out = await releaseHeldJobs({ defer: async () => {} });
     expect(out.released).toEqual(["gen_order_slot"]);
     expect(await status("gen_order_first")).toMatchObject({ status: "held", error: expect.any(String) });
-    // The 2-credit take would fit the 5 left, but it does not jump the line.
+    // The 1.5-credit take would fit the 5 left, but it does not jump the line.
     expect(await status("gen_order_small")).toMatchObject({ status: "held", error: null });
     expect(await metered("gen_order_small")).toBeUndefined();
   });

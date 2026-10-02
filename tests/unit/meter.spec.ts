@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /**
  * The meter against a throwaway file database: the same id written twice
@@ -13,7 +14,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-meter-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 
 const workspace = (over: Partial<TenantWorkspace>): TenantWorkspace => ({
   id: "ws_unit",
@@ -82,10 +83,10 @@ test("one id, one row: the completion updates the running event", async () => {
   const r = rows.rows[0] as Record<string, unknown>;
   expect(r.status).toBe("succeeded");
   expect(Number(r.engine_cost_usd)).toBeCloseTo(2.9, 6);
-  expect(Number(r.billed_credits)).toBe(44);
+  expect(Number(r.billed_credits)).toBe(43.5);
   expect(r.project_id).toBe("p1");
   expect(Number(r.duration_ms)).toBe(40_000);
-  expect(await creditsUsed("ws_unit")).toBe(44);
+  expect(await creditsUsed("ws_unit")).toBe(43.5);
   const s = await meterSummary("ws_unit");
   expect(s.jobs).toBe(1);
   expect(s.byEngine[0].engine).toBe("byteplus");
@@ -188,8 +189,8 @@ test("changing vendor keys while a job runs cannot change who funds its complete
       Number(r.billed_credits),
     ]),
   ).toEqual([
-    ["key_added", 1, 17],
-    ["key_removed", 1, 17],
+    ["key_added", 1, 16.5],
+    ["key_removed", 1, 16.5],
   ]);
 });
 
@@ -205,6 +206,7 @@ test('direct OpenAI funding is separate from Gateway and provider changes fail b
   const direct = workspace({ keys: { openai: 'workspace-openai' } });
   await runInTenant(direct, () => meter({ id: 'meter-direct-byok', kind: 'text', engine: 'openai', model: 'openai/gpt-6-astra', status: 'running', engineCostUsd: .10 }));
   const rows = await platformDb().execute("SELECT id,paid_by_platform,billed_credits FROM meter_events WHERE id IN ('meter-direct-openai','meter-direct-byok') ORDER BY id");
-  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 1, billed_credits: 2 });
+  /* Charged in tenths: 1.5 credits at this file's price, never rounded up to a whole credit. */
+  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 1, billed_credits: 1.5 });
   expect(rows.rows[1].paid_by_platform).toBe(1);
 });

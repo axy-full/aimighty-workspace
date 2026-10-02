@@ -89,7 +89,7 @@ async function loseNextReply(page: Page) {
   return () => landed[0] ?? "";
 }
 
-const creditsOn = async (button: Locator) => Number(/(\d[\d,]*) cr/.exec((await button.textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
+const creditsOn = async (button: Locator) => Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await button.textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
 
 test("a canvas node whose run reply was lost is followed by the next Run, never run twice", async ({ page }, info) => {
   test.setTimeout(240_000);
@@ -169,7 +169,7 @@ test("the phone board's Apply follows a take whose reply was lost, and never sen
   await sheet.getByRole("option").nth(1).click();
   await sheet.getByRole("radio", { name: /^Apply to draft · 1/ }).click();
   const apply = page.locator("[data-apply]");
-  await expect(apply).toContainText(/Apply v2 to draft\s*\d+ cr/);
+  await expect(apply).toContainText(/Apply v2 to draft\s*\d[\d,]*(?:\.\d)? cr/);
   const price = await creditsOn(apply);
 
   const landedId = await loseNextReply(page);

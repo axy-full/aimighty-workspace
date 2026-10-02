@@ -140,9 +140,9 @@ async function rigInspector(page: Page): Promise<Locator> {
 
 async function rigPrice(body: Locator): Promise<number> {
   const button = body.locator(".pxw-insp-generate");
-  await expect(button).toHaveText(/^Generate take · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(button).toHaveText(/^Generate take · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   await expect(button).toBeEnabled();
-  return Number((await button.textContent())!.replace(/.*· /, "").replace(/\D/g, ""));
+  return Number((await button.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
 }
 
 /** A Rig take of the shot, pressed once and lost; then the shot is edited (a new note, one step longer). */
@@ -212,7 +212,7 @@ test("Studio's Recover submitted take never re-sends a Rig take that never reach
 
   /* Let go: the dialog starts again from the node as it is now, with its fresh price on the button. */
   await expect(dialog.getByRole("status").filter({ hasText: "Your last Generate never reached the server. Nothing was charged for it." })).toBeVisible();
-  const generate = dialog.getByRole("button", { name: /^Generate · \d+ cr estimated$/ });
+  const generate = dialog.getByRole("button", { name: /^Generate · \d[\d,]*(?:\.\d)? cr estimated$/ });
   await expect(generate).toBeEnabled({ timeout: 60_000 });
   await expect(dialog.getByLabel("Generation direction")).toHaveValue(new RegExp(AFTER.replace(/\./g, "\\.")));
   await expect.poll(() => claimOf(page, project.id, SHOT)).toBeNull();
@@ -228,7 +228,7 @@ test("Studio's Recover submitted take never re-sends a Rig take that never reach
   expect({ made: books.jobs.length, billed: books.charges.length }).toEqual({ made: 0, billed: 0 });
 
   /* A new take goes only from the priced button: once, under a new key, at that price. */
-  const shown = Number((await generate.textContent())!.replace(/\D/g, ""));
+  const shown = Number((await generate.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
   const again = sent.length;
   await generate.click();
   await expect(dialog).not.toBeVisible({ timeout: 60_000 });
@@ -291,9 +291,9 @@ async function lostSoundEffect(page: Page, project: Project, scope: string, sent
   const landedId = await loseNext(page, "**/api/audio", how);
   await panel.getByLabel("Describe the sound", { exact: true }).fill(SOUND_BEFORE);
   const generate = panel.locator("[data-sound-generate]");
-  await expect(generate).toHaveText(/^Generate sound effect · \d+ cr$/, { timeout: 60_000 });
+  await expect(generate).toHaveText(/^Generate sound effect · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   await expect(generate).toBeEnabled();
-  const credits = Number((await generate.textContent())!.replace(/\D/g, ""));
+  const credits = Number((await generate.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
   await generate.click();
   await expect.poll(() => sent.filter((s) => s.path === "/api/audio").length, { timeout: 60_000 }).toBe(1);
   const first = sent.find((s) => s.path === "/api/audio")!;
@@ -342,9 +342,9 @@ test("Edit & Sound's recovery shows the stored request, never re-sends it when i
   /* The form is the person's again; what goes is what is on screen, once, at the price then on the button. */
   await expect(script).toBeEnabled();
   await script.fill(SOUND_AFTER);
-  await expect(recover).toHaveText(/^Generate sound effect · \d+ cr$/, { timeout: 60_000 });
+  await expect(recover).toHaveText(/^Generate sound effect · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   await expect(recover).toBeEnabled();
-  const shown = Number((await recover.textContent())!.replace(/\D/g, ""));
+  const shown = Number((await recover.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
   const again = sent.length;
   await recover.click();
   await expect(panel.getByRole("status")).toContainText("Sound effect submitted", { timeout: 60_000 });
@@ -381,7 +381,7 @@ test("Edit & Sound's recovery follows a sound effect that reached the server wit
   const landed = panel.getByRole("alert");
   const stays = "Sound effect is in the library, not on the timeline: the cut is empty. Add it from Sound mix once the cut has shots.";
   await expect(landed).toHaveText(stays, { timeout: 60_000 });
-  await expect(recover).toHaveText(/^Generate sound effect · \d+ cr$/, { timeout: 60_000 });
+  await expect(recover).toHaveText(/^Generate sound effect · \d[\d,]*(?:\.\d)? cr$/, { timeout: 60_000 });
   await expect(landed).toHaveText(stays);
   await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
   expect(sent.slice(mark).map((s) => s.path)).toEqual(["/api/generate/check"]);

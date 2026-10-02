@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { askForLegacyShell } from "./helpers/legacyShell";
+import { isCreditAmount } from "../lib/creditTerms";
 
 test("Gen Seedance Edit recovers a lost submission after returning to Studio without buying a second edit", async ({
   page,
@@ -475,7 +476,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await page.getByLabel("First frame", { exact: true }).selectOption("");
   await expect(primary).toBeEnabled();
   await expect(primary).toContainText(/\d+ cr/);
-  const beforeClip = Number((await primary.innerText()).match(/(\d+) cr/)![1]);
+  const beforeClip = Number((await primary.innerText()).match(/(\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   const clip = await readFile("public/fixtures/clip.mp4");
   await referencePicker.setInputFiles({
     name: "clip-3.mp4",
@@ -498,7 +499,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   ).toBeVisible();
   await expect(primary).toBeEnabled();
   const quotedWithClip = Number(
-    (await primary.innerText()).match(/(\d+) cr/)![1],
+    (await primary.innerText()).match(/(\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""),
   );
   expect(quotedWithClip).toBeGreaterThan(beforeClip);
   await primary.click();
@@ -595,7 +596,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     expect(request.key).toBeTruthy();
     expect(request.workspace).toBe(account.workspace.id);
     expect(request.actor).toBe(me.email);
-    expect(Number.isInteger(request.body.maxCredits)).toBeTruthy();
+    expect(isCreditAmount(request.body.maxCredits)).toBeTruthy();
   }
   expect(new Set(submissions.map((item) => item.key)).size).toBe(5);
   expect(errors).toEqual([]);

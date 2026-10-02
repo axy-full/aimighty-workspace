@@ -13,13 +13,13 @@ test("the gate: raw and structured prompts never refine; a thin idea does; a fil
   expect(promptRichness("golden hour, 35mm, handheld").score).toBe(3);
 });
 
-test("one writer call is priced from the model's rates, and lands as a whole credit", () => {
+test("one writer call is priced from the model's rates, and lands as a tenth of a credit", () => {
   const usd = estimateRefineUsd("anthropic/claude-sonnet-5", 60, 1500)!;
   const rate = rateFor("anthropic/claude-sonnet-5")!;
   const expected = ((SYSTEM_TOKENS + Math.ceil(1500 / 4) + Math.ceil(60 / 4)) * rate.input + OUT_TOKENS * rate.output) / 1e6;
   expect(Math.abs(usd - expected)).toBeLessThan(1e-4);
   expect(usd).toBeGreaterThan(0.001); expect(usd).toBeLessThan(0.05);
-  expect(billCredits(usd, "text")).toBe(1);
+  expect(billCredits(usd, "text")).toBe(0.1);
   expect(estimateRefineUsd("claude-sonnet-5", 60)).toBe(estimateRefineUsd("anthropic/claude-sonnet-5", 60));
   expect(estimateRefineUsd("nope", 60)).toBeNull();
 });

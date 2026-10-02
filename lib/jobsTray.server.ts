@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { listGenerations, type Generation } from "./jobs";
 import { creditsApply } from "./credits";
+import { ceilDeci, fromDeci } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant } from "./tenant";
 import { CONSUMER_CAPACITY_WINDOW_MS, consumerJobsReady } from "./higgsfield-consumer/jobs";
@@ -85,7 +86,7 @@ async function ledgerFor(rows: Generation[], inCredits: boolean, workspaceId: st
          The tray uses that quote; a price that moves before Release is refused with the new figure. */
       const held = (g.params.held ?? {}) as { needs?: unknown; estUsd?: unknown };
       const figure = Number(inCredits ? held.needs : held.estUsd);
-      out.set(g.id, { unit, reserved: null, charged: null, needs: Number.isFinite(figure) && figure > 0 ? (inCredits ? Math.ceil(figure) : figure) : null });
+      out.set(g.id, { unit, reserved: null, charged: null, needs: Number.isFinite(figure) && figure > 0 ? (inCredits ? fromDeci(ceilDeci(figure)) : figure) : null });
     } else if (!ENGINE_SETTLED.includes(g.status)) {
       out.set(g.id, { unit, reserved: running ? (inCredits ? m!.credits : m!.usd) : null, charged: null, needs: null });
     } else if (inCredits) {

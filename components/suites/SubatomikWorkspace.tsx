@@ -1,5 +1,6 @@
 "use client";
 import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
+import { isCreditAmount } from "@/lib/creditTerms";
 /* eslint-disable @next/next/no-img-element -- Private originals need the browser's authenticated same-origin request. */
 
 import { useEffect, useRef, useState } from "react";
@@ -606,8 +607,7 @@ function Studio({
         );
       if (
         !record(value) ||
-        !Number.isSafeInteger(value.estimatedCredits) ||
-        Number(value.estimatedCredits) < 0 ||
+        !isCreditAmount(value.estimatedCredits) ||
         typeof value.fingerprint !== "string" ||
         !value.fingerprint ||
         typeof value.price !== "number" ||

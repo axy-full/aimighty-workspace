@@ -30,6 +30,7 @@ import { CREW } from './crew';
 import { projectSchema } from './studio-schema';
 import type { Plan, Project } from './studio';
 import { requireTenant, type TenantToken } from '../tenant';
+import { isCreditAmount, toDeci } from "../creditTerms";
 import { plannerMemory } from '../atomikMemory';
 import { MEMORY_ABOUT, type PlannerMemoryItem } from '../atomikMemoryText';
 
@@ -46,7 +47,7 @@ export const atomikRequestSchema = z.object({
   // Optional preserves fingerprints and exact recovery bodies created before effort controls.
   effort: z.string().min(1).max(40).optional(),
   refs: z.array(z.string().min(1).max(100)).max(12).default([]),
-  maxCredits: z.number().int().min(0).max(10000).optional(),
+  maxCredits: z.number().min(0).max(10000).refine(isCreditAmount).optional(),
   videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[\w-]{1,100}$/), timeSeconds: z.number().finite().min(0).max(3600), durationSeconds: z.number().finite().min(0.1).max(60).optional() }).strict()).max(REFERENCE_AD_FRAMES).optional(),
 }).strict();
 export type AtomikRequest = z.infer<typeof atomikRequestSchema>;
@@ -358,7 +359,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
     providerBody = JSON.stringify(envelope);
   }
   const estimateCredits = paidByPlatform(textVendor(model.id)) ? billCredits(estimateUsd, 'text') : 0;
-  if (input.maxCredits != null && estimateCredits > input.maxCredits) {
+  if (input.maxCredits != null && toDeci(estimateCredits) > toDeci(input.maxCredits)) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
   }
   return { project, model, providerBody, estimateUsd, estimateCredits, budgets, maxTokens, visualCount: references.images.length };

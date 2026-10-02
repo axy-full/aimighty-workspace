@@ -652,8 +652,9 @@ test("Atomik builds, a master is locked (by Atomik for Ana, and by Ana), then th
   });
 });
 
-test("the cut-out is priced by the server exactly as it is sent: about 1 cr for one still, refused without one", async () => {
+test("the cut-out is priced by the server exactly as it is sent: the minimum charge for one still, refused without one", async () => {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
+  const { fromDeci } = await import("../../lib/creditTerms");
   const { runInTenant } = await import("../../lib/tenant");
   const { ready, db, now } = await import("../../lib/db");
   await platformReady();
@@ -678,7 +679,8 @@ test("the cut-out is priced by the server exactly as it is sent: about 1 cr for 
       const prepared = await prepareGeneration(body, actor);
       expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
       const quote = prepared.ok ? prepared.value.quote : null;
-      expect(quote).toMatchObject({ estimatedCredits: 1, unit: "cr" });
+      /* One still costs less than the minimum charge: one tenth of a credit at the default price (one whole credit at US$0.10). */
+      expect(quote).toMatchObject({ estimatedCredits: fromDeci(1), price: fromDeci(1), unit: "cr" });
       expect(quote?.fingerprint).toMatch(/^[a-f0-9]{64}$/);
       /* No still, no price, nothing to send. */
       const none = await prepareGeneration({ ...body, references: [] }, actor);

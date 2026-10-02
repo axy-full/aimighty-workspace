@@ -397,6 +397,9 @@ test("the button's total is the take's price summed per take, and a batch of one
   expect(batchTotal(18, 2, [18, 19])).toBe(37);
   /* Summed the way the fresh total is summed, so an unchanged fractional price compares equal. */
   expect(batchGate(batchTotal(0.1, 3), [0.1, 0.1, 0.1]).ok).toBe(true);
+  /* Credits are tenths: a total the button added in another order is the same price, and a moved tenth is not. */
+  expect(batchGate(0.6, [0.1, 0.2, 0.3]).ok).toBe(true);
+  expect(batchGate(0.6, [0.1, 0.2, 0.4]).ok).toBe(false);
   expect(batchGate(null, [9, 9]).ok).toBe(false);
 });
 

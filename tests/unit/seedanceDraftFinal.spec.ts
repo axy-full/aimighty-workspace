@@ -6,6 +6,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /**
  * Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p draft, then a 1080p
@@ -28,7 +29,7 @@ process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "draft-final-unit-keyring-not-a-real-secret";
 process.env.BLOB_READ_WRITE_TOKEN = "";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 const SD25 = "dreamina-seedance-2-5-260628";

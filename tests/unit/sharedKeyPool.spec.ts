@@ -364,8 +364,9 @@ test("no double send: two releases racing for one waiting take start it once and
   expect(results.flatMap((r) => r.released)).toEqual(["race_take"]);
   const row = await metered("race_take");
   expect(row).toMatchObject({ status: "running" });
-  // One reservation: the balance moved by that take's credits, once.
-  expect(before - (await inside(ws, async () => (await creditState())!.balance))).toBe(Number(row.billed_credits));
+  // One reservation: the balance moved by that take's credits, once (in whole tenths, as the ledger counts).
+  const after = await inside(ws, async () => (await creditState())!.balance);
+  expect(Math.round(before * 10) - Math.round(after * 10)).toBe(Math.round(Number(row.billed_credits) * 10));
   // A take already sent is never parked again behind the pool.
   const { holdForPool, heldInfo } = await import("../../lib/held");
   const { db } = await import("../../lib/db");

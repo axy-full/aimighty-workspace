@@ -1,5 +1,7 @@
 import { platformDb, platformReady, newId, now, getWorkspace, workspaceAdmins } from "./platform";
 import { packById, capBonus } from "./packs";
+import { creditUsd } from "./creditTerms";
+import { unitOf } from "./creditUnits";
 import { runInTenant } from "./tenant";
 import { releaseHeldJobs } from "./held";
 import { sendMail, mailConfigured } from "./mail";
@@ -73,9 +75,11 @@ export async function requestTopup(opts: { workspaceId: string; packId: string; 
   const id = newId("tu");
   const ts = now();
   await platformDb().execute({
-    sql: `INSERT INTO topup_requests (id, workspace_id, pack_id, label, credits, bonus_credits, usd, status, note, requested_by, created_at)
-          VALUES (?,?,?,?,?,?,?,'requested',?,?,?)`,
-    args: [id, opts.workspaceId, pack.id, pack.label, pack.credits, pack.bonus, pack.usd, (opts.note ?? "").slice(0, 300), opts.requestedBy, ts],
+    /* The price of a credit the pack was priced at is frozen with it, so a pack asked
+       for before a price change is granted at the value it was sold at. */
+    sql: `INSERT INTO topup_requests (id, workspace_id, pack_id, label, credits, bonus_credits, usd, status, note, requested_by, created_at, unit_usd)
+          VALUES (?,?,?,?,?,?,?,'requested',?,?,?,?)`,
+    args: [id, opts.workspaceId, pack.id, pack.label, pack.credits, pack.bonus, pack.usd, (opts.note ?? "").slice(0, 300), opts.requestedBy, ts, creditUsd()],
   });
   return {
     id, workspaceId: opts.workspaceId, packId: pack.id, label: pack.label, credits: pack.credits, bonus: pack.bonus, usd: pack.usd,
@@ -147,6 +151,8 @@ export async function decideTopupCredits(opts: { id: string; action: "approve" |
     const rows = await tx.execute({ sql: `SELECT * FROM topup_requests WHERE id=?`, args: [opts.id] });
     if (!rows.rows[0]) throw new Error("No such request.");
     const req = rowToRequest(rows.rows[0] as Record<string, unknown>);
+    // Granted in the unit the pack was priced at (NULL: a request from before units, at the legacy price).
+    const unit = unitOf((rows.rows[0] as Record<string, unknown>).unit_usd);
     const next = opts.action === "approve" ? "approved" : "declined";
     if (req.status === next) return { request: req, changed: false };
     if (!nextStatus(req.status, opts.action)) throw new Error(`This request was already ${req.status}.`);
@@ -165,8 +171,8 @@ export async function decideTopupCredits(opts: { id: string; action: "approve" |
       if (!Number.isSafeInteger(req.credits) || req.credits <= 0 || !Number.isFinite(req.usd) || req.usd <= 0) throw new Error("This pack has invalid billing terms.");
       for (const [kind, amount] of [["purchase", req.credits], ["bonus", req.bonus]] as const) {
         if (!amount) continue;
-        await tx.execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)`,
-          args: [`topup:${req.id}:${kind}`, req.workspaceId, amount, `${req.label} pack · ${amount.toLocaleString("en-US")} ${kind === "bonus" ? "bonus " : ""}credits`, kind, opts.by, ts] });
+        await tx.execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)`,
+          args: [`topup:${req.id}:${kind}`, req.workspaceId, amount, `${req.label} pack · ${amount.toLocaleString("en-US")} ${kind === "bonus" ? "bonus " : ""}credits`, kind, opts.by, ts, unit] });
       }
       await syncBillingLedger(tx, req.workspaceId, ts);
     }

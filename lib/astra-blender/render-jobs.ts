@@ -12,7 +12,7 @@ import { uploadReservationsReady } from '../uploadReservations';
 import { reserveGenerationSpend } from '../generationRequests';
 import { meter, assertMeterFunding, type MeterEvent } from '../meter';
 import { platformDb } from '../platform';
-import { billCredits } from '../creditTerms';
+import { billCredits, isCreditAmount } from '../creditTerms';
 import { billingTransaction } from '../billingLedger';
 import { resolveRecoveryJobTx } from '../recovery';
 import { engineMock } from '../mock';
@@ -26,7 +26,7 @@ import type { AstraRenderJob, AstraRenderRequest, AstraRenderQuote, AstraRenderS
 import type { Asset } from '../workbench/studio';
 const initialized = new WeakMap<Client, Promise<void>>();
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const astraRenderRequestSchema = z.object({ projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), source: z.enum(['scene', 'native']), sourceDigest: z.string().regex(/^[a-f0-9]{64}$/), quoteOnly: z.boolean().optional(), quoteDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(100000).optional() }).strict();
+export const astraRenderRequestSchema = z.object({ projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), source: z.enum(['scene', 'native']), sourceDigest: z.string().regex(/^[a-f0-9]{64}$/), quoteOnly: z.boolean().optional(), quoteDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().min(0).max(100000).refine(isCreditAmount).optional() }).strict();
 export class AstraRenderError extends Error {
     constructor(message: string, public status = 400) { super(message); }
 }

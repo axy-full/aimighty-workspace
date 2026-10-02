@@ -21,7 +21,7 @@ import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, ty
  * engine health, margin. The workspace's own tables keep the product data.
  *
  * `engine_cost_usd` is what the vendor charged; `billed_credits` is what
- * the workspace pays — whole credits at the engine's margin — and only when
+ * the workspace pays — credits, to a tenth, at the engine's margin — and only when
  * the platform's key paid the vendor. A workspace on its own key for that
  * vendor is metered at zero credits: the money was theirs.
  */
@@ -129,7 +129,8 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         const billed = cost == null ? null : !fundedByPlatform || e.unbilled ? 0
           : row && row.status !== "running" && row.status === e.status && Number(row.engine_cost_usd) === cost
             ? Number(row.billed_credits ?? 0) : creditsAtTerms(cost, terms);
-        await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
+        // In the unit this job's terms were admitted at, like its receipt (lib/billingLedger.ts setCreditDebitTx).
+        await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running", terms.creditUsd);
         await tx.execute({
         sql: `INSERT INTO meter_events
                 (id, workspace_id, project_id, shot_id, kind, engine, model, status,

@@ -10,6 +10,7 @@
  */
 
 import { displayModelName, getModel } from "./models";
+import { isCreditAmount, creditsFigure } from "./creditTerms";
 
 /**
  * The longest wait_for_render may hold its request open. The route ends at
@@ -115,7 +116,7 @@ export const TOOLS: ToolDef[] = [
 ];
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
-const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
+const cr = (n: number | null | undefined) => `${creditsFigure(Number(n ?? 0))} cr`;
 
 /* A take arrives in the one unit its workspace pays in (lib/jobs.ts rowToGeneration): credits billed
    on the platform's keys, its own vendors' dollars otherwise. The tools print whichever came. */
@@ -246,7 +247,7 @@ export async function runTool(
          request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
       const quote = (await call("/api/generate/quote", { method: "POST", body })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
       const credits = quote.estimatedCredits, price = quote.price;
-      if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price))
+      if (!isCreditAmount(credits) || typeof price !== "number" || !Number.isFinite(price))
         throw new Error("This render could not be priced, so nothing was started.");
       const out = (await call("/api/generate", {
         method: "POST",

@@ -133,6 +133,7 @@ import {
   admitPrepared,
   assertAdmissionActor,
 } from "./admissionSupport";
+import { isCreditAmount } from "./creditTerms";
 
 /**
  * The shot-control chips, kept as data and not just baked into the prose, so
@@ -446,7 +447,7 @@ export async function executeGenerationAdmission(
     if (
       body.maxCredits != null &&
       (typeof body.maxCredits !== "number" ||
-        !Number.isInteger(body.maxCredits) ||
+        !isCreditAmount(body.maxCredits) ||
         body.maxCredits < 0)
     ) {
       return admissionReply(

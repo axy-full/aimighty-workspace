@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { creditsFigure } from "@/lib/creditTerms";
 export type WorkbenchAccount = {
   name: string;
   mfaRequired?: boolean;
@@ -104,7 +105,7 @@ export default function WorkspaceMenu({
       >
         <span className="studio-credit-label">Credits</span>
         {typeof account.credits?.balance === "number"
-          ? `${Math.round(account.credits.balance).toLocaleString()} cr`
+          ? `${creditsFigure(account.credits.balance)} cr`
           : "Billing"}
       </button>}
       <DropdownMenu>

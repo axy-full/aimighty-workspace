@@ -151,13 +151,13 @@ test("shot list, selection, edits that persist and a live estimate", async ({ pa
 
   /* Duration moves the estimate. */
   const estimate = page.getByTestId("shot-estimate").locator(".pxw-insp-estimate-value");
-  await expect(estimate).toHaveText(/^\d[\d,]* cr$/);
-  const before = Number((await estimate.textContent())!.replace(/\D/g, ""));
+  await expect(estimate).toHaveText(/^\d[\d,]*(?:\.\d)? cr$/);
+  const before = Number((await estimate.textContent())!.replace(/[^\d.]/g, ""));
   await expect(page.getByTestId("shot-estimate")).toContainText(/[\d,]+ tokens · billed on settle/);
   await page.getByRole("button", { name: "Longer" }).click();
   await page.getByRole("button", { name: "Longer" }).click();
   await expect(page.getByTestId("shot-duration")).toHaveText("7s");
-  await expect.poll(async () => Number((await estimate.textContent())!.replace(/\D/g, ""))).toBeGreaterThan(before);
+  await expect.poll(async () => Number((await estimate.textContent())!.replace(/[^\d.]/g, ""))).toBeGreaterThan(before);
   await expect(page.locator(".pxw-rig-row").nth(1).locator(".pxw-rig-dur")).toHaveText("7s");
 
   /* Edits persist through the revision-checked draft save. */
@@ -208,9 +208,9 @@ test("Generate re-quotes, dispatches a mocked render, files a take, and still wo
   await expect(page.getByTestId("inspector-title")).toHaveText("Opening wide");
 
   /* The exact live quote is on the button. */
-  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]*(?:\.\d)? cr$/ });
   await expect(header).toBeEnabled();
-  const credits = Number((await header.textContent())!.replace(/.*· /, "").replace(/\D/g, ""));
+  const credits = Number((await header.textContent())!.replace(/.*· /, "").replace(/[^\d.]/g, ""));
   await expect(page.getByRole("button", { name: `Generate take · ${credits.toLocaleString("en-US")} cr` })).toBeEnabled();
 
   await header.click();
@@ -349,9 +349,9 @@ test("a shot the composer named with its prompt renders as \"Your take\", never 
   const { project } = await seeded(page, (nodes) => [...nodes, shot("rig-p", title, prompt, 1300)]);
   await page.goto(rigUrl(project.id, "rig-p"));
   await expect(page.getByTestId("inspector-title")).toHaveText(title);
-  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]*(?:\.\d)? cr$/ });
   await expect(header).toBeEnabled();
   await header.click();
   /* The real (mocked) job finishes: the toast names the take the way Gen's does, not "…desk lamp in rendered". */
-  await expect(page.locator(".pxw-toast").filter({ hasText: /rendered/ })).toHaveText(/^Your take rendered · \d[\d,]* cr settled\. Filed in Takes for review\.$/, { timeout: 90_000 });
+  await expect(page.locator(".pxw-toast").filter({ hasText: /rendered/ })).toHaveText(/^Your take rendered · \d[\d,]*(?:\.\d)? cr settled\. Filed in Takes for review\.$/, { timeout: 90_000 });
 });

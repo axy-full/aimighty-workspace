@@ -4,7 +4,7 @@
  * Money, in whatever this workspace pays in.
  *
  * A workspace on the platform's keys buys credits, and every figure it
- * sees is in whole credits at the engine's margin, rounded up — the rule
+ * sees is in credits at the engine's margin, rounded up to a tenth — the rule
  * the metering layer bills by. The house workspace (lib/houseWorkspace.ts)
  * is never billed in credits and sees the engines' dollars. A list is summed
  * take by take, never rounded once at the end; a server aggregate carries
@@ -12,6 +12,8 @@
  */
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
+import { ceilDeci, creditsFigure, fromDeci } from "@/lib/creditTerms";
+import { roundToTenth } from "@/lib/creditUnits";
 import { usd } from "@/lib/format";
 import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
@@ -49,13 +51,13 @@ export type Money = {
   approx: (usdAmount: number) => string;
 };
 
-const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
+/* To a tenth, one decimal only when it is not zero: "12 cr", "12.3 cr" (lib/creditTerms.ts creditsFigure). */
+const cr = (n: number) => `${creditsFigure(n)} cr`;
 
-/** Credits as a number for a sentence: whole above ten, one decimal under. */
+/** Credits as a number for a sentence: to a tenth, one decimal only when it is not zero; a trace reads "<0.1". */
 export function creditsNumber(n: number): string {
   if (n > 0 && n < 0.05) return "<0.1";
-  const v = Math.abs(n) < 10 ? Math.round(n * 10) / 10 : Math.round(n);
-  return v.toLocaleString("en-US");
+  return creditsFigure(n);
 }
 
 export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
@@ -93,8 +95,9 @@ export function useMoney(): Money {
        It used to convert — `billCreditsWith(usd, marginFor(engine, margins), per)`
        — which meant the browser held both the vendor's dollars and the margin
        table, the two things that must never leave the server. */
-    const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
-    const takeCredits = (g: Priced) => providerCreditQuote(g.providerCreditQuote) ? 0 : Math.round(g.creditsBilled ?? 0);
+    /* A price rounds UP to the next tenth, never below one tenth (lib/creditTerms.ts billDeciWith). */
+    const whole = (n: number) => (n > 0 ? fromDeci(Math.max(1, ceilDeci(n))) : 0);
+    const takeCredits = (g: Priced) => providerCreditQuote(g.providerCreditQuote) ? 0 : roundToTenth(g.creditsBilled ?? 0);
     const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,

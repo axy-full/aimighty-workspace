@@ -1,6 +1,6 @@
 import { currentTenant, type TenantWorkspace } from "./tenant";
 import { paidByPlatform } from "./platformSpend";
-import { billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
+import { billCreditsWith, creditUsd, creditsFigure, floorDeci, fromDeci, type CreditState } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
@@ -36,9 +36,9 @@ export async function creditState(): Promise<CreditState | null> {
  * A workspace billed in credits is quoted what it will be billed. The house
  * workspace is billed nothing in credits — its quote states the engines'
  * dollars — and a credit count at the platform's rate beside those dollars
- * would state the margin. Its approval counts the same dollars in whole
- * credits at the price of a credit instead, so the ceiling still holds and
- * says nothing else.
+ * would state the margin. Its approval counts the same dollars in credits,
+ * rounded up to a tenth at the price of a credit (billCreditsWith, no margin),
+ * so the ceiling still holds and says nothing else.
  *
  * `engine` is the margin key, or the exact terms the job's reservation will
  * charge (lib/billingTerms.ts currentBillingTerms): given those, the quote is
@@ -48,11 +48,10 @@ export function quotedCredits(usd: number, engine?: EstimateTerms): number {
   return creditsApply(currentTenant()?.workspace) ? creditsFor(usd, engine) : billCreditsWith(usd, 1, creditUsd());
 }
 
-/** Credits, written for a sentence: one decimal under ten, whole above. */
+/** Credits, written for a sentence: to a tenth, one decimal only when it is not zero; a trace reads "<0.1". */
 export function fmtCredits(n: number): string {
   if (n > 0 && n < 0.05) return "<0.1";
-  const v = Math.abs(n) < 10 ? Math.round(n * 10) / 10 : Math.round(n);
-  return v.toLocaleString("en-US");
+  return creditsFigure(n);
 }
 
 /**
@@ -69,12 +68,13 @@ export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: Es
   if (!state) return { ok: true };
   const need = creditsFor(estUsd, engine);
   if (state.balance <= 0 || state.balance < need) {
-    const left = Math.max(0, Math.floor(state.balance));
+    /* What is left, to the tenth a charge is made in: 0.5 left is not "0 left". */
+    const left = Math.max(0, fromDeci(floorDeci(state.balance)));
     return {
       ok: false, status: 402,
       error: need > 0 && left > 0
-        ? `Out of credits: this needs ${need}, ${left} left. Top up in Settings › Credits.`
-        : `Out of credits (${left} left). Top up in Settings › Credits.`,
+        ? `Out of credits: this needs ${creditsFigure(need)}, ${creditsFigure(left)} left. Top up in Settings › Credits.`
+        : `Out of credits (${creditsFigure(left)} left). Top up in Settings › Credits.`,
     };
   }
   return { ok: true };

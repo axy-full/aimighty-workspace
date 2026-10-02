@@ -48,7 +48,7 @@ test("a reservation settles on its admitted terms after configuration changes", 
   await runInTenant(workspace("studio_b"), () => meter({ ...event, id: "new-terms", status: "succeeded" }));
   const fresh = (await platformDb().execute("SELECT billed_credits,credit_usd FROM meter_events WHERE id='new-terms'")).rows[0];
   expect(Number(fresh.credit_usd)).toBe(0.4);
-  expect(Number(fresh.billed_credits)).toBe(2);
+  expect(Number(fresh.billed_credits)).toBe(1.5);
 });
 
 test("direct meter starts also freeze terms, and duplicate completions preserve their receipt", async () => {

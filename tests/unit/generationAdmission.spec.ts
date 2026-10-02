@@ -9,6 +9,10 @@ import type {
   PreparedAdmission,
 } from "../../lib/admissionTypes";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-admission-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -657,7 +661,7 @@ test("Topaz prices the original image, retains settings for its worker and rejec
   const body = { model: TOPAZ_IMAGE_MODEL, prompt: "", references: [{ uploadId: "topaz-original" }], topaz: { ...DEFAULT_TOPAZ_IMAGE, factor: 4 }, resolution: "24MP", projectId: "project" };
   const prepared = value(await service.gen.prepareGeneration(body, actor));
   expect(prepared.compiled).toMatchObject({ params: { resolution: "48MP", topazOutput: { width: 8000, height: 4000 }, topaz: { factor: 4, model: "High Fidelity V2", faceEnhancement: false } } });
-  expect(prepared.quote.estimatedCredits).toBe(3);
+  expect(prepared.quote.estimatedCredits).toBe(2.4);
   expect(await rows()).toHaveLength(0); expect(await meters()).toHaveLength(0);
   const rejected = await route("generation", service).POST(request("generate", { ...body, maxCredits: 2 }, "topaz-too-low"));
   expect(rejected.status).toBe(409); expect(dispatched).toHaveLength(0);
@@ -717,7 +721,7 @@ test("Astra quotes measured original bytes and explicit FPS, persists controls a
   const body={model:ASTRA_MODEL,task:"upscale",sourceUploadId:"astra-clip",prompt:"",refine:false,resolution:"1080p",duration:.01,fps60:false,astra:{...DEFAULT_ASTRA,fps:60},astraSource:{seconds:.01,width:1,height:1}};
   const prepared=value(await service.gen.prepareGeneration(body,actor));
   expect(prepared.compiled.params).toMatchObject({resolution:"4k",duration:1.5,fps60:true,astra:{...DEFAULT_ASTRA,fps:60},astraSource:{width:720,height:1280,seconds:1.5}});
-  expect(prepared.quote.estimatedCredits).toBe(23);
+  expect(prepared.quote.estimatedCredits).toBe(22.5);
   const quoted={...body,maxCredits:prepared.quote.estimatedCredits,quoteFingerprint:prepared.quote.fingerprint};
   const changed=await route("generation",service).POST(request("generate",{...quoted,astra:{...body.astra,creativity:.8}},"changed-astra"));
   expect(changed.status).toBe(409);expect(await rows()).toHaveLength(0);
@@ -762,7 +766,7 @@ test("Astra reconciles measured output below its quote, leases collection and re
     expect(edit).toMatchObject({ok:false,status:400});if(!edit.ok)expect(edit.body.error).toMatch(/at least 4 seconds/);
     const reuse=value(await service.gen.prepareGeneration({model:ASTRA_MODEL,task:"upscale",sourceGenId:id,prompt:"",refine:false,astra:DEFAULT_ASTRA},actor));
     expect(reuse.compiled.params).toMatchObject({astraSource:{width:720,height:1280,seconds:1.5}});
-    expect(Number((await meters())[0].engine_cost_usd)).toBeCloseTo(.45,8);expect((await meters())[0].billed_credits).toBe(7);
+    expect(Number((await meters())[0].engine_cost_usd)).toBeCloseTo(.45,8);expect((await meters())[0].billed_credits).toBe(6.8);
     await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);expect((await db().execute("SELECT * FROM generation_settlements")).rows).toHaveLength(1);
   }finally{release?.();engine.poll=original;}
 }));

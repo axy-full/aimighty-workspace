@@ -38,6 +38,7 @@ import { estimateVideo } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import Compare from "@/components/Compare";
 import { canCompare } from "@/lib/compare";
+import { creditsFigure, floorDeci, fromDeci } from "@/lib/creditTerms";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -450,7 +451,7 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
   }
   return (
     <div className="take-acts take-held">
-      <span className="text-[12.5px] text-mute">Needs {needs} cr{balance != null ? ` · ${Math.max(0, Math.floor(balance))} left` : ""}</span>
+      <span className="text-[12.5px] text-mute">Needs {creditsFigure(needs)} cr{balance != null ? ` · ${creditsFigure(fromDeci(floorDeci(Math.max(0, balance))))} left` : ""}</span>
       {covered
         ? <button type="button" className="btn-secondary !py-1 !text-[12.5px]" disabled={busy} onClick={release}>{busy ? "Releasing…" : "Release"}</button>
         : <Link href="/settings#credits" className="btn-secondary !py-1 !text-[12.5px]">Top up</Link>}

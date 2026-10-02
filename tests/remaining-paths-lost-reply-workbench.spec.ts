@@ -76,7 +76,7 @@ async function loseNextReply(page: Page) {
 }
 
 /** The figure in a button's own cost slot (its mono price), in credits. */
-const creditsOn = async (button: Locator) => Number(/(\d[\d,]*) cr/.exec((await button.locator(".ui-mono-cost").first().textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
+const creditsOn = async (button: Locator) => Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await button.locator(".ui-mono-cost").first().textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
 
 test("the Shots grid's Render sends the price on its button as the ceiling, and a second press after a lost reply follows the take instead of rendering it twice", async ({ page }) => {
   test.setTimeout(240_000);

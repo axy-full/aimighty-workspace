@@ -36,6 +36,7 @@ import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
 import { ENGINE_LABEL, type ShotProposal } from "@/lib/shotBuilder";
 import { useMoney } from "@/lib/price";
+import { chargedCredits } from "@/lib/shotListCost";
 
 type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
@@ -76,10 +77,10 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
   const target = runtimeTarget ?? scenes.reduce((a, s) => a + s.secs, 0);
   /* One take of each, in the workspace's unit, summed take by take as each is
-     billed (lib/price.ts): whole credits per take, or the vendors' dollars. */
+     billed (lib/price.ts): credits per take, to a tenth, or the vendors' dollars. */
   const takesTotal = (list: { planned: number | null; engine?: string | null }[]) => list.reduce((a, s) => {
     const n = takeCost(rates, s.planned, s.engine);
-    return a + (money.inCredits ? (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0) : n);
+    return a + (money.inCredits ? chargedCredits(n) : n);
   }, 0);
   const estimate = takesTotal(billable);
 

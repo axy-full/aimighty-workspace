@@ -17,6 +17,7 @@ import type { UploadedFile } from "@/lib/uploadClient";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
 import styles from "./gen.module.css";
 import edit from "./seedance-edit.module.css";
+import { isCreditAmount } from "@/lib/creditTerms";
 
 const DEFAULT_MODEL = "dreamina-seedance-2-5-260628";
 const EDIT_LABEL: Record<string, string> = { "dreamina-seedance-2-5-260628": "Seedance 2.5 Edit", "dreamina-seedance-2-0-260128": "Seedance 2.0 Edit" };
@@ -206,7 +207,7 @@ export default function SeedanceEdit({
       if (!response.ok)
         throw new Error(result.error || "The edit could not be quoted.");
       if (
-        !Number.isInteger(result.estimatedCredits) ||
+        !isCreditAmount(result.estimatedCredits) ||
         result.estimatedCredits < 0 ||
         !/^[a-f0-9]{64}$/.test(result.fingerprint) ||
         !Number.isFinite(result.price) ||

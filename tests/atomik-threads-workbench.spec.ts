@@ -2,6 +2,8 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { legacyShell } from "./helpers/legacyShell";
 import { newProject } from "../lib/workbench/studio";
 import { dimLabels, smallTargets } from "./phoneFloors";
@@ -32,8 +34,8 @@ async function seeded(page: Page, opts: { second?: boolean } = {}) {
   let tenantUrl: string;
   try {
     await platform.execute({
-      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
-      args: [randomUUID(), signed.workspace.id, 2000, "Local mock Atomik threads", "admin", "test", Date.now()],
+      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)",
+      args: [randomUUID(), signed.workspace.id, 2000, "Local mock Atomik threads", "admin", "test", Date.now(), creditUsd()],
     });
     tenantUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [signed.workspace.id] })).rows[0].db_url);
   } finally {
@@ -117,7 +119,7 @@ const sideways = (page: Page) => page.evaluate(() => document.documentElement.sc
 /** Ask Atomik in the open rail (or sheet): wait for the planning estimate for this production, then send at it. */
 async function ask(page: Page, surface: Locator, brief: string, production: string) {
   const field = surface.getByRole("textbox", { name: "Ask Atomik" });
-  const send = surface.getByRole("button", { name: /^Send · \d+ cr estimated/ });
+  const send = surface.getByRole("button", { name: /^Send · \d[\d,]*(?:\.\d)? cr estimated/ });
   await expect(async () => {
     const quoted = page.waitForResponse((r) => {
       const request = r.request();
@@ -261,7 +263,7 @@ test("threads in the rail and on a phone: an old link opens the production's con
 
   /* Continue in thread 2: quoted, then rendered under a key naming thread 2 alone; thread 1's step stays proposed. */
   const cont = checkpointOf(page).getByRole("button", { name: /^Continue/ }).first();
-  await expect(cont).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
   const rendered = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/generate", { timeout: 60_000 });
   await cont.click();
@@ -338,7 +340,7 @@ test("the Suites Agent page lists the project's threads; each shows its own plan
 
   /* Continue approves thread 1's step alone, at its quoted price, under a key naming thread 1. */
   const cont = view.getByTestId("atomik-thread-continue");
-  await expect(cont).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
   await floors(page, "[data-testid='atomik-threads-panel'] [data-testid='atomik-threads'], [data-testid='atomik-thread-checkpoint']", "[data-testid='atomik-threads-panel']");
   await sendTarget(page, panel);

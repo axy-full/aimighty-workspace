@@ -6,6 +6,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { monthLabel } from "../lib/usageLedgerTerms";
+import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
 import { newProject, type Project } from "../lib/workbench/studio";
 
 /**
@@ -56,12 +57,13 @@ async function seedMeter(workspaceId: string, userId: string) {
   const ids = { held: `gen_held_${tag}`, charged: `gen_charged_${tag}`, released: `gen_released_${tag}`, agent: `agent_${tag}`, ownKey: `gen_own_${tag}`, failedPaid: `gen_failpaid_${tag}`, neighbour: `gen_neighbour_${tag}` };
   const now = Date.now(), earlier = lastMonthAt();
   const rows: [string, string, string, string, string, string, number, number, number, string, number][] = [
-    [ids.held, workspaceId, "video", "fal", "fal-ai/kling-video/v3/standard", "running", 0.7777, 12, 1, userId, now - 1000],
-    [ids.charged, workspaceId, "video", "byteplus", SEEDANCE, "succeeded", 2.8667, 43, 1, userId, now - 2000],
+    /* Credits are charged in tenths of a credit: the meter holds 12.5 and 43.7 as they were billed. */
+    [ids.held, workspaceId, "video", "fal", "fal-ai/kling-video/v3/standard", "running", 0.7777, 12.5, 1, userId, now - 1000],
+    [ids.charged, workspaceId, "video", "byteplus", SEEDANCE, "succeeded", 2.8667, 43.7, 1, userId, now - 2000],
     [ids.released, workspaceId, "image", "google", "gemini-3.1-flash-image", "failed", 0, 0, 1, userId, now - 3000],
     [ids.agent, workspaceId, "text", "vercel", "anthropic/claude-sonnet-4.6", "failed", 0.3512, 0, 1, userId, now - 4000],
     [ids.ownKey, workspaceId, "image", "openai", "gpt-image-2.5-flare", "succeeded", 0.0421, 0, 0, userId, now - 5000],
-    [ids.failedPaid, workspaceId, "video", "byteplus", SEEDANCE, "failed", 1.3333, 20, 1, userId, now - 6000],
+    [ids.failedPaid, workspaceId, "video", "byteplus", SEEDANCE, "failed", 1.3333, 20.4, 1, userId, now - 6000],
     [ids.neighbour, `ws_neighbour_${tag}`, "video", "byteplus", SEEDANCE, "succeeded", 2.8667, 43, 1, "someone", now - 500],
   ];
   for (let i = 0; i < OLDER; i++) rows.push([`gen_older_${tag}_${String(i).padStart(2, "0")}`, workspaceId, "image", "google", "gemini-3.1-flash-image", "succeeded", 0.039, 1, 1, userId, earlier + i * 60_000]);
@@ -178,21 +180,23 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   const rows = ledger.getByTestId("ws-ledger-row");
   /* One page from the server, newest first; the neighbour's job is not here. */
   await expect(rows).toHaveCount(50);
-  await expect(page.getByTestId("ws-ledger-summary")).toHaveText(`All months · ${43 + 20 + OLDER} cr charged · 12 cr held while running · 3 not billed`);
+  await expect(page.getByTestId("ws-ledger-summary")).toHaveText(`All months · ${creditsFigure(fromDeci(toDeci(43.7) + toDeci(20.4) + toDeci(OLDER)))} cr charged · 12.5 cr held while running · 3 not billed`);
+  /* The ledger holds its figures in tenths inside its card, at every size. */
+  expect(await page.getByTestId("ws-ledger").evaluate((el) => el.scrollWidth <= el.clientWidth + 0.5), "the ledger fits its card").toBe(true);
   const row = (state: string) => ledger.locator(`[data-testid="ws-ledger-row"][data-state="${state}"]`);
   await expect(rows.first()).toHaveAttribute("data-state", "held");
   await expect(row("held")).toContainText("Kling 3.0");
-  await expect(row("held")).toContainText("12 cr");
+  await expect(row("held")).toContainText("12.5 cr");
   await expect(row("held")).toContainText("Held");
   await expect(row("held")).toContainText("Workbench Tester");
   await expect(row("charged").first()).toContainText("Seedance 2.5");
-  await expect(row("charged").first()).toContainText("43 cr");
+  await expect(row("charged").first()).toContainText("43.7 cr");
   await expect(row("failed-not-billed")).toHaveCount(2);
   await expect(row("failed-not-billed").first()).toContainText("Failed · not billed");
   await expect(row("failed-not-billed").nth(1)).toContainText(/^Atomik · /);
   await expect(row("own-key")).toContainText("Own key · not billed");
   await expect(row("failed-charged")).toContainText("Failed · charged");
-  await expect(row("failed-charged")).toContainText("20 cr");
+  await expect(row("failed-charged")).toContainText("20.4 cr");
 
   /* The next page on request: every job once. */
   await page.getByTestId("ws-ledger-more").click();
@@ -226,7 +230,7 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   await expect(connected).toHaveCount(0);
   await month.selectOption(seed.month);
   await expect(rows).toHaveCount(6);
-  await expect(page.getByTestId("ws-ledger-summary")).toHaveText(`${monthLabel(seed.month)} · 63 cr charged · 12 cr held while running · 3 not billed`);
+  await expect(page.getByTestId("ws-ledger-summary")).toHaveText(`${monthLabel(seed.month)} · 64.1 cr charged · 12.5 cr held while running · 3 not billed`);
   await shot(page, info, "ledger-month");
 
   /* The file follows the filter, in credits. */
@@ -238,6 +242,8 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   expect(lines).toHaveLength(1 + 6);
   expect(csv).toContain("Held");
   expect(csv).toContain("Failed · not billed");
+  /* In credits to the tenth, as billed (the failure column follows the credits). */
+  expect(lines.some((line) => /,43\.7(?:,|$)/.test(line))).toBe(true);
   if (WIDE.includes(info.project.name)) {
     const [file] = await Promise.all([page.waitForEvent("download"), connected.getByTestId("ws-ledger-connected-export").click()]);
     const quoted = readFileSync((await file.path())!, "utf8");
@@ -248,7 +254,7 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
 
   /* Never a dollar: not on the page, not in any answer /api/usage gave it, not in the file, not for one job. */
   const one = await (await page.request.get(`/api/usage?rows=1&id=${seed.ids.charged}`)).json();
-  expect(one.rows).toEqual([expect.objectContaining({ id: seed.ids.charged, credits: 43, state: "charged" })]);
+  expect(one.rows).toEqual([expect.objectContaining({ id: seed.ids.charged, credits: 43.7, state: "charged" })]);
   expect((await (await page.request.get(`/api/usage?rows=1&id=${seed.ids.neighbour}`)).json()).rows).toEqual([]);
   const wire = [...(await bodies()), csv, JSON.stringify(one), await (await page.request.get("/api/usage")).text()];
   expect(wire.length).toBeGreaterThanOrEqual(6);
@@ -306,12 +312,12 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
   await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("SettledCould not be read");
   refuse = false;
   await page.getByTestId("inspector-settled-retry").click();
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled43 cr");
+  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled43.7 cr");
   await expect(page.getByTestId("inspector-settled-retry")).toHaveCount(0);
   await expect(facts).not.toContainText("$");
   await expect(facts).not.toContainText("99 cr");
   await inspect(ids.held);
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled" + "Held · 12 cr");
+  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled" + "Held · 12.5 cr");
   await expect(facts).not.toContainText("$");
   /* The connected account's take is its provider's credits, as quoted; the ledger is not asked about it. */
   await inspect(connectedId);

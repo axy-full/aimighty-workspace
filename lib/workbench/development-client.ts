@@ -2,6 +2,7 @@ import type { DevelopmentRequest, DevelopmentKind } from './development-types';
 import { sourceCanonical } from './development-types';
 import type { Project } from './studio';
 import { withPendingAtomikLock } from './atomik-pending-request';
+import { isCreditAmount } from "../creditTerms";
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 /**
@@ -26,7 +27,7 @@ export function developmentInput(record: PendingDevelopment): DevelopmentRequest
       (input.sketchAssetId != null && (input.kind !== 'sketch' || !/^[\w-]{1,100}$/.test(input.sketchAssetId))) ||
       (input.shotId != null && ((input.kind !== 'sketch' && input.kind !== 'frames') || !/^[\w-]{1,100}$/.test(input.shotId))) ||
       typeof input.effort !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceHash ?? '') ||
-      !Number.isInteger(input.maxCredits) || input.maxCredits! < 0 || input.quoteOnly != null ||
+      !isCreditAmount(input.maxCredits) || input.quoteOnly != null ||
       (input.maxUsd != null && (!Number.isFinite(input.maxUsd) || input.maxUsd < 0)) ||
       (input.attachmentAssetIds != null && (!Array.isArray(input.attachmentAssetIds) || input.attachmentAssetIds.length > 4 || input.kind === 'condense' || input.kind === 'verify' || !input.attachmentAssetIds.every((id) => typeof id === 'string' && /^[\w-]{1,100}$/.test(id)))) ||
       /* A Verify check's sampled stills: three at most, each a stored upload of the take it checks. */

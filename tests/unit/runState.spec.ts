@@ -163,8 +163,8 @@ test("a failure with no way out is not a failure", () => {
   });
   expect(ok?.unit).toBe("SH07");
   expect(ok?.fixes.map((f) => f.id)).toEqual(["a", "b"]);
-  // Credits are whole and never negative, whatever was written down.
-  expect(ok?.fixes[1].credits).toBe(29);
+  // Credits are to a tenth and never negative, whatever was written down.
+  expect(ok?.fixes[1].credits).toBe(29.4);
   expect(cleanFailure({ reason: "x", fixes: [{ id: "a", label: "b", credits: -5 }] })?.fixes[0].credits).toBe(0);
   // An unknown kind is the harmless one, not a re-render.
   expect(cleanFailure({ reason: "x", fixes: [{ id: "a", label: "b", kind: "nonsense" }] })?.fixes[0].kind).toBe("settings");

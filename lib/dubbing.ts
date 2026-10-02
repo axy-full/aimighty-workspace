@@ -22,6 +22,7 @@ import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspect
 import { DUBBING_SOURCE_AUTO, isDubbingLanguage, dubbingLanguageLabel } from "./workbench/dubbing-options";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
+import { isCreditAmount, toDeci } from "./creditTerms";
 
 /**
  * Dubbing: an ASYNCHRONOUS ElevenLabs project, kept as a durable workflow.
@@ -177,7 +178,7 @@ export async function executeDubbingAdmission(
   const inCredits = creditsApply(requireTenant());
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });
-  if (body.maxCredits != null && (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number)))
+  if (body.maxCredits != null && (!isCreditAmount(body.maxCredits) || toDeci(estimatedCredits) > toDeci(body.maxCredits as number)))
     return admissionReply({ error: "The dubbing estimate exceeds the approved credit amount. Review the price before submitting." }, { status: 409 });
   const wall = await allowanceCheck("elevenlabs", reservedUsd, "elevenlabs");
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });

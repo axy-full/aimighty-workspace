@@ -46,7 +46,7 @@ test("Storyboards: pick frames and storyboard them together, revise one with a f
   await frames.nth(0).getByTestId("frame-select").check();
   await frames.nth(2).getByTestId("frame-select").check();
   await expect(page.getByTestId("boards-selection")).toContainText("2 selected");
-  await expect(page.getByTestId("boards-render-selected")).toContainText(/Storyboard 2 frames · \d+ credits?/, { timeout: 30_000 });
+  await expect(page.getByTestId("boards-render-selected")).toContainText(/Storyboard 2 frames · \d[\d,]*(?:\.\d)? credits?/, { timeout: 30_000 });
   await page.getByTestId("boards-render-selected").click();
   await expect.poll(async () => { const f = (await boards()).production.boards.frames; return [f["shot-a1"]?.takes.length ?? 0, f["shot-a3"]?.takes.length ?? 0, f["shot-a2"]?.takes.length ?? 0]; }, { timeout: 90_000 }).toEqual([1, 1, 0]);
   expect((await boards()).production.boards.frames["shot-a3"].prompt).toContain("The lamp goes out");
@@ -54,7 +54,7 @@ test("Storyboards: pick frames and storyboard them together, revise one with a f
   /* Revise shot 1 with a fresh prompt: priced, rendered as a new frame beside the first. */
   await frames.nth(0).getByTestId("frame-revise").click();
   await frames.nth(0).getByTestId("frame-revise-prompt").fill("Close on the fox's eyes, frost on its whiskers, the lamp a blur behind.");
-  await expect(frames.nth(0).getByTestId("frame-revise-render")).toContainText(/Render revision · \d+ credits?/, { timeout: 30_000 });
+  await expect(frames.nth(0).getByTestId("frame-revise-render")).toContainText(/Render revision · \d[\d,]*(?:\.\d)? credits?/, { timeout: 30_000 });
   await frames.nth(0).getByTestId("frame-revise-render").click();
   await expect.poll(async () => { const f = (await boards()).production.boards.frames["shot-a1"]; return [f.takes.length, f.prompt]; }, { timeout: 90_000 })
     .toEqual([2, "Close on the fox's eyes, frost on its whiskers, the lamp a blur behind."]);

@@ -6,6 +6,7 @@ import ts from "typescript";
 import { createPlatformDatabaseClient } from "../../lib/localDatabaseClient";
 import * as compiler from "../../lib/pipeline/compile";
 import * as schema from "../../lib/pipeline/schema";
+import * as creditTerms from "../../lib/creditTerms";
 import type { PipelineRun } from "../../lib/pipeline/store";
 
 const owner = "account",
@@ -94,6 +95,8 @@ async function fixture(extra = false, input: unknown = specification(extra)) {
     "node:crypto": await import("node:crypto"),
     "../db": {},
     "../tenant": {},
+    // Pure: the real check that a quote is a whole number of tenths.
+    "../creditTerms": creditTerms,
     "../workbench/records": {},
     "../mediaMutation": { validateMediaSources: async () => {} },
     "./compile": compiler,

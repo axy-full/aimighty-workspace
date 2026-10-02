@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* A statement lists every credit the balance lost that month — including
    metered work that has no take of its own (a transcription, an Astra
@@ -11,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-statement-metered-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 const ws: TenantWorkspace = {
@@ -57,16 +58,16 @@ test("transcription and Astra renders are statement lines, and a take's meter ro
     const byId = new Map(lines.map((l) => [l.id, l]));
     expect(byId.get("g1")!.credits).toBe(15);
     expect(byId.get("stt_1")).toMatchObject({ credits: 3, take: "Transcript", what: "Transcription", kind: "audio" });
-    expect(byId.get("astra_1")).toMatchObject({ credits: 8, take: "Astra", what: "Astra render", kind: "image" });
-    expect(byId.get("text_1")!.credits).toBe(1);
-    expect(s.totals.credits).toBe(27);
+    expect(byId.get("astra_1")).toMatchObject({ credits: 7.5, take: "Astra", what: "Astra render", kind: "image" });
+    expect(byId.get("text_1")!.credits).toBe(0.2);
+    expect(s.totals.credits).toBeCloseTo(25.7, 9);
     // The funding split covers the same credits the total does.
-    expect(Object.values(s.funding!).reduce((a, b) => a + b, 0)).toBe(27);
+    expect(Object.values(s.funding!).reduce((a, b) => a + b, 0)).toBeCloseTo(25.7, 9);
     expect(statementCsv(s)).toContain("Transcription");
 
     // One production: the same metered lines, filed under it.
     const one = (await statementFor(month, "p1"))!;
-    expect(one.totals.credits).toBe(27);
+    expect(one.totals.credits).toBeCloseTo(25.7, 9);
     expect(one.projects.map((p) => p.name)).toEqual(["Rooftop"]);
   });
 });

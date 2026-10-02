@@ -79,9 +79,9 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   const f = await seeded(page);
   await page.goto(await legacyShell(page, "/atomik?page=generate"));
   const cont = () => surfaceOf(page).getByRole("button", { name: /^Continue/ }).first();
-  await expect(cont()).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont()).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont()).toBeEnabled();
-  const price = Number(/(\d[\d,]*) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
+  const price = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
 
   /* The render leaves the browser and is held back: it has not reached the server. */
   let hold = true;
@@ -110,7 +110,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
     tenant.close();
   }
   await page.reload();
-  await expect(cont()).toContainText(/\d+ cr/, { timeout: 60_000 });
+  await expect(cont()).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   const reread = createClient({ url: f.tenantUrl, timeout: 10_000 });
   try {
     expect((await reread.execute({ sql: "SELECT status,error FROM atomik_steps WHERE id=?", args: [f.stepId] })).rows[0])
@@ -127,7 +127,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
 
   /* Continue again: a key of its own, admitted once, at the price on the button. */
   await expect(cont()).toBeEnabled();
-  const again = Number(/(\d[\d,]*) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
+  const again = Number(/(\d[\d,]*(?:\.\d)?) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
   await cont().click();
   await expect.poll(() => renders.length, { timeout: 60_000 }).toBe(2);
   expect(renders[1]).toMatchObject({ key: `atomik-step:${f.chatId}:${f.stepId}:2`, body: { maxCredits: again } });

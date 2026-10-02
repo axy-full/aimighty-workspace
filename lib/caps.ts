@@ -1,11 +1,12 @@
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
+import { creditsFigure, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
 import { getSetting } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
+import { legacyBilledCredits } from "./creditUnits";
 
 /**
  * A production's cap, in the workspace's unit.
@@ -21,7 +22,8 @@ export type CapRule = "producer" | "stop" | "warn";
 export type CapUnit = "cr" | "$";
 export type CapVerdict = { allow: boolean; error?: string; notice?: string; pct: number | null; warned: boolean };
 
-const fmt = (n: number, unit: CapUnit) => (unit === "cr" ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${n.toFixed(2)}`);
+/* Credits to a tenth ("12.3 cr"), never rounded away: a 0.3 cr take is not "0 cr". */
+const fmt = (n: number, unit: CapUnit) => (unit === "cr" ? `${creditsFigure(n)} cr` : `$${n.toFixed(2)}`);
 
 /** The rule at the cap, with nothing read from anywhere. */
 export function capVerdict(o: { cap: number | null; spent: number; needs: number; rule: CapRule; unlocked: boolean; warnPct: number; unit: CapUnit }): CapVerdict {
@@ -78,7 +80,7 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
       });
       for (const r of rs.rows as unknown as { id: string; k: string | null; kind: string | null; model: string | null; cost: number }[]) {
         const cost = Number(r.cost ?? 0);
-        rows.set(String(r.id), { key: r.k == null ? null : String(r.k), usd: cost, credits: billCreditsWith(cost, marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10) });
+        rows.set(String(r.id), { key: r.k == null ? null : String(r.k), usd: cost, credits: legacyBilledCredits(cost, marginFor(marginKeyOf(String(r.kind), String(r.model)))) });
       }
     }
   };
@@ -152,8 +154,8 @@ export async function projectCapSpent(projectId: string): Promise<ProjectCap | n
 
 /**
  * The cost check against the production's cap. `needsUsd` is the job's
- * estimate at the vendor; in a credits workspace it is billed as whole
- * credits at the engine's margin, like everything else — or, given the exact
+ * estimate at the vendor; in a credits workspace it is billed in tenths of
+ * a credit at the engine's margin, like everything else — or, given the exact
  * terms the job's reservation will charge (currentBillingTerms), at those.
  */
 export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms): Promise<CapVerdict> {

@@ -65,7 +65,7 @@ const cardRun = (page: Page, phone: boolean, label: string) => card(page, phone,
 const inspector = (page: Page) => page.getByRole("complementary", { name: "Inspector" });
 /** Selecting a node: a press on its header, clear of its fields and its Run. */
 const pick = (page: Page, phone: boolean, label: string) => card(page, phone, label).click({ position: { x: 24, y: 12 }, timeout: 60_000 });
-const creditsOn = async (button: Locator) => Number(/(\d[\d,]*) cr/i.exec((await button.textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
+const creditsOn = async (button: Locator) => Number(/(\d[\d,]*(?:\.\d)?) cr/i.exec((await button.textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
 
 /**
  * The UI floors on what this change draws (the reasons and the price slots): no

@@ -11,6 +11,7 @@
  * the prompt a brief hands to Gen — which prices it on its button before
  * anything runs.
  */
+import { ceilDeci, creditsFigure, fromDeci } from "@/lib/creditTerms";
 import { MOLECULR_FORMATS, type MoleculrBrief } from "@/lib/workbench/moleculr";
 import { CREATIVE_TEMPLATES, creativeTemplate, switchProduct, type BrandKit, type CreativeTemplate, type ProductProfile } from "@/lib/workbench/moleculr-creative";
 import { referenceAdDirection, resolveReferenceAd } from "@/lib/workbench/reference-ad";
@@ -30,10 +31,13 @@ export const OWN_TOOLS_FACT = "Brand · product · briefs · design";
 
 /* ── Money ───────────────────────────────────────────────────────────── */
 
-/** A price shown before anything paid runs is an estimate: "about 7 cr", never an exact figure. */
+/**
+ * A price shown before anything paid runs is an estimate: "about 7 cr", never an exact figure.
+ * Credits are charged in tenths, so the estimate is rounded up to a tenth ("about 6.2 cr"), not to a whole credit.
+ */
 export function aboutCredits(credits: number): string {
-  const whole = Number.isFinite(credits) ? Math.max(0, Math.ceil(credits)) : 0;
-  return `about ${whole.toLocaleString("en-US")} cr`;
+  const deci = Number.isFinite(credits) ? Math.max(0, ceilDeci(credits)) : 0;
+  return `about ${creditsFigure(fromDeci(deci))} cr`;
 }
 
 /* ── Limits (lib/workbench/studio-schema.ts › moleculrSchema) ───────── */

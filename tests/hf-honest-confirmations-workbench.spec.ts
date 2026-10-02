@@ -96,12 +96,12 @@ async function roomWithSolutions(page: Page, overRig = false) {
   await hydrated(page.getByTestId("crew-goal"));
   await expect(async () => {
     await page.getByTestId("crew-goal").fill(GOAL);
-    await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/, { timeout: 4_000 });
+    await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/, { timeout: 4_000 });
   }).toPass({ timeout: 30_000 });
   await page.getByTestId("crew-run").click();
   const solutions = page.getByTestId("crew-solutions").locator(".cw-solution");
   await expect(solutions).toHaveCount(3, { timeout: 45_000 });
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   return { errors, project, headers, solutions };
 }
 

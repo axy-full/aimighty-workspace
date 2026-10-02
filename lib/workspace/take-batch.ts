@@ -12,6 +12,7 @@ import {
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
 import { readPendingGeneration } from "../workbench/pending-generation";
 import { formatCredits } from "./cost";
+import { toDeci } from "../creditTerms";
 import { dispatchGeneration, quoteDispatch, settlePendingGeneration, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
 import { generationPhase, neutralCopy } from "./rig";
 import type { MediaJob } from "../workbench/job-recovery";
@@ -63,7 +64,8 @@ export type BatchTake = { variation: number; state: BatchTakeState; jobId: strin
 /** The one gate: the sum of every take's fresh quote is exactly the total the person approved on the button. */
 export function batchGate(shown: number | null, fresh: readonly number[]): { ok: true; total: number } | { ok: false; total: number } {
   const total = fresh.reduce((sum, c) => sum + c, 0);
-  return shown !== null && total === shown ? { ok: true, total } : { ok: false, total };
+  /* Compared in whole tenths, the unit credits are charged in: 0.1 + 0.2 + 0.3 is the 0.6 on the button. */
+  return shown !== null && toDeci(total) === toDeci(shown) ? { ok: true, total } : { ok: false, total };
 }
 
 /** "takes 1–2", "take 3", "takes 1, 3" — the takes a sentence is about. */

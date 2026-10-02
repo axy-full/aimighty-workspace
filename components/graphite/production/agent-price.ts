@@ -1,10 +1,12 @@
 import type { DevelopmentJob, DevelopmentQuote } from "@/lib/workbench/development-types";
+import { creditsFigure, fromDeci, toDeci } from "@/lib/creditTerms";
 
 type Price = Pick<DevelopmentQuote, "estimateCredits" | "estimateUsd">;
 type Run = Pick<DevelopmentJob, "status" | "credits" | "costUsd" | "estimateCredits" | "estimateUsd" | "ownKey">;
 
-const credits = (n: number) => { const whole = Math.max(0, Math.round(n)); return `${whole.toLocaleString("en-US")} ${whole === 1 ? "credit" : "credits"}`; };
 const usdOf = (n: number | null | undefined): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
+/* Credits are charged in tenths (lib/creditTerms.ts): "0.4 credits", "12 credits", "1 credit". */
+const credits = (n: number) => { const v = Math.max(0, fromDeci(toDeci(n))); return `${creditsFigure(v)} ${v === 1 ? "credit" : "credits"}`; };
 const dollars = (n: number) => `$${n.toFixed(4)}`;
 
 /*

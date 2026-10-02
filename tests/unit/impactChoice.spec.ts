@@ -50,6 +50,9 @@ test("the footnote stays true when a side is empty", () => {
   expect(footnote("all", { credits: 58, approved: 0, draft: 2, version: "v1" })).toBe("58 CR · NOTHING TO RE-APPROVE");
   expect(footnote("approved", { credits: 29, approved: 1, draft: 0, version: "v1" })).toBe("29 CR · NO DRAFTS TO LEAVE BEHIND");
   expect(footnote("none", { credits: 0, approved: 0, draft: 0, version: "v1" })).toBe("NOTHING RE-RENDERS");
+  /* Credits are charged in tenths, and the footnote says them that way. */
+  expect(footnote("all", { credits: 40.6, approved: 6, draft: 8, version: "v3" })).toBe("40.6 CR · 6 APPROVALS TO REDO");
+  expect(footnote("approved", { credits: 1234.5, approved: 0, draft: 1, version: "v2" })).toBe("1,234.5 CR · 1 DRAFT LEFT ON V2");
   // Singulars read as singulars.
   expect(footnote("all", { credits: 29, approved: 1, draft: 0, version: "v1" })).toContain("1 APPROVAL TO REDO");
   expect(footnote("approved", { credits: 29, approved: 1, draft: 1, version: "v2" })).toContain("1 DRAFT LEFT ON V2");

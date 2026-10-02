@@ -4,7 +4,7 @@ import { billCredits } from "../../lib/creditTerms";
 import { shotCostUsd } from "../../lib/shotCost";
 import { ENGINE_MODEL } from "../../lib/shotBuilder";
 import { takeCost } from "../../lib/breakdownCost";
-import { listEstimate, moneyColumns, takeEstimate, wholeCredits } from "../../lib/shotListCost";
+import { listEstimate, moneyColumns, takeEstimate, chargedCredits } from "../../lib/shotListCost";
 import { publicTextCost } from "../../lib/textRunCost";
 import { textCostLabel } from "../../lib/textCostLabel";
 import { isOwnMedia } from "../../lib/format";
@@ -39,9 +39,9 @@ test("a planned shot is estimated at exactly what one take of it will bill, in c
 
 test("a list of shots sums each take already rounded; type-only shots cost nothing", () => {
   const shots = Array.from({ length: 10 }, () => ({ planned: 3, engine: "seedance" }));
-  const each = wholeCredits(takeCost(cr, 3, "seedance"));
-  expect(listEstimate(cr, shots)).toBe(each * 10);
-  expect(listEstimate(cr, [...shots, { planned: 8, engine: "seedance", kind: "type" }])).toBe(each * 10);
+  const each = chargedCredits(takeCost(cr, 3, "seedance"));
+  expect(listEstimate(cr, shots)).toBeCloseTo(each * 10, 9);
+  expect(listEstimate(cr, [...shots, { planned: 8, engine: "seedance", kind: "type" }])).toBeCloseTo(each * 10, 9);
   expect(takeEstimate(cr, { planned: 8, kind: "type" })).toBe(0);
   /* Ten 5s Seedance shots are not "$290.00" and not "29 cr": they are ten times one take. */
   expect(listEstimate(cr, Array.from({ length: 10 }, () => ({ planned: 5, engine: "seedance" })))).toBe(10 * billCredits(shotCostUsd("seedance", 5), ENGINE_MODEL.seedance));

@@ -166,7 +166,7 @@ export function ownerRunEyebrow(surface: OwnerRunSurface, tools: readonly string
 
 /**
  * The alternative's price, as the model sheet states it (lib/workspace/model-picker
- * › rowPrice): the engine, then the whole credits, then the settings it is at.
+ * › rowPrice): the engine, then the credits, then the settings it is at.
  * Null when there is no figure — never a guess.
  */
 export function alternativePrice(label: string, price: { credits: number | null; unit: string; detail: string } | null): string | null {

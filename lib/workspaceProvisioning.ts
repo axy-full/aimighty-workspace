@@ -13,7 +13,7 @@ import {
 } from "./platform";
 import { provisionTenantDatabase, provisioningConfigured } from "./provision";
 import { keyringConfigured, seal, open } from "./keyring";
-import { signupCredits } from "./creditTerms";
+import { creditUsd, signupCredits } from "./creditTerms";
 import { runInTenant, type TenantWorkspace } from "./tenant";
 
 export type WorkspaceOwner = { id: string; email: string; name: string };
@@ -337,13 +337,15 @@ return await withRecoveryActivity('provisioning', async () => {
       });
       if (usePlatform && row.welcome_source && row.welcome_credits > 0)
         await tx.execute({
-          sql: `INSERT OR IGNORE INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,'Approved invitation welcome credits','welcome',?,?)`,
+          // In today's credits, and saying so (lib/billingLedger.ts units).
+          sql: `INSERT OR IGNORE INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,'Approved invitation welcome credits','welcome',?,?,?)`,
           args: [
             "welcome:" + ws.id,
             ws.id,
             row.welcome_credits,
             ownerId,
             now(),
+            creditUsd(),
           ],
         });
       await tx.execute({

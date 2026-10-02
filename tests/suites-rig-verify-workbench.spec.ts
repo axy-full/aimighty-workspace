@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@libsql/client";
 import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { newProject, type Asset, type CanvasNode, type Project } from "../lib/workbench/studio";
@@ -37,7 +39,7 @@ async function setup(page: Page, info: TestInfo, take: Rgb | "video", withCard =
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Local mock Verify test", "admin", "test", Date.now()] });
+    await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Local mock Verify test", "admin", "test", Date.now(), creditUsd()] });
   } finally { platform.close(); }
   const upload = async (name: string, buffer: Buffer, mimeType: string): Promise<Receipt> => {
     const response = await page.request.post("/api/uploads", { headers, multipart: { file: { name, mimeType, buffer } } });
@@ -110,16 +112,18 @@ async function verifyCardFromShot(page: Page) {
 /** Asks for the price and approves exactly that; the check runs on the mock judge and lands as a scorecard. */
 async function priceAndApprove(body: Locator, watch: ReturnType<typeof watchDevelopment>) {
   await body.getByTestId("card-verify-estimate").click();
-  await expect(body.getByTestId("card-verify-price")).toContainText(/about \d[\d,]* cr, charged in credits once it is done/);
+  await expect(body.getByTestId("card-verify-price")).toContainText(/about \d[\d,]*(?:\.\d)? cr, charged in credits once it is done/);
   const start = body.getByTestId("card-verify-start");
-  await expect(start).toHaveText(/^Verify · about \d[\d,]* cr$/);
-  const credits = Number((await start.textContent())!.replace(/\D/g, ""));
+  await expect(start).toHaveText(/^Verify · about \d[\d,]*(?:\.\d)? cr$/);
+  /* Read with its decimal: replace(/\D/g, "") would turn 2.2 into 22. */
+  const figureIn = (text: string | null) => Number(/(\d[\d,]*(?:\.\d)?) cr/.exec(text ?? "")![1].replace(/,/g, ""));
+  const credits = figureIn(await start.textContent());
   expect(credits).toBeGreaterThan(0);
   /* The price is what a check usually uses; the ceiling the wallet holds while it runs is said in small type when it is well above it. */
   const hold = body.getByTestId("card-verify-hold");
   if (await hold.count()) {
-    await expect(hold).toHaveText(/^Up to \d[\d,]* cr held while it runs\.$/);
-    expect(Number((await hold.textContent())!.replace(/\D/g, ""))).toBeGreaterThanOrEqual(2 * credits);
+    await expect(hold).toHaveText(/^Up to \d[\d,]*(?:\.\d)? cr held while it runs\.$/);
+    expect(figureIn(await hold.textContent())).toBeGreaterThanOrEqual(2 * credits);
   }
   /* Nothing paid yet: only the free quote went out. */
   expect(watch.starts()).toEqual([]);
@@ -190,7 +194,7 @@ test("press Verify on a take: the price comes first, the approved check lands as
 
   await body.getByTestId("card-verify-estimate").click();
   await expect(body.getByTestId("card-verify-price")).toBeVisible();
-  await expect(body.getByTestId("card-verify-hold")).toHaveText(/^Up to \d[\d,]* cr held while it runs\.$/);
+  await expect(body.getByTestId("card-verify-hold")).toHaveText(/^Up to \d[\d,]*(?:\.\d)? cr held while it runs\.$/);
   await floors(page, info, body, "with the price");
   if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("verify-price-390x844.png"), animations: "disabled" });
   await body.getByRole("button", { name: "Cancel" }).click();
@@ -294,7 +298,7 @@ test("a changed master: the stored check says it was against an older master, an
   /* Verify again: a new, priced check — not the stored one. */
   await expect(body.getByTestId("card-verify-estimate")).toHaveText("Verify again");
   await body.getByTestId("card-verify-estimate").click();
-  await expect(body.getByTestId("card-verify-price")).toContainText(/about \d[\d,]* cr/);
+  await expect(body.getByTestId("card-verify-price")).toContainText(/about \d[\d,]*(?:\.\d)? cr/);
   await expect(body.getByTestId("card-verify-free")).toHaveCount(0);
   expect(watch.starts()).toEqual([]);
   await page.goto(`/suites?suite=studio&page=takes&project=${s.project.id}`);

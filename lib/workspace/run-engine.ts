@@ -40,6 +40,7 @@ import type {
   PlanContext,
   RunIO,
 } from "./plan-types";
+import { isCreditAmount, creditsFigure, fromDeci, toDeci } from "../creditTerms";
 
 /** Upper bound of the visual pacing for instantaneous read/compute steps. */
 export const VISUAL_PACING_MS = 300;
@@ -110,7 +111,7 @@ export type ApproveResult =
   | { ok: false; reason: "not-waiting" | "refreshed" | "quote-failed" };
 
 export function formatCredits(credits: number, unit: LiveQuote["unit"]) {
-  const n = credits.toLocaleString("en-US");
+  const n = unit === "cr" ? creditsFigure(credits) : credits.toLocaleString("en-US");
   return unit === "cr" ? `${n} cr` : `${n} ${credits === 1 ? "credit" : "credits"}`;
 }
 
@@ -337,12 +338,13 @@ export class AtomikRunEngine {
     if (!raw || !Array.isArray(raw.parts) || raw.parts.length === 0)
       throw new Error("The quote came back empty. Nothing was dispatched.");
     for (const part of raw.parts) {
-      if (!Number.isInteger(part.credits) || part.credits < 0)
+      if (!isCreditAmount(part.credits))
         throw new Error("The quote came back without a credit price. Nothing was dispatched.");
       if (typeof part.fingerprint !== "string" || part.fingerprint.length === 0)
         throw new Error("The quote came back without a fingerprint. Nothing was dispatched.");
     }
-    const credits = raw.parts.reduce((sum, part) => sum + part.credits, 0);
+    // In whole tenths, so the total on the button is exactly the parts added up.
+    const credits = fromDeci(raw.parts.reduce((sum, part) => sum + toDeci(part.credits), 0));
     const cap = quotedAt + QUOTE_MAX_AGE_MS;
     return {
       unit: raw.unit,

@@ -22,11 +22,11 @@ Copied verbatim from docs/particl-sow.md, section 7A. Decided for launch. Anythi
 Pricing policy (multipliers, margins, floor guard, volume phases) is kept privately by the owner; it is not in this repo. What follows is what customers see and what the code must guarantee. Anything that changes what a workspace is charged needs the owner's approval.
 
 ### Credits
-- **1 credit = US$0.10, fixed**, the public price. A credit's price is `creditUsd()` (`lib/creditTerms.ts`, overridable by `CREDIT_USD`).
-- Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next whole credit per job. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
+- **1 credit = US$0.80, fixed**, the public price (US$0.10 until 28 September 2026). A credit's price is `creditUsd()` (`lib/creditTerms.ts`, `DEFAULT_CREDIT_USD`, overridable by `CREDIT_USD`).
+- Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next tenth of a credit per job, never less than 0.1 credit. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
 - The ledger stores `engine_cost_usd` and `billed_credits` per job. The rate card is generated from the adapter registry, never hand-edited.
 - Customers never receive vendor costs for work on the platform's keys: no engine cost or margin reaches anyone but a platform admin, and a vendor cost is never shown next to our price. A workspace on its own keys sees its own vendors' dollars.
-- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe.
+- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (0.1 cr), draft takes to Kling Standard or Wan (0.8–1.2 cr), and hero takes to Seedance or Kling Pro (3.6–5.4 cr). The composer's model row defaults from the shot's stage in the recipe.
 
 Reference rate card at launch, in credits (regenerate from the code before publishing):
 
@@ -43,20 +43,31 @@ frame (`billedFrame` rounds each side up to a multiple of 16, which is why
 1080p is metered at 1088), stills come from `imagePricing`, and every "sells
 at" goes through `billCredits`.
 
+**REGENERATED 28 September 2026 at US$0.80 a credit, in tenths**, from the
+same code: every row rounds up to the next tenth of a credit.
+
+**AMENDED 28 September 2026 — US$0.80 a credit, charged in tenths.** A job is
+charged in tenths of a credit, rounded up, never less than 0.1 (US$0.08). Money
+code counts whole tenths, and every ledger row records the price of a credit
+its figures were recorded at, so a balance is its exact value in today's
+credits. Balances held at US$0.10 are restated by value and rounded up to the
+next tenth, one recorded entry per workspace (`lib/creditConversion.ts`),
+reversible; receipts keep the terms they were admitted at.
+
 | Action | Sells at |
 |---|---|
-| Standard still (Nano Banana 2, 512) | 1 cr |
-| Keyframe still (Nano Banana Pro, 1K) | 3 cr |
-| Kling 3.0 Standard, 5s 1080p | 7 cr |
-| Kling 3.0 Standard, 5s 1080p, audio | 10 cr |
-| Kling 3.0 Pro, 5s 1080p, audio | 13 cr |
-| Seedance 2.0, 5s 1080p | 29 cr |
-| Seedance 2.5, 5s 720p | 18 cr |
-| Seedance 2.5, 5s 1080p | 43 cr |
-| Topaz upscale, 5s 1080p | 23 cr |
-| Topaz upscale, 5s 4K | 38 cr |
-| Identity training (1,500 steps) | 54 cr |
-| Prompt enhancement | 1 cr |
+| Standard still (Nano Banana 2, 512) | 0.1 cr |
+| Keyframe still (Nano Banana Pro, 1K) | 0.3 cr |
+| Kling 3.0 Standard, 5s 1080p | 0.8 cr |
+| Kling 3.0 Standard, 5s 1080p, audio | 1.2 cr |
+| Kling 3.0 Pro, 5s 1080p, audio | 1.6 cr |
+| Seedance 2.0, 5s 1080p | 3.6 cr |
+| Seedance 2.5, 5s 720p | 2.2 cr |
+| Seedance 2.5, 5s 1080p | 5.4 cr |
+| Topaz upscale, 5s 1080p | 2.9 cr |
+| Topaz upscale, 5s 4K | 4.7 cr |
+| Identity training (1,500 steps) | 6.8 cr |
+| Prompt enhancement | 0.1 cr |
 
 Gone from the card, because the engine is not in the product: **Wan 2.6** —
 `alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
@@ -94,10 +105,10 @@ it already means.
 
 | Tier | Price | Included | Members |
 |---|---|---|---|
-| **Invite** | $0 | 250 cr once, 1 production | 3 |
-| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited |
-| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited |
-| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited |
+| **Invite** | $0 | 25 cr once, 1 production | 3 |
+| **Studio** | $49/mo | 50 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited |
+| **Agency** | $199/mo | 200 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited |
+| **Production** | $999/mo | 1,125 cr, ~~3,000 panels~~, admin console, setup hours | unlimited |
 
 - **Included credits expire at cycle end. No rollover.** (Panels struck, 10 September — see the amendment above.)
 - **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
@@ -105,7 +116,7 @@ it already means.
 - ~~Panel inclusions are on the standard engine only.~~ Struck 10 September with the panel rows. Pro stills and all video draw credits regardless of plan — which, with panels gone, is simply: everything draws credits.
 
 ### Packs
-Unit stays $0.10. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
+Unit stays $0.80. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
 
 **AMENDED 10 September 2026 — a pack does not expire while the workspace is
 on a plan.** The 12 months is time spent OFF a plan; a subscriber's purchased
@@ -132,15 +143,19 @@ nothing can leave a plan, and the two differ only for someone who has.
 
 | Pack | Price | Credits | Effective |
 |---|---|---|---|
-| Starter | $50 | 500 | $0.100 |
-| Team | $200 | 2,000 + 200 | $0.091 |
-| Studio | $500 | 5,000 + 750 | $0.087 |
-| Agency | $2,000 | 20,000 + 4,000 | $0.083 |
+| Starter | $49.60 | 62 | $0.800 |
+| Team | $200 | 250 + 25 | $0.727 |
+| Studio | $500 | 625 + 94 | $0.695 |
+| Agency | $2,000 | 2,500 + 500 | $0.667 |
+
+**AMENDED 28 September 2026 — the packs at US$0.80 a credit.** Each pack keeps
+its dollar price and buys an eighth of the credits; half a credit cannot be
+sold, so Starter is 62 credits at $49.60.
 
 ### Guardrails in code
 1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
-4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
+4. Any single job estimated above 25 cr (US$20; 200 cr at US$0.10) requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
 6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.

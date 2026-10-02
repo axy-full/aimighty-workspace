@@ -7,7 +7,8 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { openSuitesMenu } from "./helpers/suitesMenu";
 import { newProject } from "../lib/workbench/studio";
-import { billCredits, marginKeyOf } from "../lib/creditTerms";
+import { billCredits, creditUsd, creditsFigure, fromDeci, marginKeyOf, toDeci, usdToCredits } from "../lib/creditTerms";
+import { packLine, packRequestLabel, type TopupPack } from "../lib/shell/workspace-view";
 import { estimateCostUsd } from "../lib/vendorPricing";
 
 /**
@@ -46,8 +47,13 @@ async function tenant<T>(workspaceId: string, fn: (db: ReturnType<typeof createC
 }
 const setRole = (workspaceId: string, role: "owner" | "admin" | "member") =>
   platform((db) => db.execute({ sql: "UPDATE memberships SET role=? WHERE workspace_id=?", args: [role, workspaceId] }));
+/* A grant as the app writes one: in today's credits, saying so (unit_usd; this runner and the mock server share the default). */
 const grant = (workspaceId: string, credits: number) =>
-  platform((db) => db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, credits, "Credits out fixture", "manual", "test", Date.now()] }));
+  platform((db) => db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, credits, "Credits out fixture", "manual", "test", Date.now(), creditUsd()] }));
+/** Credits added and taken in whole tenths, so a figure on the page is compared with an exact one. */
+const plus = (a: number, b: number) => fromDeci(toDeci(a) + toDeci(b));
+const minus = (a: number, b: number) => fromDeci(toDeci(a) - toDeci(b));
+const fig = (n: number) => creditsFigure(n);
 
 /** A signed-in workspace with one saved project, opened on load. */
 async function seed(page: Page): Promise<Seeded> {
@@ -68,9 +74,10 @@ const balanceOf = async (page: Page) => Number((await (await page.request.get("/
 /** Every held take here is this take: what the mock engine renders, and bills, once one is released. */
 const SHAPE = { ratio: "16:9", resolution: "720p", duration: 5 } as const;
 
-/** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits). */
+/** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits),
+ *  at the credit's price: this runner and the server both read CREDIT_USD, unset on the local mock server. */
 function dollarsFor(needs: number): number {
-  const est = (needs - 0.5) / 15;
+  const est = (needs - 0.05) / usdToCredits(1, marginKeyOf("video", SEEDANCE));
   expect(billCredits(est, marginKeyOf("video", SEEDANCE))).toBe(needs);
   return est;
 }
@@ -203,11 +210,12 @@ test("owner: a held take says what it needs and releases at that price, once; st
   const s = await seed(page);
   await grant(s.workspaceId, 20);
   const before = await balanceOf(page);
-  const short = before + 40;
-  const dawn = await heldTake(s, "Harbour dawn", 15, s.userId);
+  const short = plus(before, 40);
+  /* Tenths on purpose: every check below that nothing is cut runs on a figure with a decimal. */
+  const dawn = await heldTake(s, "Harbour dawn", 15.3, s.userId);
   const storm = await heldTake(s, "Storm front", short, s.userId);
   /* A long price, for the checks that nothing is cut. */
-  await heldTake(s, "Night ferry across the outer harbour", 12_345, s.userId);
+  await heldTake(s, "Night ferry across the outer harbour", 12_345.6, s.userId);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");
@@ -217,11 +225,11 @@ test("owner: a held take says what it needs and releases at that price, once; st
 
   /* Its own state: held, not rendering; the need on the chip and the exact price on Release. */
   await expect(tile(takes, "Harbour dawn")).toHaveAttribute("data-status", "held");
-  await expect(tile(takes, "Harbour dawn").getByTestId("take-chip")).toHaveText("Held · needs 15 cr");
-  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText(`Held · needs ${short.toLocaleString("en-US")} cr`);
-  await expect(takes.getByRole("button", { name: "Release Harbour dawn · 15 cr", exact: true })).toBeVisible();
+  await expect(tile(takes, "Harbour dawn").getByTestId("take-chip")).toHaveText("Held · needs 15.3 cr");
+  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText(`Held · needs ${fig(short)} cr`);
+  await expect(takes.getByRole("button", { name: "Release Harbour dawn · 15.3 cr", exact: true })).toBeVisible();
   /* Every price shows whole, in this font and in a wider one; on a narrow tile the need moves under the name. */
-  await expect(tile(takes, "Night ferry").getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345 cr");
+  await expect(tile(takes, "Night ferry").getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345.6 cr");
   await whole(page, PRICES);
   let normal = await widerSans(page);
   await whole(page, PRICES);
@@ -231,7 +239,7 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await openSuitesMenu(page);
   await page.locator('[data-suite-tab="gen"]').click();
   const results = page.getByRole("region", { name: "Results" });
-  await expect(tile(results, "Night ferry").getByTestId("take-chip")).toHaveText("Held · needs 12,345 cr");
+  await expect(tile(results, "Night ferry").getByTestId("take-chip")).toHaveText("Held · needs 12,345.6 cr");
   await expect(tile(results, "Night ferry").getByTestId("take-release")).toBeVisible();
   await whole(page, PRICES);
   normal = await widerSans(page);
@@ -245,7 +253,7 @@ test("owner: a held take says what it needs and releases at that price, once; st
   /* Still short: the route's own words, the way to credits, and nothing charged. */
   await tile(takes, "Storm front").getByTestId("take-release").click();
   const note = tile(takes, "Storm front").getByTestId("take-release-note");
-  await expect(note).toContainText(`Still short: this needs ${short.toLocaleString("en-US")} credits and ${before} are left.`);
+  await expect(note).toContainText(`Still short: this needs ${fig(short)} credits and ${fig(before)} are left.`);
   await expect(note.getByTestId("take-release-credits")).toHaveText("Add credits");
   expect(await takeRow(s, storm)).toMatchObject({ status: "held", released: null });
   expect(await meterRows(storm)).toEqual([]);
@@ -259,15 +267,15 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await shot(page, info, "held-short");
 
   /* Enough: charged at admission, once, and the card moves on. */
-  await takes.getByRole("button", { name: "Release Harbour dawn · 15 cr", exact: true }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dawn released · 15 cr");
+  await takes.getByRole("button", { name: "Release Harbour dawn · 15.3 cr", exact: true }).click();
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dawn released · 15.3 cr");
   await expect(tile(takes, "Harbour dawn")).not.toHaveAttribute("data-status", "held");
   await expect(tile(takes, "Harbour dawn").getByTestId("take-release")).toHaveCount(0);
-  expect(await meterRows(dawn)).toEqual([15]);
+  expect(await meterRows(dawn)).toEqual([15.3]);
   expect(Number((await takeRow(s, dawn)).released)).toBeGreaterThan(0);
-  await expect.poll(() => balanceOf(page)).toBe(before - 15);
+  await expect.poll(() => balanceOf(page)).toBe(minus(before, 15.3));
   /* The header reads the balance again at once. */
-  await expect(page.getByTestId("workspace-credits")).toContainText(String(before - 15));
+  await expect(page.getByTestId("workspace-credits")).toContainText(fig(minus(before, 15.3)));
 
   /* A wheel (a finger) reaches the page's last row (the Takes desk's grid ends the page), and on a phone it ends above the tab bar. */
   await clearOfTabBar(page, page.getByTestId("takes-grid").locator(":scope > *").last(), true);
@@ -293,24 +301,24 @@ test("owner: a held take says what it needs and releases at that price, once; st
   }
   await tile(assets, "Night ferry").locator(".gx-asset-thumb").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Night ferry across the outer harbour");
-  await expect(inspector.getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345 cr");
+  await expect(inspector.getByTestId("take-release")).toHaveText("Release Night ferry across the outer harbour · 12,345.6 cr");
   await expect(inspector.getByTestId("take-release-note")).toHaveCount(0);
   if (!wide) {
     await page.getByTestId("close-inspector").click();
     if (!(await assets.isVisible())) await page.getByTestId("toggle-library").click();
     if (!(await assets.isVisible())) await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   }
-  /* Released, it was charged at admission: the ledger holds its 15 cr while it runs, then charges them. */
+  /* Released, it was charged at admission: the ledger holds its 15.3 cr while it runs, then charges them. */
   await tile(assets, "Harbour dawn").locator(".gx-asset-thumb").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Harbour dawn");
-  await expect(settledFact).toHaveText(/^Settled(Held · 15 cr|15 cr)$/);
+  await expect(settledFact).toHaveText(/^Settled(Held · 15\.3 cr|15\.3 cr)$/);
   await expect(inspector.getByTestId("take-release")).toHaveCount(0);
   if (!wide) await page.getByTestId("close-inspector").click();
 
   /* Add credits opens Plans & credits. */
   await tile(takes, "Storm front").getByTestId("take-release-credits").click();
   await expect(page.getByTestId("ws-plans")).toBeVisible();
-  expect(await meterRows(dawn)).toEqual([15]);
+  expect(await meterRows(dawn)).toEqual([15.3]);
   expect(errors).toEqual([]);
 });
 
@@ -326,14 +334,14 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   expect(RUN).toBeGreaterThan(0);
   const theirs = await heldTake(s, "Lamp line", RUN, mate, RUN_USD);
   /* Priced over the balance, so nothing settling in the background can start them. */
-  const theirsShort = await heldTake(s, "Ferry turn", before + 50, mate);
-  const mine = await heldTake(s, "Tide pool", before + 60, s.userId);
+  const theirsShort = await heldTake(s, "Ferry turn", plus(before, 50), mate);
+  const mine = await heldTake(s, "Tide pool", plus(before, 60), s.userId);
   await setRole(s.workspaceId, "admin");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");
   const takes = page.getByTestId("edit-takes");
-  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText(`Held · needs ${RUN.toLocaleString("en-US")} cr`, { timeout: 60_000 });
+  await expect(tile(takes, "Lamp line").getByTestId("take-chip")).toHaveText(`Held · needs ${fig(RUN)} cr`, { timeout: 60_000 });
 
   /* A gateway's page instead of the route's answer: not claimed either way, and nothing reached the route. */
   await page.route("**/api/jobs/*/release", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "<html><body>Bad gateway</body></html>" }), { times: 1 });
@@ -357,22 +365,22 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   await expect(page.getByTestId("toast")).toHaveText("Lamp line was already released.");
   await expect(tile(takes, "Lamp line")).not.toHaveAttribute("data-status", "held");
   expect(await meterRows(theirs)).toEqual([RUN]);
-  await expect.poll(() => balanceOf(page)).toBe(before - RUN);
+  await expect.poll(() => balanceOf(page)).toBe(minus(before, RUN));
 
   /* A member: their own take carries Release; a teammate's does not, here or in the Inspector. */
   await setRole(s.workspaceId, "member");
   await page.reload();
-  await expect(tile(takes, "Tide pool").getByTestId("take-chip")).toHaveText(`Held · needs ${(before + 60).toLocaleString("en-US")} cr`);
-  await expect(tile(takes, "Ferry turn").getByTestId("take-chip")).toHaveText(`Held · needs ${(before + 50).toLocaleString("en-US")} cr`);
+  await expect(tile(takes, "Tide pool").getByTestId("take-chip")).toHaveText(`Held · needs ${fig(plus(before, 60))} cr`);
+  await expect(tile(takes, "Ferry turn").getByTestId("take-chip")).toHaveText(`Held · needs ${fig(plus(before, 50))} cr`);
   await expect(tile(takes, "Ferry turn").getByTestId("take-release")).toHaveCount(0);
   await tile(takes, "Tide pool").getByTestId("take-release").click();
   const note = tile(takes, "Tide pool").getByTestId("take-release-note");
-  await expect(note).toContainText(`Still short: this needs ${(before + 60).toLocaleString("en-US")} credits and ${before - RUN} are left.`);
+  await expect(note).toContainText(`Still short: this needs ${fig(plus(before, 60))} credits and ${fig(minus(before, RUN))} are left.`);
   await expect(note.getByTestId("take-release-ask")).toHaveText("Ask an admin for credits.");
   await expect(note.getByTestId("take-release-credits")).toHaveCount(0);
   expect(await meterRows(mine)).toEqual([]);
   /* The route refuses a member on a teammate's take whatever the page shows. */
-  const refused = await page.request.post(`/api/jobs/${theirsShort}/release`, { headers: { "X-Workbench-Scope": s.scope }, data: { credits: before + 50 } });
+  const refused = await page.request.post(`/api/jobs/${theirsShort}/release`, { headers: { "X-Workbench-Scope": s.scope }, data: { credits: plus(before, 50) } });
   expect(refused.status()).toBe(403);
   expect(await meterRows(theirsShort)).toEqual([]);
   if (PHONES.includes(info.project.name)) {
@@ -388,7 +396,7 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   const assets = page.getByTestId("library-assets");
   await tile(assets, "Ferry turn").locator(".gx-asset-thumb").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Ferry turn");
-  await expect(page.getByTestId("asset-facts")).toContainText(`Held · needs ${(before + 50).toLocaleString("en-US")} cr`);
+  await expect(page.getByTestId("asset-facts")).toContainText(`Held · needs ${fig(plus(before, 50))} cr`);
   await expect(page.getByTestId("asset-inspector").getByTestId("take-release")).toHaveCount(0);
   if (!wide) {
     await page.getByTestId("close-inspector").click();
@@ -398,7 +406,7 @@ test("admin and member: an admin releases a teammate's take, and a lost reply pr
   await tile(assets, "Tide pool").locator(".gx-asset-thumb").click();
   await expect(page.getByTestId("inspector-title")).toHaveText("Tide pool");
   const inInspector = page.getByTestId("asset-inspector").getByTestId("take-release");
-  await expect(inInspector).toHaveText(`Release Tide pool · ${(before + 60).toLocaleString("en-US")} cr`);
+  await expect(inInspector).toHaveText(`Release Tide pool · ${fig(plus(before, 60))} cr`);
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="inspector-release"]'), "Inspector Release under 44×44").toEqual([]);
   await noSideScroll(page);
   expect(errors).toEqual([]);
@@ -424,8 +432,12 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await expect(packs).toHaveCount(4);
   await expect(page.getByTestId("ws-topups-error")).toHaveCount(0);
   /* Priced by the platform's own packs(): credits, bonus and the pack's dollar price, the one dollar figure here. */
-  await expect(packs).toHaveText([/Starter\s*500 cr · \$50/, /Team\s*2,200 cr · \$200 · 200 free/, /Studio\s*5,750 cr · \$500 · 750 free/, /Agency\s*24,000 cr · \$2,000 · 4,000 free/]);
-  await expect(packs.nth(1).getByTestId("ws-pack-request")).toHaveText("Request 2,200 credits");
+  const served = (await (await page.request.get("/api/workspaces/topups")).json()).packs as TopupPack[];
+  expect(served.map((p) => p.id)).toEqual(["starter", "team", "studio", "agency"]);
+  const [starterPack, teamPack] = served;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(packs).toHaveText(served.map((p) => new RegExp(`${p.label}\\s*${escape(packLine(p))}`)));
+  await expect(packs.nth(1).getByTestId("ws-pack-request")).toHaveText(packRequestLabel(teamPack));
   await expect(page.getByTestId("ws-grant").filter({ hasText: "Credits out fixture" })).toContainText("+120 cr");
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="ws-packs"]'), "pack buttons under 44×44").toEqual([]);
   await floors(page, '[data-testid="ws-pack"], [data-testid="ws-grant"], [data-testid="workspace-credits"]');
@@ -443,10 +455,10 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   const reply = page.waitForResponse((r) => r.url().endsWith("/api/workspaces/topups") && r.request().method() === "POST");
   await packs.nth(1).getByTestId("ws-pack-request").click();
   const posted = await (await reply).json();
-  expect(posted).toMatchObject({ emailed: false, checkout: { kind: "queued" }, request: { label: "Team", credits: 2000, bonus: 200, usd: 200, status: "requested" } });
+  expect(posted).toMatchObject({ emailed: false, checkout: { kind: "queued" }, request: { label: "Team", credits: teamPack.credits, bonus: teamPack.bonus, usd: teamPack.usd, status: "requested" } });
   await expect(page.getByTestId("ws-plans-note")).toHaveText("Requested. It waits on the platform desk; nothing is charged here, and the credits land once payment is confirmed.");
   const request = page.getByTestId("ws-topup-request").filter({ hasText: "Team" });
-  await expect(request).toContainText("Team · 2,200 cr · waiting on the platform since");
+  await expect(request).toContainText(`Team · ${teamPack.total.toLocaleString("en-US")} cr · waiting on the platform since`);
   expect(await balanceOf(page)).toBe(before);
   const stored = () => platform(async (db) => (await db.execute({ sql: "SELECT status FROM topup_requests WHERE id=?", args: [posted.request.id] })).rows.map((r) => String(r.status)));
   expect(await stored()).toEqual(["requested"]);
@@ -466,7 +478,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await packs.nth(0).getByTestId("ws-pack-request").click();
   await expect(page.getByTestId("ws-plans-note")).toHaveText("The request was not confirmed. Check Requests below before asking again; nothing is charged either way.");
   const starter = page.getByTestId("ws-topup-request").filter({ hasText: "Starter" });
-  await expect(starter).toContainText("Starter · 500 cr · waiting on the platform since");
+  await expect(starter).toContainText(`Starter · ${starterPack.total.toLocaleString("en-US")} cr · waiting on the platform since`);
   await page.unroute(/\/api\/workspaces\/topups$/);
   await starter.getByTestId("ws-topup-withdraw").click();
   await expect(starter).toHaveAttribute("data-status", "cancelled");
@@ -476,7 +488,7 @@ test("Plans & credits: the owner requests a pack and withdraws it, kept as withd
   await request.getByTestId("ws-topup-withdraw").click();
   await expect(page.getByTestId("ws-plans-note")).toHaveText("Request withdrawn.");
   await expect(request).toHaveAttribute("data-status", "cancelled");
-  await expect(request).toContainText("Team · 2,200 cr · withdrawn");
+  await expect(request).toContainText(`Team · ${teamPack.total.toLocaleString("en-US")} cr · withdrawn`);
   await expect(request.getByTestId("ws-topup-withdraw")).toHaveCount(0);
   expect(await stored()).toEqual(["cancelled"]);
   /* A wheel (a finger) reaches the page's last element, and on a phone it ends above the tab bar. */

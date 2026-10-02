@@ -116,7 +116,7 @@ export function RateCard({ groups, reference, legend, testId }: {
               const marked = Boolean(cell && isTakeCell(take, group, row, cell));
               return (
                 <span key={option} className="mr-cell" role="cell" data-empty={!cell || undefined} data-reference={marked || undefined} data-option={option}>
-                  <span className="mr-cell-opt" aria-hidden="true">{optionLabel(option)}</span>
+                  <span className="mr-cell-opt">{optionLabel(option)}</span>
                   <span className="mr-cell-cr">{cell ? grouped(cell.credits) : <><span aria-hidden="true">—</span><span className="mr-sr">not offered</span></>}</span>
                 </span>
               );

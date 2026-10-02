@@ -23,6 +23,7 @@ import {
   type PipelineSelection,
   type PreparedStageAdmission,
 } from "./schema";
+import { isCreditAmount } from "../creditTerms";
 
 export type PipelineVersion = {
   id: string;
@@ -466,7 +467,7 @@ export class PipelineStore {
           prepared.kind !== definition.kind ||
           prepared.request.projectId !== run.compiled.spec.context.projectId ||
           !/^[a-f0-9]{64}$/.test(prepared.quote.fingerprint) ||
-          !Number.isInteger(prepared.quote.estimatedCredits) ||
+          !isCreditAmount(prepared.quote.estimatedCredits) ||
           prepared.quote.estimatedCredits < 0 ||
           !Number.isFinite(prepared.quote.price) ||
           prepared.quote.price < 0 ||

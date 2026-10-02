@@ -72,7 +72,7 @@ test("Storyboards: agent prompts, the look, a priced frame filed as an asset, a 
 
   /* Black-and-white sketch; price, then render at that price. */
   await page.getByTestId("boards-style-bw-sketch").click();
-  await expect(frames.nth(0).getByTestId("frame-render")).toContainText(/Render frame · \d+ credits/);
+  await expect(frames.nth(0).getByTestId("frame-render")).toContainText(/Render frame · \d[\d,]*(?:\.\d)? credits?/);
   const priced = quotes.at(-1)!;
   expect(priced).toMatchObject({ model: "gemini-3.1-flash-image", references: [] });
   expect(String(priced.prompt)).toContain("black-and-white pencil sketch");
@@ -169,7 +169,7 @@ test("a frame's own agent prompt reads its beat; a line drawing is put on its be
   await drawing.locator("[data-testid$='-estimate']").click();
   await drawing.locator("[data-testid$='-start']").click();
   await expect(drawing.getByTestId("drawing-reading")).toContainText("(1 image seen)", { timeout: 60_000 });
-  await expect(drawing.getByTestId("drawing-render")).toContainText(/Convert · \d+ credits/);
+  await expect(drawing.getByTestId("drawing-render")).toContainText(/Convert · \d[\d,]*(?:\.\d)? credits?/);
   const converted = quotes.at(-1)!;
   expect(String(converted.prompt)).toContain("Cinematic live-action storyboard frame");
   expect(converted.references).toEqual([{ uploadId: expect.any(String), role: "reference_image" }]);

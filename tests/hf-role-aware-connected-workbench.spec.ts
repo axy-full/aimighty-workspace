@@ -308,8 +308,8 @@ test("the Studio alternative takes a fresh credit quote before explicit Generate
     const generate = page.getByTestId("gen-generate");
     await expect(generate).toBeEnabled();
     /* The button asks for one of the server's own quotes — a real figure, never a guess — and exactly that is sent. */
-    await expect(generate).toContainText(/· [\d,]+ cr/);
-    const credits = Number(/· ([\d,]+) cr/.exec((await generate.textContent()) ?? "")![1].replace(/,/g, ""));
+    await expect(generate).toContainText(/· \d[\d,]*(?:\.\d)? cr/);
+    const credits = Number(/· (\d[\d,]*(?:\.\d)?) cr/.exec((await generate.textContent()) ?? "")![1].replace(/,/g, ""));
     expect(credits).toBeGreaterThan(0);
     expect(quotes).toContain(credits);
     expect(submitted).toEqual([]);

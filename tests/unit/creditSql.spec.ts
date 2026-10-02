@@ -3,11 +3,16 @@ import { createClient } from "@libsql/client";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setCreditUsd } from "../helpers/creditRate";
 
 /** The ledger's SQL sum must agree with the meter's JavaScript, row by row. */
 test("the SQL rounding agrees with the meter", async () => {
   const { billedCreditsSum } = await import("../../lib/creditSql");
-  const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
+  const { marginFor, marginKeyOf } = await import("../../lib/creditTerms");
+  const { legacyBilledCredits } = await import("../../lib/creditUnits");
+  /* Takes that predate metering keep the terms they were made at — whole
+     credits at US$0.10 — whatever CREDIT_USD or the rounding is now (lib/creditSql.ts). */
+  const historical = (usd: number, key: string) => legacyBilledCredits(usd, marginFor(key));
   const dir = mkdtempSync(path.join(tmpdir(), "particl-sql-"));
   const c = createClient({ url: `file:${path.join(dir, "t.db")}` });
   await c.execute(`CREATE TABLE credit_receipts(event_id TEXT PRIMARY KEY, credits REAL, revision INTEGER)`);
@@ -24,9 +29,16 @@ test("the SQL rounding agrees with the meter", async () => {
   ];
   for (const r of rows) await c.execute({ sql: "INSERT INTO generations VALUES (?,?,?,?,?)", args: r });
   const rs = await c.execute(`SELECT ${billedCreditsSum()} AS credits FROM generations`);
-  const expected = rows.reduce((a, r) => a + billCredits(r[3] + (r[4] ?? 0), marginKeyOf(r[1], r[2])), 0);
+  const expected = rows.reduce((a, r) => a + historical(r[3] + (r[4] ?? 0), marginKeyOf(r[1], r[2])), 0);
   expect(Number((rs.rows[0] as Record<string, unknown>).credits)).toBe(expected);
   expect(expected).toBeGreaterThan(0);
+  /* And a different price for a credit today does not reprice them. */
+  const before = process.env.CREDIT_USD;
+  try {
+    setCreditUsd("0.25");
+    const again = await c.execute(`SELECT ${billedCreditsSum()} AS credits FROM generations`);
+    expect(Number((again.rows[0] as Record<string, unknown>).credits)).toBe(expected);
+  } finally { setCreditUsd(before); }
   const rs2 = await c.execute(`SELECT ${billedCreditsSum("g")} AS credits FROM generations g WHERE g.kind = 'audio'`);
-  expect(Number((rs2.rows[0] as Record<string, unknown>).credits)).toBe(billCredits(0.036, "elevenlabs"));
+  expect(Number((rs2.rows[0] as Record<string, unknown>).credits)).toBe(historical(0.036, "elevenlabs"));
 });

@@ -11,6 +11,10 @@ import { byQuality, eachLine, isTakeCell, leftFrom, optionLabel, reachFor, sortO
 import { paidFromBalance, plansWithReach, rateCard, referenceTakes, reachEngines, usualTakes, workspaceReach, RATE_CARD_SECONDS, USUAL_WINDOW } from '../../lib/workbench/media-reach';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
+import { pinCreditUsd } from "../helpers/creditRate";
+
+/* Arithmetic fixtures priced at US$0.10 a credit, for this file only (tests/helpers/creditRate.ts). */
+pinCreditUsd("0.10");
 
 /**
  * Credits said as takes (idea 24: plans and credits as media). Every figure
@@ -59,6 +63,13 @@ test('the arithmetic: whole takes, rounded down, unknowns stay unknown', () => {
   expect(takesWithin(null, 18)).toBeNull();
   expect(takesWithin(400, null)).toBeNull();
   expect(takesWithin(Number.NaN, 18)).toBeNull();
+  /* Tenths divide exactly: the floating division reads 162 / 5.4 as 29.999… and 0.7 / 0.1 as 6.999… */
+  expect(takesWithin(162, 5.4)).toBe(30);
+  expect(takesWithin(32.4, 5.4)).toBe(6);
+  expect(takesWithin(0.7, 0.1)).toBe(7);
+  expect(takesWithin(0.6, 0.2)).toBe(3);
+  expect(takesWithin(162, 5.5)).toBe(29);
+  expect(takesWithin(22_222_206, 0.3)).toBe(74_074_020);
   expect(reachFor(400, { video: null, image: null })).toEqual({ videos: null, images: null });
   expect(sortOptions(['1080p', '4k', '480p', '720p'])).toEqual(['480p', '720p', '1080p', '4k']);
   expect(sortOptions(['Medium', 'High', 'Low'])).toEqual(['Low', 'Medium', 'High']);

@@ -58,6 +58,7 @@ import {
   admitPrepared,
   assertAdmissionActor,
 } from "./admissionSupport";
+import { isCreditAmount, toDeci } from "./creditTerms";
 
 const MAX_TEXT = 5000;
 export type AudioTask = "speech" | "sound" | "music" | "dialogue" | "voiceChange";
@@ -343,9 +344,8 @@ export async function executeAudioAdmission(
     });
   if (
     body.maxCredits != null &&
-    (!Number.isInteger(body.maxCredits) ||
-      body.maxCredits < 0 ||
-      estimatedCredits > body.maxCredits)
+    (!isCreditAmount(body.maxCredits) ||
+      toDeci(estimatedCredits) > toDeci(body.maxCredits))
   ) {
     return admissionReply(
       {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd, setCreditUsd } from "../helpers/creditRate";
 
 /**
  * Idea 4 — a way out when credits run out. Release charges the exact price on
@@ -18,7 +19,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-credits-out-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 /* Never a mail key, in any test: the point is that nothing is sent without one. */
 delete process.env.RESEND_API_KEY;
@@ -407,6 +408,11 @@ const request = async (id: string) => {
 test("Packs: the owner or an admin asks and withdraws, a member cannot; a withdrawn request is kept; nothing crosses workspaces", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { platformDb } = await import("../../lib/platform");
+  const { packs, packById } = await import("../../lib/packs");
+  /* Packs sell at the public price, not at this file's arithmetic rate; the
+     table itself is pinned in topups.spec.ts. */
+  setCreditUsd(undefined);
+  const team = packById("team")!;
   let user = MEMBER;
   const sent: unknown[] = [];
   const call = topupsRoute(() => user, sent);
@@ -423,7 +429,8 @@ test("Packs: the owner or an admin asks and withdraws, a member cannot; a withdr
       user = MEMBER;
       const seen = await (await call("GET")).json();
       expect(seen).toMatchObject({ applies: true, canRequest: false, provider: "manual" });
-      expect(seen.packs.map((p: { id: string; total: number; usd: number }) => [p.id, p.total, p.usd])).toEqual([["starter", 500, 50], ["team", 2200, 200], ["studio", 5750, 500], ["agency", 24000, 2000]]);
+      expect(seen.packs.map((p: { id: string; total: number; usd: number }) => [p.id, p.total, p.usd])).toEqual(packs().map((p) => [p.id, p.total, p.usd]));
+      expect(seen.packs.map((p: { id: string }) => p.id)).toEqual(["starter", "team", "studio", "agency"]);
       const before = Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM topup_requests WHERE workspace_id=?", args: [home.id] })).rows[0].n);
       const asked = await call("POST", "", { packId: "team" });
       expect(asked.status).toBe(403);
@@ -436,8 +443,8 @@ test("Packs: the owner or an admin asks and withdraws, a member cannot; a withdr
       const made = await call("POST", "", { packId: "team" });
       expect(made.status).toBe(201);
       const body = await made.json();
-      expect(body).toMatchObject({ checkout: { kind: "queued" }, emailed: false, request: { label: "Team", credits: 2000, bonus: 200, usd: 200, status: "requested" } });
-      expect(await request(body.request.id)).toMatchObject({ workspace_id: home.id, status: "requested", credits: 2000, bonus_credits: 200, usd: 200 });
+      expect(body).toMatchObject({ checkout: { kind: "queued" }, emailed: false, request: { label: "Team", credits: team.credits, bonus: team.bonus, usd: team.usd, status: "requested" } });
+      expect(await request(body.request.id)).toMatchObject({ workspace_id: home.id, status: "requested", credits: team.credits, bonus_credits: team.bonus, usd: team.usd });
       expect(await balance()).toBe(0);
       expect((await call("POST", "", { packId: "made-up" })).status).toBe(400);
 
@@ -451,7 +458,7 @@ test("Packs: the owner or an admin asks and withdraws, a member cannot; a withdr
 
       /* The owner withdraws: marked, never erased, and it stays in the list as withdrawn. */
       expect((await call("DELETE", `?id=${body.request.id}`)).status).toBe(200);
-      expect(await request(body.request.id)).toMatchObject({ status: "cancelled", credits: 2000 });
+      expect(await request(body.request.id)).toMatchObject({ status: "cancelled", credits: team.credits });
       expect((await call("DELETE", `?id=${body.request.id}`)).status).toBe(404);
       const listed = (await (await call("GET")).json()).requests as { id: string; status: string }[];
       expect(listed.find((r) => r.id === body.request.id)).toMatchObject({ status: "cancelled" });
@@ -462,6 +469,7 @@ test("Packs: the owner or an admin asks and withdraws, a member cannot; a withdr
     expect(net.calls).toEqual([]);
   } finally {
     net.restore();
+    setCreditUsd("0.10");
   }
 });
 
@@ -496,13 +504,13 @@ test("a take held for credits is its own state: Held · needs N cr, its price, a
     gen("c", { status: "held", error: "This take and reserved takes exceed the shot's credit cap. An admin must start it.", params: { held: { why: "credits", needs: 40 } } }),
   ] as never);
   /* Held for credits is not "rendering": its own status, the need on the chip, nothing charged. */
-  expect(credits).toMatchObject({ status: "held", needs: 12, credits: null, reason: "Needs 12 cr" });
-  expect(takeChip(credits)).toEqual({ label: "Held · needs 12 cr", tone: "waiting" });
-  expect(takeStatusWord(credits)).toBe("Held · needs 12 cr");
+  expect(credits).toMatchObject({ status: "held", needs: 11.2, credits: null, reason: "Needs 11.2 cr" });
+  expect(takeChip(credits)).toEqual({ label: "Held · needs 11.2 cr", tone: "waiting" });
+  expect(takeStatusWord(credits)).toBe("Held · needs 11.2 cr");
   /* The chip carries the need; the 2-up tile says Held and the need under the name. */
   expect(takeReasonLine(credits)).toBeNull();
   expect(takeChip(credits, true)).toEqual({ label: "Held", tone: "waiting" });
-  expect(takeReasonLine(credits, true)).toBe("Needs 12 cr");
+  expect(takeReasonLine(credits, true)).toBe("Needs 11.2 cr");
   /* Waiting for a slot is a place in the line. */
   expect(slots).toMatchObject({ status: "rendering", stage: "queued", reason: "Waiting for a free slot" });
   expect(slots.needs).toBeUndefined();
@@ -526,14 +534,14 @@ test("the amber pill reads the last quote in this workspace's credits and never 
   expect(lastWorkspaceQuote("scope-a")).toBeNull();
   expect(lowBalance(10, null)).toBe(false);
   rememberWorkspaceQuote("scope-a", 12.2);
-  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 13 });
+  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 12.2 }); // to the tenth it was quoted at
   expect(lowBalance(12, lastWorkspaceQuote("scope-a"))).toBe(true);
   expect(lowBalance(13, lastWorkspaceQuote("scope-a"))).toBe(false);
   /* Unknown is not low; another workspace's quote is not this one's. */
   expect(lowBalance(null, lastWorkspaceQuote("scope-a"))).toBe(false);
   expect(lastWorkspaceQuote("scope-b")).toBeNull();
   for (const bad of [Number.NaN, -1, null, undefined]) rememberWorkspaceQuote("scope-a", bad as number);
-  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 13 });
+  expect(lastWorkspaceQuote("scope-a")).toMatchObject({ credits: 12.2 }); // to the tenth it was quoted at
   expect(lowBalance(0, { credits: 0 })).toBe(false);
 });
 
@@ -542,6 +550,8 @@ test("Plans lists packs as the platform prices them, requests by where they stan
   const team = { id: "team", label: "Team", credits: 2000, bonus: 200, total: 2200, usd: 200 };
   expect(packLine(team)).toBe("2,200 cr · $200 · 200 free");
   expect(packRequestLabel(team)).toBe("Request 2,200 credits");
+  /* A price with cents keeps both digits: $49.60, never $49.6. */
+  expect(packLine({ id: "starter", label: "Starter", credits: 62, bonus: 0, total: 62, usd: 49.6 })).toBe("62 cr · $49.60");
   const at = Date.UTC(2026, 8, 27, 12);
   const rows = requestRows([
     { id: "a", label: "Team", credits: 2000, bonus: 200, usd: 200, status: "cancelled", createdAt: at, decidedAt: at },

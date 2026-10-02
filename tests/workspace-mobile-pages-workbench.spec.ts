@@ -221,7 +221,7 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
      shot, on the button, exactly as the desktop's Generate carries it. */
   const primary = page.getByTestId("mobile-primary");
   await expect(primary).toContainText("Generate");
-  await expect(primary).toContainText(/\d+ cr/);
+  await expect(primary).toContainText(/\d[\d,]*(?:\.\d)? cr/);
   await expect(primary).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.getByTestId("mobile-action-reason")).toHaveCount(0);
   expect(await page.locator(".pxm-primary").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(10, 132, 255)");

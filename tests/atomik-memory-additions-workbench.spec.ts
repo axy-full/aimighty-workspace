@@ -3,6 +3,8 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
 
@@ -75,7 +77,7 @@ async function setup(page: Page, opts: { credits?: number; soul?: boolean } = {}
   });
   if (opts.credits) {
     const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
-    try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspace.id, opts.credits, "Local mock Memory read", "admin", "test", Date.now()] }); }
+    try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), workspace.id, opts.credits, "Local mock Memory read", "admin", "test", Date.now(), creditUsd()] }); }
     finally { platform.close(); }
   }
   await forbidPaidWork(page);
@@ -343,9 +345,11 @@ test("Read with Atomik: priced first, approved at that price, its proposals revi
   await card.getByTestId("memory-read-open").click();
   const panel = view.getByTestId("memory-read");
   const go = panel.getByTestId("memory-read-go");
-  await expect(go).toHaveText(/^Read · about \d+ cr$/);
-  const credits = Number((await go.textContent())!.match(/about (\d+) cr/)![1]);
-  await expect(panel.getByTestId("memory-read-estimate")).toHaveText(`about ${credits} cr · charged what the read actually costs, with up to ${credits} cr reserved until it finishes.`);
+  await expect(go).toHaveText(/^Read · about \d[\d,]*(?:\.\d)? cr$/);
+  /* A figure may carry one decimal (tenths of a credit); the page writes it as it is read here. */
+  const figure = (await go.textContent())!.match(/about (\d[\d,]*(?:\.\d)?) cr/)![1];
+  const credits = Number(figure.replace(/,/g, ""));
+  await expect(panel.getByTestId("memory-read-estimate")).toHaveText(`about ${figure} cr · charged what the read actually costs, with up to ${figure} cr reserved until it finishes.`);
   await floors(page, '[data-testid="memory-view"]', phone);
   await shot(page, "memory2-read-quote");
   /* Only the price was asked for: nothing sent, nothing kept. */
@@ -356,8 +360,8 @@ test("Read with Atomik: priced first, approved at that price, its proposals revi
   await go.click();
   const summary = panel.getByTestId("memory-proposals-summary");
   await expect(summary).toContainText("Atomik proposed 4 entries. 1 line with an amount left out.");
-  const billed = Number((await summary.textContent())!.match(/Read for (\d+) cr\./)![1]);
-  expect(billed).toBeGreaterThanOrEqual(1);
+  const billed = Number((await summary.textContent())!.match(/Read for (\d[\d,]*(?:\.\d)?) cr\./)![1].replace(/,/g, ""));
+  expect(billed).toBeGreaterThanOrEqual(0.1);
   expect(billed).toBeLessThanOrEqual(credits);
   const proposals = panel.getByTestId("memory-proposal");
   await expect(proposals).toHaveCount(4);
@@ -436,7 +440,7 @@ test("The phone Memory page: every part fits, reads and can be pressed, and ends
   await view.getByTestId("memory-brandkit-cancel").click();
   await view.getByTestId("memory-import-text").fill("- Teal and sand\n- Packs are $49");
   await view.getByTestId("memory-read-open").click();
-  await expect(view.getByTestId("memory-read-go")).toHaveText(/^Read · about \d+ cr$/);
+  await expect(view.getByTestId("memory-read-go")).toHaveText(/^Read · about \d[\d,]*(?:\.\d)? cr$/);
   await floors(page, '[data-testid="memory-view"]', phone);
   await shot(page, "memory2-page-read");
   await clearOfTabBar(page, '[data-testid="memory-view"]');

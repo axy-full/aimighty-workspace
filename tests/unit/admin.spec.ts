@@ -2,13 +2,14 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /** The platform's view across workspaces: spend, billed, margin, and which engines fail. */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-admin-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 
 const workspace = (id: string, own = false) => ({
   id, slug: id, name: id, legacy: false, dbUrl: process.env.TURSO_DATABASE_URL, dbToken: null,
@@ -30,13 +31,13 @@ test("spend, billed and failures are summed per workspace, engine health per eng
   const wa = by.get("ws_a")!;
   expect(wa.jobs).toBe(3); expect(wa.failed).toBe(1);
   expect(wa.engineCostUsd).toBeCloseTo(2.998, 3);
-  expect(wa.billedCredits).toBe(46); // 43 + 3
+  expect(wa.billedCredits).toBe(45.1); // 43 + 2.1: each job in tenths, rounded up
   /* Fully funded: every credit this workspace holds was bought, so the whole
      of its spend is revenue. */
-  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 1)).toBeCloseTo(1.602, 3);
+  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 1)).toBeCloseTo(1.512, 3);
   /* Half its credits were given. Half the same spend is revenue, and this
      workspace is in fact losing money — which the old figure hid. */
-  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 0.5)).toBeCloseTo(-0.698, 3);
+  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 0.5)).toBeCloseTo(-0.743, 3);
   const wb = by.get("ws_b")!;
   expect(wb.billedCredits).toBe(43); // saved workspace keys do not bypass managed billing
   expect(wb.engineCostUsd).toBeCloseTo(2.864, 6);

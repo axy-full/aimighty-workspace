@@ -5,6 +5,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
+import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -90,7 +91,7 @@ async function priced(page: Page) {
   return sheet;
 }
 const selectedRow = (page: Page) => sheetOf(page).locator('[role="option"][aria-selected="true"]');
-const figureOf = async (row: ReturnType<typeof selectedRow>) => Number(((await row.getByTestId("gen-sheet-price").locator("b").textContent()) ?? "").replace(/[^\d]/g, ""));
+const figureOf = async (row: ReturnType<typeof selectedRow>) => Number(((await row.getByTestId("gen-sheet-price").locator("b").textContent()) ?? "").replace(/[^\d.]/g, ""));
 /* Retrying: after a reload the list is read again before the group can draw. */
 const group = (page: Page, testId: string) => sheetOf(page).getByTestId(testId).locator(".gx-model-name");
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
@@ -111,7 +112,7 @@ test("every Studio engine wears spec chips and a price; the picked row's price i
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
     await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
-    await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^(about )?\d+ cr$/);
+    await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^(about )?\d[\d,]*(?:\.\d)? cr$/);
     /* A 16:9 project and an untouched composer: length and size, and the aspect only if it is not 16:9. */
     await expect(row.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^\d+ s · \S+( · \S+)?$/);
     await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^\d+(p|K)$/);
@@ -119,7 +120,7 @@ test("every Studio engine wears spec chips and a price; the picked row's price i
     await expect(row.locator('[data-spec="refs"]')).toHaveText(/refs$|^Prompt only$/);
   }
   /* Cinema Studio is priced from its published pricing and settles on the delivered take: it says "about". */
-  await expect(sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ }).getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d+ cr$/);
+  await expect(sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ }).getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d[\d,]*(?:\.\d)? cr$/);
   /* The default engine is the selected row; its price is what the button asks for, once there is a prompt. */
   const selected = sheet.locator('[role="option"][aria-selected="true"]');
   await expect(selected).toHaveCount(1);
@@ -158,7 +159,7 @@ for (const aspect of ["21:9", "1:1"]) {
     for (const row of await sheet.getByRole("option").all()) await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
     await closeSheet(page);
     await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour at dawn");
-    await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${figure} cr`, { timeout: 30_000 });
+    await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(figure)} cr`, { timeout: 30_000 });
     expect(errors).toEqual([]);
   });
 }
@@ -172,7 +173,7 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   const start = await figureOf(selectedRow(page));
   const engine = (await selectedRow(page).locator(".gx-model-name").textContent())!;
   await closeSheet(page);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${start} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(start)} cr`, { timeout: 30_000 });
 
   /* Gen's aspect chip at 21:9: the row names 21:9, and Generate settles on the row's figure. */
   await page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "21:9", exact: true }).click();
@@ -182,7 +183,7 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   const wide = await figureOf(selectedRow(page));
   expect(reads.some((q) => q.get("pickRatio") === "21:9")).toBe(true);
   await closeSheet(page);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${wide} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(wide)} cr`, { timeout: 30_000 });
 
   /* A bigger size, a longer take and three takes: the row is one take at those settings, the button three. */
   await page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
@@ -198,7 +199,7 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   expect(take).toBeGreaterThan(wide);
   await shot(page, info, "touched");
   await closeSheet(page);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${(take * 3).toLocaleString("en-US")} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${creditsFigure(fromDeci(toDeci(take) * 3))} cr`, { timeout: 30_000 });
 
   /* Another engine: its row, times three, is what Generate then asks for. */
   sheet = await openSheet(page);
@@ -207,7 +208,7 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   const otherFigure = await figureOf(other);
   await other.click();
   await expect(sheetOf(page)).toHaveCount(0);
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${(otherFigure * 3).toLocaleString("en-US")} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate 3 takes · ${creditsFigure(fromDeci(toDeci(otherFigure) * 3))} cr`, { timeout: 30_000 });
   expect(consumer).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -319,7 +320,7 @@ test("Recent leads with the last three models used for this output, never repeat
   await page.route("**/api/workbench/projects**", (route) => (paused ? route.fulfill({ status: 503, json: { error: "Saving is paused in this test." } }) : route.fallback()));
   await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour");
   await pick(order[2]);
-  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · \d+ cr$/, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Generate · \d[\d,]*(?:\.\d)? cr$/, { timeout: 30_000 });
   await page.getByTestId("gen-generate").click();
   await expect(page.locator(".gx-gen-note[role='status']").filter({ hasText: "Saving is paused in this test." })).toBeVisible();
   paused = false;
@@ -427,7 +428,7 @@ test("the Audio output: sound effects and music carry a price and a one-liner; G
   await music.click();
   await expect(sheetOf(page)).toHaveCount(0);
   await page.getByTestId("gen-prompt").fill("A slow cello over rain on a tin roof");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${figure} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(figure)} cr`, { timeout: 30_000 });
   sheet = await openSheet(page);
   await priced(page);
   const effects = sheet.getByRole("option").first();

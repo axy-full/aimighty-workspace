@@ -15,7 +15,7 @@ import { assertMeterFunding, meter, type MeterEvent } from '../meter';
 import { platformDb, platformReady } from '../platform';
 import { billingTransaction } from '../billingLedger';
 import { vendorKey } from '../vendorKeys';
-import { billCredits } from '../creditTerms';
+import { billCredits, isCreditAmount, toDeci } from '../creditTerms';
 import { paidByPlatform } from '../platformSpend';
 import { engineMock } from '../mock';
 import { requireTenant, type TenantToken } from '../tenant';
@@ -41,7 +41,7 @@ export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
   kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig', 'verify']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
-  sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().int().min(0).max(1_000_000).optional(),
+  sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().min(0).max(1_000_000).refine(isCreditAmount).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
   fromJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   fromBeats: z.literal(true).optional(),
@@ -512,7 +512,7 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   const approvedUsd = paidByPlatform(textVendor(input.model)) ? null : input.maxUsd ?? null;
   /* The approval binds the price the person was shown; what is allowed, reserved and kept below is the ceiling. */
   const shown = shownPrice(compiled);
-  if (shown.credits > input.maxCredits || (approvedUsd != null && shown.usd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
+  if (toDeci(shown.credits) > toDeci(input.maxCredits) || (approvedUsd != null && shown.usd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
   const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();

@@ -302,7 +302,7 @@ test("Crew: a room opened on an engine the deployment has moved off offers the m
   await expect(move).toHaveCount(0);
   await expect(panel).not.toContainText("grok-retired");
   await expect(panel).toContainText(current);
-  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d+ cr$/);
+  await expect(page.getByTestId("crew-run")).toHaveText(/^Run round · \d[\d,]*(?:\.\d)? cr$/);
   expect(await noOverflow(page)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });

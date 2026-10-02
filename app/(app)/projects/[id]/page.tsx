@@ -24,6 +24,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { useMoney } from "@/lib/price";
 import { useSession } from "@/lib/session";
 import { burnDown, biggestBurners, projectionLine } from "@/lib/burndown";
+import { creditsFigure } from "@/lib/creditTerms";
 
 type Project = {
   id: string; name: string; description: string; code?: string; category?: string;
@@ -243,7 +244,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
   // The page's own totals, which are fresh; the production list behind `project` is a cache.
   const spent = money.inCredits ? spentCredits : spentUsd;
   const unit = money.inCredits ? "cr" : "$";
-  const show = (n: number) => (money.inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const show = (n: number) => (money.inCredits ? `${creditsFigure(n)} cr` : `$${Math.round(n)}`);
   const pct = cap ? Math.round((spent / cap) * 100) : null;
   async function patch(body: Record<string, unknown>) {
     const res = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -346,7 +347,7 @@ function BurnDown({ project, totals, byShot, shotCount }: {
 }) {
   const money = useMoney();
   const inCredits = money.inCredits;
-  const show = (n: number) => (inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const show = (n: number) => (inCredits ? `${creditsFigure(n)} cr` : `$${Math.round(n)}`);
   const spend = (s: { credits?: number; spend?: number }) => (inCredits ? s.credits ?? 0 : s.spend ?? 0);
   const rows = byShot.map((s) => ({ id: s.id, code: s.code, title: s.title, takes: s.takes, credits: spend(s) }));
   const b = burnDown({

@@ -1,3 +1,5 @@
+import { isCreditAmount } from '../../lib/creditTerms';
+
 /** Durable request bytes are written before a native-render POST. */
 export type PendingAstraRender = {
   version: 1;
@@ -23,7 +25,7 @@ export function readPendingAstraRender(storage: StorageLike, scope: string, proj
     const record = JSON.parse(raw) as PendingAstraRender;
     const input = JSON.parse(record.body);
     if (record.version !== 1 || record.scope !== scope || record.projectId !== projectId || typeof record.requestId !== 'string' || !record.requestId || typeof record.body !== 'string' || record.body.length > 20000 || !Number.isFinite(record.createdAt)
-      || input.projectId !== projectId || input.requestId !== record.requestId || !['scene', 'native'].includes(input.source) || !Number.isSafeInteger(input.maxCredits) || input.maxCredits < 0 || input.maxCredits > 100000 || input.quoteOnly !== false || typeof input.sourceDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceDigest) || typeof input.quoteDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.quoteDigest)) throw new Error('invalid');
+      || input.projectId !== projectId || input.requestId !== record.requestId || !['scene', 'native'].includes(input.source) || !isCreditAmount(input.maxCredits) || input.maxCredits < 0 || input.maxCredits > 100000 || input.quoteOnly !== false || typeof input.sourceDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.sourceDigest) || typeof input.quoteDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.quoteDigest)) throw new Error('invalid');
     return record;
   } catch { throw new Error('The saved render request could not be verified. Review render history before starting another render.'); }
 }

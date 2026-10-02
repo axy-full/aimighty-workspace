@@ -16,6 +16,7 @@
 import { TOOLS } from "@/lib/mcp";
 import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
 import type { ShellSuiteId } from "./ia";
+import { creditsFigure } from "../creditTerms";
 
 export type ToolsTab = "reach" | "connect";
 
@@ -163,7 +164,7 @@ export type TokenUnit = "credits" | "usd";
 /** What a new generating token's ceiling field starts at: a stop has to be removed on purpose. */
 export const DEFAULT_CEILING: Record<TokenUnit, string> = { credits: "500", usd: "20" };
 
-const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
+const cr = (n: number) => `${creditsFigure(n)} cr`;
 const usd = (n: number) => `$${n.toFixed(2)}`;
 function ago(at: number, now: number): string {
   const s = Math.max(0, Math.floor((now - at) / 1000));

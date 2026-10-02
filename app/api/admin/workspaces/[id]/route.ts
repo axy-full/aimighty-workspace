@@ -1,6 +1,7 @@
 import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, after } from "next/server";
 import { asPlanId } from "@/lib/plans";
+import { isCreditAmount } from "@/lib/creditTerms";
 import { requireSuperAdmin } from "@/lib/auth";
 import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
@@ -76,8 +77,9 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   }
   if ("grantCredits" in body) {
     const n = Number(body.grantCredits);
-    if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000) {
-      return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
+    // Credits move in tenths (lib/creditTerms.ts): 2.5 is a grant, 2.55 is not.
+    if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000 || !isCreditAmount(Math.abs(n))) {
+      return NextResponse.json({ error: "Credits to add: a number to a tenth, negative to take some away." }, { status: 400 });
     }
     /* `manual`, which counts as free. Management adding credits is usually
        goodwill; when it is a payment taken off-platform there is nowhere yet

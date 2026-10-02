@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CatalogModel } from "../../lib/catalog";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-paid-entry-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 const model: CatalogModel = {
   id: "test/text",
@@ -109,7 +110,7 @@ test("legacy text reserves before its only provider call and charges even when t
     expect(out.text).toContain("not the requested");
     expect(calls).toBe(1);
     expect((await metered("text_paid"))[0].status).toBe("succeeded");
-    expect(Number((await metered("text_paid"))[0].billed_credits)).toBe(1);
+    expect(Number((await metered("text_paid"))[0].billed_credits)).toBe(0.2); // a tenth is the smallest step
   }));
 
 test("an answer the caller refuses is paid to the provider but settles at zero for the workspace", async () =>

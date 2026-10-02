@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { pinCreditUsd } from "../helpers/creditRate";
 
 /* The walls a customer can walk into say nothing about what the vendors
    charge: a token's monthly ceiling trips on what the workspace pays, the
@@ -13,7 +14,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-vendor-walls-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
+pinCreditUsd("0.10");
 process.env.ENGINE_MOCK = "1";
 
 const run = randomUUID().slice(0, 8);
@@ -87,7 +88,7 @@ test("current and migrated studios receive the same retail credit quote", async 
   const { billCredits } = await import("../../lib/creditTerms");
   const { publicQuote, quoteOf, liveTerms } = await import("../../lib/quote");
   expect(await runInTenant(workspace("quote_cr", true), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
-  /* Stored funding preferences cannot bypass managed retail quotes. */
+  /* Stored funding preferences cannot bypass managed retail quotes (#425); billCredits is in tenths here. */
   expect(await runInTenant(workspace("quote_usd", false), async () => quotedCredits(1.339101, SEEDANCE))).toBe(billCredits(1.339101, SEEDANCE));
   /* A quote leaves the server in credits alone (/api/rig/quote). */
   const q = quoteOf([{ key: "s1", usd: 1.339101, engine: SEEDANCE }, { key: "s2", usd: 0.512901, engine: SEEDANCE }], liveTerms());

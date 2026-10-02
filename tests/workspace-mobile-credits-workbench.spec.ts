@@ -113,12 +113,12 @@ test("a large balance is written in full, and still clears the header's floors",
   await page.route("**/api/me", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
-    return route.fulfill({ json: { ...body, credits: { ...(body.credits ?? {}), balance: 1234567 } } });
+    return route.fulfill({ json: { ...body, credits: { ...(body.credits ?? {}), balance: 1234567.8 } } });
   });
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/workspace?project=" + primary.id + "&suite=particl");
-  /* Grouped en-US, in full: a truncated balance is a wrong balance. */
-  await expect(page.getByTestId("mobile-credits")).toHaveText("1,234,567 cr");
+  /* Grouped en-US, in full, to the tenth credits are charged in: a truncated balance is a wrong balance. */
+  await expect(page.getByTestId("mobile-credits")).toHaveText("1,234,567.8 cr");
   const title = (await page.getByTestId("mobile-title").boundingBox())!;
   expect(title.width).toBeGreaterThanOrEqual(44);
   expect(Math.round(title.height * 100) / 100).toBeGreaterThanOrEqual(44);

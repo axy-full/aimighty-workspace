@@ -2,6 +2,8 @@ import { test, expect, type Page, type PlaywrightWorkerArgs } from "@playwright/
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+/* Grants in today's credits, saying so (unit_usd): the runner and the mock server share the default. */
+import { creditUsd } from "../lib/creditTerms";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 
@@ -40,7 +42,7 @@ async function seed(page: Page, playwright: PlaywrightWorkerArgs["playwright"], 
     await ownerApi.dispose();
   }
   const mode = await platform(async (db) => {
-    await db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, 5000, "Viral key fixture", "manual", "test", Date.now()] });
+    await db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at,unit_usd) VALUES(?,?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, 5000, "Viral key fixture", "manual", "test", Date.now(), creditUsd()] });
     return Number((await db.execute({ sql: "SELECT uses_platform_keys FROM workspaces WHERE id=?", args: [workspaceId] })).rows[0].uses_platform_keys);
   });
   expect(mode, "a managed workspace: the platform's keys, paid in credits").toBe(1);
@@ -83,8 +85,9 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 /** A priced button reads "<verb> · about N cr": an estimate, whole, never shortened. */
-const priced = (verb: string) => new RegExp(`^${verb} · about \\d[\\d,]* cr$`);
-const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/about ([\d,]+) cr/)?.[1] ?? "").replace(/,/g, ""));
+/* A figure may carry one decimal: credits are charged in tenths. */
+const priced = (verb: string) => new RegExp(`^${verb} · about \\d[\\d,]*(?:\\.\\d)? cr$`);
+const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)?.[1] ?? "").replace(/,/g, ""));
 
 test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");

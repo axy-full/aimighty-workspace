@@ -339,7 +339,7 @@ test("Rig on a phone: Apply prices each shot at the engine's own settings, sends
   expect(bodies[0]).toMatchObject({ model: engine, shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 4, projectId: "prj_audit" });
   expect(bodies[1]).toMatchObject({ duration: 8 });
   const cost = (await toast.textContent())!.match(/rendering · ([^·]+?) ·/)?.[1]?.trim() ?? "";
-  if (/cr$/i.test(cost)) expect(bodies[0].maxCredits).toBe(Number(cost.replace(/\D/g, "")));
+  if (/cr$/i.test(cost)) expect(bodies[0].maxCredits).toBe(Number(cost.replace(/[^\d.]/g, "")));
   else expect(bodies[0]).not.toHaveProperty("maxCredits");
   /* One take started, so the slot now carries v2. */
   await expect.poll(() => puts.length).toBe(1);

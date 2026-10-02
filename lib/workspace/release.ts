@@ -1,3 +1,4 @@
+import { ceilDeci, fromDeci } from "../creditTerms";
 /**
  * Releasing a take held for credits (lib/held.ts), as rules both sides read:
  * the route (app/api/jobs/[id]/release) decides with them, the Suites show
@@ -17,10 +18,10 @@ export function mayRelease(viewer: ReleaseViewer, createdBy: string | null | und
 /**
  * The credits a take held at zero was quoted (lib/held.ts heldInfo, carried
  * to the browser as `params.held.needs` for a workspace that pays in
- * credits), whole; null when it waits for a slot or no figure was kept.
+ * credits), to a tenth; null when it waits for a slot or no figure was kept.
  */
 export function heldNeeds(params: Record<string, unknown> | null | undefined): number | null {
   const held = (params as { held?: { why?: unknown; needs?: unknown } } | null | undefined)?.held;
   if (!held || held.why === "slots") return null;
-  return typeof held.needs === "number" && Number.isFinite(held.needs) && held.needs > 0 ? Math.ceil(held.needs) : null;
+  return typeof held.needs === "number" && Number.isFinite(held.needs) && held.needs > 0 ? fromDeci(ceilDeci(held.needs)) : null;
 }

@@ -24,6 +24,7 @@ import { listEstimate, moneyColumns, takeEstimate } from "@/lib/shotListCost";
 import type { Shot } from "@/lib/shots";
 import type { Treatment } from "@/lib/atomikDocs";
 import { useMoney } from "@/lib/price";
+import { roundToTenth } from "@/lib/creditUnits";
 
 type Row = Shot & { takes: number; ok: number; failed: number; spend?: number; credits?: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
 type Proj = { id: string; name: string; spend?: number; credits?: number; capUsd?: number | null; capCredits?: number | null };
@@ -78,7 +79,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
   }
   function exportCsv() {
     const cols = moneyColumns(rates);
-    const figure = (n: number) => (money.inCredits ? String(Math.round(n)) : n.toFixed(2));
+    const figure = (n: number) => (money.inCredits ? String(roundToTenth(n)) : n.toFixed(2));
     const rows = [["#", "shot", "scene", "cast", "size", "angle", "move", "lens", "planned_s", cols.estimate, "state", "takes", cols.spent, "master"],
       ...shots.map((s) => [s.code, s.description || s.title, s.scene, s.cast.join(" "), labelOf("shot", s.setup.shot) ?? "", labelOf("angle", s.setup.angle) ?? "", labelOf("move", s.setup.move) ?? "", labelOf("lens", s.setup.lens) ?? "",
         s.planned ?? "", figure(takeEstimate(rates, s)), s.state, s.takes, figure(spentOf(s)), s.master?.url ?? ""])];

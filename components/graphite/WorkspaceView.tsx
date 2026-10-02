@@ -24,6 +24,7 @@ import { XaiEngineRow } from "./crew/XaiEngineRow";
 import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
+import { roundToTenth } from "@/lib/creditUnits";
 
 /**
  * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage · Dashboard ·
@@ -198,7 +199,7 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
         <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Prompt enhancer" style={{ alignSelf: "flex-start" }}>
           {ENHANCER_PROVIDERS.map((p) => <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gx-seg-btn" disabled={!admin} onClick={() => set("promptEnhancer", p)} data-testid={`ws-enhancer-${p}`}><span>{ENHANCER_LABEL[p]}</span></button>)}
         </div>
-        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr.</span>
+        <span className="cw-dim">{ENHANCER_NOTE[enhancer]} A local enhancement costs about 0.1 cr.</span>
       </div>
       <div className="wsx-actions">
         <button type="button" className="gx-primary" disabled={!admin || (!changed.length && !renamed) || saving} onClick={() => void save()} data-testid="ws-save">{saving ? "Saving…" : "Save"}</button>
@@ -528,7 +529,7 @@ function Plans({ credits, balance }: { credits: { text: string; title: string };
 function Usage() {
   const { data, error } = useRead<UsageBody>("/api/usage");
   const { unit, rows, total } = usageRows(data);
-  const money = (n: number) => (unit === "cr" ? cr(Math.round(n)) : `$${n.toFixed(2)}`);
+  const money = (n: number) => (unit === "cr" ? cr(roundToTenth(n)) : `$${n.toFixed(2)}`);
   const shown = rows.filter((r) => r.amount > 0 || r.n > 0).sort((a, b) => b.amount - a.amount);
   const max = Math.max(1, ...shown.map((r) => r.amount));
   return (
