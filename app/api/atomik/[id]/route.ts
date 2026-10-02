@@ -11,6 +11,7 @@ import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuot
 import { cleanAttachments } from "@/lib/attachments";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
+import { ARCHIVED_NOTE, ThreadError, archiveThread, renameThread, restoreThread } from "@/lib/atomikThreads";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -35,15 +36,21 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
   const { id } = await ctx.params;
   const b = await req.json().catch(() => ({}));
   try {
+  /* A thread is renamed, archived or restored (lib/atomikThreads.ts). None of it is activity, none of it
+     spends, and archiving keeps everything in the thread. */
+  if (typeof b.title === "string") await renameThread(id, b.title);
+  if (typeof b.archived === "boolean") await (b.archived ? archiveThread(id, got.user.id) : restoreThread(id));
   await patchChat(id, {
-    title: typeof b.title === "string" ? b.title : undefined,
     model: typeof b.model === "string" ? b.model : undefined,
     effort: requestEffort(b.effort),
     agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? b.agentMode as AgentMode : undefined,
     projectId: b.projectId === undefined ? undefined : (b.projectId || null),
   });
   return NextResponse.json(await getChat(id));
-  } catch (error) { return paidTextFailure(error); }
+  } catch (error) {
+    if (error instanceof ThreadError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return paidTextFailure(error);
+  }
 });
 
 export const DELETE = withTenant(async function DELETE(_req: NextRequest, ctx: Ctx) {
@@ -79,6 +86,8 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
 
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
+  /* An archived thread is hidden: nothing is planned in it, or paid for, until it is restored. */
+  if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: loaded }, { status: 409 });
 
   try {
     const effort = requestEffort(b.effort);

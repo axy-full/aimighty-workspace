@@ -12,6 +12,7 @@ import { MessageLoader } from "./Loader";
 import { useAtomik } from "./AtomikProvider";
 import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
+import ThreadSwitcher from "./threads/ThreadSwitcher";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
 import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
@@ -43,6 +44,9 @@ import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKey
  * the filled button (46px, radius 12, `Continue · keyframes · 24 CR`).
  * The composer below it (`8px 16px 16px`): the field at 46, radius 12,
  * 400 14px; `↑` at 46×46.
+ *
+ * Both open on the production's Threads row (threads/ThreadSwitcher.tsx):
+ * the thread on screen, and the list to switch, start, name and archive.
  *
  * Nothing of this renders while the rail is closed (§5).
  */
@@ -192,6 +196,7 @@ function Compact({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const a = useAtomik();
   return (
     <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide={false} resize={size.update}/>} footer={<ChatComposer inputHeight={44} />}>
+      <ThreadSwitcher placement="rail" />
       <ContextChip />
       <MarketingStudioEntry />
       <CurrentCard placement="card" />
@@ -225,6 +230,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
   );
   return (
     <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide resize={size.update}/>} footer={footer}>
+      <ThreadSwitcher placement="rail" />
       <ContextChip dismiss={a.clear} />
       <MarketingStudioEntry />
       {a.messages.map((m) => (

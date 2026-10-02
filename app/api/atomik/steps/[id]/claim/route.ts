@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
+import { ARCHIVED_NOTE, threadArchived } from "@/lib/atomikThreads";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,9 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   const pending = await getStep(id);
   if (pending && isAccountStep(pending))
     return NextResponse.json({ error: ACCOUNT_STEP_NOTE, step: stepForBrowser(pending) }, { status: 409 });
+  /* A step in an archived thread waits, unpaid, until its thread is restored (lib/atomikThreads.ts). */
+  if (pending && (await threadArchived(pending.chatId)))
+    return NextResponse.json({ error: ARCHIVED_NOTE, step: stepForBrowser(pending) }, { status: 409 });
 
   let step = await claimStep(id, got.user.id);
   /* A step left running by an approval that never reached the renderer is
