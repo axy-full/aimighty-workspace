@@ -7,6 +7,7 @@
  */
 import { db, ready } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
+import { requireConsumerFunding } from "./jobs";
 import { getConsumerAccess, ConsumerOAuthError } from "./oauth";
 import { createConsumerElement, listConsumerElements, type ConsumerElementCategory } from "./mcp";
 import { resolveConsumerGenerationSources } from "./generation-sources";
@@ -69,6 +70,7 @@ export async function connectedElements(userId: string): Promise<{ connected: bo
 
 export type ElementBuildOutcome = { state: "created"; element: ConnectedElement } | { state: "accepted"; element: null } | { state: "refused"; reason: string } | { state: "uncertain"; element: null };
 export async function buildConnectedElement(userId: string, input: { name: string; category: ConsumerElementCategory; description: string; sources: SoulBuildSource[]; projectId?: string | null }): Promise<ElementBuildOutcome> {
+  requireConsumerFunding();
   const access = await getConsumerAccess(requireTenant().id, userId);
   if (!access) throw new ConsumerOAuthError("reconnect_required");
   await elementsReady();

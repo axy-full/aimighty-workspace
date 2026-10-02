@@ -121,7 +121,7 @@ test("a completion without a cost keeps the estimate's billing", async () => {
   expect((await creditsUsed("ws_unit")) - before).toBe(54);
 });
 
-test("a workspace on its own key is metered at zero credits", async () => {
+test("saved workspace keys cannot bypass managed credit billing", async () => {
   const { meter, creditsUsed } = await import("../../lib/meter");
   const { runInTenant } = await import("../../lib/tenant");
   const ws = workspace({
@@ -139,7 +139,7 @@ test("a workspace on its own key is metered at zero credits", async () => {
       engineCostUsd: 2.864,
     }),
   );
-  expect(await creditsUsed("ws_own")).toBe(0);
+  expect(await creditsUsed("ws_own")).toBe(43);
 });
 
 test("changing vendor keys while a job runs cannot change who funds its completed bill", async () => {
@@ -189,7 +189,7 @@ test("changing vendor keys while a job runs cannot change who funds its complete
     ]),
   ).toEqual([
     ["key_added", 1, 17],
-    ["key_removed", 0, 0],
+    ["key_removed", 1, 17],
   ]);
 });
 
@@ -205,6 +205,6 @@ test('direct OpenAI funding is separate from Gateway and provider changes fail b
   const direct = workspace({ keys: { openai: 'workspace-openai' } });
   await runInTenant(direct, () => meter({ id: 'meter-direct-byok', kind: 'text', engine: 'openai', model: 'openai/gpt-6-astra', status: 'running', engineCostUsd: .10 }));
   const rows = await platformDb().execute("SELECT id,paid_by_platform,billed_credits FROM meter_events WHERE id IN ('meter-direct-openai','meter-direct-byok') ORDER BY id");
-  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 0, billed_credits: 0 });
+  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 1, billed_credits: 2 });
   expect(rows.rows[1].paid_by_platform).toBe(1);
 });

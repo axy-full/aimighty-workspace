@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,7 +44,7 @@ function harness() {
   return { deps, events, calls, reservations: () => reservations };
 }
 async function fixture(kind: DevelopmentRequest['kind'] = 'screenplay') {
-  await ready();
+  await ready(); await fundFixtureWorkspace();
   const project = seedProject(); project.id = 'development-' + randomUUID(); project.productionProjectId = 'real-' + randomUUID();
   project.script = 'TITLE PAGE\n\nEXT. DUNES - DAY\nMira follows her reflection.\n\nINT. ROOM - NIGHT\nShe opens a letter.';
   await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: ['owner:' + project.id, 'owner', project.id, project.name, JSON.stringify(project), Date.now()] });
@@ -101,7 +102,7 @@ test('quote is read-only and accounts for every phase, complete source, prior ou
     expect(quote.estimateUsd).toBeGreaterThan(.015); expect(h.reservations()).toBe(0); expect(h.calls).toHaveLength(0);
     expect(await listDevelopmentJobs('owner', request.projectId, undefined, h.deps)).toEqual([]);
     await expect(prepareDevelopmentJob(request, 'owner', undefined, h.deps)).rejects.toThrow('quote');
-    await expect(prepareDevelopmentJob({ ...await approve(request, h.deps), maxUsd: 0 }, 'owner', undefined, h.deps)).rejects.toThrow('estimate changed');
+    await expect(prepareDevelopmentJob({ ...await approve(request, h.deps), maxCredits: 0 }, 'owner', undefined, h.deps)).rejects.toThrow('estimate changed');
   });
 });
 
@@ -183,7 +184,7 @@ test('a breakdown phase has room for its whole result; a fenced answer with a tr
   });
 });
 
-test('the per-request ceiling is $250 by default: a $150 worst case is quoted, a $300 one is refused with its figures', async () => {
+test('the per-request ceiling rejects excessive work without exposing provider amounts', async () => {
   await runInTenant(workspace(), async () => {
     const { request } = await fixture(), h = harness();
     const base = Number((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd);
@@ -192,7 +193,7 @@ test('the per-request ceiling is $250 by default: a $150 worst case is quoted, a
     priced(150);
     expect((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd).toBeCloseTo(150, 0);
     priced(300);
-    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/at most \$300\.\d\d across \d+ agent steps with Claude, against \$250\.00 per request/);
+    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow('The full development workflow is more than one request may spend: 3 agent steps with Claude. Choose a less expensive model or lower effort.');
   });
 });
 
@@ -307,6 +308,7 @@ test('real ledger funding guard prevents a BYOK reservation from switching to pl
     const deps: Partial<DevelopmentDependencies> = { models: h.deps.models, allowance: h.deps.allowance, auth: h.deps.auth, call: h.deps.call, reserve: reserveGenerationSpend, meter };
     const { job } = await prepareDevelopmentJob(await approve(request, deps), 'owner', undefined, deps);
     await runDevelopmentStep(job.id, 'owner', deps);
+    await platformDb().execute({ sql: "UPDATE meter_events SET paid_by_platform=0,billed_credits=0 WHERE id=?", args: [job.id] });
     ws.keys = {}; ws.usesPlatformKeys = true;
     await runDevelopmentStep(job.id, 'owner', deps);
     const [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, deps);
@@ -451,6 +453,7 @@ test('a failed run on the platform\'s keys is never billed: the vendor\'s cost i
 
 
 test('direct development prices its saved per-step cache receipt and stops on unknown usage', async () => {
+  const priorKey = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = 'unit-only-managed';
   const prior = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
   try { for (const unknown of [false, true]) {
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
@@ -471,5 +474,5 @@ test('direct development prices its saved per-step cache receipt and stops on un
       const receipt = (await db().execute({ sql: 'SELECT usage,response FROM workbench_development_steps WHERE job_id=? AND step_index=0', args: [job.id] })).rows[0];
       expect(String(receipt.usage)).toContain('cached_tokens'); expect(String(receipt.response)).toContain('summary');
     });
-  } } finally { if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
+  } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
 });

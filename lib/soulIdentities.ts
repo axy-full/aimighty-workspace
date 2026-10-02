@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import type { Client, Row, Transaction } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { db, ready, now, id as newId } from "./db";
@@ -847,8 +848,7 @@ export async function syncSoulIdentity(
       return publicIdentity((await rawIdentity(id))!);
     }
     if (
-      !higgsfieldConfigured() ||
-      higgsfieldCredentialFingerprint() !== row.credential_fingerprint
+      !(await withAcceptedJobCredentials(id, "higgsfield", async () => higgsfieldConfigured() && higgsfieldCredentialFingerprint() === row!.credential_fingerprint))
     ) {
       await db().execute({
         sql: "UPDATE soul_identities SET error=?,last_polled_at=? WHERE id=?",
@@ -867,11 +867,13 @@ export async function syncSoulIdentity(
     if (leased.rowsAffected) {
       let origin: SoulReferenceOrigin | null = null;
       try {
-        origin = soulReferenceOrigin(row.provider_origin);
-        const result = await (deps.poll ?? getSoulReference)(
-          String(row.provider_reference_id),
-          origin,
-        );
+        // The host that accepted it, read with the key that paid for it.
+        const host = soulReferenceOrigin(row.provider_origin);
+        origin = host;
+        const result = await withAcceptedJobCredentials(id, "higgsfield", () => (deps.poll ?? getSoulReference)(
+          String(row!.provider_reference_id),
+          host,
+        ));
         if (result.id !== row.provider_reference_id)
           throw new Error("Identity handle mismatch.");
         await saveReceipt(row, result);

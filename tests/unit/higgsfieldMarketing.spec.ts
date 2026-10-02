@@ -1,3 +1,4 @@
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -560,7 +561,7 @@ test("Marketing durable receipts recover lost tenant acknowledgement, settle sav
   const genId = `gen_marketing_${path.basename(dir)}`;
   try {
     await runInTenant(workspace("marketing_recovery"), async () => {
-      await ready();
+      await ready(); await fundFixtureWorkspace();
       const req = await request();
       const params = {
         marketing: req.marketing,
@@ -633,7 +634,8 @@ test("Marketing durable receipts recover lost tenant acknowledgement, settle sav
       });
       await reconcileHiggsfieldImage(genId);
       await reconcileHiggsfieldImage(genId);
-      expect((await getGeneration(genId))!.costUsd).toBe(0.25);
+      expect((await getGeneration(genId))!.costUsd).toBeNull();
+      expect((await getGeneration(genId))!.creditsBilled).toBe(4);
       expect((await getGeneration(genId))!.status).toBe("succeeded");
       expect(
         (
@@ -680,7 +682,7 @@ test("unknown paid Marketing outcome retains claim and reserve; worker replays a
   };
   try {
     await runInTenant(workspace("unknown_marketing"), async () => {
-      await ready();
+      await ready(); await fundFixtureWorkspace();
       const req = await request();
       const params = {
         marketing: req.marketing,

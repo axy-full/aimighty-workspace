@@ -244,7 +244,7 @@ test("Brief & Script: the notes survive a reload and a refused start, leave only
   expect(errors).toEqual([]);
 });
 
-test("Beats: a delete goes on the undo stack with a toast Undo, ⌘Z brings it back from Brief; notes survive a reload; own-key prices say so", async ({ page }, info) => {
+test("Beats: a delete goes on the undo stack with a toast Undo, ⌘Z brings it back from Brief; notes survive a reload; stale own-key quotes never expose vendor amounts", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(120_000);
   const sha = createHash("sha256").update(SCRIPT).digest("hex");
@@ -270,10 +270,10 @@ test("Beats: a delete goes on the undo stack with a toast Undo, ⌘Z brings it b
   await page.reload();
   await expect(page.getByTestId("beats-notes")).toHaveValue("Keep it wordless.");
 
-  /* A model on the workspace's own key is priced in its dollars there, never "0 credits"; a platform model in credits only. */
+  /* A stale own-key quote is unavailable; only a fresh retail credit quote is displayed. */
   agent.quote = { estimateCredits: 0, estimateUsd: 0.0123 };
   await page.getByTestId("beats-breakdown-estimate").click();
-  await expect(page.getByTestId("beats-breakdown-start")).toHaveText("Break it into beats · up to $0.0123 on your key");
+  await expect(page.getByTestId("beats-breakdown-start")).toHaveText("Break it into beats · up to Quote unavailable");
   await expect(page.getByTestId("beats-breakdown-quote")).not.toContainText("0 credits");
   await page.getByTestId("beats-breakdown").getByRole("button", { name: "Change" }).click();
   agent.quote = { estimateCredits: 4 };

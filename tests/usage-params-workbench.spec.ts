@@ -3,7 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
-test("own-key usage exposes display settings without execution metadata", async ({ page }) => {
+test("migrated workspace usage exposes display settings without execution metadata", async ({ page }) => {
   const { workspace } = await signInLocally(page.request);
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl: string;
@@ -20,6 +20,9 @@ test("own-key usage exposes display settings without execution metadata", async 
       sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd) VALUES(?,?,?,?,'succeeded',?,?,'video','byteplus',?)",
       args: [id, "dreamina-seedance-2-5-260628", "A quiet coastline", params, Date.now(), Date.now(), 0.12345],
     });
+    const receipts = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+    try { await receipts.execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES(?,?,'video','byteplus','dreamina-seedance-2-5-260628','succeeded',?,0,0,?,?)", args: [id, workspace.id, 0.12345, Date.now(), Date.now()] }); }
+    finally { receipts.close(); }
     const response = await page.request.get("/api/usage");
     expect(response.ok(), await response.text()).toBe(true);
     const body = await response.json();

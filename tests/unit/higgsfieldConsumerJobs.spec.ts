@@ -819,3 +819,37 @@ test("stuck jobs stop holding the four slots once their owner sets them aside or
     expect(jobs.consumerJobSetAside({ status: "quoted", releasedAt: null, createdAt: 0 })).toBe(false);
   });
 });
+
+test("managed studios refuse provider-wallet spending while accepted jobs stay recoverable", async () => {
+  const { jobs, tenant, database } = await modules();
+  const legacy = workspace();
+  let quoted!: ConsumerJob, running!: ConsumerJob;
+  await tenant.runInTenant(legacy, async () => {
+    await seed();
+    quoted = (await jobs.createConsumerJob(input())).job;
+    const second = (await jobs.createConsumerJob(input())).job;
+    const claim = (await jobs.claimConsumerDispatch(key(second)))!;
+    running = (await jobs.markConsumerAccepted({ ...key(second), claimToken: claim.claimToken, providerJobId: randomUUID() }))!;
+  });
+  await tenant.runInTenant({ ...legacy, usesPlatformKeys: true }, async () => {
+    for (const call of [
+      () => jobs.createConsumerJob(input()),
+      () => jobs.claimConsumerDispatch(key(quoted)),
+      () => jobs.claimConsumerDispatchBatch([key(quoted), key(running)]),
+    ]) await expect(call()).rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
+    expect((await jobs.getConsumerJob(key(quoted)))?.status).toBe("quoted");
+    expect((await jobs.getConsumerJob(key(running)))?.providerJobId).toBe(running.providerJobId);
+    expect(await jobs.claimConsumerDispatch(key(running))).toBeNull();
+    expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(2);
+    const video = await import("../../lib/higgsfield-consumer/video-service");
+    const generation = await import("../../lib/higgsfield-consumer/generation-service");
+    const genjutsu = await import("../../lib/higgsfield-consumer/genjutsu-service");
+    const shorts = await import("../../lib/higgsfield-consumer/shorts-service");
+    const voice = await import("../../lib/higgsfield-consumer/voice-tool-service");
+    const template = await import("../../lib/higgsfield-consumer/marketing-template-service");
+    // Refuse before parsing sources, creating project data, or contacting OAuth/MCP.
+    for (const quote of [video.quoteConsumerMarketingVideo, generation.quoteConsumerGeneration, genjutsu.quoteConsumerGenjutsu,
+      shorts.quoteConsumerShorts, voice.quoteConsumerVoiceTool, template.quoteConsumerMarketingTemplate])
+      await expect(quote("owner", "draft", null as never, "no-new-work")).rejects.toMatchObject({ code: "particl_quote_unavailable" });
+  });
+});

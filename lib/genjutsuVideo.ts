@@ -1,3 +1,4 @@
+import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { createHash, randomUUID } from "node:crypto";
 import { db, now, ready } from "./db";
 import { engineFor } from "./engines";
@@ -62,7 +63,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         }
       }
       if (!stored) {
-        const state = await engineFor("higgsfield").poll!(handle);
+        const state = await withAcceptedJobCredentials(id, "higgsfield", () => engineFor("higgsfield").poll!(handle));
         /* The key it was sent on answered: any wait for a changed key is over. */
         if (params.providerKeyChanged != null) await clearKeyChanged(id);
         if (state.status === "failed" || state.status === "cancelled") {
@@ -161,12 +162,12 @@ export async function cancelGenjutsuVideo(id: string): Promise<{status: "request
     if (!handle || handle.model !== row.model || handle.credentialFingerprint !== params.higgsfieldCredentialFingerprint || !params.paidClaim)
       throw new HiggsfieldHttpError(409,"The provider acknowledgement is not available yet. Refresh status before cancelling.");
     const engine = engineFor("higgsfield");
-    const state = await engine.poll!(handle);
+    const state = await withAcceptedJobCredentials(id, "higgsfield", () => engine.poll!(handle));
     if (state.status !== "queued") {
       if (state.status !== "running") await reconcileGenjutsuVideo(id);
       return {status: state.status};
     }
-    try { await engine.cancel!(handle); }
+    try { await withAcceptedJobCredentials(id, "higgsfield", () => engine.cancel!(handle)); }
     catch (error) {
       if (error instanceof HiggsfieldHttpError) throw error;
       throw new HiggsfieldHttpError(503,"Cancellation could not be confirmed. The request remains tracked; refresh status before trying again.");

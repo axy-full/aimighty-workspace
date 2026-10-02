@@ -14,8 +14,8 @@ import {
    customer-reachable GET route below is called as the workspace's owner, an
    admin and a member, and its JSON is scanned (tests/helpers/vendorCostScan.ts)
    for a vendor-money key, any seeded vendor figure, and any job internal or
-   credential. A workspace on its own keys is scanned too: its own dollars are
-   allowed, credits beside them are not. To cover a new route, add one line to
+   credential. Migrated workspaces receive the same response protections.
+   To cover a new route, add one line to
    ROUTES. */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-no-vendor-cost-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -30,6 +30,13 @@ const COST = {
   demo: 0.731301, turn: 0.041901, stepEstimate: 0.871301,
 };
 const FIGURES = vendorFigures(Object.values(COST));
+/* The house workspace's own costs (lib/houseWorkspace.ts): read by it, at cost, and by no other workspace. */
+/* No sum of these equals any sum of COST, so a match names whose spend leaked. */
+const HOUSE_COST: typeof COST = {
+  take: 3.469831, writer: 0.017351, still: 0.067731, dub: 0.621391, dubRate: 0.297731, voice: 0.153971,
+  demo: 0.857371, turn: 0.039731, stepEstimate: 0.913371,
+};
+const HOUSE_FIGURES = vendorFigures(Object.values(HOUSE_COST));
 /** The workspace's own production cap in dollars: a field no credit workspace reads. */
 const CAP_USD = 55.55;
 /** Job internals a take's params carry for the queue, which no response may repeat. */
@@ -52,7 +59,9 @@ const person = (id: string, role: "admin" | "member", owner = false): TenantUser
 });
 const ACTORS = { owner: person("u_owner", "admin", true), admin: person("u_admin", "admin"), member: person("u_member", "member") };
 
-async function seed(ws: TenantWorkspace) {
+/* The house workspace (lib/houseWorkspace.ts) is seeded as it runs: not billed in credits, no grant, its own costs. */
+async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
+  const house = ws.id === "ws_legacy";
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { platformDb, platformReady } = await import("../../lib/platform");
@@ -74,41 +83,42 @@ async function seed(ws: TenantWorkspace) {
       { sql: "INSERT INTO projects(id,name,created_at,production_id,cap_usd,cap_credits) VALUES('p_margin','Harbour 30s',?,'prod_margin',?,555)", args: [at, CAP_USD] },
       { sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES('s_margin','p_margin','SH010',?,?)", args: [at, at] },
       { sql: take, args: ["g_take", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "A harbour at dawn", JSON.stringify({ resolution: "1080p", duration: 5, ...INTERNALS }),
-        "u_member", at, at, "byteplus", COST.take, COST.writer, "anthropic/claude-test", "tok_margin", "/api/media/g_take", 244800] },
+        "u_member", at, at, "byteplus", cost.take, cost.writer, "anthropic/claude-test", "tok_margin", "/api/media/g_take", 244800] },
       { sql: take, args: ["g_failed", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Failed harbour", "{}",
         "u_member", at + 10, at + 10, "xai", null, null, null, null, null, null] },
       { sql: take, args: ["g_still", "p_margin", "s_margin", "image", "gemini-3.1-flash-image", "A crane at dusk", "{}",
-        "u_owner", at + 1, at + 1, "google", COST.still, null, null, null, "/api/media/g_still", null] },
+        "u_owner", at + 1, at + 1, "google", cost.still, null, null, null, "/api/media/g_still", null] },
       { sql: take, args: ["g_dub", "p_margin", null, "audio", "eleven_dubbing_v1", "Dub · harbour → French",
-        JSON.stringify({ task: "dub", dubbingStatus: "dubbed", minutes: 2, usdPerMinute: COST.dubRate, rateUsdPerMinute: COST.dubRate, estUsd: COST.dub, estCredits: 0 }),
-        "u_member", at + 2, at + 2, "elevenlabs", COST.dub, null, null, null, "/api/media/g_dub", null] },
+        JSON.stringify({ task: "dub", dubbingStatus: "dubbed", minutes: 2, usdPerMinute: cost.dubRate, rateUsdPerMinute: cost.dubRate, estUsd: cost.dub, estCredits: 0 }),
+        "u_member", at + 2, at + 2, "elevenlabs", cost.dub, null, null, null, "/api/media/g_dub", null] },
       { sql: take, args: ["g_voice", "p_margin", null, "audio", "eleven_multilingual_sts_v2", "Voice change",
-        JSON.stringify({ task: "voiceChange", estUsd: COST.voice, estCredits: 1234, credits: 1234, tier: "creator" }),
-        "u_admin", at + 3, at + 3, "elevenlabs", COST.voice, null, null, null, "/api/media/g_voice", 1234] },
+        JSON.stringify({ task: "voiceChange", estUsd: cost.voice, estCredits: 1234, credits: 1234, tier: "creator" }),
+        "u_admin", at + 3, at + 3, "elevenlabs", cost.voice, null, null, null, "/api/media/g_voice", 1234] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
-        JSON.stringify({ demo: true, demoCostUsd: COST.demo, resolution: "1080p", duration: 5 }),
+        JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
         "u_owner", at + 4, at + 4, "byteplus", 0, null, null, null, "/fixtures/clip.mp4", null] },
       { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_usd,created_at) VALUES('tok_margin','hash_margin','Assistant','u_owner','render',20,?)", args: [at] },
-      { sql: "INSERT INTO atomik_chats(id,project_id,title,model,agent_mode,status,text_cost_usd,created_by,created_at,updated_at,deleted) VALUES('ach_margin','p_margin','Harbour plan','auto','ask','waiting',?,'u_member',?,?,0)", args: [COST.turn, at, at] },
-      { sql: "INSERT INTO atomik_messages(id,chat_id,role,text,cost_usd,model,created_at) VALUES('amsg_margin','ach_margin','assistant','Two shots.',?,'anthropic/claude-test',?)", args: [COST.turn, at] },
+      { sql: "INSERT INTO atomik_chats(id,project_id,title,model,agent_mode,status,text_cost_usd,created_by,created_at,updated_at,deleted) VALUES('ach_margin','p_margin','Harbour plan','auto','ask','waiting',?,'u_member',?,?,0)", args: [cost.turn, at, at] },
+      { sql: "INSERT INTO atomik_messages(id,chat_id,role,text,cost_usd,model,created_at) VALUES('amsg_margin','ach_margin','assistant','Two shots.',?,'anthropic/claude-test',?)", args: [cost.turn, at] },
       { sql: `INSERT INTO atomik_steps(id,chat_id,message_id,position,kind,title,prompt,model,params,status,est_cost_usd,created_at,updated_at)
               VALUES('ast_margin','ach_margin','amsg_margin',0,'video','Harbour wide','A harbour at dawn',?,?,'proposed',?,?,?)`,
-        args: [DEFAULT_MODEL_ID, JSON.stringify({ seconds: 5, ratio: "16:9", resolution: "1080p" }), COST.stepEstimate, at, at] },
+        args: [DEFAULT_MODEL_ID, JSON.stringify({ seconds: 5, ratio: "16:9", resolution: "1080p" }), cost.stepEstimate, at, at] },
       { sql: `INSERT INTO identities(id,project_id,name,status,provider,steps,cost_usd,created_by,created_at,updated_at,trained_at,lora_url)
-              VALUES('id_margin','p_margin','Mara','ready','fal',1500,?,'u_owner',?,?,?,'https://example.invalid/lora.safetensors')`, args: [COST.still, at, at, at] },
+              VALUES('id_margin','p_margin','Mara','ready','fal',1500,?,'u_owner',?,?,?,'https://example.invalid/lora.safetensors')`, args: [cost.still, at, at, at] },
       /* A room per person (rooms are their owner's), each with a round the vendor charged for. */
       ...Object.values(ACTORS).map((u) => ({
         sql: `INSERT INTO crew_sessions(id,owner,project_id,goal,context,model,rounds_run,spend_cr,spend_usd,created_by,created_at)
               VALUES(?,?,'wb_margin','Land the harbour open','{}','grok-test',1,?,?,?,?)`,
-        args: [`crew_${u.id}`, u.id, ws.usesPlatformKeys ? 1 : null, COST.turn, u.id, at],
+        args: [`crew_${u.id}`, u.id, ws.usesPlatformKeys && !house ? 1 : null, cost.turn, u.id, at],
       })),
     ], "write");
+    /* A failed provider job, quoting this workspace's own figure (the house's own, in the house). */
     await db().execute({ sql: "UPDATE generations SET status='failed',error=?,provider_outcome=? WHERE id='g_failed'", args: [
-      `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
+      `Provider cost $${cost.take}; token=sk-private1234567890abcdefghijklmnop`,
       JSON.stringify({ v: 1, provider: "xai", stage: "run", code: "content_moderated", kind: "content_filter",
-        message: `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
-        billing: { state: "billed", amount: COST.take, unit: "usd", basis: "xai-ticks" }, funding: "platform", at }),
+        message: `Provider cost $${cost.take}; token=sk-private1234567890abcdefghijklmnop`,
+        billing: { state: "billed", amount: cost.take, unit: "usd", basis: "xai-ticks" }, funding: "platform", at }),
     ] });
   });
   /* A workspace skill saved from that plan: a template of its steps, engines and settings, never a figure. */
@@ -127,11 +137,11 @@ async function seed(ws: TenantWorkspace) {
   await platformReady();
   const meter = `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
                  VALUES(?,?,?,?,?,?,?,'succeeded',?,?,?,?,?,?)`;
-  const paid = ws.usesPlatformKeys ? 1 : 0;
+  const paid = ws.usesPlatformKeys && !house ? 1 : 0;
   await platformDb().batch([
-    { sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_at) VALUES(?,?,500,'unit','manual',0)", args: [`grant_${ws.id}`, ws.id] },
-    { sql: meter, args: [`g_take_${ws.id}`, ws.id, "p_margin", "s_margin", "video", "byteplus", DEFAULT_MODEL_ID, COST.take + COST.writer, paid ? billCredits(COST.take + COST.writer, DEFAULT_MODEL_ID) : 0, paid, "u_member", at, at] },
-    { sql: meter, args: [`amsg_margin_${ws.id}`, ws.id, "p_margin", null, "text", "vercel", "anthropic/claude-test", COST.turn, paid ? billCredits(COST.turn, "text") : 0, paid, "u_member", at, at] },
+    ...(house ? [] : [{ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_at) VALUES(?,?,500,'unit','manual',0)", args: [`grant_${ws.id}`, ws.id] }]),
+    { sql: meter, args: [`g_take_${ws.id}`, ws.id, "p_margin", "s_margin", "video", "byteplus", DEFAULT_MODEL_ID, cost.take + cost.writer, paid ? billCredits(cost.take + cost.writer, DEFAULT_MODEL_ID) : 0, paid, "u_member", at, at] },
+    { sql: meter, args: [`amsg_margin_${ws.id}`, ws.id, "p_margin", null, "text", "vercel", "anthropic/claude-test", cost.turn, paid ? billCredits(cost.turn, "text") : 0, paid, "u_member", at, at] },
   ], "write");
 }
 
@@ -203,9 +213,11 @@ async function callAs(ws: TenantWorkspace, user: Actor, route: RouteCase): Promi
 
 const credit = workspace("credit", true);
 const ownKeys = workspace("own", false);
+const house: TenantWorkspace = { ...workspace("house", true), id: "ws_legacy", slug: "house", legacy: true };
 test.beforeAll(async () => {
   await seed(credit);
   await seed(ownKeys);
+  await seed(house, HOUSE_COST);
 });
 
 test("the scanner reports a money key, a vendor figure under any key, a dollar in a sentence, and job internals", () => {
@@ -237,31 +249,75 @@ for (const route of ROUTES) {
   });
 }
 
-test("a workspace on its own keys reads its own dollars, never credits beside them, and no job internals", async () => {
+test("a migrated workspace receives no provider amounts or job internals", async () => {
   const leaks: Record<string, Finding[]> = {};
   for (const route of ROUTES) {
     const { status, body } = await callAs(ownKeys, ACTORS.owner, route);
     expect(status, `${route.name}: ${JSON.stringify(body).slice(0, 300)}`).toBeLessThan(500);
-    const found = [...secretFindings(body), ...(route.ownKeys ? marginCreditFindings(body) : [])];
+    const found = [...secretFindings(body), ...vendorCostFindings(body, { figures: FIGURES, ...route.allow })];
     if (found.length) leaks[route.name] = found;
   }
   expect(leaks).toEqual({});
-  /* The control: its own dollars are there to read, so the scanner is not passing on an empty page. */
+  /* Successful nonempty project responses keep the scan from passing on an error page. */
   for (const url of ["/api/projects", "/api/shots?projectId=p_margin", "/api/analytics"]) {
-    const { body } = await callAs(ownKeys, ACTORS.owner, ROUTES.find((r) => r.url === url)!);
-    expect(vendorCostFindings(body, { figures: FIGURES }).length, url).toBeGreaterThan(0);
+    const { status, body } = await callAs(ownKeys, ACTORS.owner, ROUTES.find((r) => r.url === url)!);
+    expect(status).toBe(200);
+    expect(JSON.stringify(body), url).toContain("p_margin");
+    expect(vendorCostFindings(body, { figures: FIGURES }), url).toEqual([]);
   }
 });
 
-test("a cached project list is not reused after the workspace's billing unit changes", async () => {
+test("a pre-migration project cache cannot restore provider amounts", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { putCache, PROJECTS_KEY } = await import("../../lib/cache");
   const route = ROUTES.find((item) => item.url === "/api/projects")!;
-  const { body: original } = await callAs(ownKeys, ACTORS.owner, route);
-  expect(original).toMatchObject({ unit: "usd" });
-  const { status, body } = await callAs({ ...ownKeys, usesPlatformKeys: true }, ACTORS.owner, route);
+  await runInTenant(ownKeys, async () => putCache(PROJECTS_KEY, { unit: "usd", projects: [{ id: "p_margin", spend: COST.take }] }));
+  const { status, body } = await callAs(ownKeys, ACTORS.owner, route);
   expect(status).toBe(200);
   expect(body).toMatchObject({ unit: "cr" });
   expect(vendorCostFindings(body, { figures: FIGURES })).toEqual([]);
   const { body: restored } = await callAs(ownKeys, ACTORS.owner, route);
-  expect(restored).toMatchObject({ unit: "usd" });
-  expect(vendorCostFindings(restored, { figures: FIGURES }).length).toBeGreaterThan(0);
+  expect(restored).toMatchObject({ unit: "cr" });
+  expect(vendorCostFindings(restored, { figures: FIGURES })).toEqual([]);
+});
+
+const figuresOnly = (found: Finding[]) => found.filter((f) => f.why.startsWith("vendor figure"));
+
+test("the house workspace's spend never reaches another workspace", async () => {
+  const leaks: Record<string, Finding[]> = {};
+  for (const ws of [credit, ownKeys])
+    for (const route of ROUTES) {
+      const { status, body } = await callAs(ws, ACTORS.owner, route);
+      expect(status, `${ws.name} ${route.name}: ${JSON.stringify(body).slice(0, 300)}`).toBeLessThan(500);
+      const found = vendorCostFindings(body, { figures: HOUSE_FIGURES, ...route.allow });
+      if (found.length) leaks[`${ws.name} ${route.name}`] = found;
+    }
+  expect(leaks).toEqual({});
+});
+
+test("the house workspace reads its own spend at the engines' cost, never credits beside it, and only its own", async () => {
+  const leaks: Record<string, Finding[]> = {};
+  for (const route of ROUTES) {
+    const { status, body } = await callAs(house, ACTORS.owner, route);
+    expect(status, `${route.name}: ${JSON.stringify(body).slice(0, 300)}`).toBeLessThan(500);
+    /* No job internal, no other workspace's figure, and no credit count beside its dollars (that would state the margin). */
+    const found = [...secretFindings(body), ...figuresOnly(vendorCostFindings(body, { figures: FIGURES })), ...(route.ownKeys ? marginCreditFindings(body) : [])];
+    if (found.length) leaks[route.name] = found;
+  }
+  expect(leaks).toEqual({});
+  /* The control: its own dollars are there to read, so the scan is not passing on an empty page. */
+  for (const url of ["/api/projects", "/api/shots?projectId=p_margin", "/api/analytics"]) {
+    const { status, body } = await callAs(house, ACTORS.owner, ROUTES.find((r) => r.url === url)!);
+    expect(status, url).toBe(200);
+    expect(figuresOnly(vendorCostFindings(body, { figures: HOUSE_FIGURES })).length, url).toBeGreaterThan(0);
+  }
+  const me = ROUTES.find((r) => r.url === "/api/me")!;
+  const own = (await callAs(house, ACTORS.owner, me)).body as { rates: { unit: string }; credits: unknown };
+  expect(own.rates.unit).toBe("usd");
+  expect(own.credits).toBeNull();
+  /* Every other workspace is handed a credit table. */
+  for (const ws of [credit, ownKeys]) expect(((await callAs(ws, ACTORS.owner, me)).body as { rates: { unit: string } }).rates.unit).toBe("cr");
+  const tokens = (await callAs(house, ACTORS.owner, ROUTES.find((r) => r.url === "/api/tokens")!)).body as { unit: string; tokens: { capUsd?: number | null }[] };
+  expect(tokens.unit).toBe("usd");
+  expect(tokens.tokens[0]?.capUsd).toBe(20);
 });

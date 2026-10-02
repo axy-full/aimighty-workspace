@@ -98,6 +98,8 @@ const neutral = (message: string) =>
     .replace(/\bthe connected account account\b/g, "the connected account")
     .replace(/^the connected/, "The connected");
 function problem(error: unknown) {
+  if (error instanceof ConsumerJobError && error.code === "particl_quote_unavailable")
+    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   // A Soul ID or element build already sent (build-records): never sent twice.
   if (error instanceof Error && error.name === "BuildInFlightError")
     return Response.json({ code: "build_in_flight", error: error.message }, { status: 409, headers });

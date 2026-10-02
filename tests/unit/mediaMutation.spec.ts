@@ -590,6 +590,10 @@ test("actual image and video generation handlers reject a source deleted after r
                 prompt: "raw: Source regression",
                 refine: false,
                 references: [{ uploadId: "source", role: "reference_image" }],
+                /* Every workspace pays in credits, so an unpriced take (a video's
+                   default "adaptive" ratio) is refused before its source is read;
+                   a priced one reaches the source check this regression is about. */
+                ...(kind === "video" ? { ratio: "16:9", resolution: "720p", duration: 5 } : {}),
               }),
             });
           const response = await compiledModule.exports.POST(request(), {

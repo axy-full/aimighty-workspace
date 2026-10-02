@@ -9,8 +9,8 @@ import { ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, 
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import {
-  auditEntries, checkoutUrl, grantRow, keyStatus, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
-  type BillingPlan, type BillingSubscription, type KeyMode, type SecurityBody, type Topups, type UsageBody,
+  auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
+  type BillingPlan, type BillingSubscription, type SecurityBody, type Topups, type UsageBody,
 } from "@/lib/shell/workspace-view";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -550,48 +550,25 @@ function Usage() {
 }
 
 /* ── Engines ─────────────────────────────────────────────────────────── */
-type Keys = { mode?: KeyMode; keyring?: boolean; keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[] };
+type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 function Engines() {
   const session = useSession();
-  const write = useWrite();
   const owner = session.role === "owner";
-  /* The keys and the account's row are the owner's (both routes answer 403 to anyone else). */
-  const { data, error, read } = useRead<Keys>(owner ? "/api/workspaces/keys" : null);
-  const [entering, setEntering] = useState<string | null>(null);
-  const [key, setKey] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const save = async (name: string) => {
-    setNote(null);
-    const { error: refused } = await write("/api/workspaces/keys", "PUT", { name, value: key.trim() });
-    if (refused) { setNote(refused); return; }
-    setKey(""); setEntering(null); setNote("Key saved."); void read();
-  };
+  /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
+  const house = session.rates.unit === "usd";
+  const { data, error } = useRead<Keys>("/api/workspaces/keys");
   return (
     <>
       <div className="wsx-card" data-testid="ws-engines">
         <span className="gx-eyebrow">Engines</span>
-        {!owner ? <span className="gx-reason">Engine keys are the owner’s to change.</span> : null}
+        <span className="cw-dim">{house ? "Managed by Particl. This house workspace runs on the platform’s engines and is not billed in credits." : "Managed by Particl. Your organisation pays in credits."}</span>
         {error ? <p className="gx-gen-error" role="alert">{error}</p> : null}
-        {(data?.keys ?? []).filter((k) => k.name !== "xai").map((k) => {
-          const status = keyStatus(data?.mode, k.set);
-          return (
-            <div className="wsx-row" key={k.name} data-testid="ws-engine">
-              <span className="cw-engine" data-ok={k.set || status.label !== "not connected"}><span className="cw-engine-dot" aria-hidden="true" /></span>
-              <span style={{ minWidth: 0 }}><span className="wsx-name">{k.label} · {status.label}</span><span className="cw-dim">{k.does}{k.masked ? ` · ${k.masked}` : ""}</span></span>
-              <span className="wsx-actions">
-                {status.canConnect ? <button type="button" className="gx-hbtn" onClick={() => { setEntering(entering === k.name ? null : k.name); setKey(""); }}>{k.set ? "Replace key" : "Connect"}</button> : null}
-              </span>
-              {entering === k.name ? (
-                <div className="wsx-actions" style={{ gridColumn: "1 / -1" }}>
-                  <input className="gx-field" type="password" autoComplete="off" aria-label={`${k.label} key`} placeholder={k.name === "higgsfield" ? "KEY_ID:KEY_SECRET" : "API key"} value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
-                  <button type="button" className="gx-hbtn" disabled={key.trim().length < 8} onClick={() => void save(k.name)}>Save key</button>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-        {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
-        {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
+        {(data?.keys ?? []).filter((key) => key.name !== "xai").map((key) => (
+          <div className="wsx-row" key={key.name} data-testid="ws-engine">
+            <span className="cw-engine" data-ok={key.set}><span className="cw-engine-dot" aria-hidden="true" /></span>
+            <span style={{ minWidth: 0 }}><span className="wsx-name">{key.label} · {key.set ? "Available" : "Unavailable"}</span><span className="cw-dim">{key.does}</span></span>
+          </div>
+        ))}
       </div>
       <ConnectedAccountRow owner={owner} />
       <XaiEngineRow />

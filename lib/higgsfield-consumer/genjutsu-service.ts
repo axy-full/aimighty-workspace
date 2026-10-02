@@ -3,6 +3,7 @@ import { accountFailure, higgsfieldAccountOutcome } from "@/lib/providerOutcome"
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -127,6 +128,7 @@ export async function quoteConsumerGenjutsu(
   input: ConsumerGenjutsuInput,
   idempotencyKey: string,
 ) {
+  requireConsumerFunding();
   const normalized = parseConsumerGenjutsuInput(input);
   const previous = await getConsumerJobByKey({
     userId,

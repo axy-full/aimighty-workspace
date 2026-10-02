@@ -14,6 +14,7 @@ import { requireTenant } from "@/lib/tenant";
 import { readDraft } from "@/lib/workbench/records";
 import { ConsumerOAuthError, getConsumerAccess } from "./oauth";
 import {
+  requireConsumerFunding,
   createConsumerJob,
   getConsumerJob,
   getConsumerJobByKey,
@@ -50,7 +51,6 @@ import {
   findMarketingTemplate,
   listMarketingTemplates,
   parseConsumerMarketingTemplateInput,
-  priceForTemplate,
   templateOutputKind,
   type ConsumerMarketingTemplateInput,
   type ConsumerMarketingTemplateParams,
@@ -146,7 +146,7 @@ export async function connectedMarketingTemplateCosts(userId: string, options: {
     read: () => readMarketingTemplateCosts(access.accessToken),
   });
 }
-/** The browse view: filtered templates with their catalogue price when known. */
+/** The browse view never publishes an upstream wallet price as a retail quote. */
 export function presentMarketingTemplates(
   catalogue: MarketingTemplateCatalogue,
   costs: MarketingTemplateCosts | null,
@@ -156,7 +156,6 @@ export function presentMarketingTemplates(
   const limit = Math.min(Math.max(1, options.limit ?? 120), 400);
   return {
     templates: templates.slice(0, limit).map((template) => {
-      const price = priceForTemplate(costs, template);
       return {
         id: template.id,
         name: template.name,
@@ -165,8 +164,8 @@ export function presentMarketingTemplates(
         previewUrl: template.previewUrl,
         outputKind: templateOutputKind(template),
         inputs: template.inputs,
-        credits: price?.credits ?? null,
-        priceSource: price?.source ?? null,
+        credits: null,
+        priceSource: null,
       };
     }),
     matched: templates.length,
@@ -193,6 +192,7 @@ async function requireTemplate(userId: string, presetId: string): Promise<{ temp
 }
 const sameInput = (a: unknown, b: ConsumerMarketingTemplateInput) => sameConsumerValue(parseConsumerMarketingTemplateInput(a), b);
 export async function quoteConsumerMarketingTemplate(userId: string, draftId: string, value: ConsumerMarketingTemplateInput, idempotencyKey: string) {
+  requireConsumerFunding();
   const input = parseConsumerMarketingTemplateInput(value);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
   if (previous) {

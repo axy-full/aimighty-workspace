@@ -22,7 +22,7 @@ export function DeveloperApiRow({ connected }: { connected: boolean | null }) {
       const json = await response.json().catch(() => null) as ({ probe?: DeveloperProbe; error?: string } | null);
       if (!response.ok || !json?.probe) { setResult(json?.error ?? "The developer API could not be checked."); return; }
       setResult(json.probe.reachable
-        ? `Reachable with this account's grant${json.probe.balance != null ? ` · balance ${json.probe.balance.toLocaleString("en-US")}${json.probe.unit ? ` ${json.probe.unit}` : ""}` : ""}.`
+        ? "Reachable with this account's grant."
         : json.probe.reason);
     } catch { setResult("The developer API could not be checked."); }
     finally { setBusy(false); }
