@@ -29,7 +29,6 @@ async function open(page: Page) {
     return route.fulfill({ json: request.url().endsWith("/quote") ? { estimatedCredits: 4, fingerprint: "f".repeat(64), price: 0.04, unit: "cr" } : { id: "gen_reedit" } });
   });
   await page.route(/\/api\/jobs\/gen_reedit(\?.*)?$/, (route) => route.fulfill({ json: { generation: generation({ id: "gen_reedit", title: "Re-edit", projectId: "prod-edit" }) } }));
-  await page.route("**/api/higgsfield/consumer/audio-tools?**", (route) => route.fulfill({ json: { connection: { connected: false, requiresReconnect: false }, capabilities: { voice: false, dubbing: false, analysis: false, reframe: false, languages: [] }, jobs: [] } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=takes");

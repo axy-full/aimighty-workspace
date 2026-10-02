@@ -25,7 +25,6 @@ async function open(page: Page) {
   const store = { current: fixture() };
   await mockProjects(page, store);
   await mockLibrary(page, { uploads: [], generations: [] });
-  await page.route("**/api/higgsfield/consumer/audio-tools?**", (route) => route.fulfill({ json: { connection: { connected: false, requiresReconnect: false }, capabilities: { voice: false, dubbing: false, analysis: false, reframe: false, languages: [] }, jobs: [] } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=deliver");

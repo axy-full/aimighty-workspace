@@ -1,12 +1,18 @@
 import type { Client } from "@libsql/client";
 
 type Reader = Pick<Client, "execute">;
-export const CONSUMER_ORIGINAL_PENDING_MESSAGE =
-  "This original is still being finalized. Check the saved connected-account job before deleting it.";
 
-// Both records are server-written. Generation params alone cannot retain an
-// unrelated file. Keep the original between its storage commit and the separate
-// consumer completion commit, including after the collecting request crashes.
+/**
+ * Collected account originals whose ledger never recorded completion: the old
+ * collector stored the bytes and filed the take, then its separate completion
+ * commit never ran (the request crashed, or the job was still open when the
+ * account was disconnected). Particl no longer signs in to Higgsfield
+ * (CLAUDE.md ground rule 10), so nothing will finish one. A person deletes such
+ * a take like any other (lib/mediaDeletion.ts); purge reads this to record the
+ * disposal on the job's own row before a deleted workspace is removed
+ * (lib/purge.ts). Both records are server-written: generation params alone
+ * cannot match an unrelated file.
+ */
 const pendingOriginalIds = `SELECT g.id FROM consumer_video_originals o
   JOIN higgsfield_consumer_jobs j ON j.id=o.job_id AND j.user_id=o.owner_id
     AND j.draft_id=o.draft_id AND j.provider_job_id=o.provider_job_id

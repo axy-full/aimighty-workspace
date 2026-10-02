@@ -379,8 +379,6 @@ test("the chat planner's quote and its turn read the same memory, and only this 
       runTurn: async (_id: string, opts: { quoteOnly?: boolean; memory?: string }) => { seen.push({ quoteOnly: opts.quoteOnly, memory: opts.memory }); return opts.quoteOnly ? { model: "test/model", effort: "auto", estimateCredits: 2 } : {}; } },
     "@/lib/rules": { effectiveRules: async () => [] },
     "@/lib/platformLayer": { writerRulesByScope: () => "" },
-    "@/lib/higgsfield-consumer/planner-service": { connectedPlannerFor: async () => null },
-    "@/lib/higgsfield-consumer/recipes-service": { RecipeError: class extends Error {}, recipeForMessage: async () => null },
     "@/lib/generationRequests": { withGenerationRequest: async (_req: Request, _user: string, run: () => Promise<Response>) => run(), SpendReservationError: class extends Error {} },
   });
   const post = (body: unknown) => route.POST(new Request("https://studio.test/api/atomik/ach_1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), { params: Promise.resolve({ id: "ach_1" }) });

@@ -44,7 +44,8 @@ function busyTray(): TrayJob[] {
   return [
     job({ id: "gen_held", name: "Harbour at dawn", stage: "held", label: "Held · needs 43 cr", tone: "amber", action: "release", releaseCredits: 43, createdAt: now - 12 * MIN }),
     job({ id: "gen_run", name: "A wide shot on the water at first light", stage: "rendering", label: "Rendering", tone: "blue", price: { amount: 13, unit: "cr" }, createdAt: now - 4 * MIN }),
-    job({ id: "3f7a1c2e-5b6d-4e8f-9a0b-1c2d3e4f5a6b", source: "account", name: "Product spins on a marble plinth", stage: "rendering", label: "Rendering", tone: "blue", price: { amount: 40, unit: "account-cr" }, createdAt: now - 2 * MIN, draftId: "ws-other", projectName: "Trail bottle ads" }),
+    /* A connected-account job still open in its ledger: nothing collects it since the sign-in went, so it is never collected (lib/jobsTray.ts). */
+    job({ id: "3f7a1c2e-5b6d-4e8f-9a0b-1c2d3e4f5a6b", source: "account", name: "Product spins on a marble plinth", stage: "aside", label: "Not collected", tone: "idle", price: { amount: 40, unit: "account-cr" }, action: "usage", createdAt: now - 80 * MIN, settledAt: now - 75 * MIN, draftId: "ws-other", projectName: "Trail bottle ads" }),
     job({ id: "gen_slot", name: "Nets drying on the quay", stage: "queued", label: "Queued", tone: "blue", reason: "Waiting for a free slot", price: { amount: 7, unit: "cr" }, createdAt: now - MIN }),
     job({ id: "gen_fail", name: "Lighthouse at dusk", stage: "failed", label: "Failed · not billed", tone: "red", reason: "Refused by the content filter", action: "recreate", createdAt: now - 30 * MIN, settledAt: now - 20 * MIN,
       preset: recipe("gen_fail", "Lighthouse at dusk", "A slow push-in on a lighthouse at dusk") }),
@@ -180,11 +181,12 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   const errors = await open(page, tray);
 
   const pill = page.getByTestId("running-jobs");
-  /* Two rows say Rendering, one says Queued (waiting for a slot), one says Held: the pill says the same. */
-  await expect(pill).toHaveAccessibleName("Jobs: 2 rendering · 1 queued · 1 held");
+  /* One row says Rendering, one says Queued (waiting for a slot), one says Held: the pill says the same. The connected job
+     never collected waits on nothing and is not counted. */
+  await expect(pill).toHaveAccessibleName("Jobs: 1 rendering · 1 queued · 1 held");
   await expect(pill).toHaveAttribute("aria-expanded", "false");
   /* A phone and a phone on its side say the one figure, so the header keeps its row. */
-  await expect(pill.locator(touch ? ".gx-jobs-short" : ".gx-jobs-long")).toHaveText(touch ? "4" : "2 rendering · 1 queued · 1 held");
+  await expect(pill.locator(touch ? ".gx-jobs-short" : ".gx-jobs-long")).toHaveText(touch ? "3" : "1 rendering · 1 queued · 1 held");
   await expect(pill.locator(touch ? ".gx-jobs-long" : ".gx-jobs-short")).toBeHidden();
   if (touch) {
     const target = (await pill.boundingBox())!;
@@ -203,30 +205,32 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   const panel = page.getByRole("dialog", { name: "Jobs" });
   await expect(panel).toBeVisible();
   await expect(pill).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByTestId("jobs-summary")).toHaveText("2 rendering · 1 queued · 1 held");
+  await expect(page.getByTestId("jobs-summary")).toHaveText("1 rendering · 1 queued · 1 held");
   const rows = panel.getByTestId("jobs-row");
   await expect(rows).toHaveCount(7);
   /* Held first (it waits on you), then what renders newest first, then what waits its turn, then what finished, latest first. */
-  await expect(rows.locator(".gx-jobs-name")).toHaveText(["Harbour at dawn", "Product spins on a marble plinth", "A wide shot on the water at first light", "Nets drying on the quay", "Lighthouse at dusk", "Gulls over the pier", "Harbour at noon"]);
-  await expect(rows.getByTestId("jobs-stage")).toHaveText(["Held · needs 43 cr", "Rendering", "Rendering", "Queued", "Failed · not billed", "Complete", "Discarded"]);
+  await expect(rows.locator(".gx-jobs-name")).toHaveText(["Harbour at dawn", "A wide shot on the water at first light", "Nets drying on the quay", "Lighthouse at dusk", "Gulls over the pier", "Harbour at noon", "Product spins on a marble plinth"]);
+  await expect(rows.getByTestId("jobs-stage")).toHaveText(["Held · needs 43 cr", "Rendering", "Queued", "Failed · not billed", "Complete", "Discarded", "Not collected"]);
   /* How long it has been going; when it finished. */
-  await expect(rows.getByTestId("jobs-when")).toHaveText(["12 min", "2 min", "4 min", "1 min", "20 min ago", "45 min ago", "1 h ago"]);
+  await expect(rows.getByTestId("jobs-when")).toHaveText(["12 min", "4 min", "1 min", "20 min ago", "45 min ago", "1 h ago", "1 h ago"]);
   /* The ledger's figure, whole; a held row's label already names what it needs. A connected job's is the account's own credits, and says so. */
   await expect(rows.nth(0).getByTestId("jobs-price")).toHaveCount(0);
-  await expect(rows.getByTestId("jobs-price")).toHaveText(["40 connected cr", "13 cr", "7 cr", "3 cr"]);
-  /* Made in another project: named, so the row says where Open would go. */
-  await expect(rows.nth(1).getByTestId("jobs-where")).toHaveText("Trail bottle ads");
-  await expect(rows.nth(2).getByTestId("jobs-where")).toHaveCount(0);
-  /* No engine reports a percentage: an indeterminate bar on the two that render, and nothing on what waits. */
-  await expect(panel.getByTestId("jobs-bar")).toHaveCount(2);
+  await expect(rows.getByTestId("jobs-price")).toHaveText(["13 cr", "7 cr", "3 cr", "40 connected cr"]);
+  /* Made in another project: named, so the row says where its record is. */
+  await expect(rows.nth(6).getByTestId("jobs-where")).toHaveText("Trail bottle ads");
+  await expect(rows.nth(1).getByTestId("jobs-where")).toHaveCount(0);
+  /* No engine reports a percentage: an indeterminate bar on the one that renders, and nothing on what waits or was never collected. */
+  await expect(panel.getByTestId("jobs-bar")).toHaveCount(1);
   await expect(rows.nth(0).getByTestId("jobs-bar")).toHaveCount(0);
-  await expect(rows.nth(3).getByTestId("jobs-bar")).toHaveCount(0);
+  await expect(rows.nth(2).getByTestId("jobs-bar")).toHaveCount(0);
+  await expect(rows.nth(6).getByTestId("jobs-bar")).toHaveCount(0);
   await expect(panel.getByTestId("jobs-bar").first()).not.toHaveAttribute("aria-valuenow", /.*/);
-  await expect(rows.nth(3).getByTestId("jobs-reason")).toHaveText("Waiting for a free slot");
-  await expect(rows.nth(4).getByTestId("jobs-reason")).toHaveText("Refused by the content filter");
+  await expect(rows.nth(2).getByTestId("jobs-reason")).toHaveText("Waiting for a free slot");
+  await expect(rows.nth(3).getByTestId("jobs-reason")).toHaveText("Refused by the content filter");
   /* Release carries the figure it approves. */
-  await expect(rows.getByTestId("jobs-action")).toHaveText(["Release · 43 cr", "Recreate", "Open in Takes", "Recreate"]);
-  await expect(rows.nth(5).locator(".gx-jobs-thumb img")).toBeVisible();
+  await expect(rows.getByTestId("jobs-action")).toHaveText(["Release · 43 cr", "Recreate", "Open in Takes", "Recreate", "Open Usage"]);
+  await expect(rows.nth(4).locator(".gx-jobs-thumb img")).toBeVisible();
+  await expect(rows.nth(5)).toHaveAttribute("data-tone", "idle");
   await expect(rows.nth(6)).toHaveAttribute("data-tone", "idle");
   expect(errors).toEqual([]);
 
@@ -358,7 +362,7 @@ test("Release approves the figure on its button; short, a moved price and a lost
   await expect.poll(() => accountReads, { timeout: 5_000 }).toBeGreaterThan(0);
   expect(releases.map((r) => r.credits)).toEqual([43, 43, 43, 45]);
   await expect(held.getByTestId("jobs-stage")).toHaveText("Queued");
-  await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 2 queued");
+  await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 1 rendering · 2 queued");
 });
 
 test("Open in Takes opens the take that was clicked — also when Takes is already open — and Recreate hands Gen its recipe without sending anything", async ({ page }, info) => {
@@ -700,7 +704,7 @@ test("a failed first jobs read keeps recovery reachable without inventing an emp
   await page.getByTestId("jobs-retry").click();
   await expect(page.getByTestId("jobs-row")).toHaveCount(7);
   await expect(page.getByTestId("jobs-error")).toHaveCount(0);
-  await expect(pill).toHaveAccessibleName("Jobs: 2 rendering · 1 queued · 1 held");
+  await expect(pill).toHaveAccessibleName("Jobs: 1 rendering · 1 queued · 1 held");
   expect(errors).toEqual([]);
 });
 
@@ -716,7 +720,7 @@ test("a tray that cannot be drawn costs the pill, not the header, and Try again 
   expect(await headerFits(page)).toEqual([]);
   await page.evaluate(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = []; });
   await fault.click();
-  await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 1 queued · 1 held");
+  await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 1 rendering · 1 queued · 1 held");
 });
 
 test("GET /api/jobs?view=tray lists this person's own takes from both engines, with the ledger's figures and real settle times, and nothing of anyone else's", async ({ page }, info) => {

@@ -96,7 +96,7 @@ test("the account folder keeps only its history readers, and none of them reache
       expect(KEPT.map((kept) => kept.replace(/\.ts$/, "")), `${file} imports ${id}`).toContain(id.split("higgsfield-consumer/")[1]);
 });
 
-test("nothing starts account work: no new job, media import, original or grant is written; only purge and set-aside touch an old row", () => {
+test("nothing starts account work: no new job, media import, original or grant is written; only purge's disposal touches an old row", () => {
   const writers: Record<string, string[]> = {};
   for (const file of appCode()) {
     const source = read(file);
@@ -104,9 +104,9 @@ test("nothing starts account work: no new job, media import, original or grant i
       (writers[`${match[1].toUpperCase().replace(/\s+/g, " ")} ${match[2]}`] ??= []).push(file);
   }
   expect(writers).toEqual({
-    /* Set-aside marks an old unsettled job (lib/higgsfield-consumer/jobs.ts); a purged workspace's collected original is
-       recorded as disposed (lib/purge.ts). Neither sends anything. */
-    "UPDATE higgsfield_consumer_jobs": ["lib/higgsfield-consumer/jobs.ts", "lib/purge.ts"],
+    /* A deleted workspace's collected original is recorded as disposed on its job's row before purge removes the
+       workspace (lib/purge.ts). It sends nothing. */
+    "UPDATE higgsfield_consumer_jobs": ["lib/purge.ts"],
   });
   /* The tables stay, so a fresh database and an older backup read alike. */
   expect(read("lib/higgsfield-consumer/jobs.ts")).toContain("CREATE TABLE IF NOT EXISTS higgsfield_consumer_jobs");

@@ -64,35 +64,13 @@ export class ConsumerJobError extends Error {
     this.name = "ConsumerJobError";
   }
 }
-export const CONSUMER_ACTIVE_LIMIT = 4;
 /**
- * How long an admitted job may hold one of the four slots. A provider job is
- * finished or dead well inside this window, so a job still unsettled after it
- * (an uncertain dispatch with no receipt id, a crash mid-dispatch, a result no
- * tab ever polled) stops blocking new spend. The row, its receipt and its
- * recovery path are untouched; it simply no longer counts.
+ * How long after it was sent a job still open in the ledger counts as current:
+ * the jobs tray lists it while it is younger than this (it was the time an
+ * admitted job could hold one of the workspace's account slots). Older open
+ * jobs are read in Workspace › Usage and on the /usage tab.
  */
 export const CONSUMER_CAPACITY_WINDOW_MS = 2 * 3_600_000;
-/** An owner may set a job aside this long after it was admitted, not sooner. */
-export const CONSUMER_RELEASE_GRACE_MS = 15 * 60_000;
-/** The jobs that hold capacity right now, in SQL: admitted, unsettled, not set
- * aside by their owner, and inside the capacity window. */
-const holdsCapacity = (alias = "") =>
-  `${alias}status IN ('dispatching','accepted','uncertain') AND ${alias}released_at IS NULL AND ${alias}created_at>?`;
-/**
- * The same rule for one job, from its views: an unsettled job its owner set
- * aside, or one past the capacity window, no longer holds a slot and no longer
- * blocks its workflow. It stays listed, and nothing is ever dispatched again.
- */
-export function consumerJobSetAside(
-  job: Pick<ConsumerJob, "status" | "releasedAt" | "createdAt">,
-  now = Date.now(),
-): boolean {
-  return (
-    (job.status === "dispatching" || job.status === "accepted" || job.status === "uncertain") &&
-    (job.releasedAt !== null || job.createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS)
-  );
-}
 const initialized = new WeakMap<Client, Promise<void>>();
 const invalid = (): never => {
   throw new ConsumerJobError("invalid_input", 400);
@@ -259,74 +237,4 @@ export async function listConsumerJobs(
         ? { createdAt: last.createdAt, id: last.id }
         : null,
   };
-}
-
-export type ConsumerCapacityJob = {
-  id: string;
-  draftId: string;
-  projectName: string | null;
-  workflow: ConsumerWorkflow;
-  status: "dispatching" | "accepted" | "uncertain";
-  createdAt: number;
-  /** The owner may set it aside now (past the grace period). */
-  releasable: boolean;
-};
-/**
- * Who holds the workspace's four connected-account slots, from one owner's
- * side: the total, and that owner's own holders across every project (other
- * members' jobs are counted, never described). Reads the ledger only.
- */
-export async function consumerCapacity(
-  userId: string,
-  now = Date.now(),
-): Promise<{ limit: number; active: number; mine: ConsumerCapacityJob[] }> {
-  identifier(userId);
-  await consumerJobsReady();
-  const since = now - CONSUMER_CAPACITY_WINDOW_MS;
-  const [total, own] = await db().batch(
-    [
-      { sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`, args: [since] },
-      {
-        sql: `SELECT j.id,j.draft_id,j.workflow,j.status,j.created_at,SUBSTR(p.name,1,200) AS project_name
-          FROM higgsfield_consumer_jobs j LEFT JOIN workbench_projects p ON p.owner=j.user_id AND p.project_id=j.draft_id
-          WHERE j.user_id=? AND ${holdsCapacity("j.")} ORDER BY j.created_at ASC,j.id ASC LIMIT ?`,
-        args: [userId, since, CONSUMER_ACTIVE_LIMIT * 4],
-      },
-    ],
-    "read",
-  );
-  return {
-    limit: CONSUMER_ACTIVE_LIMIT,
-    active: Number(total.rows[0]?.count ?? 0),
-    mine: own.rows.map((row) => ({
-      id: String(row.id),
-      draftId: String(row.draft_id),
-      projectName: row.project_name == null ? null : String(row.project_name),
-      workflow: row.workflow as ConsumerWorkflow,
-      status: row.status as ConsumerCapacityJob["status"],
-      createdAt: Number(row.created_at),
-      releasable: Number(row.created_at) <= now - CONSUMER_RELEASE_GRACE_MS,
-    })),
-  };
-}
-/**
- * The owner sets one of their own unsettled jobs aside so it stops holding a
- * slot. Nothing is deleted or rewritten: the status, receipt and provider id
- * stay, the job stays listed and recoverable, and it can never be dispatched
- * again. Only past the grace period, so capacity cannot be bypassed by
- * setting fresh jobs aside.
- */
-export async function setAsideConsumerJob(
-  input: { userId: string; id: string },
-  now = Date.now(),
-): Promise<boolean> {
-  identifier(input.userId);
-  identifier(input.id);
-  await consumerJobsReady();
-  const changed = await db().execute({
-    sql: `UPDATE higgsfield_consumer_jobs SET released_at=? WHERE id=? AND user_id=?
-      AND status IN ('dispatching','accepted','uncertain') AND released_at IS NULL AND created_at<=?`,
-    args: [now, input.id, input.userId, now - CONSUMER_RELEASE_GRACE_MS],
-  });
-  return changed.rowsAffected === 1;
 }

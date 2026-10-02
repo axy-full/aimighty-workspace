@@ -54,8 +54,9 @@ async function fixture(page: Page, options: { initialError?: boolean; truncated?
         return error ? json({ error: "Saved the connected account activity is temporarily unavailable." }, 503)
           : json({ ...activity, projectsTruncated: !!options.truncated });
       }
+      /* The credit history is the one account route left; anything else is unexpected, and the server has no such route. */
       unexpected.push(`${request.method()} ${path}`);
-      return json({ error: "No provider operations permitted in this fixture." }, 409);
+      return route.continue();
     }
     if (request.method() !== "GET") { unexpected.push(`${request.method()} ${path}`); return json({ error: "No mutations permitted." }, 409); }
     if (path === "/api/me") return json(me);

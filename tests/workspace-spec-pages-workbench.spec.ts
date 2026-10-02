@@ -230,6 +230,8 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
   await signInLocally(page.request);
   const project = { ...primary, id: "ws-spec-generate" };
   const asked: string[] = [];
+  /* Nothing asks the account, not even for a list of saved jobs: its routes are gone with the sign-in. */
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`); });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error" && /Maximum update depth/.test(message.text())) errors.push(message.text()); });
@@ -238,11 +240,6 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
     if (path === "/api/workbench/projects")
       return json({ project, projects: [{ id: project.id, name: project.name, revision: 1 }], revision: 1, productions: [], shared: null });
-    if (path.startsWith("/api/higgsfield/consumer/")) {
-      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
-      asked.push(`${request.method()} ${path}`);
-      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
-    }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);
     return route.continue();
@@ -276,6 +273,8 @@ test("Compare's Atomik plan builds the comparison from the project's Library, fr
     createdBy: "fixture", createdAt: Date.now() - 60_000, updatedAt: Date.now() - 30_000,
   };
   const asked: string[] = [], reads: string[] = [];
+  /* Nothing asks the account, not even for a list of saved jobs: its routes are gone with the sign-in. */
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`); });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/api/**", async (route) => {
@@ -287,11 +286,6 @@ test("Compare's Atomik plan builds the comparison from the project's Library, fr
       if (url.searchParams.get("source") !== "generations") return json({ uploads: [], nextCursor: null });
       reads.push(url.search);
       return json({ generations: [take], nextPageCursor: null });
-    }
-    if (path.startsWith("/api/higgsfield/consumer/")) {
-      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
-      asked.push(`${request.method()} ${path}`);
-      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
     }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);

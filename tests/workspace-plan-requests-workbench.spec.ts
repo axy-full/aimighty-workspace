@@ -23,8 +23,6 @@ const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=",
   "base64",
 );
-const presetId = "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f";
-const wallet = "22222222-2222-4222-8222-222222222222";
 /** The one project original Shorts may restyle in these tests. */
 const launchOriginal = {
   id: "launch-original", filename: "Launch cut.mp4", kind: "video", mime: "video/mp4", bytes: 4000,
@@ -98,6 +96,8 @@ type State = {
   quotes: Record<string, unknown>[];
   dispatches: string[];
   refused: string[];
+  /** Any request to the retired Higgsfield account's routes (none may be made). */
+  account: string[];
   external: string[];
   errors: string[];
 };
@@ -111,8 +111,9 @@ async function fixture(page: Page, project: Project): Promise<State> {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
   me.owner = true;
-  const state: State = { quotes: [], dispatches: [], refused: [], external: [], errors: [] };
+  const state: State = { quotes: [], dispatches: [], refused: [], account: [], external: [], errors: [] };
   page.on("pageerror", (error) => state.errors.push(error.message));
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) state.account.push(`${request.method()} ${path}`); });
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (["localhost", "127.0.0.1"].includes(url.hostname)) return route.continue();
@@ -136,42 +137,6 @@ async function fixture(page: Page, project: Project): Promise<State> {
         productions: [],
         shared: null,
       });
-    if (path === "/api/higgsfield/consumer/connection") return json({ connected: true, requiresReconnect: false });
-    if (path === "/api/higgsfield/consumer/shorts") {
-      if (method === "GET")
-        return json({
-          connection: { connected: true, requiresReconnect: false },
-          capabilities: { shorts: true, aspectRatios: ["9:16", "16:9"], resolution: "720p", minSourceSeconds: 4, maxSourceSeconds: 120, maxClips: 20, cancel: false },
-          jobs: [],
-        });
-      const body = request.postDataJSON();
-      if (body.action === "presets")
-        return json({ presets: { presets: [{ id: presetId, source: "cms", name: "Bold Urban" }], complete: true, fetchedAt: Date.now() } });
-      if (body.action === "quote") {
-        state.quotes.push(body);
-        return json({
-          job: {
-            id: `11111111-1111-4111-8111-${String(state.quotes.length).padStart(12, "0")}`,
-            draftId: body.draftId,
-            status: "quoted",
-            input: body.input,
-            source: { kind: "video", name: "Launch cut.mp4" },
-            pricedSeconds: 31,
-            workspaceId: wallet,
-            workspaceName: "Studio wallet",
-            quoteCredits: 40,
-            creditUnit: "higgsfield_credits",
-            quoteExpiresAt: Date.now() + 300_000,
-            providerJobId: null,
-            clips: [],
-            settlement: null,
-            createdAt: Date.now(),
-          },
-        });
-      }
-      state.dispatches.push(`${path} ${String(body.action)}`);
-      return json({ error: "No dispatch is permitted in this test." }, 409);
-    }
     if (path === "/api/generate/quote" && method === "POST") {
       state.quotes.push(request.postDataJSON());
       return json({ estimatedCredits: 18, price: 18, unit: "cr", fingerprint: `fp${"0".repeat(60)}01` });
@@ -301,6 +266,7 @@ test("Shorts ran on the Higgsfield account: its page says the sign-in is retired
   await expect(page.getByTestId("atomik-gate")).toHaveCount(0);
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);
+  expect(state.account).toEqual([]);
   expect(state.external).toEqual([]);
   expect(state.errors).toEqual([]);
 });

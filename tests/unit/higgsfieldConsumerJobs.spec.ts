@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
@@ -59,11 +59,14 @@ async function seedDraft(userId = owner.userId, draftId = owner.draftId) {
   });
 }
 
-test("the module reads the ledger and writes nothing but a set-aside mark: no quote, send, poll or collection is left", async () => {
+test("the module reads the ledger and writes no row: no quote, send, poll, collection, slot count or set-aside is left", async () => {
   const { jobs } = await modules();
   expect(Object.keys(jobs).filter((name) => typeof (jobs as Record<string, unknown>)[name] === "function").sort()).toEqual([
-    "ConsumerJobError", "consumerCapacity", "consumerJobSetAside", "consumerJobsReady", "getConsumerJob", "listConsumerJobs", "setAsideConsumerJob",
+    "ConsumerJobError", "consumerJobsReady", "getConsumerJob", "listConsumerJobs",
   ]);
+  /* The one figure the tray still reads: how long an open job counts as current. */
+  expect(jobs.CONSUMER_CAPACITY_WINDOW_MS).toBe(2 * 3_600_000);
+  expect(readFileSync("lib/higgsfield-consumer/jobs.ts", "utf8")).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b[^`]*higgsfield_consumer_jobs/);
 });
 
 test("a fresh database gets every column, and an older table gains the later ones without losing a row", async () => {
@@ -138,46 +141,5 @@ test("the list pages by a stable cursor, reads no claim or fingerprint, and keep
     await database.db().execute({ sql: "DELETE FROM workbench_projects WHERE owner=? AND project_id=?", args: [owner.userId, owner.draftId] });
     expect((await jobs.listConsumerJobs(owner)).items).toHaveLength(5);
     expect((await jobs.getConsumerJob({ ...owner, id: ids[0] }))?.status).toBe("accepted");
-  });
-});
-
-test("a stuck job stops holding a slot once its owner sets it aside or the capacity window passes; nothing is deleted or re-sent", async () => {
-  const { tenant, jobs, database } = await modules();
-  await tenant.runInTenant(workspace(), async () => {
-    await seedDraft();
-    await seedDraft("owner", "second-draft");
-    const now = Date.now();
-    const held: string[] = [];
-    /* Unconfirmed sends with no receipt: nothing can ever settle them. */
-    for (let index = 0; index < 4; index++)
-      held.push(await seedConsumerJob({ userId: "owner", draftId: index % 2 ? "second-draft" : "draft", status: "uncertain", createdAt: now - index }));
-    const seen = await jobs.consumerCapacity("owner", now);
-    expect(seen).toMatchObject({ limit: 4, active: 4 });
-    expect(seen.mine.map((job) => job.id).sort()).toEqual([...held].sort());
-    expect(seen.mine.every((job) => job.status === "uncertain" && job.projectName === "Test draft" && !job.releasable)).toBe(true);
-    expect((await jobs.consumerCapacity("someone-else", now)).mine).toEqual([]);
-    /* Too recent to set aside, and never by another member. */
-    const target = held[0];
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, now)).toBe(false);
-    const later = now + jobs.CONSUMER_RELEASE_GRACE_MS + 1;
-    expect((await jobs.consumerCapacity("owner", later)).mine.every((job) => job.releasable)).toBe(true);
-    expect(await jobs.setAsideConsumerJob({ userId: "someone-else", id: target }, later)).toBe(false);
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, later)).toBe(true);
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, later)).toBe(false);
-    /* Kept exactly as it was, still listed. */
-    expect(await jobs.getConsumerJob({ ...owner, id: target })).toMatchObject({ status: "uncertain", releasedAt: later, providerJobId: null });
-    expect((await jobs.consumerCapacity("owner", later)).active).toBe(3);
-    /* A job admitted before the capacity window no longer counts either. */
-    await database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET created_at=? WHERE id=?", args: [later - jobs.CONSUMER_CAPACITY_WINDOW_MS - 1, held[1]] });
-    expect((await jobs.consumerCapacity("owner", later)).active).toBe(2);
-    expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(4);
-    /* The same rule, read off one job. */
-    const setAside = async (id: string, draftId: string) => jobs.consumerJobSetAside((await jobs.getConsumerJob({ userId: "owner", draftId, id }))!, later);
-    expect(await setAside(target, "draft")).toBe(true);
-    expect(await setAside(held[1], "second-draft")).toBe(true);
-    expect(await setAside(held[2], "draft")).toBe(false);
-    /* A settled or merely quoted job is never "set aside", whatever its age. */
-    expect(jobs.consumerJobSetAside({ status: "failed", releasedAt: later, createdAt: 0 })).toBe(false);
-    expect(jobs.consumerJobSetAside({ status: "quoted", releasedAt: null, createdAt: 0 })).toBe(false);
   });
 });

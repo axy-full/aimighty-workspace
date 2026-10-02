@@ -2,8 +2,6 @@ import type { Client, Transaction } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { db, ready } from "./db";
 import { deleteVideo } from "./storage";
-import { MediaSourceError } from "./mediaBindings";
-import { consumerOriginalPending, consumerOriginalRetentionQuery, CONSUMER_ORIGINAL_PENDING_MESSAGE } from "./higgsfield-consumer/original-retention";
 
 const initialized = new WeakMap<Client, Promise<void>>();
 const LEASE_MS = 10 * 60_000;
@@ -40,14 +38,18 @@ async function transaction<T>(work: (tx: Transaction) => Promise<T>) {
     tx.close();
   }
 }
-/** Call after the binding check in the same tenant write transaction. */
+/**
+ * Call after the binding check in the same tenant write transaction. An
+ * original the connected account's collector stored but never recorded as
+ * complete is deleted like any take: Particl no longer signs in to Higgsfield
+ * (CLAUDE.md ground rule 10), so nothing will finish it. Its ledger row and
+ * receipt stay; only the person's own delete removes the take.
+ */
 export async function markGenerationDeletion(
   tx: Transaction,
   id: string,
   at = Date.now(),
 ) {
-  if (await consumerOriginalPending(tx, id))
-    throw new MediaSourceError(CONSUMER_ORIGINAL_PENDING_MESSAGE);
   const changed = await tx.execute({
     sql: "UPDATE generations SET deleted=1,updated_at=? WHERE id=?",
     args: [at, id],
@@ -66,13 +68,11 @@ export async function cleanupDeletedGenerations(
   onlyId?: string,
 ) {
   await mediaDeletionReady();
-  const pendingOriginals = await consumerOriginalRetentionQuery(db());
   const candidates = (
     await db().execute({
       sql: `SELECT g.id FROM generations g LEFT JOIN generation_deletions d ON d.id=g.id
     WHERE g.deleted=1 AND g.status NOT IN ('queued','running','held') AND (? IS NULL OR g.id=?)
     AND (COALESCE(g.bytes,0)>0 OR g.stored_url IS NOT NULL OR d.id IS NOT NULL) AND COALESCE(d.lease_until,0)<=?
-    ${pendingOriginals ? `AND g.id NOT IN (${pendingOriginals})` : ""}
     ORDER BY COALESCE(d.updated_at,0),g.updated_at,g.id LIMIT ?`,
       args: [
         onlyId ?? null,
@@ -95,7 +95,6 @@ export async function cleanupDeletedGenerations(
         })
       ).rows[0];
       if (!row) return null;
-      if (await consumerOriginalPending(tx, id)) return null;
       const acquired = await tx.execute({
         sql: `INSERT INTO generation_deletions(id,lease,lease_until,updated_at) VALUES(?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET lease=excluded.lease,lease_until=excluded.lease_until,updated_at=excluded.updated_at WHERE COALESCE(generation_deletions.lease_until,0)<=?`,

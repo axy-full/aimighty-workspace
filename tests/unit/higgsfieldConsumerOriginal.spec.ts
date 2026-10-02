@@ -14,8 +14,8 @@ import { seedCollectedOriginal } from "../helpers/consumerLedger";
 /**
  * Originals collected from the connected account, after its sign-in was
  * removed: nothing collects one any more, so what is tested is what still
- * reads them (the Library's retained take, deletion's retention guard, purge)
- * plus the pieces the API-key collector shares: the pinned public fetch and
+ * reads them (the Library's retained take, deletion like any take, purge's
+ * disposal) plus the pieces the API-key collector shares: the pinned fetch and
  * the MP4 inspection (lib/videoOriginal.ts). Collected originals are seeded
  * as the old collector left them (tests/helpers/consumerLedger.ts).
  */
@@ -258,7 +258,7 @@ test("a collected original stays an ordinary Library take, kept on its server-wr
   });
 });
 
-test("an original whose ledger never completed stays protected from deletion; one the ledger completed can be deleted, its receipt kept", async () => {
+test("an original whose ledger never recorded completion is deleted like any take, by the person only; its ledger row and receipt stay", async () => {
   const m = await modules();
   const deletion = await import("../../lib/mediaDeletion");
   const { workbenchTransaction } = await import("../../lib/workbench/records");
@@ -267,26 +267,28 @@ test("an original whose ledger never completed stays protected from deletion; on
     let network = 0;
     globalThis.fetch = async () => { network++; throw new Error("No provider calls allowed"); };
     try {
-      /* The old collector stored it, then the request died before the ledger's completion: nothing will finish it now. */
+      /* The old collector stored it, then its completion never ran: nothing will finish it now, so nothing holds it. */
       const pending = await collected(m);
-      expect((await m.jobs.getConsumerJob(pending.scope))?.status).toBe("accepted");
-      await deletion.mediaDeletionReady();
-      await expect(
-        workbenchTransaction((tx) => deletion.markGenerationDeletion(tx, pending.generationId)),
-      ).rejects.toThrow("still being finalized");
-      const retained = (await m.database.db().execute({ sql: "SELECT deleted,bytes,stored_url FROM generations WHERE id=?", args: [pending.generationId] })).rows[0];
-      expect(retained).toMatchObject({ deleted: 0, bytes: original.length, stored_url: m.storage.videoPath(pending.generationId) });
-      expect((await m.storage.readVideoBytes(pending.generationId)).equals(original)).toBe(true);
-
-      /* One whose completion the ledger did record deletes like any take; its receipt stays word for word. */
       const done = await collected(m, { completed: true });
-      const manifest = (await m.jobs.getConsumerJob(done.scope))!.resultManifest;
-      expect(manifest).toMatchObject({ original: { generationId: done.generationId, sha256: done.sha256, bytes: original.length } });
+      const receipts = async () => (await m.database.db().execute("SELECT job_id,state,sha256,bytes,receipt_json FROM consumer_video_originals ORDER BY job_id")).rows.map((row) => ({ ...row }));
+      const before = { pending: (await m.jobs.getConsumerJob(pending.scope))!, done: (await m.jobs.getConsumerJob(done.scope))!, receipts: await receipts() };
+      expect(before.pending.status).toBe("accepted");
+      expect(before.done.resultManifest).toMatchObject({ original: { generationId: done.generationId, sha256: done.sha256, bytes: original.length } });
+      /* Nothing is deleted until the person deletes it. */
+      await deletion.mediaDeletionReady();
+      expect(await deletion.cleanupDeletedGenerations(5)).toMatchObject({ attempted: 0, cleaned: 0 });
       expect((await m.quota.standing()).usedBytes).toBe(original.length * 2);
-      await workbenchTransaction((tx) => deletion.markGenerationDeletion(tx, done.generationId));
-      expect(await deletion.cleanupDeletedGenerations(1, Date.now(), done.generationId)).toMatchObject({ cleaned: 1, failed: 0 });
-      expect((await m.quota.standing()).usedBytes).toBe(original.length);
-      expect((await m.jobs.getConsumerJob(done.scope))!.resultManifest).toEqual(manifest);
+      for (const take of [pending, done]) {
+        await workbenchTransaction((tx) => deletion.markGenerationDeletion(tx, take.generationId));
+        expect(await deletion.cleanupDeletedGenerations(1, Date.now(), take.generationId)).toMatchObject({ cleaned: 1, failed: 0 });
+        expect((await m.database.db().execute({ sql: "SELECT deleted,bytes,stored_url FROM generations WHERE id=?", args: [take.generationId] })).rows[0])
+          .toMatchObject({ deleted: 1, bytes: 0, stored_url: null });
+      }
+      expect((await m.quota.standing()).usedBytes).toBe(0);
+      /* The ledger keeps both jobs as they were, and the collector's receipts word for word. */
+      expect(await m.jobs.getConsumerJob(pending.scope)).toEqual(before.pending);
+      expect(await m.jobs.getConsumerJob(done.scope)).toEqual(before.done);
+      expect(await receipts()).toEqual(before.receipts);
       expect(network).toBe(0);
     } finally {
       globalThis.fetch = realFetch;
@@ -492,13 +494,13 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
   });
 });
 
-test("cleanup cannot remove an already marked pending original or let it starve unrelated deletions", async () => {
+test("cleanup takes a never-completed original marked deleted in an earlier deployment like any take, and starves no unrelated deletion", async () => {
   const m = await modules();
   const deletion = await import("../../lib/mediaDeletion");
   await m.tenant.runInTenant(workspace(), async () => {
     const take = await collected(m);
     await deletion.mediaDeletionReady();
-    // A previous deployment/manual tombstone must not bypass the cleanup guard.
+    // A tombstone written by an earlier deployment or by hand, with no deletion record of its own.
     await m.database.db().execute({
       sql: "UPDATE generations SET deleted=1 WHERE id=?",
       args: [take.generationId],
@@ -508,27 +510,23 @@ test("cleanup cannot remove an already marked pending original or let it starve 
       sql: "INSERT INTO generations(id,model,prompt,params,status,stored_url,bytes,deleted,created_at,updated_at) VALUES(?,'fixture','','{}','succeeded',?,1,1,0,1)",
       args: [unrelated, `/api/media/${unrelated}`],
     });
-    expect(await deletion.cleanupDeletedGenerations(1)).toMatchObject({
-      attempted: 1,
-      cleaned: 1,
+    expect(await deletion.cleanupDeletedGenerations(5)).toMatchObject({
+      attempted: 2,
+      cleaned: 2,
       failed: 0,
     });
-    expect(
-      (await m.storage.readVideoBytes(take.generationId)).equals(original),
-    ).toBe(true);
-    expect(
-      (
-        await m.database.db().execute({
-          sql: "SELECT bytes FROM generations WHERE id=?",
-          args: [take.generationId],
-        })
-      ).rows[0].bytes,
-    ).toBe(original.length);
-    expect(await deletion.cleanupDeletedGenerations(1)).toMatchObject({
+    for (const id of [take.generationId, unrelated])
+      expect((await m.database.db().execute({ sql: "SELECT bytes,stored_url FROM generations WHERE id=?", args: [id] })).rows[0], id)
+        .toMatchObject({ bytes: 0, stored_url: null });
+    expect(await deletion.cleanupDeletedGenerations(5)).toMatchObject({
       attempted: 0,
       cleaned: 0,
       failed: 0,
     });
+    /* Its ledger row and receipt are untouched. */
+    expect((await m.jobs.getConsumerJob(take.scope))?.status).toBe("accepted");
+    expect((await m.database.db().execute({ sql: "SELECT state,receipt_json FROM consumer_video_originals WHERE job_id=?", args: [take.jobId] })).rows[0])
+      .toMatchObject({ state: "stored", receipt_json: JSON.stringify(take.receipt) });
   });
 });
 

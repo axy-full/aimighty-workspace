@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -25,7 +25,7 @@ const PATH = "/suites?suite=atomik&page=skills&sp=skills";
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-tools", productionProjectId: "prod-tools", shotMappings: {} });
 
 /* `armed` names #392's development-only crash probes (lib/shell/fault.ts): each named boundary throws as it renders.
-   The account's capability check (the reach read this page used to make) is watched: this page must never ask it. */
+   Every request to the account's old routes (this page used to read its capability check) is watched: there must be none. */
 async function open(page: Page, armed: string[] = []) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -33,9 +33,9 @@ async function open(page: Page, armed: string[] = []) {
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [], generations: [] });
   const asked: string[] = [];
-  await page.route("**/api/higgsfield/consumer/capabilities", async (route: Route) => {
-    asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-    return route.fulfill({ status: 409, json: { error: "Atomik reaches no signed-in account." } });
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`);
   });
   if (armed.length) await page.addInitScript((list) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = list; }, armed);
   const errors: string[] = [];
@@ -241,7 +241,7 @@ test("a member sees the same Particl rows, and the page never asks an account on
   await mockProjects(page, { current: fixture() });
   await mockLibrary(page, { uploads: [], generations: [] });
   let asked = 0;
-  await page.route("**/api/higgsfield/consumer/capabilities", (route) => { asked++; return route.fulfill({ status: 403, json: { error: "Only the owner" } }); });
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) asked++; });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(PATH);

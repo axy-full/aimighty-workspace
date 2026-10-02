@@ -9,18 +9,9 @@ const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=",
   "base64",
 );
-const wallet = "22222222-2222-4222-8222-222222222222",
-  consumerProviderId = "33333333-3333-4333-8333-333333333333";
-const consumerGenerationId = `gen_hfc_${"c".repeat(40)}`;
-type ConsumerJob = Record<string, unknown> & { id: string; status: string };
 async function fixture(
   page: Page,
   lostResponse = false,
-  consumerOptions: {
-    loseSubmit?: boolean;
-    loseQuote?: boolean;
-    connected?: boolean;
-  } = {},
 ) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
@@ -39,8 +30,9 @@ async function fixture(
     posts: { key: string; body: Record<string, unknown> }[] = [],
     unexpected: string[] = [],
     errors: string[] = [];
-  const consumerJobs: ConsumerJob[] = [],
-    consumerPosts: Record<string, unknown>[] = [];
+  /* Any request to the retired Higgsfield account's routes: none may be made. */
+  const account: string[] = [];
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) account.push(`${request.method()} ${path}`); });
   const uploads = [
     {
       id: "motion-original",
@@ -121,106 +113,6 @@ async function fixture(
     const json = (data: unknown, status = 200) =>
       route.fulfill({ json: data, status });
     if (path === "/api/me") return json(me);
-    if (path === "/api/higgsfield/consumer/connection") {
-      expect(req.headers()["x-workbench-scope"]).toBe(scope);
-      return json({
-        connected: consumerOptions.connected ?? true,
-        requiresReconnect: false,
-      });
-    }
-    if (path === "/api/higgsfield/consumer/genjutsu") {
-      expect(req.headers()["x-workbench-scope"]).toBe(scope);
-      if (req.method() === "GET")
-        return json({
-          connection: {
-            connected: consumerOptions.connected ?? true,
-            requiresReconnect: false,
-          },
-          capabilities: {
-            resolutions: ["480p", "720p", "1080p"],
-            minSeconds: 4,
-            maxSeconds: 30,
-            maxImages: 30,
-            maxMediaBytes: 52428800,
-          },
-          jobs: consumerJobs,
-        });
-      const body = req.postDataJSON();
-      consumerPosts.push(body);
-      expect(body.draftId).toBe("viral-draft");
-      if (body.action === "quote") {
-        const existing = consumerJobs.find(
-          (job) => job.quoteKey === body.idempotencyKey,
-        );
-        if (existing) return json({ job: existing });
-        const job: ConsumerJob = {
-          id: `11111111-1111-4111-8111-${String(consumerJobs.length + 1).padStart(12, "0")}`,
-          status: "quoted",
-          draftId: "viral-draft",
-          input: body.input,
-          quoteKey: body.idempotencyKey,
-          workspaceId: wallet,
-          workspaceName: "Fixture wallet",
-          quoteCredits: 18,
-          creditUnit: "higgsfield_credits",
-          quoteExpiresAt: Date.now() + 300000,
-          createdAt: Date.now(),
-          providerJobId: null,
-        };
-        consumerJobs.push(job);
-        if (
-          consumerOptions.loseQuote &&
-          consumerPosts.filter((p) => p.action === "quote").length === 1
-        )
-          return route.abort("connectionreset");
-        return json({ job });
-      }
-      const job = consumerJobs.find((item) => item.id === body.id);
-      expect(job).toBeTruthy();
-      if (!job) return json({ error: "Unavailable" }, 404);
-      if (body.action === "submit") {
-        expect(body).toEqual({
-          action: "submit",
-          draftId: "viral-draft",
-          id: job.id,
-          workspaceId: wallet,
-          credits: 18,
-        });
-        job.status = consumerOptions.loseSubmit ? "uncertain" : "accepted";
-        job.providerJobId = consumerProviderId;
-        job.providerReceipt = { job_id: consumerProviderId };
-        if (consumerOptions.loseSubmit) return route.abort("connectionreset");
-        return json({ job });
-      }
-      if (body.action === "status") {
-        job.status = "completed";
-        job.originalAvailable = true;
-        job.originalAvailability = "available";
-        job.result = {
-          original: {
-            generationId: consumerGenerationId,
-            providerJobId: consumerProviderId,
-            bytes: 1234,
-            sha256: "b".repeat(64),
-            width: 1080,
-            height: 1920,
-            seconds: 5,
-            credits: 18,
-            creditUnit: "higgsfield_credits",
-            asset: {
-              generationId: consumerGenerationId,
-              url: `/api/media/${consumerGenerationId}`,
-              kind: "video",
-              mime: "video/mp4",
-              width: 1080,
-              height: 1920,
-              durationS: 5,
-            },
-          },
-        };
-        return json({ job, pollAfterSeconds: 15 });
-      }
-    }
     if (path === "/api/workbench/projects") {
       expect(req.headers()["x-workbench-scope"]).toBe(scope);
       if (req.method() === "PUT") {
@@ -328,8 +220,7 @@ async function fixture(
   return {
     quotes,
     posts,
-    consumerJobs,
-    consumerPosts,
+    account,
     errors,
     unexpected,
     get project() {
@@ -699,7 +590,7 @@ test("the page always bills the Particl workspace: the owner's account is never 
   /* Shorts ran only on the account: the page says it is retired, and asks nothing. */
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=shorts"));
   await expect(page.getByTestId("subatomik-shorts-retired")).toContainText("Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.");
-  expect(f.consumerPosts).toEqual([]);
+  expect(f.account).toEqual([]);
   expect(f.unexpected).toEqual([]);
   expect(f.errors).toEqual([]);
 });

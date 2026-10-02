@@ -40,11 +40,9 @@ async function open(page: Page, options: Options = {}) {
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   const consumer: Record<string, unknown>[] = [];
   const quotes: Record<string, unknown>[] = [];
-  await page.route("**/api/higgsfield/consumer/**", async (route) => {
-    const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
-    /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
-    consumer.push({ url: route.request().url(), ...body });
-    return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+  /* Nothing asks the account, not even for a list of saved jobs: its routes are gone with the sign-in. */
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) consumer.push({ url: request.url(), method: request.method() });
   });
   await options.engines?.(page);
   /* The sheet's own reads of the engine list, priced where the composer stands (never a quote: no `model`). */

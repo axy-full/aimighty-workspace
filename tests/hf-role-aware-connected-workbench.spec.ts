@@ -323,9 +323,8 @@ test("the previous workspace Atomik panel never offers an account approval, the 
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { project: film } = await asOwner(page);
   const writes: string[] = [];
-  await page.route("**/api/higgsfield/consumer/**", (route) => {
-    if (route.request().method() !== "GET") writes.push(route.request().url());
-    return route.fallback();
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/") && request.method() !== "GET") writes.push(request.url());
   });
   await page.goto(`/workspace?suite=subatomik&page=motion&project=${film.id}`);
   if (WIDE.includes(info.project.name)) await page.getByTestId("atomik-button").click();

@@ -419,10 +419,10 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
   });
   const asked: string[] = [];
   const setup = async (page: Page) => {
-    await page.route("**/api/higgsfield/consumer/**", (route) => {
-      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
-      asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+    /* Nothing asks the account, not even for a list of saved jobs: its routes are gone with the sign-in. */
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`);
     });
   };
   const { errors } = await open(page, { member, generations: [connected], setup });
@@ -455,10 +455,10 @@ test("the owner's Soul take is recreated on Studio engines: its identity is not 
   });
   const asked: string[] = [];
   const setup = async (page: Page) => {
-    await page.route("**/api/higgsfield/consumer/**", (route) => {
-      /* Nothing asks the account, not even for a list of saved jobs: the shell's collector went with the sign-in. */
-      asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+    /* Nothing asks the account, not even for a list of saved jobs: its routes are gone with the sign-in. */
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`);
     });
   };
   const { errors, priced } = await open(page, { generations: [soul], setup });

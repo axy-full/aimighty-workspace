@@ -187,7 +187,6 @@ test("Production re-edit: a failed read says so while it is checked again, and a
     reads.push(reads.length + 1);
     return reads.length === 1 ? route.fulfill({ status: 503, json: { error: "The render request could not finish." } }) : route.fulfill({ status: 404, json: { error: "Not found" } });
   });
-  await page.route("**/api/higgsfield/consumer/audio-tools?**", (route) => route.fulfill({ json: { connection: { connected: false, requiresReconnect: false }, capabilities: { voice: false, dubbing: false, analysis: false, reframe: false, languages: [] }, jobs: [] } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await probe(page);

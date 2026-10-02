@@ -46,15 +46,15 @@ async function fixture(page: Page, options: Options = {}) {
   const models = { featured: [thinking("anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6"), thinking("openai/gpt-5.5", "GPT-5.5"), thinking("spacexai/grok-4.7", "Grok 4.7")], rest: [] };
   const unexpected: string[] = [], quotes: unknown[] = [], errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  /* Nothing in Atomik may reach the account, its recipes or a connected step: those routes are gone, so any request to one is a failure. */
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/higgsfield/consumer/") || path === "/api/atomik/recipes" || path.endsWith("/connected")) unexpected.push(`${request.method()} ${path}`);
+  });
   await page.route("**/*", (route) => (["localhost", "127.0.0.1"].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort("blockedbyclient")));
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
-    /* Nothing in Atomik may reach the account, its recipes or a connected step. */
-    if (path.startsWith("/api/higgsfield/consumer/") || path === "/api/atomik/recipes" || path.endsWith("/connected")) {
-      unexpected.push(`${request.method()} ${path}`);
-      return json({ error: "Atomik reaches no signed-in account." }, 409);
-    }
     if (path === "/api/me") return json(me);
     if (path === "/api/atomik") return json({ chats: [{ ...chat, needsApproval: false }], models, engines });
     if (path === "/api/atomik/ach_1") {
