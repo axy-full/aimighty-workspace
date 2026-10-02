@@ -665,8 +665,17 @@ test("after two fixes that still fail, the shot is handed to the person who aske
     let run = await view();
     const flagged = run.paid.at(-1)!;
     expect(flagged).toMatchObject({ tool: "verify", state: "paused", pause: "check", verdict: "fail", choices: ["accept", "fix", "rerender", "skip"], takeKind: "image" });
-    /* What the choices that spend are likely to cost: what the shot's last fix and render were priced at. */
-    expect(flagged.prices).toEqual({ fix: await credits(0.3), rerender: await credits(0.3) });
+    /* What the choices that spend are likely to cost: what the shot's last render was priced at, and for another fix, the
+       last fix's render plus the run's last charge for writing one — priced first, writing included. */
+    const { runCharges } = await import("../../lib/generationRequests");
+    const { stepChargeEventId } = await import("../../lib/workbench/rig-agent-charges");
+    const { ceilTenths, fromTenths } = await import("../../lib/runLimit");
+    const fixes = run.paid.filter((p) => p.tool === "fix");
+    const lastWriting = (await runCharges(runId)).find((c) => c.id === stepChargeEventId(runId, fixes[1].seq, 1))!;
+    expect(lastWriting.credits).toBeGreaterThan(0);
+    expect(fixes[1]).toMatchObject({ quote: await credits(0.3), note: { credits: lastWriting.credits, settled: true } });
+    expect(flagged.prices).toEqual({ fix: fromTenths(ceilTenths(await credits(0.3)) + ceilTenths(lastWriting.credits)), rerender: await credits(0.3) });
+    expect(flagged.fixNote).toBe(fromTenths(ceilTenths(lastWriting.credits)));
     expect(flagged.reason).toBe("Atomik made 2 fixes and the take still fails Identity. Look at it and decide.");
     expect(run.reason).toBe(flagged.reason);
     expect(run.paid.filter((p) => p.tool === "fix").length).toBe(2);
@@ -915,6 +924,68 @@ test("a fix writer that fails is not billed, and the shot waits for a person; it
     /* The run spent on the take and its check only. */
     const check = (await runCharges(runId)).find((c) => c.id.startsWith("wb_development_"))!;
     expect(await balance(ws)).toBe(before - (await credits(0.3)) - check.credits);
+  });
+});
+
+test("'try another fix' is priced first, writing included: before the run has been charged for writing any fix, the writer's own estimate; what is then charged settles as before, inside the run's limit", async () => {
+  await inRun("fix-figure", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { fixNoteEstimate } = await import("../../lib/workbench/rig-agent-fix-steps");
+    const { runCharges } = await import("../../lib/generationRequests");
+    const { getRun } = await import("../../lib/workbench/rig-agent-store");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    const j = judge({ "01 — Opening": [{ identity: 0.1 }, {}] });
+    /* The first writing fails (released unbilled); the next is the mock writer. */
+    let writes = 0;
+    const write = async (brief: FixBrief) => {
+      writes++;
+      if (writes === 1) throw new FixWriterError("Atomik could not write this fix.");
+      return runFixWriter(brief, mockFixWriterModel(brief));
+    };
+    const deps = await depsFor(ws, r, { checks: { development: j.development }, fixes: { write } });
+    const runId = await approvedRun(deps, { limit: 500, mode: "auto", shots: 1 });
+    await stillShots(runId);
+    const before = await balance(ws);
+    expect(await tickTo(runId, deps, { tapRenders: true })).toEqual({ state: "needs_you", more: false });
+    let run = await view();
+    const handed = run.paid.find((p) => p.tool === "fix")!;
+    expect(handed).toMatchObject({ state: "paused", pause: "check", choices: ["accept", "fix", "rerender", "skip"], note: null });
+    /* Nothing written has been charged yet: the figure is the writer's own estimate, and the shot has no fix render priced. */
+    const estimate = (await fixNoteEstimate((await getRun(db(), runId))!))!;
+    expect(estimate).toBeGreaterThan(0);
+    expect(handed.fixNote).toBe(estimate);
+    expect(handed.prices.fix).toBeUndefined();
+    /* Asked for: it is written (charged at what the turn used, never above the estimate), priced, and waits for a tap. */
+    await agent.resolveRigAgentShot({ productionId: "prod-1", runId, seq: handed.seq, choice: "fix", userId: OWNER, name: "Ana" });
+    expect(await tickTo(runId, deps)).toEqual({ state: "needs_you", more: false });
+    run = await view();
+    const fix2 = run.paid.find((p) => p.tool === "fix" && p.state === "waiting")!;
+    expect(fix2.label).toBe("Fix 2 · 01 — Opening");
+    expect(writes).toBe(2);
+    const steps = await stepsOf(runId);
+    const written = steps.find((s) => s.seq === fix2.seq)!;
+    expect(written.charge).toBe("settled");
+    const charge = (await meterRow(written.chargeId!))!;
+    expect(charge.status).toBe("succeeded");
+    expect(charge.credits).toBeGreaterThan(0);
+    expect(charge.credits).toBeLessThanOrEqual(estimate);
+    expect(fix2.note).toEqual({ credits: charge.credits, settled: true });
+    /* The failed writing was released unbilled, as before. */
+    expect(await meterRow(steps.find((s) => s.seq === handed.seq)!.chargeId!)).toMatchObject({ status: "failed", credits: 0 });
+    /* The tap renders it, charged at what the take settled at; its check passes. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: fix2.seq, fingerprint: fix2.fingerprint, userId: OWNER });
+    expect(await tickTo(runId, deps)).toEqual({ state: "done", more: false });
+    run = await view();
+    expect(run.paid.find((p) => p.seq === fix2.seq)).toMatchObject({ state: "done", charged: await credits(0.3) });
+    expect(run.paid.at(-1)).toMatchObject({ tool: "verify", state: "done", verdict: "pass" });
+    /* Every charge named the run and counts toward its limit; the balance moved by exactly what settled. */
+    const all = await runCharges(runId);
+    expect(all.some((c) => c.id === written.chargeId)).toBe(true);
+    expect(all.every((c) => !c.running)).toBe(true);
+    expect(run.money!.spent).toBeLessThanOrEqual(run.money!.limit);
+    const planning = run.money!.planning!.credits!;
+    expect(await balance(ws)).toBeCloseTo(before - (run.money!.spent - planning), 5);
   });
 });
 

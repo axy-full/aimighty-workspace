@@ -463,6 +463,11 @@ export type RigAgentPaidStepView = {
    * has one. A fix and a check are priced again before they run, and a fix always asks for a tap at its price.
    */
   prices: Partial<Record<ShotChoice, number>>;
+  /**
+   * With "try another fix": what writing it is likely to cost (the run's last charge for writing a fix, else the
+   * writer's own estimate). It is part of the fix's figure; when the shot has no fix render priced yet, it is the figure.
+   */
+  fixNote: number | null;
   /** What the take is (a check's subject, or what a fix edits): a still or a clip. */
   takeKind: "image" | "video" | null;
 };

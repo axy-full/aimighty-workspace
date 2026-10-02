@@ -8,14 +8,14 @@ import { engineMock } from "../mock";
 import { MODELS } from "../models";
 import { textVendor } from "../openai-direct";
 import { DEFAULT_AGENT, verifyJudge } from "../production/agent";
-import { jobBand } from "../runLimit";
+import { ceilTenths, fromTenths, jobBand } from "../runLimit";
 import { shotRequestInput } from "../workspace/rig-requests";
 import { rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
 import { mapNodeShot, readDraft } from "./records";
 import { releaseStepCharge, reserveStepCharge, settleStepCharge, stepChargeEventId } from "./rig-agent-charges";
 import { takeOf } from "./rig-agent-checks";
-import { fixMove, type FixMoveId } from "./rig-agent-fixes";
+import { FIX_TABLE, fixMove, type FixMoveId } from "./rig-agent-fixes";
 import {
   FIX_WRITER_TIMEOUT_MS, FixWriterError, MOCK_FIX_WRITER_CATALOG, MOCK_FIX_WRITER_MODEL, fixWriterCeilingUsd, fixWriterCostUsd, mockFixWriterModel, runFixWriter,
   type FixBrief, type FixWriterOutcome,
@@ -24,7 +24,7 @@ import { CONTINUE, limitProblem, meterOf, pause, stepTitle, stop, type Moved, ty
 import { getRun, patchStep, type RunRow, type StepRequest, type StepRow } from "./rig-agent-store";
 import { readTeamCanvas } from "./team-canvas";
 import { withTeamCanvas } from "./team-canvas-model";
-import type { VerifyCheck } from "./verify";
+import { VERIFY_CHECKS, type VerifyCheck } from "./verify";
 
 /*
  * A fix of a take that failed its check (plan §6; PR 11): written, then priced,
@@ -75,6 +75,27 @@ async function defaultWriterPrice(run: RunRow, models: () => Promise<CatalogMode
   const judge = verifyJudge(developmentModels(all), run.agent ?? DEFAULT_AGENT).model;
   const model = judge ? all.find((m) => m.id === judge.id) : undefined;
   return model ? { id: model.id, catalog: model, direct: textVendor(model.id) === "openai" } : null;
+}
+
+/**
+ * What writing a fix may cost, in credits, before anything is known of it: the writer's ceiling for a brief at its
+ * longest (every move, the longest names and reasons, each character at three bytes), rounded up to a tenth. What a
+ * person is shown for "try another fix" when the run has not been charged for writing one yet; null when the writer
+ * has no model or no confirmed price, and then no fix is written either.
+ */
+export async function fixNoteEstimate(run: RunRow, deps: Pick<FixDeps, "writerPrice" | "models"> = {}): Promise<number | null> {
+  const price = await (deps.writerPrice ?? ((r: RunRow) => defaultWriterPrice(r, deps.models)))(run).catch(() => null);
+  if (!price) return null;
+  const long = (n: number) => "\u2014".repeat(n);
+  let most: number | null = null;
+  for (const check of VERIFY_CHECKS) for (const take of ["image", "video"] as const) {
+    const moves = [FIX_TABLE[check][take], ...(check === "props" ? ["add" as const] : [])].filter((m): m is FixMoveId => !!m);
+    for (const move of moves) {
+      const usd = fixWriterCeilingUsd(price.catalog, { move: fixMove(check, move, take), shot: long(120), master: long(120), take, reasons: [long(300), long(300), long(300)] }, price.direct);
+      if (usd != null) most = Math.max(most ?? 0, usd);
+    }
+  }
+  return most == null ? null : fromTenths(ceilTenths(quotedCredits(most, "text")));
 }
 
 async function defaultWrite(brief: FixBrief, id: string): Promise<FixWriterOutcome> {

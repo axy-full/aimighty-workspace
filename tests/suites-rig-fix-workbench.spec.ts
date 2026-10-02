@@ -6,6 +6,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
+import { ceilTenths, fromTenths } from "../lib/runLimit";
 import type { TakeVerification } from "../lib/workbench/verify";
 
 /**
@@ -345,8 +346,12 @@ test("a clip checked on the board fails: Atomik writes fix 1, an edit of the cli
   const identity = handed.getByTestId("rig-agent-scorecard").locator("li[data-check='identity']");
   await expect(identity).toHaveAttribute("data-verdict", "fail");
   await expect(identity).toContainText(/^IdentityFail.+like the master's\.$/);
+  /* Another fix is priced first, writing included: the last fix's render plus the run's last charge for writing one. */
+  const writing = run.paid[4].note!;
+  expect(writing.settled).toBe(true);
+  expect(flagged.prices.fix).toBe(fromTenths(ceilTenths(fix2.quote!) + ceilTenths(writing.credits!)));
   await expect(handed.getByTestId("rig-agent-choices").locator("button")).toHaveText([
-    "Open its Verify card", "Accept as is", `Try another fix · about ${cr(fix2.quote!)}`, `Render again · about ${cr(take.quote!)}`, "Skip",
+    "Open its Verify card", "Accept as is", `Try another fix · about ${cr(flagged.prices.fix!)}`, `Render again · about ${cr(take.quote!)}`, "Skip",
   ]);
   await floors(page, "fixes: handed over", phone);
   if (info.project.name === "workbench-1440x900") await card.screenshot({ path: info.outputPath("handed-over-1440x900.png"), animations: "disabled" });

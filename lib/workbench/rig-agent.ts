@@ -14,7 +14,7 @@ import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservation
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
 import { textVendor } from "@/lib/openai-direct";
-import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
+import { ceilTenths, fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
@@ -96,8 +96,12 @@ const agentAuthor = (runId: string) => `agent:${runId}`;
 
 const distinct = (items: string[]) => [...new Set(items)];
 
-/** The ledger's view of a run: every charge that named it (planning, renders), and the per-job line now. */
-export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null };
+/**
+ * The ledger's view of a run: every charge that named it (planning, renders, checks, fix notes), the per-job line
+ * now, and — while a shot waits for a person and the run has not been charged for writing a fix yet — what writing
+ * one may cost (lib/workbench/rig-agent-fix-steps.ts fixNoteEstimate).
+ */
+export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null; noteEstimate?: number | null };
 const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
 
 /** The planning turn's meter event: one per run. */
@@ -126,9 +130,18 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   /* What a choice is likely to cost: what the shot's last render, fix or check was priced at. */
   const lastQuote = (s: StepRow, purpose: StepRow["purpose"]) =>
     [...steps].reverse().find((x) => x.nodeId === s.nodeId && x.purpose === purpose && x.quoteCredits != null)?.quoteCredits ?? null;
+  /* What writing another fix is likely to cost: the run's last charge for writing one, else the writer's own estimate. */
+  const lastNote = [...steps].reverse().map((s) => (s.purpose === "fix" && s.charge === "settled" && s.chargeId ? byId.get(s.chargeId) : undefined))
+    .find((row) => !!row && !row.running && row.credits > 0)?.credits ?? null;
+  const noteGuess = lastNote ?? ledger.noteEstimate ?? null;
+  /* Another fix is priced first, writing included: its figure is the shot's last fix render plus that writing (none without it). */
   const choicePrices = (s: StepRow, choices: ShotChoice[]): Partial<Record<ShotChoice, number>> => {
     const prices: Partial<Record<ShotChoice, number>> = {};
-    const of = { fix: lastQuote(s, "fix"), rerender: lastQuote(s, "take"), recheck: s.purpose === "verify" ? s.quoteCredits : null };
+    const fixRender = lastQuote(s, "fix");
+    const of = {
+      fix: fixRender != null && noteGuess != null ? fromTenths(ceilTenths(fixRender) + ceilTenths(noteGuess)) : null,
+      rerender: lastQuote(s, "take"), recheck: s.purpose === "verify" ? s.quoteCredits : null,
+    };
     for (const choice of ["fix", "rerender", "recheck"] as const) if (choices.includes(choice) && of[choice] != null) prices[choice] = of[choice]!;
     return prices;
   };
@@ -150,7 +163,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     const common = {
       seq: s.seq, title, label, round: s.round, state: s.state, pause: s.state === "paused" ? s.pause : null, reason: s.reason,
       resolution: s.resolution && s.resolvedAt ? { choice: s.resolution, at: s.resolvedAt } : null,
-      choices, prices: choicePrices(s, choices),
+      choices, prices: choicePrices(s, choices), fixNote: choices.includes("fix") && noteGuess != null ? fromTenths(ceilTenths(noteGuess)) : null,
       takeKind: s.request?.kind === "check" ? s.request.takeKind : s.request?.kind === "fix" ? s.request.take : null,
     };
     /* A check: its price (and what it holds), what it settled at, its verdict and scorecard, and the Verify card on the board. */
@@ -218,18 +231,22 @@ function shotChoices(step: StepRow, steps: readonly StepRow[]): ShotChoice[] {
 }
 
 /** What the ledger holds for a run (read-only). A read that fails shows the run without it rather than failing the card. */
-async function ledgerOf(run: RunRow): Promise<RunLedger> {
-  const [charges, ceiling] = await Promise.all([
+async function ledgerOf(run: RunRow, steps: readonly StepRow[] = []): Promise<RunLedger> {
+  /* Only needed for the figure on "try another fix" before the run has been charged for writing any fix. */
+  const estimate = steps.some((s) => s.state === "paused" && s.pause === "check") && !steps.some((s) => s.purpose === "fix" && s.charge === "settled");
+  const [charges, ceiling, noteEstimate] = await Promise.all([
     run.capCredits == null ? Promise.resolve([]) : runCharges(run.id).catch(() => []),
     rigJobCeiling().catch(() => null),
+    estimate ? import("./rig-agent-fix-steps").then((m) => m.fixNoteEstimate(run)).catch(() => null) : Promise.resolve(null),
   ]);
-  return { charges, ceiling };
+  return { charges, ceiling, noteEstimate };
 }
 
 async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
   const run = await getRun(db(), runId);
   if (!run) throw new RigAgentError("That build is not on this production.", 404);
-  return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run));
+  const steps = await stepsOf(db(), runId);
+  return runView(run, steps, viewer, await ledgerOf(run, steps));
 }
 
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
@@ -248,7 +265,8 @@ export async function rigAgentState(productionId: string, viewer: string, draftI
   const ask = enabled && draftId && !busy ? await askTerms(productionId, draftId, viewer).catch(() => null) : null;
   if (!run) return { enabled, run: null, ask };
   await nudge(run).catch(() => {});
-  return { enabled, run: runView(run, await stepsOf(db(), run.id), viewer, await ledgerOf(run)), ask };
+  const steps = await stepsOf(db(), run.id);
+  return { enabled, run: runView(run, steps, viewer, await ledgerOf(run, steps)), ask };
 }
 
 async function askTerms(productionId: string, draftId: string, viewer: string): Promise<RigAgentAskTerms> {

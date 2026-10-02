@@ -442,7 +442,8 @@ function PaidRow({ run, p, busy, onRender, onSkip, onChoose, onOpen }: { run: Ri
           ) : null}
           {onChoose ? p.choices.map((choice) => (
             <button key={choice} type="button" className="pxw-agent-quiet" data-testid={`rig-agent-choice-${choice}`} data-choice={choice} disabled={!!busy} onClick={() => onChoose(p, choice)}>
-              {CHOICE_LABEL[choice]}{SPENDS.includes(choice) && p.prices[choice] != null ? ` · about ${cr(p.prices[choice]!)}` : ""}
+              {CHOICE_LABEL[choice]}{SPENDS.includes(choice) && p.prices[choice] != null ? ` · about ${cr(p.prices[choice]!)}`
+                : choice === "fix" && p.fixNote != null ? ` · writing about ${cr(p.fixNote)}` : ""}
             </button>
           )) : null}
         </div>
