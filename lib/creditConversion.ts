@@ -3,6 +3,7 @@ import { balanceValueTx, billingReady, billingTransaction, syncBillingLedger } f
 import { platformDb, platformReady } from "./platform";
 import { LEGACY_CREDIT_USD, creditRateUsd, creditsFigure, fromDeci } from "./creditTerms";
 import { deciCovering, microOf, valueOf } from "./creditUnits";
+import { isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * Restating a workspace's balance at a new price of a credit (owner decision,
@@ -26,11 +27,15 @@ import { deciCovering, microOf, valueOf } from "./creditUnits";
  * as it is. A dry run computes the same figures inside a transaction that is
  * rolled back, so it writes nothing, not even the ledger's own import.
  * Receipts keep their admitted terms: meter rows and debits are not touched.
+ *
+ * The house workspace (lib/houseWorkspace.ts) is never billed in credits, so it
+ * has no balance to restate: it is reported as `house` and nothing is written
+ * for it, neither a rounding grant nor a conversion row.
  */
 export type CreditConversion = {
   id: string | null;
   workspaceId: string;
-  status: "planned" | "converted" | "already" | "reversed" | "refused";
+  status: "planned" | "converted" | "already" | "reversed" | "refused" | "house";
   fromUsd: number;
   toUsd: number;
   /** The balance before, in credits at `fromUsd`. */
@@ -52,6 +57,13 @@ class DryRun extends Error {
 }
 
 const same = (a: number, b: number) => microOf(a) === microOf(b);
+
+/** The house workspace's line in a conversion or reversal: nothing read, nothing written. */
+const houseLine = (workspaceId: string, fromUsd: number, toUsd: number): CreditConversion => ({
+  id: null, workspaceId, status: "house", fromUsd, toUsd, balanceBefore: 0, balanceExact: 0, balanceAfter: 0,
+  roundingCredits: 0, roundingGrantId: null, inFlight: 0,
+  reason: "The house workspace is never billed in credits: it has no balance to restate.",
+});
 const dollars = (usd: number) => `US$${creditRateUsd(usd) ?? usd}`;
 
 /** The price a workspace's balance is stated at: the last conversion's (or reversal's) target, else the legacy price. */
@@ -165,6 +177,7 @@ export async function convertCreditBalance(
   o: { fromUsd: number; toUsd: number; by?: string | null; dryRun?: boolean; at?: number },
 ): Promise<CreditConversion> {
   if (!(o.fromUsd > 0) || !(o.toUsd > 0)) throw new Error("A price of a credit must be above zero.");
+  if (isHouseWorkspace({ id: workspaceId })) return houseLine(workspaceId, o.fromUsd, o.toUsd);
   await billingReady();
   const at = o.at ?? Date.now();
   try {
@@ -184,6 +197,7 @@ export async function reverseCreditConversion(
   workspaceId: string,
   o: { by?: string | null; dryRun?: boolean; at?: number } = {},
 ): Promise<CreditConversion> {
+  if (isHouseWorkspace({ id: workspaceId })) return houseLine(workspaceId, LEGACY_CREDIT_USD, LEGACY_CREDIT_USD);
   await billingReady();
   const at = o.at ?? Date.now();
   try {

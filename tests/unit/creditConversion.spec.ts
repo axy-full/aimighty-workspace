@@ -184,6 +184,22 @@ test("conversion is idempotent: running it twice converts once", async () => {
   expect(await balance(w)).toBe(31.3);              // 31.25, rounded up
 });
 
+test("the house workspace is never restated: no rounding grant, no record, not even the ledger's import; the workspace beside it converts", async () => {
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const { convertCreditBalance, reverseCreditConversion } = await import("../../lib/creditConversion");
+  /* A grant left on the house from before it was exempt (it is never given credits now) is not restated either. */
+  await grant(HOUSE_WORKSPACE_ID, `house_old_${randomUUID().slice(0, 8)}`, 7, null);
+  const counts = await rowCounts(HOUSE_WORKSPACE_ID);
+  for (const dryRun of [true, false])
+    expect(await convertCreditBalance(HOUSE_WORKSPACE_ID, { fromUsd: 0.10, toUsd: 0.80, dryRun, at: t0 }))
+      .toMatchObject({ status: "house", roundingCredits: 0, roundingGrantId: null });
+  expect(await reverseCreditConversion(HOUSE_WORKSPACE_ID, { dryRun: false, at: t0 })).toMatchObject({ status: "house" });
+  expect(await rowCounts(HOUSE_WORKSPACE_ID)).toEqual(counts);
+  const w = ws();
+  await grant(w, `${w}_old`, 7, null);
+  expect(await convertCreditBalance(w, { fromUsd: 0.10, toUsd: 0.80, at: t0 })).toMatchObject({ status: "converted", balanceAfter: 0.9 });
+});
+
 test("a dry run reports the change and writes nothing — not even the ledger's own import", async () => {
   const w = ws();
   await grant(w, `${w}_old`, 99, null);
