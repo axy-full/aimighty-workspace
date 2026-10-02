@@ -750,6 +750,8 @@ const SCHEMA = [
      deleted     INTEGER NOT NULL DEFAULT 0
    )`,
   `CREATE INDEX IF NOT EXISTS idx_atomik_chats_created ON atomik_chats(created_at DESC)`,
+  /* A project's threads, newest activity first (lib/atomikThreads.ts). */
+  `CREATE INDEX IF NOT EXISTS idx_atomik_chats_project ON atomik_chats(project_id, updated_at DESC)`,
   `CREATE TABLE IF NOT EXISTS atomik_messages (
      id         TEXT PRIMARY KEY,
      chat_id    TEXT NOT NULL,
@@ -939,6 +941,12 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       // Who took a step to render it, and which approval this is: its render's Idempotency-Key is per approval (lib/atomik.ts › stepRequestKey).
       await addColumn("atomik_steps", `claimed_by TEXT`);
       await addColumn("atomik_steps", `attempt INTEGER NOT NULL DEFAULT 0`);
+      /* Threads (lib/atomikThreads.ts): a chat is one of its project's threads. Archive hides one, by whom and
+         when, and Restore clears it; nothing is deleted. A step's render key names its thread (lib/atomik.ts ›
+         threadStepRequestKey), written by the approval that claims it; older approvals keep the key they had. */
+      await addColumn("atomik_chats", `archived_at INTEGER`);
+      await addColumn("atomik_chats", `archived_by TEXT`);
+      await addColumn("atomik_steps", `request_key TEXT`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
       await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
       // Consent to train on a face, stored with the identity (brief 1.3).

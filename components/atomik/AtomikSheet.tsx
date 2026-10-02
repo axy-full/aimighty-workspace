@@ -8,6 +8,7 @@ import { useAtomikRail, setAtomikRail } from "@/lib/atomikRail";
 import Ring from "@/components/atomik/Ring";
 import { ChatComposer } from "./ChatComposer";
 import MarketingStudioEntry from "./MarketingStudioEntry";
+import ThreadSwitcher from "./threads/ThreadSwitcher";
 import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
@@ -29,7 +30,9 @@ import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKey
  * spent.`), one sentence at 14/1.45, `Continue · 24 CR` (52px, radius 14),
  * `Change engine` / `Stop here` (44px, radius 12, .16), and `19 OF 253 CR ·
  * PLANNING 3 CR`. A question shows its options as 44px buttons; with
- * nothing to decide the card says so.
+ * nothing to decide the card says so. The Threads row above it
+ * (threads/ThreadSwitcher.tsx) switches, starts, names and archives the
+ * production's threads.
  */
 export default function AtomikSheet() {
   const a = useAtomik();
@@ -62,6 +65,7 @@ export default function AtomikSheet() {
       title={<span className="flex items-center gap-[8px]">{"steps" in a.ring && a.ring.steps ? <Ring steps={a.ring.steps} size={18} /> : <Ring mode={"mode" in a.ring && a.ring.mode ? a.ring.mode : "idle"} size={18} />}Atomik</span>} context={context}
       actions={expanded ? <button type="button" onClick={()=>{size.update(58);rail.compact();}} className={action}>Compact ↓</button> : <button type="button" onClick={()=>{size.update(92);rail.expand();}} className={action}>Expand ↑</button>}
       footer={<ChatComposer />} footerPad="8px 16px 26px">
+      <ThreadSwitcher placement="sheet" />
       <MarketingStudioEntry />
       {expanded && (
         <>
