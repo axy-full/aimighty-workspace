@@ -63,7 +63,7 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 7. **Two first-class surfaces, different jobs.** Desktop is where work is made: composing, wiring Rig, reviewing at speed, bulk actions, admin. Mobile is where work is judged: watch a run, compare, approve, unlock a cap. Neither is a shrunken version of the other. Every change ships with Playwright checks at 360×640, 390×844, 844×390, 1440×900 and 1920×1080. No horizontal overflow at any width; primary actions reachable without panning; dock and sheets clear of the home indicator; no fixed-width layout stranding whitespace above 1600px.
 8. **Small PRs**, one concern each, in phase order.
 9. **Prose in the product is a cost.** The copy voice is good; there's too much of it. Where a paragraph explains what the UI should make obvious, fix the UI and cut the paragraph.
-10. **Provider APIs and loginless MCP only.** Particl uses provider APIs and loginless MCP only — nothing that needs a Higgsfield sign-in (the account's OAuth MCP, its CLI or a website account). Higgsfield work runs on the API key. Owner's decision, 28 September 2026.
+10. **Provider APIs and loginless MCP only.** Particl uses provider APIs and loginless MCP only — nothing that needs a Higgsfield sign-in (the account's OAuth MCP, its CLI or a website account). Higgsfield work runs on the API key. Owner's decision, 28 September 2026. Since 2 October 2026 the sign-in features are off: nothing new starts on a Higgsfield account, and past results stay in the Library.
 
 ---
 
@@ -128,6 +128,16 @@ quote         { unitCredits, units, totalCredits }   // resolved before any acti
 
 **Port identity is `elementId:attributeId:versionId`.** That triple is what a wire carries and what provenance records. It is the single most important line in this document; everything else in Rig is bookkeeping on top of it.
 
+Added on 2 October 2026. All of it is additive; nothing is deleted or rewritten.
+
+- `element_lock_events`: the append-only history of every lock and unlock of a master (§9). `attribute_versions.sha256` records the source a lock froze.
+- `take_verifications`: one finished Verify check per take, set of wired cards, rubric and set of frames (§9).
+- `rig_agent_runs` and `rig_agent_steps` gain a run's limit, its approvals, and each render's price, approval and settlement. In the platform ledger, `generation_reservations.run_id` names the run a hold belongs to.
+- `boards.imported_at` and `boards.imported_to`: when an old board's cards last came across to the new Rig, and where they went.
+- Team-canvas cards gain three optional fields: `master` (written only by a lock), `section` and `imported`.
+- `atomik_skills` and `atomik_skill_versions`: each Atomik skill, and every version of it (1.8).
+- `provider_pool` and `provider_key_alerts`, in the platform database: the shared provider key's line, and takes waiting on a key that changed (1.0). Each row names its workspace.
+
 Everything above is workspace-scoped.
 
 ---
@@ -162,9 +172,11 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 **Onboarding.** Request an invite → platform admin queue → approve → expiring invite code → account → create or join a workspace → workspace seeded with platform Setup defaults, camera bank, rules and a copy of the demo production as a starter project → **a free credit grant** (250 cr by default — `signupCredits()`, overridable per deployment and from the platform layer) → first render. Time this path against rule 6. Owners and admins invite their team by email with a role; pending invites visible in Team & roles. Workspace switcher in the header lists every workspace the user belongs to.
 
-**Platform admin console** — separate route, platform-role gated: invite queue, workspace list with spend / balance / margin, engine health and error rates, per-workspace suspend, content-policy flags, and a platform-layer editor for default Setup, camera bank, compiler rules and default caps.
+**Platform admin console** — separate route, platform-role gated: invite queue, workspace list with spend / balance / margin, engine health and error rates, per-workspace suspend, content-policy flags, and a platform-layer editor for default Setup, camera bank, compiler rules and default caps. **Built, 2 October 2026:** a Shared provider key card, for the platform owner alone. It shows the pool and who holds what, takes waiting on a key that changed, and each recent request's id beside the provider's correlation id. The owner is emailed once when takes start waiting on a changed key.
 
 **Isolation and lifecycle.** Per-workspace rate limits and a **fair-share queue** — per-workspace concurrency slots inside the global pool, so one customer's batch of forty stills can't starve nine others. This is what breaks first, long before any provider ceiling. Per-workspace storage quota shown on Storage & masters. Self-serve workspace export (all masters plus a CSV of every take, prompt and cost) and deletion with purge. Shared identity with Atomik: one account, one workspace list, one session, same scoping enforced on both sides.
+
+**Built for the shared provider key, 2 October 2026.** Higgsfield work on the platform's key shares one pool of requests in flight, and one workspace holds at most its share. A take that finds the pool full waits in line ("Queued — starts when a slot frees"). Nothing is reserved, charged or sent while it waits; it starts once, at the price it was quoted. The next free slot goes to the waiting take whose workspace has the fewest takes in flight; a tie goes to the take that has waited longest. Each job keeps the one-way fingerprint of the key it was sent on and is collected on that key, so a key rotation never sends it again.
 
 **Policy.** Written content policy shown at signup. Engines refuse some prompts — failure reasons must say so plainly. Report path on review links, platform-side suspend for abuse, terms/privacy/retention visible from Settings → Account.
 
@@ -185,6 +197,8 @@ Don't copy Higgsfield's model marketplace. Five well-wired engines beat thirty.
 ### 1.2 Post tools on an approved take
 
 In order: **Reframe** (aspect change with content-aware fill, new take under the same shot, versioned, named by convention) · **Upscale** via Topaz on fal · **Motion control** via Kling 3.0 Motion — a cast still or approved frame plus a reference video, which is the one that stops you re-rolling a performance · **Extend / last-frame continuation** · outpaint and background removal for stills. Every post tool shows its credit price before pressing and files output against the same shot as a take, not a separate bucket.
+
+**Built, 2 October 2026.** The Next row on a finished still or clip makes a new take from it, and each action is priced first ("about N cr"). A still can be upscaled (Topaz), outpainted to another aspect (Bria Expand) or animated from its first frame (Seedance 2.5). A clip can be upscaled (Topaz Astra 2), reframed (Luma Ray 2) or extended (Seedance 2.5). Made from a take, the new take is filed under that take's shot as its next version; made from an upload, it goes to Takes without a shot. The source is never changed. On the Rig, an Element card can be cut out (Bria background removal), priced and approved first; the cut-out becomes the card's next version, and the original stays.
 
 ### 1.3 Identities
 
@@ -215,6 +229,8 @@ Every LLM call goes through the **Vercel API** adapter, metered in credits, so t
 - **Shot builder**: scene → shot list with every Setup row pre-filled, cast tagged `@Name`, recommended engine per shot, and estimated credits per shot and per scene **before anything renders**. This is the planned budget that flows to particl.
 - Use **structured output** so Setup rows land as fields, not prose to parse. Use **prompt caching** for the rule library and workspace Setup, identical on every call. Propose which Claude/GPT model per job with per-call credit cost — enhancement is high-volume and wants something fast and cheap; idea and shot building can afford stronger.
 - Every generated line shows which model wrote it and can be regenerated alone. Nothing auto-overwrites a human edit. Same workspace scoping and content policy as particl.
+- **Memory (rules as of 2 October 2026).** Atomik › Memory keeps what a workspace wants Atomik to know: brand, audience, identities and notes. It refuses only amounts of money, such as a price, a cost or a number of credits, and keeps descriptive words such as "a premium price point". An identity points at a Cast & Elements entry or a Soul ID by reference, never as a copy, and Atomik reads the name it has now. Lines can be picked from the project's brand kit. Anyone in the workspace may forget any entry; forgetting archives it. All of this is free. The one paid step is Read with Atomik, which sorts a long paste or a document into proposed entries. It is priced first ("about N cr"), and nothing is saved until a person ticks lines and presses Keep.
+- **Skills (2 October 2026).** A finished Atomik run can be saved as a skill: its steps, engines and settings, with the person's own words as named parameters, and nothing the run made. `/` in the composer, or Atomik › Skills, runs it with new words. Each step still waits for its own quote and a person's Continue. Library steps and steps with attached media are left out, with the reason. A skill is Just me or Workspace. Each edit is a new version, and Archive hides a skill without deleting it. Saving, editing and planning a skill's steps are free.
 
 ---
 
@@ -451,6 +467,8 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 
 **Locks.** Any node can be locked (identity, voice, look, Setup). A locked node cannot drift between stages or scenes; the compiler re-asserts it at every stage. Unlocking is explicit and logged.
 
+**Built, 2 October 2026 — locked masters.** On the Suites Rig (`/suites`, page Rig), a Cast, Environment or Element card can be locked as the master for everyone. Locking is free and open to anyone in the workspace, and to Atomik. Unlocking needs an admin and a reason; Atomik never unlocks. Every lock and unlock is kept in an append-only history. Nobody (a person, a stale tab or Atomik) can change a master's source or kind, or take it off the board: the rest of the edit lands, and the page says why that part did not.
+
 **Build order — data model first, mobile before desktop, canvas last:**
 1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
 2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
@@ -463,6 +481,13 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Constraints that don't relax:** rule 6 — a new user must never need to open Rig to make a first render. Rule 7 — five of seven surfaces are 390×844 and must pass the Phase 0 suite. Desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
 
 **Known geometry trade-off.** With the chat panel restored, the graph viewport is ~878px against a 1040px graph, so ~162px scrolls off at rest and the collapsed stages node is partly cut. Acceptable for a scrollable canvas. If it must read at rest: pull the column x-positions in ~120px, or narrow the inspector to 240px. **Pick one before building** — the geometry is measured and exact.
+
+**Also built on the Suites Rig, 2 October 2026.**
+
+- **Atomik's runs.** Asking Atomik for a board carries a limit for the whole run ("up to about N cr") and a mode: Ask (the default) or Auto. The planning turn is metered inside the limit. After the build, each render the plan names is priced first. In Ask it waits for one tap; in Auto, only a draft priced at or under the per-job line goes on its own. The per-job line is the platform's approval line (§7A guardrail 4). The reservation refuses any job that would pass the limit, and a run's take is never held to start later. A refusal pauses the run at "Needs you", with Retry, Skip, Raise the limit or Stop. Atomik's board building stays off in production until the owner turns on `RIG_AGENT_ENABLED`.
+- **Verify.** A Verify card checks one take against the Cast, Environment and Element cards wired into it: identity, wardrobe, environment, props, and artifacts such as extra limbs or warped text. It is one judge call on a vision model from the agent's menu (Claude, OpenAI or Grok), priced first and charged in credits at what it used. The judge only scores; the code turns each score into pass, fail or unsure against fixed thresholds. A failed check fails the card; otherwise any unsure check makes it "Needs you", so nothing passes on a guess. Checking the same take against the same cards again reads the stored scorecard, free. A new version of one of those cards needs a new, priced check.
+- **A tidier board.** Cards snap to a 20 px grid; Alt places one exactly. Notes and section titles are written on the board itself. Each card sits in its kind's section (Cast, Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review and output) or in one a person made. Tidy lays the board out by sections for everyone, free, and locked cards keep their place. Atomik's build lays out its own cards the same way but adds no section titles.
+- **Old boards.** "Open in the new Rig" on an old board (`/rig/canvas/<board>`) brings its cards, inputs and places onto the production's shared canvas, free. The old board is only read and stays editable. Opening it again brings only what is new, and a card someone took off the new Rig stays off.
 
 ---
 
@@ -704,6 +729,10 @@ private policy's floor guard, the `internal: true` pricing override, guardrails
 recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
+
+Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
+2026 Atomik's Rig runs use it as the most one job may cost without asking
+(§9); nothing else enforces it yet.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives a batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.
@@ -744,8 +773,14 @@ Private productions now retain named asset bins and immutable named cuts. The ed
 
 Failed generations retain an additive `provider_outcome` record on the tenant's generation row and the platform meter event. Connected jobs retain the same optional record in their tenant database. Existing rows remain valid without one. This is reporting only: admission, reservations and settlement rules are unchanged.
 
-Customer takes show the recorded Particl credit charge when available. Provider diagnostics for platform-funded work remain restricted to the platform administrator. Missing provider evidence remains unknown; token usage is not treated as a billing receipt. Connected-account transaction reconciliation awaits a verified response contract and is not enabled. Failed takes retain their reason and can be reviewed without triggering another generation.
+Customer takes show the recorded Particl credit charge when available. Provider diagnostics for platform-funded work remain restricted to the platform administrator. Missing provider evidence remains unknown; token usage is not treated as a billing receipt. Connected-account transaction reconciliation is not enabled, and since 2 October 2026 no new connected job starts (ground rule 10). Failed takes retain their reason and can be reviewed without triggering another generation.
 
 ### September 27 — separately approved draft and final takes
 
 Gen gains a watermarked draft and separately quoted final through the existing video admission, worker and ledger. The final inherits its original draft context; a transactional claim, expiry check and settle-first recovery prevent duplicate or stale submissions. Gen, Takes, Library and the inspector retain the pair. No pricing rule changes. See [draft-to-final behavior](seedance-draft-final.md) for boundaries and validation.
+
+### 2 October 2026 — Higgsfield work on the API key only
+
+The Higgsfield sign-in features are off (ground rule 10). An account route that would price, start or build work refuses it with one plain sentence. Past results stay in the Library and Takes, with their original files and charge lines. Jobs that were already running on the account are still collected; while the account's grant is held, Workspace › Engines lists them and offers Disconnect.
+
+Viral (Motion Transfer, Object Swap and History) and Business › Image ads run on Particl's API key for every workspace and every member. Each take is priced first ("about N cr"), sent once with that figure as its ceiling, and charged in workspace credits. Image ads offers Marketing Studio Image 2.0 Alpha, 2.5 Flare and 2.5 Sunburst; a 2.5 take is settled on the delivered image. Viral's History and Atomik's Compare plan read the project's Library, so runs made earlier on the account stay readable. No workspace plan calls an account route.
