@@ -98,7 +98,8 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   });
   await cont().click();
   await expect.poll(() => renders.length, { timeout: 60_000 }).toBe(1);
-  expect(renders[0]).toMatchObject({ key: `atomik-step:${f.stepId}`, body: { maxCredits: price } });
+  /* The render key names the step's thread (lib/atomik.ts › threadStepRequestKey). */
+  expect(renders[0]).toMatchObject({ key: `atomik-step:${f.chatId}:${f.stepId}`, body: { maxCredits: price } });
 
   /* Two minutes on (aged in the database), reading the plan gives the step up: it is proposed again. */
   const tenant = createClient({ url: f.tenantUrl, timeout: 10_000 });
@@ -129,7 +130,7 @@ test("a Continue whose render was only delayed: the step goes back to proposed, 
   const again = Number(/(\d[\d,]*) cr/.exec((await cont().textContent()) ?? "")![1].replace(/,/g, ""));
   await cont().click();
   await expect.poll(() => renders.length, { timeout: 60_000 }).toBe(2);
-  expect(renders[1]).toMatchObject({ key: `atomik-step:${f.stepId}:2`, body: { maxCredits: again } });
+  expect(renders[1]).toMatchObject({ key: `atomik-step:${f.chatId}:${f.stepId}:2`, body: { maxCredits: again } });
   /* Once the job is on the meter: admission writes a job's row, then reserves its charge. */
   await expect.poll(async () => {
     const now = await ledger(f.tenantUrl, f.workspaceId);
