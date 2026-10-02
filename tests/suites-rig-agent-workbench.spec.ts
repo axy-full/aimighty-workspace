@@ -141,7 +141,11 @@ test("ask Atomik for a board: it proposes the cards and wires, free; approved, t
   await expect(proposal.locator("li[data-kind='shot']")).toContainText("Shot · 2");
   await expect(proposal.locator("li[data-kind='shot']")).toContainText("01 — Opening · 02 — The turn");
   await expect(card.getByTestId("rig-agent-count")).toHaveText("4 cards · 4 wires · tidied · free");
-  await expect(card.getByTestId("rig-agent-next")).toHaveText("Next: render 2 shots · priced, each one approved first");
+  await expect(card.getByTestId("rig-agent-next")).toHaveText([
+    "Next: render 2 shots · priced, each one approved first",
+    "Then each take is checked against its masters · priced, each one approved first",
+    "A failed check gets at most 2 fixes · each priced and approved first",
+  ]);
   await expect(card.getByTestId("rig-agent-approve")).toHaveText("Build · free");
   /* Nothing is on the board until it is approved. */
   expect(await cardIds(page)).toEqual(["theirs"]);

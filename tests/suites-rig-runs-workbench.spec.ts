@@ -12,6 +12,9 @@ import { newProject, type CanvasNode, type Project } from "../lib/workbench/stud
  * the plan names as a draft: in Ask mode after one tap each, in Auto on its own
  * while a render is at or under the per-job line. A render that would pass the
  * limit waits for a person ("needs you"); Stop lets go of everything not sent.
+ * Each take is then checked against its masters (plan PR 11); here the
+ * planned cast and place have no picture, so each shot waits for the person
+ * who asked, who takes it as it is, and no check is charged.
  *
  * Real local ENGINE_MOCK=1 server throughout: the planner is the scripted mock,
  * renders are the mock engine, the browser never sends a paid request itself
@@ -25,7 +28,10 @@ const shot = (id: string, title: string, x: number, y: number): CanvasNode => ({
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
 });
 
-type Paid = { seq: number; tool: string; title: string; state: string; quote: number | null; charged: number | null; outcome: string | null; pause: string | null; canRender: boolean; fingerprint: string | null };
+type Paid = {
+  seq: number; tool: string; title: string; state: string; quote: number | null; charged: number | null; outcome: string | null; pause: string | null; canRender: boolean; fingerprint: string | null;
+  reason: string | null; choices: string[];
+};
 type Run = {
   id: string; state: string; reason: string | null; credits: number;
   money: { limit: number; mode: string; jobCeiling: number; spent: number; inFlight: number; left: number; planning: { state: string; credits: number | null } | null } | null;
@@ -172,13 +178,35 @@ test("approve a run limit; Ask: each render waits for one tap, the takes land, a
   await expect(firstRow.getByTestId("rig-agent-render-price")).toHaveText(`${cr(took1.charged!)} settled`);
   await floors(page, "ask: one rendered", phone);
   await (await reach(page, "rig-agent-render")).click();
+  /* Each take is then checked against its masters. The planned cast and place have no picture yet, so nothing is checked:
+     each shot waits for the person who asked, and nothing is charged for it. */
+  await expect.poll(async () => (await agentOf(page.request, headers, productionId)).agent.run!.paid.map((p) => [p.tool, p.state, p.pause]), { timeout: 60_000 })
+    .toEqual([["render", "done", null], ["verify", "paused", "check"], ["render", "done", null], ["verify", "paused", "check"]]);
+  run = (await agentOf(page.request, headers, productionId)).agent.run!;
+  expect(run.state).toBe("needs_you");
+  const checks = run.paid.filter((p) => p.tool === "verify");
+  for (const check of checks) {
+    expect(check).toMatchObject({ charged: null, choices: ["accept", "rerender", "recheck", "skip"] });
+    expect(check.reason).toMatch(new RegExp(`^The (lead|location) has no picture yet\\. Give it one, or unwire it\\. ${check.title}'s take is not checked until then\\.$`));
+    await expect(card.getByTestId(`rig-agent-render-${check.seq}`).getByTestId("rig-agent-render-price")).toHaveText("Not charged");
+  }
+  await expect(card.getByTestId("rig-agent-needs")).toHaveText(checks[0].reason!);
+  await floors(page, "ask: the checks wait for a person", phone);
+  /* Take each as it is: who decided is said, and the run finishes. */
+  for (const check of checks) {
+    await (await reach(page, "rig-agent-choice-accept", `rig-agent-render-${check.seq}`)).click();
+    await expect(card.getByTestId(`rig-agent-render-${check.seq}`)).toHaveAttribute("data-state", "done");
+  }
   await expect(card.getByTestId("rig-agent-state")).toHaveText("Build the board", { timeout: 60_000 });
   run = (await agentOf(page.request, headers, productionId)).agent.run!;
   expect(run.state).toBe("done");
   const renders = run.paid.filter((p) => p.tool === "render");
   expect(renders.map((p) => p.state)).toEqual(["done", "done"]);
-  /* The checks of the takes are shown, never run or charged yet. */
-  expect(run.paid.filter((p) => p.tool === "verify").every((p) => p.state === "next" && p.charged == null)).toBe(true);
+  /* The checks were never run, so never charged; each says who took its take as it is. */
+  for (const check of run.paid.filter((p) => p.tool === "verify")) {
+    expect(check).toMatchObject({ state: "done", charged: null });
+    expect(check.reason).toMatch(/^Accepted by .+ without its check\.$/);
+  }
   const settled = renders.reduce((sum, p) => sum + p.charged!, 0);
   expect(run.money).toMatchObject({ spent: Math.round((planning + settled) * 10) / 10, inFlight: 0 });
   /* The balance moved by exactly what the card says settled, and never past the limit. */
@@ -215,8 +243,9 @@ test("Auto: renders under the per-job line run on their own, with no tap, up to 
   const ranAlone = renders.filter((p) => ["rendering", "done", "failed"].includes(p.state)).length;
   expect(ranAlone).toBeGreaterThanOrEqual(1);
   expect(clicks).toEqual([]);
-  const paused = run.paid.find((p) => p.state === "paused")!;
-  expect(paused).toMatchObject({ pause: "limit", canRender: true });
+  /* (A check that waits for a person holds only its own shot; the limit holds the run.) */
+  const paused = run.paid.find((p) => p.state === "paused" && p.pause === "limit")!;
+  expect(paused).toMatchObject({ tool: "render", canRender: true });
   expect(paused.quote!).toBeLessThanOrEqual(run.money!.jobCeiling);
   expect(run.reason).toMatch(/^The next render is about [\d.,]+ cr; this run's limit of [\d.,]+ cr leaves about [\d.,]+ cr\. Raise the limit, skip this render, or stop\.$/);
   await expect(card.getByTestId("rig-agent-needs")).toHaveText(run.reason!);

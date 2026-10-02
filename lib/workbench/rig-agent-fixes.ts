@@ -164,8 +164,12 @@ export function afterCheck(input: { verdict: Verdict; checks: readonly VerifyChe
     return choice.kind === "pass" ? { kind: "done" } : { kind: "person", why: "unsure", check: null, words: "The check's verdict and its scorecard disagree. Look at the take and decide." };
   if (choice.kind === "person") return choice;
   if (choice.kind === "pass" || input.verdict === "needs_you") return { kind: "person", why: "unsure", check: null, words: "The check needs a person. Look at the take and decide." };
-  if (input.fixes >= MAX_AUTO_FIXES)
-    return { kind: "person", why: "fixes-used", check: choice.fix.check, words: `Atomik made ${MAX_AUTO_FIXES} fixes and the take still fails ${VERIFY_CHECK_LABELS[choice.fix.check]}. Look at it and decide.` };
+  if (input.fixes >= MAX_AUTO_FIXES) {
+    /* Every check it still fails, in the scorecard's order: "Identity", "Identity and Props", "Identity, Wardrobe and Props". */
+    const failed = VERIFY_CHECKS.filter((check) => input.checks.some((c) => c.check === check && c.verdict === "fail")).map((check) => VERIFY_CHECK_LABELS[check]);
+    const named = failed.length > 1 ? `${failed.slice(0, -1).join(", ")} and ${failed.at(-1)}` : failed[0] ?? VERIFY_CHECK_LABELS[choice.fix.check];
+    return { kind: "person", why: "fixes-used", check: choice.fix.check, words: `Atomik made ${MAX_AUTO_FIXES} fixes and the take still fails ${named}. Look at it and decide.` };
+  }
   if (!input.canFix) return { kind: "person", why: "cannot-fix", check: choice.fix.check, words: `${VERIFY_CHECK_LABELS[choice.fix.check]} failed. Look at the take and decide.` };
   return { kind: "fix", n: input.fixes + 1, fix: choice.fix, reasons: choice.reasons };
 }

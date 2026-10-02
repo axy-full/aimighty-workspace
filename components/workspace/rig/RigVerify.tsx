@@ -173,7 +173,11 @@ function Section({ node, project }: { node: CanvasNode; project: Project }) {
       const controller = new AbortController();
       cancel.current = controller;
       setPreparing(true);
-      try { videoFrames = await prepareAtomikVideoFrames([takeAsset], project.id, rig.scope, controller.signal); }
+      try {
+        /* Its stills are filed against the saved project: a take that has only just landed (an Atomik run's) is saved first. */
+        if (!(await rig.save())) throw new Error("Save the project before checking this take.");
+        videoFrames = await prepareAtomikVideoFrames([takeAsset], project.id, rig.scope, controller.signal);
+      }
       catch (error) { setProblem(error instanceof Error ? error.message : "The take’s frames could not be prepared."); return; }
       finally { setPreparing(false); }
     }

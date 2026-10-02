@@ -6,6 +6,7 @@ import { CHECK_VERDICT_WORDS, VERIFY_CHECK_LABELS, holdWorthSaying } from "@/lib
 import { readAgent } from "@/lib/production/agent";
 import { creditFigure, isRunLimitAmount } from "@/lib/runLimit";
 import { chargeSentence } from "@/lib/errors";
+import { useShellIfMounted } from "@/lib/shell/state";
 import { useRig } from "./RigProvider";
 
 /**
@@ -52,6 +53,7 @@ const cr = (credits: number) => `${creditFigure(credits)} cr`;
 
 export function RigAgentCard() {
   const rig = useRig();
+  const shell = useShellIfMounted();
   const project = rig.project;
   const pid = project?.productionProjectId ?? null;
   const draftId = project?.id ?? null;
@@ -224,7 +226,8 @@ export function RigAgentCard() {
           {!terminal && !agent.enabled && run.state !== "paused" ? <p className="pxw-agent-problem" role="status">Atomik&apos;s board building is switched off right now.</p> : null}
           {!terminal && run.paid.length > 0 && run.state !== "awaiting_approval" && run.state !== "planning" ? (
             <Renders run={run} busy={busy} onRender={(p) => void act("agent.render", { seq: p.seq, ...(p.fingerprint ? { fingerprint: p.fingerprint } : {}) })}
-              onSkip={(p) => void act("agent.skip", { seq: p.seq })} onChoose={(p, choice) => void act("agent.resolve", { seq: p.seq, choice })} onOpen={(id) => rig.select(id)} />
+              onSkip={(p) => void act("agent.skip", { seq: p.seq })} onChoose={(p, choice) => void act("agent.resolve", { seq: p.seq, choice })}
+              onOpen={(id) => { rig.select(id); /* A phone's Inspector is a sheet the shell opens; a desk's opens with the selection. */ if (shell && !shell.wide) shell.openInspector(); }} />
           ) : null}
           {limited && run.mine && raiseTo != null ? (
             <div className="pxw-agent-raise" data-testid="rig-agent-raise">
@@ -421,7 +424,7 @@ function PaidRow({ run, p, busy, onRender, onSkip, onChoose, onOpen }: { run: Ri
       {rows.length ? (
         <ul className="pxw-agent-checks" data-testid="rig-agent-scorecard">
           {rows.map((c) => (
-            <li key={c.check} data-verdict={c.verdict}>
+            <li key={c.check} data-check={c.check} data-verdict={c.verdict}>
               <span className="pxw-agent-check-name">{VERIFY_CHECK_LABELS[c.check as keyof typeof VERIFY_CHECK_LABELS] ?? c.check}</span>
               <span className="pxw-agent-check-verdict" data-functional-label="">{CHECK_VERDICT_WORDS[c.verdict]}</span>
               {c.reasons.length ? <span className="pxw-agent-check-why">{c.reasons.join(" ")}</span> : null}

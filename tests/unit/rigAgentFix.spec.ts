@@ -118,6 +118,12 @@ test("what follows a check: a pass is done; a clean fail is fixed, at most twice
   expect(MAX_AUTO_FIXES).toBe(2);
   expect(afterCheck({ verdict: "fail", checks: fail, take, fixes: 2, canFix: true }))
     .toMatchObject({ kind: "person", why: "fixes-used", words: "Atomik made 2 fixes and the take still fails Identity. Look at it and decide." });
+  /* Every check it still fails is named, in the scorecard's order. */
+  const many = [result("props", "fail", ["No mug."]), result("identity", "fail", ["Wrong face."]), result("environment", "fail", ["Not the pier."])];
+  expect(afterCheck({ verdict: "fail", checks: many, take: { kind: "image" }, fixes: 2, canFix: true }))
+    .toMatchObject({ kind: "person", check: "identity", words: "Atomik made 2 fixes and the take still fails Identity, Environment and Props. Look at it and decide." });
+  expect(afterCheck({ verdict: "fail", checks: many.slice(0, 2), take: { kind: "image" }, fixes: 2, canFix: true }))
+    .toMatchObject({ words: "Atomik made 2 fixes and the take still fails Identity and Props. Look at it and decide." });
   expect(afterCheck({ verdict: "fail", checks: fail, take, fixes: 0, canFix: false })).toMatchObject({ kind: "person", why: "cannot-fix", check: "identity" });
   expect(afterCheck({ verdict: "needs_you", checks: [result("identity", "unsure")], take, fixes: 0, canFix: true })).toMatchObject({ kind: "person", why: "unsure" });
   /* A round's steps: what it makes, then the check of that take. */
