@@ -7,6 +7,7 @@ import { DEFAULT_ENVIRONMENT, newEnvironmentEntry } from "../lib/production/envi
 import { forbidPaidWork, generation, mockLibrary, mockMedia, upload } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * The owner's UI floors, held where the floors audit of the Suites pages
@@ -230,6 +231,27 @@ test("a draft that could not be read says Try again, never Retry (Deliver's tool
   down = false;
   await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByTestId("assembly")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("the old shell's home: a projects read that failed says Try again, never Retry, and reads again", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await signInLocally(page.request);
+  let down = true;
+  await page.route(/\/api\/workbench\/projects(\?.*)?$/, (route) =>
+    down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Projects could not be loaded (503)." } }) : route.fallback());
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(await legacyShell(page, "/"));
+  const failed = page.locator(".suite-home-projects [role='alert']");
+  await expect(failed).toContainText("Projects could not be loaded");
+  await expect(failed.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+  await expect(failed.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+  if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".suite-home-projects [role='alert']"), "Try again under 44×44").toEqual([]);
+  down = false;
+  await failed.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(failed).toHaveCount(0);
+  await expect(page.locator(".suite-home-projects").getByText(/Loading projects|Start a project|Open production/).first()).toBeVisible();
   expect(errors).toEqual([]);
 });
 

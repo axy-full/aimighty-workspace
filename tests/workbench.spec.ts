@@ -442,7 +442,15 @@ test("a shared publication conflict preserves private edits and requires saving 
   await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("My private changes survive");
   expect(reads).toBe(before);
   failSaves = false;
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  /* Saving again is "Try again" ("Retry" is a take's paid re-render), and on a phone a 44px target like its neighbour. */
+  const banner = page.locator(".save-banner").filter({ hasText: "Keep the private edit on screen" });
+  await expect(banner.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+  if (testInfo.project.name === "workbench-390x844")
+    for (const name of ["Try again", "Download current work"]) {
+      const box = (await banner.getByRole("button", { name, exact: true }).boundingBox())!;
+      expect(Math.min(box.width, box.height), `${name} is a 44px target on a phone`).toBeGreaterThanOrEqual(44);
+    }
+  await banner.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator(".save-label")).toHaveText("Saved");
   await reload.click();
   await expect(reload).not.toBeVisible();
