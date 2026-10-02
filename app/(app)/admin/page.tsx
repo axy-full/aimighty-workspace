@@ -24,6 +24,7 @@ import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import { creditsFigure } from "@/lib/creditTerms";
 import type { ProviderFailureRow, ProviderFailureSummary } from "@/lib/meter";
 import { billingAmount, failureCopy } from "@/lib/errors";
+import { SharedKeyCard } from "@/components/SharedKeyCard";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -150,6 +151,7 @@ export default function AdminPage() {
             <EnginesCard />
             <ProviderChargesCard />
             <ConcurrencyCard c={data.concurrency} />
+            <SharedKeyCard />
 
             <PlatformLayerCard />
 

@@ -2,6 +2,10 @@ import { test, expect } from "@playwright/test";
 import { checkQuote, dispatchGeneration, sendClaimedGeneration, settlePendingGeneration, settleStoredRequest, type QuoteCheck } from "../../lib/workspace/generate-submit";
 import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
+import { viralRequest } from "../../lib/shell/viral";
+import { imageAdRequest, INITIAL_IMAGE_AD } from "../../lib/shell/image-ads";
+import { GENJUTSU_MODELS } from "../../lib/genjutsuTypes";
+import { MARKETING_IMAGE_MODEL_ID } from "../../lib/models";
 
 /**
  * The shared workspace-credit dispatch (the Rig, the Gen composer, Storyboards,
@@ -317,3 +321,70 @@ test("a claim stored without its route (the Make composer's audio) is checked ag
     expect(calls[0].body).toMatchObject({ key: "audio-claim-0001", endpoint: "/api/audio" });
   });
 });
+
+/* ── Viral and Business › Image ads on the API key: the same dispatch, no path of their own ── */
+
+const transform = () => viralRequest(
+  { variant: "motion-transfer", resolution: "720p", prompt: "Keep the hands.", source: { uploadId: "src" }, references: [{ uploadId: "b" }, { genId: "a" }] },
+  { id: "draft-1", productionProjectId: "prod_1" },
+);
+const TRANSFORM_BODY = {
+  model: GENJUTSU_MODELS["motion-transfer"], task: "genjutsu", sourceUploadId: "src",
+  references: [{ uploadId: "b", role: "reference_image" }, { genId: "a", role: "reference_image" }],
+  resolution: "720p", prompt: "Keep the hands.", projectId: "prod_1", workbenchProjectId: "draft-1", refine: false,
+};
+
+test("a Viral transform is priced exactly as it will be sent, held to the button, claimed, and sent once with its approval", async () => {
+  const storage = memory(), storageId = pendingGenerationKey(SCOPE, "draft-1", "viral:motion-transfer");
+  await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_transform", status: "queued" } }) }, async (calls) => {
+    const outcome = await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request: transform() });
+    expect(outcome).toEqual({ state: "queued", jobId: "gen_transform", credits: 21 });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote", "/api/generate"]);
+    expect(calls[0].body).toEqual(TRANSFORM_BODY);
+    expect(calls[1].body).toEqual({ ...TRANSFORM_BODY, maxCredits: 21, quoteFingerprint: "f".repeat(64) });
+    expect(calls[1].key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(readPendingGeneration(storage, storageId)).toBeNull();
+  });
+});
+
+test("a transform whose price moved, or that the route refuses, sends nothing", async () => {
+  const storage = memory(), storageId = pendingGenerationKey(SCOPE, "draft-1", "viral:motion-transfer");
+  await withServer({ "/api/generate/quote": () => ({ json: { estimatedCredits: 30, fingerprint: "e".repeat(64) } }) }, async (calls) => {
+    expect(await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request: transform() })).toMatchObject({ state: "repriced", credits: 30 });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
+  });
+  /* No estimate at all is refused: never a guessed price. */
+  for (const refusal of [
+    { status: 400, json: { error: "Choose one to eight original still references using saved media identities." } },
+    { status: 503, json: { error: "A live transform price could not be verified. Nothing was submitted. Try a fresh quote.", code: "price_unavailable" } },
+  ]) await withServer({ "/api/generate/quote": () => refusal }, async (calls) => {
+    expect(await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request: transform() })).toEqual({ state: "refused", reason: refusal.json.error });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
+    expect(readPendingGeneration(storage, storageId)).toBeNull();
+  });
+});
+
+test("a transform whose reply was lost is asked about by its own key on the next press, never sent again", async () => {
+  const storage = memory(), storageId = pendingGenerationKey(SCOPE, "draft-1", "viral:motion-transfer");
+  await withServer({ "/api/generate/quote": quote, "/api/generate": () => "network" }, async () => {
+    expect(await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request: transform() })).toMatchObject({ state: "refused" });
+  });
+  const claim = readPendingGeneration(storage, storageId)!;
+  expect(JSON.parse(claim.body)).toEqual({ ...TRANSFORM_BODY, maxCredits: 21, quoteFingerprint: "f".repeat(64) });
+  await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_landed", status: "running" } }) }, async (calls) => {
+    expect(await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request: transform() })).toEqual({ state: "queued", jobId: "gen_landed", credits: 21 });
+    expect(calls).toEqual([{ path: "/api/generate/check", key: null, body: { key: claim.key, endpoint: "/api/generate", body: claim.body } }]);
+  });
+});
+
+test("an Image ad goes through the same dispatch: the key model's body, priced as sent, sent once with its approval", async () => {
+  const storage = memory(), storageId = pendingGenerationKey(SCOPE, "draft-1", "business:image-ads");
+  const request = imageAdRequest({ ...INITIAL_IMAGE_AD, prompt: "Bold hero shot", productStill: { id: "upload:p", name: "p", sourceId: "p", origin: "upload", url: "/api/uploads/p" } }, { productionProjectId: "prod_1" });
+  await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_ad", status: "held" } }) }, async (calls) => {
+    /* Held for credits is a real job, not a charge: it starts when credits arrive. */
+    expect(await dispatchGeneration({ scope: SCOPE, storageId, shown: 21, storage, request })).toEqual({ state: "queued", jobId: "gen_ad", credits: 21, status: "held" });
+    expect(calls[0].body).toEqual({ prompt: "Bold hero shot", model: MARKETING_IMAGE_MODEL_ID, projectId: "prod_1", ratio: "1:1", resolution: "2k", refine: false, references: [{ uploadId: "p", role: "reference_image" }], marketing: { quality: "high", enhancePrompt: false } });
+    expect(calls[1].body).toMatchObject({ maxCredits: 21, quoteFingerprint: "f".repeat(64), marketing: { quality: "high", enhancePrompt: false } });
+  });
+});
+

@@ -27,7 +27,7 @@ export const EVENTS = {
   development: "workbench/development.requested",
   /** A funded dubbing project to submit, ask after, or collect (lib/dubbing.ts). */
   dubbing: "audio/dubbing.requested",
-  /** An Atomik run on a Rig board to plan or build (lib/workbench/rig-agent.ts). Free: nothing in it is paid. */
+  /** An Atomik run on a Rig board to plan, build, or render inside its approved limit (lib/workbench/rig-agent.ts). */
   rigAgent: "rig/agent.run.requested",
 } as const;
 
@@ -37,6 +37,14 @@ export const EVENTS = {
  * spares Inngest the wait.
  */
 export const RIG_AGENT_STOPPED = "rig/agent.run.stopped";
+
+/**
+ * Inngest only, never a worker event: a take an Atomik run made reached its end
+ * (lib/workbench/rig-agent-settled.ts). The run's function waits for it
+ * (`waitForEvent`, matched on the take's id) before its next tick; it carries
+ * identifiers only.
+ */
+export const RIG_RENDER_SETTLED = "rig/render.settled";
 
 export type WorkerEventName = (typeof EVENTS)[keyof typeof EVENTS];
 export const WORKER_EVENT_NAMES = [

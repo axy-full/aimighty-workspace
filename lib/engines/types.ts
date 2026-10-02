@@ -36,7 +36,9 @@ export type AudioRenderRequest = {
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 
 /** An asynchronous job at the vendor: what to ask after, and where. */
-export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string };
+export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string;
+  /** Beside `ref` (the provider's request_id): the submission's correlation id, for the provider's support. Platform desk only. */
+  correlationId?: string };
 
 /** Bytes back from a synchronous engine, with what it charged. */
 export type Produced = {
@@ -56,9 +58,9 @@ export type PollResult = {
   costUsd?: number | null;
 };
 
-export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 /** A chat call by its parts, so the instruction can be marked cacheable (brief 1.8). */
-export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 
 /** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
 export type EnhanceRequest = {

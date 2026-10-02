@@ -226,7 +226,7 @@ export function MarketingPresets({
           {current.error}
           <button className="suite-text-button" onClick={() => void readPage()}>
             <RefreshCw size={14} />
-            Retry connection
+            Try again
           </button>
         </div>
       ) : !current.loaded ? (

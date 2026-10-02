@@ -7,9 +7,12 @@
  * unit tests can hold it to its word.
  *
  * Memory keeps brand, audience, references, approved identities and notes.
- * It never keeps money: a line about prices, credits, plans or a wallet is
- * refused on the way in, left out of an import, and — should one ever be
- * there — never read into a planner's context.
+ * It never keeps an amount of money — a price, a cost, a credit amount, a
+ * currency amount, or a markup or margin given as a number: a line with one
+ * is refused on the way in, left out of an import, and — should one ever be
+ * there — never read into a planner's context. Words about money are welcome
+ * ("a premium price point", "cost-effective"): they explain a product, and
+ * they never go out of date the way a figure does.
  */
 
 export const MEMORY_KINDS = ["brand", "audience", "reference", "identity", "note"] as const;
@@ -26,12 +29,27 @@ export type MemorySource = "person" | "atomik" | "import";
 /** Where a paste came from, said on each entry it made. */
 export const IMPORT_FROM = { chatgpt: "ChatGPT", claude: "Claude", codex: "Codex", other: "Another assistant" } as const;
 export type ImportFrom = keyof typeof IMPORT_FROM;
+/**
+ * Where entries a person picked in one go came from (lib/atomikMemory ›
+ * keepMemory), kept as their `origin`: lines from the Business brand kit
+ * (kept as the person's own), or what Atomik read from a paste or a document
+ * and the person ticked (kept as an import).
+ */
+export const KEPT_FROM = { "brand-kit": "the brand kit", "atomik-read": "Atomik" } as const;
+export type KeptFrom = keyof typeof KEPT_FROM;
 
 export type MemoryEntry = {
   id: string; kind: MemoryKind; text: string;
   /** Null for the whole workspace. */
   projectId: string | null;
-  /** A Library asset (`generation:<id>` / `upload:<id>`) for a reference or an approved identity. */
+  /**
+   * What the entry points at, by reference — never a copy of it. A Library
+   * asset (`generation:<id>` / `upload:<id>`) for a reference or an approved
+   * identity; for an approved identity also an entry of a production's Cast &
+   * Elements (`cast:<production>:<entry>`) or a Soul ID trained in this
+   * workspace (`soul:<id>`). The label is the name it had when it was kept;
+   * the name it has now is read wherever the entry is shown or planned with.
+   */
   assetId: string | null; assetLabel: string | null; assetKind: string | null;
   status: MemoryStatus; source: MemorySource;
   /** A chat message or Agent job that proposed it, or the assistant a paste came from. */
@@ -72,8 +90,24 @@ export const MEMORY_LIMITS = {
 
 /** A Library asset, by the id the Library gives it: `generation:<id>` or `upload:<id>`. */
 export const LIBRARY_ASSET = /^(generation|upload):([A-Za-z0-9_-]{1,120})$/;
+/** A Soul ID trained in this workspace, by its identity id. */
+export const SOUL_REF = /^soul:([A-Za-z0-9_-]{1,120})$/;
+/** An entry of a production's Cast & Elements: the production, then the entry. */
+export const CAST_REF = /^cast:([A-Za-z0-9_-]{1,100}):([A-Za-z0-9_-]{1,120})$/;
 export const PROJECT_ID = /^[A-Za-z0-9_-]{1,100}$/;
 export const MEMORY_ID = /^mem_[A-Za-z0-9]{6,40}$/;
+
+/** What an entry's reference points at, or null when it is not one Memory knows. */
+export type RefSource = "library" | "soul" | "cast";
+export function refSource(assetId: string | null | undefined): RefSource | null {
+  if (!assetId) return null;
+  return LIBRARY_ASSET.test(assetId) ? "library" : SOUL_REF.test(assetId) ? "soul" : CAST_REF.test(assetId) ? "cast" : null;
+}
+/** The reference for a Cast & Elements entry of a production. */
+export const castRef = (productionId: string, entryId: string) => `cast:${productionId}:${entryId}`;
+export const soulRef = (identityId: string) => `soul:${identityId}`;
+/** Where an approved identity's element lives, for the line under it. */
+export const REF_SOURCE_LABEL: Record<RefSource, string> = { library: "Library", soul: "Soul ID", cast: "Cast & Elements" };
 
 export function isMemoryKind(value: unknown): value is MemoryKind {
   return typeof value === "string" && (MEMORY_KINDS as readonly string[]).includes(value);
@@ -86,39 +120,125 @@ export function cleanMemoryText(value: unknown, limit: number = MEMORY_LIMITS.te
   return flat.length > limit ? flat.slice(0, limit).trimEnd() : flat;
 }
 
-/* ── Money never goes in ───────────────────────────────────────────────── */
+/* ── Amounts never go in ───────────────────────────────────────────────── */
 
 /*
- * Written for a film studio's words, where "credits" roll, "white balance"
- * is a camera setting, "margin" is white space and "low-budget" is a look:
- * each pattern needs money around it, not the word alone.
+ * Memory never keeps a money figure: a price, a cost, a credit amount, a
+ * currency amount, or a markup or margin given as a number. A figure goes out
+ * of date, and what a vendor charges must never reach a client.
+ *
+ * Words are welcome, because a word is not an amount and a customer uses them
+ * to explain a product: "a premium price point", "budget-friendly",
+ * "cost-effective", a "low-budget" look. A film studio's own words are left
+ * alone too: "credits" roll, "white balance" is a camera setting, "margin" is
+ * white space. So every pattern here needs a number with the money — a
+ * currency, a credit unit, a price or a cost, or a markup or a margin — and a
+ * year ("our 2025 launch"), a resolution ("4K"), a length ("30 s"), a currency
+ * sign on its own ("$") and a discount ("50% off") are not amounts.
  */
-const MONEY: RegExp[] = [
-  /[$€£¥₹]\s?\d/,
-  /\b\d[\d,.]*\s?(?:k|m)?\s?(?:usd|eur|gbp|inr|aud|cad|dollars?|euros?|pounds?|rupees?|bucks|cents?)\b/i,
-  /\b(?:usd|eur|gbp|inr|aud|cad)\s?\d/i,
-  /\b\d[\d,.]*\s?(?:credits?|cr)\b/i,
-  /\bcredit\s?(?:card|balance|limit|packs?|top[- ]?ups?|grants?)\b/i,
-  /\b(?:buy|bought|purchas\w*|spend\w*|spent|remaining|left|unused)\s+(?:\w+\s+)?credits?\b/i,
-  /\b(?:wallet|invoices?|billing|billed|subscriptions?|subscribed|refund\w*|top[- ]?ups?|payments?|card numbers?|pricing|price list|rate card|markup|mark-up|profit margins?)\b/i,
-  /\b(?:prices?|priced|fees?|costs?|costing)\b/i,
-  /\b(?:invite|studio|agency|production|free|pro|premium|enterprise|starter|team|business|ultra|plus|basic|paid)\s+(?:plan|tier|pack|subscription)s?\b/i,
-  /\b(?:our|my|the|their|your|this)\s+plan\s+(?:is|was|includes?|gives?|has|costs?)\b/i,
-  /\bplans?\s+(?:tiers?|prices?|limits?|renewals?|upgrades?|downgrades?)\b/i,
-  /\b(?:upgrade|downgrade|renew|cancel)\w*\s+(?:the\s+|our\s+|my\s+)?(?:plan|subscription)\b/i,
-  /\bbudget\s*(?:of|is|was|:)?\s*[$€£¥₹\d]/i,
-  /\b(?:ad|media|marketing|monthly|weekly|daily|annual|production)\s+budgets?\b/i,
-  /\b(?:account|wallet|credit|remaining|current|available)\s+balance\b/i,
-  /\bbalance\s+(?:of|is|was)\s+[$€£¥₹\d]/i,
-  /\b(?:\d[ -]?){13,19}\b/,
-];
+const NUM = String.raw`\d(?:[\d,.]*\d)?`;
+const SCALE = String.raw`(?:\s?(?:k|m|mm|bn|thousand|million|billion|lakhs?|crores?)\b)?`;
+const SIGN = "[$€£¥₹₩₽₺₪₦₫฿₱₴₸₡¢]";
+const CODE = "usd|eur|gbp|inr|aud|cad|nzd|sgd|hkd|jpy|cny|rmb|chf|sek|nok|dkk|zar|brl|mxn|aed|sar|krw|rub|pln|thb|myr|idr|vnd|ngn|kes|egp|ils";
+/* "Pounds" alone is a weight, so only "pounds sterling" is money here (and £ always is). */
+const MONEY_WORD = String.raw`dollars?|bucks|euros?|quid|pounds?\s+sterling|sterling|rupees?|yen|yuan|renminbi|francs?|pesos?|reais|rand|rubles?|roubles?|liras?|dirhams?|riyals?|kronor|kroner|kronur|krona|krone|zlotys?|baht|ringgit|dong|naira|shillings?|cedis?`;
+/* After a figure only: "99 cents" is money, "my two cents" is a saying; "5 grand" is money, a grand prix is not. */
+const CURRENCY_WORD = String.raw`${MONEY_WORD}|cents?|pence|pennies|grand(?!\s+(?:prix|piano|pianos|slams?|tours?|opening|finals?|jury|canyon|central))`;
+const SPELLED = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion";
+const ABOUT = String.raw`(?:(?:about|around|roughly|approximately|approx\.?|just|only|under|over|up\s+to|from|less\s+than|more\s+than|nearly|almost|~)\s*)?`;
+/* A count of something other than money after "costs" or "budget" ("costs 2 days", "a budget of 3 shoots", "opening credits: 30 seconds") is not an amount. */
+const COUNTED = String.raw`(?![\d,.]*\s?(?:%|(?:days?|weeks?|months?|years?|yrs?|hours?|hrs?|h|mins?|minutes?|seconds?|secs?|s|frames?|fps|shots?|takes?|scenes?|shoots?|locations?|sets?|people|persons?|crew|actors?|talents?|cameras?|lenses|videos?|posts?|spots?|ads?|episodes?|reels?|cuts?|edits?|versions?|variants?|stills?|images?|photos?|pages?|words?|lines?|slides?|characters?|chars?|looks?|outfits?|products?|items?|pieces?|units?|seats?|members?|tiers?|steps?|rounds?|revisions?|cards?|names?|titles?)\b))`;
+/* "2 credits sequences", "3 credits cards": the film's credits, counted. */
+const FILM_CREDITS = String.raw`(?!\s+(?:sequences?|rolls?|cards?|blocks?|crawls?|titles?|music|fonts?|type))`;
+/* "Season 2 credits", "episode 3 credits": a sequence of a show, not an amount of credits. */
+const SEQUENCE = String.raw`(?<!\b(?:season|episode|ep|part|chapter|act|reel|scene|shot|take|track|vol|volume|series|book|level|stage|round|day|week)\.?\s?)`;
+/* "White balance" and its kin are settings, not money. */
+const BALANCE = String.raw`(?<!\b(?:white|colou?r|tonal|audio|sound|stereo|grey|gray|mix|work-life|life)[\s-])balance`;
+const SHARE = String.raw`(?:\d(?:[\d.,]*\d)?\s?(?:%|percent\b|per\s?cent\b|pct\b)|\d(?:[\d.]*\d)?\s?[x×](?!\w))`;
 
-/** True when the words are about money: a price, credits, a plan, a wallet, a card. */
-export function mentionsMoney(text: string): boolean {
-  return MONEY.some((pattern) => pattern.test(text));
+const AMOUNTS: RegExp[] = [
+  /* A currency sign with a number, on either side: $49, € 1.200, US$5k, 49€, 99¢. */
+  new RegExp(`${SIGN}\\s?${NUM}${SCALE}`, "i"),
+  new RegExp(`${NUM}${SCALE}\\s?${SIGN}(?!${SIGN})`, "i"),
+  /* A currency code or word with a number: USD 49, Rs. 499, 49 dollars, a 5-dollar coffee, 5k euros, fifty bucks (but a "million-dollar look" is a saying). */
+  new RegExp(`\\b(?:${CODE}|rs\\.?)\\s?${NUM}${SCALE}`, "i"),
+  new RegExp(`${NUM}${SCALE}[\\s-]?(?:${CODE}|${CURRENCY_WORD})\\b`, "i"),
+  new RegExp(`\\b(?:${SPELLED})(?:[\\s-]+(?:${SPELLED}))*\\s+(?:${MONEY_WORD})\\b`, "i"),
+  /* A number of credits: 25 credits, 25 cr, 1.5k credits, credits: 400. */
+  new RegExp(`${SEQUENCE}\\b${NUM}\\s?(?:k\\s?)?(?:credits?|cr)(?![\\w-])${FILM_CREDITS}`, "i"),
+  new RegExp(`\\bcredits?(?:\\s+(?:balance|left|remaining|available))?\\s*[:=]\\s*${NUM}${COUNTED}${SCALE}`, "i"),
+  /* A price or a cost as a number: costs 49, priced at 120, price: 49, a budget of 5,000, an account balance of 1,200. */
+  new RegExp(`\\b(?:costs?|costing|priced(?:\\s+at)?|sells?\\s+for|sold\\s+for|retails?\\s+(?:at|for)|charges?|charged|msrp|rrp)\\s*:?\\s+${ABOUT}${NUM}${COUNTED}${SCALE}`, "i"),
+  new RegExp(`\\b(?:prices?|pricing|price\\s+points?|costs?|fees?|budgets?|${BALANCE}|salary|salaries|wages?|revenue|turnover|(?:ad|media)\\s+spend|(?:day|hourly|daily|weekly|monthly|flat|crew|talent)\\s+rates?)\\s*(?::|=|-|–|—|\\b(?:of|is|was|are|were|at)\\b)\\s*${ABOUT}${NUM}${COUNTED}${SCALE}`, "i"),
+  /* A markup as a number: a 30% markup, marked up 40%, a 2x markup, cost plus 20%, 20% above cost. */
+  new RegExp(`${SHARE}\\s+(?:[a-z-]+\\s+){0,2}?(?:mark[- ]?ups?|marked[- ]up|profit|commissions?|take\\s+rate|fees?)\\b`, "i"),
+  new RegExp(`\\b(?:mark[- ]?ups?|marked[- ]up|mark(?:s|ed|ing)?\\s+(?:[a-z]+\\s+){0,2}?up|commissions?|take\\s+rate)\\s*(?:of|is|was|at|around|about|:|=|by|to|near|above|over|under|between|from|-)?\\s*${ABOUT}${SHARE}`, "i"),
+  new RegExp(`\\b(?:cost|price)[- ]plus\\s+${SHARE}`, "i"),
+  new RegExp(`${SHARE}\\s+(?:on\\s+top\\s+of|above|over|added\\s+to)\\s+(?:(?:the|our|their|its|each|every|a)\\s+)?(?:[a-z-]+\\s+)?(?:costs?|prices?|wholesale|vendor|supplier|retail)\\b`, "i"),
+];
+/* A margin as a number — a 40% margin, margins of 30% — unless the sentence is about layout ("a 10% margin around the logo"). */
+const MARGINS: RegExp[] = [
+  new RegExp(`${SHARE}\\s+(?:[a-z-]+\\s+){0,2}?margins?\\b`, "gi"),
+  new RegExp(`\\bmargins?\\s*(?:of|is|was|at|around|about|:|=|near|above|over|under|between|from|-)?\\s*${ABOUT}${SHARE}`, "gi"),
+];
+const LAYOUT = /\b(?:around|borders?|edges?|sides?|padding|white\s?space|gutters?|bleed|safe\s+area|frames?|logo|page|text|type|title|headline|crop|top|bottom|left|right|layout|grid|columns?)\b/i;
+
+/** The sentence a match sits in: from the last full stop (or line) before it to the next after it. */
+function sentenceAt(text: string, start: number, end: number): string {
+  let from = start, to = end;
+  while (from > 0 && !/[.!?;\n]\s/.test(text.slice(from - 1, from + 1))) from--;
+  while (to < text.length && !/[.!?;\n]/.test(text[to])) to++;
+  return text.slice(from, to);
 }
 
-export const MONEY_REFUSAL = "Memory keeps brand, audience, references and notes, never prices, credits or plans. Take the money out and save it again.";
+/** The Luhn check: a payment card's number passes it; a barcode or an id seldom does. */
+function luhn(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * The first amount of money in the words, as written ("$49", "25 credits",
+ * "a 30% markup"), or null when there is none. A payment card's number counts:
+ * memory never keeps one either.
+ */
+export function findAmount(text: string): string | null {
+  const words = String(text ?? "");
+  for (const pattern of AMOUNTS) {
+    const found = pattern.exec(words);
+    if (found) return found[0].trim();
+  }
+  for (const pattern of MARGINS) {
+    for (const found of words.matchAll(pattern)) {
+      if (!LAYOUT.test(sentenceAt(words, found.index, found.index + found[0].length))) return found[0].trim();
+    }
+  }
+  for (const found of words.matchAll(/\b\d(?:[ -]?\d){12,18}\b/g)) {
+    if (luhn(found[0].replace(/\D/g, ""))) return found[0];
+  }
+  return null;
+}
+
+/** True when the words hold an amount of money (findAmount): never when they only talk about money. */
+export function mentionsMoney(text: string): boolean {
+  return findAmount(text) !== null;
+}
+
+const AMOUNT_WHY = "Amounts can't be remembered: prices, costs, credits and markups go out of date.";
+const AMOUNT_WORDS = "Words such as “premium price point” are fine.";
+export const MONEY_REFUSAL = `${AMOUNT_WHY} Take the amount out and save it again. ${AMOUNT_WORDS}`;
+/** Why a line was refused, naming the amount in it ("Take out “$49” …"). */
+export function amountRefusal(text: string): string {
+  const found = findAmount(text);
+  if (!found) return MONEY_REFUSAL;
+  const shown = found.length > 40 ? `${found.slice(0, 39)}…` : found;
+  return `${AMOUNT_WHY} Take out “${shown}” and save it again. ${AMOUNT_WORDS}`;
+}
 
 /* ── Words ─────────────────────────────────────────────────────────────── */
 
@@ -284,7 +404,7 @@ function sentences(line: string): string[] {
  * Codex AGENTS.md, a JSON export — as entries for a person to review. Each
  * bullet or sentence is one entry, sorted into brand, audience, approved
  * identity or note by what it talks about (a heading such as "## Brand"
- * sorts the lines under it). Lines about money are left out and counted.
+ * sorts the lines under it). Lines with an amount are left out and counted.
  */
 export function parseImport(raw: string): ImportResult {
   const skipped = { money: 0, duplicates: 0, beyondLimit: 0 };
@@ -321,6 +441,151 @@ export function parseImport(raw: string): ImportResult {
     }
   }
   return { entries, skipped };
+}
+
+/* ── What Atomik read from a paste or a document ───────────────────────── */
+
+/** The text Atomik is given to read is fenced as data between these marks (the mock model reads it the same way). */
+export const READ_OPEN = "<<<TEXT";
+export const READ_CLOSE = "TEXT>>>";
+/** The person's text, fenced: a closing mark inside it is broken, so the text cannot end its own fence. */
+export function readFence(text: string): string {
+  return `${READ_OPEN}\n${String(text ?? "").replaceAll(READ_CLOSE, "TEXT>>").replaceAll(READ_OPEN, "<<TEXT")}\n${READ_CLOSE}`;
+}
+/** The text between the fence's marks, or "" (lib/mock.ts reads the person's text back out of the request with it). */
+export function unfence(message: string): string {
+  const start = message.indexOf(READ_OPEN), end = message.lastIndexOf(READ_CLOSE);
+  return start >= 0 && end > start ? message.slice(start + READ_OPEN.length, end).trim() : "";
+}
+
+export type ReadResult = { entries: ImportedEntry[]; skipped: ImportResult["skipped"] & { invalid: number } };
+
+/**
+ * What Atomik proposed from a paste or a document — untrusted, like anything
+ * a model writes — as entries a person reviews. The same rules as everything
+ * else on the way in: words only (a reference needs a person to pick the
+ * asset), one line of plain text, never an amount, never the same line twice,
+ * and no more than one paste may propose. Null when the answer is not the
+ * list that was asked for, so the read can be refused rather than charged.
+ */
+export function readProposals(raw: string): ReadResult | null {
+  const body = String(raw ?? "").replace(/```(?:json)?/gi, "").trim();
+  const start = body.indexOf("{"), end = body.lastIndexOf("}");
+  let parsed: unknown;
+  try { parsed = JSON.parse(start >= 0 && end > start ? body.slice(start, end + 1) : body); } catch { return null; }
+  const list = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? ["entries", "memories", "items"].map((key) => (parsed as Record<string, unknown>)[key]).find(Array.isArray)
+    : Array.isArray(parsed) ? parsed : undefined;
+  if (!Array.isArray(list)) return null;
+  const skipped = { money: 0, duplicates: 0, beyondLimit: 0, invalid: 0 };
+  const entries: ImportedEntry[] = [];
+  const seen = new Set<string>();
+  for (const item of list.slice(0, 200)) {
+    const said = typeof item === "string" ? item : item && typeof item === "object" ? (item as Record<string, unknown>).text : undefined;
+    const clean = cleanMemoryText(said);
+    if (clean.length < 3 || !/[A-Za-z]/.test(clean)) { skipped.invalid++; continue; }
+    if (mentionsMoney(clean)) { skipped.money++; continue; }
+    const key = clean.toLowerCase().replace(/[^a-z0-9#@]+/g, " ").trim();
+    if (seen.has(key)) { skipped.duplicates++; continue; }
+    seen.add(key);
+    if (entries.length >= MEMORY_LIMITS.importEntries) { skipped.beyondLimit++; continue; }
+    const named = item && typeof item === "object" ? (item as Record<string, unknown>).kind : undefined;
+    /* A kind the model made up, or a reference (which needs an asset), is sorted by what the line says. */
+    const kind = typeof named === "string" && (TEXT_KINDS as string[]).includes(named) ? (named as ImportedEntry["kind"]) : guessKind(clean);
+    entries.push({ kind, text: clean });
+  }
+  return { entries, skipped };
+}
+
+/* ── The Business brand kit, as entries to pick ────────────────────────── */
+
+/** What the Business suite keeps about a brand in the project (lib/workbench/studio-schema › moleculr), read-only here. */
+export type BrandKitSource = {
+  brandKit?: {
+    name?: string; tagline?: string; voice?: string; audience?: string; colors?: readonly string[];
+    website?: string; description?: string; fontFamilies?: readonly string[]; logoAssetId?: string;
+  } | null;
+  products?: readonly { id: string; name?: string; description?: string; brand?: string }[] | null;
+  productName?: string; productDescription?: string; productBrand?: string;
+} | null | undefined;
+
+export type BrandKitPick = {
+  key: string;
+  /** What it is, as the list names it ("Voice", "Product · Wave Runner"). */
+  label: string;
+  kind: Exclude<MemoryKind, "identity">;
+  text: string;
+  /** The logo, by its Library id, when the kit has one in the Library. */
+  assetId?: string;
+  /** How many sentences with an amount were left out of `text`. */
+  leftOut: number;
+  /** The amount that makes the whole line impossible to keep, or null. */
+  refused: string | null;
+};
+
+const MAX_PICK = 360;
+const plain = (value: unknown) => cleanMemoryText(value, 4000);
+/** Cut long words to a sentence that ends before `limit`, or a word with an ellipsis. */
+function clip(text: string, limit = MAX_PICK): string {
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  if (stop >= limit * 0.5) return cut.slice(0, stop + 1);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), limit * 0.5)).trimEnd()}…`;
+}
+
+/**
+ * A line of the brand kit as it may be kept: the sentences with an amount in
+ * them taken out (a product's "Retails at $120." goes, its description stays),
+ * and refused outright when nothing but the amount is left.
+ */
+function pickOf(key: string, label: string, kind: BrandKitPick["kind"], lead: string, body: string, extra: Partial<BrandKitPick> = {}): BrandKitPick | null {
+  const said = plain(body);
+  if (!said && !extra.assetId) return null;
+  const parts = said ? sentences(said) : [];
+  const kept = parts.filter((part) => !mentionsMoney(`${lead}${part}`));
+  const leftOut = parts.length - kept.length;
+  const text = kept.length ? clip(`${lead}${kept.join(" ")}`) : extra.assetId ? lead.replace(/:\s*$/, ".") : "";
+  const refused = !text || mentionsMoney(text) ? findAmount(`${lead}${said}`) ?? findAmount(text) ?? "an amount" : null;
+  return { key, label, kind, text: refused ? clip(`${lead}${said}`) : text, leftOut: refused ? 0 : leftOut, refused, ...extra };
+}
+
+/**
+ * The Business brand kit (and the products saved with it) as memory lines a
+ * person picks from: the name and tagline, voice, what the brand is about,
+ * palette, typography, website, audience, each product, and the logo when it
+ * is a Library asset. Nothing is kept until the person picks; each pick lands
+ * as an ordinary entry, and Atomik's workbench agent goes on reading the kit
+ * itself, as before.
+ */
+export function brandKitPicks(source: BrandKitSource, libraryIdOf?: (projectAssetId: string) => string | null): BrandKitPick[] {
+  const kit = source?.brandKit ?? null;
+  const name = plain(kit?.name).replace(/[.\s]+$/, "");
+  const out: (BrandKitPick | null)[] = [];
+  if (kit) {
+    out.push(pickOf("name", "Name", "brand", "Brand name: ", name ? `${name}.` : ""));
+    out.push(pickOf("tagline", "Tagline", "brand", "Tagline: ", plain(kit.tagline)));
+    out.push(pickOf("voice", "Voice", "brand", "Brand voice: ", plain(kit.voice)));
+    out.push(pickOf("about", "About", "brand", `About ${name || "the brand"}: `, plain(kit.description)));
+    const colours = (kit.colors ?? []).filter((c) => /^#[\da-f]{6}$/i.test(c)).map((c) => c.toUpperCase());
+    out.push(pickOf("palette", "Palette", "brand", "Brand palette: ", colours.length ? `${colours.join(", ")}.` : ""));
+    const faces = (kit.fontFamilies ?? []).map((f) => plain(f)).filter(Boolean);
+    out.push(pickOf("type", "Typography", "brand", "Typography: ", faces.length ? `${faces.join(", ")}.` : ""));
+    out.push(pickOf("website", "Website", "brand", "Website: ", plain(kit.website)));
+    out.push(pickOf("audience", "Audience", "audience", "", plain(kit.audience)));
+  }
+  const products = source?.products?.length ? source.products
+    : source?.productName || source?.productDescription ? [{ id: "product", name: source.productName, description: source.productDescription, brand: source.productBrand }] : [];
+  for (const product of products.slice(0, 24)) {
+    const title = plain(product.name) || "Product";
+    const maker = plain(product.brand);
+    const lead = `Product: ${title}${maker && maker.toLowerCase() !== name.toLowerCase() ? ` (${maker})` : ""}`;
+    const about = plain(product.description);
+    out.push(about ? pickOf(`product:${product.id}`, `Product · ${title}`, "note", `${lead} — `, about) : pickOf(`product:${product.id}`, `Product · ${title}`, "note", "", `${lead}.`));
+  }
+  const logo = kit?.logoAssetId && libraryIdOf ? libraryIdOf(kit.logoAssetId) : null;
+  if (logo && LIBRARY_ASSET.test(logo)) out.push(pickOf("logo", "Logo", "reference", "The brand's logo: ", "", { assetId: logo }));
+  return out.filter((pick): pick is BrandKitPick => pick !== null && Boolean(pick.text || pick.assetId));
 }
 
 /* ── The planner's share ───────────────────────────────────────────────── */

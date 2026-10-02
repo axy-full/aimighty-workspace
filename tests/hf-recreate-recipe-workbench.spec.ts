@@ -410,43 +410,72 @@ test("a take from a tool Gen does not have — an edit, a dub — cannot be recr
   expect(errors).toEqual([]);
 });
 
-for (const role of ["member", "owner"] as const)
-  test(`${role === "member" ? "a member" : "the owner"} recreates a connected-account take on this workspace's engines, and the card says why`, async ({ page }, info) => {
-    test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-    const connected = generation({
-      id: "gen_account", kind: "video", model: "seedance_2_5", title: "Account take", prompt: "a gull over the breakwater", provider: "higgsfield",
-      params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", duration: 5.04, settings: { aspect_ratio: "9:16", resolution: "720p", duration: 6 } },
-    });
-    /* Gen offers no signed-in account's catalogue since 28 September 2026: the owner recreates on Studio engines as well. */
-    const account: string[] = [];
-    const setup = async (page: Page) => {
-      if (role === "owner") {
-        const me = await page.request.get("/api/me").then((r) => r.json());
-        await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-      }
-      await page.route("**/api/higgsfield/consumer/generation", (route) => { account.push(route.request().method()); return route.fulfill({ status: 409, json: { error: "Gen reaches no signed-in account." } }); });
-    };
-    const { errors } = await open(page, { member: role === "member", generations: [connected], setup });
-    const inspector = await inspect(page, "gen_account");
-    await inspector.getByTestId("inspector-recreate").click();
-    await expect(page.getByTestId("gen-prompt")).toHaveValue("a gull over the breakwater");
-    await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
-    const model = page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']");
-    await expect(model).toHaveAttribute("data-state", "changed");
-    /* The account's catalogue id is not a name: it is not dressed up as one. */
-    await expect(model).toHaveText("Account model → Seedance 2.5");
-    await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
-    /* The settings the account was asked for still carry over where this engine offers them. */
-    await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("gen-length")).toHaveValue("6");
-    await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
-    /* Dismissing the card leaves the engine choice where it was. */
-    await page.getByTestId("gen-recipe-dismiss").click();
-    await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
-    expect(account).toEqual([]);
-    expect(await noOverflow(page)).toBe(true);
-    expect(errors).toEqual([]);
+for (const member of [false, true])
+test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfield account on this workspace's engines, and the card says so`, async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const connected = generation({
+    id: "gen_account", kind: "video", model: "seedance_2_5", title: "Account take", prompt: "a gull over the breakwater", provider: "higgsfield",
+    params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "video", duration: 5.04, settings: { aspect_ratio: "9:16", resolution: "720p", duration: 6 } },
   });
+  const asked: string[] = [];
+  const setup = async (page: Page) => {
+    await page.route("**/api/higgsfield/consumer/**", (route) => {
+      const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
+      if (listing) return route.fulfill({ json: { jobs: [] } });
+      asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+    });
+  };
+  const { errors } = await open(page, { member, generations: [connected], setup });
+  const inspector = await inspect(page, "gen_account");
+  await inspector.getByTestId("inspector-recreate").click();
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("a gull over the breakwater");
+  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  const model = page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']");
+  await expect(model).toHaveAttribute("data-state", "changed");
+  /* The account's catalogue id is not a name: it is not dressed up as one. */
+  await expect(model).toHaveText("Account model → Seedance 2.5");
+  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
+  /* The settings the account was asked for still carry over where this engine offers them. */
+  await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("gen-length")).toHaveValue("6");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  /* Dismissing the card leaves the engine choice where it was. */
+  await page.getByTestId("gen-recipe-dismiss").click();
+  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  expect(await noOverflow(page)).toBe(true);
+  expect(asked, "the account is never asked").toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("the owner's Soul take is recreated on Studio engines: its identity is not carried, and the account's identities are never read", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  const soul = generation({
+    id: "gen_soul", kind: "image", model: "soul_2", title: "Soul portrait", prompt: "a keeper on the pier at first light", provider: "higgsfield",
+    params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", outputType: "image", settings: { aspect_ratio: "3:4", soul_id: "soul_gone", enhance_prompt: true } },
+  });
+  const asked: string[] = [];
+  const setup = async (page: Page) => {
+    await page.route("**/api/higgsfield/consumer/**", (route) => {
+      const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
+      if (listing) return route.fulfill({ json: { jobs: [] } });
+      asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+    });
+  };
+  const { errors, priced } = await open(page, { generations: [soul], setup });
+  const inspector = await inspect(page, "gen_soul");
+  await inspector.getByTestId("inspector-recreate").click();
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("a keeper on the pier at first light");
+  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Account model → /);
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Gen runs on Studio engines only");
+  await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveText("Identity → none");
+  await expect(page.getByTestId("gen-blocked")).not.toHaveText("Reading the account’s identities…");
+  expect(priced).toEqual([]);
+  expect(asked, "the account's identities are never read").toEqual([]);
+  expect(errors).toEqual([]);
+});
 
 test("an engine that is gone lands on the nearest size at or below the take's, and says why", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");

@@ -383,8 +383,7 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
   expect(errors).toEqual([]);
 });
 
-const TAKE = `gen_hfc_${"d".repeat(40)}`;
-const IMAGE_MODEL = { id: "marketing_studio_image", name: "Marketing Studio Image", outputType: "image", aspectRatios: ["auto", "1:1", "9:16"], medias: [{ name: "medias", roles: ["image"] }], parameters: [{ name: "resolution", options: ["1k", "2k", "4k"] }] };
+const TAKE = `gen_${"d".repeat(40)}`;
 
 test("Business › a finished image ad's Open in Takes lands on that take, not on the newest one", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
@@ -394,46 +393,37 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
   const fixture: Project = { ...newProject("Coastal light study"), id: "ws-honest", productionProjectId: "prod-ws", shotMappings: {} };
   await mockProjects(page, { current: fixture });
   const now = Date.now();
+  const ad = generation({ id: TAKE, title: "Marble hero", kind: "image", model: "higgsfield/marketing-studio-image", provider: "higgsfield", createdAt: now - 1_000 });
   /* The ad lands filed in the project; a newer take sits above it, so landing on the ad is not luck. */
   await mockLibrary(page, {
     uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" })],
-    generations: [generation({ id: "g_newer", title: "Evening pass", createdAt: now + 60_000 }), generation({ id: TAKE, title: "Marble hero", createdAt: now - 1_000 })],
+    generations: [generation({ id: "g_newer", title: "Evening pass", createdAt: now + 60_000 }), ad],
   });
-  const me = await page.request.get("/api/me").then((r) => r.json());
-  await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-  await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
-  let quoted: unknown = null;
-  await page.route("**/api/higgsfield/consumer/generation", async (route) => {
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    if (body.action === "quote") quoted = body.input;
-    if (body.action === "catalogue") return route.fulfill({ json: { catalogue: { models: [IMAGE_MODEL], unlim: { available: false, remaining: null, expiresAt: null }, complete: true, fetchedAt: Date.now() } } });
-    const job = (status: string) => ({ id: "5d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d", draftId: fixture.id, workflow: "generation", status, model: IMAGE_MODEL, input: quoted, workspaceId: "1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b", workspaceName: "Connected wallet", quoteCredits: 40, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300_000, createdAt: now, providerJobId: status === "quoted" ? null : "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", tool: null, result: null, originalAvailable: false, sources: [] });
-    if (body.action === "quote") return route.fulfill({ json: { job: job("quoted") } });
-    if (body.action === "submit") return body.credits === 40 ? route.fulfill({ json: { job: job("accepted") } }) : route.fulfill({ status: 409, json: { error: "Review the quote again." } });
-    if (body.action === "status") {
-      const done = job("completed");
-      const original = { generationId: TAKE, providerJobId: done.providerJobId, creditUnit: "higgsfield_credits", credits: 40, sha256: "b".repeat(64), bytes: 2048, asset: { generationId: TAKE, mime: "image/webp", url: `/api/media/${TAKE}`, kind: "image" } };
-      return route.fulfill({ json: { job: { ...done, originalAvailable: true, originalAvailability: "available", result: { original } } } });
-    }
-    return route.fulfill({ status: 400, json: { error: "Nothing else is priced or sent in this spec." } });
+  /* Image ads runs on Particl's API key: the quote, the one send and the take's read are the routes the composer uses (answered here, nothing billed). */
+  const sent: Record<string, unknown>[] = [];
+  const consumer: string[] = [];
+  page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) consumer.push(`${request.method()} ${path}`); });
+  await page.route(/\/api\/generate\/quote$/, (route) => route.fulfill({ json: { estimatedCredits: 40, fingerprint: "f".repeat(64), price: 40, unit: "cr" } }));
+  await page.route(/\/api\/generate$/, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    sent.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ json: { id: TAKE, status: "running" } });
   });
-  await page.route("**/api/higgsfield/consumer/marketing-templates**", (route) => route.request().method() === "GET"
-    ? route.fulfill({ json: { connection: { connected: true, requiresReconnect: false }, capabilities: {}, jobs: [] } })
-    : route.fulfill({ json: { catalogue: { templates: [], matched: 0, total: 0, loaded: 0, complete: true, fetchedAt: Date.now(), categories: [], costsVersion: "v1" } } }));
-  await page.route("**/api/higgsfield/consumer/video", (route) => route.fulfill({ json: { connected: true, reads: [] } }));
-  await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
+  await page.route(new RegExp(`/api/jobs/${TAKE}(\\?.*)?$`), (route) => route.fulfill({ json: { generation: { ...ad, status: "succeeded", storedUrl: `/api/media/${TAKE}` } } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/suites?suite=moleculr&page=marketing&sp=dtc");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  await hydrated(page.getByTestId("dtc-prompt"));
-  await page.getByTestId("dtc-prompt").fill("Bold hero shot on marble");
-  await expect(page.getByTestId("dtc-generate")).toContainText("40 cr");
-  await page.getByTestId("dtc-generate").click();
-  const done = page.getByTestId("dtc-done");
-  await expect(done.getByTestId("dtc-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
-  const open = done.getByTestId("dtc-done-open");
+  await hydrated(page.getByTestId("image-ad-prompt"));
+  await page.getByTestId("image-ad-prompt").fill("Bold hero shot on marble");
+  await expect(page.getByTestId("image-ad-generate")).toHaveText("Generate image · about 40 cr");
+  await page.getByTestId("image-ad-generate").click();
+  const done = page.getByTestId("image-ad-done");
+  await expect(done.getByTestId("image-ad-done-take").locator("img")).toBeVisible({ timeout: 15_000 });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ model: "higgsfield/marketing-studio-image", maxCredits: 40, quoteFingerprint: "f".repeat(64) });
+  const open = done.getByTestId("image-ad-done-open");
   await expect(open).toHaveText("Open in Takes");
   if (TOUCH.includes(info.project.name)) expect((await open.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await open.click();
@@ -441,5 +431,7 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
   await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Marble hero");
   expect(new URL(page.url()).searchParams.get("sel")).toBe(`take:generation:${TAKE}`);
   await noSideScroll(page);
+  /* The shell's collector lists an owner's earlier account jobs on every page (the drain, not Image ads): that one read aside, nothing. */
+  expect(consumer.filter((call) => call !== "GET /api/higgsfield/consumer/generation"), "Image ads reads nothing of the connected account").toEqual([]);
   expect(errors).toEqual([]);
 });

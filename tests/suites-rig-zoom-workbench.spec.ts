@@ -148,7 +148,7 @@ test("⌘-wheel zooms about the cursor without zooming the page; wheel and drag 
   expect(errors).toEqual([]);
 });
 
-test("a node dragged at 200% moves by what the pointer travelled on the board, and the view is remembered", async ({ page }, info) => {
+test("a node dragged at 200% moves by what the pointer travelled on the board (Alt: not snapped to the grid), and the view is remembered", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "the two desktops");
   const { board, errors, store } = await open(page);
   const card = node(page, "b");
@@ -161,10 +161,13 @@ test("a node dragged at 200% moves by what the pointer travelled on the board, a
   await page.keyboard.up("Control");
   await expect(board).toHaveAttribute("data-zoom", "200");
   const box = (await card.boundingBox())!;
+  /* Alt places a card exactly where it is let go, instead of on the board's 20 px grid (lib/workspace/rig-board.ts). */
+  await page.keyboard.down("Alt");
   await page.mouse.move(box.x + 30, box.y + 20);
   await page.mouse.down();
   await page.mouse.move(box.x + 30 + 200, box.y + 20 + 100, { steps: 6 });
   await page.mouse.up();
+  await page.keyboard.up("Alt");
   /* 200 px on screen at 200% is 100 board units. */
   await expect.poll(() => store.current.nodes.find((n) => n.id === "b")?.x).toBe(800);
   expect(store.current.nodes.find((n) => n.id === "b")?.y).toBe(150);
@@ -264,13 +267,13 @@ test("on a phone a take dragged at 51% moves by the finger's travel, the next ta
   await settled(node(page, "a"));
   const cdp = await page.context().newCDPSession(page);
 
-  /* 30 × 20 px on screen at 51.2% is 59 × 39 board units. */
+  /* 30 × 20 px on screen at 51.2% is 59 × 39 board units: let go, the take lands on the board's 20 px grid. */
   const a = (await node(page, "a").boundingBox())!;
   const from = { x: a.x + a.width / 2, y: a.y + 12 };
   await touch(cdp, "touchStart", [{ ...from, id: 1 }]);
   for (let i = 1; i <= 5; i++) await touch(cdp, "touchMove", [{ x: from.x + 6 * i, y: from.y + 4 * i, id: 1 }]);
   await touch(cdp, "touchEnd", []);
-  await expect.poll(() => store.current.nodes.find((n) => n.id === "a")).toMatchObject({ x: 159, y: 139 });
+  await expect.poll(() => store.current.nodes.find((n) => n.id === "a")).toMatchObject({ x: 160, y: 140 });
 
   /* A touch drag has no click of its own, so the very next tap selects. */
   const b = (await node(page, "b").boundingBox())!;

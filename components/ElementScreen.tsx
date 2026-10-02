@@ -91,11 +91,14 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
 
   async function toggleLock() {
     if (busy || !el) return;
+    /* Unlocking is explicit and logged: an admin says why, and the reason is kept in the element's history. */
+    const reason = el.locked ? window.prompt(`Why are you unlocking ${el.name}? The reason is recorded.`)?.trim() : undefined;
+    if (el.locked && !reason) return;
     setBusy("lock"); setTrouble(null);
     try {
       const res = await fetch(`/api/rig/elements/${encodeURIComponent(elementId)}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locked: !el.locked }),
+        body: JSON.stringify(el.locked ? { locked: false, reason } : { locked: true }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) { setTrouble(String(json?.error ?? "That didn't change.")); return; }

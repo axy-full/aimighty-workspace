@@ -268,3 +268,23 @@ test("Add from the beat sheet clicked from a render before the agent's cast land
   expect(await names()).toEqual(["Mara", "Mooring rope", "Fox", "Lantern"]);
   expect(errors).toEqual([]);
 });
+
+test("an entry's still is made in Gen with its own words, on this workspace's credits; Cast shows no card of the retired sign-in", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "the five sizes");
+  test.setTimeout(120_000);
+  const f = await setup(page);
+  await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
+  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 60_000 });
+  /* Cast builds on Particl's own key: nothing here is the card for what ran on the Higgsfield sign-in. */
+  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
+  const fox = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Fox"]') });
+  const still = fox.getByTestId("cast-still-gen");
+  await still.scrollIntoViewIfNeeded();
+  await hydrated(still);
+  await still.click();
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("A red fox on the ice at dusk, three-quarter view");
+  expect(f.consumer, "nothing of the connected account is read or sent").toEqual([]);
+  expect(f.errors).toEqual([]);
+});

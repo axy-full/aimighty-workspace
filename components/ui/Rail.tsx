@@ -11,6 +11,12 @@ import type { ReactNode } from "react";
  *
  * Layout only. It does not know what is in it, and it does not know how to
  * open or close — the shell owns that state (§5).
+ *
+ * In a short window (a phone held landscape) the header and the pinned
+ * footer can be taller than the rail itself: there the rail scrolls as one
+ * column, so the footer is reached inside it instead of running on under
+ * what follows the rail (a page's dock). Only there: elsewhere the resize
+ * handle straddles the rail's edge, and a scrolling box would clip it.
  */
 export const RAIL_WIDTHS = { compact: 300, expanded: 420 } as const;
 
@@ -28,7 +34,7 @@ export default function Rail({ width, resizeHandle, header, footer, children, la
   const wide = width >= RAIL_WIDTHS.expanded;
   return (
     <aside aria-label={label} style={{ width,position:"relative" }}
-      className={`ui-rail flex h-full flex-none flex-col border-l border-border-mid text-ink ${className}`}>
+      className={`ui-rail flex h-full flex-none flex-col border-l border-border-mid text-ink [@media(max-height:500px)]:overflow-y-auto ${className}`}>
       {resizeHandle}
       <header className={`flex h-[52px] flex-none items-center gap-[8px] border-b border-border ${wide ? "px-[16px]" : "px-[14px]"}`}>{header}</header>
       <div className={`flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto ${wide ? "px-[16px] pb-[12px] pt-[14px]" : "p-[14px]"}`}>{children}</div>

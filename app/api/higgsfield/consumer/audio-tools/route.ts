@@ -22,6 +22,7 @@ import {
   submitConsumerVoiceToolJob,
   pollConsumerVoiceTool,
 } from "@/lib/higgsfield-consumer/voice-tool-service";
+import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,6 +36,8 @@ const submit = z
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [voices, quote, submit, poll]);
+/** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): reading the account's voices, pricing and starting a voice tool (dub, change voice, social cuts, analysis). `status` and the saved jobs (GET) stay. Edit & Sound keeps Particl's own Dub and Change voice. */
+const RETIRED = new Set(["voices", "quote", "submit"]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -110,6 +113,7 @@ export const POST = withTenant(async (req: Request) => {
   if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 48000));
+    if (asksRetired(raw, RETIRED)) return retiredResponse();
     const parsed = requestSchema.safeParse(raw);
     if (!parsed.success)
       return Response.json({ error: "Review the voice tool request." }, { status: 400, headers });

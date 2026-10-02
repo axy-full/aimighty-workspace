@@ -13,10 +13,9 @@ import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
  * (idea 3). The button shows the batch's total; Generate quotes every take
  * fresh and sends none of them if the sum moved; this workspace's takes carry
  * one batch id and their take numbers, and a take admission refuses stops the
- * batch with the takes that were made and charged named. (Gen no longer
- * offers a signed-in account's catalogue, so every batch is this workspace's.)
- * Every paid route is a mock that counts the charges per take; nothing is
- * billed.
+ * batch with the takes that were made and charged named. (The connected
+ * account's batches went with the Higgsfield sign-in.) Every paid route is a
+ * mock that counts the charges per take; nothing is billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -32,7 +31,8 @@ const ENGINES = [
   { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion from a prompt or references.", rate: { credits: PRICE, resolution: "480p", ratio: "16:9", duration: 5 } },
   { id: "gemini-3.1-flash-image", kind: "image", resolutions: ["1K", "2K"], ratios: ["1:1", "16:9", "9:16"], durations: [], use: "Stills and quick frames.", rate: { credits: 1, resolution: "1K", ratio: "1:1", duration: null } },
 ];
-async function open(page: Page, options: { owner?: boolean; library?: LibraryRoute } = {}) {
+
+async function open(page: Page, options: { library?: LibraryRoute } = {}) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -47,11 +47,6 @@ async function open(page: Page, options: { owner?: boolean; library?: LibraryRou
     const priced = new URL(route.request().url()).searchParams.has("model");
     return route.fulfill({ json: { models: ENGINES, audio: null, credits: priced ? PRICE : null } });
   });
-  if (options.owner) {
-    const me = await page.request.get("/api/me").then((r) => r.json());
-    await page.route("**/api/me", (route) => route.fulfill({ json: { ...me, owner: true } }));
-    await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: true, requiresReconnect: false } }));
-  }
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   return { errors, library, store };

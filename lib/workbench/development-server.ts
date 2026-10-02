@@ -27,15 +27,20 @@ import { ENGINE_PROMPT_LIMIT, shotRenderPrompt, textKey } from '../production/ri
 import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
-import { FRAMES_PER_CHUNK, DEVELOPMENT_STAGES, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
+import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
+import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
+import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 import { isCreditAmount, toDeci } from "../creditTerms";
+
+/** The production's stored Verify checks, read by the development route (GET ?verifications=1). */
+export { listVerifications } from './verify-server';
 
 export class DevelopmentError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'DevelopmentError'; }
 }
 export const developmentRequestSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
-  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig']), model: z.string().min(1).max(120),
+  kind: z.enum(['idea', 'screenplay', 'adfilm', 'write', 'frames', 'sketch', 'cast', 'environment', 'beatsheet', 'condense', 'rig', 'verify']), model: z.string().min(1).max(120),
   effort: z.string().min(1).max(40).default('auto'), instructions: z.string().trim().max(5000).optional(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxCredits: z.number().min(0).max(1_000_000).refine(isCreditAmount).optional(),
   maxUsd: z.number().finite().min(0).max(1000).optional(),
@@ -44,6 +49,8 @@ export const developmentRequestSchema = z.object({
   shotId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(), sketchAssetId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
   nodeId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
   attachmentAssetIds: z.array(z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)).min(1).max(4).optional(),
+  videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+    timeSeconds: z.number().finite().min(0).max(3600), durationSeconds: z.number().finite().positive().max(3600).optional() }).strict()).min(1).max(3).optional(),
 }).strict();
 export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
@@ -134,10 +141,12 @@ export function developmentSourceHash(canonical: string) { return createHash('sh
 
 type Snapshot = { name: string; brief: string; audience: string; deliverables: string; direction: string; fps: number; aspect: string; script?: string; fromJobId?: string; beatSheet?: unknown;
   /* frames / sketch */ style?: string; shots?: { id: string }[]; shot?: unknown; sketch?: { assetId: string; name: string; sha256: string; dataUrl: string };
-  /* any kind: what the director attached to the prompt box */ attachments?: { assetId: string; name: string; sha256?: string; dataUrl?: string; text?: string }[] };
-/** Images a phase sends with its prompt: only the sketch reader's one drawing. */
-export function developmentImages(snapshot: { sketch?: { dataUrl?: string }; attachments?: { dataUrl?: string }[] }): string[] {
-  return [...(snapshot.sketch?.dataUrl ? [snapshot.sketch.dataUrl] : []), ...(snapshot.attachments ?? []).flatMap((a) => (a.dataUrl ? [a.dataUrl] : []))];
+  /* any kind: what the director attached to the prompt box */ attachments?: { assetId: string; name: string; sha256?: string; dataUrl?: string; text?: string }[];
+  /* verify: the take's and the masters' review copies, and the key the check is stored under */ verify?: VerifySnapshot };
+/** Images a phase sends with its prompt: the sketch reader's drawing, the director's attached pictures, a check's take and masters. */
+export function developmentImages(snapshot: { sketch?: { dataUrl?: string }; attachments?: { dataUrl?: string }[]; verify?: { images: { dataUrl: string }[] } }): string[] {
+  return [...(snapshot.sketch?.dataUrl ? [snapshot.sketch.dataUrl] : []), ...(snapshot.attachments ?? []).flatMap((a) => (a.dataUrl ? [a.dataUrl] : [])),
+    ...(snapshot.verify?.images ?? []).map((image) => image.dataUrl)];
 }
 /** The storyboard shots the agent writes for: every beat-sheet shot, numbered, with its scene. */
 function boardSource(project: Project) {
@@ -168,6 +177,8 @@ function promptFor(snapshot: Snapshot, input: DevelopmentRequest, chunk: Develop
     ...(pictures.length ? { pictures: pictures.map((name, i) => `Image ${i + 1} sent with this message: ${name}`) } : {}), ...(texts.length ? { textFiles: texts } : {}) } });
 }
 function promptForSource(snapshot: Snapshot, input: DevelopmentRequest, chunk: DevelopmentChunk, draft?: unknown, critique?: unknown) {
+  /* One judge call: the take's and the masters' images follow this text, in order. */
+  if (input.kind === 'verify') return verifyPrompt(snapshot.verify!);
   if (input.kind === 'rig') {
     const { kind: _kind, nodeId: _node, ...source } = snapshot as Snapshot & { kind?: string; nodeId?: string };
     return JSON.stringify({ directorRequest: input.instructions ?? '', ...source, ...(draft ? { savedDraft: draft } : {}), ...(critique ? { independentCritique: critique } : {}) });
@@ -253,7 +264,8 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   }
   if (input.kind !== 'sketch' && input.sketchAssetId) throw new DevelopmentError('Only the sketch reader takes a drawing.');
   if (input.kind !== 'sketch' && input.kind !== 'frames' && input.shotId) throw new DevelopmentError('Only the storyboard artist takes a shot.');
-  if (input.kind !== 'condense' && input.kind !== 'rig' && input.nodeId) throw new DevelopmentError('Only the Rig steps take a Rig shot.');
+  if (input.kind !== 'condense' && input.kind !== 'rig' && input.kind !== 'verify' && input.nodeId) throw new DevelopmentError('Only the Rig steps take a Rig shot.');
+  if (input.kind !== 'verify' && input.videoFrames?.length) throw new DevelopmentError('Only a Verify check takes sampled frames.');
   const style = project.production?.boards?.style ?? 'live';
   let canonical: string, boardChunks: DevelopmentChunk[] | null = null, images = 0;
   if (input.kind === 'frames') {
@@ -295,6 +307,15 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     if (full.length <= ENGINE_PROMPT_LIMIT) throw new DevelopmentError('This shot\'s prompt already fits the engine; nothing to condense.');
     canonical = JSON.stringify({ kind: 'condense', nodeId: node.id, key: textKey(full), prompt: full });
     boardChunks = [{ index: 0, start: 0, end: canonical.length, segments: [{ id: node.id, heading: textKey(full), start: 0, end: 1 }] }];
+  } else if (input.kind === 'verify') {
+    /* A running check of the same key is looked up among the jobs, so they exist before the free quote reads them. */
+    await developmentReady();
+    let check;
+    try { check = await compileVerify(project, input.nodeId, input.videoFrames, owner); }
+    catch (error) { if (error instanceof VerifyError) throw new DevelopmentError(error.message, error.status); throw error; }
+    canonical = check.canonical;
+    boardChunks = [check.chunk];
+    images = check.images;
   } else if (input.kind === 'cast') {
     const sheet = project.production?.beats;
     const script = agentScript(project, Boolean(sheet?.scenes.length));
@@ -320,6 +341,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   } else canonical = input.kind === 'write' ? writerCanonical(project, base, input.fromJobId, beatSheet) : sourceCanonical(project, input.kind);
   /* What the director attached to the prompt box: pictures the agent sees, text files it reads (owner, 25 September). */
   if (input.attachmentAssetIds?.length) {
+    if (input.kind === 'verify') throw new DevelopmentError('A check reads its take and its masters only. Wire a master into the card instead.');
     if (input.kind === 'condense') throw new DevelopmentError('Condensing reads the shot prompt only; attach pictures to the shot instead.');
     let refs;
     try { refs = await loadAtomikReferences(project, input.attachmentAssetIds, owner); }
@@ -341,7 +363,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
   if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
-  if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can read the drawing.`, 422);
+  if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can ${input.kind === 'verify' ? 'see the take and its masters' : 'read the drawing'}.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
   /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for.
@@ -356,7 +378,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
   const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
   const resultBytes = developmentResultBytes(input.kind);
-  const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
+  const estimates = chunks.flatMap(chunk => developmentStages(input.kind).map(stage => {
     const maxTokens = stage === 'critique' ? Math.min(reasoning.maxTokens, critiqueReasoning.maxTokens) : reasoning.maxTokens;
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
@@ -375,12 +397,33 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     : `The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
-  return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
+  /* A Verify check is quoted at what one usually uses (lib/workbench/verify-judge.ts verifyLikelyTokens), never above
+     its ceiling; the ceiling above stays what its job reserves, allows and holds for review, as for every agent step. */
+  let likely: { usd: number; credits: number } | undefined;
+  if (input.kind === 'verify') {
+    const tokens = verifyLikelyTokens({ textBytes: Buffer.byteLength(promptFor(snapshot, input, chunks[0]) + developmentInstructions(input.kind, 'refine'), 'utf8'),
+      images, checks: snapshot.verify?.checks.length ?? 0, thinkingAllowance: atomikReasoningAllowance(model, input.effort) });
+    const usd = textCostUsd(model, tokens.inputTokens, tokens.outputTokens);
+    if (usd == null || !Number.isFinite(usd) || usd < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
+    const capped = Math.min(usd, estimateUsd);
+    likely = { usd: capped, credits: paidByPlatform(textVendor(input.model)) ? Math.min(billCredits(capped, 'text'), estimateCredits) : 0 };
+  }
+  return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, likely, model };
 }
+/** The price a person is shown and approves: a Verify check's usual use ("about N cr"), every other step's ceiling. */
+const shownPrice = (compiled: { estimateUsd: number; estimateCredits: number; likely?: { usd: number; credits: number } }) =>
+  compiled.likely ?? { usd: compiled.estimateUsd, credits: compiled.estimateCredits };
 export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
-  const compiled = await compile(input, owner, dependencies(overrides));
+  /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */
+  if (input.kind === 'verify') {
+    const stored = await storedVerificationFor(await getAtomikProject(owner, input.projectId), input.nodeId);
+    if (stored) return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind, sourceHash: '', estimateCredits: 0, chunks: 0, calls: 0, sourceCharacters: 0, stored };
+  }
+  const compiled = await compile(input, owner, dependencies(overrides)), shown = shownPrice(compiled);
   return { quoteOnly: true, model: input.model, effort: input.effort, kind: input.kind,
-    sourceHash: compiled.sourceHash, estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd,
+    sourceHash: compiled.sourceHash, estimateCredits: shown.credits, estimateUsd: shown.usd,
+    /* Credits only: what the wallet holds while it runs, where that is more than the estimate. */
+    ...(compiled.likely && compiled.estimateCredits > shown.credits ? { holdCredits: compiled.estimateCredits } : {}),
     chunks: compiled.chunks.length, calls: compiled.estimates.length,
     sourceCharacters: input.kind === 'screenplay' || input.kind === 'adfilm' ? compiled.project.script?.length ?? 0 : input.kind === 'beatsheet' ? compiled.project.production?.beatSource?.text.length ?? 0 : compiled.canonical.length };
 }
@@ -402,7 +445,7 @@ async function publicJob(row: Row, offset = 0, withResult = true, preloaded?: Pr
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     ...(input.kind === 'sketch' ? { shotId: input.shotId, sketchAssetId: input.sketchAssetId } : {}),
     ...(input.kind === 'frames' && input.shotId ? { shotId: input.shotId } : {}),
-    ...(input.kind === 'condense' || input.kind === 'rig' ? { nodeId: input.nodeId } : {}),
+    ...(input.kind === 'condense' || input.kind === 'rig' || input.kind === 'verify' ? { nodeId: input.nodeId } : {}),
     instructions: input.instructions ?? '', sourceHash: String(row.source_hash), status: String(row.status) as DevelopmentJob['status'],
     completedChunks, totalChunks, completedSteps, totalSteps: progress.rows.length,
     currentStage: next ? String(next.stage) as DevelopmentStage : 'complete',
@@ -468,14 +511,22 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   /* A dollar approval counts only where the workspace pays the vendor itself: on the platform's keys a
      refusal that turned on it would tell, one guess at a time, what the vendor charges. */
   const approvedUsd = paidByPlatform(textVendor(input.model)) ? null : input.maxUsd ?? null;
-  if (toDeci(compiled.estimateCredits) > toDeci(input.maxCredits) || (approvedUsd != null && compiled.estimateUsd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
+  /* The approval binds the price the person was shown; what is allowed, reserved and kept below is the ceiling. */
+  const shown = shownPrice(compiled);
+  if (toDeci(shown.credits) > toDeci(input.maxCredits) || (approvedUsd != null && shown.usd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
   const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();
   // Claim and immutable source snapshot commit before reserving or calling a provider.
-  const inserted = await db().execute({ sql: `INSERT OR IGNORE INTO workbench_development_jobs(id,owner,project_id,production_project_id,request_id,fingerprint,request_body,source_hash,snapshot,model_body,chunks,status,estimate_usd,estimate_credits,funded_by_platform,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
+  const insert = { sql: `INSERT OR IGNORE INTO workbench_development_jobs(id,owner,project_id,production_project_id,request_id,fingerprint,request_body,source_hash,snapshot,model_body,chunks,status,estimate_usd,estimate_credits,funded_by_platform,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
     args: [id, owner, input.projectId, compiled.project.productionProjectId!, input.requestId, fingerprint, JSON.stringify(input), compiled.sourceHash,
-      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform(textVendor(input.model)) ? 1 : 0, ts, ts] });
+      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform(textVendor(input.model)) ? 1 : 0, ts, ts] };
+  /* A Verify check's job is also the claim on its key, saved under the write lock that first refuses a key stored
+     or being checked (lib/workbench/verify-server.ts claimVerifyKey): one key is reserved, sent and charged once,
+     even when two instances start it at the same instant. */
+  let inserted;
+  try { inserted = input.kind === 'verify' && compiled.snapshot.verify ? await claimVerifyKey(compiled.snapshot.verify, { owner, requestId: input.requestId }, insert) : await db().execute(insert); }
+  catch (error) { if (error instanceof VerifyError) throw new DevelopmentError(error.message, error.status); throw error; }
   if (!inserted.rowsAffected) {
     const duplicate = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
     if (!duplicate || duplicate.fingerprint !== fingerprint) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
@@ -511,7 +562,7 @@ export function developmentProviderOptions(model: CatalogModel, effort: string):
   return { ...existing, anthropic: { ...existing.anthropic, thinking: { type: 'adaptive' }, effort } };
 }
 async function callDevelopmentAgent(input: DevelopmentCall): Promise<DevelopmentReply> {
-  if (engineMock()) return mockDevelopmentReply(input);
+  if (engineMock()) return input.kind === 'verify' ? mockVerifyReply(input) : mockDevelopmentReply(input);
   let auth: DevelopmentAuth;
   try { auth = await developmentAuth(input.model.id); }
   catch (error) { throw Object.assign(error as Error, { providerSubmitted: false }); }
@@ -534,8 +585,10 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
     maxOutputTokens: input.model.id.startsWith('anthropic/') && input.effort.startsWith('budget:') ? input.maxTokens - Number(input.effort.slice(7)) : input.maxTokens,
     maxRetries: 0, stopWhen: stepCountIs(1),
     providerOptions: developmentProviderOptions(input.model, input.effort) });
+    /* A Verify check's review copies are 512 px at most and go at low detail, as its quote counts them. */
+    const detail = input.kind === 'verify' ? { providerOptions: { openai: { imageDetail: 'low' } } } : {};
     const result = input.images?.length
-      ? await agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image }))] }], abortSignal: AbortSignal.timeout(240_000) })
+      ? await agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image, ...detail }))] }], abortSignal: AbortSignal.timeout(240_000) })
       : await agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) });
     return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens, finishReason: result.finishReason,
       ...(textVendor(input.model.id) === 'openai' ? { directUsage: result.steps.length === 1 ? sdkTextUsage(result.steps[0].usage, true) : null } : {}) };
@@ -628,6 +681,8 @@ function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
   return { text: JSON.stringify(result), inputTokens: 200, outputTokens: 250, costUsd: 0 };
 }
 
+/** What an unconfirmed attempt keeps for review: a Verify check's hold (its ceiling, above the estimate it was quoted at), any other step's approved estimate. */
+const keptForReview = (kind: DevelopmentRequest['kind'], article: 'The' | 'Its' = 'The') => (kind === 'verify' ? 'What was held for it' : `${article} approved estimate`);
 /** Claim exactly one phase. A started phase is never repeated, even by queue retry. */
 export async function runDevelopmentStep(id: string, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<{ done: boolean; waiting: boolean; settlementPending?: boolean }> {
   return withRecoveryJob(requireTenant().id, id, async () => {
@@ -680,7 +735,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       }
       if (reply.finishReason === 'length') throw new Error('The agent ran out of room before it finished its answer, so nothing was kept from this phase.');
       const value: unknown = parseAgentJson(reply.text);
-      const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk);
+      const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk, snapshot.verify);
       if (stage === 'critique' && Buffer.byteLength(JSON.stringify(result), 'utf8') > DEVELOPMENT_CRITIQUE_BYTES) throw new Error('The critique exceeded its saved review budget.');
       const finished = await db().execute({ sql: "UPDATE workbench_development_steps SET status='succeeded',result=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [JSON.stringify(result), now(), id, Number(next.step_index)] });
       if (!finished.rowsAffected) return { done: true, waiting: false };
@@ -695,7 +750,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       const uncertain = submitted && !returned && !rejection && !notSubmitted;
       if (!submitted || rejection || notSubmitted) cost = 0;
       /* A failed run is never billed: the vendor's cost is kept on the steps and in the meter, the workspace's bill is zero. */
-      const message = uncertain ? 'This provider attempt could not be confirmed. It will never be submitted again automatically. The approved estimate remains reserved for review.' :
+      const message = uncertain ? `This provider attempt could not be confirmed. It will never be submitted again automatically. ${keptForReview(input.kind)} remains reserved for review.` :
         'This development phase could not complete: ' + ((error as Error).message || 'Invalid response').slice(0, 750) + (Number(row.funded_by_platform) ? ' It was not billed, and it is never sent again on its own.' : ' It is never sent again on its own.');
       const stopped = await db().execute({ sql: "UPDATE workbench_development_steps SET status=?,error=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [uncertain ? 'uncertain' : 'failed', message, uncertain ? null : cost, now(), id, Number(next.step_index)] });
       if (!stopped.rowsAffected) return { done: false, waiting: true };
@@ -712,7 +767,12 @@ async function finishDevelopmentJob(row: Row, deps: DevelopmentDependencies) {
   const steps = (await db().execute({ sql: 'SELECT stage,status,cost_usd FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] })).rows;
   if (!steps.length || steps.some(step => step.status !== 'succeeded')) throw new Error('The workflow has incomplete development phases.');
   const cost = steps.reduce((sum, step) => sum + Number(step.cost_usd ?? 0), 0);
-  await db().execute({ sql: "UPDATE workbench_development_jobs SET status='succeeded',cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [cost, Number(row.funded_by_platform) ? billCredits(cost, 'text') : 0, now(), String(row.id)] });
+  const credits = Number(row.funded_by_platform) ? billCredits(cost, 'text') : 0;
+  const finished = { sql: "UPDATE workbench_development_jobs SET status='succeeded',cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [cost, credits, now(), String(row.id)] };
+  /* A finished check is stored in the same write that finishes its job: the row exists exactly when the job succeeded. */
+  const stored = (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'verify' ? await verificationStatements(row, credits) : [];
+  if (stored.length) await db().batch([finished, ...stored], 'write');
+  else await db().execute(finished);
   return settleDevelopment({ ...row, status: 'succeeded', cost_usd: cost }, deps);
 }
 
@@ -753,7 +813,8 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
   for (const row of stale) {
     const fenced = await db().execute({ sql: "UPDATE workbench_development_steps SET status='uncertain',updated_at=? WHERE job_id=? AND step_index=? AND status='running' AND updated_at=?", args: [now(), String(row.id), Number(row.stale_step), Number(row.stale_updated_at)] });
     if (!fenced.rowsAffected) continue;
-    const fencedJob = await db().execute({ sql: "UPDATE workbench_development_jobs SET status='uncertain',error=?,updated_at=? WHERE id=? AND status='running'", args: ['The provider phase was interrupted. Its approved estimate remains reserved; the attempt cannot be safely repeated.', now(), String(row.id)] });
+    const kept = keptForReview((JSON.parse(String(row.request_body)) as DevelopmentRequest).kind, 'Its');
+    const fencedJob = await db().execute({ sql: "UPDATE workbench_development_jobs SET status='uncertain',error=?,updated_at=? WHERE id=? AND status='running'", args: [`The provider phase was interrupted. ${kept} remains reserved; the attempt cannot be safely repeated.`, now(), String(row.id)] });
     if (fencedJob.rowsAffected) await settleDevelopment({ ...row, status: 'uncertain' }, deps);
   }
   const admissions = (await db().execute({ sql: "SELECT * FROM workbench_development_jobs WHERE owner=? AND project_id=? AND status='queued' AND updated_at<?", args: [owner, projectId, now() - 360_000] })).rows;

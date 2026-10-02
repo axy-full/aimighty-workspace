@@ -842,6 +842,10 @@
 .pxw-phone .pxm-flow-desc { display: block; font-size: 12px; color: var(--pxw-dimmer); line-height: 1.45; margin-top: 4px; text-wrap: pretty; }
 .pxw-phone .pxm-flow-foot { gap: 7px; margin-top: 11px; }
 .pxw-phone .pxm-flow-role { font-size: 12px; color: var(--pxw-dimmer); }
+/* A section title from the Rig board (lib/workspace/rig-board.ts): a heading in the chain, the cards under it its own. */
+.pxw-phone .pxm-flow-section { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 14px 0 10px; padding-bottom: 7px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+.pxw-phone .pxm-flow-section-name { min-width: 0; font-size: 17px; font-weight: 620; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.pxw-phone .pxm-flow-section-count { flex: none; font-family: var(--pxw-mono); font-size: 12px; color: var(--pxw-label-floor); }
 
 /* ── 3. Cards ──────────────────────────────────────────────────────────── */
 
