@@ -168,7 +168,10 @@ test("dispatch re-prices before the sole paid POST, and refuses when the kept qu
     const out = await higgsfield.render(req);
     expect(calls).toEqual([{ url: "https://api.higgsfield.ai/higgsfield/cinema-studio/4.0", auth: "Key fixture:key",
       body: { prompt: "A harbour at dawn", duration: 5, resolution: "720p", aspect_ratio: "16:9", generate_audio: true } }]);
-    expect(out).toEqual({ handle: { provider: "higgsfield", model: CINEMA_STUDIO_MODEL_ID, ref: requestId, endpoint: statusUrl, cancelUrl, credentialFingerprint: value.params.higgsfieldCredentialFingerprint } });
+    // The answer carried no correlation id of its own: the one sent with the POST is kept beside the request id.
+    const { higgsfieldCorrelationId } = await import("../../lib/higgsfield");
+    expect(out).toEqual({ handle: { provider: "higgsfield", model: CINEMA_STUDIO_MODEL_ID, ref: requestId, endpoint: statusUrl, cancelUrl, credentialFingerprint: value.params.higgsfieldCredentialFingerprint,
+      correlationId: higgsfieldCorrelationId(req.genId, "submit") } });
     calls.length = 0;
     // A kept quote the settings no longer price the same (rates changed since), the kill switch,
     // rotated credentials, or a take whose clip basis no longer matches its quote: nothing is sent.

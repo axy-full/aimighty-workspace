@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { after } from "next/server";
 import { platformDb, platformReady, now } from "./platform";
-import { higgsfieldConfigured, higgsfieldCredentials } from "./higgsfield";
+import { higgsfieldConfigured, higgsfieldCredentials, higgsfieldKeyHeaders } from "./higgsfield";
 import { marketingJson } from "./higgsfieldMarketing";
 import { engineMock } from "./mock";
 import { withRecoveryActivity } from "./recovery";
@@ -72,10 +72,9 @@ export async function checkHiggsfieldPricing(
   let detail: string | null = null;
   try {
     const reply = await withRecoveryActivity("external-read", async () => {
-      const { keyId, keySecret } = higgsfieldCredentials();
       const response = await (deps.fetch ?? fetch)(`https://api.higgsfield.ai/estimate/${watch.path}`, {
         method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000),
-        headers: { Authorization: `Key ${keyId}:${keySecret}`, "Content-Type": "application/json" },
+        headers: higgsfieldKeyHeaders(higgsfieldCredentials()),
         body: JSON.stringify(watch.body),
       });
       if (!response.ok) {

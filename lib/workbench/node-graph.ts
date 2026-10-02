@@ -48,6 +48,8 @@ export function canConnect(nodes:CanvasNode[],source:string,target:string):strin
  if(to.linked.includes(source))return 'These nodes are already connected.';
  /* A card from a newer release has rules this page does not know: it is never wired from here. */
  if(!isKnownNodeType(to.type)||!isKnownNodeType(from.type))return 'This card is from a newer version of Particl. Reload the page to connect it.';
+ /* A section title (a note in `section` mode, lib/workspace/rig-board.ts) groups cards on the board; it is never an input. */
+ if([to,from].some(n=>n.type==='note'&&n.mode==='section'))return 'Section titles group cards on the board. They do not connect to other cards.';
  const rule=NODE_INPUTS[to.type],label=NODE_DEFS[to.type].label;
  if(rule.accepts==='media'&&nodeOutputKind(from.type)==='text')return label+' nodes take an image input, not a direction. Connect a media, scene or finishing node instead.';
  if(to.linked.length>=rule.max)return rule.max===1?label+' nodes take one input. Disconnect the current input first.':rule.max===2?label+' nodes take two inputs: background and foreground. Disconnect one first.':'This node has reached its input limit.';

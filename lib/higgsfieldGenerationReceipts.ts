@@ -12,7 +12,7 @@ const receiptModels = [...HIGGSFIELD_IMAGE_MODELS, ...Object.values(GENJUTSU_MOD
 const receiptModelSlots = receiptModels.map(() => "?").join(",");
 const supported = (model: string) => isHiggsfieldImageModel(model) || isHiggsfieldVideoModel(model);
 let boot: Promise<void> | undefined;
-async function receiptsReady() {
+export async function receiptsReady() {
   await platformReady();
   boot ??= platformDb().execute(`CREATE TABLE IF NOT EXISTS higgsfield_generation_receipts (
     id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handle_json TEXT NOT NULL,

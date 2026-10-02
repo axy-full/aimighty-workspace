@@ -29,6 +29,8 @@ import {
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
 import { restoreHiggsfieldGenerationReceipts, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
+import { clearKeyChanged, KEY_GONE_END, KEY_GONE_MS } from "./higgsfieldKeyAlerts";
+import { POOL_MARK } from "./sharedKeyTerms";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
@@ -133,6 +135,8 @@ function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind: string, model: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (typeof held.why === "string") out.why = held.why;
+  /* Waiting for the platform's shared pool rather than this workspace's own slots (lib/providerPool.ts). */
+  if (held.pool === POOL_MARK) out.pool = POOL_MARK;
   const needs = heldPriceNow(held, kind, model);
   /* A changed quote needs approval even if the take originally waited only for a slot. */
   const approved = typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null;
@@ -831,7 +835,10 @@ export async function syncPending(
           if (gen.kind === "image" && gen.provider === "higgsfield" && params.paidClaim != null && !TERMINAL.has(gen.status)) {
             const handle = Boolean(params.higgsfieldStillHandle);
             const since = Number(params.paidClaim) || gen.createdAt;
-            if (handle ? collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
+            /* Waiting on a key that is gone (lib/higgsfieldKeyAlerts.ts) is not a failing collection; it ends only
+               once the provider no longer keeps what it made. */
+            const keyGone = handle && Number(params.providerKeyChanged) > 0 && Number(params.providerKeyChanged) < now() - KEY_GONE_MS;
+            if (handle ? keyGone || collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
               const price = isSoulIdentityModel(gen.model) ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
               const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
               /* Sent, and the provider never said how it went: its charge is unknown. */
@@ -841,7 +848,7 @@ export async function syncPending(
                   sql: `UPDATE generations SET status='failed',error=?,cost_usd=COALESCE(cost_usd,?),provider_outcome=COALESCE(?,provider_outcome),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
                     WHERE id=? AND status IN ('queued','running') AND deleted=0`,
                   args: [
-                    handle
+                    keyGone ? KEY_GONE_END : handle
                       ? "The connected account stopped answering about this request, so its result could not be collected. Its cost stays charged; it will not be sent again."
                       : "The connected account never confirmed this request. Its estimated cost stays charged; it will not be sent again.",
                     known, silent ? serializeOutcome(silent) : null, now(), gen.id,
@@ -852,6 +859,7 @@ export async function syncPending(
               );
               await deliverGenerationSettlement(gen.id);
               await settleHiggsfieldGenerationReceipt(gen.id).catch(() => false);
+              if (keyGone) await clearKeyChanged(gen.id).catch(() => {});
               return;
             }
           }
