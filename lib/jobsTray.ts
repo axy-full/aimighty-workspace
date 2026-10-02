@@ -24,6 +24,7 @@ import { accountFailure, type ProviderOutcome, type TakeFailure } from "./provid
 import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-consumer/resume";
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
+import { KEY_CHANGED_LABEL, KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from "./sharedKeyTerms";
 
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
@@ -169,7 +170,7 @@ export type EngineRecreate = { preset: GenPreset } | { blocked: string } | null;
 
 export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: string | null = null, recreate: EngineRecreate = null): TrayJob {
   const params = row.params ?? {};
-  const held = (params.held ?? null) as { why?: string } | null;
+  const held = (params.held ?? null) as { why?: string; pool?: string } | null;
   /* Named the way the Library and Takes name it: its title, else its words. */
   const name = shortName(clean(row.title) || clean(row.prompt), 60) || "Untitled take";
   const base = {
@@ -208,7 +209,7 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "held": {
       /* Held for a slot is a place in the line, and starts on its own; held for credits waits for a Release or a top-up. */
       if (held?.why === "slots")
-        return { ...base, stage: "queued", label: "Queued", tone: "blue", reason: "Waiting for a free slot", price: amount(money.needs, money.unit) ?? reserved };
+        return { ...base, stage: "queued", label: "Queued", tone: "blue", reason: held.pool === POOL_MARK ? POOL_REASON : "Waiting for a free slot", price: amount(money.needs, money.unit) ?? reserved };
       const needs = money.unit === "cr" && money.needs ? money.needs : null;
       /* A reason of its own written by a refused release (a cap): the label already says what credits it needs. */
       const kind = row.error ? failureKind(row.error) : "unknown";
@@ -221,8 +222,11 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
       };
     }
     case "running":
+      /* Sent on a provider key that is gone: it waits, never failed or sent again, while that is sorted out. */
+      if (waitsOnChangedKey(params)) return { ...base, stage: "confirming", label: KEY_CHANGED_LABEL, tone: "amber", reason: KEY_CHANGED_REASON, price: reserved };
       return { ...base, stage: "rendering", label: "Rendering", tone: "blue", price: reserved };
     default:
+      if (waitsOnChangedKey(params)) return { ...base, stage: "confirming", label: KEY_CHANGED_LABEL, tone: "amber", reason: KEY_CHANGED_REASON, price: reserved };
       return { ...base, stage: "queued", label: "Queued", tone: "blue", price: reserved };
   }
 }

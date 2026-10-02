@@ -141,6 +141,10 @@ const node = z.object({
     last: z.looseObject({ id: z.string().max(200).optional(), takeId: z.string().max(200).optional(), verdict: z.string().max(40).optional(), at: z.number().finite().optional() }).optional(),
   }).refine(reservedFits).optional(),
   agent: z.looseObject({ runId: z.string().max(200).optional(), key: z.string().max(200).optional() }).refine(reservedFits).optional(),
+  /* The Rig board's sections (lib/workspace/rig-board.ts): the section title card a person filed this card under.
+     Declared before anything writes it, for the same reason as the fields above. A section title itself is a `note`
+     card whose `mode` is "section" (a free string already), so it needs no field of its own. */
+  section: z.string().min(1).max(100).optional(),
   /* Rig shot fields (optional; absent on every older draft). Shape only here:
      the catalogue clamp lives in lib/workspace so a catalogue change can never
      make an existing draft unsaveable. */

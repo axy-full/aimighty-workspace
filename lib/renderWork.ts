@@ -23,7 +23,8 @@ import { falAwait, falStatus, falResult, FalHttpError, falSubmissionRejected } f
 import { fetchBytes } from "./mockFs";
 import type { Produced as EngineProduced, RenderHandle } from "./engines/types";
 import { engineFor } from "./engines";
-import { higgsfieldSubmissionRejected } from "./higgsfield";
+import { higgsfieldSubmissionRejected, HiggsfieldKeyChangedError } from "./higgsfield";
+import { clearKeyChanged, markKeyChanged } from "./higgsfieldKeyAlerts";
 import { marketing25Usd, marketing25SettlementUsd } from "./higgsfieldMarketing";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
@@ -507,6 +508,8 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       const credentialFingerprint = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint;
       const vendorCostUsd = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd;
       const state = await engine.poll!({ ...saved, credentialFingerprint });
+      /* The key it was sent on answered: any wait for a changed key is over. */
+      if (params.providerKeyChanged != null) await clearKeyChanged(genId);
       if (state.status === "failed" || state.status === "cancelled") {
         // Its own status and words; its FAQ: failed and NSFW requests are
         // refunded, and only successful completions are billed.
@@ -545,6 +548,12 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       await seal(job, out);
       await settleHiggsfieldGenerationReceipt(genId);
     } catch (error) {
+      /* The key this request was sent on is gone: nothing was asked of the provider. It waits, visibly, and
+         the platform's admin is told; it is not a failed collection, a failure, or a refund. */
+      if (error instanceof HiggsfieldKeyChangedError) {
+        await markKeyChanged(genId, (params.higgsfieldStillHandle as RenderHandle | undefined)?.credentialFingerprint);
+        return;
+      }
       // Transport, connection rotation and storage failures never imply a refund.
       // Preserve both the original request handle and its existing reservation.
       const message = error instanceof Error ? error.message : "Soul collection could not complete.";

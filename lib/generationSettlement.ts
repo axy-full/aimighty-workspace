@@ -98,6 +98,8 @@ export async function deliverGenerationSettlement(id: string, options: { release
      it, rather than only the video polls and the ten-minute cron. Imported
      late: held.ts reaches back into the render paths that settle here. */
   if (delivered && options.releaseHeld !== false) await (await import("./held")).releaseAfterSettlement();
+  /* A take an Atomik run made: its step records how it ended, and the run is woken (rig/render.settled). */
+  if (delivered) await (await import("./workbench/rig-agent-settled")).rigRenderSettled(id).catch((error) => console.error("rig agent settlement:", (error as Error).message));
 }
 
 export type ReconcileResult = { attempted: number; failed: number };

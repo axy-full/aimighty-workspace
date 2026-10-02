@@ -130,9 +130,11 @@ export async function GET(req: Request) {
             await stage("canvas_pushes", () =>
               drainCanvasPushes(null, { limit: 4, deadlineAt }),
             );
-            // Atomik runs on Rig boards whose wake is due: a plan or a build
-            // a lost event left waiting, or one paused by the kill switch
-            // (free; a build never renders or spends).
+            // Atomik runs on Rig boards whose wake is due: a plan, a build or
+            // a render a lost event left waiting, or one paused by the kill
+            // switch. A render spends only inside the limit a person approved
+            // for its run, under its saved request key (never re-sent); what
+            // a stopped run left mid-way is closed with free reads.
             await stage("rig_agents", () =>
               drainRigAgentWakeups({ limit: 2, deadlineAt }),
             );

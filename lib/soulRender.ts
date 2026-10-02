@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { HiggsfieldHttpError, higgsfieldCredentials } from "./higgsfield";
+import { HiggsfieldHttpError, higgsfieldCredentials, higgsfieldKeyHeaders } from "./higgsfield";
 import { marketingJson } from "./higgsfieldMarketing";
 import { withRecoveryActivity } from "./recovery";
 import { engineMock } from "./mock";
@@ -92,11 +92,11 @@ export function soulRenderInput(modelId: string, settings: SoulRenderSettings): 
 /* The estimate is a non-generating read: tracked as external activity, never as paid work. */
 async function estimateCall(url: string, body: unknown): Promise<Record<string, unknown>> {
   return withRecoveryActivity("external-read", async () => {
-    const { keyId, keySecret } = higgsfieldCredentials();
+    const credentials = higgsfieldCredentials();
     try {
       const response = await fetch(url, {
         method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(20_000),
-        headers: { Authorization: `Key ${keyId}:${keySecret}`, "Content-Type": "application/json" },
+        headers: higgsfieldKeyHeaders(credentials),
         body: JSON.stringify(body),
       });
       if (!response.ok) {

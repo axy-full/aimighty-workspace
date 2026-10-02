@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Reference } from "./ark";
 import { db, ready, now } from "./db";
-import { higgsfieldCredentials, HiggsfieldHttpError } from "./higgsfield";
+import { higgsfieldCredentials, higgsfieldKeyHeaders, HiggsfieldHttpError } from "./higgsfield";
 import { withRecoveryActivity } from "./recovery";
 import { imagePath, uploadPath, presignedReadUrl, usingBlob } from "./storage";
 import { engineMock } from "./mock";
@@ -181,17 +181,14 @@ async function readCall(url: string, body?: unknown) {
   // Both catalog GET and the documented estimate POST are non-generating.
   // Track the complete read without treating an estimate timeout as paid work.
   return withRecoveryActivity("external-read", async () => {
-    const { keyId, keySecret } = higgsfieldCredentials();
+    const credentials = higgsfieldCredentials();
     try {
       const response = await fetch(url, {
         method: body === undefined ? "GET" : "POST",
         redirect: "error",
         cache: "no-store",
         signal: AbortSignal.timeout(20_000),
-        headers: {
-          Authorization: `Key ${keyId}:${keySecret}`,
-          "Content-Type": "application/json",
-        },
+        headers: higgsfieldKeyHeaders(credentials),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (!response.ok) {

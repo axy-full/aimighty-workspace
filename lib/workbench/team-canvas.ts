@@ -4,7 +4,7 @@ import { db, ready, now } from "@/lib/db";
 import { workbenchTransaction } from "./records";
 import { canvasAssetSchema, canvasNodeSchema } from "./studio-schema";
 import { PROJECT_JSON_BYTES, PROJECT_LIMITS } from "./project-limits";
-import { applyTeamPatch, emptyTeamCanvas, heldRemovals, parseTeamCanvas, referencedAssetIds, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { applyTeamPatch, emptyTeamCanvas, guardMasters, heldRemovals, parseTeamCanvas, referencedAssetIds, type MasterHold, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
 import { canvasOpsReady, insertCanvasOp } from "./canvas-ops-log";
 import { collabConfigured } from "@/lib/collab";
 
@@ -95,6 +95,25 @@ export async function patchTeamCanvas(productionId: string, patch: Omit<TeamPatc
   return workbenchTransaction(async (tx) => (await applyTeamCanvasPatch(tx, productionId, patch, userId))!);
 }
 
+/**
+ * Which of the elements a canvas's cards (and a patch's) stand for are locked
+ * in the elements table: the masters (team-canvas-model guardMasters). The
+ * table decides, never a card's own lock record.
+ */
+export async function masterLocks(client: Pick<Transaction, "execute">, canvas: Pick<TeamCanvas, "nodes" | "removed">, patch?: Pick<TeamPatch, "upsertNodes">): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const n of [...Object.values(canvas.nodes), ...Object.values(canvas.removed), ...(patch?.upsertNodes ?? [])])
+    if (typeof n?.elementId === "string" && ID.test(n.elementId)) ids.add(n.elementId);
+  const locked = new Set<string>();
+  const all = [...ids];
+  for (let start = 0; start < all.length; start += 500) {
+    const batch = all.slice(start, start + 500);
+    const rows = (await client.execute({ sql: `SELECT id FROM elements WHERE locked=1 AND id IN (${batch.map(() => "?").join(",")})`, args: batch })).rows;
+    for (const row of rows) locked.add(String(row.id));
+  }
+  return locked;
+}
+
 /** The canvas row as it is inside the caller's transaction (null: nobody has opened this production's canvas yet). */
 export async function readCanvasRow(tx: Transaction, productionId: string): Promise<{ canvas: TeamCanvas; revision: number } | null> {
   const row = (await tx.execute({ sql: "SELECT body,revision FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
@@ -128,21 +147,26 @@ export async function writeCanvasRow(tx: Transaction, productionId: string, next
  * production whose canvas nobody has opened yet is left alone: the first Rig
  * to open it brings the whole draft.
  *
+ * Writes that would change a locked master do not land (guardMasters, against
+ * the elements table); `masterHolds` says which. `trusted`: the master lock's
+ * own write of a card's lock record (lib/masters.ts), which nothing else sends.
+ *
  * `held`: cards a server operation made that this patch's removals would have
  * taken off although it only implied them (heldRemoval). They stay, and the
  * live room is told to hold them too (a re-assert, pushed like any server
  * change), so a window that lost them to a stale view gets them back.
  */
-export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false, options: { implied?: boolean } = {}) {
+export async function applyTeamCanvasPatch(tx: Transaction, productionId: string, patch: Omit<TeamPatch, "at">, userId: string, onlyIfShared = false, options: { implied?: boolean; trusted?: boolean } = {}) {
   const saved = await readCanvasRow(tx, productionId);
   if (!saved && onlyIfShared) return null;
   const current = saved?.canvas ?? emptyTeamCanvas();
   const stamped = { ...patch, at: canvasClock(current), author: userId, implied: options.implied || undefined };
-  const held = heldRemovals(current, stamped);
-  const next = applyTeamPatch(current, stamped);
+  const guarded = options.trusted ? { patch: stamped, held: [] as MasterHold[] } : guardMasters(current, stamped, { locks: await masterLocks(tx, current, stamped) });
+  const held = heldRemovals(current, guarded.patch);
+  const next = applyTeamPatch(current, guarded.patch, "trusted");
   const revision = await writeCanvasRow(tx, productionId, next, saved?.revision ?? 0, userId);
   if (held.length) await logReassert(tx, productionId, next, held, revision);
-  return { canvas: next, revision, held };
+  return { canvas: next, revision, held, masterHolds: guarded.held };
 }
 
 /** Records that the server keeps these cards on the canvas: an outbox row the room takes like any server change. */

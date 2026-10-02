@@ -10,7 +10,7 @@ import { engineMock } from '@/lib/mock';
 import { paidByPlatform } from '@/lib/platformSpend';
 import { textVendor } from '@/lib/openai-direct';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
-import { DevelopmentError, developmentRequestSchema, developmentState, listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep } from '@/lib/workbench/development-server';
+import { DevelopmentError, developmentRequestSchema, developmentState, listDevelopmentJobs, listVerifications, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep } from '@/lib/workbench/development-server';
 import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +45,8 @@ export const GET = withTenant(async (req: Request) => {
   const url = new URL(req.url), projectId = url.searchParams.get('projectId'), requestId = url.searchParams.get('requestId') ?? undefined;
   if (!projectId || !/^[a-zA-Z0-9-]{1,100}$/.test(projectId) || (requestId && !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) return response({ error: 'Choose a saved project and a valid request identity.' }, 400);
   try {
+    /* The production's Verify checks (the Rig's scorecards and the Takes badges): stored results, read free. */
+    if (url.searchParams.get('verifications') === '1') return response(await listVerifications(auth.user.id, projectId));
     const jobId = url.searchParams.get('jobId'), offset = Number(url.searchParams.get('offset') ?? 0);
     if (jobId) {
       if (!/^wb_development_[a-f0-9-]+$/.test(jobId) || !Number.isSafeInteger(offset) || offset < 0) return response({ error: 'Choose a valid result section.' }, 400);

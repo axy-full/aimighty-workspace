@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { DraftRequestError, draftBody, draftRequest } from "@/lib/workbench/draft-request";
-import type { Project } from "@/lib/workbench/studio";
+import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import {
-  catchUpForTeam, diffForTeam, joinTeamCanvas, landedWrite, orderedIds, overlay, plainJson, roomPeer, withTeamCanvas, writeRoom,
-  type RoomDrag, type RoomPeer, type RoomPoint, type RoomStorage, type TeamCanvasView, type TeamPatch,
+  MASTER_NODE_FIELDS, catchUpForTeam, diffForTeam, guardMasters, joinTeamCanvas, landedWrite, masterView, orderedIds, overlay, plainJson, restoreHeld, roomPeer, withTeamCanvas, writeRoom,
+  type MasterHold, type RoomDrag, type RoomPeer, type RoomPoint, type RoomStorage, type TeamCanvasView, type TeamPatch,
 } from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -45,7 +45,8 @@ type Canvas = TeamCanvasView;
 type LiveRoom = Room<Presence, Storage>;
 /** The newest change the server made to the canvas (canvas-ops-log latestServerChange). */
 export type ServerChange = { seq: number; at: number; what: string; agent: boolean };
-export type TidyOutcome = { ok: true; moved: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
+/** `moved`: cards the Tidy moved; `sections`: section titles it made (lib/workspace/rig-board.ts). */
+export type TidyOutcome = { ok: true; moved: number; sections: number; live: "sent" | "waiting" | "off" } | { ok: false; error: string };
 
 export type TeamCanvasApi = {
   /** "live" once in the room; "saved" when only the server copy is shared; "off" before a project is saved. */
@@ -63,6 +64,20 @@ export type TeamCanvasApi = {
   tidy: () => Promise<TidyOutcome>;
   /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
   refresh: () => Promise<void>;
+  /** The locked elements this window knows of (the masters): from the canvas's read, a lock or unlock here, and edits the server held. */
+  locks: ReadonlySet<string>;
+  /** A lock or unlock this window made (or learned of). */
+  learnLock: (elementId: string, locked: boolean) => void;
+  /** A card as the server now holds it after a lock or unlock: into the live room as it is (the server wrote it, so it is not sent again). */
+  writeServer: (node: CanvasNode, fields: string[]) => void;
+};
+
+/** A held write as the route answers it: the card (or asset) as the canvas holds it comes with it. */
+type HeldAnswer = MasterHold & { node?: CanvasNode; asset?: Asset };
+/** The masters a canvas read names (GET's `locks`: locked elements, from the elements table). */
+const locksOf = (answer: unknown): Set<string> => {
+  const locks = (answer as { locks?: unknown } | null)?.locks;
+  return new Set(Array.isArray(locks) ? locks.filter((id): id is string => typeof id === "string") : []);
 };
 
 const API = "/api/workbench/team-canvas";
@@ -150,6 +165,35 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   const writeLive = useRef<((patch: TeamPatch) => void) | null>(null);
   /* Edits made before the canvas has loaded: kept, laid over it on arrival, then sent. */
   const early = useRef<{ pid: string; patch: TeamPatch } | null>(null);
+  /* The masters this window knows of (locked elements), for the production it is on. The server decides; this only keeps
+     the window from showing, or rendering with, an edit to a master the server will not take. */
+  const [lockState, setLockState] = useState<{ pid: string; locks: ReadonlySet<string> } | null>(null);
+  const locksRef = useRef<{ pid: string | null; locks: ReadonlySet<string> }>({ pid: null, locks: new Set() });
+  const setLocks = useCallback((pid: string, next: ReadonlySet<string>) => {
+    locksRef.current = { pid, locks: next };
+    setLockState({ pid, locks: next });
+  }, []);
+  const locks = useMemo<ReadonlySet<string>>(() => (productionId && lockState?.pid === productionId ? lockState.locks : new Set()), [productionId, lockState]);
+  const locksFor = useCallback((pid: string): ReadonlySet<string> => (locksRef.current.pid === pid ? locksRef.current.locks : new Set<string>()), []);
+  /* Set once in the room: a card as the server holds it, written there as it is. */
+  const writeTrusted = useRef<((node: CanvasNode, fields: string[] | null) => void) | null>(null);
+
+  /* The server held part of an edit (a write to a locked master): the window learns that master, puts back what the canvas holds, and says so. */
+  const handleHeld = useCallback((pid: string, held: HeldAnswer[]) => {
+    const learned = held.map((h) => h.elementId).filter((id): id is string => !!id);
+    if (learned.length) setLocks(pid, new Set([...locksFor(pid), ...learned]));
+    const nodes = Object.fromEntries(held.filter((h) => h.nodeId && h.node).map((h) => [h.nodeId!, h.node!]));
+    const assets = Object.fromEntries(held.filter((h) => h.assetId && h.asset).map((h) => [h.assetId!, h.asset!]));
+    if (joined.current !== pid) return;
+    /* The master as the canvas holds it, whole identity and all (its element and lock record too): so a window that
+       never heard of the lock now shows the card as the master it is. */
+    const back = held.map((h) => (h.nodeId && h.node && !h.removal ? { ...h, fields: [...MASTER_NODE_FIELDS] } : h));
+    fold((p) => (p.productionProjectId === pid ? restoreHeld(p, back, nodes, assets) : p));
+    /* A room this window wrote the held edit into takes back what the canvas holds. */
+    for (const h of back) if (h.nodeId && h.node) writeTrusted.current?.(h.node, h.removal ? null : h.fields);
+    const names = [...new Set(held.map((h) => (h.nodeId ? nodes[h.nodeId]?.title : null)).filter(Boolean))];
+    toast(`${names.length ? names.join(", ") : "A card"} ${names.length > 1 ? "are locked masters" : "is a locked master"}: that edit did not change ${names.length > 1 ? "them" : "it"}. An admin can unlock a master.`);
+  }, [fold, toast, setLocks, locksFor]);
 
   const send = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -162,7 +206,8 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
         /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
            (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
         const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
-        await draftRequest(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
+        const answer = await draftRequest<{ held?: unknown } | null>(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
+        if (answer && Array.isArray(answer.held) && answer.held.length) handleHeld(pid, answer.held as HeldAnswer[]);
       } finally {
         const left = (inflight.current.get(pid) ?? []).filter((p) => p !== patch);
         if (left.length) inflight.current.set(pid, left);
@@ -205,7 +250,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       }
     }));
     if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
-  }, [scope, outbox, toast]);
+  }, [scope, outbox, toast, handleHeld]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
@@ -244,11 +289,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     catch { return; }
     /* Only while this window still shows that production with no live room: a room carries server changes itself. */
     if (!isCanvasAnswer(saved) || joined.current !== pid || room.current) return;
+    /* The masters as the elements table has them now. */
+    const known = locksOf(saved);
+    setLocks(pid, known);
     const pending: (TeamPatch | null)[] = [...(catchUps.current.get(pid) ?? []), ...(inflight.current.get(pid) ?? []), outbox.peek(pid)];
-    const canvas = pending.reduce<Canvas>((at, patch) => overlay(at, patch), saved.canvas ?? EMPTY);
+    const canvas = pending.reduce<Canvas>((at, patch) => overlay(at, patch, known), saved.canvas ?? EMPTY);
     fold((p) => withTeamCanvas(p, canvas));
     noteServer(pid, isServerChange(saved.server) ? saved.server : null, true);
-  }, [scope, outbox, fold, noteServer]);
+  }, [scope, outbox, fold, noteServer, setLocks]);
 
   /* Open the production's canvas, fold it in, then join its live room if there is one. */
   useEffect(() => {
@@ -265,11 +313,15 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       if (!isCanvasAnswer(saved)) return;
       const draft = current();
       if (!draft) return;
-      /* What this window changed while the canvas was loading is newer than the canvas: it wins. What a merge brought in
-         meanwhile lands where the canvas still holds what this window had. */
+      /* The masters on this canvas, as the elements table has them. */
+      const known = locksOf(saved);
+      setLocks(productionId, known);
+      /* What this window changed while the canvas was loading is newer than the canvas: it wins (except on a locked
+         master, which stays as the canvas holds it). What a merge brought in meanwhile lands where the canvas still
+         holds what this window had. */
       const mine = early.current?.pid === productionId ? early.current.patch : null;
       early.current = null;
-      const canvas: Canvas = [...(catchUps.current.get(productionId) ?? []), mine].reduce<Canvas>((at, patch) => overlay(at, patch), saved.canvas ?? EMPTY);
+      const canvas: Canvas = [...(catchUps.current.get(productionId) ?? []), mine].reduce<Canvas>((at, patch) => overlay(at, patch, known), saved.canvas ?? EMPTY);
       const joinedCanvas = joinTeamCanvas(draft, canvas, Date.now());
       const outgoing = mine && joinedCanvas.patch ? mergePatches(mine, joinedCanvas.patch) : mine ?? joinedCanvas.patch;
       joined.current = productionId;
@@ -306,15 +358,26 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
       /* The fields an edit changed, over the room's node: a teammate's edit to another field stands (and a catch-up lands
          only where the room still holds what this window had). The server's own changes reach the room the same way. */
-      const write = (patch: TeamPatch) => live.batch(() => writeRoom(roomOf(root), patch));
+      const write = (sent: TeamPatch) => live.batch(() => {
+        /* Never onto a locked master this window knows of: the room holds what the server would. */
+        const masters = locksFor(productionId);
+        writeRoom(roomOf(root), masters.size ? guardMasters(masterView(readStorage(root)), sent, { locks: masters }).patch : sent);
+      });
       writeLive.current = write;
+      /* A card as the server holds it (after a lock, or an edit it held): the fields named, or the card whole (`null`). */
+      writeTrusted.current = (node, fields) => live.batch(() => {
+        const nodes = root.get("nodes");
+        const next = fields ? landedWrite(nodes.get(node.id) as unknown as CanvasNode | undefined, undefined, node, { fields: { [node.id]: fields } }) : node;
+        if (next) nodes.set(node.id, plainJson(next) as unknown as Json);
+      });
 
       /* Alone in the room: the saved canvas is the truth, so the room starts from it.
          With teammates already editing: the room is ahead of the server; take it, then add what only this draft had. */
-      const truth = { ...canvas, ...(outgoing ? {
-        nodes: { ...canvas.nodes, ...Object.fromEntries(outgoing.upsertNodes.flatMap((n) => { const next = landedWrite(canvas.nodes[n.id], undefined, n, outgoing); return next ? [[n.id, next]] : []; })) },
-        assets: { ...canvas.assets, ...Object.fromEntries(outgoing.upsertAssets.map((a) => [a.id, a])) },
-        order: outgoing.order ?? canvas.order,
+      const safe = outgoing && known.size ? guardMasters(masterView(canvas), outgoing, { locks: known }).patch : outgoing;
+      const truth = { ...canvas, ...(safe ? {
+        nodes: { ...canvas.nodes, ...Object.fromEntries(safe.upsertNodes.flatMap((n) => { const next = landedWrite(canvas.nodes[n.id], undefined, n, safe); return next ? [[n.id, next]] : []; })) },
+        assets: { ...canvas.assets, ...Object.fromEntries(safe.upsertAssets.map((a) => [a.id, a])) },
+        order: safe.order ?? canvas.order,
       } : {}) };
       if (live.getOthers().length === 0) {
         live.batch(() => {
@@ -342,6 +405,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       for (const unsub of unsubs) unsub();
       room.current = null;
       writeLive.current = null;
+      writeTrusted.current = null;
       leave?.();
       void send();
       joined.current = null;
@@ -409,14 +473,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     } catch (error) {
       return { ok: false, error: error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 ? error.message : TIDY_FAILED };
     }
-    const v = (answer ?? {}) as { moved?: unknown; live?: unknown };
+    const v = (answer ?? {}) as { moved?: unknown; sections?: unknown; live?: unknown };
     if (typeof v.moved !== "number") return { ok: false, error: TIDY_FAILED };
     const live = v.live === "sent" || v.live === "waiting" ? v.live : "off";
     /* No live room: it is here now, and teammates' windows fold it in on their next check. With a room, the room brings it;
        one the room could not take yet goes out again on the next read of the canvas. */
     if (!room.current) await foldServer(pid);
     else if (live === "waiting") setTimeout(() => void draftRequest(`${API}?productionId=${encodeURIComponent(pid)}&head=1`, scope).catch(() => null), 3000);
-    return { ok: true, moved: v.moved, live };
+    return { ok: true, moved: v.moved, sections: typeof v.sections === "number" ? v.sections : 0, live };
   }, [scope, send, foldServer]);
 
   const refresh = useCallback(async () => {
@@ -424,5 +488,14 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     if (pid && !room.current) await foldServer(pid);
   }, [foldServer]);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh };
+  const learnLock = useCallback((elementId: string, locked: boolean) => {
+    const pid = joined.current;
+    if (!pid) return;
+    const next = new Set(locksFor(pid));
+    if (locked) next.add(elementId); else next.delete(elementId);
+    setLocks(pid, next);
+  }, [locksFor, setLocks]);
+  const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
+
+  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh, locks, learnLock, writeServer };
 }

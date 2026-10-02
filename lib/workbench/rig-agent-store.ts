@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import { db, now, ready } from "@/lib/db";
+import type { PreparedAdmission } from "../admissionTypes";
 import type { CanvasOp, OpOutcome } from "./canvas-ops-model";
-import type { CompiledPlan, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
+import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
 
 /*
  * rig_agent_runs and rig_agent_steps: an Atomik run on a production's Rig
@@ -17,9 +18,12 @@ import type { CompiledPlan, RigAgentState, RigAgentStepState, StepTool } from ".
  *  - A step is one batch of canvas operations with its op id (applying it again
  *    changes nothing), its state and what became of each operation — including
  *    the ones a person's edit held. Priced steps (a render) and person-only
- *    ones (locking a master) are kept as `next`: shown, never run by this build.
- *    The columns later steps need (a request key, a job, credits reserved and
- *    settled) are here, empty: nothing in a build is paid.
+ *    ones (locking a master) are kept as `next`: shown, never run by the build.
+ *  - After the build, a render is a paid step (lib/workbench/rig-agent-runs.ts):
+ *    its price (the prepared admission, server-only), who approved it and at
+ *    which price, its durable request key (saved before anything is sent), the
+ *    job it made, and the credits reserved and settled for it. A run records
+ *    the limit a person approved for it and every change to that limit.
  */
 
 type Executor = Pick<Client, "execute"> | Transaction;
@@ -59,6 +63,8 @@ const SCHEMA = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_rig_agent_runs_active ON rig_agent_runs(production_id) WHERE state IN ('planning','awaiting_approval','running','paused')`,
   `CREATE INDEX IF NOT EXISTS idx_rig_agent_runs_production ON rig_agent_runs(production_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_rig_agent_runs_wake ON rig_agent_runs(wake_at) WHERE wake_at IS NOT NULL`,
+  /* The same, including a run that waits for a person (needs_you): a stop or its end frees the production. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_rig_agent_runs_live ON rig_agent_runs(production_id) WHERE state IN ('planning','awaiting_approval','running','paused','needs_you')`,
   `CREATE TABLE IF NOT EXISTS rig_agent_steps (
      id TEXT PRIMARY KEY,
      run_id TEXT NOT NULL,
@@ -82,6 +88,30 @@ const SCHEMA = [
    )`,
 ];
 
+/** Additive columns for paid work, on tables an earlier version may already have made. */
+const COLUMNS: Record<string, [string, string][]> = {
+  rig_agent_runs: [["limits", "TEXT"], ["plan_charge", "TEXT"]],
+  rig_agent_steps: [
+    ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
+    ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
+  ],
+};
+const INDEXES = [
+  `CREATE INDEX IF NOT EXISTS idx_rig_agent_steps_job ON rig_agent_steps(job_id) WHERE job_id IS NOT NULL`,
+];
+
+async function addColumns(client: Client) {
+  for (const [table, columns] of Object.entries(COLUMNS)) {
+    const have = new Set((await client.execute(`PRAGMA table_info(${table})`)).rows.map((row) => String(row.name)));
+    for (const [column, type] of columns) {
+      if (have.has(column)) continue;
+      try { await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); }
+      catch (error) { if (!/duplicate column/i.test(String(error))) throw error; }
+    }
+  }
+  await client.batch(INDEXES, "write");
+}
+
 const created = new WeakMap<object, Promise<void>>();
 /** Creates the tables on first use (idempotent). */
 export async function rigAgentReady() {
@@ -89,7 +119,7 @@ export async function rigAgentReady() {
   const client = db();
   let pending = created.get(client);
   if (!pending) {
-    pending = client.batch(SCHEMA, "write").then(() => {}).catch((error) => { created.delete(client); throw error; });
+    pending = client.batch(SCHEMA, "write").then(() => addColumns(client)).catch((error) => { created.delete(client); throw error; });
     created.set(client, pending);
   }
   await pending;
@@ -102,18 +132,48 @@ export async function rigAgentExists(executor: Executor = db()): Promise<boolean
 
 export type UndoRecord = { removed: number; kept: number; reasons: string[] };
 export type PlanUsage = { model: string; inputTokens: number; outputTokens: number; steps: number };
+/** One approval of a run's limit: at the ask, or a raise later (only ever by the person who asked). */
+export type LimitRecord = { credits: number; mode: RigAgentMode; jobCeiling: number; by: string; at: number };
+/** The planning turn's charge: reserved at its ceiling while Atomik plans, then settled at what it used, or released. */
+export type PlanCharge = "reserved" | "settled" | "released";
+/** Why a paid step waits for a person. */
+export type PauseKind = "limit" | "credits" | "admin" | "refused" | "unpriced" | "record";
 
 export type RunRow = {
-  id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; mode: string;
+  id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; mode: RigAgentMode;
   model: string; state: RigAgentState; reason: string | null; plan: CompiledPlan | null; fingerprint: string | null;
   planningStartedAt: number | null; approvedAt: number | null; approvedBy: string | null; finishedAt: number | null;
   undoneAt: number | null; undoneBy: string | null; undo: UndoRecord | null;
+  /** The limit the person approved for the run, in credits (null: asked before limits, so nothing after the build is paid). */
+  capCredits: number | null;
+  /** The per-job line in force when the limit was approved: Auto never runs a render priced above it (nor above today's). */
+  perJobCap: number | null;
+  limits: LimitRecord[];
+  planCharge: PlanCharge | null;
   leaseUntil: number; wakeAt: number | null; createdAt: number; updatedAt: number;
 };
 
 export type StepRow = {
   id: string; runId: string; seq: number; tool: StepTool; label: string; purpose: string; nodeId: string | null;
   attempt: number; ops: CanvasOp[]; opId: string | null; state: RigAgentStepState; result: OpOutcome[] | null;
+  /** The saved request key of the paid attempt now being sent (`rig-agent:<runId>:<nodeId>:take:<attempt>`). */
+  requestKey: string | null;
+  jobId: string | null;
+  creditsReserved: number | null;
+  creditsSettled: number | null;
+  /** The render as priced (server-only): admitted exactly as approved, or refused when it changed. */
+  admission: PreparedAdmission | null;
+  quoteCredits: number | null;
+  band: number | null;
+  approvedAt: number | null;
+  /** A user id (a tap), or `auto` (Auto mode, under the per-job line). */
+  approvedBy: string | null;
+  /** The price the approval covers: the admission's quote fingerprint. */
+  approvedFingerprint: string | null;
+  reason: string | null;
+  pause: PauseKind | null;
+  settledAt: number | null;
+  outcome: "not_billed" | "charged" | "unknown" | null;
 };
 
 const parse = <T,>(text: unknown, fallback: T): T => { if (text == null) return fallback; try { return JSON.parse(String(text)) as T; } catch { return fallback; } };
@@ -123,10 +183,12 @@ const str = (v: unknown) => (v == null ? null : String(v));
 function runOf(r: Record<string, unknown>): RunRow {
   return {
     id: String(r.id), productionId: String(r.production_id), draftId: String(r.draft_id), owner: String(r.owner), requestId: String(r.request_id),
-    goal: String(r.goal), mode: String(r.mode), model: String(r.model), state: String(r.state) as RigAgentState, reason: str(r.reason),
+    goal: String(r.goal), mode: r.mode === "auto" ? "auto" : "ask", model: String(r.model), state: String(r.state) as RigAgentState, reason: str(r.reason),
     plan: parse<CompiledPlan | null>(r.plan, null), fingerprint: str(r.plan_fingerprint),
     planningStartedAt: num(r.planning_started_at), approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), finishedAt: num(r.finished_at),
     undoneAt: num(r.undone_at), undoneBy: str(r.undone_by), undo: parse<UndoRecord | null>(r.undo, null),
+    capCredits: num(r.cap_credits), perJobCap: num(r.per_job_cap), limits: parse<LimitRecord[]>(r.limits, []),
+    planCharge: r.plan_charge === "reserved" || r.plan_charge === "settled" || r.plan_charge === "released" ? r.plan_charge : null,
     leaseUntil: Number(r.lease_until ?? 0), wakeAt: num(r.wake_at), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
@@ -136,6 +198,11 @@ function stepOf(r: Record<string, unknown>): StepRow {
     id: String(r.id), runId: String(r.run_id), seq: Number(r.seq), tool: String(r.tool) as StepTool, label: String(r.label), purpose: String(r.purpose),
     nodeId: str(r.node_id), attempt: Number(r.attempt ?? 0), ops: parse<CanvasOp[]>(r.prepared, []), opId: str(r.op_id),
     state: String(r.state) as RigAgentStepState, result: parse<OpOutcome[] | null>(r.result, null),
+    requestKey: str(r.request_key), jobId: str(r.job_id), creditsReserved: num(r.credits_reserved), creditsSettled: num(r.credits_settled),
+    admission: parse<PreparedAdmission | null>(r.admission, null), quoteCredits: num(r.quote_credits), band: num(r.band),
+    approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), approvedFingerprint: str(r.approved_fingerprint),
+    reason: str(r.reason), pause: (str(r.pause) as PauseKind | null), settledAt: num(r.settled_at),
+    outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
   };
 }
 
@@ -158,7 +225,7 @@ export async function runByRequest(executor: Executor, owner: string, requestId:
 }
 
 export async function activeRun(executor: Executor, productionId: string): Promise<RunRow | null> {
-  const row = (await rows(executor, { sql: "SELECT * FROM rig_agent_runs WHERE production_id=? AND state IN ('planning','awaiting_approval','running','paused') LIMIT 1", args: [productionId] }))[0];
+  const row = (await rows(executor, { sql: "SELECT * FROM rig_agent_runs WHERE production_id=? AND state IN ('planning','awaiting_approval','running','paused','needs_you') LIMIT 1", args: [productionId] }))[0];
   return row ? runOf(row) : null;
 }
 
@@ -176,11 +243,17 @@ export function newRunId() {
   return "rar_" + randomUUID().replaceAll("-", "").slice(0, 24);
 }
 
-export async function insertRun(tx: Transaction, run: { id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number }) {
+export async function insertRun(tx: Transaction, run: {
+  id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number;
+  /** The limit the person approved as they asked, the mode, and the per-job line then in force. */
+  limit: { credits: number; mode: RigAgentMode; jobCeiling: number };
+}) {
+  const limits: LimitRecord[] = [{ credits: run.limit.credits, mode: run.limit.mode, jobCeiling: run.limit.jobCeiling, by: run.owner, at: run.at }];
   await tx.execute({
-    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,model,state,lease_until,wake_at,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,'ask',?,'planning',0,?,?,?)`,
-    args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, run.model, run.at, run.at, run.at],
+    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,state,lease_until,wake_at,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?)`,
+    args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, run.limit.mode, run.limit.credits, run.limit.jobCeiling,
+      JSON.stringify(limits), run.model, run.at, run.at, run.at],
   });
 }
 
@@ -188,6 +261,7 @@ type RunPatch = Partial<{
   state: RigAgentState; reason: string | null; plan: CompiledPlan; plan_fingerprint: string; usage: PlanUsage; model: string;
   planning_started_at: number; approved_at: number; approved_by: string; finished_at: number;
   undone_at: number; undone_by: string; undo: UndoRecord; wake_at: number | null;
+  cap_credits: number; limits: LimitRecord[]; plan_charge: PlanCharge;
 }>;
 
 /**
@@ -234,6 +308,42 @@ export async function attemptStep(executor: Executor, stepId: string): Promise<n
   return row ? Number(row.attempt) : 0;
 }
 
+type StepPatch = Partial<{
+  state: RigAgentStepState; attempt: number; request_key: string | null; job_id: string | null;
+  credits_reserved: number | null; credits_settled: number | null; admission: PreparedAdmission | null; quote_credits: number | null;
+  band: number | null; approved_at: number | null; approved_by: string | null; approved_fingerprint: string | null;
+  reason: string | null; pause: PauseKind | null; settled_at: number | null; outcome: StepRow["outcome"];
+}>;
+
+/**
+ * Changes a paid step, only while it is in one of `from` (null: any state). Answers whether it
+ * changed: two ticks, or a tick and a person, never both move the same step.
+ */
+export async function patchStep(executor: Executor, stepId: string, patch: StepPatch, from: readonly RigAgentStepState[] | null = null): Promise<boolean> {
+  const keys = Object.keys(patch) as (keyof StepPatch)[];
+  const values = keys.map((key) => {
+    const value = patch[key];
+    return value !== null && typeof value === "object" ? JSON.stringify(value) : (value ?? null);
+  });
+  const guard = from ? ` AND state IN (${from.map(() => "?").join(",")})` : "";
+  const result = await executor.execute({
+    sql: `UPDATE rig_agent_steps SET ${[...keys.map((key) => `${key}=?`), "updated_at=?"].join(",")} WHERE id=?${guard}`,
+    args: [...values, now(), stepId, ...(from ?? [])] as (string | number | null)[],
+  });
+  return result.rowsAffected > 0;
+}
+
+export async function getStep(executor: Executor, runId: string, seq: number): Promise<StepRow | null> {
+  const row = (await rows(executor, { sql: "SELECT * FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, seq] }))[0];
+  return row ? stepOf(row) : null;
+}
+
+/** The paid step that made a job (the settlement's way back to its run). */
+export async function stepOfJob(executor: Executor, jobId: string): Promise<StepRow | null> {
+  const row = (await rows(executor, { sql: "SELECT * FROM rig_agent_steps WHERE job_id=? LIMIT 1", args: [jobId] }))[0];
+  return row ? stepOf(row) : null;
+}
+
 /** A step that was applied is done, even when a stop marked the rest skipped while it was being applied. */
 export async function finishStep(executor: Executor, stepId: string, outcomes: OpOutcome[]) {
   await executor.execute({ sql: "UPDATE rig_agent_steps SET state='done',result=?,updated_at=? WHERE id=? AND state IN ('queued','skipped')", args: [JSON.stringify(outcomes), now(), stepId] });
@@ -266,6 +376,33 @@ export async function dueRuns(limit: number, at = now()): Promise<string[]> {
   return (await rows(db(), {
     sql: "SELECT id FROM rig_agent_runs WHERE state IN ('planning','running','paused') AND wake_at IS NOT NULL AND wake_at<=? AND lease_until<=? ORDER BY wake_at LIMIT ?",
     args: [at, at, limit],
+  })).map((r) => String(r.id));
+}
+
+/**
+ * Runs that ended (or stopped) with their planning charge still reserved and nobody holding them:
+ * a worker that died while Atomik planned. The cron releases them (lib/workbench/rig-agent.ts).
+ */
+export async function looseCharges(limit: number, olderThan: number, at = now()): Promise<string[]> {
+  if (!(await rigAgentExists())) return [];
+  return (await rows(db(), {
+    sql: "SELECT id FROM rig_agent_runs WHERE plan_charge='reserved' AND state NOT IN ('planning') AND lease_until<=? AND updated_at<=? ORDER BY updated_at LIMIT ?",
+    args: [at, olderThan, limit],
+  })).map((r) => String(r.id));
+}
+
+/**
+ * Runs that ended with a render still marked as being sent, or a take in flight, and nobody holding
+ * them: what the stop could not close yet (a request still being accepted, a take still rendering).
+ * The cron closes them (closeEndedSteps, lib/workbench/rig-agent-runs.ts); free reads, never a send.
+ */
+export async function looseSteps(limit: number, at = now()): Promise<string[]> {
+  if (!(await rigAgentExists())) return [];
+  return (await rows(db(), {
+    sql: `SELECT r.id FROM rig_agent_runs r WHERE r.state IN ('stopped','failed','done') AND r.lease_until<=?
+          AND EXISTS (SELECT 1 FROM rig_agent_steps s WHERE s.run_id=r.id AND s.purpose='take' AND s.state IN ('sending','rendering'))
+          ORDER BY r.updated_at LIMIT ?`,
+    args: [at, limit],
   })).map((r) => String(r.id));
 }
 

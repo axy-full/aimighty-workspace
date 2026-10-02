@@ -1,6 +1,6 @@
 import type { Reference } from "./ark";
 import { GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS, genjutsuVariantForModel, type GenjutsuResolution } from "./genjutsuTypes";
-import { HiggsfieldHttpError, higgsfieldCredentials } from "./higgsfield";
+import { HiggsfieldHttpError, higgsfieldCredentials, higgsfieldKeyHeaders } from "./higgsfield";
 import { marketingJson, MarketingError } from "./higgsfieldMarketing";
 import { engineMock } from "./mock";
 import { withRecoveryActivity } from "./recovery";
@@ -49,10 +49,10 @@ export async function estimateGenjutsuInput(model: string, input: Awaited<Return
   const endpoint = `https://api.higgsfield.ai/estimate/${genjutsuPath(model)}`;
   if (engineMock()) return 0.75; // Synthetic fixture price only.
   return withRecoveryActivity("external-read", async () => {
-    const { keyId, keySecret } = higgsfieldCredentials();
+    const credentials = higgsfieldCredentials();
     try {
       const response = await fetch(endpoint, { method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(20_000),
-        headers: { Authorization: `Key ${keyId}:${keySecret}`, "Content-Type": "application/json" }, body: JSON.stringify(input) });
+        headers: higgsfieldKeyHeaders(credentials), body: JSON.stringify(input) });
       if (!response.ok) { await response.body?.cancel(); throw new Error("quote unavailable"); }
       const result = await marketingJson(response);
       const usd = typeof result.usd === "string" && /^\d+(?:\.\d+)?$/.test(result.usd) ? Number(result.usd) : NaN;
