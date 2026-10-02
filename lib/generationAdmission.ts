@@ -132,6 +132,7 @@ import {
   prepareAdmission,
   admitPrepared,
   assertAdmissionActor,
+  refuseUnsentTake,
 } from "./admissionSupport";
 
 /**
@@ -322,6 +323,22 @@ async function inPoolLine(
     { id: genId, status: "held", held: true, why: "slots", notices: [POOL_QUEUED] },
     { status: 202 },
   );
+}
+
+/**
+ * Park a take its reservation found the shared pool full for (lib/held.ts
+ * holdForPool). False when it could not be held: it ended a moment before, or
+ * the hold could not be written. Then it is refused like any take its
+ * reservation turns away. A hold that throws is logged with the take's id;
+ * it never escapes to leave the take running, unreserved and in no line.
+ */
+async function heldForPool(genId: string, waits: HeldInfo): Promise<boolean> {
+  try {
+    return await holdForPool(genId, waits);
+  } catch (error) {
+    console.error(`generate ${genId}: not held for the shared pool —`, (error as Error).message);
+    return false;
+  }
 }
 
 /**
@@ -1475,17 +1492,11 @@ export async function executeGenerationAdmission(
             status: "failed",
             engineCostUsd: 0,
           });
-          await db().execute({
-            sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-            args: [(e as Error).message, now(), started.genId],
-          });
-          return admissionReply(
-            {
-              id: started.genId,
-              status: "failed",
-              error: (e as Error).message,
-            },
-            { status: e instanceof SpendReservationError ? e.status : 503 },
+          /* Failed, unless it ended a moment before: then it stays as it is, and the reply says so. */
+          return refuseUnsentTake(
+            started.genId,
+            (e as Error).message,
+            e instanceof SpendReservationError ? e.status : 503,
           );
         }
         await options.defer(() =>
@@ -1668,20 +1679,13 @@ export async function executeGenerationAdmission(
         /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
            run's take never waits held (it could start later by itself, outside the run's approved limit): it is
            refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
-           could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
-           charged — never that it waits in line. */
+           could not be held (discarded or ended a moment before, or its hold could not be written) fails the same
+           way, and says so: not sent, nothing charged — never that it waits in line. One that ended a moment before
+           keeps its end, and the reply says what it is. */
         const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estStillUsd, "image", modelId, "slots") : null;
-        if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+        if (waits && (await heldForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
         const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
-        await db().execute({
-          sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-          args: [error, now(), genId],
-        });
-        invalidate(PROJECTS_KEY);
-        return admissionReply(
-          { id: genId, status: "failed", error },
-          { status: e instanceof SpendReservationError ? e.status : 503 },
-        );
+        return refuseUnsentTake(genId, error, e instanceof SpendReservationError ? e.status : 503);
       }
 
       /* The render itself now belongs to the worker: the row is written, the
@@ -2343,20 +2347,13 @@ export async function executeGenerationAdmission(
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
          run's take never waits held (it could start later by itself, outside the run's approved limit): it is
          refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
-         could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
-         charged — never that it waits in line. */
+         could not be held (discarded or ended a moment before, or its hold could not be written) fails the same
+         way, and says so: not sent, nothing charged — never that it waits in line. One that ended a moment before
+         keeps its end, and the reply says what it is. */
       const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estUsd, "video", modelId, "slots") : null;
-      if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+      if (waits && (await heldForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
       const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
-      await db().execute({
-        sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-        args: [error, now(), genId],
-      });
-      invalidate(PROJECTS_KEY);
-      return admissionReply(
-        { id: genId, status: "failed", error },
-        { status: e instanceof SpendReservationError ? e.status : 503 },
-      );
+      return refuseUnsentTake(genId, error, e instanceof SpendReservationError ? e.status : 503);
     }
 
     if (!(await enqueueRender(genId, "video")))

@@ -879,7 +879,12 @@ export async function startIdentityStill(opts: {
     await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",
                   engineCostUsd: renderUsdForRatio(opts.ratio), projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
   } catch (e) {
-    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] }).catch(() => {});
+    /* Only a take that has not ended fails here (lib/admissionSupport.ts refuseUnsentTake): one cancelled a moment before stays so. */
+    await db().execute({
+      sql: `UPDATE generations SET status='failed', error=?, updated_at=?
+            WHERE id=? AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL`,
+      args: [(e as Error).message, now(), genId],
+    }).catch(() => {});
     invalidate(PROJECTS_KEY);
     throw e;
   }

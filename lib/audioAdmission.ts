@@ -57,6 +57,7 @@ import {
   prepareAdmission,
   admitPrepared,
   assertAdmissionActor,
+  refuseUnsentTake,
 } from "./admissionSupport";
 
 const MAX_TEXT = 5000;
@@ -484,30 +485,38 @@ export async function executeAudioAdmission(
         modelId,
         e.status === 402 ? "credits" : "slots",
       );
-      await db().execute({
-        sql: `UPDATE generations SET status='held',params=json_set(params,'$.held',json(?)),updated_at=? WHERE id=?`,
-        args: [JSON.stringify(held), now(), genId],
-      });
-      return admissionReply(
-        {
-          id: genId,
-          status: "held",
-          held: true,
-          why: held.why,
-          needs: held.needs,
-          notices: [e.message],
-        },
-        { status: 202 },
-      );
+      /* Held only while it has not ended (holdForPool's guard, lib/held.ts): a take cancelled or ended a moment
+         before is never brought back to wait, and start, later. A hold that could not be written is refused below. */
+      let parked = false;
+      try {
+        const out = await db().execute({
+          sql: `UPDATE generations SET status='held',params=json_set(params,'$.held',json(?)),updated_at=?
+                WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL`,
+          args: [JSON.stringify(held), now(), genId],
+        });
+        parked = out.rowsAffected > 0;
+      } catch (error) {
+        console.error(`audio ${genId}: not held —`, (error as Error).message);
+      }
+      if (parked)
+        return admissionReply(
+          {
+            id: genId,
+            status: "held",
+            held: true,
+            why: held.why,
+            needs: held.needs,
+            notices: [e.message],
+          },
+          { status: 202 },
+        );
     }
-    await db().execute({
-      sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-      args: [(e as Error).message, now(), genId],
-    });
-    invalidate(PROJECTS_KEY);
-    return admissionReply(
+    /* Failed, unless it ended a moment before: then it stays as it is, and the reply says so. */
+    return refuseUnsentTake(
+      genId,
+      (e as Error).message,
+      e instanceof SpendReservationError ? e.status : 503,
       { error: (e as Error).message },
-      { status: e instanceof SpendReservationError ? e.status : 503 },
     );
   }
 

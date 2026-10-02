@@ -8,7 +8,8 @@ import type {
   PrepareAdmissionResult,
 } from "./admissionTypes";
 import { currentTenant, requireTenant } from "./tenant";
-import { db } from "./db";
+import { db, now } from "./db";
+import { invalidate, PROJECTS_KEY } from "./cache";
 import { creditsApply, quotedCredits } from "./credits";
 import type { EstimateTerms } from "./billingTerms";
 import { billedTo } from "./providers";
@@ -29,6 +30,42 @@ export function admissionResponse(reply: AdmissionReply): Response {
     status: reply.status,
     headers: reply.headers,
   });
+}
+
+/**
+ * A take its reservation turned away, with nothing reserved, sent or charged
+ * for it, fails with `error`. The reply is `failed` (by default the take's id,
+ * "failed" and `error`) at `httpStatus`.
+ *
+ * Only a take that has not ended moves: still queued or running, and never
+ * claimed for its paid send (the guard holdForPool uses, lib/held.ts). A take
+ * cancelled, discarded or ended a moment before by another path keeps its own
+ * status and words, and the reply says what it is, never "failed", at the same
+ * `httpStatus`. A hidden take is ended all the same: hiding does not stop a
+ * take, and one left queued or running would never be swept (lib/jobs.ts
+ * syncPending and lib/renderDispatch.ts read visible takes only).
+ */
+export async function refuseUnsentTake(
+  id: string,
+  error: string,
+  httpStatus: number,
+  failed: Record<string, unknown> = { id, status: "failed", error },
+): Promise<AdmissionReply> {
+  const out = await db().execute({
+    sql: `UPDATE generations SET status='failed', error=?, updated_at=?
+          WHERE id=? AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL`,
+    args: [error, now(), id],
+  });
+  if (out.rowsAffected) {
+    invalidate(PROJECTS_KEY);
+    return admissionReply(failed, { status: httpStatus });
+  }
+  const take = (await db().execute({ sql: "SELECT status, error FROM generations WHERE id=?", args: [id] })).rows[0];
+  if (!take) return admissionReply(failed, { status: httpStatus });
+  return admissionReply(
+    { id, status: String(take.status), ...(take.error == null ? {} : { error: String(take.error) }) },
+    { status: httpStatus },
+  );
 }
 
 /** The executor must restore a freshly authorized actor into tenant scope, never a snapshot role. */
