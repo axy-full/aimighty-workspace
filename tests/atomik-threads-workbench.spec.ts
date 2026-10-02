@@ -169,6 +169,44 @@ async function floors(page: Page, scope: string, whole?: string) {
   }
 }
 
+/**
+ * The rail (components/ui/Rail.tsx) in a short window (max-height 500px, a phone on its side): its body keeps its
+ * natural height and the whole rail scrolls as one column, so the Threads row never scrolls inside a strip squeezed
+ * down to the body's padding, and the composer's Send is reached by scrolling the rail. Nothing to check on a phone's
+ * sheet (it is not the rail) or in a taller window (the body scrolls between the pinned header and footer there).
+ */
+async function shortRail(page: Page) {
+  return page.evaluate(() => {
+    const rail = document.querySelector<HTMLElement>("aside.ui-rail[aria-label='Atomik']");
+    if (!rail || !matchMedia("(max-height: 500px)").matches) return [];
+    const body = rail.querySelector<HTMLElement>(":scope > header + div")!;
+    const out: string[] = [];
+    if (getComputedStyle(body).overflowY !== "visible" || body.scrollHeight > body.clientHeight + 1)
+      out.push(`the body scrolls on its own: ${body.scrollHeight}px of content in ${body.clientHeight}px (overflow-y ${getComputedStyle(body).overflowY})`);
+    const row = body.querySelector<HTMLElement>("[data-testid='atomik-threads-toggle']");
+    if (!row) out.push("no Threads row in the rail body");
+    else {
+      const r = row.getBoundingClientRect(), b = body.getBoundingClientRect();
+      if (r.top < b.top - 1 || r.bottom > b.bottom + 1) out.push(`the Threads row (${Math.round(r.top)}–${Math.round(r.bottom)}) runs outside the body (${Math.round(b.top)}–${Math.round(b.bottom)})`);
+    }
+    const before = rail.scrollTop;
+    rail.scrollTop = rail.scrollHeight;
+    const send = rail.querySelector<HTMLElement>("footer button[type='submit']");
+    const box = rail.getBoundingClientRect();
+    if (!send) out.push("no Send in the rail's footer");
+    else if (send.getBoundingClientRect().bottom > box.bottom + 1) out.push(`Send ends at ${Math.round(send.getBoundingClientRect().bottom)}, below the rail's ${Math.round(box.bottom)} once it is scrolled to the end`);
+    rail.scrollTop = before;
+    return out;
+  });
+}
+
+/** On a phone or any touch screen the shared composer's Send is a 44px target (min-h-11 alone is 2.75rem, 41px on the 15px root). */
+async function sendTarget(page: Page, scope: Locator) {
+  if (!(await page.evaluate(() => matchMedia("(max-width: 767px), (pointer: coarse)").matches))) return;
+  const send = (await scope.locator("form:has(input[aria-label='Ask Atomik']) button[type='submit']").filter({ visible: true }).first().boundingBox())!;
+  expect(Math.min(send.width, send.height), "Send is a 44px target on touch").toBeGreaterThanOrEqual(43.5);
+}
+
 test("threads in the rail and on a phone: an old link opens the production's conversation as thread 1; a second thread keeps its own plan; switch, rename, archive and restore; a step in thread 2 is approved alone", async ({ page }) => {
   test.setTimeout(300_000);
   const f = await seeded(page);
@@ -185,6 +223,8 @@ test("threads in the rail and on a phone: an old link opens the production's con
   await expect(toggle).toContainText("Thread 1", { timeout: 60_000 });
   await expect(toggle).toContainText("Bottle spot");
   await expect(checkpointOf(page)).toContainText(/Next: push in/i, { timeout: 60_000 });
+  expect(await shortRail(page), "a short window's rail scrolls as one column").toEqual([]);
+  await sendTarget(page, surface);
 
   /* A new thread: the next ask starts it, and the planner plans it there. */
   await threads.getByTestId("atomik-thread-new").click();
@@ -303,6 +343,7 @@ test("the Suites Agent page lists the project's threads; each shows its own plan
   await expect(cont).toContainText(/\d[\d,]*(?:\.\d)? cr/, { timeout: 60_000 });
   await expect(cont).toBeEnabled();
   await floors(page, "[data-testid='atomik-threads-panel'] [data-testid='atomik-threads'], [data-testid='atomik-thread-checkpoint']", "[data-testid='atomik-threads-panel']");
+  await sendTarget(page, panel);
   const rendered = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/generate", { timeout: 60_000 });
   await cont.click();
   expect((await rendered).headers()["idempotency-key"]).toBe(`atomik-step:${f.first.chat}:${f.first.step}`);

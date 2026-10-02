@@ -2,6 +2,7 @@ import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/ge
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
@@ -82,7 +83,7 @@ import {
   type HeldInfo,
 } from "@/lib/held";
 import { POOL_QUEUED, SHARED_POOL, poolAdmission, queueForPool, releasePoolWaiters, type PoolVerdict } from "@/lib/providerPool";
-import { POOL_BUSY_FOR_RUN } from "@/lib/sharedKeyTerms";
+import { POOL_BUSY_UNSENT } from "@/lib/sharedKeyTerms";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
@@ -484,6 +485,10 @@ export async function executeGenerationAdmission(
     // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
     if (cinema && !cinemaStudioEnabled())
       return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
+    /* Its Sound switch is offered only once sound is priced, and in the house workspace, which is metered at cost
+       (lib/cinemaSoundPricing.ts). Anywhere else a take asked for with sound stops here: nothing reserved or sent. */
+    if (cinema && model.supportsAudio && Boolean(body.generateAudio ?? false) && !cinemaSoundOffered(requireTenant()))
+      return admissionReply({ error: CINEMA_SOUND_UNAVAILABLE }, { status: 400 });
     /* Cinema Studio's creative controls: only its documented parameters and values, only on its own engine.
        They direct the shot and never enter the price (lib/cinemaStudio.ts). */
     if (body.cinema != null && !cinema)
@@ -1569,10 +1574,12 @@ export async function executeGenerationAdmission(
       if (soulRender && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before rendering with a Soul ID." }, { status: 400 });
       /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
-         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks.
+         A take the shared pool would hold is refused in the pool's words, never with this workspace's own
+         slot counts: those have room, and the pool is shared by every workspace on the platform's key. */
       if (holdStill && options.run)
         return admissionReply(
-          { error: holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
+          { error: holdStill.pool ? POOL_BUSY_UNSENT : holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
           { status: holdStill.why === "slots" ? 409 : 402 },
         );
 
@@ -1661,10 +1668,12 @@ export async function executeGenerationAdmission(
       } catch (e) {
         /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
            run's take never waits held (it could start later by itself, outside the run's approved limit): it is
-           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
+           could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
+           charged — never that it waits in line. */
         const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estStillUsd, "image", modelId, "slots") : null;
         if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
-        const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
+        const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
         await db().execute({
           sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
           args: [error, now(), genId],
@@ -1851,7 +1860,8 @@ export async function executeGenerationAdmission(
      * Higgsfield's move: the camera is a self-contained, scene-independent
      * block, written precisely enough that the engine cannot read it as a
      * neighbouring move. This attaches one to EVERY render, not just the ones
-     * composed in the Studio.
+     * composed in the Studio — except Cinema Studio's, whose camera is its own
+     * parameter (below).
      *
      * It is not inventing a camera. Either the author named a move — in which
      * case expanding "handheld" into its sixty rigorous words is honouring
@@ -1896,12 +1906,14 @@ export async function executeGenerationAdmission(
         const choice = named ?? fromModel ?? inferred;
 
         /* Cinema Studio takes its camera move, light, camera body and palette as parameters. Where one is
-           picked, that parameter directs the shot and the words get no second, competing module for it. */
+           picked, that parameter directs the shot and the words get no second, competing module for it.
+           Its camera is never written into the words: a picked movement goes as `camera_movement`, and a
+           movement left on Auto is the model's to choose, so no move is named, inferred or expanded for it. */
         const directed = params.cinema ?? {};
         // Camera, plus the light and look the author already named — each from
         // the bank, so the wording is identical on every render that uses it.
         const craft = craftModules({
-          ...(directed.camera_movement ? {} : { [choice.kind]: choice.value }),
+          ...(cinema ? {} : { [choice.kind]: choice.value }),
           light: directed.light ? "" : (spec.light ?? ""),
           look: directed.color_palette || directed.camera_model ? "" : (spec.look ?? ""),
         });
@@ -1994,6 +2006,8 @@ export async function executeGenerationAdmission(
         duration: params.duration,
         hasVideoInput,
         inputSeconds: hasVideoInput ? inputSeconds : undefined,
+        /* With sound, what its measured charge adds (lib/cinemaSoundPricing.ts). */
+        generateAudio: params.generateAudio,
       });
       if (usd == null)
         return admissionReply({ error: "Cinema Studio has no confirmed price for these settings." }, { status: 400 });
@@ -2160,10 +2174,12 @@ export async function executeGenerationAdmission(
       if (stopped) return stopped;
     }
     /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
-       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks.
+       A take the shared pool would hold is refused in the pool's words, never with this workspace's own
+       slot counts: those have room, and the pool is shared by every workspace on the platform's key. */
     if (hold && options.run)
       return admissionReply(
-        { error: hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
+        { error: hold.pool ? POOL_BUSY_UNSENT : hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
         { status: hold.why === "slots" ? 409 : 402 },
       );
 
@@ -2327,10 +2343,12 @@ export async function executeGenerationAdmission(
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
          run's take never waits held (it could start later by itself, outside the run's approved limit): it is
-         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. A take that
+         could not be held (discarded or ended a moment before) fails the same way, and says so: not sent, nothing
+         charged — never that it waits in line. */
       const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estUsd, "video", modelId, "slots") : null;
       if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
-      const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
+      const error = e instanceof ProviderPoolBusyError ? POOL_BUSY_UNSENT : (e as Error).message;
       await db().execute({
         sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
         args: [error, now(), genId],

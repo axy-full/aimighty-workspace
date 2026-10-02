@@ -8,6 +8,8 @@ import { isSoulRenderModel } from '../soulRenderTypes';
 import { elevenConfigured, musicCredits, sfxCredits, usdForCredits } from '../elevenlabs';
 import { composerSettings, type ComposerPicks } from '../workspace/composer';
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime } from '../cinemaStudioTypes';
+import { cinemaStudioQuoteUsd } from '../cinemaStudio';
+import { CINEMA_SOUND_UNAVAILABLE } from '../cinemaSoundPricing';
 
 export class MediaQuoteError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'MediaQuoteError'; }
@@ -98,18 +100,26 @@ function soundProblem(model: ModelDef, refs: ReferencePrices): string | null {
     return `Sound references total ${(refs.audioSeconds ?? 0).toFixed(1)} s. Cinema Studio takes ${CINEMA_STUDIO_LIMITS.maxAudioSeconds} s combined.`;
   return null;
 }
-/** One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the take is silent. */
-export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean }, refs: ReferencePrices) {
+/**
+ * One take's price in credits. `audio` prices sound where the engine bills for it (per-second engines); absent, the
+ * take is silent. Cinema Studio is priced as admission prices it (cinemaStudioQuoteUsd): its published formula, plus
+ * what sound's measured charge adds when the take is asked for with sound. Its sound is priced only where it is
+ * offered (`soundOffered`, lib/cinemaSoundPricing.ts); anywhere else asking for it is refused.
+ */
+export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean; soundOffered?: boolean }, refs: ReferencePrices) {
   if (!model.resolutions.includes(params.resolution) || !model.ratios.includes(params.ratio) || (model.kind === 'video' && !model.durations.includes(params.duration))) throw new MediaQuoteError('Choose a size, aspect and duration supported by this engine.');
   if (refs.images > model.maxReferenceImages) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceImages} reference images.`);
   if (refs.videos > model.maxReferenceVideos || (model.kind === 'image' && refs.videos)) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceVideos} reference videos.`);
   if (refs.inputSeconds > model.maxVideoSecondsTotal) throw new MediaQuoteError(`Reference videos total ${refs.inputSeconds.toFixed(1)}s; ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`);
   const sound = soundProblem(model, refs);
   if (sound) throw new MediaQuoteError(sound);
+  if (model.cinemaStudio && params.audio && !params.soundOffered) throw new MediaQuoteError(CINEMA_SOUND_UNAVAILABLE);
   /* Sound references never reach the estimate: the published formula counts no audio input. */
-  const estimate = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)
-    : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' });
-  return { credits: estimate ? billCredits(estimate.net, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
+  const usd = model.kind === 'image' ? estimateImageCostUsd(model.id, params.resolution, refs.images)?.net
+    : model.cinemaStudio ? cinemaStudioQuoteUsd({ resolution: params.resolution, ratio: params.ratio, duration: params.duration,
+        hasVideoInput: refs.hasVideoInput, inputSeconds: refs.inputSeconds, generateAudio: Boolean(params.audio) })
+    : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' })?.net;
+  return { credits: usd != null ? billCredits(usd, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
     /* Cinema Studio is quoted from published pricing and settles on its delivered output. */
     ...(model.cinemaStudio ? { approximate: true as const } : {}) };
 }
@@ -118,9 +128,10 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
  * Whether a take from this engine carries sound as the workbench renders it,
  * for the model sheet's Audio chip. xAI's video always does and so has no
  * switch (lib/models.ts › XAI_VIDEO_MODELS). An engine with an audio switch
- * (supportsAudio) renders silent here: the workbench never sends
- * generateAudio (lib/generationAdmission.ts defaults it to false) and its
- * rate is the silent one, so a chip would promise sound the take lacks.
+ * (supportsAudio) renders silent here by default: the workbench sends
+ * generateAudio only from Cinema Studio's Sound switch, which starts off
+ * (lib/generationAdmission.ts defaults it to false), and the rate is the
+ * silent one, so a chip would promise sound the take may lack.
  */
 export function rendersSound(model: ModelDef): boolean {
   return model.kind === 'video' && model.provider === 'xai';
@@ -139,10 +150,11 @@ export function workbenchUse(model: ModelDef): string | undefined {
   return /audio|sound/i.test(line) ? undefined : line;
 }
 
-/** What an engine is priced at, and what it costs, in credits only. */
-export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true };
-/** Where the model sheet prices the list: the composer's picks, the project's aspect, its references. */
-export type RateAt = { picks?: ComposerPicks; aspect?: string };
+/** What an engine is priced at, and what it costs, in credits only. `sound`: the figure is for a take with sound. */
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true; sound?: true };
+/** Where the model sheet prices the list: the composer's picks, the project's aspect, its references, and whether
+ *  Cinema Studio's Sound switch is offered in this workspace. */
+export type RateAt = { picks?: ComposerPicks; aspect?: string; soundOffered?: boolean };
 export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
 
 /**
@@ -159,10 +171,12 @@ export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferenceP
   if (model.marketing || model.soulIdentity) return null;
   if (!model.resolutions.length || !model.ratios.length || (model.kind === 'video' && !model.durations.length)) return null;
   /* "Draft first" prices a draft-mode engine at 480p, as its draft is billed. */
-  const { resolution, ratio, duration } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations, ...(model.supportsDraft ? { draft: true as const } : {}) }, at.aspect, at.picks);
+  const { resolution, ratio, duration, generateAudio } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations, ...(model.supportsDraft ? { draft: true as const } : {}),
+    ...(model.cinemaStudio && at.soundOffered ? { sound: true as const } : {}) }, at.aspect, at.picks);
   try {
-    const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration }, refs);
-    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}) };
+    const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration, audio: Boolean(generateAudio), soundOffered: at.soundOffered }, refs);
+    return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}),
+      ...(generateAudio ? { sound: true as const } : {}) };
   } catch (error) {
     if (error instanceof MediaQuoteError) return null;
     throw error;

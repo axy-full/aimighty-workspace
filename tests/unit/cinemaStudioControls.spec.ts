@@ -394,7 +394,7 @@ async function setup() {
     });
     return { uploadId: id, role: kind === "image" ? "reference_image" : kind === "video" ? "reference_video" : "reference_audio" };
   }
-  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "A lighthouse keeper waits on the pier", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: true, projectId: "project", refine: false, ...patch });
+  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "A lighthouse keeper waits on the pier", ratio: "16:9", resolution: "720p", duration: 5, projectId: "project", refine: false, ...patch });
   const post = (value: Record<string, unknown>, key: string) => handler.POST(new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(value) }));
   const rows = async () => (await database.db().execute({ sql: "SELECT * FROM generations WHERE model=?", args: [CINEMA_STUDIO_MODEL_ID] })).rows;
   return { admission, upload, body, post, rows, dispatches, db: database.db };
@@ -489,9 +489,10 @@ test("the prompt compiler writes no camera, light or look module where Cinema St
   const bankModule = (row: string, value: string) => CATEGORIES.find((c) => c.key === row)!.options.find((o) => o.value === value)!.module!;
   const words = "A lighthouse keeper waits under neon on a desaturated pier";
   const neon = bankModule("light", "neon"), muted = bankModule("look", "muted");
-  /* Auto everywhere: the words get the camera, light and look sentences every engine gets. */
+  /* Auto everywhere: the light and look the words name expand as on every engine; the camera is the model's to
+     choose, so no camera sentence is written (tests/unit/cinemaSound.spec.ts). */
   const auto = String(prepared(await f.admission.prepareGeneration(f.body({ prompt: words }), actor)).compiled.prompt);
-  expect(hasCameraModule(auto)).toBe(true);
+  expect(hasCameraModule(auto)).toBe(false);
   expect(auto).toContain(neon);
   expect(auto).toContain(muted);
   /* A picked movement: no camera sentence (the parameter moves the camera); light and look still expand. */

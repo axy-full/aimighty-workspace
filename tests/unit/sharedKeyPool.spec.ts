@@ -522,7 +522,7 @@ test("an Atomik run's take on a full pool is refused, never queued: before its r
   });
   const { db, ready } = await import("../../lib/db");
   const { platformDb } = await import("../../lib/platform");
-  const { POOL_BUSY_FOR_RUN } = await import("../../lib/sharedKeyTerms");
+  const { POOL_BUSY_FOR_RUN, POOL_BUSY_UNSENT } = await import("../../lib/sharedKeyTerms");
   const other = await register("run_other"), ws = await register("run_pool");
   await reserve(other, "run_other_running");
   const body = { model: MARKETING, prompt: "A bottle on a marble plinth", projectId: "project", ratio: "3:4", resolution: "2k" };
@@ -550,6 +550,9 @@ test("an Atomik run's take on a full pool is refused, never queued: before its r
     const before = await admit(false);
     expect(before.status).toBe(409);
     expect(before.body).toMatchObject({ runHold: "slots" });
+    /* In the pool's words, never this workspace's own slot counts: those have room, and the pool is every workspace's. */
+    expect(before.body.error).toBe(POOL_BUSY_UNSENT);
+    expect(String(before.body.error)).not.toMatch(/Waiting for a slot|this workspace's limit/);
     expect(before.body.id).toBeUndefined();
     expect((await inside(ws, () => db().execute("SELECT COUNT(*) AS n FROM generations"))).rows[0].n).toBe(0);
     /* The last slot went a moment before its reservation: the take fails unreserved and unsent, and never joins the line. */
@@ -564,4 +567,59 @@ test("an Atomik run's take on a full pool is refused, never queued: before its r
     expect(dispatched).toEqual([]);
   } finally { globalThis.fetch = fetchBefore; staleRead = false; }
   await settle(other, "run_other_running", "succeeded");
+});
+
+test("a person's take the pool turned away at its reservation that can no longer wait in the line fails unsent and unreserved, and says so", async () => {
+  /* Generate parks a take its reservation finds the pool full for (lib/held.ts holdForPool): it waits in the line.
+     One that can no longer be held there (discarded, or ended, between its write and its reservation) fails, and
+     its words say what happened to it: not sent, nothing charged. Never that it waits in line, which it does not. */
+  pool("1", "1");
+  const dispatched: string[] = [];
+  const realPool = await import("../../lib/providerPool");
+  const realHeld = await import("../../lib/held");
+  const gen = load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
+    "@/lib/inngest": { enqueueRender: async (genId: string) => { dispatched.push(genId); return true; } },
+    /* A read taken a moment before another Generate took the last slot: the reservation's own answer decides. */
+    "@/lib/providerPool": { ...realPool, poolAdmission: async () => ({ admit: true, free: 1 }) },
+    "@/lib/held": { ...realHeld, holdForPool: async () => false },
+  });
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const { creditState } = await import("../../lib/credits");
+  const { POOL_BUSY_UNSENT } = await import("../../lib/sharedKeyTerms");
+  const other = await register("unheld_other"), ws = await register("unheld");
+  await reserve(other, "unheld_other_running");
+  const body = { model: MARKETING, prompt: "A bottle on a marble plinth", projectId: "project", ratio: "3:4", resolution: "2k" };
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Network forbidden: nothing is sent"); };
+  try {
+    await inside(ws, async () => {
+      await ready();
+      await db().execute("INSERT INTO projects(id,name,created_at) VALUES('project','Project',0)");
+      await db().execute("INSERT INTO settings(key,value,updated_at) VALUES('promptWriter','none',0) ON CONFLICT(key) DO UPDATE SET value='none'");
+    });
+    const balance = () => inside(ws, async () => (await creditState())!.balance);
+    const before = await balance();
+    const reply = await (await import("../../lib/tenant")).runInTenant(ws, async () => {
+      const prepared = await gen.prepareGeneration(body, actor);
+      expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
+      const quote = (prepared as { value: PreparedAdmission }).value.quote;
+      return gen.executeGenerationAdmission({ ...body, maxCredits: quote.estimatedCredits }, actor, {
+        checkpoint: (value) => (value.quote.fingerprint === quote.fingerprint ? undefined : { status: 409, body: { error: "changed" } }),
+        defer: async () => {},
+      });
+    }, actor);
+    expect(reply.status).toBe(409);
+    expect(reply.body).toMatchObject({ status: "failed", error: POOL_BUSY_UNSENT });
+    expect(String(reply.body.error)).not.toMatch(/waits in line/);
+    const id = String(reply.body.id);
+    expect(await status(ws, id)).toMatchObject({ status: "failed", error: POOL_BUSY_UNSENT });
+    /* Nothing reserved or charged, nothing sent, and it stands in no line. */
+    expect(await metered(id)).toBeUndefined();
+    expect(await balance()).toBe(before);
+    expect(await line(id)).toBeUndefined();
+    expect((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM provider_pool WHERE workspace_id=?", args: [ws.id] })).rows[0].n).toBe(0);
+    expect(dispatched).toEqual([]);
+  } finally { globalThis.fetch = fetchBefore; }
+  await settle(other, "unheld_other_running", "succeeded");
 });

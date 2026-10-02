@@ -65,7 +65,10 @@ function heldPrice(job: Pick<DevelopmentJob, "estimateCredits" | "estimateUsd">,
 
 /* ── On the canvas ─────────────────────────────────────────────────────── */
 
-/** The card's verdict on the canvas: one line of what it found, and whether it is still about these masters. */
+/**
+ * The card's verdict on the canvas, and what it found or whether it is still about these masters: one flow of words,
+ * two lines at most (rig-verify.css). On the board's fixed-height card it stands where a description would.
+ */
 export function VerifyCardLine({ node }: { node: CanvasNode }) {
   const rig = useRig();
   if (!rig.project || !isVerifyCard(node)) return null;
@@ -77,7 +80,7 @@ function CardLine({ node, project }: { node: CanvasNode; project: Project }) {
   const stale = shown && shown.standing !== "current" ? STANDING_WORDS[shown.standing] : null;
   return (
     <span className="pxw-graph-verify" data-testid="rig-verify-line" data-verdict={v?.verdict ?? "none"} data-standing={shown?.standing}>
-      <span className="pxw-graph-verify-verdict" data-functional-label="">{v ? VERDICT_WORDS[v.verdict].toUpperCase() : "NOT CHECKED"}</span>
+      <span className="pxw-graph-verify-verdict" data-functional-label="">{v ? VERDICT_WORDS[v.verdict].toUpperCase() : "NOT CHECKED"}</span>{" "}
       <span className="pxw-graph-verify-detail">{stale ?? (v ? verdictLine(v.checks) : subject.problem ?? `${subject.checks.length} checks · priced before it runs`)}</span>
     </span>
   );

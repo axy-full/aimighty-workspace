@@ -1660,6 +1660,7 @@ export default function Studio({
               <div className="save-banner">
                 <TriangleAlert size={14} />
                 <span>{saveError}</span>
+                {/* Saves the work again, or reads the project again: "Try again". "Retry" is a take's paid re-render. */}
                 <button
                   onClick={() => {
                     if (failedSave.current) {
@@ -1669,7 +1670,7 @@ export default function Studio({
                     } else void loadProject(failedLoad.current?.id??p.id);
                   }}
                 >
-                  Retry
+                  Try again
                 </button>
                 <button
                   onClick={() =>

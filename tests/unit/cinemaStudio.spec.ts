@@ -326,7 +326,7 @@ async function setup(name: string) {
     });
     return { uploadId: id, role: kind === "image" ? "reference_image" : "reference_video" };
   }
-  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "@Image1 crosses the harbour", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: true, projectId: "project", refine: false, ...patch });
+  const body = (patch: Record<string, unknown> = {}) => ({ model: CINEMA_STUDIO_MODEL_ID, prompt: "@Image1 crosses the harbour", ratio: "16:9", resolution: "720p", duration: 5, projectId: "project", refine: false, ...patch });
   const post = (value: Record<string, unknown>, key: string) => handler.POST(new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(value) }));
   const rows = async () => (await database.db().execute({ sql: "SELECT * FROM generations WHERE model=?", args: [CINEMA_STUDIO_MODEL_ID] })).rows;
   return { admission, upload, body, post, rows, dispatches, name };
@@ -362,7 +362,7 @@ test("admission keeps the formula quote with its clip seconds and dispatches onc
   const body = f.body({ prompt: "@Image1 crosses the harbour as in @Video1", references: [still, clip] });
   const quote = prepared(await f.admission.prepareGeneration(body, actor));
   const usd = cinemaStudioQuoteUsd(settings({ hasVideoInput: true, inputSeconds: 3.5 }))!;
-  expect(quote.compiled.params).toMatchObject({ resolution: "720p", ratio: "16:9", duration: 5, generateAudio: true, hasVideoInput: true, inputSeconds: 3.5, higgsfieldVendorCostUsd: usd, higgsfieldCredentialFingerprint: "c".repeat(64) });
+  expect(quote.compiled.params).toMatchObject({ resolution: "720p", ratio: "16:9", duration: 5, generateAudio: false, hasVideoInput: true, inputSeconds: 3.5, higgsfieldVendorCostUsd: usd, higgsfieldCredentialFingerprint: "c".repeat(64) });
   expect((quote.compiled.references as Reference[]).map(ref => [ref.id, ref.kind, ref.role])).toEqual([["still", "image", "reference_image"], ["clip", "video", "reference_video"]]);
   // Past the provider's 30 s reference budget there is no price, so no take.
   const long = await f.upload("long", "video", 30.5);

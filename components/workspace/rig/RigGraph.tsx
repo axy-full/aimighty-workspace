@@ -57,6 +57,7 @@ function Card({ node, kind, shot, asset, selected, wiring, master, editing, onSe
   const grade = node.type === "grade" ? operationsFor(node).find((op) => op.kind === "grade") : undefined;
   const status = cardStatus(node, shot?.status, !!asset);
   const version = asset ? `v${asset.version}` : `v${(node.versions?.length ?? 0) + 1}`;
+  const verify = isVerifyCard(node);
   return (
     <>
       {/* Every card is picked (and dragged) by its face: a shot into the shot Inspector, any other card into the Card Inspector. */}
@@ -72,8 +73,9 @@ function Card({ node, kind, shot, asset, selected, wiring, master, editing, onSe
       {note && !editing && !node.locked ? <EditButton label={`Edit note ${node.title}`} onEdit={onEdit} /> : null}
       {well ? <Media id={node.id} asset={asset} height={well} badge={isShot && selected} /> : null}
       <span className="pxw-graph-title">{node.title}</span>
-      {/* A Verify card says what its check found, and whether it still is about these masters. */}
-      {isVerifyCard(node) ? <VerifyCardLine node={node} /> : null}
+      {/* A Verify card says what its check found, and whether it still is about these masters. On the card's fixed
+          height those words stand where a description would: its description shows in the Card Inspector. */}
+      {verify ? <VerifyCardLine node={node} /> : null}
       {editing ? (
         <BoardEditor field="text" value={node.text ?? ""} label={`Note: ${node.title}`} onCommit={onCommit} onCancel={onCancel} />
       ) : grade ? (
@@ -82,7 +84,7 @@ function Card({ node, kind, shot, asset, selected, wiring, master, editing, onSe
             <span key={k}><span>{k}</span><span>{String(grade.values[v] ?? 100)}</span></span>
           ))}
         </span>
-      ) : text ? <span className={note ? "pxw-graph-desc pxw-graph-note-text" : "pxw-graph-desc"}>{text}</span>
+      ) : text && !verify ? <span className={note ? "pxw-graph-desc pxw-graph-note-text" : "pxw-graph-desc"}>{text}</span>
         : note ? <span className="pxw-graph-desc pxw-graph-note-text pxw-graph-placeholder">Nothing written yet.</span> : null}
       <span className="pxw-graph-foot">
         <span className="pxw-dot" style={{ width: 5, height: 5, background: TONE[status.tone] }} />

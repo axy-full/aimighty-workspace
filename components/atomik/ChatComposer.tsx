@@ -55,8 +55,9 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
     {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">{thinkingModelName(a.quote.model, a.models)} · {effortLabel(a.quote.effort, a.models.find(model => model.id === a.quote?.model))} · up to {creditsFigure(a.quote.estimateCredits)} cr</p>}
     {a.quoteError && !recovering && !command && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
     {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request with its saved model, effort and price.</p>}
+    {/* min-h-11 is 2.75rem, 41px on the 15px root: on a phone or a touch screen Send is a full 44px target. */}
     <button type="submit" disabled={a.busy || waiting || !a.draftText.trim() || (!recovering && !a.quote && !command)}
-      className="flex min-h-11 w-full items-center justify-center rounded-ctl border border-border-mid bg-action hover:bg-action-hover px-3 text-[13px] font-medium text-on-action [overflow-wrap:anywhere] disabled:opacity-50">
+      className="flex min-h-11 max-md:min-h-[44px] [@media(pointer:coarse)]:min-h-[44px] w-full items-center justify-center rounded-ctl border border-border-mid bg-action hover:bg-action-hover px-3 text-[13px] font-medium text-on-action [overflow-wrap:anywhere] disabled:opacity-50">
       {a.busy ? "Sending…" : recovering ? "Recover saved request" : command ? `Run /${command.skill.slug}` : waiting ? "Reading skills…" : a.quote ? `Send · ${creditsFigure(a.quote.estimateCredits)} cr estimated` : a.quoting ? "Estimating…" : a.quoteError ? "Estimate unavailable" : "Send"}
     </button>
   </form>

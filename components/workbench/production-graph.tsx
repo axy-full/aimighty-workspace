@@ -159,7 +159,9 @@ export default function ProductionGraph({project:p,onChange,onSettle,selectedId,
  const previewKey=node&&visual?previewRenderKey(node,nodes,assets):'';
  const startPreview=useEffectEvent((signal:AbortSignal)=>{if(!node||!visual)return;const id=node.id;setRenderingNodeId(id);void renderNode(compare?{...node,operations:[]}:node,{...p,nodes,assets},{signal}).then(canvas=>{if(!signal.aborted)setPreviewResult({nodeId:id,url:canvas.toDataURL('image/png'),error:''});}).catch(err=>{if(!signal.aborted)setPreviewResult({nodeId:id,url:'',error:err instanceof Error?err.message:'Preview unavailable'});}).finally(()=>{if(!signal.aborted)setRenderingNodeId(current=>current===id?null:current)});});
  useEffect(()=>{if(!previewKey)return;const controller=new AbortController();const timer=setTimeout(()=>startPreview(controller.signal),150);return()=>{controller.abort();clearTimeout(timer)};},[previewKey,compare]);
- useEffect(()=>{if(audioRef.current)audioRef.current.volume=Number(node?.mode||100)/100;},[node?.mode,selectedId]);
+ // The monitor's volume is an audio node's own setting (0–100 in `mode`). Any other node's `mode` is its kind ("Video" on a
+ // Generate node whose first input is a sound), so its sound plays at full volume rather than throwing on a non-finite value.
+ useEffect(()=>{if(!audioRef.current)return;const level=node?.type==='audio'?Number(node.mode||100):100;audioRef.current.volume=Number.isFinite(level)?Math.min(1,Math.max(0,level/100)):1;},[node?.mode,node?.type,selectedId]);
  const focusCurrentNode=useEffectEvent(()=>{if(!nodes.length)return;if(shortLandscape){const top=Math.min(...nodes.map(n=>n.y));fit(nodes.filter(n=>n.y<=top+50));return;}setZoom(.6);setPan({x:16-Math.min(...nodes.map(n=>n.x))*.6,y:50-Math.min(...nodes.map(n=>n.y))*.6});});
  useEffect(()=>{if(!mobile&&!shortLandscape)return;const frame=requestAnimationFrame(()=>focusCurrentNode());return()=>cancelAnimationFrame(frame)},[mobile,shortLandscape,p.id]);
  const onCanvasKey=useEffectEvent((e:KeyboardEvent)=>{
