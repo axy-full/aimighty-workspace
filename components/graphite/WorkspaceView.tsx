@@ -21,7 +21,6 @@ import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
-import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -593,7 +592,6 @@ function Engines() {
         {owner ? <span className="cw-dim">{data?.mode === "legacy" ? "This workspace runs on the deployment’s keys." : "Keys are encrypted and never returned."}</span> : null}
         {note ? <p className="gx-gen-note" role="status">{note}</p> : null}
       </div>
-      <ConnectedAccountRow owner={owner} />
       <XaiEngineRow />
     </>
   );

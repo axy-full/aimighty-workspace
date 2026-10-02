@@ -431,7 +431,7 @@ test("Business › a finished image ad's Open in Takes lands on that take, not o
   await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Marble hero");
   expect(new URL(page.url()).searchParams.get("sel")).toBe(`take:generation:${TAKE}`);
   await noSideScroll(page);
-  /* The shell's collector lists an owner's earlier account jobs on every page (the drain, not Image ads): that one read aside, nothing. */
-  expect(consumer.filter((call) => call !== "GET /api/higgsfield/consumer/generation"), "Image ads reads nothing of the connected account").toEqual([]);
+  /* Nothing reads the connected account any more, on this page or from the shell. */
+  expect(consumer, "Image ads reads nothing of the connected account").toEqual([]);
   expect(errors).toEqual([]);
 });

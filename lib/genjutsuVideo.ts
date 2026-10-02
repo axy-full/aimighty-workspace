@@ -12,7 +12,7 @@ import { currentTenant, requireTenant } from "./tenant";
 import { withRecoveryJob } from "./recovery";
 import { workbenchTransaction } from "./workbench/records";
 import { fetchPublicConsumerVideoBytes } from "./workbench/product-fetch";
-import { inspectConsumerVideoOriginal } from "./higgsfield-consumer/video-original";
+import { inspectVideoOriginal } from "./videoOriginal";
 import { storeVideoBytes, readVideoBytesLimited } from "./storage";
 import { quotaVerdict, workspaceLimits } from "./limits";
 import { uploadReservationsReady } from "./uploadReservations";
@@ -80,7 +80,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         if (!state.videoUrl) throw new Error("No original");
         reportedUsd = typeof state.costUsd === "number" ? state.costUsd : null;
         const bytes = engineMock() && state.videoUrl === fixtureUrl("clip.mp4") ? await fixtureBytes("clip.mp4") : (await fetchPublicConsumerVideoBytes(state.videoUrl)).bytes;
-        const metadata = await inspectConsumerVideoOriginal(bytes);
+        const metadata = await inspectVideoOriginal(bytes);
         const candidate: Original = { ...metadata, bytes: bytes.length, sha256: hash(bytes), requestId: handle.ref };
         if (original && (candidate.bytes !== original.bytes || candidate.sha256 !== original.sha256)) throw new Error("Original changed");
         original = candidate;

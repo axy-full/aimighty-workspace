@@ -307,7 +307,7 @@ test("unpriced work that is not the platform's to pay is admitted exactly as bef
     });
 });
 
-test("connected-account work never enters generation admission, so the refusal cannot reach it", () => {
+test("no connected-account work is left to enter generation admission: its one route is the history read, which reaches none", () => {
   const root = process.cwd();
   const resolve = (from: string, spec: string): string | null => {
     const base = spec.startsWith("@/") ? path.join(root, spec.slice(2)) : spec.startsWith(".") ? path.resolve(path.dirname(from), spec) : null;
@@ -321,10 +321,11 @@ test("connected-account work never enters generation admission, so the refusal c
     }
     return null;
   };
-  /* Every connected-account entry point: the consumer routes (Atomik's connected step route is gone since 28 September 2026). */
+  /* Every connected-account entry point: since the sign-in was removed, only the credit history's read is left
+     (Atomik's connected step route went on 28 September 2026). */
   const consumer = path.join(root, "app/api/higgsfield/consumer");
   const entries = readdirSync(consumer, { recursive: true }).map(String).filter((file) => file.endsWith("route.ts")).map((file) => path.join(consumer, file));
-  expect(entries.length).toBeGreaterThan(5);
+  expect(entries.map((file) => path.relative(consumer, file))).toEqual([path.join("activity", "route.ts")]);
   const reached = new Set<string>();
   const pending = [...entries];
   while (pending.length) {
@@ -338,7 +339,7 @@ test("connected-account work never enters generation admission, so the refusal c
   }
   const files = [...reached].map((file) => path.relative(root, file));
   expect(files).toContain("lib/db.ts"); // the walk does reach deep into lib
-  expect(files).toContain("lib/storage.ts");
+  expect(files).toContain("lib/higgsfield-consumer/activity.ts");
   expect(files).not.toContain("lib/generationAdmission.ts");
 });
 

@@ -21,11 +21,11 @@ import type { GenPreset } from "./shell/recipe";
 import { failureKind } from "./jobState";
 import { failedChip, failureCopy, failureUncharged } from "./errors";
 import { accountFailure, type ProviderOutcome, type TakeFailure } from "./providerOutcome";
-import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-consumer/resume";
-import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
+import { resumeAge, shortName } from "./higgsfield-consumer/resume";
+import { CONNECTED_LABEL, fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
 
-/** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
+/** `aside`: a connected job still open in its ledger, never collected (nothing reads the account any more) — nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
 export type TrayTone = "blue" | "amber" | "green" | "red" | "idle";
 /**
@@ -236,7 +236,6 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
 export type AccountRow = {
   id: string; draftId: string; workflow: string; status: string; quoteCredits: number;
   failureCode: string | null; createdAt: number; updatedAt: number;
-  hasReceipt: boolean; setAside: boolean;
   prompt: string | null; modelId: string | null; outputType: string | null; toolLabel: string | null;
   originalId: string | null; originalKind: string | null; projectName: string | null;
   /** A failed job: what the account said (lib/providerOutcome.ts); its charge stays unknown until its own ledger names one. */
@@ -255,9 +254,6 @@ const WORKFLOW_NAME: Record<string, string> = {
  * refunded, so a failure here never claims "not billed".
  */
 export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null): TrayJob {
-  const job = { status: row.status, providerReceipt: row.hasReceipt ? true : undefined, setAside: row.setAside, failureCode: row.failureCode };
-  const following = canProgress(job) && !row.setAside;
-  const phase = resumePhase(job, following);
   const words = clean(row.prompt);
   const name = words ? shortName(words, 60) : clean(row.toolLabel) || WORKFLOW_NAME[row.workflow] || "Take";
   const kind = kindOf(row.originalKind ?? row.outputType ?? (row.workflow === "genjutsu" || row.workflow.startsWith("marketing") || row.workflow === "shorts" ? "video" : row.workflow === "voice-tool" ? "audio" : null));
@@ -283,7 +279,7 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
       const failure = row.outcome ? accountFailure(row.outcome, row.failureCode) : null;
       return {
         ...base, stage: "failed", tone: "red", settledAt: row.updatedAt, action, ...(preset ? { preset } : {}),
-        label: kept ? phase.label : failedChip(failure),
+        label: kept ? "Not kept · receipt saved" : failedChip(failure),
         reason: kept ? "The account finished it, but the result could not be kept. Its receipt is saved."
           : failure ? failureCopy(failure.kind, failure.payer).what : "The connected account reported it as failed.",
         /* Finished on the account but not kept: the approved figure may have been spent. Refused: no figure is claimed either way. */
@@ -291,11 +287,9 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
       };
     }
     default:
-      /* Set aside, or past the time it may hold a slot: never sent again, and nothing here waits on it. */
-      if (row.setAside) return { ...base, stage: "aside", label: phase.label, tone: "idle", settledAt: row.updatedAt, action: record };
-      if (following) return row.status === "accepted" ? { ...base, stage: "rendering", label: "Rendering", tone: "blue" } : { ...base, stage: "confirming", label: phase.label, tone: "amber" };
-      /* Sent, or maybe sent, with nothing to confirm it by: never sent twice, and nothing here can check it again. */
-      return { ...base, stage: "unconfirmed", label: phase.label, tone: "amber", action: record };
+      /* Still open in the ledger (sending, sent or unconfirmed): nothing reads the account or collects its work any
+         more, so it was never collected and never will be. Closed, not counted, not news; it says what Usage says. */
+      return { ...base, stage: "aside", label: CONNECTED_LABEL.pending, tone: "idle", settledAt: row.updatedAt, action: record };
   }
 }
 

@@ -59,14 +59,14 @@ test("Suites Workspace › Engines links the token page; the platform desk is fo
 test("on a phone, the tokens row is the last card on Engines and ends above the tab bar", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones with a pinned tab bar");
   await signInLocally(page.request);
-  /* The Higgsfield account's row reads its status once; with no grant and nothing running it shows nothing. */
-  const accountRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/higgsfield/consumer/connection");
+  /* The Higgsfield account's row went with its sign-in: Engines reads nothing of the account. */
+  const accountReads: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) accountReads.push(request.url()); });
   await page.goto("/suites?view=workspace&tab=engines");
   /* Everything above it has loaded, so nothing moves it after the measure. */
   await expect(page.getByTestId("ws-engine").first()).toBeVisible();
-  await accountRead;
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
-  /* The developer-API check went with the Higgsfield sign-in. */
+  /* The developer-API check went with the Higgsfield sign-in too. */
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   await expect(page.getByTestId("workspace-connect-link")).toContainText(/token/);
   const end = () => page.getByTestId("workspace-view").evaluate(async (pane) => {
@@ -79,6 +79,7 @@ test("on a phone, the tokens row is the last card on Engines and ends above the 
   });
   expect((await end()).last, "the tokens row is the tab's last card").toBe(true);
   await expect.poll(async () => (await end()).gap, { message: "at the pane's end, the tokens row ends above the pinned tab bar" }).toBeGreaterThanOrEqual(0);
+  expect(accountReads).toEqual([]);
 });
 
 test("public metadata: robots, sitemap, one icon per URL, and client review pages without Particl's install card", async ({ page, baseURL }, info) => {

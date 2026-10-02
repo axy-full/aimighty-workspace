@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
+import { seedConsumerJob } from "../helpers/consumerLedger";
 
 const directory = mkdtempSync(
   path.join(tmpdir(), "particl-consumer-lifecycle-"),
@@ -64,20 +65,18 @@ test("the existing grace-period purge deletes the consumer tenant ledger and own
         await db().execute(
           "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('owner-draft','owner','draft','Campaign','{}',1,0)",
         );
-        return (
-          await jobs.createConsumerJob({
+        /* A quote the old ledger kept: nothing writes this table any more, so it is seeded as an older database holds it. */
+        return {
+          id: await seedConsumerJob({
             userId: "owner",
             draftId: "draft",
-            connectedOwnerId: "owner",
-            connectionGeneration: randomUUID(),
             workflow: "marketing-video",
             idempotencyKey: "consumer-quote",
             payload: { prompt: "Fixture" },
             quoteCredits: 4,
-            quoteExpiresAt: Date.now() + 60_000,
             originalAssetIds: [uploadId],
-          })
-        ).job;
+          }),
+        };
       });
       fixtures.push({ workspace, file, databasePath, job });
     }

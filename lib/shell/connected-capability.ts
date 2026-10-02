@@ -1,13 +1,12 @@
 /**
- * The words of the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts).
+ * The words of the retired Higgsfield sign-in (CLAUDE.md ground rule 10).
  * Nobody runs the connected account any more — the hook
  * (./use-connected-capability) answers "member" for everyone and reads
  * nothing — and the pages that ran there and have no replacement yet
  * (Business's Ads and Setup, until Particl's own versions replace them) meet
  * one calm card saying so, with the way to make the same kind of thing on this
  * workspace's credits. Viral and Business › Image ads run on Particl's API key.
- * Workspace › Engines keeps its Disconnect and Set aside. Pure: the answer's
- * shape and the card's words.
+ * Pure: the answer's shape and the card's words.
  */
 
 export type CapabilityStatus = "member" | "loading" | "ready" | "error";
@@ -27,13 +26,11 @@ export type ConnectedCapability = {
 /** What the connection route (and the routes that carry a `connection`) answers. */
 export type ConnectionReply = { connected?: unknown; requiresReconnect?: unknown } | null | undefined;
 
-/** Workspace › Engines' retired row: the running jobs (Set aside) and Disconnect. */
-export const CONNECTION_ENDPOINT = "/api/higgsfield/consumer/connection";
 export const CAPABILITY_UNREADABLE = "The connected account could not be read.";
 
 /* ── What everyone meets now ─────────────────────────────────────────── */
 
-/* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), so the
+/* The Higgsfield sign-in is retired (CLAUDE.md ground rule 10), so the
    surfaces that ran on the connected account show one card to everyone, the
    workspace owner included: what ran there, that Particl no longer signs in to
    Higgsfield, and — where a Studio engine makes the same kind of thing — the

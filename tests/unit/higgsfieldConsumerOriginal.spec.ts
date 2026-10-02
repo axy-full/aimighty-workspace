@@ -3,14 +3,22 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ProductFetchDependencies } from "../../lib/workbench/product-fetch";
-import { parseConsumerVideoInput } from "../../lib/higgsfield-consumer/video-contract";
+import { seedCollectedOriginal } from "../helpers/consumerLedger";
 
+/**
+ * Originals collected from the connected account, after its sign-in was
+ * removed: nothing collects one any more, so what is tested is what still
+ * reads them (the Library's retained take, deletion's retention guard, purge)
+ * plus the pieces the API-key collector shares: the pinned public fetch and
+ * the MP4 inspection (lib/videoOriginal.ts). Collected originals are seeded
+ * as the old collector left them (tests/helpers/consumerLedger.ts).
+ */
 const directory = mkdtempSync(
   path.join(tmpdir(), "particl-consumer-original-"),
 );
@@ -108,63 +116,23 @@ async function modules() {
     uploads: await import("../../lib/uploadReservations"),
   };
 }
-async function accepted(m: Awaited<ReturnType<typeof modules>>, mapped = true, variant?: 'motion-transfer' | 'object-swap') {
+/** A draft on a production, and an original the account made in it, collected before the sign-in was removed. */
+async function collected(m: Awaited<ReturnType<typeof modules>>, options: { completed?: boolean } = {}) {
   await m.database.ready();
   const draftId = `draft-${randomUUID()}`,
     productionId = `project-${randomUUID()}`;
-  if (mapped)
-    await m.database.db().execute({
-      sql: "INSERT INTO projects(id,name,created_at) VALUES(?,'Fixture',0)",
-      args: [productionId],
-    });
+  await m.database.db().execute({
+    sql: "INSERT INTO projects(id,name,created_at) VALUES(?,'Fixture',0)",
+    args: [productionId],
+  });
   await m.database.db().execute({
     sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,'owner',?,'Fixture',?,1,0)",
-    args: [
-      draftId,
-      draftId,
-      JSON.stringify({
-        productionProjectId: mapped ? productionId : undefined,
-      }),
-    ],
+    args: [draftId, draftId, JSON.stringify({ productionProjectId: productionId })],
   });
-  if (variant) for (const [id, kind, ext] of [['original-motion', 'video', 'mp4'], ['original-look', 'image', 'png']] as const)
-    await m.database.db().execute({ sql: 'INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES(?,?,?,?,100,?,?,?,0)', args: [id, `${id}.${ext}`, `${kind}/${ext}`, ext, 'fixture-hash', `/api/uploads/${id}`, kind] });
-  const { job } = await m.jobs.createConsumerJob({
-    userId: "owner",
-    draftId,
-    connectedOwnerId: "owner",
-    connectionGeneration: randomUUID(),
-    workflow: variant ? "genjutsu" : "marketing-video",
-    idempotencyKey: randomUUID(),
-    payload: variant ? { input: { variant, resolution: '1080p', prompt: 'Keep the camera movement; restage the world.', source: { uploadId: 'original-motion' }, references: [{ uploadId: 'original-look' }] }, params: { model: variant === 'motion-transfer' ? 'hf_mult_motion_control' : 'hf_mult_replace_object' } } : {
-      input: {
-        ...parseConsumerVideoInput({
-          prompt: "A plain bottle.",
-          duration: 15,
-          resolution: "720p",
-          aspectRatio: "16:9",
-          generateAudio: true,
-        }),
-      },
-    },
-    quoteCredits: 75,
-    quoteExpiresAt: Date.now() + 60_000,
-    originalAssetIds: variant ? ['upload:original-motion', 'upload:original-look'] : [],
-  });
-  const scope = { id: job.id, userId: job.userId, draftId };
-  const claim = await m.jobs.claimConsumerDispatch(scope);
-  const result = (await m.jobs.markConsumerAccepted({
-    ...scope,
-    claimToken: claim!.claimToken,
-    providerJobId: randomUUID(),
-  }))!;
-  saved.push(
-    m.originals.consumerOriginalGenerationId(
-      m.tenant.requireTenant().id,
-      result.id,
-    ),
-  );
-  return { job: result, productionId };
+  const seeded = await seedCollectedOriginal({ userId: "owner", draftId, bytes: original, projectId: productionId, completed: options.completed });
+  saved.push(seeded.generationId);
+  const scope = { id: seeded.jobId, userId: "owner", draftId };
+  return { ...seeded, scope, draftId, productionId };
 }
 
 test("video transport pins every public destination, forwards no credentials, and refuses unsafe redirects/MIME/compression/size", async () => {
@@ -226,8 +194,8 @@ test("video transport pins every public destination, forwards no credentials, an
 });
 
 test("actual MP4 inspection measures original packets and rejects invalid or overlong media without conversion", async () => {
-  const { originals } = await modules();
-  expect(await originals.inspectConsumerVideoOriginal(original)).toEqual({
+  const inspection = await import("../../lib/videoOriginal");
+  expect(await inspection.inspectVideoOriginal(original)).toEqual({
     width: 720,
     height: 1280,
     seconds: 1.5,
@@ -238,7 +206,7 @@ test("actual MP4 inspection measures original packets and rejects invalid or ove
     original.subarray(0, Math.floor(original.length / 2)),
   ])
     await expect(
-      originals.inspectConsumerVideoOriginal(bytes),
+      inspection.inspectVideoOriginal(bytes),
     ).rejects.toMatchObject({ code: "invalid_video" });
   const stretched = (factor: number) => {
     const long = Buffer.from(original);
@@ -254,449 +222,75 @@ test("actual MP4 inspection measures original packets and rejects invalid or ove
     }
     return long;
   };
-  // A 90 s result (Marketing Video runs to 120 s; tools return their
-  // source's length) is kept; one past the ten-minute limit is not.
-  expect((await originals.inspectConsumerVideoOriginal(stretched(60))).seconds).toBeCloseTo(90, 0);
-  expect(originals.CONSUMER_ORIGINAL_SECONDS).toBe(600);
+  // A 90 s result is kept; one past the ten-minute limit is not.
+  expect((await inspection.inspectVideoOriginal(stretched(60))).seconds).toBeCloseTo(90, 0);
+  expect(inspection.VIDEO_ORIGINAL_SECONDS).toBe(600);
   await expect(
-    originals.inspectConsumerVideoOriginal(stretched(500)),
+    inspection.inspectVideoOriginal(stretched(500)),
   ).rejects.toMatchObject({ code: "invalid_video" });
-  // Only a real inspection verdict is "invalid" (which settles a job for good).
-  expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError("invalid_video"))).toBe(true);
-  expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError("too_large"))).toBe(true);
-  for (const code of ["quota", "timeout", "busy", "storage_unavailable", "deleted", "conflict"] as const)
-    expect(originals.uncollectableOriginal(new originals.ConsumerOriginalError(code))).toBe(false);
-  expect(originals.uncollectableOriginal(new Error("invalid_video"))).toBe(false);
+  /* The API-key collector (Genjutsu, Cinema Studio) inspects with this, not with the removed account code. */
+  const collector = readFileSync("lib/genjutsuVideo.ts", "utf8");
+  expect(collector).toContain('import { inspectVideoOriginal } from "./videoOriginal";');
+  expect(collector).not.toContain("higgsfield-consumer");
 });
 
-test("a result over the collection limit is refused as too large, not as a retryable storage problem, and nothing is stored", async () => {
+test("a collected original stays an ordinary Library take, kept on its server-written receipt; a forged one is not", async () => {
   const m = await modules();
-  const { CONSUMER_VIDEO_BYTES } = await import("../../lib/workbench/product-fetch");
+  const generation = await import("../../lib/jobs");
   await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: transport([{ headers: { "content-length": String(CONSUMER_VIDEO_BYTES + 1) } }]).deps,
-      }),
-    ).rejects.toMatchObject({ code: "too_large" });
-    expect((await m.database.db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n).toBe(0);
-  });
-});
-
-test("collection preserves original bytes, records exact consumer credits and exposes one authenticated library generation", async () => {
-  const m = await modules();
-  await m.tenant.runInTenant(workspace(), async () => {
-    const { job, productionId } = await accepted(m),
-      f = transport();
-    const result = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: f.deps },
-    );
-    expect(result).toMatchObject({
-      providerJobId: job.providerJobId,
-      bytes: original.length,
-      sha256: createHash("sha256").update(original).digest("hex"),
-      credits: 75,
-      creditUnit: "higgsfield_credits",
-      width: 720,
-      height: 1280,
-      seconds: 1.5,
-    });
-    expect(
-      (await m.storage.readVideoBytes(result.generationId)).equals(original),
-    ).toBe(true);
-    const row = (
-      await m.database.db().execute({
-        sql: "SELECT * FROM generations WHERE id=?",
-        args: [result.generationId],
-      })
-    ).rows[0];
-    expect(row).toMatchObject({
-      project_id: productionId,
-      provider: "higgsfield",
-      model: "marketing_studio_video",
-      cost_usd: null,
-      status: "succeeded",
-      bytes: original.length,
-      created_by: "owner",
-    });
-    expect(JSON.parse(String(row.params))).toMatchObject({
-      consumerJobId: job.id,
-      ratio: "16:9",
-      aspectRatio: "16:9",
-      consumerCredits: 75,
-      consumerCreditUnit: "higgsfield_credits",
-      originalSha256: result.sha256,
-    });
-    expect(await m.uploads.reservedUploadBytes()).toBe(0);
+    const take = await collected(m);
+    expect(await m.originals.hasRetainedConsumerOriginal(take.generationId)).toBe(true);
     expect((await m.quota.standing()).usedBytes).toBe(original.length);
-    const generation = await import("../../lib/jobs");
-    const gen = await generation.getGeneration(result.generationId);
-    expect(gen?.storedUrl).toBe(`/api/media/${result.generationId}`);
-    expect(gen?.costUsd).toBeNull();
-    expect(
-      await m.originals.hasRetainedConsumerOriginal(result.generationId),
-    ).toBe(true);
+    const gen = (await generation.getGeneration(take.generationId))!;
+    expect(gen).toMatchObject({
+      storedUrl: `/api/media/${take.generationId}`, costUsd: null, projectId: take.productionId,
+      providerCreditQuote: { provider: "higgsfield", unit: "higgsfield_credits", credits: 75, basis: "approved_quote" },
+    });
+    /* No legacy paid intent is admitted for it, and nothing is read from a provider. */
+    expect(await generation.syncGeneration(gen)).toBe(gen);
+    const row = (await m.database.db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [take.generationId] })).rows[0];
     const forgedId = `gen-forged-${randomUUID()}`;
     await m.database.db().execute({
       sql: "INSERT INTO generations(id,model,prompt,params,status,stored_url,bytes,created_by,created_at,updated_at,provider,kind) VALUES(?,'marketing_studio_video','',?,'succeeded',?,?,'owner',0,0,'higgsfield','video')",
       args: [forgedId, row.params, `/api/media/${forgedId}`, original.length],
     });
     expect(await m.originals.hasRetainedConsumerOriginal(forgedId)).toBe(false);
-    await m.database
-      .db()
-      .execute({ sql: "DELETE FROM generations WHERE id=?", args: [forgedId] });
-    // This completed consumer original is not a legacy paid job; no legacy intent is admitted.
-    expect(await generation.syncGeneration(gen!)).toBe(gen);
-    const replay = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: transport([]).deps },
-    );
-    expect(replay).toEqual(result);
-    expect(
-      (await m.database.db().execute("SELECT COUNT(*) AS n FROM generations"))
-        .rows[0].n,
-    ).toBe(1);
   });
 });
 
-test("completed original availability fails closed on missing or mismatched tenant records without rewriting its receipt", async () => {
-  const m = await modules(), videoService = await import("../../lib/higgsfield-consumer/video-service");
-  let completed!: NonNullable<Awaited<ReturnType<typeof m.jobs.getConsumerJob>>>;
-  await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m), scope = { id: job.id, userId: job.userId, draftId: job.draftId };
-    const collected = await m.originals.collectConsumerVideoOriginal(job, sourceUrl, { fetchDependencies: transport().deps });
-    const poll = (await m.jobs.claimConsumerPoll(scope))!;
-    completed = (await m.jobs.completeConsumerJob({ ...scope, leaseToken: poll.leaseToken, resultManifest: { original: collected } }))!;
-    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: true, originalAvailability: "available" });
-    const originalRow = (await m.database.db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [collected.generationId] })).rows[0];
-    for (const [column, value] of [["stored_url", null], ["bytes", 1], ["created_by", "another-owner"], ["params", JSON.stringify({ consumerJobId: "another-job" })]] as const) {
-      await m.database.db().execute({ sql: `UPDATE generations SET ${column}=? WHERE id=?`, args: [value, collected.generationId] });
-      const view = await videoService.consumerVideoView(completed);
-      expect(view).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
-      expect(view.result!.original).not.toHaveProperty("asset");
-      await m.database.db().execute({ sql: `UPDATE generations SET ${column}=? WHERE id=?`, args: [originalRow[column], collected.generationId] });
-    }
-    await m.database.db().execute({ sql: "DELETE FROM consumer_video_originals WHERE job_id=?", args: [job.id] });
-    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
-    expect((await m.jobs.getConsumerJob(scope))!.resultManifest).toEqual(completed.resultManifest);
-  });
-  await m.tenant.runInTenant(workspace(), async () => {
-    await m.database.ready();
-    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
-  });
-});
-
-test("both consumer Genjutsu modes retain original bindings, their own credit unit and a deletion guard until completion", async () => {
-  const m = await modules(), generation = await import('../../lib/jobs');
-  const availability = await import('../../lib/higgsfield-consumer/video-availability');
-  const retention = await import('../../lib/higgsfield-consumer/original-retention');
-  for (const variant of ['motion-transfer', 'object-swap'] as const) await m.tenant.runInTenant(workspace(), async () => {
-    const { job, productionId } = await accepted(m, true, variant);
-    const collected = await m.originals.collectConsumerVideoOriginal(job, sourceUrl, { fetchDependencies: transport().deps });
-    const gen = (await generation.getGeneration(collected.generationId))!;
-    expect(gen).toMatchObject({ model: variant === 'motion-transfer' ? 'hf_mult_motion_control' : 'hf_mult_replace_object', projectId: productionId, costUsd: null,
-      providerCreditQuote: { provider: 'higgsfield', unit: 'higgsfield_credits', credits: 75, basis: 'approved_quote' },
-      params: { task: 'genjutsu', workbenchProjectId: job.draftId, sourceUploadId: 'original-motion', resolution: '1080p', references: [{ uploadId: 'original-look', role: 'reference_image' }] } });
-    expect(await generation.syncGeneration(gen)).toBe(gen);
-    expect(await retention.consumerOriginalPending(m.database.db(), gen.id)).toBe(true);
-    const scope = { id: job.id, userId: job.userId, draftId: job.draftId }, poll = (await m.jobs.claimConsumerPoll(scope))!;
-    const completed = (await m.jobs.completeConsumerJob({ ...scope, leaseToken: poll.leaseToken, resultManifest: { original: collected } }))!;
-    expect((await availability.consumerOriginalAvailability([completed])).get(job.id)).toBe('available');
-    expect(await retention.consumerOriginalPending(m.database.db(), gen.id)).toBe(false);
-    await m.database.db().execute({ sql: "UPDATE generations SET model='marketing_studio_video' WHERE id=?", args: [gen.id] });
-    expect((await availability.consumerOriginalAvailability([completed])).get(job.id)).toBe('unavailable');
-    await expect(m.originals.collectConsumerVideoOriginal(completed, sourceUrl, { fetchDependencies: transport([]).deps })).rejects.toMatchObject({ code: 'conflict' });
-  });
-});
-
-test("collector leases exclude concurrent writers and durable reservations compete atomically with uploads", async () => {
-  const m = await modules();
-  await m.tenant.runInTenant(workspace(original.length + 1), async () => {
-    const { job } = await accepted(m),
-      f = transport();
-    let started!: () => void, release!: () => void;
-    const entered = new Promise<void>((r) => (started = r)),
-      gate = new Promise<void>((r) => (release = r));
-    const first = m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-      fetchDependencies: f.deps,
-      store: async (id, bytes) => {
-        started();
-        await gate;
-        return m.storage.storeVideoBytes(id, bytes);
-      },
-    });
-    await entered;
-    expect(await m.uploads.reservedUploadBytes()).toBe(original.length);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: f.deps,
-      }),
-    ).rejects.toMatchObject({ code: "busy" });
-    await expect(
-      m.uploads.reserveUploadChunk({
-        owner: "owner",
-        session: randomUUID(),
-        index: 0,
-        bytes: 2,
-        sha256: "a".repeat(64),
-      }),
-    ).rejects.toMatchObject({ status: 507 });
-    release();
-    await first;
-    expect(f.calls).toHaveLength(1);
-    expect(await m.uploads.reservedUploadBytes()).toBe(0);
-  });
-});
-
-test("lost storage acknowledgements recover the same private original after lease expiry without downloading again", async () => {
-  const m = await modules();
-  await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: transport().deps,
-        store: async (id, bytes) => {
-          await m.storage.storeVideoBytes(id, bytes);
-          throw new Error("Lost storage acknowledgement");
-        },
-      }),
-    ).rejects.toMatchObject({ code: "storage_unavailable" });
-    expect(await m.uploads.reservedUploadBytes()).toBe(original.length);
-    await m.database
-      .db()
-      .execute("UPDATE consumer_video_originals SET lease_until=0");
-    const noNetwork = transport([]);
-    const result = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: noNetwork.deps },
-    );
-    expect(noNetwork.calls).toHaveLength(0);
-    expect(
-      (await m.storage.readVideoBytes(result.generationId)).equals(original),
-    ).toBe(true);
-    expect(await m.uploads.reservedUploadBytes()).toBe(0);
-  });
-});
-
-test("changed original hashes, stale collector leases and unrelated generations cannot overwrite an accepted artifact", async () => {
-  const m = await modules();
-  await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: transport().deps,
-        store: async () => {
-          throw new Error("Fixture storage outage");
-        },
-      }),
-    ).rejects.toMatchObject({ code: "storage_unavailable" });
-    await m.database
-      .db()
-      .execute("UPDATE consumer_video_originals SET lease_until=0");
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: transport([
-          { bytes: Buffer.concat([original, Buffer.from([0])]) },
-        ]).deps,
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
-    expect(await m.uploads.reservedUploadBytes()).toBe(original.length);
-    await m.database
-      .db()
-      .execute("UPDATE consumer_video_originals SET lease_until=0");
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: transport().deps,
-        store: async (id, bytes) => {
-          const stored = await m.storage.storeVideoBytes(id, bytes);
-          await m.database
-            .db()
-            .execute(
-              "UPDATE consumer_video_originals SET lease='newer-collector',lease_until=9999999999999",
-            );
-          return stored;
-        },
-      }),
-    ).rejects.toMatchObject({ code: "busy" });
-    expect(
-      (await m.database.db().execute("SELECT COUNT(*) AS n FROM generations"))
-        .rows[0].n,
-    ).toBe(0);
-    expect(await m.uploads.reservedUploadBytes()).toBe(original.length);
-    const other = await accepted(m);
-    const id = m.originals.consumerOriginalGenerationId(
-      m.tenant.requireTenant().id,
-      other.job.id,
-    );
-    await m.database.db().execute({
-      sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at) VALUES(?,'other','', '{}','succeeded',0,0)",
-      args: [id],
-    });
-    const noFetch = transport([]);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(other.job, sourceUrl, {
-        fetchDependencies: noFetch.deps,
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
-    expect(noFetch.calls).toHaveLength(0);
-  });
-});
-
-test("deleted drafts collect without project attachment; deleted originals never resurrect; tenant-spoofed jobs refuse", async () => {
-  const m = await modules();
-  let foreign!: Awaited<ReturnType<typeof accepted>>["job"];
-  await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m);
-    foreign = job;
-    await m.database.db().execute("DELETE FROM workbench_projects");
-    const result = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: transport().deps },
-    );
-    expect(
-      (
-        await m.database.db().execute({
-          sql: "SELECT project_id FROM generations WHERE id=?",
-          args: [result.generationId],
-        })
-      ).rows[0].project_id,
-    ).toBeNull();
-    await m.database.db().execute({
-      sql: "UPDATE generations SET deleted=1 WHERE id=?",
-      args: [result.generationId],
-    });
-    const noFetch = transport([]);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(job, sourceUrl, {
-        fetchDependencies: noFetch.deps,
-      }),
-    ).rejects.toMatchObject({ code: "deleted" });
-    expect(noFetch.calls).toHaveLength(0);
-  });
-  await m.tenant.runInTenant(workspace(), async () => {
-    const noFetch = transport([]);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(foreign, sourceUrl, {
-        fetchDependencies: noFetch.deps,
-      }),
-    ).rejects.toMatchObject({ code: "not_found" });
-    expect(noFetch.calls).toHaveLength(0);
-    expect(
-      (await m.database.db().execute("SELECT COUNT(*) AS n FROM generations"))
-        .rows[0].n,
-    ).toBe(0);
-  });
-});
-
-test("a crash after collection protects the original from deletion until a fresh poll finalizes the ledger", async () => {
+test("an original whose ledger never completed stays protected from deletion; one the ledger completed can be deleted, its receipt kept", async () => {
   const m = await modules();
   const deletion = await import("../../lib/mediaDeletion");
   const { workbenchTransaction } = await import("../../lib/workbench/records");
-  const { platformDb, platformReady } = await import("../../lib/platform");
-  const { accountDbReady } = await import("../../lib/accountDb");
-  await platformReady();
-  await accountDbReady();
-  const ws = workspace();
-  await platformDb().execute({
-    sql: "INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,0,0)",
-    args: [ws.id, ws.slug, ws.name, ws.dbUrl, ws.ownerId],
-  });
-  await m.tenant.runInTenant(ws, async () => {
-    const { job } = await accepted(m);
-    const scope = { id: job.id, userId: job.userId, draftId: job.draftId };
-    const abandoned = (await m.jobs.claimConsumerPoll(scope))!;
-    const collected = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: transport().deps },
-    );
-    // Simulate the request dying after the original commits but before ledger completion.
-    expect((await m.jobs.getConsumerJob(scope))?.status).toBe("accepted");
-    await deletion.mediaDeletionReady();
-    await expect(
-      workbenchTransaction((tx) =>
-        deletion.markGenerationDeletion(tx, collected.generationId),
-      ),
-    ).rejects.toThrow("still being finalized");
-    const retained = (
-      await m.database.db().execute({
-        sql: "SELECT deleted,bytes,stored_url FROM generations WHERE id=?",
-        args: [collected.generationId],
-      })
-    ).rows[0];
-    expect(retained).toMatchObject({
-      deleted: 0,
-      bytes: original.length,
-      stored_url: (await import("../../lib/storage")).videoPath(collected.generationId),
-    });
-    expect((await m.quota.standing()).usedBytes).toBe(original.length);
-    expect(
-      (await m.storage.readVideoBytes(collected.generationId)).equals(original),
-    ).toBe(true);
+  await m.tenant.runInTenant(workspace(), async () => {
+    const realFetch = globalThis.fetch;
+    let network = 0;
+    globalThis.fetch = async () => { network++; throw new Error("No provider calls allowed"); };
+    try {
+      /* The old collector stored it, then the request died before the ledger's completion: nothing will finish it now. */
+      const pending = await collected(m);
+      expect((await m.jobs.getConsumerJob(pending.scope))?.status).toBe("accepted");
+      await deletion.mediaDeletionReady();
+      await expect(
+        workbenchTransaction((tx) => deletion.markGenerationDeletion(tx, pending.generationId)),
+      ).rejects.toThrow("still being finalized");
+      const retained = (await m.database.db().execute({ sql: "SELECT deleted,bytes,stored_url FROM generations WHERE id=?", args: [pending.generationId] })).rows[0];
+      expect(retained).toMatchObject({ deleted: 0, bytes: original.length, stored_url: m.storage.videoPath(pending.generationId) });
+      expect((await m.storage.readVideoBytes(pending.generationId)).equals(original)).toBe(true);
 
-    await m.database.db().execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?",
-      args: [job.id],
-    });
-    expect(
-      await m.jobs.completeConsumerJob({
-        ...scope,
-        leaseToken: abandoned.leaseToken,
-        resultManifest: { original: collected },
-      }),
-    ).toBeNull();
-    const fresh = (await m.jobs.claimConsumerPoll(scope))!;
-    const noNetwork = transport([]);
-    const replay = await m.originals.collectConsumerVideoOriginal(
-      fresh.job,
-      sourceUrl,
-      { fetchDependencies: noNetwork.deps },
-    );
-    expect(replay).toEqual(collected);
-    expect(noNetwork.calls).toHaveLength(0);
-    expect(
-      (
-        await m.jobs.completeConsumerJob({
-          ...scope,
-          leaseToken: fresh.leaseToken,
-          resultManifest: { original: replay },
-        })
-      )?.status,
-    ).toBe("completed");
-
-    const videoService = await import("../../lib/higgsfield-consumer/video-service");
-    const beforeDeletion = await videoService.pollConsumerMarketingVideo(scope);
-    expect(beforeDeletion.job).toMatchObject({ originalAvailability: "available", originalAvailable: true, result: { original: collected } });
-    const immutableManifest = (await m.jobs.getConsumerJob(scope))!.resultManifest;
-    await workbenchTransaction((tx) =>
-      deletion.markGenerationDeletion(tx, collected.generationId),
-    );
-    expect(
-      await deletion.cleanupDeletedGenerations(
-        1,
-        Date.now(),
-        collected.generationId,
-      ),
-    ).toMatchObject({ cleaned: 1, failed: 0 });
-    expect((await m.quota.standing()).usedBytes).toBe(0);
-    for (const view of [(await videoService.pollConsumerMarketingVideo(scope)).job,
-      ...(await videoService.consumerMarketingJobs(job.userId, job.draftId))]) {
-      expect(view).toMatchObject({ status: "completed", originalAvailability: "deleted", originalAvailable: false,
-        result: { original: { generationId: collected.generationId, sha256: collected.sha256, bytes: collected.bytes } } });
-      expect(view.result!.original).not.toHaveProperty("asset");
+      /* One whose completion the ledger did record deletes like any take; its receipt stays word for word. */
+      const done = await collected(m, { completed: true });
+      const manifest = (await m.jobs.getConsumerJob(done.scope))!.resultManifest;
+      expect(manifest).toMatchObject({ original: { generationId: done.generationId, sha256: done.sha256, bytes: original.length } });
+      expect((await m.quota.standing()).usedBytes).toBe(original.length * 2);
+      await workbenchTransaction((tx) => deletion.markGenerationDeletion(tx, done.generationId));
+      expect(await deletion.cleanupDeletedGenerations(1, Date.now(), done.generationId)).toMatchObject({ cleaned: 1, failed: 0 });
+      expect((await m.quota.standing()).usedBytes).toBe(original.length);
+      expect((await m.jobs.getConsumerJob(done.scope))!.resultManifest).toEqual(manifest);
+      expect(network).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
     }
-    expect((await m.jobs.getConsumerJob(scope))!.resultManifest).toEqual(immutableManifest);
-    await expect(
-      m.originals.collectConsumerVideoOriginal(fresh.job, sourceUrl, {
-        fetchDependencies: noNetwork.deps,
-      }),
-    ).rejects.toMatchObject({ code: "deleted" });
-    expect(noNetwork.calls).toHaveLength(0);
   });
 });
 
@@ -714,21 +308,19 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
     args: [ws.id, ws.slug, ws.name, ws.dbUrl, ws.ownerId],
   });
   await m.tenant.runInTenant(ws, async () => {
-    const { job } = await accepted(m),
-      scope = { id: job.id, userId: job.userId, draftId: job.draftId };
-    const abandoned = (await m.jobs.claimConsumerPoll(scope))!;
-    const f = transport();
-    const collected = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: f.deps },
-    );
+    const take = await collected(m),
+      scope = take.scope;
+    /* A status read the old collector had leased when it stopped. */
+    await m.database.db().execute({
+      sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_hash='abandoned',poll_lease_until=? WHERE id=?",
+      args: [Date.now() + 180_000, take.jobId],
+    });
     const receiptBefore = (
       await m.database
         .db()
         .execute({
           sql: "SELECT receipt_json FROM consumer_video_originals WHERE job_id=?",
-          args: [job.id],
+          args: [take.jobId],
         })
     ).rows[0].receipt_json;
     await markWorkspaceDeleted(ws.id);
@@ -756,14 +348,14 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
       .db()
       .execute({
         sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?",
-        args: [job.id],
+        args: [take.jobId],
       });
 
     await m.database
       .db()
       .execute({
         sql: "UPDATE consumer_video_originals SET receipt_json='{}' WHERE job_id=?",
-        args: [job.id],
+        args: [take.jobId],
       });
     await retry();
     expect((await purgeWorkspace(ws)).errors).toContain(
@@ -774,7 +366,7 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
       .db()
       .execute({
         sql: "UPDATE consumer_video_originals SET receipt_json=? WHERE job_id=?",
-        args: [receiptBefore, job.id],
+        args: [receiptBefore, take.jobId],
       });
 
     const realFetch = globalThis.fetch;
@@ -811,7 +403,7 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
       expect(disposed).toMatchObject({
         status: "completed",
         failureCode: null,
-        providerJobId: job.providerJobId,
+        providerJobId: take.providerJobId,
         quoteCredits: 75,
       });
       expect(disposed.resultManifest).toMatchObject({
@@ -821,9 +413,9 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
           attachable: false,
           workspaceId: ws.id,
           originalReceipt: {
-            generationId: collected.generationId,
-            providerJobId: job.providerJobId,
-            sha256: collected.sha256,
+            generationId: take.generationId,
+            providerJobId: take.providerJobId,
+            sha256: take.sha256,
             bytes: original.length,
             credits: 75,
             creditUnit: "higgsfield_credits",
@@ -838,23 +430,16 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
             .db()
             .execute({
               sql: "SELECT receipt_json FROM consumer_video_originals WHERE job_id=?",
-              args: [job.id],
+              args: [take.jobId],
             })
         ).rows[0].receipt_json,
       ).toBe(receiptBefore);
       expect(
-        (await m.storage.readVideoBytes(collected.generationId)).equals(
+        (await m.storage.readVideoBytes(take.generationId)).equals(
           original,
         ),
       ).toBe(true);
       expect((await m.quota.standing()).usedBytes).toBe(original.length);
-      expect(
-        await m.jobs.completeConsumerJob({
-          ...scope,
-          leaseToken: abandoned.leaseToken,
-          resultManifest: { original: collected },
-        }),
-      ).toBeNull();
       await retry();
       const second = await purgeWorkspace(ws, {
         files: async () => {
@@ -863,9 +448,9 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
             disposed.resultManifest,
           );
           await m.storage.deleteVideo(
-            collected.generationId,
+            take.generationId,
             true,
-            collected.asset.url,
+            take.receipt.asset.url,
           );
           return { files: 1, uploads: 0 };
         },
@@ -893,7 +478,7 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
             .db()
             .execute({
               sql: "SELECT receipt_json FROM consumer_video_originals WHERE job_id=?",
-              args: [job.id],
+              args: [take.jobId],
             })
         ).rows[0].receipt_json,
       ).toBe(receiptBefore);
@@ -901,7 +486,6 @@ test("ordinary deleted-workspace purge disposes a collected original after grace
       expect((await purgeWorkspace(ws)).completed).toBe(true);
       expect((await purgeWorkspace(ws)).completed).toBe(true);
       expect(networkCalls).toBe(0);
-      expect(f.calls).toHaveLength(1);
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -912,17 +496,12 @@ test("cleanup cannot remove an already marked pending original or let it starve 
   const m = await modules();
   const deletion = await import("../../lib/mediaDeletion");
   await m.tenant.runInTenant(workspace(), async () => {
-    const { job } = await accepted(m);
-    const collected = await m.originals.collectConsumerVideoOriginal(
-      job,
-      sourceUrl,
-      { fetchDependencies: transport().deps },
-    );
+    const take = await collected(m);
     await deletion.mediaDeletionReady();
     // A previous deployment/manual tombstone must not bypass the cleanup guard.
     await m.database.db().execute({
       sql: "UPDATE generations SET deleted=1 WHERE id=?",
-      args: [collected.generationId],
+      args: [take.generationId],
     });
     const unrelated = `unrelated-${randomUUID()}`;
     await m.database.db().execute({
@@ -935,13 +514,13 @@ test("cleanup cannot remove an already marked pending original or let it starve 
       failed: 0,
     });
     expect(
-      (await m.storage.readVideoBytes(collected.generationId)).equals(original),
+      (await m.storage.readVideoBytes(take.generationId)).equals(original),
     ).toBe(true);
     expect(
       (
         await m.database.db().execute({
           sql: "SELECT bytes FROM generations WHERE id=?",
-          args: [collected.generationId],
+          args: [take.generationId],
         })
       ).rows[0].bytes,
     ).toBe(original.length);

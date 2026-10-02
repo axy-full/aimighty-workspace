@@ -35,7 +35,7 @@ import {
 import creativeStyles from "./moleculr-creative.module.css";
 
 /* The template category stays: collected template originals are still shown as results. The account's
-   marketing video and template library went with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */
+   marketing video and template library went with the Higgsfield sign-in (CLAUDE.md ground rule 10). */
 const TEMPLATE_ASSET_CATEGORY = "Campaign template";
 
 export function MoleculrWorkspace({

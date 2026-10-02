@@ -12,7 +12,7 @@ import { moreTakes } from "./helpers/genTakes";
  * route where the composer stands — its picks, the project's aspect, its
  * references, one take — so the ticked row is the figure Generate shows.
  * The connected Higgsfield catalogue went with the Higgsfield sign-in
- * (lib/higgsfield-consumer/retired.ts): nobody, the workspace owner included,
+ * (CLAUDE.md ground rule 10): nobody, the workspace owner included,
  * sees a connected switch, and the account is never read.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];

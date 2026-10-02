@@ -2,13 +2,16 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
 import type { TenantWorkspace } from "../../lib/tenant";
-import type {
-  CreateConsumerJob,
-  ConsumerJob,
-} from "../../lib/higgsfield-consumer/jobs";
+import { seedConsumerJob } from "../helpers/consumerLedger";
 
+/**
+ * The connected account's job ledger, read-only (lib/higgsfield-consumer/jobs.ts).
+ * Particl no longer signs in to Higgsfield, so nothing quotes, sends, polls or
+ * collects an account job; the rows a database already holds are read as they
+ * stand, and none is ever deleted. Rows are seeded the way an older database
+ * holds them (tests/helpers/consumerLedger.ts).
+ */
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-jobs-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
 process.env.KEYRING_SECRET ??= "unit-consumer-ledger-keyring-not-a-real-secret";
@@ -40,28 +43,6 @@ function workspace(): TenantWorkspace {
   };
 }
 const owner = { userId: "owner", draftId: "draft" };
-const input = (
-  overrides: Partial<CreateConsumerJob> = {},
-): CreateConsumerJob => ({
-  ...owner,
-  connectedOwnerId: "connected-owner",
-  connectionGeneration: randomUUID(),
-  workflow: "marketing-video",
-  idempotencyKey: randomUUID(),
-  payload: {
-    params: { prompt: "Bottle on a stone plinth", duration: 15 },
-    count: 1,
-  },
-  quoteCredits: 7.5,
-  quoteExpiresAt: Date.now() + 60_000,
-  originalAssetIds: ["product-original"],
-  ...overrides,
-});
-const key = (job: ConsumerJob) => ({
-  userId: job.userId,
-  draftId: job.draftId,
-  id: job.id,
-});
 async function modules() {
   return {
     jobs: await import("../../lib/higgsfield-consumer/jobs"),
@@ -69,752 +50,133 @@ async function modules() {
     tenant: await import("../../lib/tenant"),
   };
 }
-async function seed(userId = owner.userId, draftId = owner.draftId) {
+async function seedDraft(userId = owner.userId, draftId = owner.draftId) {
   const { database } = await modules();
   await database.ready();
   await database.db().execute({
-    sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)",
-    args: [
-      `${userId}-${draftId}`,
-      userId,
-      draftId,
-      "Test draft",
-      JSON.stringify({ assets: [{ id: "product-original" }] }),
-      Date.now(),
-    ],
+    sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,'{}',1,?)",
+    args: [`${userId}-${draftId}`, userId, draftId, "Test draft", Date.now()],
   });
-}
-async function fixture<T>(
-  run: (m: Awaited<ReturnType<typeof modules>>) => Promise<T>,
-) {
-  const m = await modules();
-  return m.tenant.runInTenant(workspace(), async () => {
-    await seed();
-    return run(m);
-  });
-}
-async function accepted(jobs: Awaited<ReturnType<typeof modules>>["jobs"]) {
-  const { job } = await jobs.createConsumerJob(input());
-  const claim = await jobs.claimConsumerDispatch(key(job));
-  const result = await jobs.markConsumerAccepted({
-    ...key(job),
-    claimToken: claim!.claimToken,
-    providerJobId: randomUUID(),
-  });
-  return { job: result!, claim: claim! };
 }
 
-test("stable immutable payloads replay one row, including after dispatch; changed terms conflict", async () => {
-  await fixture(async ({ jobs, database }) => {
-    const request = input();
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => jobs.createConsumerJob(request)),
-    );
-    expect(new Set(results.map((result) => result.job.id)).size).toBe(1);
-    expect(results.filter((result) => !result.replayed)).toHaveLength(1);
-    const original = results[0].job;
-    expect(
-      (
-        await jobs.getConsumerJobByKey({
-          ...owner,
-          idempotencyKey: request.idempotencyKey,
-        })
-      )?.id,
-    ).toBe(original.id);
-    expect(
-      await jobs.getConsumerJobByKey({
-        ...owner,
-        userId: "another-owner",
-        idempotencyKey: request.idempotencyKey,
-      }),
-    ).toBeNull();
-    expect(
-      await jobs.getConsumerJobByKey({
-        ...owner,
-        draftId: "another-draft",
-        idempotencyKey: request.idempotencyKey,
-      }),
-    ).toBeNull();
-    const reordered = await jobs.createConsumerJob({
-      ...request,
-      payload: {
-        count: 1,
-        params: { duration: 15, prompt: "Bottle on a stone plinth" },
-      },
+test("the module reads the ledger and writes nothing but a set-aside mark: no quote, send, poll or collection is left", async () => {
+  const { jobs } = await modules();
+  expect(Object.keys(jobs).filter((name) => typeof (jobs as Record<string, unknown>)[name] === "function").sort()).toEqual([
+    "ConsumerJobError", "consumerCapacity", "consumerJobSetAside", "consumerJobsReady", "getConsumerJob", "listConsumerJobs", "setAsideConsumerJob",
+  ]);
+});
+
+test("a fresh database gets every column, and an older table gains the later ones without losing a row", async () => {
+  const { tenant, jobs, database } = await modules();
+  await tenant.runInTenant(workspace(), async () => {
+    await database.ready();
+    /* The first shape the ledger shipped with: no receipt, set-aside, sweep or outcome columns. */
+    await database.db().execute(`CREATE TABLE higgsfield_consumer_jobs (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, draft_id TEXT NOT NULL,
+      connected_owner_id TEXT NOT NULL, connection_generation TEXT NOT NULL, higgsfield_workspace_id TEXT,
+      workflow TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+      payload_json TEXT NOT NULL, payload_hash TEXT NOT NULL, immutable_hash TEXT NOT NULL,
+      quote_credits REAL NOT NULL, quote_expires_at INTEGER NOT NULL, original_asset_ids TEXT NOT NULL,
+      status TEXT NOT NULL, provider_job_id TEXT, dispatch_claim_hash TEXT, poll_lease_hash TEXT, poll_lease_until INTEGER,
+      result_manifest TEXT, failure_code TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+    await database.db().execute(`INSERT INTO higgsfield_consumer_jobs VALUES('old-job','owner','draft','owner','generation-1',NULL,'genjutsu','old-key',
+      '{"input":{"prompt":"An old run"}}','payload','immutable',12.5,0,'[]','completed','11111111-1111-4111-8111-111111111111','claim',NULL,NULL,'{"original":{"bytes":1}}',NULL,10,20)`);
+    await jobs.consumerJobsReady();
+    const columns = (await database.db().execute("PRAGMA table_info(higgsfield_consumer_jobs)")).rows.map((row) => String(row.name));
+    expect(columns).toEqual(expect.arrayContaining(["provider_receipt", "released_at", "swept_at", "provider_outcome"]));
+    expect(await jobs.getConsumerJob({ ...owner, id: "old-job" })).toMatchObject({
+      status: "completed", workflow: "genjutsu", quoteCredits: 12.5, creditUnit: "higgsfield_credits",
+      resultManifest: { original: { bytes: 1 } }, providerReceipt: null, providerOutcome: null, releasedAt: null,
     });
-    expect(reordered.replayed).toBe(true);
-    expect(original.payloadHash).toBe(
-      createHash("sha256").update(original.payloadJson).digest("hex"),
-    );
-    expect(original).toMatchObject({
-      quoteCredits: 7.5,
-      creditUnit: "higgsfield_credits",
-      higgsfieldWorkspaceId: null,
-    });
-    expect(JSON.stringify(original)).not.toMatch(
-      /usd|claimToken|leaseToken|claim_hash/,
-    );
-    for (const changed of [
-      { payload: { count: 2 } },
-      { connectedOwnerId: "another-owner" },
-      { connectionGeneration: randomUUID() },
-      { higgsfieldWorkspaceId: "another-wallet" },
-      { quoteCredits: 8 },
-      { quoteExpiresAt: request.quoteExpiresAt + 1 },
-      { originalAssetIds: ["another-original"] },
-    ])
-      await expect(
-        jobs.createConsumerJob({ ...request, ...changed }),
-      ).rejects.toMatchObject({ code: "idempotency_conflict" });
-    await jobs.claimConsumerDispatch(key(original));
-    expect((await jobs.createConsumerJob(request)).job.status).toBe(
-      "dispatching",
-    );
-    expect(
-      Number(
-        (
-          await database
-            .db()
-            .execute("SELECT count(*) AS count FROM higgsfield_consumer_jobs")
-        ).rows[0].count,
-      ),
-    ).toBe(1);
+  });
+  await tenant.runInTenant(workspace(), async () => {
+    await jobs.consumerJobsReady();
+    const columns = (await database.db().execute("PRAGMA table_info(higgsfield_consumer_jobs)")).rows.map((row) => String(row.name));
+    expect(columns).toEqual(expect.arrayContaining(["dispatch_claim_hash", "provider_receipt", "released_at", "swept_at", "provider_outcome"]));
   });
 });
 
-test("owner, draft, and tenant boundaries protect both reads and mutations", async () => {
+test("owner, draft and tenant boundaries protect every read", async () => {
   const { tenant, jobs } = await modules(),
     first = workspace(),
     second = workspace();
   let id = "";
   await tenant.runInTenant(first, async () => {
-    await seed();
-    await seed("other-owner", "draft");
-    await seed("owner", "other-draft");
-    const request = input({ idempotencyKey: "same-key" });
-    id = (await jobs.createConsumerJob(request)).job.id;
-    await expect(
-      jobs.createConsumerJob({ ...request, userId: "unknown" }),
-    ).rejects.toMatchObject({ code: "not_found" });
+    await seedDraft();
+    id = await seedConsumerJob({ ...owner, status: "completed" });
+    expect((await jobs.getConsumerJob({ ...owner, id }))?.id).toBe(id);
     for (const wrong of [
       { userId: "other-owner", draftId: "draft" },
       { userId: "owner", draftId: "other-draft" },
     ]) {
       expect(await jobs.getConsumerJob({ ...wrong, id })).toBeNull();
       expect((await jobs.listConsumerJobs(wrong)).items).toEqual([]);
-      await expect(
-        jobs.claimConsumerDispatch({ ...wrong, id }),
-      ).rejects.toMatchObject({ code: "not_found" });
-      expect(
-        (await jobs.createConsumerJob({ ...request, ...wrong })).job.id,
-      ).not.toBe(id);
     }
+    await expect(jobs.getConsumerJob({ ...owner, id: "has space" })).rejects.toMatchObject({ code: "invalid_input", status: 400 });
+    await expect(jobs.listConsumerJobs({ ...owner, limit: 51 })).rejects.toMatchObject({ code: "invalid_input" });
   });
   await tenant.runInTenant(second, async () => {
-    await seed();
+    await seedDraft();
     expect(await jobs.getConsumerJob({ ...owner, id })).toBeNull();
     expect((await jobs.listConsumerJobs(owner)).items).toEqual([]);
-    await expect(
-      jobs.claimConsumerDispatch({ ...owner, id }),
-    ).rejects.toMatchObject({ code: "not_found" });
-    expect(
-      (await jobs.createConsumerJob(input({ idempotencyKey: "same-key" }))).job
-        .id,
-    ).not.toBe(id);
   });
-  await expect(jobs.getConsumerJob({ ...owner, id })).rejects.toThrow(
-    "No workspace",
-  );
+  await expect(jobs.getConsumerJob({ ...owner, id })).rejects.toThrow("No workspace");
 });
 
-test("quote snapshots cannot change while creation awaits the database lock", async () => {
-  await fixture(async ({ jobs }) => {
-    const request = input(),
-      approved = structuredClone(request);
-    const pending = jobs.createConsumerJob(request);
-    request.quoteCredits = 999;
-    request.connectionGeneration = randomUUID();
-    request.originalAssetIds.push("not-approved");
-    request.payload.changed = true;
-    const result = await pending;
-    expect(result.job.quoteCredits).toBe(approved.quoteCredits);
-    expect(result.job.connectionGeneration).toBe(approved.connectionGeneration);
-    expect(result.job.originalAssetIds).toEqual(approved.originalAssetIds);
-    expect(JSON.parse(result.job.payloadJson)).toEqual(approved.payload);
-    expect((await jobs.createConsumerJob(approved)).job.id).toBe(result.job.id);
-  });
-});
-
-test("concurrent dispatch has one winner; uncertainty remains active and cannot be retried", async () => {
-  await fixture(async ({ jobs }) => {
-    const { job } = await jobs.createConsumerJob(input());
-    const claims = await Promise.all(
-      Array.from({ length: 12 }, () => jobs.claimConsumerDispatch(key(job))),
-    );
-    expect(claims.filter(Boolean)).toHaveLength(1);
-    const claim = claims.find(Boolean)!;
-    expect(
-      await jobs.markConsumerUncertain({ ...key(job), claimToken: "wrong" }),
-    ).toBeNull();
-    expect(
-      (
-        await jobs.markConsumerUncertain({
-          ...key(job),
-          claimToken: claim.claimToken,
-        })
-      )?.status,
-    ).toBe("uncertain");
-    expect(await jobs.claimConsumerDispatch(key(job))).toBeNull();
-    expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
-    expect(
-      await jobs.markConsumerFailed({
-        ...key(job),
-        claimToken: claim.claimToken,
-      }),
-    ).toBeNull();
-    const providerJobId = randomUUID();
-    expect(
-      (
-        await jobs.markConsumerAccepted({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerJobId,
-        })
-      )?.status,
-    ).toBe("accepted");
-    expect(await jobs.claimConsumerDispatch(key(job))).toBeNull();
-  });
-});
-
-test("a workspace admits four active jobs atomically, including uncertain jobs in another draft", async () => {
-  await fixture(async ({ jobs }) => {
-    await seed("owner", "second-draft");
-    const records = await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        jobs.createConsumerJob(
-          input({ draftId: index % 2 ? "second-draft" : "draft" }),
-        ),
-      ),
-    );
-    const outcomes = await Promise.allSettled(
-      records.map(({ job }) => jobs.claimConsumerDispatch(key(job))),
-    );
-    expect(
-      outcomes.filter((result) => result.status === "fulfilled"),
-    ).toHaveLength(4);
-    expect(
-      outcomes.filter((result) => result.status === "rejected"),
-    ).toHaveLength(4);
-    const claims = outcomes.flatMap((result, index) =>
-      result.status === "fulfilled" && result.value
-        ? [{ ...result.value, index }]
-        : [],
-    );
-    for (const claim of claims)
-      await jobs.markConsumerUncertain({
-        ...key(claim.job),
-        claimToken: claim.claimToken,
-      });
-    const waiting = records.find(
-      ({ job }) => !claims.some((claim) => claim.job.id === job.id),
-    )!.job;
-    await expect(
-      jobs.claimConsumerDispatch(key(waiting)),
-    ).rejects.toMatchObject({ code: "capacity", status: 429 });
-    const first = claims[0];
-    await jobs.markConsumerAccepted({
-      ...key(first.job),
-      claimToken: first.claimToken,
-      providerJobId: randomUUID(),
-    });
-    const poll = await jobs.claimConsumerPoll(key(first.job));
-    await jobs.completeConsumerJob({
-      ...key(first.job),
-      leaseToken: poll!.leaseToken,
-      resultManifest: { original: "asset-result" },
-    });
-    expect((await jobs.claimConsumerDispatch(key(waiting)))?.job.status).toBe(
-      "dispatching",
-    );
-  });
-});
-
-test("uncertain provider acknowledgements persist atomically and cannot be overwritten or replayed as submission", async () => {
-  await fixture(async ({ jobs }) => {
-    const { job } = await jobs.createConsumerJob(input()),
-      claim = (await jobs.claimConsumerDispatch(key(job)))!;
-    const providerReceipt = {
-      response: { state: "submitted", request_ref: "unexpected-handle-format" },
-      qualification: "unsupported-provider-shape",
-    };
-    expect(
-      await jobs.markConsumerUncertain({
-        ...key(job),
-        claimToken: "wrong",
-        providerReceipt,
-      }),
-    ).toBeNull();
-    expect(
-      (
-        await jobs.markConsumerUncertain({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerReceipt,
-        })
-      )?.providerReceipt,
-    ).toEqual(providerReceipt);
-    expect((await jobs.getConsumerJob(key(job)))?.providerReceipt).toEqual(
-      providerReceipt,
-    );
-    expect(
-      (
-        await jobs.markConsumerUncertain({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerReceipt,
-        })
-      )?.status,
-    ).toBe("uncertain");
-    await expect(
-      jobs.markConsumerUncertain({
-        ...key(job),
-        claimToken: claim.claimToken,
-        providerReceipt: { different: true },
-      }),
-    ).rejects.toMatchObject({ code: "receipt_conflict" });
-    expect(() =>
-      jobs.markConsumerUncertain({
-        ...key(job),
-        claimToken: claim.claimToken,
-        providerReceipt: { oversized: "x".repeat(65_537) },
-      }),
-    ).toThrow("invalid_input");
-    expect(await jobs.claimConsumerDispatch(key(job))).toBeNull();
-    const providerJobId = randomUUID();
-    expect(
-      (
-        await jobs.markConsumerAccepted({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerJobId,
-        })
-      )?.providerReceipt,
-    ).toEqual(providerReceipt);
-  });
-});
-
-test("quote expiry blocks fresh claims but does not destroy matching idempotent replay", async () => {
-  await fixture(async ({ jobs }) => {
-    await expect(
-      jobs.createConsumerJob(input({ quoteExpiresAt: Date.now() - 1 })),
-    ).rejects.toMatchObject({ code: "quote_expired" });
-    const request = input(),
-      { job } = await jobs.createConsumerJob(request);
-    const realNow = Date.now;
-    Date.now = () => request.quoteExpiresAt + 1;
-    try {
-      await expect(jobs.claimConsumerDispatch(key(job))).rejects.toMatchObject({
-        code: "quote_expired",
-      });
-      expect((await jobs.createConsumerJob(request)).job.id).toBe(job.id);
-      expect((await jobs.getConsumerJob(key(job)))?.status).toBe("quoted");
-    } finally {
-      Date.now = realNow;
-    }
-  });
-});
-
-test("provider UUID is bound once to its original claim and cannot belong to a different job", async () => {
-  await fixture(async ({ jobs }) => {
-    const { job } = await jobs.createConsumerJob(input()),
-      claim = (await jobs.claimConsumerDispatch(key(job)))!;
-    await expect(
-      jobs.markConsumerAccepted({
-        ...key(job),
-        claimToken: claim.claimToken,
-        providerJobId: "not-a-uuid",
-      }),
-    ).rejects.toMatchObject({ code: "invalid_input" });
-    const providerJobId = randomUUID();
-    expect(
-      await jobs.markConsumerAccepted({
-        ...key(job),
-        claimToken: "wrong",
-        providerJobId,
-      }),
-    ).toBeNull();
-    expect(
-      (
-        await jobs.markConsumerAccepted({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerJobId: providerJobId.toUpperCase(),
-        })
-      )?.providerJobId,
-    ).toBe(providerJobId);
-    expect(
-      (
-        await jobs.markConsumerAccepted({
-          ...key(job),
-          claimToken: claim.claimToken,
-          providerJobId,
-        })
-      )?.id,
-    ).toBe(job.id);
-    await expect(
-      jobs.markConsumerAccepted({
-        ...key(job),
-        claimToken: claim.claimToken,
-        providerJobId: randomUUID(),
-      }),
-    ).rejects.toMatchObject({ code: "provider_job_conflict" });
-    const other = (await jobs.createConsumerJob(input())).job,
-      second = (await jobs.claimConsumerDispatch(key(other)))!;
-    await expect(
-      jobs.markConsumerAccepted({
-        ...key(other),
-        claimToken: second.claimToken,
-        providerJobId,
-      }),
-    ).rejects.toMatchObject({ code: "provider_job_conflict" });
-    expect((await jobs.getConsumerJob(key(other)))?.status).toBe("dispatching");
-  });
-});
-
-test("poll leases admit one collector and stale or foreign claims cannot complete a job", async () => {
-  await fixture(async ({ jobs, database }) => {
-    const { job } = await accepted(jobs);
-    const claims = await Promise.all(
-      Array.from({ length: 8 }, () => jobs.claimConsumerPoll(key(job))),
-    );
-    expect(claims.filter(Boolean)).toHaveLength(1);
-    const old = claims.find(Boolean)!;
-    expect(
-      await jobs.completeConsumerJob({
-        ...key(job),
-        leaseToken: "wrong",
-        resultManifest: { result: "wrong" },
-      }),
-    ).toBeNull();
-    await database.db().execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?",
-      args: [job.id],
-    });
-    expect(
-      await jobs.completeConsumerJob({
-        ...key(job),
-        leaseToken: old.leaseToken,
-        resultManifest: { result: "stale" },
-      }),
-    ).toBeNull();
-    const current = (await jobs.claimConsumerPoll(key(job)))!;
-    expect(current.leaseToken).not.toBe(old.leaseToken);
-    expect(
-      await jobs.releaseConsumerPoll({
-        ...key(job),
-        leaseToken: old.leaseToken,
-      }),
-    ).toBeNull();
-    const resultManifest = {
-      assets: [{ id: "collected-original", sha256: "a".repeat(64) }],
-      score: null,
-    };
-    const completed = await jobs.completeConsumerJob({
-      ...key(job),
-      leaseToken: current.leaseToken,
-      resultManifest,
-    });
-    expect(completed).toMatchObject({
-      status: "completed",
-      resultManifest,
-      providerJobId: job.providerJobId,
-    });
-    expect(
-      await jobs.completeConsumerJob({
-        ...key(job),
-        leaseToken: current.leaseToken,
-        resultManifest: { overwrite: true },
-      }),
-    ).toBeNull();
-    expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
-    expect(await jobs.claimConsumerDispatch(key(job))).toBeNull();
-    expect((await jobs.getConsumerJob(key(job)))?.resultManifest).toEqual(
-      resultManifest,
-    );
-  });
-});
-
-test("bounded JSON rejects non-JSON values and hostile getters without reading them", async () => {
-  await fixture(async ({ jobs }) => {
-    let reads = 0;
-    const getter = Object.defineProperty({}, "secret", {
-      enumerable: true,
-      get() {
-        reads++;
-        return "secret";
-      },
-    });
-    const cycle: Record<string, unknown> = {};
-    cycle.self = cycle;
-    for (const payload of [
-      getter,
-      cycle,
-      { number: Infinity },
-      { date: new Date() },
-      { large: "x".repeat(65_537) },
-      { undefined: undefined },
-      { array: [, 1] },
-    ]) {
-      await expect(
-        jobs.createConsumerJob(
-          input({ payload: payload as CreateConsumerJob["payload"] }),
-        ),
-      ).rejects.toMatchObject({ code: "invalid_input" });
-    }
-    expect(reads).toBe(0);
-    for (const partial of [
-      { quoteCredits: -1 },
-      { quoteCredits: NaN },
-      { originalAssetIds: ["duplicate", "duplicate"] },
-      { higgsfieldWorkspaceId: "invalid workspace" },
-    ]) {
-      await expect(
-        jobs.createConsumerJob(input(partial)),
-      ).rejects.toMatchObject({ code: "invalid_input" });
-    }
-    const { job } = await accepted(jobs),
-      lease = (await jobs.claimConsumerPoll(key(job)))!;
-    expect(() =>
-      jobs.completeConsumerJob({
-        ...key(job),
-        leaseToken: lease.leaseToken,
-        resultManifest: { tooLarge: "x".repeat(262_145) },
-      }),
-    ).toThrow("invalid_input");
-    expect((await jobs.getConsumerJob(key(job)))?.status).toBe("accepted");
-    expect(
-      (
-        await jobs.releaseConsumerPoll({
-          ...key(job),
-          leaseToken: lease.leaseToken,
-        })
-      )?.status,
-    ).toBe("accepted");
-    const next = (await jobs.claimConsumerPoll(key(job)))!;
-    expect(
-      (
-        await jobs.failConsumerPoll({
-          ...key(job),
-          leaseToken: next.leaseToken,
-          failureCode: "invalid_result",
-        })
-      )?.failureCode,
-    ).toBe("invalid_result");
-    expect(await jobs.claimConsumerDispatch(key(job))).toBeNull();
-  });
-});
-
-test("provider polling backoff survives fresh reads and refuses early multi-window claims", async () => {
-  await fixture(async ({ jobs }) => {
-    const { job } = await accepted(jobs),
-      lease = (await jobs.claimConsumerPoll(key(job)))!;
-    const nextPollAt = Date.now() + 120_000;
-    // The check reads its own clock; pin it so each bound is missed by exactly 1 ms.
-    const realNow = Date.now,
-      now = realNow();
-    Date.now = () => now;
-    try {
-      expect(() =>
-        jobs.releaseConsumerPoll({
-          ...key(job),
-          leaseToken: lease.leaseToken,
-          nextPollAt: now - 1,
-        }),
-      ).toThrow("invalid_input");
-      expect(() =>
-        jobs.releaseConsumerPoll({
-          ...key(job),
-          leaseToken: lease.leaseToken,
-          nextPollAt: now + 3_600_001,
-        }),
-      ).toThrow("invalid_input");
-    } finally {
-      Date.now = realNow;
-    }
-    expect(
-      (
-        await jobs.releaseConsumerPoll({
-          ...key(job),
-          leaseToken: lease.leaseToken,
-          nextPollAt,
-        })
-      )?.status,
-    ).toBe("accepted");
-    expect((await jobs.getConsumerJob(key(job)))?.status).toBe("accepted");
-    expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
-    Date.now = () => nextPollAt - 1;
-    try {
-      expect(await jobs.claimConsumerPoll(key(job))).toBeNull();
-    } finally {
-      Date.now = realNow;
-    }
-    Date.now = () => nextPollAt;
-    try {
-      const later = await jobs.claimConsumerPoll(key(job));
-      expect(later).not.toBeNull();
-      expect(later?.leaseToken).not.toBe(lease.leaseToken);
-    } finally {
-      Date.now = realNow;
-    }
-  });
-});
-
-test("stable pagination and late receipts survive draft deletion without permitting new spend", async () => {
-  await fixture(async ({ jobs, database }) => {
-    const created = await Promise.all(
-      Array.from({ length: 5 }, () => jobs.createConsumerJob(input())),
-    );
+test("the list pages by a stable cursor, reads no claim or fingerprint, and keeps a deleted draft's jobs", async () => {
+  const { tenant, jobs, database } = await modules();
+  await tenant.runInTenant(workspace(), async () => {
+    await seedDraft();
+    const ids = [];
+    for (let index = 0; index < 5; index++) ids.push(await seedConsumerJob({ ...owner, status: index ? "completed" : "accepted", createdAt: 1_000 + index }));
     const first = await jobs.listConsumerJobs({ ...owner, limit: 2 });
-    const second = await jobs.listConsumerJobs({
-      ...owner,
-      limit: 2,
-      before: first.nextCursor!,
-    });
-    const third = await jobs.listConsumerJobs({
-      ...owner,
-      limit: 2,
-      before: second.nextCursor!,
-    });
+    const second = await jobs.listConsumerJobs({ ...owner, limit: 2, before: first.nextCursor! });
+    const third = await jobs.listConsumerJobs({ ...owner, limit: 2, before: second.nextCursor! });
     expect(third.nextCursor).toBeNull();
-    expect(
-      new Set(
-        [...first.items, ...second.items, ...third.items].map((job) => job.id),
-      ).size,
-    ).toBe(5);
-    expect(first.items).toHaveLength(2);
-    expect(JSON.stringify(first)).not.toMatch(
-      /lease_hash|dispatch_claim|immutable_hash/,
-    );
-    const running = created[0].job;
-    const claim = (await jobs.claimConsumerDispatch(key(running)))!;
-    await database.db().execute({
-      sql: "DELETE FROM workbench_projects WHERE owner=? AND project_id=?",
-      args: [owner.userId, owner.draftId],
-    });
-    expect((await jobs.getConsumerJob(key(running)))?.status).toBe(
-      "dispatching",
-    );
+    expect([...first.items, ...second.items, ...third.items].map((job) => job.id)).toEqual([...ids].reverse());
+    expect(JSON.stringify(first)).not.toMatch(/lease_hash|dispatch_claim|immutable_hash|claim-/);
+    await database.db().execute({ sql: "DELETE FROM workbench_projects WHERE owner=? AND project_id=?", args: [owner.userId, owner.draftId] });
     expect((await jobs.listConsumerJobs(owner)).items).toHaveLength(5);
-    await expect(
-      jobs.claimConsumerDispatch(key(created[1].job)),
-    ).rejects.toMatchObject({ code: "not_found" });
-    await expect(jobs.createConsumerJob(input())).rejects.toMatchObject({
-      code: "not_found",
-    });
-    const providerJobId = randomUUID();
-    expect(
-      (
-        await jobs.markConsumerAccepted({
-          ...key(running),
-          claimToken: claim.claimToken,
-          providerJobId,
-        })
-      )?.status,
-    ).toBe("accepted");
-    const poll = (await jobs.claimConsumerPoll(key(running)))!;
-    const receipt = await jobs.completeConsumerJob({
-      ...key(running),
-      leaseToken: poll.leaseToken,
-      resultManifest: { outputAssetId: "recoverable-original" },
-    });
-    expect(receipt).toMatchObject({
-      status: "completed",
-      providerJobId,
-      resultManifest: { outputAssetId: "recoverable-original" },
-    });
-    await seed("reassigned-owner", "draft");
-    expect(
-      await jobs.getConsumerJob({
-        ...key(running),
-        userId: "reassigned-owner",
-      }),
-    ).toBeNull();
-    await expect(jobs.createConsumerJob(input())).rejects.toMatchObject({
-      code: "not_found",
-    });
+    expect((await jobs.getConsumerJob({ ...owner, id: ids[0] }))?.status).toBe("accepted");
   });
 });
 
-test("receipt recovery is immutable, owner-scoped, unique and never restores dispatch admission", async () => {
-  await fixture(async ({ jobs }) => {
-    const { job } = await jobs.createConsumerJob(input());
-    const scope = key(job);
-    const claim = await jobs.claimConsumerDispatch(scope);
-    const providerJobId = randomUUID();
-    const receipt = { response: { results: [{ id: providerJobId, model: "marketing_studio_video", type: "video" }] } };
-    await jobs.markConsumerUncertain({ ...scope, claimToken: claim!.claimToken, providerReceipt: receipt });
-    expect(await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: { wrong: true } })).toBeNull();
-    await expect(jobs.reconcileConsumerReceipt({ ...scope, userId: "another-owner", providerJobId, expectedReceipt: receipt })).rejects.toMatchObject({ code: "not_found" });
-    const recovered = await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: receipt });
-    expect(recovered?.status).toBe("accepted");
-    expect(recovered?.providerJobId).toBe(providerJobId);
-    expect(await jobs.claimConsumerDispatch(scope)).toBeNull();
-    expect((await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: receipt }))?.status).toBe("accepted");
-    await expect(jobs.reconcileConsumerReceipt({ ...scope, providerJobId: randomUUID(), expectedReceipt: receipt })).rejects.toMatchObject({ code: "provider_job_conflict" });
-  });
-});
-
-test("stuck jobs stop holding the four slots once their owner sets them aside or the capacity window passes; nothing is deleted or re-sent", async () => {
-  await fixture(async ({ jobs, database }) => {
-    await seed("owner", "second-draft");
-    const held: { job: ConsumerJob; claimToken: string }[] = [];
-    for (let index = 0; index < 4; index++) {
-      const { job } = await jobs.createConsumerJob(input({ draftId: index % 2 ? "second-draft" : "draft" }));
-      const claim = (await jobs.claimConsumerDispatch(key(job)))!;
-      // An uncertain dispatch with no receipt id: nothing can ever reconcile it.
-      await jobs.markConsumerUncertain({ ...key(job), claimToken: claim.claimToken });
-      held.push(claim);
-    }
-    const waiting = (await jobs.createConsumerJob(input())).job;
-    await expect(jobs.claimConsumerDispatch(key(waiting))).rejects.toMatchObject({ code: "capacity", status: 429 });
-    // The owner sees every holder across projects in one place.
-    const seen = await jobs.consumerCapacity("owner");
+test("a stuck job stops holding a slot once its owner sets it aside or the capacity window passes; nothing is deleted or re-sent", async () => {
+  const { tenant, jobs, database } = await modules();
+  await tenant.runInTenant(workspace(), async () => {
+    await seedDraft();
+    await seedDraft("owner", "second-draft");
+    const now = Date.now();
+    const held: string[] = [];
+    /* Unconfirmed sends with no receipt: nothing can ever settle them. */
+    for (let index = 0; index < 4; index++)
+      held.push(await seedConsumerJob({ userId: "owner", draftId: index % 2 ? "second-draft" : "draft", status: "uncertain", createdAt: now - index }));
+    const seen = await jobs.consumerCapacity("owner", now);
     expect(seen).toMatchObject({ limit: 4, active: 4 });
-    expect(seen.mine.map((job) => job.id).sort()).toEqual(held.map((claim) => claim.job.id).sort());
+    expect(seen.mine.map((job) => job.id).sort()).toEqual([...held].sort());
     expect(seen.mine.every((job) => job.status === "uncertain" && job.projectName === "Test draft" && !job.releasable)).toBe(true);
-    expect((await jobs.consumerCapacity("someone-else")).mine).toEqual([]);
-    // Too recent to set aside, and never by another member.
-    const target = held[0].job;
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id })).toBe(false);
-    const later = Date.now() + jobs.CONSUMER_RELEASE_GRACE_MS + 1;
+    expect((await jobs.consumerCapacity("someone-else", now)).mine).toEqual([]);
+    /* Too recent to set aside, and never by another member. */
+    const target = held[0];
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, now)).toBe(false);
+    const later = now + jobs.CONSUMER_RELEASE_GRACE_MS + 1;
     expect((await jobs.consumerCapacity("owner", later)).mine.every((job) => job.releasable)).toBe(true);
-    expect(await jobs.setAsideConsumerJob({ userId: "someone-else", id: target.id }, later)).toBe(false);
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id }, later)).toBe(true);
-    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target.id }, later)).toBe(false);
-    // Kept exactly as it was, still listed for recovery, never dispatchable again.
-    expect(await jobs.getConsumerJob(key(target))).toMatchObject({ status: "uncertain", releasedAt: later, providerJobId: null });
-    expect(await jobs.claimConsumerDispatch(key(target))).toBeNull();
-    expect((await jobs.listConsumerRecoveryJobs({ ...owner, workflow: "marketing-video" })).some((job) => job.id === target.id)).toBe(true);
-    // Its slot admits the waiting job.
-    expect((await jobs.claimConsumerDispatch(key(waiting)))?.job.status).toBe("dispatching");
-    // A job admitted before the capacity window no longer counts either.
-    const next = (await jobs.createConsumerJob(input())).job;
-    await expect(jobs.claimConsumerDispatch(key(next))).rejects.toMatchObject({ code: "capacity" });
-    await database.db().execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET created_at=? WHERE id=?",
-      args: [Date.now() - jobs.CONSUMER_CAPACITY_WINDOW_MS - 1, held[1].job.id],
-    });
-    expect((await jobs.claimConsumerDispatch(key(next)))?.job.status).toBe("dispatching");
-    expect((await jobs.getConsumerJob(key(held[1].job)))?.status).toBe("uncertain");
-    expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(6);
-    // Every workflow view reads the same rule, so the set-aside job and the one
-    // past the window stop gating their project's next quote; the others still do.
-    const setAside = async (job: ConsumerJob) => jobs.consumerJobSetAside((await jobs.getConsumerJob(key(job)))!);
-    expect(await setAside(target)).toBe(true);
-    expect(await setAside(held[1].job)).toBe(true);
-    expect(await setAside(held[2].job)).toBe(false);
-    expect(await setAside(waiting)).toBe(false);
-    // A settled or merely quoted job is never "set aside", whatever its age.
+    expect(await jobs.setAsideConsumerJob({ userId: "someone-else", id: target }, later)).toBe(false);
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, later)).toBe(true);
+    expect(await jobs.setAsideConsumerJob({ userId: "owner", id: target }, later)).toBe(false);
+    /* Kept exactly as it was, still listed. */
+    expect(await jobs.getConsumerJob({ ...owner, id: target })).toMatchObject({ status: "uncertain", releasedAt: later, providerJobId: null });
+    expect((await jobs.consumerCapacity("owner", later)).active).toBe(3);
+    /* A job admitted before the capacity window no longer counts either. */
+    await database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET created_at=? WHERE id=?", args: [later - jobs.CONSUMER_CAPACITY_WINDOW_MS - 1, held[1]] });
+    expect((await jobs.consumerCapacity("owner", later)).active).toBe(2);
+    expect(Number((await database.db().execute("SELECT COUNT(*) AS n FROM higgsfield_consumer_jobs")).rows[0].n)).toBe(4);
+    /* The same rule, read off one job. */
+    const setAside = async (id: string, draftId: string) => jobs.consumerJobSetAside((await jobs.getConsumerJob({ userId: "owner", draftId, id }))!, later);
+    expect(await setAside(target, "draft")).toBe(true);
+    expect(await setAside(held[1], "second-draft")).toBe(true);
+    expect(await setAside(held[2], "draft")).toBe(false);
+    /* A settled or merely quoted job is never "set aside", whatever its age. */
     expect(jobs.consumerJobSetAside({ status: "failed", releasedAt: later, createdAt: 0 })).toBe(false);
     expect(jobs.consumerJobSetAside({ status: "quoted", releasedAt: null, createdAt: 0 })).toBe(false);
   });

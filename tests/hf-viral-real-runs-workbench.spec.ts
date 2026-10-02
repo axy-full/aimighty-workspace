@@ -59,8 +59,6 @@ async function open(page: Page, sp: "motion" | "swap" | "history", generations: 
   await expect(page.getByTestId("project-name")).toHaveText("Harbour dusk study");
   return { errors, asked, library };
 }
-/** Viral asks nothing of the connected account; the shell's own collector may list an owner's earlier connected jobs, to drain them. */
-const viralAsked = (asked: string[]) => asked.filter((call) => call !== "GET /api/higgsfield/consumer/generation");
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
@@ -106,7 +104,7 @@ test("History lists the project's transform takes from the Library, each state i
   await done.nth(1).getByRole("button", { name: "Send to Edit" }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
-  expect(viralAsked(asked), "Viral asks the connected account for nothing").toEqual([]);
+  expect(asked, "Viral asks the connected account for nothing").toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -150,7 +148,7 @@ test("with no takes yet, History says so and starts one; Recent says which varia
   await page.getByTestId("history-empty").getByRole("button", { name: "Object Swap" }).click();
   await expect(page.getByTestId("viral-recent-empty")).toHaveText("No Object Swap takes yet.");
   await noOverflow(page);
-  expect(viralAsked(asked)).toEqual([]);
+  expect(asked).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -172,39 +170,19 @@ test("Recreate from an earlier account run loads what the key carries and says w
   await expect(page.getByTestId("viral-reference")).toHaveCount(8);
   await expect(page.getByTestId("viral-prompt")).toHaveValue("swap the bottle");
   await noOverflow(page);
-  expect(viralAsked(asked)).toEqual([]);
+  expect(asked).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-/* The account's Viral route is no longer read by these pages, but its history reads stay until its server code goes
-   (lib/higgsfield-consumer/retired.ts), and pricing or starting a run there answers 410. */
-test("the real route: the runs view pages runs by cursor and the saved-jobs list is unchanged; a quote or a submit is retired", async ({ page }, info) => {
+/* The account's Viral route went with its server code (CLAUDE.md ground rule 10): its runs come from the Library above. */
+test("the real route: the account's Viral route is gone — its runs and saved jobs, a quote, a submit and a status read all find nothing", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one server check is enough");
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; owner?: boolean; workspace: { id: string } };
   const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
   const base = "/api/higgsfield/consumer/genjutsu?draftId=ws-runs-real";
-  const runs = await page.request.get(`${base}&view=runs`, { headers });
-  expect(runs.status(), await runs.text()).toBe(200);
-  expect(await runs.json()).toMatchObject({ jobs: [], nextCursor: null, connection: { connected: false } });
-  const saved = await page.request.get(base, { headers });
-  expect(saved.status()).toBe(200);
-  const body = await saved.json();
-  expect(body.jobs).toEqual([]);
-  expect(body).not.toHaveProperty("nextCursor");
-  const swaps = await page.request.get(`${base}&view=runs&variant=object-swap`, { headers });
-  expect(swaps.status(), await swaps.text()).toBe(200);
-  expect(await swaps.json()).toMatchObject({ jobs: [], nextCursor: null });
-  for (const query of ["&view=runs&cursor=nope", "&cursor=1700000000000.abc", "&view=everything", "&variant=object-swap", "&view=runs&variant=lip-sync"])
-    expect((await page.request.get(`${base}${query}`, { headers })).status(), query).toBe(400);
-
-  /* New work is retired on the real server, whatever the body holds; a status read still reaches the ledger. */
-  const post = (data: Record<string, unknown>) => page.request.post("/api/higgsfield/consumer/genjutsu", { headers, data });
-  for (const action of ["quote", "submit"]) {
-    const refused = await post({ action, draftId: "ws-runs-real" });
-    expect(refused.status(), action).toBe(410);
-    expect(await refused.json()).toEqual({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." });
-  }
-  const status = await post({ action: "status", draftId: "ws-runs-real", id: "44444444-4444-4444-8444-000000000001" });
-  expect(status.status()).not.toBe(410);
+  for (const query of ["&view=runs", "", "&view=runs&variant=object-swap"])
+    expect((await page.request.get(`${base}${query}`, { headers })).status(), query).toBe(404);
+  for (const action of ["quote", "submit", "status"])
+    expect([404, 405], action).toContain((await page.request.post("/api/higgsfield/consumer/genjutsu", { headers, data: { action, draftId: "ws-runs-real", id: "44444444-4444-4444-8444-000000000001" } })).status());
 });

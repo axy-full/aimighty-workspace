@@ -372,8 +372,11 @@ Its quoted amount is in **Higgsfield credits**, separate from Particl credits or
 USD. The reconciliation report exposes the amount and unit, IDs and disposition;
 it excludes prompts, claim hashes, provider response bodies and results.
 
-Scheduled backup preflight rejects dispatching, accepted, uncertain or unknown
-consumer states. Offline forensic restore still preserves such records exactly.
+Scheduled backup preflight no longer waits on consumer rows. Since the sign-in
+was removed, nothing reads the account, so a dispatching, accepted or uncertain
+job, an unfinished media import or an uncollected original can never settle;
+the capture takes them as they stand. Offline forensic restore still preserves
+such records exactly, and the reconciliation report still lists them.
 Preparation always quarantines quoted and dispatching snapshots as uncertain:
 a quote in an older backup may have been submitted after capture. It retains
 the original quote expiry, fingerprints and claims rather than clearing or

@@ -397,7 +397,7 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   expect(errors).toEqual([]);
 });
 
-test("a failed motion transfer or ad, and a take nobody can confirm, open their read-only record in Usage — never a page that no longer lists them", async ({ page }, info) => {
+test("a failed motion transfer or ad, and a take never collected, open their read-only record in Usage — never a page that no longer lists them", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const touch = TOUCH.includes(info.project.name);
   /* Real reads end to end: the account's own rows, seeded, listed by the tray's route and by Usage's. */
@@ -447,14 +447,15 @@ test("a failed motion transfer or ad, and a take nobody can confirm, open their 
   await page.goto("/suites?suite=studio&page=rig");
   await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
 
-  /* Nothing here can check the take again: it is counted as unconfirmed, and the failed two are news. */
+  /* Nothing collects the account's work any more: the take still open in its ledger was never collected and waits on
+     nothing, so nothing is counted; the failed two were already there on this first visit, so they are not news. */
   const pill = page.getByTestId("running-jobs");
-  await expect(pill).toHaveAccessibleName("Jobs: 1 unconfirmed");
+  await expect(pill).toHaveAccessibleName("Jobs");
   await pill.click();
   const panel = page.getByRole("dialog", { name: "Jobs" });
   const rows = panel.getByTestId("jobs-row");
   await expect(rows.locator(".gx-jobs-name")).toHaveText(["Product spins on a marble plinth", "Ad", "Motion transfer"]);
-  await expect(rows.getByTestId("jobs-stage")).toHaveText(["Not confirmed · never sent twice", "Failed", "Failed"]);
+  await expect(rows.getByTestId("jobs-stage")).toHaveText(["Not collected", "Failed", "Failed"]);
   await expect(rows.getByTestId("jobs-price")).toHaveText(["40 connected cr"]);
   await expect(rows.nth(2).getByTestId("jobs-where")).toHaveText("Trail bottle ads");
   /* Not Open Gen, Ads or Viral: those pages no longer list the account's work. Its record does. */
@@ -838,17 +839,18 @@ test("GET /api/jobs?view=tray lists this person's own takes from both engines, w
   expect(byId.get(`gen_t${tag}_failed`)!.preset).toMatchObject({ prompt: `Prompt for gen_t${tag}_failed`, billing: "workspace", from: { id: `gen_t${tag}_failed` } });
   expect(byId.get(`gen_t${tag}_failed_open`)).toMatchObject({ label: "Failed", price: null, reason: "The engine timed out" });
   expect(byId.get(`gen_t${tag}_discarded`)).toMatchObject({ stage: "cancelled", label: "Discarded", tone: "idle", reason: null });
-  expect(byId.get("c-accepted")).toMatchObject({ source: "account", stage: "rendering", price: { amount: 40, unit: "account-cr" }, name: "Account prompt c-accepted", projectName: "Harbour launch spot" });
+  /* Sent and never collected (nothing reads the account any more): said as Usage says it, waiting on nothing, never "Rendering". */
+  expect(byId.get("c-accepted")).toMatchObject({ source: "account", stage: "aside", label: "Not collected", tone: "idle", price: { amount: 40, unit: "account-cr" }, name: "Account prompt c-accepted", projectName: "Harbour launch spot", action: "usage" });
   expect(byId.get("c-done")).toMatchObject({ stage: "complete", takeId: `generation:gen_hfc_${"b".repeat(40)}`, mediaUrl: `/api/media/gen_hfc_${"b".repeat(40)}` });
   expect(byId.get("c-failed")).toMatchObject({ stage: "failed", label: "Failed", price: null, action: "recreate" });
   /* A failed connected Generate is made again in Gen, on Studio engines, with the words and settings it was sent with
      ("connected" marks where it was first made; Gen prices it again before anything runs). */
   expect(byId.get("c-failed")!.preset).toMatchObject({ prompt: "Account prompt c-failed", model: "seedance_2_0", billing: "connected", picks: { ratio: "9:16", duration: 5 } });
-  /* Gen, Viral and Business no longer list the retired account's work: a failed motion transfer or ad, and a take nobody
-     can confirm, open their read-only record in Workspace › Usage. */
+  /* Gen, Viral and Business no longer list the retired account's work: a failed motion transfer or ad, and a take never
+     collected, open their read-only record in Workspace › Usage. */
   expect(byId.get("c-motion-failed")).toMatchObject({ source: "account", stage: "failed", label: "Failed", name: "Account prompt c-motion-failed", action: "usage" });
   expect(byId.get("c-ad-failed")).toMatchObject({ source: "account", stage: "failed", action: "usage" });
-  expect(byId.get("c-unconfirmed")).toMatchObject({ source: "account", stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "usage" });
+  expect(byId.get("c-unconfirmed")).toMatchObject({ source: "account", stage: "aside", label: "Not collected", action: "usage" });
   for (const id of ["c-motion-failed", "c-ad-failed", "c-unconfirmed"]) expect(byId.get(id)!.preset).toBeUndefined();
   /* Held first, then the running ones, then what finished. */
   expect(body.jobs[0].stage).toBe("held");

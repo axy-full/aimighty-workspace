@@ -96,28 +96,38 @@ test("purge retains credentials and unfinished stages on failure, retries exactl
   ).toBeNull();
 });
 
-test("workspace purge removes only its consumer grants and pending states, fencing a late OAuth callback", async () => {
+test("workspace purge removes only its consumer grants and pending sign-in states", async () => {
   const { platformReady, platformDb, getWorkspace } = await import("../../lib/platform");
   const { markWorkspaceDeleted, purgeWorkspace } = await import("../../lib/purge");
-  const consumer = await import("../../lib/higgsfield-consumer/store");
   await platformReady();
   const p = platformDb();
   await p.execute({
     sql: `INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at) VALUES('consumer-purge','consumer-purge','Customer',?,'owner',0,0)`,
     args: [`file:${path.join(dir, "consumer-purge.db")}`],
   });
-  const states = [];
-  for (const [index, workspaceId] of ["consumer-purge", "other-customer"].entries()) {
-    const identity = { workspaceId, userId: "owner" };
-    const state = String(index).repeat(43), sessionHash = "fixture-session-hash";
-    await consumer.storeAuthorization({ ...identity, state, sessionHash, verifier: "v".repeat(43), clientId: "fixture-client", redirectUri: "https://particl.example/callback" });
-    const authorization = await consumer.consumeAuthorization(state, { ...identity, sessionHash });
-    const tokens = { accessToken: "fixture-access", refreshToken: "fixture-refresh", clientId: "fixture-client", redirectUri: "https://particl.example/callback", expiresAt: Date.now() + 3600_000, scope: "offline_access" };
-    expect(await consumer.completeAuthorization(authorization!, tokens)).toBe(true);
-    states.push({ authorization: authorization!, tokens });
+  /* The grants and sign-in states as an older platform database holds them: nothing signs in to Higgsfield any more
+     (CLAUDE.md ground rule 10), so nothing else creates these tables or writes a row. */
+  await p.execute(`CREATE TABLE IF NOT EXISTS higgsfield_consumer_connections (
+    workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,authorization_id TEXT NOT NULL,
+    generation TEXT NOT NULL,status TEXT NOT NULL,tokens_enc TEXT,
+    connected_at INTEGER,expires_at INTEGER,refresh_lease TEXT,refresh_lease_until INTEGER,
+    updated_at INTEGER NOT NULL,subject_hash TEXT,PRIMARY KEY(workspace_id,user_id))`);
+  await p.execute(`CREATE TABLE IF NOT EXISTS higgsfield_consumer_authorizations (
+    state_hash TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,
+    session_hash TEXT NOT NULL,authorization_id TEXT NOT NULL,verifier_enc TEXT NOT NULL,
+    client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)`);
+  for (const workspaceId of ["consumer-purge", "other-customer"]) {
+    await p.execute({
+      sql: "INSERT INTO higgsfield_consumer_connections(workspace_id,user_id,authorization_id,generation,status,tokens_enc,updated_at) VALUES(?,'owner',?,?,'connected','sealed-fixture',0)",
+      args: [workspaceId, `authorization-${workspaceId}`, `generation-${workspaceId}`],
+    });
+    await p.execute({
+      sql: "INSERT INTO higgsfield_consumer_authorizations(state_hash,workspace_id,user_id,session_hash,authorization_id,verifier_enc,client_id,redirect_uri,expires_at) VALUES(?,?,'owner','hash',?,'sealed-verifier','fixture-client','https://particl.example/callback',0)",
+      args: [`state-${workspaceId}`, workspaceId, `authorization-${workspaceId}`],
+    });
   }
-  // A second pending login from another owner must also be removed.
-  await consumer.storeAuthorization({ workspaceId: "consumer-purge", userId: "previous-owner", state: "p".repeat(43), sessionHash: "hash", verifier: "v".repeat(43), clientId: "fixture-client", redirectUri: "https://particl.example/callback" });
+  // A second pending sign-in from another owner must also be removed.
+  await p.execute("INSERT INTO higgsfield_consumer_authorizations(state_hash,workspace_id,user_id,session_hash,authorization_id,verifier_enc,client_id,redirect_uri,expires_at) VALUES('state-previous','consumer-purge','previous-owner','hash','authorization-previous','sealed-verifier','fixture-client','https://particl.example/callback',0)");
   const ws = (await getWorkspace("consumer-purge"))!;
   await markWorkspaceDeleted(ws.id);
   // Deleting no longer queues a purge (never-delete); the retired purge is driven directly.
@@ -128,9 +138,6 @@ test("workspace purge removes only its consumer grants and pending states, fenci
     const rows = (await p.execute(`SELECT workspace_id FROM ${table} WHERE workspace_id IN ('consumer-purge','other-customer')`)).rows;
     expect(rows.map(row => row.workspace_id)).toEqual(["other-customer"]);
   }
-  expect(await consumer.completeAuthorization(states[0].authorization, states[0].tokens)).toBe(false);
-  expect(await consumer.claimConsumerAccess({ workspaceId: "consumer-purge", userId: "owner" })).toEqual({ kind: "missing" });
-  expect((await consumer.claimConsumerAccess({ workspaceId: "other-customer", userId: "owner" })).kind).toBe("ready");
 });
 
 test("workspace export includes shared production records and owner drafts but excludes other private drafts and credentials", async () => {

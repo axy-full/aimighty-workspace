@@ -20,7 +20,7 @@ export function openGenOn(shell: ReturnType<typeof useShell>, preset: GenPreset)
 
 /**
  * What everyone sees where the connected Higgsfield account used to run: the
- * sign-in is retired (lib/higgsfield-consumer/retired.ts), so the card says
+ * sign-in is retired (CLAUDE.md ground rule 10), so the card says
  * what ran there, that Particl no longer signs in to Higgsfield and that past
  * results stay in the Library — and, where a Studio engine makes the same
  * kind of thing, that engine on this workspace's credits at its price, with

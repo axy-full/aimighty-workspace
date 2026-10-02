@@ -43,10 +43,9 @@ export const OWN_LIMITS = { products: 24, productImages: 5, colors: 8, hooks: 12
 /* ── Setup items Particl made ───────────────────────────────────────── */
 
 /**
- * Particl's own items carry this prefix. A connected account's setup ids are
- * its own UUIDs, and the account's quote guard (lib/higgsfield-consumer/
- * marketing-records.ts) refuses any id Particl did not record there, so one of
- * these can never be sent to the account as a product, brand kit or reference.
+ * Particl's own items carry this prefix, so one is never mistaken for an id the
+ * connected account once listed (its own UUIDs). Nothing here is ever sent to a
+ * Higgsfield account: its sign-in is retired (CLAUDE.md ground rule 10).
  */
 export const PARTICL_SETUP_PREFIX = "particl-";
 export type ParticlSetupType = Extract<SetupType, "product" | "brand_kit" | "ad_reference">;

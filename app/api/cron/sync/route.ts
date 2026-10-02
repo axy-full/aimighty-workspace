@@ -21,7 +21,6 @@ import { retireDeletedWorkspaces } from "@/lib/purge";
 import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
-import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
 import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 
@@ -118,12 +117,6 @@ export async function GET(req: Request) {
             await stage("soul_training", async () => {
               const report = await syncSoulIdentities(2, { deadlineAt });
               if (report.failed) throw new Error("SOUL_RECONCILIATION_FAILED");
-            });
-            // Connected-account jobs finish with no page open: read the
-            // due ones (free reads, one-time collection, never a re-send).
-            await stage("connected_jobs", async () => {
-              const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
-              deferred ||= report.deferred;
             });
             // Server-made Rig canvas changes the live room has not taken yet
             // (free; the room only ever gets what the saved canvas holds).

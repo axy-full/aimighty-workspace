@@ -1,8 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { elementToken, parseElementCreate, parseElements } from "../../lib/higgsfield-consumer/element-parse";
-import { castFromBeats, entryModel, newEntry, soulParameters } from "../../lib/production/cast";
+import { castFromBeats, elementToken, entryModel, newEntry, soulParameters } from "../../lib/production/cast";
 
-/** Cast & Elements = Soul Studio: which Soul model builds what, only the settings a model declares, and the account's element replies. */
+/** Cast & Elements = Soul Studio: which Soul model builds what, only the settings a model declares, and an older entry's element token. */
 test("an entry's Soul model follows its kind and category; settings are only the declared ones", () => {
   expect(entryModel(newEntry("character"))).toBe("soul_cinematic");
   expect(entryModel(newEntry("element", "Harbour", "", "", { category: "environment" }))).toBe("soul_location");
@@ -22,9 +21,7 @@ test("the beat sheet's characters and props become entries; locations go to Envi
   expect(entries.map((e) => [e.name, e.kind, e.category, entryModel(e)])).toEqual([["Lantern", "element", "prop", "soul_cinematic"]]);
 });
 
-test("element replies are read by element_id or id, whatever the envelope; junk is not an element", () => {
-  expect(parseElements({ elements: [{ element_id: "el_1", name: "Fox", category: "character" }, { id: "bad id", name: "x" }, "no"] })).toEqual([{ elementId: "el_1", name: "Fox", category: "character", previewUrl: null }]);
-  expect(parseElementCreate({ element: { id: "el_2" } }, "Harbour", "environment")).toEqual({ elementId: "el_2", name: "Harbour", category: "environment", previewUrl: null });
-  expect(parseElementCreate({ ok: true }, "x", null)).toBeNull();
+test("an element an older entry saved on the account is shown by the token the account read it by", () => {
+  /* Cast reads it from the cast's own module now: the account's element code went with its sign-in. */
   expect(elementToken("el_2")).toBe("<<<el_2>>>");
 });

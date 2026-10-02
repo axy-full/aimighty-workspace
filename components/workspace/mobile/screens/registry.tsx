@@ -50,7 +50,7 @@ export type MobilePageDef = {
 /**
  * The form template (Motion and Swap) priced and ran its transform on the
  * connected Higgsfield account. That sign-in is retired
- * (lib/higgsfield-consumer/retired.ts), so the page says so and nothing is read.
+ * (CLAUDE.md ground rule 10), so the page says so and nothing is read.
  */
 function RetiredFormPage({ page }: MobilePageProps) {
   return (

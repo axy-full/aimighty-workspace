@@ -100,21 +100,11 @@ export async function assertNoActiveOrUncertain(config, env) {
       // an uncollected receipt, none of which a checkpoint may hide.
       if (names.has("astra_render_jobs") &&
           (await db.execute("SELECT 1 FROM astra_render_jobs WHERE COALESCE(settled,0)=0 LIMIT 1")).rows.length) blocked();
-      // Consumer jobs use Higgsfield credits and their own status vocabulary.
-      // A dispatch claim, accepted remote job or uncertain admission must not
-      // disappear behind a successful scheduled checkpoint.
-      if (names.has("higgsfield_consumer_jobs") &&
-          (await db.execute("SELECT 1 FROM higgsfield_consumer_jobs WHERE status IS NULL OR status NOT IN ('quoted','failed','completed') LIMIT 1")).rows.length) blocked();
-      // Media import happens before a quote exists. Its permanent claim must
-      // remain visible even when no generation could yet have been admitted.
-      if (names.has("higgsfield_consumer_media_imports") &&
-          (await db.execute("SELECT 1 FROM higgsfield_consumer_media_imports WHERE state IS NULL OR state<>'ready' OR media_id IS NULL LIMIT 1")).rows.length) blocked();
-      // Collection has an independent lease and reserved-byte receipt. A
-      // terminal provider job does not prove its private storage write settled.
-      if (names.has("consumer_video_originals") && (await db.execute({
-        sql: "SELECT 1 FROM consumer_video_originals WHERE COALESCE(state,'preparing')<>'stored' AND (COALESCE(bytes,0)>0 OR COALESCE(lease_until,0)>?) LIMIT 1",
-        args: [Date.now()],
-      })).rows.length) blocked();
+      // Connected-account jobs, their media imports and their uncollected
+      // originals no longer hold a checkpoint: Particl no longer signs in to
+      // Higgsfield, so an open row can never settle and would block every
+      // capture for good. Their rows are still captured as they stand, and
+      // recovery-report.mjs still lists them for an operator.
       if (names.has("workbench_development_jobs") &&
           (await db.execute("SELECT 1 FROM workbench_development_jobs WHERE settled=0 LIMIT 1")).rows.length) blocked();
       // Queued phases may remain on a terminal failed workflow. Only started

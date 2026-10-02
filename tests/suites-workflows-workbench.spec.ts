@@ -7,7 +7,7 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
  * The connected account's workflows on the Studio pages — Edit's Dub and
  * Change voice, Deliver's Social cuts, Gen's Analysis (the Virality
  * Predictor) — went with the Higgsfield sign-in
- * (lib/higgsfield-consumer/retired.ts), for the workspace owner too. No card
+ * (CLAUDE.md ground rule 10), for the workspace owner too. No card
  * stands in for them. Edit & Sound keeps Particl's own Dub and Change voice
  * (ElevenLabs), so the page is no dead end. Nothing here spends, and nothing
  * asks the account for anything.

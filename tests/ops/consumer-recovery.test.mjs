@@ -32,7 +32,9 @@ async function fixture(t) {
   return { root, db, config: { databases: [{ url }] } };
 }
 
-test("backup preflight blocks consumer admission, accepted jobs, uncertainty and unknown states without writing", async (t) => {
+// Particl no longer signs in to Higgsfield, so an open account job can never
+// settle: a capture takes it as it stands instead of waiting on it for good.
+test("backup preflight no longer waits on consumer jobs, whatever their state, and writes nothing", async (t) => {
   const { db, config } = await fixture(t);
   for (const status of [
     "dispatching",
@@ -45,10 +47,7 @@ test("backup preflight blocks consumer admission, accepted jobs, uncertainty and
       sql: "INSERT INTO higgsfield_consumer_jobs(id,status) VALUES('job',?)",
       args: [status],
     });
-    await assert.rejects(
-      assertNoActiveOrUncertain(config, {}),
-      /requires reconciliation/,
-    );
+    await assertNoActiveOrUncertain(config, {});
     assert.equal(
       (await db.execute("SELECT status FROM higgsfield_consumer_jobs")).rows[0]
         .status,
@@ -151,7 +150,7 @@ test("offline consumer report preserves separate credit units and recovery ident
   );
 });
 
-test("original collection independently blocks backup and appears in reconciliation without private payloads", async (t) => {
+test("an uncollected original no longer blocks backup and still appears in reconciliation without private payloads", async (t) => {
   const { root, db, config } = await fixture(t);
   await db.execute(
     "INSERT INTO higgsfield_consumer_jobs(id,status) VALUES('job','failed')",
@@ -171,10 +170,7 @@ test("original collection independently blocks backup and appears in reconciliat
       sql: "UPDATE consumer_video_originals SET bytes=?,lease_until=?",
       args: [pending.bytes, pending.lease],
     });
-    await assert.rejects(
-      assertNoActiveOrUncertain(config, {}),
-      /requires reconciliation/,
-    );
+    await assertNoActiveOrUncertain(config, {});
     assert.deepEqual(
       (
         await db.execute(
@@ -222,19 +218,18 @@ test("original collection independently blocks backup and appears in reconciliat
   await assertNoActiveOrUncertain(config, {});
 });
 
-test("a pre-quote media import claim blocks a clean checkpoint and reports recovery without private media handles", async (t) => {
+test("a pre-quote media import claim no longer blocks a checkpoint and still reports recovery without private media handles", async (t) => {
   const { root, db, config } = await fixture(t);
   await db.execute(`CREATE TABLE higgsfield_consumer_media_imports (
     user_id TEXT,draft_id TEXT,quote_key TEXT,source_index INTEGER,state TEXT,
     media_id TEXT,source_identity TEXT,fingerprint TEXT)`);
   await db.execute("INSERT INTO higgsfield_consumer_media_imports VALUES('owner','draft','attempt',0,'claimed',NULL,'PRIVATE-SOURCE','PRIVATE-GRANT')");
-  await assert.rejects(assertNoActiveOrUncertain(config, {}), /requires reconciliation/);
+  await assertNoActiveOrUncertain(config, {});
   await recoveryReport(root);
   const report = await readFile(join(root, 'reconciliation-report.json'), 'utf8');
   assert.doesNotMatch(report, /PRIVATE-|source_identity|fingerprint|media_id/);
   assert.deepEqual(JSON.parse(report).actions, [{ database: 'tenant', workspaceIds: ['workspace-a'], table: 'higgsfield_consumer_media_imports', id: 'attempt:0', userId: 'owner', draftId: 'draft', status: 'claimed', disposition: 'reconcile-consumer-media-import-never-replay-claim' }]);
   await db.execute("UPDATE higgsfield_consumer_media_imports SET state='ready'");
-  await assert.rejects(assertNoActiveOrUncertain(config, {}), /requires reconciliation/);
-  await db.execute("UPDATE higgsfield_consumer_media_imports SET media_id='PRIVATE-MEDIA'");
   await assertNoActiveOrUncertain(config, {});
+  assert.equal((await db.execute("SELECT count(*) AS n FROM higgsfield_consumer_media_imports")).rows[0].n, 1);
 });

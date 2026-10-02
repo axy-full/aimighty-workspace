@@ -19,7 +19,7 @@ import { smallTargets } from "./phoneFloors";
  * mock mode the provider lists none).
  *
  * Ads and Setup ran on the connected Higgsfield account, whose sign-in is
- * retired (lib/higgsfield-consumer/retired.ts): for everyone, the workspace
+ * retired (CLAUDE.md ground rule 10): for everyone, the workspace
  * owner included, they are one card, with Gen on Images (at its price) as the
  * way on. An ad made before is still a take in the Library. Nothing asks the
  * account.
@@ -128,8 +128,6 @@ async function openImageAds(page: Page, playwright: PlaywrightWorkerArgs["playwr
   await expect(page.getByTestId("image-ads-view")).toBeVisible();
   return seeded;
 }
-/** What Image ads asked of the connected account: nothing (the shell's own collector lists an owner's earlier connected jobs on any page, to drain them). */
-const imageAdsAsked = (consumer: string[]) => consumer.filter((call) => call !== "GET /api/higgsfield/consumer/generation");
 /** A still from the device, uploaded into the project through the Product slot. */
 async function uploadProduct(page: Page) {
   await page.getByTestId("image-ad-product-file").setInputFiles({ name: "serum.webp", mimeType: "image/webp", buffer: readFileSync("public/campaign/hero.webp") });
@@ -174,7 +172,7 @@ test("Image ads runs Marketing Studio Image on the API key: the product first, t
   expect(s.sends).toHaveLength(1);
   expect(s.sends[0]).toMatchObject({ ...quote, maxCredits: shown, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
   await noSideScroll(page);
-  expect(imageAdsAsked(s.consumer), "Image ads asks the connected account for nothing").toEqual([]);
+  expect(s.consumer, "Image ads asks the connected account for nothing").toEqual([]);
   expect(s.errors).toEqual([]);
 });
 
@@ -214,7 +212,7 @@ test("Image ads on a 2.5 build: Flare at extra high names its variant, is priced
   await expect(quality.getByRole("button", { name: "High", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(build).toContainText("priced live before generating");
   await noSideScroll(page);
-  expect(imageAdsAsked(s.consumer), "Image ads asks the connected account for nothing").toEqual([]);
+  expect(s.consumer, "Image ads asks the connected account for nothing").toEqual([]);
   expect(s.errors).toEqual([]);
 });
 

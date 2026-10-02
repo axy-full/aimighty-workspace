@@ -70,6 +70,8 @@ export function retiredModelOf(entry: Pick<CastEntry, "model" | "takes" | "job" 
   if (!entry.takes.length && !entry.job && !entry.elementId) return null;
   return SOUL_MODELS.find((m) => m.id === model)?.label ?? "a connected-account Soul model";
 }
+/** The prompt token the connected account read a reference element by: an older entry's element shows it, read-only. */
+export const elementToken = (id: string) => `<<<${id}>>>`;
 /** A Soul ID trained on the connected account: it cannot render on the platform's key, so the character needs training again here. */
 export const accountSoulIdOf = (entry: Pick<CastEntry, "kind" | "soulId" | "identityId">): string | null =>
   entry.kind === "character" && entry.soulId && !entry.identityId ? entry.soulId : null;

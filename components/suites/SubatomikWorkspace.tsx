@@ -170,7 +170,7 @@ export default function SubatomikWorkspace({
     (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");
   // Every project bills the Particl workspace: the connected account (and the
   // `?account=higgsfield` links to it) went with the Higgsfield sign-in
-  // (lib/higgsfield-consumer/retired.ts), so nothing here reads it.
+  // (CLAUDE.md ground rule 10), so nothing here reads it.
   const drafts = useApi<DraftResponse>(
     session.requestScope
       ? `/api/workbench/projects${projectId ? `?id=${encodeURIComponent(projectId)}` : ""}`

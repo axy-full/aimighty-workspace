@@ -179,8 +179,7 @@ function accountRecipe(row: AccountRecord): GenPreset | null {
 async function accountRows(userId: string, since: number, now: number): Promise<AccountRecord[]> {
   await consumerJobsReady();
   const rs = await db().execute({
-    sql: `SELECT j.id, j.draft_id, j.workflow, j.status, j.quote_credits, j.failure_code, j.created_at, j.updated_at, j.released_at,
-        j.provider_receipt IS NOT NULL AS has_receipt,
+    sql: `SELECT j.id, j.draft_id, j.workflow, j.status, j.quote_credits, j.failure_code, j.created_at, j.updated_at,
         SUBSTR(json_extract(j.payload_json,'$.input.prompt'),1,400) AS prompt,
         json_extract(j.payload_json,'$.model.id') AS model_id,
         json_extract(j.payload_json,'$.model.outputType') AS output_type,
@@ -204,9 +203,7 @@ async function accountRows(userId: string, since: number, now: number): Promise<
     return {
       id: String(row.id), draftId: String(row.draft_id), workflow: String(row.workflow), status,
       quoteCredits: Number(row.quote_credits ?? 0), failureCode: text(row.failure_code),
-      createdAt, updatedAt: Number(row.updated_at), hasReceipt: Boolean(Number(row.has_receipt)),
-      /* lib/higgsfield-consumer/jobs consumerJobSetAside: open, but set aside or past the capacity window. */
-      setAside: ["dispatching", "accepted", "uncertain"].includes(status) && (row.released_at != null || createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS),
+      createdAt, updatedAt: Number(row.updated_at),
       prompt: text(row.prompt), modelId: text(row.model_id), outputType: text(row.output_type), toolLabel: text(row.tool_label),
       originalId: text(row.original_id), originalKind: text(row.original_kind), projectName: text(row.project_name), input: text(row.input),
       outcome: row.provider_outcome == null ? null : parseOutcome(String(row.provider_outcome)),

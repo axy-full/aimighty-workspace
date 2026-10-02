@@ -27,7 +27,7 @@ import { OwnerRunCard } from "../OwnerRunCard";
  * (lib/shell/image-ads.ts), through the one workspace-credit path — the
  * estimate on the button, then one send at that figure. Ads and Setup ran on
  * a signed-in Higgsfield account, whose sign-in is retired
- * (lib/higgsfield-consumer/retired.ts): each is the retired card, for
+ * (CLAUDE.md ground rule 10): each is the retired card, for
  * everyone, with the way to make the same kind of thing in Gen; Setup also
  * lists what Particl made (ParticlSetup, in BusinessSuite).
  *

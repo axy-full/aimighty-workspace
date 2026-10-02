@@ -147,9 +147,8 @@ test("no Atomik code calls the connected step route, the recipes route or the ac
   /* The planner's prompt carries no account section, recipe section or connected-model rules. */
   const planner = readFileSync("lib/atomik.ts", "utf8");
   expect(planner).not.toMatch(/CONNECTED ACCOUNT|CONNECTED_SYSTEM|RECIPE_SYSTEM|recipeSection|"connected:\.\.\."/);
-  /* The account's workflow reads are gone from the account client itself. */
-  const client = readFileSync("lib/higgsfield-consumer/mcp.ts", "utf8");
-  expect(client).not.toMatch(/readConnectedWorkflow|workflowRead|get_workflow_bundle_file/);
+  /* The account client itself is gone (tests/unit/signinRemovedGuard.spec.ts). */
+  expect(existsSync("lib/higgsfield-consumer/mcp.ts")).toBe(false);
 });
 
 test("the plans Atomik runs on a page never read, quote, submit or poll on the account", async () => {

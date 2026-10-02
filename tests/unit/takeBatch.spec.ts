@@ -6,8 +6,6 @@ import {
 import { batchTotal, composerButtonLabel, composerButtonParts, type ComposerQuote } from "../../lib/workspace/composer";
 import { pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
 import { groupSiblings, stripLabel, takeLabel } from "../../lib/variations";
-import { consumerVideoIdentity } from "../../lib/higgsfield-consumer/original-identity";
-import type { ConsumerJob } from "../../lib/higgsfield-consumer/jobs";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
 
 /**
@@ -257,16 +255,10 @@ test("a batch's takes gather into one strip in take order whatever order the lib
   expect(takeLabel(3)).toBe("take 3");
 });
 
-test("a take the connected account made carries its batch and take number in its kept original, so Takes can draw the strip", () => {
-  const input = { type: "image" as const, model: "nano_banana_2", prompt: "A plain bottle.", parameters: { resolution: "2k" }, medias: [] };
-  const payload = {
-    input: { ...input, medias: [] }, params: { model: "nano_banana_2" }, workspaceName: "Fixture wallet",
-    model: { id: "nano_banana_2", name: "Nano Banana 2", outputType: "image" }, batch: { id: "b_strip001", variation: 2 },
-  };
-  const jobRow = { workflow: "generation", payloadJson: JSON.stringify(payload), draftId: DRAFT } as unknown as ConsumerJob;
-  expect(consumerVideoIdentity(jobRow).params).toMatchObject({ task: "connected-generation", batchId: "b_strip001", variation: 2 });
-  const lone = { ...jobRow, payloadJson: JSON.stringify({ ...payload, batch: undefined }) } as ConsumerJob;
-  expect(consumerVideoIdentity(lone).params).not.toHaveProperty("batchId");
-  const forged = { ...jobRow, payloadJson: JSON.stringify({ ...payload, batch: { id: "../x", variation: 99 } }) } as ConsumerJob;
-  expect(consumerVideoIdentity(forged).params).not.toHaveProperty("batchId");
+test("takes the connected account made keep their batch and take number in their kept originals, so Takes still draws the strip", () => {
+  /* As the old collector filed them: nothing collects an account take any more, and the ones in the Library group as before. */
+  const account = (id: string, variation: number) => ({ id, params: { task: "connected-generation", consumerCreditUnit: "higgsfield_credits", batchId: "b_strip001", variation } });
+  const strips = groupSiblings([account("gen_hfc_2", 2), account("gen_hfc_1", 1), { id: "gen_hfc_lone", params: { task: "connected-generation" } }]);
+  expect(strips.map((s) => s.kind)).toEqual(["batch", "one"]);
+  expect((strips[0] as { takes: { id: string }[] }).takes.map((t) => t.id)).toEqual(["gen_hfc_1", "gen_hfc_2"]);
 });

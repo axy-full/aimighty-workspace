@@ -10,6 +10,7 @@ import {
   workbenchScopeProblem,
 } from "../../lib/workbench/request-scope";
 import { MediaSourceError } from "../../lib/mediaBindings";
+import { seedConsumerJob } from "../helpers/consumerLedger";
 
 const directory = mkdtempSync(
   path.join(tmpdir(), "particl-consumer-activity-"),
@@ -45,7 +46,6 @@ function workspace(): TenantWorkspace {
 }
 async function fixture() {
   const database = await import("../../lib/db"),
-    jobs = await import("../../lib/higgsfield-consumer/jobs"),
     activity = await import("../../lib/higgsfield-consumer/activity"),
     tenant = await import("../../lib/tenant");
   const ws = workspace();
@@ -79,31 +79,19 @@ async function fixture() {
   ) {
     const userId = options.userId ?? "owner",
       draftId = options.draftId ?? "draft";
-    const { job } = await jobs.createConsumerJob({
+    /* As the old ledger kept it: a sent job carries its durable dispatch claim; a quote never sent does not. */
+    const id = await seedConsumerJob({
       userId,
       draftId,
       workflow: options.workflow ?? "marketing-video",
-      connectedOwnerId: userId,
-      connectionGeneration: randomUUID(),
-      idempotencyKey: randomUUID(),
-      payload: { private: "NEVER_SERIALIZE_PAYLOAD" },
+      status,
       quoteCredits,
-      quoteExpiresAt: Date.now() + 60_000,
-      originalAssetIds: [],
+      claimed: options.admitted ?? status !== "quoted",
+      payload: { private: "NEVER_SERIALIZE_PAYLOAD" },
+      providerReceipt: { secret: "NEVER_SERIALIZE_RECEIPT" },
+      resultManifest: { private: "NEVER_SERIALIZE_MANIFEST" },
     });
-    const admitted = options.admitted ?? status !== "quoted";
-    if (admitted)
-      await jobs.claimConsumerDispatch({ userId, draftId, id: job.id });
-    // Terminal fixture states isolate aggregation; lifecycle CAS has its own tests.
-    await database.db().execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,provider_receipt=?,result_manifest=? WHERE id=?",
-      args: [
-        status,
-        '{"secret":"NEVER_SERIALIZE_RECEIPT"}',
-        '{"private":"NEVER_SERIALIZE_MANIFEST"}',
-        job.id,
-      ],
-    });
+    const job = { id };
     return job;
   }
   return { ws, run, draft, row, database, activity, tenant };

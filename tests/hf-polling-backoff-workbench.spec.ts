@@ -27,7 +27,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
  *
  * The Business pages that showed the connected account's jobs, and the
  * shell's collector that finished them, went with the Higgsfield sign-in
- * (lib/higgsfield-consumer/retired.ts). Viral runs on Particl's API key and
+ * (CLAUDE.md ground rule 10). Viral runs on Particl's API key and
  * lists its takes from the project's Library, collected by the key's own job
  * reads (tests/hf-viral-real-runs-workbench.spec.ts). What is here is a
  * Production re-edit's own reads.

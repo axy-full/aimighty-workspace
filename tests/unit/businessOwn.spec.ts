@@ -4,7 +4,6 @@ import {
   isParticlSetupId, libraryIdOf, mergeHooks, particlItemActions, particlSetupItems, particlSetupList, productLabel, unsavedProduct, withTemplate, type BriefForGen,
 } from "../../lib/shell/business-own";
 import { SHELL_SUITES } from "../../lib/shell/ia";
-import { NO_PARTICL_SETUP, foreignSetupIds, setupIdsOfParameters } from "../../lib/higgsfield-consumer/marketing-records";
 import { EMPTY_MOLECULR, type MoleculrBrief } from "../../lib/workbench/moleculr";
 import { CREATIVE_CATEGORIES, CREATIVE_TEMPLATES, EMPTY_BRAND_KIT, saveProduct } from "../../lib/workbench/moleculr-creative";
 import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
@@ -84,7 +83,7 @@ test("Setup lists the brand kit once it holds something, and the reference ad on
   expect(particlSetupList(project({ brandKit: kit, referenceAd: reference }, [logo, ad])).map((i) => i.type)).toEqual(["brand_kit", "ad_reference"]);
 });
 
-test("a Particl item never passes the connected account's quote guard: its ids are Particl's, not the account's", () => {
+test("a Particl item carries Particl's own id, never one the connected account listed", () => {
   const bottle = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle" }, "p-bottle");
   const items = particlSetupList(project({ ...bottle, brandKit: { ...EMPTY_BRAND_KIT, name: "Northline" } }));
   expect(items.length).toBe(2);
@@ -92,9 +91,6 @@ test("a Particl item never passes the connected account's quote guard: its ids a
     expect(isParticlSetupId(item.id)).toBe(true);
     expect(item.id).toMatch(/^[A-Za-z0-9_-]{1,200}$/);
   }
-  /* Named on a DTC request, both are foreign to the account (nothing Particl made there is recorded), so the quote refuses them. */
-  const wanted = setupIdsOfParameters({ product_ids: [items[0].id], brand_kit_id: items[1].id }, "ms_image");
-  expect(foreignSetupIds(wanted, NO_PARTICL_SETUP).map((f) => f.type)).toEqual(["product", "brand_kit"]);
   expect(isParticlSetupId("9d2b3c4e-5f60-4a7b-8c9d-0e1f2a3b4c5d")).toBe(false);
 });
 

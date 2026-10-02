@@ -24,7 +24,7 @@ function engine(fields: Partial<EngineRow> & { id: string; status: string }): En
 function account(fields: Partial<AccountRow> & { id: string; status: string }): AccountRow {
   return {
     draftId: "draft-1", workflow: "generation", quoteCredits: 40, failureCode: null, createdAt: T0, updatedAt: T0,
-    hasReceipt: false, setAside: false, prompt: "Product spins on a marble plinth", modelId: "seedance_2_0",
+    prompt: "Product spins on a marble plinth", modelId: "seedance_2_0",
     outputType: "video", toolLabel: null, originalId: null, originalKind: null, projectName: "Harbour launch spot", ...fields,
   };
 }
@@ -150,23 +150,20 @@ test("a take is named the way the Library names it — its title, else its words
 });
 
 test("a connected-account job reads its stage from the account's own record, in the account's own credits", () => {
-  expect(accountTrayJob(account({ id: "a", status: "accepted" }))).toMatchObject({ source: "account", stage: "rendering", label: "Rendering", price: { amount: 40, unit: "account-cr" }, action: null });
-  expect(accountTrayJob(account({ id: "u", status: "uncertain", hasReceipt: true }))).toMatchObject({ stage: "confirming", label: "Confirming", tone: "amber" });
-  /* Nothing a read can move: said as it is, counted as unconfirmed, never as rendering. Gen, Viral and Business no longer
-     list the retired account's work, so it opens its read-only record in Workspace › Usage. */
-  const stuck = accountTrayJob(account({ id: "d", status: "dispatching" }));
-  expect(stuck).toMatchObject({ stage: "unconfirmed", label: "Not confirmed · never sent twice", action: "usage" });
-  expect(moving(stuck)).toBe(false);
+  /* Nothing reads the account or collects its work any more: a job still open in the ledger (sending, sent or
+     unconfirmed) was never collected and never will be. It says what Usage says, waits on nothing, is not counted and is
+     not news. Gen, Viral and Business no longer list the retired account's work, so it opens its record in Workspace › Usage. */
+  for (const status of ["accepted", "uncertain", "dispatching"]) {
+    const open = accountTrayJob(account({ id: status, status, updatedAt: T0 + 3 * MIN }));
+    expect(open, status).toMatchObject({ source: "account", stage: "aside", label: "Not collected", tone: "idle", settledAt: T0 + 3 * MIN, price: { amount: 40, unit: "account-cr" }, action: "usage" });
+    expect(moving(open) || active(open) || changing(open), status).toBe(false);
+    expect(traySummary([open], new Set()), status).toMatchObject({ kind: "quiet" });
+  }
+  expect(JSON.stringify(accountTrayJob(account({ id: "a", status: "accepted" })))).not.toMatch(/Rendering|Confirming|never sent twice|Can't be checked/);
   expect(accountTrayJob(account({ id: "dv", status: "uncertain", workflow: "genjutsu" })).action).toBe("usage");
   expect(accountTrayJob(account({ id: "dm", status: "dispatching", workflow: "marketing-video" })).action).toBe("usage");
   /* A tool no Suites page made has no page and no record to open from here, as before. */
   expect(accountTrayJob(account({ id: "dt", status: "dispatching", workflow: "voice-tool" })).action).toBeNull();
-  /* Set aside (or past the time it may hold a slot): never sent again, nothing to wait for — closed, not counted, not news. */
-  const aside = accountTrayJob(account({ id: "s", status: "accepted", setAside: true, updatedAt: T0 + 3 * MIN }));
-  expect(aside).toMatchObject({ stage: "aside", label: "Can't be checked", tone: "idle", settledAt: T0 + 3 * MIN, action: "usage" });
-  expect(active(aside)).toBe(false);
-  expect(accountTrayJob(account({ id: "s2", status: "uncertain", setAside: true }))).toMatchObject({ stage: "aside", label: "Set aside · never sent again" });
-  expect(traySummary([aside], new Set())).toMatchObject({ kind: "quiet" });
 
   const original = `gen_hfc_${"a".repeat(40)}`;
   expect(accountTrayJob(account({ id: "c", status: "completed", originalId: original, originalKind: "video", updatedAt: T0 + 9 * MIN })))

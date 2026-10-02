@@ -8,7 +8,7 @@ import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
- * The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), in
+ * The Higgsfield sign-in is retired (CLAUDE.md ground rule 10), in
  * the browser against a local ENGINE_MOCK server. Everyone — the workspace
  * owner included — meets one calm card wherever the connected account used to
  * run and nothing replaces it yet: Business's Ads and Setup. It says what ran

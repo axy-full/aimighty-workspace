@@ -1,15 +1,15 @@
-/** Server-side consumer ledger. This module never calls a provider or spends credits. */
-import { createHash, randomUUID } from "node:crypto";
+/**
+ * The connected account's job ledger, read-only. Particl no longer signs in to
+ * Higgsfield (CLAUDE.md ground rule 10): nothing quotes, sends, polls or
+ * collects an account job any more. Its rows stay (nothing is deleted) and are
+ * read by the jobs tray, Workspace › Usage, the /usage history tab, purge and
+ * backups. The schema installer keeps every column, so a fresh database and an
+ * older backup read alike. This module never calls a provider or spends credits.
+ */
 import type { Client, Row, Transaction } from "@libsql/client";
 import { db, ready } from "@/lib/db";
-import { workbenchTransaction } from "@/lib/workbench/records";
-import { validateConsumerGenjutsuSources } from "./genjutsu-sources";
-import { validateConsumerGenerationSources } from "./generation-sources";
-import { validateConsumerMarketingTemplateSources } from "./marketing-template-sources";
-import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
-import { validateConsumerShortsSources } from "./shorts-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
-import { parseOutcome, serializeOutcome, type ProviderOutcome } from "@/lib/providerOutcome";
+import { parseOutcome, type ProviderOutcome } from "@/lib/providerOutcome";
 
 export type ConsumerWorkflow =
   "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool" | "shorts";
@@ -51,31 +51,14 @@ export type ConsumerJob = ConsumerJobScope & {
   createdAt: number;
   updatedAt: number;
 };
-export type CreateConsumerJob = ConsumerScope & {
-  workflow: ConsumerWorkflow;
-  connectedOwnerId: string;
-  connectionGeneration: string;
-  higgsfieldWorkspaceId?: string | null;
-  idempotencyKey: string;
-  payload: { [key: string]: ConsumerJson };
-  quoteCredits: number;
-  quoteExpiresAt: number;
-  originalAssetIds: string[];
-};
 export type ConsumerFailureCode =
   "submission_rejected" | "provider_failed" | "invalid_result";
-export type ConsumerJobErrorCode =
-  | "invalid_input"
-  | "not_found"
-  | "idempotency_conflict"
-  | "quote_expired"
-  | "capacity"
-  | "provider_job_conflict"
-  | "receipt_conflict";
+/** The ledger reads only validate their own arguments now. */
+export type ConsumerJobErrorCode = "invalid_input";
 export class ConsumerJobError extends Error {
   constructor(
     public readonly code: ConsumerJobErrorCode,
-    public readonly status: number = 409,
+    public readonly status: number = 400,
   ) {
     super(code);
     this.name = "ConsumerJobError";
@@ -99,8 +82,7 @@ const holdsCapacity = (alias = "") =>
 /**
  * The same rule for one job, from its views: an unsettled job its owner set
  * aside, or one past the capacity window, no longer holds a slot and no longer
- * blocks its workflow. It stays listed and recoverable (a saved receipt can
- * still be checked) and is never dispatched again.
+ * blocks its workflow. It stays listed, and nothing is ever dispatched again.
  */
 export function consumerJobSetAside(
   job: Pick<ConsumerJob, "status" | "releasedAt" | "createdAt">,
@@ -111,11 +93,7 @@ export function consumerJobSetAside(
     (job.releasedAt !== null || job.createdAt <= now - CONSUMER_CAPACITY_WINDOW_MS)
   );
 }
-// A result read can include bounded original-media collection before settling.
-export const CONSUMER_POLL_LEASE_MS = 180_000;
 const initialized = new WeakMap<Client, Promise<void>>();
-const hash = (value: string) =>
-  createHash("sha256").update(value).digest("hex");
 const invalid = (): never => {
   throw new ConsumerJobError("invalid_input", 400);
 };
@@ -135,54 +113,6 @@ function scope(value: ConsumerScope) {
 function jobScope(value: ConsumerJobScope) {
   scope(value);
   identifier(value.id);
-}
-
-/** Stable JSON, with hard depth/node/byte bounds. No getters, prototypes or implicit coercion. */
-function canonicalObject(value: unknown, maxBytes: number): string {
-  let nodes = 0;
-  const visit = (item: unknown, depth: number): string => {
-    if (++nodes > 10_000 || depth > 12) return invalid();
-    if (item === null || typeof item === "boolean") return JSON.stringify(item);
-    if (typeof item === "string") {
-      if (Buffer.byteLength(item) > maxBytes) return invalid();
-      return JSON.stringify(item);
-    }
-    if (typeof item === "number")
-      return Number.isFinite(item) ? JSON.stringify(item) : invalid();
-    if (typeof item !== "object" || item === null) return invalid();
-    if (Array.isArray(item)) {
-      if (
-        item.length > 10_000 ||
-        Object.keys(item).length !== item.length ||
-        Object.getOwnPropertySymbols(item).length
-      )
-        return invalid();
-      const parts: string[] = [];
-      for (let i = 0; i < item.length; i++) {
-        const descriptor = Object.getOwnPropertyDescriptor(item, String(i));
-        if (!descriptor || !("value" in descriptor)) return invalid();
-        parts.push(visit(descriptor.value, depth + 1));
-      }
-      const text = `[${parts.join(",")}]`;
-      return Buffer.byteLength(text) <= maxBytes ? text : invalid();
-    }
-    const prototype = Object.getPrototypeOf(item);
-    if (prototype !== Object.prototype && prototype !== null) return invalid();
-    if (Object.getOwnPropertySymbols(item).length) return invalid();
-    const parts: string[] = [];
-    for (const key of Object.keys(item).sort()) {
-      const descriptor = Object.getOwnPropertyDescriptor(item, key);
-      if (!descriptor || !("value" in descriptor)) return invalid();
-      parts.push(
-        `${JSON.stringify(key)}:${visit(descriptor.value, depth + 1)}`,
-      );
-    }
-    const text = `{${parts.join(",")}}`;
-    return Buffer.byteLength(text) <= maxBytes ? text : invalid();
-  };
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return invalid();
-  return visit(value, 0);
 }
 
 export async function consumerJobsReady() {
@@ -269,16 +199,6 @@ function asJob(row: Row): ConsumerJob {
     updatedAt: Number(row.updated_at),
   };
 }
-async function requireDraft(
-  tx: Pick<Transaction, "execute">,
-  input: ConsumerScope,
-) {
-  const found = await tx.execute({
-    sql: "SELECT 1 FROM workbench_projects WHERE owner=? AND project_id=? LIMIT 1",
-    args: [input.userId, input.draftId],
-  });
-  if (!found.rows.length) throw new ConsumerJobError("not_found", 404);
-}
 async function rowFor(
   tx: Pick<Transaction, "execute">,
   input: ConsumerJobScope,
@@ -290,114 +210,6 @@ async function rowFor(
     })
   ).rows[0];
 }
-async function requiredRow(
-  tx: Pick<Transaction, "execute">,
-  input: ConsumerJobScope,
-) {
-  const row = await rowFor(tx, input);
-  if (!row) throw new ConsumerJobError("not_found", 404);
-  return row;
-}
-
-/** The caller must validate source ownership and the workflow's provider schema first.
- * A repeated key never creates a second job, including after its quote expires. */
-export async function createConsumerJob(
-  input: CreateConsumerJob,
-): Promise<{ job: ConsumerJob; replayed: boolean }> {
-  scope(input);
-  identifier(input.connectedOwnerId);
-  identifier(input.connectionGeneration);
-  identifier(input.idempotencyKey, 128);
-  const workspaceId = input.higgsfieldWorkspaceId ?? null;
-  if (workspaceId !== null) identifier(workspaceId);
-  if (!CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
-  if (
-    !Number.isFinite(input.quoteCredits) ||
-    input.quoteCredits < 0 ||
-    input.quoteCredits > Number.MAX_SAFE_INTEGER
-  )
-    invalid();
-  if (!Number.isSafeInteger(input.quoteExpiresAt) || input.quoteExpiresAt <= 0)
-    invalid();
-  if (
-    !Array.isArray(input.originalAssetIds) ||
-    input.originalAssetIds.length > 128
-  )
-    invalid();
-  for (const id of input.originalAssetIds) identifier(id);
-  if (new Set(input.originalAssetIds).size !== input.originalAssetIds.length)
-    invalid();
-  // Snapshot caller-owned fields before awaiting a database lock. Their edits
-  // must not change values after the immutable fingerprint has been computed.
-  input = { ...input, originalAssetIds: [...input.originalAssetIds] };
-  const payloadJson = canonicalObject(input.payload, 65_536);
-  const immutableHash = hash(
-    canonicalObject(
-      {
-        workflow: input.workflow,
-        connectedOwnerId: input.connectedOwnerId,
-        connectionGeneration: input.connectionGeneration,
-        higgsfieldWorkspaceId: workspaceId,
-        payloadJson,
-        quoteCredits: input.quoteCredits,
-        quoteExpiresAt: input.quoteExpiresAt,
-        originalAssetIds: input.originalAssetIds,
-      },
-      131_072,
-    ),
-  );
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    await requireDraft(tx, input);
-    if(input.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(payloadJson).input);
-    if(input.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(payloadJson).input);
-    if(input.workflow === "marketing-template") await validateConsumerMarketingTemplateSources(tx, JSON.parse(payloadJson).input);
-    if(input.workflow === "voice-tool") await validateConsumerVoiceToolSources(tx, JSON.parse(payloadJson).input);
-    if(input.workflow === "shorts") await validateConsumerShortsSources(tx, JSON.parse(payloadJson).input);
-    const previous = (
-      await tx.execute({
-        sql: "SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND idempotency_key=?",
-        args: [input.userId, input.draftId, input.idempotencyKey],
-      })
-    ).rows[0];
-    if (previous) {
-      if (previous.immutable_hash !== immutableHash)
-        throw new ConsumerJobError("idempotency_conflict");
-      return { job: asJob(previous), replayed: true };
-    }
-    const now = Date.now(),
-      id = randomUUID();
-    if (input.quoteExpiresAt <= now)
-      throw new ConsumerJobError("quote_expired");
-    await tx.execute({
-      sql: `INSERT INTO higgsfield_consumer_jobs
-      (id,user_id,draft_id,connected_owner_id,connection_generation,higgsfield_workspace_id,workflow,idempotency_key,payload_json,payload_hash,immutable_hash,quote_credits,quote_expires_at,original_asset_ids,status,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'quoted',?,?)`,
-      args: [
-        id,
-        input.userId,
-        input.draftId,
-        input.connectedOwnerId,
-        input.connectionGeneration,
-        workspaceId,
-        input.workflow,
-        input.idempotencyKey,
-        payloadJson,
-        hash(payloadJson),
-        immutableHash,
-        input.quoteCredits,
-        input.quoteExpiresAt,
-        JSON.stringify(input.originalAssetIds),
-        now,
-        now,
-      ],
-    });
-    return {
-      job: asJob(await requiredRow(tx, { ...input, id })),
-      replayed: false,
-    };
-  });
-}
 
 export async function getConsumerJob(
   input: ConsumerJobScope,
@@ -407,52 +219,7 @@ export async function getConsumerJob(
   const row = await rowFor(db(), input);
   return row ? asJob(row) : null;
 }
-/** Expiry is actionable only after any earlier dispatch transaction has
- * committed. A plain remote/WAL read can still observe its old quoted row. */
-export async function readConsumerJobAfterAdmissions(input: ConsumerJobScope): Promise<ConsumerJob | null> {
-  jobScope(input);
-  await consumerJobsReady();
-  return workbenchTransaction(async tx => {
-    const row = await rowFor(tx, input);
-    return row ? asJob(row) : null;
-  });
-}
-/** Look up a prior quote before making another provider pricing request. */
-export async function getConsumerJobByKey(
-  input: ConsumerScope & { idempotencyKey: string },
-): Promise<ConsumerJob | null> {
-  scope(input);
-  identifier(input.idempotencyKey, 128);
-  await consumerJobsReady();
-  const row = (
-    await db().execute({
-      sql: "SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND idempotency_key=?",
-      args: [input.userId, input.draftId, input.idempotencyKey],
-    })
-  ).rows[0];
-  return row ? asJob(row) : null;
-}
 export type ConsumerJobCursor = { createdAt: number; id: string };
-/** Pin every admitted recoverable job (workspace capacity is four), so quote
- * history cannot hide a paid operation that still needs reconciliation.
- * `submittedOnly` leaves read-only quotes out, so estimates never push
- * finished results off a history's page. */
-export async function listConsumerRecoveryJobs(
-  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; submittedOnly?: boolean },
-): Promise<ConsumerJob[]> {
-  scope(input);
-  const limit = input.limit ?? 25;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
-      !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
-  await consumerJobsReady();
-  const rows = await workbenchTransaction(tx => tx.execute({
-    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?${input.submittedOnly ? " AND status<>'quoted'" : ""}
-      ORDER BY CASE WHEN status IN ('dispatching','accepted','uncertain') AND dispatch_claim_hash IS NOT NULL THEN 0
-        WHEN status IN ('dispatching','accepted','uncertain') THEN 1 ELSE 2 END,created_at DESC,id DESC LIMIT ?`,
-    args: [input.userId, input.draftId, input.workflow, limit],
-  }));
-  return rows.rows.map(asJob);
-}
 export async function listConsumerJobs(
   input: ConsumerScope & { limit?: number; before?: ConsumerJobCursor },
 ): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {
@@ -492,62 +259,6 @@ export async function listConsumerJobs(
         ? { createdAt: last.createdAt, id: last.id }
         : null,
   };
-}
-
-/** A run page's cursor as one opaque query value: `<createdAt>.<id>`. */
-export function formatConsumerJobCursor(cursor: ConsumerJobCursor): string {
-  return `${cursor.createdAt}.${cursor.id}`;
-}
-export function parseConsumerJobCursor(value: string): ConsumerJobCursor {
-  const match = /^(\d{1,16})\.([A-Za-z0-9-]{1,200})$/.exec(value);
-  const createdAt = match ? Number(match[1]) : NaN;
-  if (!match || !Number.isSafeInteger(createdAt)) return invalid();
-  return { createdAt, id: match[2] };
-}
-const IN_FLIGHT = "('dispatching','accepted','uncertain')";
-/**
- * One project's runs of a workflow, newest first, paged by cursor. A quote is
- * an estimate, not a run: it stays in the ledger and is only left out here,
- * so estimates never push a result out of the window. The first page also
- * carries every admitted job still awaiting reconciliation, however old, so
- * paging can never hide a paid operation (a later page may repeat one).
- * `variant` narrows to one kind of run by the saved input's own variant
- * (Genjutsu's Motion Transfer and Object Swap pages each list their own).
- */
-export async function listConsumerRuns(
-  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number; before?: ConsumerJobCursor; variant?: string },
-): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {
-  scope(input);
-  const limit = input.limit ?? 25;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
-      !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
-  const before = input.before, variant = input.variant;
-  if (before) {
-    identifier(before.id);
-    if (!Number.isSafeInteger(before.createdAt) || before.createdAt < 0) invalid();
-  }
-  if (variant !== undefined && !/^[a-z][a-z-]{0,39}$/.test(variant)) invalid();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const owned = [input.userId, input.draftId, input.workflow, ...(variant ? [variant] : [])];
-    const kind = variant ? "AND json_extract(payload_json,'$.input.variant')=?" : "";
-    const page = (await tx.execute({
-      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status<>'quoted'
-      ${before ? "AND (created_at < ? OR (created_at = ? AND id < ?))" : ""}
-      ORDER BY created_at DESC,id DESC LIMIT ?`,
-      args: [...owned, ...(before ? [before.createdAt, before.createdAt, before.id] : []), limit + 1],
-    })).rows;
-    const items = page.slice(0, limit).map(asJob), last = items.at(-1);
-    const nextCursor = page.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null;
-    if (before) return { items, nextCursor };
-    const pinned = (await tx.execute({
-      sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=? ${kind} AND status IN ${IN_FLIGHT}
-      ORDER BY created_at DESC,id DESC LIMIT 50`,
-      args: owned,
-    })).rows.map(asJob);
-    const shown = new Set(items.map((job) => job.id));
-    return { items: [...items, ...pinned.filter((job) => !shown.has(job.id))], nextCursor };
-  });
 }
 
 export type ConsumerCapacityJob = {
@@ -618,412 +329,4 @@ export async function setAsideConsumerJob(
     args: [now, input.id, input.userId, now - CONSUMER_RELEASE_GRACE_MS],
   });
   return changed.rowsAffected === 1;
-}
-
-/** A durable dispatch claim has no expiry/reclaim path: a crash may have submitted.
- * It holds capacity until it settles, its owner sets it aside, or the capacity
- * window passes; none of those ever makes it dispatchable again. */
-export async function claimConsumerDispatch(
-  input: ConsumerJobScope,
-): Promise<{ job: ConsumerJob; claimToken: string } | null> {
-  jobScope(input);
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input);
-    if (row.status !== "quoted") return null;
-    // Deletion may not initiate new spend, but already dispatched receipts
-    // remain accessible to their immutable owner for reconciliation.
-    await requireDraft(tx, input);
-    if(row.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(String(row.payload_json)).input);
-    if(row.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);
-    if(row.workflow === "marketing-template") await validateConsumerMarketingTemplateSources(tx, JSON.parse(String(row.payload_json)).input);
-    if(row.workflow === "voice-tool") await validateConsumerVoiceToolSources(tx, JSON.parse(String(row.payload_json)).input);
-    if(row.workflow === "shorts") await validateConsumerShortsSources(tx, JSON.parse(String(row.payload_json)).input);
-    const now = Date.now();
-    if (Number(row.quote_expires_at) <= now)
-      throw new ConsumerJobError("quote_expired");
-    const active = Number(
-      (
-        await tx.execute({
-          sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`,
-          args: [now - CONSUMER_CAPACITY_WINDOW_MS],
-        })
-      ).rows[0].count,
-    );
-    if (active >= CONSUMER_ACTIVE_LIMIT)
-      throw new ConsumerJobError("capacity", 429);
-    const claimToken = randomUUID();
-    const changed = await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status='dispatching',dispatch_claim_hash=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
-      args: [hash(claimToken), now, input.id, input.userId, input.draftId, now],
-    });
-    return changed.rowsAffected === 1
-      ? { job: asJob(await requiredRow(tx, input)), claimToken }
-      : null;
-  });
-}
-
-/**
- * One durable dispatch claim per item of a batch, taken atomically: every job
- * must still be a fresh "generation" quote of this owner and draft, and the
- * workspace must have capacity for all of them, or none is claimed. Like a
- * single claim it has no expiry: a crash after it may have submitted.
- */
-export async function claimConsumerDispatchBatch(
-  inputs: ConsumerJobScope[],
-): Promise<{ job: ConsumerJob; claimToken: string }[] | null> {
-  if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
-  inputs.forEach(jobScope);
-  if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const now = Date.now();
-    for (const input of inputs) {
-      const row = await requiredRow(tx, input);
-      if (row.status !== "quoted" || row.workflow !== "generation") return null;
-      await requireDraft(tx, input);
-      await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);
-      if (Number(row.quote_expires_at) <= now) throw new ConsumerJobError("quote_expired");
-    }
-    const active = Number(
-      (await tx.execute({ sql: `SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE ${holdsCapacity()}`, args: [now - CONSUMER_CAPACITY_WINDOW_MS] })).rows[0].count,
-    );
-    if (active + inputs.length > CONSUMER_ACTIVE_LIMIT) throw new ConsumerJobError("capacity", 429);
-    const claims: { job: ConsumerJob; claimToken: string }[] = [];
-    for (const input of inputs) {
-      const claimToken = randomUUID();
-      const changed = await tx.execute({
-        sql: "UPDATE higgsfield_consumer_jobs SET status='dispatching',dispatch_claim_hash=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
-        args: [hash(claimToken), now, input.id, input.userId, input.draftId, now],
-      });
-      if (changed.rowsAffected !== 1) throw new ConsumerJobError("idempotency_conflict");
-      claims.push({ job: asJob(await requiredRow(tx, input)), claimToken });
-    }
-    return claims;
-  });
-}
-
-/**
- * Check, then fence (a batch whose submit reply was lost). In one write, under
- * the same lock as claimConsumerDispatchBatch: each job still quoted has its
- * quote closed now, so a request still on its way can never claim it (the
- * claim refuses an expired quote before anything is sent); a job already
- * claimed is left exactly as it is. Returns every job as it stands after. The
- * answer never changes afterwards: a fenced quote is never dispatchable again.
- */
-export async function fenceConsumerQuotes(
-  inputs: ConsumerJobScope[],
-): Promise<ConsumerJob[]> {
-  if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
-  inputs.forEach(jobScope);
-  if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const now = Date.now();
-    const jobs: ConsumerJob[] = [];
-    for (const input of inputs) {
-      await tx.execute({
-        sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
-        args: [now, now, input.id, input.userId, input.draftId, now],
-      });
-      jobs.push(asJob(await requiredRow(tx, input)));
-    }
-    return jobs;
-  });
-}
-
-type DispatchInput = ConsumerJobScope & { claimToken: string };
-function dispatchInput(input: DispatchInput) {
-  jobScope(input);
-  identifier(input.claimToken);
-}
-/** A late definitive acknowledgement can resolve uncertainty using the original claim only. */
-export async function markConsumerAccepted(
-  input: DispatchInput & { providerJobId: string },
-): Promise<ConsumerJob | null> {
-  dispatchInput(input);
-  if (
-    typeof input.providerJobId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      input.providerJobId,
-    )
-  )
-    invalid();
-  const providerJobId = input.providerJobId.toLowerCase();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input);
-    if (row.dispatch_claim_hash !== hash(input.claimToken)) return null;
-    if (row.provider_job_id != null) {
-      if (row.provider_job_id !== providerJobId)
-        throw new ConsumerJobError("provider_job_conflict");
-      return asJob(row);
-    }
-    if (row.status !== "dispatching" && row.status !== "uncertain") return null;
-    if (
-      (
-        await tx.execute({
-          sql: "SELECT 1 FROM higgsfield_consumer_jobs WHERE provider_job_id=? AND id<>?",
-          args: [providerJobId, input.id],
-        })
-      ).rows.length
-    )
-      throw new ConsumerJobError("provider_job_conflict");
-    await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status='accepted',provider_job_id=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND dispatch_claim_hash=? AND status IN ('dispatching','uncertain') AND provider_job_id IS NULL",
-      args: [
-        providerJobId,
-        Date.now(),
-        input.id,
-        input.userId,
-        input.draftId,
-        hash(input.claimToken),
-      ],
-    });
-    return asJob(await requiredRow(tx, input));
-  });
-}
-async function finishDispatch(
-  input: DispatchInput,
-  status: "uncertain" | "failed",
-  failureCode: ConsumerFailureCode | null,
-  providerReceipt: string | null = null,
-  providerOutcome: ProviderOutcome | null = null,
-): Promise<ConsumerJob | null> {
-  dispatchInput(input);
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input);
-    if (row.dispatch_claim_hash !== hash(input.claimToken)) return null;
-    const replay = row.status === status && row.failure_code === failureCode;
-    if (row.status !== "dispatching" && !replay) return null;
-    if (
-      row.provider_receipt != null &&
-      providerReceipt !== null &&
-      row.provider_receipt !== providerReceipt
-    )
-      throw new ConsumerJobError("receipt_conflict");
-    if (replay && (providerReceipt === null || row.provider_receipt != null))
-      return asJob(row);
-    await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,failure_code=?,provider_receipt=COALESCE(provider_receipt,?),provider_outcome=COALESCE(provider_outcome,?),updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status IN ('dispatching',?) AND dispatch_claim_hash=?",
-      args: [
-        status,
-        failureCode,
-        providerReceipt,
-        providerOutcome ? serializeOutcome(providerOutcome) : null,
-        Date.now(),
-        input.id,
-        input.userId,
-        input.draftId,
-        status,
-        hash(input.claimToken),
-      ],
-    });
-    return asJob(await requiredRow(tx, input));
-  });
-}
-
-/** Recover a newly understood acknowledgement from the immutable server-saved
- * receipt. This only adopts an existing provider job; it never admits a POST.
- * The workflow service must validate the receipt format before calling. */
-export async function reconcileConsumerReceipt(
-  input: ConsumerJobScope & { providerJobId: string; expectedReceipt: { [key: string]: ConsumerJson } },
-): Promise<ConsumerJob | null> {
-  jobScope(input);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.providerJobId)) invalid();
-  const providerJobId = input.providerJobId.toLowerCase();
-  const expected = canonicalObject(input.expectedReceipt, 65_536);
-  await consumerJobsReady();
-  return workbenchTransaction(async tx => {
-    const row = await requiredRow(tx, input);
-    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || !["marketing-video", "genjutsu", "generation", "marketing-template", "voice-tool", "shorts"].includes(String(row.workflow))) return null;
-    if (row.provider_job_id != null) {
-      if (row.provider_job_id !== providerJobId) throw new ConsumerJobError("provider_job_conflict");
-      return asJob(row);
-    }
-    if (row.status !== "uncertain") return null;
-    if ((await tx.execute({ sql: "SELECT 1 FROM higgsfield_consumer_jobs WHERE provider_job_id=? AND id<>?", args: [providerJobId, input.id] })).rows.length)
-      throw new ConsumerJobError("provider_job_conflict");
-    await tx.execute({ sql: "UPDATE higgsfield_consumer_jobs SET status='accepted',provider_job_id=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='uncertain' AND provider_receipt=? AND provider_job_id IS NULL",
-      args: [providerJobId, Date.now(), input.id, input.userId, input.draftId, expected] });
-    return asJob(await requiredRow(tx, input));
-  });
-}
-/** Pass only a service-validated, secret-redacted provider acknowledgement.
- * Recording it with uncertainty is atomic and never enables resubmission. */
-export const markConsumerUncertain = (
-  input: DispatchInput & { providerReceipt?: { [key: string]: ConsumerJson } },
-) =>
-  finishDispatch(
-    input,
-    "uncertain",
-    null,
-    input.providerReceipt === undefined
-      ? null
-      : canonicalObject(input.providerReceipt, 65_536),
-  );
-/** Only for a definitive rejection before provider acceptance; never for a timeout.
- * `outcome`: what the account said when it refused (its words; its charge is whatever its ledger says). */
-export const markConsumerFailed = (input: DispatchInput & { outcome?: ProviderOutcome | null }) =>
-  finishDispatch(input, "failed", "submission_rejected", null, input.outcome ?? null);
-
-type PollInput = ConsumerJobScope & { leaseToken: string };
-/** Grants permission to GET the stored provider job, never to submit a generation. */
-export async function claimConsumerPoll(input: ConsumerJobScope): Promise<{
-  job: ConsumerJob;
-  leaseToken: string;
-  leaseExpiresAt: number;
-} | null> {
-  jobScope(input);
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input),
-      now = Date.now();
-    if (
-      row.status !== "accepted" ||
-      !row.provider_job_id ||
-      Number(row.poll_lease_until) > now
-    )
-      return null;
-    const leaseToken = randomUUID(),
-      leaseExpiresAt = now + CONSUMER_POLL_LEASE_MS;
-    const changed = await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_hash=?,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND (poll_lease_until IS NULL OR poll_lease_until<=?)",
-      args: [
-        hash(leaseToken),
-        leaseExpiresAt,
-        now,
-        input.id,
-        input.userId,
-        input.draftId,
-        now,
-      ],
-    });
-    return changed.rowsAffected === 1
-      ? { job: asJob(await requiredRow(tx, input)), leaseToken, leaseExpiresAt }
-      : null;
-  });
-}
-async function finishPoll(
-  input: PollInput,
-  outcome:
-    | { status: "completed"; manifest: string }
-    | { status: "failed"; failureCode: ConsumerFailureCode; providerOutcome?: ProviderOutcome | null }
-    | { status: "accepted"; nextPollAt?: number },
-): Promise<ConsumerJob | null> {
-  jobScope(input);
-  identifier(input.leaseToken);
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = await requiredRow(tx, input),
-      now = Date.now();
-    if (
-      row.status !== "accepted" ||
-      row.poll_lease_hash !== hash(input.leaseToken) ||
-      Number(row.poll_lease_until) <= now
-    )
-      return null;
-    const changed = await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET status=?,result_manifest=?,failure_code=?,provider_outcome=COALESCE(?,provider_outcome),poll_lease_hash=NULL,poll_lease_until=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='accepted' AND poll_lease_hash=? AND poll_lease_until>?",
-      args: [
-        outcome.status,
-        outcome.status === "completed" ? outcome.manifest : null,
-        outcome.status === "failed" ? outcome.failureCode : null,
-        outcome.status === "failed" && outcome.providerOutcome ? serializeOutcome(outcome.providerOutcome) : null,
-        outcome.status === "accepted" ? (outcome.nextPollAt ?? null) : null,
-        now,
-        input.id,
-        input.userId,
-        input.draftId,
-        hash(input.leaseToken),
-        now,
-      ],
-    });
-    return changed.rowsAffected === 1
-      ? asJob(await requiredRow(tx, input))
-      : null;
-  });
-}
-/** Workflow service validates result provenance/schema before passing its bounded manifest.
- * Keep this durable receipt even when attaching output to a deleted/changed draft
- * fails: attachment can be recovered without submitting the provider job again. */
-export const completeConsumerJob = (
-  input: PollInput & { resultManifest: { [key: string]: ConsumerJson } },
-) =>
-  finishPoll(input, {
-    status: "completed",
-    manifest: canonicalObject(input.resultManifest, 262_144),
-  });
-/** `outcome`: what the account said — its own status (nsfw, ip_detected, …) and words; see lib/providerOutcome.ts. */
-export function failConsumerPoll(
-  input: PollInput & { failureCode: "provider_failed" | "invalid_result"; outcome?: ProviderOutcome | null },
-) {
-  if (!["provider_failed", "invalid_result"].includes(input.failureCode))
-    invalid();
-  return finishPoll(input, {
-    status: "failed",
-    failureCode: input.failureCode,
-    providerOutcome: input.outcome ?? null,
-  });
-}
-
-export function releaseConsumerPoll(
-  input: PollInput & { nextPollAt?: number },
-) {
-  const now = Date.now();
-  if (
-    input.nextPollAt !== undefined &&
-    (!Number.isSafeInteger(input.nextPollAt) ||
-      input.nextPollAt < now ||
-      input.nextPollAt > now + 3_600_000)
-  )
-    invalid();
-  return finishPoll(input, {
-    status: "accepted",
-    nextPollAt: input.nextPollAt,
-  });
-}
-
-/** A job is read in the background for this long after it was admitted. Past
- * it, the page can still check it; the heartbeat stops spending reads on it. */
-export const CONSUMER_SWEEP_AGE_MS = 7 * 24 * 3_600_000;
-/** The heartbeat takes the same job for a read at most this often. */
-export const CONSUMER_SWEEP_INTERVAL_MS = 5 * 60_000;
-/**
- * The next accepted job due for a background read (its next poll time has
- * passed and no read is in flight), least recently taken first. It is stamped
- * as taken before it is read, so a job that cannot be read right now (its
- * grant changed, the account is disconnected) steps behind the others instead
- * of starving them. The read itself is the workflow's own leased poll: this
- * never quotes, dispatches or sends anything again.
- */
-export async function claimConsumerSweep(
-  workflows: readonly ConsumerWorkflow[],
-  now = Date.now(),
-): Promise<(ConsumerJobScope & { workflow: ConsumerWorkflow }) | null> {
-  if (!workflows.length || workflows.some((workflow) => !CONSUMER_WORKFLOWS.includes(workflow))) invalid();
-  await consumerJobsReady();
-  return workbenchTransaction(async (tx) => {
-    const row = (
-      await tx.execute({
-        sql: `SELECT id,user_id,draft_id,workflow FROM higgsfield_consumer_jobs
-          WHERE status='accepted' AND provider_job_id IS NOT NULL AND workflow IN (${workflows.map(() => "?").join(",")})
-            AND (poll_lease_until IS NULL OR poll_lease_until<=?) AND created_at>? AND (swept_at IS NULL OR swept_at<=?)
-          ORDER BY COALESCE(swept_at,0) ASC,created_at ASC,id ASC LIMIT 1`,
-        args: [...workflows, now, now - CONSUMER_SWEEP_AGE_MS, now - CONSUMER_SWEEP_INTERVAL_MS],
-      })
-    ).rows[0];
-    if (!row) return null;
-    await tx.execute({
-      sql: "UPDATE higgsfield_consumer_jobs SET swept_at=? WHERE id=? AND status='accepted'",
-      args: [now, row.id],
-    });
-    return {
-      id: String(row.id),
-      userId: String(row.user_id),
-      draftId: String(row.draft_id),
-      workflow: row.workflow as ConsumerWorkflow,
-    };
-  });
 }

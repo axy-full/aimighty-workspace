@@ -1,12 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { POLL, movedOn, poll, pollAfter, pollDelay, presentTimeout, type PollClock, type PollPresence } from "../../lib/poll";
-import { checkingProblem } from "../../lib/higgsfield-consumer/resume";
 import { activeMediaJob } from "../../lib/workbench/job-recovery";
-import { CONNECTED_READ_FLOOR_S } from "../../lib/higgsfield-consumer/generation-client";
 
 /**
- * lib/poll: every page-side status read (Gen's takes, connected jobs, Ads,
- * Image ads, a re-edit) waits 2 s, then 1.5× longer each
+ * lib/poll: every page-side status read (Gen's takes, Image ads, a re-edit)
+ * waits 2 s, then 1.5× longer each
  * read that finds the job where it was, up to 10 s, never sooner than the
  * server's own pollAfterSeconds; a changed status or a Try again starts the
  * pace over; ±20% jitter (upward only when the hint sets the wait); a failed
@@ -299,28 +297,6 @@ test("a read that finds the job moved on starts the pace over; one that finds it
   poller.stop();
 });
 
-test("a connected job's floor (6 s): whatever the jitter, however often its status changes, no two reads are closer than 6.5 s — at most five in any 30 s", async () => {
-  for (const r of [0, 0.5, 0.999999]) {
-    const time = fakeClock(() => r);
-    const reads: number[] = [];
-    let n = 0;
-    const moved = movedOn();
-    const poller = poll({
-      clock: time.clock, presence: null, firstHint: CONNECTED_READ_FLOOR_S,
-      read: async () => { reads.push(time.now()); return { id: "take", status: n++ % 2 ? "accepted" : "uncertain" }; },
-      /* The account names no pace of its own: the floor is the hint. */
-      hint: () => CONNECTED_READ_FLOOR_S,
-      moved: (job) => moved(job.id, job.status),
-      done: () => false, onValue: () => undefined,
-    });
-    await time.advance(120_000);
-    poller.stop();
-    expect(reads[0]).toBeGreaterThanOrEqual(6500);
-    for (let i = 1; i < reads.length; i++) expect(reads[i] - reads[i - 1]).toBeGreaterThanOrEqual(6500);
-    for (let i = 0; i < reads.length; i++) expect(reads.filter((t) => t >= reads[i] && t < reads[i] + 30_000).length).toBeLessThanOrEqual(5);
-  }
-});
-
 test("movedOn: the first sight of a job only notes it; a status seen before is no move; a known status seeds it", () => {
   const moved = movedOn();
   expect(moved("a", "accepted")).toBe(false);
@@ -382,17 +358,6 @@ test("a one-off read's automatic retry waits while the tab is hidden and runs wh
   expect(page.listeners()).toBe(0);
   page.set(false);
   expect(ran).toBe(2);
-});
-
-test("a failed status read on a running job is said in fixed words, never the raw error, and says it is asked again", () => {
-  const err = (status?: number, message = "x", code?: string) => Object.assign(new Error(message), { ...(status === undefined ? {} : { status }), ...(code ? { code } : {}) });
-  expect(checkingProblem(new TypeError("Failed to fetch"))).toBe("The connection dropped. Checking again shortly.");
-  expect(checkingProblem(new TypeError("NetworkError when attempting to fetch resource."))).toBe("The connection dropped. Checking again shortly.");
-  expect(checkingProblem(err(429, "Too many requests. Try again shortly."))).toBe("Could not check this take. Checking again shortly.");
-  expect(checkingProblem(err(503, "The connected account could not complete this request. Check the saved job before trying again."))).toBe("Could not check this take. Checking again shortly.");
-  expect(checkingProblem(err(401, "x", "reconnect_required"))).toBe("Reconnect the account in Workspace › Engines to finish this take. Checking again shortly.");
-  expect(checkingProblem(err(507, "x", "original_quota"))).toBe("Workspace storage is full. Make room to collect this take. Checking again shortly.");
-  expect(checkingProblem(err(502), "this ad")).toBe("Could not check this ad. Checking again shortly.");
 });
 
 test("against the service's poll lease, no read is refused and a finished render is seen within one hint", async () => {

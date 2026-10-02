@@ -5,27 +5,26 @@ import {
   alternativePrice, castStillPrompt, isOwnerRunPage, isOwnerRunSuite, ownerRunEyebrow,
 } from "../../lib/shell/connected-capability";
 import { markConnectedCapability, settleConnectedCapability } from "../../lib/shell/use-connected-capability";
-import { SIGN_IN_RETIRED, SIGN_IN_RETIRED_MESSAGE } from "../../lib/higgsfield-consumer/retired";
 import { OWN_PAGES } from "../../lib/shell/business-own";
 import { SHELL_SUITES } from "../../lib/shell/ia";
 import { INITIAL_COMPOSER, activeModel, workspaceModels, type EngineRow } from "../../lib/workspace/composer";
 import { rowPrice } from "../../lib/workspace/model-picker";
 
 /**
- * The retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts), as the
- * shell says it. Nobody runs the connected account: the capability answers
- * "member" for everyone and reads nothing, the pages that ran there meet one
- * card with the way to make the same kind of thing on this workspace's
- * credits, and Workspace › Engines keeps only the owner's Disconnect and the
- * running jobs to set aside.
+ * The retired Higgsfield sign-in (CLAUDE.md ground rule 10), as the shell says
+ * it. Nobody runs the connected account: the capability answers "member" for
+ * everyone and reads nothing, and the pages that ran there meet one card with
+ * the way to make the same kind of thing on this workspace's credits. Its
+ * server code and Workspace › Engines' row are gone
+ * (tests/unit/signinRemovedGuard.spec.ts).
  */
 
 test("the words everyone meets since the sign-in was retired: what ran on the account, that Particl no longer signs in, no owner name, and the workspace-credit way", () => {
   expect(CONNECTED_PROVIDER).toBe("Higgsfield");
   expect(ACCOUNT_RETIRED).toBe("Particl no longer signs in to Higgsfield");
   expect(HISTORY_KEPT).toBe("Past results stay in your Library.");
-  /* The card and the routes say the same thing. */
-  expect(`${ACCOUNT_RETIRED}. ${HISTORY_KEPT}`).toBe(SIGN_IN_RETIRED_MESSAGE);
+  /* One sentence, as every retired surface says it. */
+  expect(`${ACCOUNT_RETIRED}. ${HISTORY_KEPT}`).toBe("Particl no longer signs in to Higgsfield. Past results stay in your Library.");
   expect(OWNER_RUNS.business.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
   /* Viral runs on Particl's API key for everyone now: it has no retired card. Business's card is Ads' and Setup's. */
   expect(Object.keys(OWNER_RUNS)).not.toContain("viral");
@@ -87,7 +86,6 @@ test("a cast entry's still is made from its prompt, else its description, else i
 });
 
 test("the capability answers member for everyone, the owner included, and reads nothing: no store, no connection read, no collector", () => {
-  expect(SIGN_IN_RETIRED).toBe(true);
   const hook = readFileSync("lib/shell/use-connected-capability.ts", "utf8");
   expect(hook).toContain('owner: false, status: "member" as const, connected: false');
   expect(hook).not.toMatch(/fetch\(|createCapabilityStore|CONNECTION_ENDPOINT|session\.owner/);
@@ -99,7 +97,7 @@ test("the capability answers member for everyone, the owner included, and reads 
   expect(existsSync("lib/shell/use-connected-collector.ts")).toBe(false);
 });
 
-test("Gen's composer and Business read nothing of the account; Viral and Image ads read nothing of it; Engines never starts a sign-in", () => {
+test("Gen's composer and Business read nothing of the account; Viral and Image ads read nothing of it; Engines has no account row", () => {
   const composer = readFileSync("lib/workspace/use-composer.ts", "utf8");
   expect(composer).not.toMatch(/useConnectedCapability|higgsfield-consumer|\/api\/higgsfield\/consumer|connected-collector/);
   /* Business's Ads and Setup are the retired card for everyone: no ownership read, no connection read, no account hook. */
@@ -108,11 +106,9 @@ test("Gen's composer and Business read nothing of the account; Viral and Image a
     const source = readFileSync(file, "utf8");
     expect(source, file).not.toMatch(/"\/api\/me"|\/api\/higgsfield\/consumer\/|from "[^"]*higgsfield-consumer\/|useConnectedCapability|use-business"|use-connected-job"|use-resumed-jobs"/);
   }
-  /* Engines is the one place that still reads the owner's connection: to list running jobs and to Disconnect. It never starts a sign-in. */
-  const row = readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8");
-  expect(row).toContain("CONNECTION_ENDPOINT");
-  expect(row).toContain('method: "DELETE"');
-  expect(row).not.toMatch(/consumer\/connect"|consumerAuthorizeUrl|"Reconnect|Opening sign-in|window\.location\.assign/);
+  /* Workspace › Engines' retired account row went with the server code: nothing reads the owner's connection any more. */
+  expect(existsSync("components/graphite/ConnectedAccountRow.tsx")).toBe(false);
+  expect(readFileSync("components/graphite/WorkspaceView.tsx", "utf8")).not.toMatch(/ConnectedAccountRow|\/api\/higgsfield\/consumer\//);
   /* Viral and Business › Image ads read nothing of the connected account at all: they run on Particl's API key. */
   for (const file of ["components/graphite/viral/ViralView.tsx", "lib/shell/viral.ts", "lib/shell/use-key-take.ts", "lib/shell/image-ads.ts", "lib/shell/use-marketing-presets.ts", "components/graphite/business/PresetPicker.tsx"]) {
     const source = readFileSync(file, "utf8");

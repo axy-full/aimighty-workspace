@@ -90,7 +90,7 @@ export const LEDGER_LABEL: Record<LedgerState, string> = {
 };
 
 /**
- * Particl no longer signs in to Higgsfield (lib/higgsfield-consumer/retired.ts)
+ * Particl no longer signs in to Higgsfield (CLAUDE.md ground rule 10)
  * and its account jobs were drained before this screen changed: a job still
  * open in the ledger was never collected, and nothing will collect it now. That
  * is all it claims — the account's own record says what it billed.
