@@ -9,7 +9,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import type { TrayReply } from "../lib/jobsTray";
-import { heldPriceNow } from "../lib/creditTerms";
+import { creditUsd, heldPriceNow } from "../lib/creditTerms";
 
 /**
  * One owned provider key serves every workspace on the platform's keys
@@ -30,7 +30,8 @@ const MARKETING = "higgsfield/marketing-studio-image";
 /* A key this server has never had: the one-way fingerprint of a key rotated away (no key is ever stored). */
 const GONE = createHash("sha256").update(`rotated-away:${randomBytes(8).toString("hex")}`).digest("hex");
 const MOCK_KEY = createHash("sha256").update("particl-mock:higgsfield").digest("hex");
-/* What a still quoted at the fixture price needs to start, at today's terms: the figure Generate held it at. */
+/* What a still quoted at the fixture price needs to start, at today's terms: the figure Generate held it at, at today's
+   price of a credit (unitUsd). A snapshot without one reads as held before a price change: a person releases it. */
 const NEEDS = heldPriceNow({ estUsd: 0.25 }, "image", MARKETING);
 
 /** SHARED_KEY_SHOTS=<dir> keeps a picture of what was checked, per size (for review; never in CI). */
@@ -134,9 +135,9 @@ test("the jobs tray says what a take on the shared key is doing: Queued — star
       args: [id, `prod-${tag}`, MARKETING, `Prompt for ${title}`, title, JSON.stringify(params), status, me.id, createdAt, createdAt],
     });
     /* Parked by Generate behind the full pool: held for a slot, marked as the pool's; nothing reserved or sent. */
-    await row(pooled, "held", "Bottle on the plinth", { ratio: "3:4", resolution: "2k", held: { why: "slots", pool: "shared", needs: NEEDS, estUsd: 0.25, at: now - 2 * MIN } }, now - 2 * MIN);
+    await row(pooled, "held", "Bottle on the plinth", { ratio: "3:4", resolution: "2k", held: { why: "slots", pool: "shared", needs: NEEDS, estUsd: 0.25, at: now - 2 * MIN, unitUsd: creditUsd() } }, now - 2 * MIN);
     /* Waiting for one of this workspace's own slots: said the way it always was. */
-    await row(slot, "held", "Bottle in the rain", { ratio: "3:4", resolution: "2k", held: { why: "slots", needs: NEEDS, estUsd: 0.25, at: now - 3 * MIN } }, now - 3 * MIN);
+    await row(slot, "held", "Bottle in the rain", { ratio: "3:4", resolution: "2k", held: { why: "slots", needs: NEEDS, estUsd: 0.25, at: now - 3 * MIN, unitUsd: creditUsd() } }, now - 3 * MIN);
     /* Sent and accepted on a key this server no longer has: its collection must not ask anything, fail it or send it again. */
     await row(changed, "running", "Bottle at dusk", { ratio: "3:4", resolution: "2k", references: [], marketing: { quality: "high", enhancePrompt: false },
       paidClaim: now - 4 * MIN, higgsfieldCredentialFingerprint: GONE, higgsfieldVendorCostUsd: 0.25,

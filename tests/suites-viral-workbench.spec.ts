@@ -85,8 +85,9 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 /** A priced button reads "<verb> · about N cr": an estimate, whole, never shortened. */
-const priced = (verb: string) => new RegExp(`^${verb} · about \\d[\\d,]* cr$`);
-const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/about ([\d,]+) cr/)?.[1] ?? "").replace(/,/g, ""));
+/* A figure may carry one decimal: credits are charged in tenths. */
+const priced = (verb: string) => new RegExp(`^${verb} · about \\d[\\d,]*(?:\\.\\d)? cr$`);
+const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)?.[1] ?? "").replace(/,/g, ""));
 
 test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
