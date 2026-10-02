@@ -3,17 +3,14 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import {
   AUDIO_SECONDS,
-  BILLING_LABELS,
   COMPOSER_TYPES,
   TYPE_LABELS,
   audioSeconds,
-  type BillingSource,
   type ComposerType,
 } from "@/lib/workspace/composer";
 import { composerEyebrow, renderPrimaryLabel } from "@/lib/workspace/make";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useComposer, type ComposerHost } from "@/lib/workspace/use-composer";
-import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useSecondsField } from "@/lib/workspace/use-seconds-field";
 import type { MobilePrimary } from "./MobileActionBar";
 import { MobileSheet } from "./MobileSheet";
@@ -135,8 +132,6 @@ export function MakeComposerCard() {
 
 export function MakeComposerSheet() {
   const ctx = useMakeComposer();
-  /* The connected account is the owner's (every route behind it refuses anyone else): a member is not offered the switch (idea 19). */
-  const { owner } = useConnectedCapability(undefined, { read: false });
   if (!ctx || !ctx.open) return null;
   const { host, setOpen } = ctx;
   const audioTask = host.model?.audioTask;
@@ -215,24 +210,7 @@ export function MakeComposerSheet() {
           </>
         ) : null}
 
-        {owner ? (<>
-          <span className="pxm-kicker" data-functional-label="">Credits</span>
-          <div className="pxm-segmented" role="group" aria-label="Credits used">
-            {(["workspace", "connected"] as BillingSource[]).map((source) => (
-              <button
-                key={source}
-                type="button"
-                className="pxm-segment"
-                data-on={host.state.billing === source ? "" : undefined}
-                aria-pressed={host.state.billing === source}
-                data-testid={`mobile-composer-billing-${source}`}
-                onClick={() => host.dispatch({ type: "billing", value: source })}
-              >
-                {BILLING_LABELS[source]}
-              </button>
-            ))}
-          </div>
-        </>) : null}
+        {/* This workspace's credits only: a signed-in account's catalogue is not offered (28 Sep 2026). */}
 
         {host.state.references.length ? (
           <ul className="pxm-ref-list" aria-label="References">

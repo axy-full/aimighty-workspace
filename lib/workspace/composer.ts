@@ -2,6 +2,7 @@ import { displayModelName } from "../models";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 import { PROMPT_LIMIT } from "../higgsfield-consumer/catalogue";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -97,6 +98,8 @@ export type ComposerState = {
   count: number;
   /** Gen's film vocabulary (lib/workspace/film-vocabulary.ts): one camera-bank value per row; a row that is absent is Auto. */
   shot: Record<string, string>;
+  /** Cinema Studio 4.0's creative controls (lib/workspace/cinema-vocabulary.ts): one documented value per control; absent is Auto. */
+  cinema: Record<string, string>;
   /** The last thing the composer said: a moved price, a refusal, a created project. */
   notice: string | null;
 };
@@ -118,6 +121,7 @@ export const INITIAL_COMPOSER: ComposerState = {
   enhance: false,
   count: 1,
   shot: {},
+  cinema: {},
   notice: null,
 };
 
@@ -139,6 +143,8 @@ export type ComposerRecipe = {
   sound?: { seconds?: number; instrumental?: boolean; voiceId?: string };
   /** The take's shot setup (params.shotSpec); none puts every chip back to Auto. */
   shot?: Record<string, string>;
+  /** The take's Cinema Studio controls (params.cinema); none puts every Cinema chip back to Auto. */
+  cinema?: Record<string, string>;
 };
 
 export type ComposerAction =
@@ -155,6 +161,7 @@ export type ComposerAction =
   | { type: "enhance"; value: boolean }
   | { type: "count"; value: number }
   | { type: "shot"; value: Record<string, string> }
+  | { type: "cinema"; value: Record<string, string> }
   | { type: "addReference"; value: ComposerReference }
   | { type: "removeReference"; key: string }
   | { type: "notice"; value: string | null }
@@ -249,6 +256,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return { ...state, count: Math.max(1, Math.min(TAKES_MAX, Math.round(action.value))) };
     case "shot":
       return { ...state, shot: { ...action.value }, notice: null };
+    case "cinema":
+      return { ...state, cinema: { ...action.value }, notice: null };
     case "addReference":
       if (state.references.some((r) => r.key === action.value.key)) return state;
       if (state.references.length >= 10) return { ...state, notice: "The composer takes up to 10 references." };
@@ -274,6 +283,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         voiceId: sound.voiceId ?? state.voiceId,
         count: 1,
         shot: { ...(recipe.shot ?? {}) },
+        cinema: { ...(recipe.cinema ?? {}) },
         notice: null,
       };
     }
@@ -287,7 +297,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 /* ── Model lists ──────────────────────────────────────────────────────── */
 
 /** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
-export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null };
+export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null; /** An approximate figure: shown as "about". */ approximate?: true };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
@@ -483,6 +493,8 @@ export type ComposerQuote = {
   reason: string | null;
   /** A batch's own fresh per-take figures (a Generate of takes 2–4 re-quoted them and they moved): their sum is the button's total. */
   takes?: number[];
+  /** The figure is approximate (the engine settles on what it delivers): the button says "about". */
+  approximate?: boolean;
 };
 
 /**
@@ -569,6 +581,8 @@ export function composerBlock(input: {
   catalogue: { loading: boolean; error: string | null };
   /** The words as sent: with Gen's film vocabulary written in, they can run past what the connected account takes. */
   sentPrompt?: string;
+  /** Sound references held in the well: only Cinema Studio 4.0, on this workspace's credits, takes them. */
+  soundReferences?: number;
 }): string | null {
   const { state, model, quote, quoteKey } = input;
   if (input.submitting) return "Submitting this generation…";
@@ -588,6 +602,8 @@ export function composerBlock(input: {
   if (state.billing === "connected" && (input.sentPrompt?.length ?? 0) > PROMPT_LIMIT)
     return `With the setup written in, the words run past ${PROMPT_LIMIT.toLocaleString("en-US")} characters. Shorten them or set fewer chips.`;
   if (model.audioTask === "speech" && !state.voiceId) return `${model.label} has no voice to read in here. Choose another model.`;
+  if ((input.soundReferences ?? 0) > 0 && !(state.billing === "workspace" && isCinemaStudioModel(model.id)))
+    return `${model.label} takes pictures and video as references, not sound. Remove the sound, or choose Cinema Studio 4.0.`;
   if (!quote || quote.key !== quoteKey || quote.state === "loading") return "Getting the live price…";
   if (quote.state === "unavailable" || quote.credits === null)
     return quote.reason ?? "This model has no live price with these settings.";
@@ -607,7 +623,8 @@ type ButtonInput = {
 
 /**
  * The button's label in its two parts: what it does ("Generate 4 takes") and
- * what it costs ("72 connected cr" — the exact live figure, whole, or none).
+ * what it costs ("72 connected cr" — the live figure, whole, "about" where it
+ * is approximate, or none).
  * Gen draws them apart so the price can take its own line on a narrow button
  * rather than ever being cut.
  */
@@ -617,10 +634,11 @@ export function composerButtonParts(input: ButtonInput): { action: string; price
   const total = shownTotal(input.quote, input.quoteKey, count);
   const action = input.draft ? "Generate draft" : count > 1 ? `Generate ${count} takes` : "Generate";
   if (total === null) return { action, price: null };
-  return { action, price: `${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
+  const about = input.quote?.approximate ? "about " : "";
+  return { action, price: `${about}${total.toLocaleString("en-US")} ${input.billing === "connected" ? "connected cr" : "cr"}` };
 }
 
-/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" — the exact live figure, or no figure at all. */
+/** "Generate · 18 cr" / "Generate 4 takes · 72 connected cr" / "Generate · about 18 cr" — the live figure, or no figure at all. */
 export function composerButtonLabel(input: ButtonInput): string {
   const { action, price } = composerButtonParts(input);
   return price ? `${action} · ${price}` : action;

@@ -8,7 +8,12 @@ import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/work
 import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { dispatchGeneration, settlePendingGeneration } from "@/lib/workspace/generate-submit";
-import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
+import { newProject, type Asset, type CanvasNode, type Project, type RefKind } from "@/lib/workbench/studio";
+import { withRefKind } from "@/lib/workbench/ref-kind";
+import { lockProblem } from "@/lib/workbench/master-lock";
+import { holdMasterEdits } from "@/lib/workbench/team-canvas-model";
+import { fileCutout } from "@/lib/workspace/cutout";
+import { useSession } from "@/lib/session";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
 import { DRAFT_WRITTEN, writtenProject } from "@/lib/workspace/draft-written";
@@ -19,7 +24,7 @@ import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/wor
 import { addShotNode, dispatchQuoteQuery, generationPhase, neutralCopy, shotReferenceAssets, shotReferenceRole } from "@/lib/workspace/rig";
 import { ENGINE_PROMPT_LIMIT, renderPromptFor } from "@/lib/production/rig-prompt";
 import { RIG_INTENT_EVENT, RigBuildError, removeShots, restoreShots, shotFromAsset, takeRigIntent } from "@/lib/production/rig-build";
-import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
+import { isShotNode, rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
 import { renderedSubject } from "@/lib/workspace/take-subject";
 import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
@@ -28,6 +33,7 @@ import type { Generation, SelectableItem } from "@/lib/workspace/types";
 import type { ShellSeams } from "../WorkspaceShell";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
+import { useCutouts, type CutoutsApi } from "./use-cutouts";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -85,7 +91,12 @@ export type RigContext = {
   saveError: string | null;
   selected: RigShot | null;
   selectedNode: CanvasNode | null;
+  /** The Rig card picked that is not a shot (a reference, a note, a look board): the Card Inspector's. */
+  selectedCard: CanvasNode | null;
+  /** Picks a card: a shot into the shot Inspector, any other card into the Card Inspector. */
   select: (id: string) => void;
+  /** Sets a reference card's kind (Cast, Environment, Element or Ref) for everyone on the canvas; returns the refusal, or null. */
+  setRefKind: (id: string, kind: RefKind) => string | null;
   patchShot: (id: string, patch: ShotPatch) => string | null;
   addShot: () => void;
   /** Link `source` into `target` under the Studio graph's rules; returns the refusal, or null. */
@@ -107,8 +118,22 @@ export type RigContext = {
   save: () => Promise<boolean>;
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
-  /** The production's shared canvas: who else is here, and presence to show them. */
-  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence">;
+  /** The production's shared canvas: who else is here, presence to show them, and the server's own changes (Tidy). */
+  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence" | "server" | "tidy" | "refresh">;
+  /** The locked elements (the masters) on this production's canvas, as the server has them. A card is a master when its element is one. */
+  masters: ReadonlySet<string>;
+  /** Whether this person may unlock a master (an admin). */
+  canUnlock: boolean;
+  /** Locks a reference card as the master, for everyone (free); resolves to the refusal, or null. */
+  lockMaster: (id: string) => Promise<string | null>;
+  /** Unlocks a master with a reason (an admin; recorded); resolves to the refusal, or null. */
+  unlockMaster: (id: string, reason: string) => Promise<string | null>;
+  /** Cut-outs of this project's cards (running, done or failed), by card id. */
+  cutouts: CutoutsApi["cutouts"];
+  /** A card's cut-out, priced without sending anything (free). */
+  quoteCutout: CutoutsApi["quote"];
+  /** Sends the cut-out the person approved at the price shown; a price that moved is asked again, never sent. */
+  startCutout: CutoutsApi["start"];
 };
 
 const Context = createContext<RigContext | null>(null);
@@ -245,12 +270,25 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [scope, setDraft, toast]);
   useEffect(() => { flushRef.current = () => flush(); }, [flush]);
 
+  /* The masters this window knows of (set once the team canvas hook exists below): its own edits never change one. */
+  const mastersRef = useRef<ReadonlySet<string>>(new Set());
   /** `made`: the change builds records (shots from boards, inputs, a filed take) — noted as made, for the merge. */
   const write = useCallback((fn: (p: Project) => Project, publish: boolean, made = false) => {
     const current = draftRef.current;
     if (!current) return;
-    const changed = fn(current.project);
+    let changed = fn(current.project);
     if (changed === current.project) return;
+    /* An edit of this window's own that would change a locked master keeps the master as it is (the server's rule, applied here
+       first, so the Rig never shows or renders with a change nobody may make); the rest of the edit stands. */
+    if (publish && mastersRef.current.size) {
+      const hold = holdMasterEdits(current.project, changed, mastersRef.current);
+      if (hold.held.length) {
+        changed = hold.project;
+        const names = [...new Set(hold.held.map((h) => current.project.nodes.find((n) => n.id === h.nodeId)?.title).filter(Boolean))];
+        toast(`${names.join(", ") || "That card"} ${names.length > 1 ? "are locked masters" : "is a locked master"}: its source, kind and card stay as they are. An admin can unlock a master.`);
+        if (sameJson(changed, current.project)) return;
+      }
+    }
     /* A shot built from boards (or another record windows make alike) that this change took out is noted, for the merge. */
     const next = noteTakenOut(current.project, changed);
     if (made) recordMade(current.made, current.project, next);
@@ -260,7 +298,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS);
-  }, [setDraft, flush]);
+  }, [setDraft, flush, toast]);
   const update = useCallback((fn: (p: Project) => Project) => write(fn, true), [write]);
   /** A build (lib/production/rig-build) or a filed take: what it made is noted, as made. */
   const make = useCallback((fn: (p: Project) => Project) => write(fn, true, true), [write]);
@@ -404,6 +442,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
   const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
   useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; }, [team.publish, team.catchUp, team.flush]);
+  useEffect(() => { mastersRef.current = team.locks; }, [team.locks]);
 
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
@@ -449,6 +488,16 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const selected = state.selKind === "shot" && state.selId ? shots.find((s) => s.id === state.selId) ?? null : null;
   const selectedNode = selected && project ? project.nodes.find((n) => n.id === selected.id) ?? null : null;
+  const selectedCard = state.selKind === "node" && state.selId && project ? project.nodes.find((n) => n.id === state.selId && !isShotNode(n)) ?? null : null;
+  /* A card picked on the canvas that is not there any more (a teammate took it off, another project opened, an old
+     link) lets go the way a shot does: onto that id's shot if it is one, else the first shot. */
+  useEffect(() => {
+    if (status !== "ready" || !project || state.selKind !== "node" || !state.selId) return;
+    const node = project.nodes.find((n) => n.id === state.selId);
+    if (node && !isShotNode(node)) return;
+    dispatch({ type: "patch", patch: { selKind: "shot", selId: node ? node.id : shots[0]?.id ?? null } });
+    ws.syncUrl();
+  }, [status, project, state.selKind, state.selId, shots, dispatch, ws]);
 
   /* ── The quote on the button ───────────────────────────────────────── */
   const refs = useMemo(() => (project && selectedNode ? shotReferenceAssets(project, selectedNode) : []), [project, selectedNode]);
@@ -626,7 +675,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* ── Selection and editing ─────────────────────────────────────────── */
   const select = useCallback((id: string) => {
-    dispatch({ type: "patch", patch: { selKind: "shot", selId: id, inspector: true } });
+    const node = draftRef.current?.project.nodes.find((n) => n.id === id);
+    dispatch({ type: "patch", patch: { selKind: node && !isShotNode(node) ? "node" : "shot", selId: id, inspector: true } });
     ws.syncUrl();
     setNotice(null);
   }, [dispatch, ws, setNotice]);
@@ -656,6 +706,93 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       else throw err;
     }
   }, [update, select, setNotice]);
+
+  const setRefKind = useCallback((id: string, kind: RefKind): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    const card = current.project.nodes.find((n) => n.id === id);
+    if (card?.elementId && mastersRef.current.has(card.elementId)) return "This card is a locked master: its kind stays as it is.";
+    const next = withRefKind(current.project, id, kind);
+    if (typeof next === "string") return next;
+    /* An edit like any other: to the team canvas (only this field of this card), then the draft save. */
+    if (next !== current.project) update(() => next);
+    return null;
+  }, [update]);
+
+  /* ── Masters: lock (free, anyone), unlock (an admin, with a reason) ─── */
+  const session = useSession();
+  const canUnlock = session.role === "owner" || session.role === "admin";
+  const { learnLock, writeServer, flush: teamFlush } = team;
+  /** The card as the server holds it after a lock or unlock: its element, kind and lock record, into this draft and the live room. */
+  const takeServerCard = useCallback((node: CanvasNode) => {
+    const keys = ["elementId", "refKind", "master"] as const;
+    fold((p) => ({
+      ...p,
+      nodes: p.nodes.map((n) => {
+        if (n.id !== node.id) return n;
+        const out = { ...n } as Record<string, unknown>, from = node as unknown as Record<string, unknown>;
+        for (const key of keys) { if (from[key] === undefined) delete out[key]; else out[key] = from[key]; }
+        return out as unknown as CanvasNode;
+      }),
+    }));
+    writeServer(node, [...keys]);
+  }, [fold, writeServer]);
+
+  const lockMaster = useCallback(async (id: string): Promise<string | null> => {
+    const current = draftRef.current;
+    const node = current?.project.nodes.find((n) => n.id === id);
+    const productionId = current?.project.productionProjectId;
+    if (!current || !node) return "That card is no longer on the canvas.";
+    if (!productionId) return "Save this project before locking a master.";
+    const problem = lockProblem(node, current.project, !!node.elementId && mastersRef.current.has(node.elementId));
+    if (problem) return problem;
+    /* The card as this window shows it reaches the team canvas first: the lock reads it there. */
+    await teamFlush();
+    try {
+      const answer = await draftRequest<{ node?: CanvasNode | null; element?: { id?: string } | null; unchanged?: boolean }>(
+        `/api/rig/elements/${encodeURIComponent(node.elementId ?? "new")}`, scope,
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locked: true, canvas: { productionId, nodeId: id } }) },
+      );
+      if (answer.element?.id) learnLock(answer.element.id, true);
+      if (answer.node) takeServerCard(answer.node);
+      toast(`${node.title} is locked as the master · free`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "The card could not be locked.";
+    }
+  }, [scope, teamFlush, learnLock, takeServerCard, toast]);
+
+  const unlockMaster = useCallback(async (id: string, reason: string): Promise<string | null> => {
+    const current = draftRef.current;
+    const node = current?.project.nodes.find((n) => n.id === id);
+    const productionId = current?.project.productionProjectId;
+    if (!current || !node) return "That card is no longer on the canvas.";
+    if (!node.elementId || !productionId) return "This card is not a locked master.";
+    await teamFlush();
+    try {
+      const answer = await draftRequest<{ node?: CanvasNode | null }>(
+        `/api/rig/elements/${encodeURIComponent(node.elementId)}`, scope,
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locked: false, reason, canvas: { productionId, nodeId: id } }) },
+      );
+      learnLock(node.elementId, false);
+      if (answer.node) takeServerCard(answer.node);
+      toast(`${node.title} is unlocked. The reason is in its history.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "The card could not be unlocked.";
+    }
+  }, [scope, teamFlush, learnLock, takeServerCard, toast]);
+
+  const fileCutoutOn = useCallback((id: string, sourceAssetId: string, jobId: string): string | null => {
+    const current = draftRef.current;
+    if (!current) return "Open a project first.";
+    const next = fileCutout(current.project, id, sourceAssetId, jobId, new Date().toISOString());
+    if (typeof next === "string") return next;
+    /* An edit like any other: the new version and the card's source to the team canvas, then the draft save. */
+    if (next !== current.project) update(() => next);
+    return null;
+  }, [update]);
+  const cut = useCutouts({ scope, draftId: project?.id ?? null, current: readDraft, file: fileCutoutOn, toast });
 
   const connect = useCallback((source: string, target: string): string | null => {
     const current = draftRef.current;
@@ -729,11 +866,13 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     toast(why ?? `${asset.name} is a new shot in the Rig`);
   }, [openId, onRigPage, intents, apply, toast]);
 
-  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence }), [team.mode, team.peers, team.presence]);
+  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh]);
+  const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
-    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode,
-    select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, select, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView]);
+    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
+    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
+    masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

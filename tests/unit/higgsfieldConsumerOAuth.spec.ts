@@ -1010,9 +1010,7 @@ async function routeFixture() {
         return input.id === held;
       },
     },
-    "@/lib/higgsfield-consumer/developer-api": {
-      probeDeveloperApi: async () => ({ reachable: false, status: null, reason: "stub" }),
-    },
+    "@/lib/higgsfield-consumer/retired": await import("../../lib/higgsfield-consumer/retired"),
     "@/lib/higgsfield-consumer/oauth": {
       ...(await modules()).oauth,
       beginConsumerAuthorization: async () => {
@@ -1117,7 +1115,7 @@ test("the connection read carries the owner's slot holders, and set-aside is an 
   expect(route.asides).toHaveLength(2);
 });
 
-test("before the owner can reconnect, the connection read and the reconnect start both learn which account the grant belongs to", async () => {
+test("the connection read still learns which account an old grant belongs to (one free read, rate-limited); reconnecting is retired and learns nothing", async () => {
   const route = await routeFixture(),
     scope = "particl-active-ws-owner";
   // Not connected: nothing to learn.
@@ -1131,52 +1129,75 @@ test("before the owner can reconnect, the connection read and the reconnect star
   // Known: no further read.
   await route.request("connection", "GET", scope);
   expect(route.backfills()).toBe(1);
-  // The reconnect start makes sure too, just before the sign-in replaces the grant.
-  expect((await route.request("connect", "POST", scope)).status).toBe(200);
-  expect(route.backfills()).toBe(2);
+  // A reconnect is retired with the sign-in: it answers 410 and neither reads nor starts anything.
+  const reconnect = await route.request("connect", "POST", scope);
+  expect(reconnect.status).toBe(410);
+  expect(await reconnect.json()).toEqual({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." });
+  expect(route.backfills()).toBe(1);
+  expect(route.counts()).toEqual({ starts: 0, disconnects: 0 });
   // Rate-limited: the read still answers, it just does not look the account up.
   route.connect({ connected: true, requiresReconnect: false, subjectKnown: false });
   route.limit();
   const limited = await route.request("connection", "GET", scope);
   expect(limited.status).toBe(200);
   expect(await limited.json()).toMatchObject({ subjectKnown: false });
-  expect(route.backfills()).toBe(2);
+  expect(route.backfills()).toBe(1);
 });
 
-test("real route guards reject stale scope, cross-origin, bearer tokens and nonowners before starting or disconnecting", async () => {
+test("connecting answers 410 to everyone and starts nothing; Disconnect keeps its guards and still revokes for the owner; the developer check is retired", async () => {
   const route = await routeFixture(),
     original = route.original(),
     scope = "particl-active-ws-owner";
-  expect((await route.request("connect", "POST")).status).toBe(409);
-  expect((await route.request("connect", "POST", "stale")).status).toBe(409);
-  expect(
-    (await route.request("connect", "POST", scope, "https://other.example"))
-      .status,
-  ).toBe(403);
+  /* Connect is retired for every caller, whatever the scope, origin or token. */
+  for (const [captured, origin] of [[undefined, undefined], ["stale", undefined], [scope, "https://other.example"], [scope, undefined]] as const)
+    expect((await route.request("connect", "POST", captured, origin)).status).toBe(410);
+  route.set({ ...original, user: { ...original.user!, owner: false } });
+  expect((await route.request("connect", "POST", scope)).status).toBe(410);
+  route.set(original);
   expect((await route.request("connection", "GET")).status).toBe(409);
   for (const tokenScope of ["read", "render"] as const) {
     route.set({
       ...original,
       token: { id: "token", name: "Token", scope: tokenScope, capUsd: null },
     });
-    expect((await route.request("connect", "POST", scope)).status).toBe(403);
-    expect((await route.request("connection", "DELETE", scope)).status).toBe(
-      403,
-    );
+    expect((await route.request("connection", "DELETE", scope)).status).toBe(403);
   }
   route.set({ ...original, user: { ...original.user!, owner: false } });
-  expect((await route.request("connect", "POST", scope)).status).toBe(403);
+  expect((await route.request("connection", "DELETE", scope)).status).toBe(403);
+  expect((await route.request("connection", "DELETE", scope, "https://other.example")).status).toBe(403);
   expect(route.counts()).toEqual({ starts: 0, disconnects: 0 });
   route.set(original);
-  expect((await route.request("connect", "POST", scope)).status).toBe(200);
+  expect((await route.request("connection", "DELETE", "stale")).status).toBe(409);
   expect((await route.request("connection", "DELETE", scope)).status).toBe(200);
-  route.limit();
-  expect((await route.request("connect", "POST", scope)).status).toBe(429);
-  expect(route.counts()).toEqual({ starts: 1, disconnects: 1 });
+  expect(route.counts()).toEqual({ starts: 0, disconnects: 1 });
+  /* The developer-API check read the account with Particl's grant: retired, before any limit. */
+  const probe = await route.request("connection", "POST", scope, undefined, { action: "developer-probe" });
+  expect(probe.status).toBe(410);
+  expect(await probe.json()).toMatchObject({ code: "retired" });
+  expect(route.limits.filter((key) => key.endsWith(":developer-probe"))).toHaveLength(0);
+  expect((await route.request("connection", "POST", scope, undefined, { action: "anything" })).status).toBe(400);
 });
 
-test("the connection callback returns to Workspace › Engines in the Suites shell, with its outcome", async () => {
+test("the callback of a sign-in started before the retirement never finishes it: it returns to Workspace › Engines saying so", async () => {
   const { oauth } = await modules();
-  expect(oauth.consumerCallbackLocation("connected")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=connected");
-  expect(oauth.consumerCallbackLocation("authorization_denied")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=authorization_denied");
+  expect(oauth.consumerCallbackLocation("retired")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=retired");
+  const retiredModule = await import("../../lib/higgsfield-consumer/retired");
+  let finished = 0;
+  const dependencies: Record<string, unknown> = {
+    "@/lib/higgsfield-consumer/oauth": { consumerCallbackLocation: oauth.consumerCallbackLocation, finishConsumerAuthorization: async () => { finished++; } },
+    "@/lib/higgsfield-consumer/retired": retiredModule,
+  };
+  const loaded = { exports: {} as { GET(request?: Request): Promise<Response> } };
+  new Function("require", "module", "exports", ts.transpileModule(readFileSync("app/api/higgsfield/consumer/callback/route.ts", "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)((id: string) => {
+    if (!(id in dependencies)) throw new Error(id);
+    return dependencies[id];
+  }, loaded, loaded.exports);
+  const response = await loaded.exports.GET(new Request("https://particl.example/api/higgsfield/consumer/callback?code=authorization-code&state=anything&iss=x"));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("Location")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=retired");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(finished).toBe(0);
 });

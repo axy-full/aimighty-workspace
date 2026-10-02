@@ -29,7 +29,6 @@ import {
 } from "@/lib/pipeline/editor";
 import type { PublicPipelineRun } from "@/lib/pipeline/public";
 import type { Project } from "@/lib/workbench/studio";
-import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { createMovieHandoff } from "@/lib/workbench/movie-handoff";
 import {
   atomikPage,
@@ -45,10 +44,7 @@ import {
 } from "./atomik-suite-data";
 import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
-import { AtomikGenerate } from "./AtomikGenerate";
 import { providerDisplayName } from "@/lib/vendorNames";
-import { setAtomikRail } from "@/lib/atomikRail";
-import type { ConnectedRecipe } from "@/lib/higgsfield-consumer/workflows";
 
 type Drafts = {
   project: Project | null;
@@ -75,8 +71,6 @@ type Props = {
   embedded?: boolean;
   /** A host that routes its own pages opens another Atomik page through this instead of `?page=`. */
   onPage?: (page: AtomikPage) => void;
-  /** Generate's current connected-account request (AtomikGenerate `onInput`). */
-  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 };
 const providerNames: Record<string, string> = {
   byteplus: providerDisplayName("byteplus"),
@@ -101,6 +95,8 @@ function provider(model: string) {
       ? providerDisplayName("elevenlabs")
       : "Provider unavailable";
 }
+/** Atomik no longer generates on a signed-in account: single generations are Gen's, on Particl's own engines. */
+const GENERATE_MOVED = "Single generations run in Gen, on Particl’s own engines, each priced before it runs.";
 const amount = (value: number | null, unit: string = "cr") =>
   value === null
     ? "Not available"
@@ -115,7 +111,6 @@ export default function AtomikSuite({
   pageTitle,
   embedded = false,
   onPage,
-  onGenerateInput,
 }: Props) {
   const session = useSession(),
     search = useSearchParams(),
@@ -142,7 +137,8 @@ export default function AtomikSuite({
       <section className={styles.suite} role="alert">
         <h1>{heading}</h1>
         <p>{drafts.error}</p>
-        <button onClick={() => void drafts.refresh()}>Retry projects</button>
+        {/* A read that failed says "Try again": "Retry" is a take's paid re-render. */}
+        <button onClick={() => void drafts.refresh()}>Try again</button>
       </section>
     );
   if (!drafts.data)
@@ -186,10 +182,8 @@ export default function AtomikSuite({
       page={page}
       heading={heading}
       pageTitle={pageTitle}
-      refreshProject={drafts.refresh}
       embedded={embedded}
       onPage={onPage}
-      onGenerateInput={onGenerateInput}
     />
   );
 }
@@ -199,19 +193,15 @@ function MappedAtomik({
   page,
   heading,
   pageTitle,
-  refreshProject,
   embedded = false,
   onPage,
-  onGenerateInput,
 }: {
   project: Project;
   page: AtomikPage;
   heading: string;
   pageTitle?: string;
-  refreshProject: () => Promise<void>;
   embedded?: boolean;
   onPage?: (page: AtomikPage) => void;
-  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 }) {
   const session = useSession(),
     money = useMoney(),
@@ -415,7 +405,7 @@ function MappedAtomik({
             {page === "runs"
               ? "Readable plans, approved stages, and recoverable production history."
               : page === "generate"
-                ? "Image, video, sound and 3D workflows on the connected account, each quoted in connected credits before it runs."
+                ? GENERATE_MOVED
               : page === "recipes"
                 ? "Reuse a saved plan with its exact context, models and checkpoints."
                 : page === "approvals"
@@ -532,7 +522,11 @@ function MappedAtomik({
           }
         />
       ) : page === "generate" ? (
-        <AtomikGenerate project={project} scope={session.requestScope ?? ""} refreshProject={refreshProject} onInput={onGenerateInput} />
+        <section className={styles.empty} aria-label="Generate" data-testid="atomik-generate-moved">
+          <h2>Generate in Gen</h2>
+          <p>{GENERATE_MOVED}</p>
+          <Link href="/suites?view=gen">Open Gen</Link>
+        </section>
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (
@@ -749,45 +743,6 @@ function SaveRecipe({ run }: { run: PublicPipelineRun }) {
     </button>
   );
 }
-/** The connected account's workflow bundles as recipes (A5 + A6): run one
- * from the Atomik composer as `/name brief`; every paid step it plans is
- * priced for approval like any other. Only where that composer exists — the
- * app shell's rail; a host without it (the Suites shell) lists nothing it
- * could not start. */
-function ConnectedRecipes() {
-  const atomik = useAtomik();
-  const { data } = useApi<{ recipes: ConnectedRecipe[] }>(atomik.hosted ? "/api/atomik/recipes" : null);
-  const recipes = data?.recipes ?? [];
-  if (!atomik.hosted || !recipes.length) return null;
-  return (
-    <section className={styles.panel} aria-label="Connected recipes">
-      <h2>Connected recipes</h2>
-      <p className={styles.note}>
-        Workflows from the connected account. Type /name and a brief in Atomik; each paid step is priced before it runs.
-      </p>
-      <div className={styles.recipeGrid}>
-        {recipes.map((recipe) => (
-          <article key={recipe.name} className={styles.panel}>
-            <h3>/{recipe.name}</h3>
-            <p>{recipe.description}</p>
-            <div className={styles.actions}>
-              <button
-                disabled={atomik.busy || !!atomik.recoveryText}
-                onClick={() => {
-                  atomik.setDraftText(`/${recipe.name} `);
-                  setAtomikRail("expanded");
-                }}
-              >
-                Use in Atomik
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function Recipes({
   runs,
   busy,
@@ -841,7 +796,6 @@ function Recipes({
           </article>
         ))}
       </div>
-      <ConnectedRecipes />
       {!recipes.length && (
         <div className={styles.empty}>
           <h2>No saved recipes yet</h2>
@@ -870,7 +824,7 @@ function Budget({ productionId }: { productionId: string }) {
     return (
       <div className={styles.error} role="alert">
         {projects.error}
-        <button onClick={() => void projects.refresh()}>Retry budget</button>
+        <button onClick={() => void projects.refresh()}>Try again</button>
       </div>
     );
   if (!projects.data) return <p role="status">Loading project budget…</p>;
@@ -1097,7 +1051,7 @@ function Models({ catalog }: { catalog: AtomikCatalog }) {
         <h2>Production models</h2>
         <p>
           Connection status and capabilities from the pipeline catalogue. Each
-          ready stage gets an exact quote before approval.
+          ready stage is quoted before approval.
         </p>
         <div className={styles.tableScroll}>
           <table

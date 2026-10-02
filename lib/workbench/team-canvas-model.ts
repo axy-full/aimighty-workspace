@@ -23,7 +23,17 @@ export type TeamCanvas = {
   retired: Record<string, Asset>;
   /** When each node or asset was last written (ms), for last-write-wins. */
   stamps: Record<string, number>;
+  /** Per node: who last changed it — a person's user id, or a server writer such as `agent:<runId>`. */
+  writers: Record<string, string>;
+  /**
+   * Nodes a server operation made (lib/workbench/canvas-ops.ts), by who made
+   * them. A removal a save only implied never takes one off (heldRemoval).
+   */
+  serverMade: Record<string, string>;
 };
+
+/** A server writer (an Atomik run) rather than a person: `agent:<runId>`. */
+export const isAgentAuthor = (author: string | undefined) => !!author && author.startsWith("agent:");
 
 export type TeamPatch = {
   /** Nodes written whole — except those named in `fields` or `made`. */
@@ -52,9 +62,20 @@ export type TeamPatch = {
    * window, which joins only a canvas that never held it.
    */
   expect?: Record<string, CanvasNode | null>;
+  /** Who wrote it (set by the server, never taken from a window): recorded per node it changed (TeamCanvas.writers). */
+  author?: string;
+  /**
+   * A patch a draft save implied (lib/workbench/records.ts saveDraft) rather
+   * than an edit made on the canvas: a node its window no longer shows may
+   * have been lost to a stale view, so its removals never take off a node a
+   * server operation made — and a node a server operation made that the
+   * canvas has taken off since is never brought back by it (heldReturn).
+   * Set by the server, never taken from a window.
+   */
+  implied?: boolean;
 };
 
-export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, retired: {}, stamps: {} });
+export const emptyTeamCanvas = (): TeamCanvas => ({ nodes: {}, assets: {}, order: [], removed: {}, retired: {}, stamps: {}, writers: {}, serverMade: {} });
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -159,26 +180,216 @@ export function landedRemoval(live: CanvasNode | undefined, id: string, patch: P
   return !!live && (!was || sameJson(live, was));
 }
 
-/** Fold a patch in. A write older than what the canvas already holds for that item is ignored. */
-export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch): TeamCanvas {
-  const out: TeamCanvas = { nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, retired: { ...canvas.retired }, stamps: { ...canvas.stamps } };
+/* ── Locked masters (the agentic Rig, plan step 3) ─────────────────────────
+ * A reference card whose element (lib/elements.ts) is locked is a master: the
+ * one source of truth for a character, a place or a product. What makes the
+ * card that master (MASTER_NODE_FIELDS) and the card itself (a removal) do not
+ * change through a canvas edit, whoever sends it: a person, a stale window,
+ * Atomik. Such writes do not land; the rest of the same edit does, the way a
+ * write that expects what the canvas no longer holds does not land (`expect`).
+ * The edit is filtered, never refused: a refusal would drop the teammate's
+ * whole patch (lib/workspace/team-canvas-outbox.ts). Only the lock itself
+ * (lib/masters.ts) writes these fields, as a trusted write.
+ *
+ * Which cards are masters is the elements table's answer (`locks`: the ids of
+ * locked elements), never a card's own `master` record alone. A caller with no
+ * table to ask (a pure test, a path not wired to it) passes no guard, and then
+ * a card carrying a lock record counts as locked: the guard fails closed.
+ */
+
+/** What makes a card the master it is: its source, its element, its kind, its type and its lock record. */
+export const MASTER_NODE_FIELDS = ["assetId", "elementId", "refKind", "type", "master"] as const;
+/** What makes a master's source asset that picture: the stored file it names, and its medium. */
+export const MASTER_ASSET_FIELDS = ["uploadId", "generationId", "kind"] as const;
+/** `locks`: the locked element ids (the elements table). "trusted": the lock's own write, which the guard lets through. */
+export type MasterGuard = { locks: ReadonlySet<string> } | "trusted";
+/** A write that did not land because it would have changed a locked master: which card or asset, which fields, or its removal. */
+export type MasterHold = { nodeId?: string; assetId?: string; elementId?: string; fields: string[]; removal?: true };
+
+/** Whether a card is a locked master under this guard (none: its lock record, failing closed). */
+export function isLockedMaster(node: Pick<CanvasNode, "elementId" | "master"> | undefined, guard?: MasterGuard): boolean {
+  if (!node || guard === "trusted") return false;
+  if (guard) return !!node.elementId && guard.locks.has(node.elementId);
+  return !!node.master;
+}
+
+function pinned<T extends object>(value: T, to: object, keys: readonly string[]): T {
+  const out = { ...value } as Record<string, unknown>, from = to as Record<string, unknown>;
+  for (const key of keys) {
+    if (from[key] === undefined) delete out[key];
+    else out[key] = from[key];
+  }
+  return out as T;
+}
+const changedKeys = (a: object | undefined, b: object | undefined, keys: readonly string[]) =>
+  keys.filter((key) => !sameJson((a as Record<string, unknown> | undefined)?.[key], (b as Record<string, unknown> | undefined)?.[key]));
+
+/**
+ * A patch with every write that would change a locked master taken out, and
+ * what was held. For a master already on the canvas (or taken off it): its
+ * MASTER_NODE_FIELDS keep what the canvas holds, its removal does not land,
+ * and its source asset keeps its MASTER_ASSET_FIELDS. For any other card, a
+ * write that would tie it to a locked element keeps its element as it was:
+ * only a lock makes a master.
+ */
+export function guardMasters(canvas: Pick<TeamCanvas, "nodes" | "removed" | "assets" | "retired">, patch: TeamPatch, guard?: MasterGuard): { patch: TeamPatch; held: MasterHold[] } {
+  if (guard === "trusted") return { patch, held: [] };
+  const held: MasterHold[] = [];
+  const fields: Record<string, string[]> = { ...(patch.fields ?? {}) };
+  const upsertNodes: CanvasNode[] = [];
+  for (const node of patch.upsertNodes) {
+    const live = canvas.nodes[node.id], gone = canvas.removed[node.id];
+    const current = live ?? gone;
+    const would = landedWrite(live, gone, node, patch);
+    /* A master's identity stays as the canvas holds it; any other card is never tied to a locked element by an edit. */
+    const keys: readonly string[] | null = !would ? null
+      : current && isLockedMaster(current, guard) ? MASTER_NODE_FIELDS
+      : guard && would.elementId && guard.locks.has(would.elementId) && would.elementId !== current?.elementId ? ["elementId"]
+      : null;
+    const lost = keys ? changedKeys(would, current, keys) : [];
+    if (!keys || !lost.length) { upsertNodes.push(node); continue; }
+    const elementId = current?.elementId ?? would!.elementId;
+    held.push({ nodeId: node.id, ...(elementId ? { elementId } : {}), fields: lost });
+    const named = patch.fields?.[node.id];
+    if (named && current) {
+      /* A field edit of a card the canvas holds: the other fields it changed still land. */
+      const rest = named.filter((key) => !keys.includes(key));
+      if (rest.length) { fields[node.id] = rest; upsertNodes.push(node); }
+      else delete fields[node.id];
+    } else upsertNodes.push(pinned(node, current ?? {}, keys));
+  }
+  const removeNodes = patch.removeNodes.filter((id) => {
+    const live = canvas.nodes[id];
+    if (!live || !isLockedMaster(live, guard) || !landedRemoval(live, id, patch)) return true;
+    held.push({ nodeId: id, ...(live.elementId ? { elementId: live.elementId } : {}), fields: [], removal: true });
+    return false;
+  });
+  const sources = new Set(Object.values(canvas.nodes).filter((n) => n.assetId && isLockedMaster(n, guard)).map((n) => n.assetId!));
+  const upsertAssets = patch.upsertAssets.map((asset) => {
+    const current = sources.has(asset.id) ? (canvas.assets[asset.id] ?? canvas.retired[asset.id]) : undefined;
+    const lost = current ? changedKeys(asset, current, MASTER_ASSET_FIELDS) : [];
+    if (!lost.length) return asset;
+    held.push({ assetId: asset.id, fields: lost });
+    return pinned(asset, current!, MASTER_ASSET_FIELDS);
+  });
+  if (!held.length) return { patch, held };
+  return { patch: { ...patch, upsertNodes, fields, removeNodes, upsertAssets }, held };
+}
+
+/**
+ * A window's own edit, with anything it would change on a locked master put
+ * back as it was (the rule the server applies to the same edit): the fields
+ * held keep their old values, and a master the edit took off is back where it
+ * was. So the window never shows, or renders with, a master nobody may change.
+ */
+export function holdMasterEdits(before: Project, after: Project, locks: ReadonlySet<string>): { project: Project; held: MasterHold[] } {
+  const patch = locks.size ? diffForTeam(before, after, 0) : null;
+  if (!patch) return { project: after, held: [] };
+  const canvas = { nodes: Object.fromEntries(before.nodes.map((n) => [n.id, n])), removed: {}, assets: Object.fromEntries(before.assets.map((a) => [a.id, a])), retired: {} };
+  const { held } = guardMasters(canvas, patch, { locks });
+  if (!held.length) return { project: after, held };
+  return { project: restoreHeld(after, held, canvas.nodes, canvas.assets), held };
+}
+
+/**
+ * A draft with what the canvas holds for held writes laid back over it: each
+ * held field of a card or asset takes the canvas's value, and a master the
+ * draft took off comes back where it stood. `nodes` and `assets` are what the
+ * canvas holds (the route sends the held cards back with its answer).
+ */
+export function restoreHeld(project: Project, held: MasterHold[], nodes: Record<string, CanvasNode>, assets: Record<string, Asset> = {}): Project {
+  let changed = false;
+  const byNode = new Map<string, string[]>(), back: string[] = [];
+  for (const h of held) {
+    if (h.nodeId && h.removal) back.push(h.nodeId);
+    else if (h.nodeId) byNode.set(h.nodeId, [...(byNode.get(h.nodeId) ?? []), ...h.fields]);
+  }
+  const out = project.nodes.map((n) => {
+    const keys = byNode.get(n.id), truth = nodes[n.id];
+    if (!keys || !truth || !changedKeys(n, truth, keys).length) return n;
+    changed = true;
+    return pinned(n, truth, keys);
+  });
+  /* A master taken off comes back after the card it followed on the canvas (first, when nothing did). */
+  const order = Object.keys(nodes);
+  for (const id of back) {
+    const truth = nodes[id];
+    if (!truth || out.some((n) => n.id === id)) continue;
+    const before = order.slice(0, order.indexOf(id)).reverse().find((prev) => out.some((n) => n.id === prev));
+    out.splice(before ? out.findIndex((n) => n.id === before) + 1 : 0, 0, truth);
+    changed = true;
+  }
+  const heldAssets = new Map(held.filter((h) => h.assetId).map((h) => [h.assetId!, h.fields]));
+  const assetsOut = heldAssets.size ? project.assets.map((a) => {
+    const keys = heldAssets.get(a.id), truth = assets[a.id];
+    if (!keys || !truth || !changedKeys(a, truth, keys).length) return a;
+    changed = true;
+    return pinned(a, truth, keys);
+  }) : project.assets;
+  /* A restored master's source travels with it when the draft no longer has it. */
+  const have = new Set(assetsOut.map((a) => a.id));
+  const missing = back.map((id) => nodes[id]?.assetId).filter((id): id is string => !!id && !have.has(id) && !!assets[id]).map((id) => assets[id]);
+  if (missing.length) changed = true;
+  return changed ? { ...project, nodes: out, assets: missing.length ? [...assetsOut, ...missing] : assetsOut } : project;
+}
+
+/**
+ * Whether a removal must not land: one a save only implied (a draft save's,
+ * or a catch-up's — it carries `expect`) of a node a server operation made.
+ * The window that sent it may have lost that node to a stale view (a live
+ * room that had not caught up with the server yet), so taking it off would
+ * throw away what the server made for everyone. A removal made on the canvas
+ * itself (the Rig's own delete) still lands.
+ */
+export function heldRemoval(serverMade: Record<string, string> | undefined, id: string, patch: Pick<TeamPatch, "implied" | "expect">): boolean {
+  return !!serverMade?.[id] && (!!patch.implied || patch.expect?.[id] !== undefined);
+}
+
+/**
+ * Whether a write must not land: one a save only implied (a draft save) of a
+ * card a server operation made that the canvas has since taken off (an Atomik
+ * run's undo, or a person's delete). The window that saved had folded the card
+ * in before it came off, so its save still carries it; putting it back would
+ * undo the removal behind everyone's back. A card put back on the canvas
+ * itself (the Rig's own undo, a window's edit) still lands.
+ */
+export function heldReturn(canvas: Pick<TeamCanvas, "nodes" | "removed" | "serverMade">, id: string, patch: Pick<TeamPatch, "implied">): boolean {
+  return !!patch.implied && !canvas.nodes[id] && !!canvas.removed[id] && !!canvas.serverMade?.[id];
+}
+
+/** The removals of a patch that would take a card off this canvas but that heldRemoval keeps from landing. */
+export function heldRemovals(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, patch: Pick<TeamPatch, "removeNodes" | "implied" | "expect">): string[] {
+  return patch.removeNodes.filter((id) => landedRemoval(canvas.nodes[id], id, patch) && heldRemoval(canvas.serverMade, id, patch));
+}
+
+/** Fold a patch in. A write older than what the canvas already holds for that item is ignored; a write to a locked master does not land (guardMasters). */
+export function applyTeamPatch(canvas: TeamCanvas, patch: TeamPatch, guard?: MasterGuard): TeamCanvas {
+  if (guard !== "trusted") patch = guardMasters(canvas, patch, guard).patch;
+  const out: TeamCanvas = {
+    nodes: { ...canvas.nodes }, assets: { ...canvas.assets }, order: [...canvas.order], removed: { ...canvas.removed }, retired: { ...canvas.retired }, stamps: { ...canvas.stamps },
+    writers: { ...canvas.writers }, serverMade: { ...canvas.serverMade },
+  };
   const newer = (key: string) => (out.stamps[key] ?? 0) <= patch.at;
   for (const node of patch.upsertNodes) {
     const key = `n:${node.id}`;
-    if (!newer(key)) continue;
+    if (!newer(key) || heldReturn(out, node.id, patch)) continue;
     const next = landedWrite(out.nodes[node.id], out.removed[node.id], node, patch);
     if (!next) continue;
+    /* The writer is who last changed the node: a save that only carries what the canvas already holds changes nothing. */
+    const changed = !out.nodes[node.id] || !sameJson(out.nodes[node.id], next);
     out.nodes[node.id] = next;
     delete out.removed[node.id];
     out.stamps[key] = patch.at;
+    if (changed && patch.author) out.writers[node.id] = patch.author;
     if (!out.order.includes(node.id)) out.order.push(node.id);
   }
   for (const id of patch.removeNodes) {
     const key = `n:${id}`;
-    if (!newer(key) || !landedRemoval(out.nodes[id], id, patch)) continue;
+    if (!newer(key) || !landedRemoval(out.nodes[id], id, patch) || heldRemoval(out.serverMade, id, patch)) continue;
     out.removed[id] = out.nodes[id];
     delete out.nodes[id];
     out.stamps[key] = patch.at;
+    if (patch.author) out.writers[id] = patch.author;
   }
   for (const asset of patch.upsertAssets) {
     const key = `a:${asset.id}`;
@@ -238,6 +449,8 @@ export function withTeamCanvas(project: Project, canvas: Pick<TeamCanvas, "nodes
 export function parseTeamCanvas(value: unknown): TeamCanvas {
   const v = (value && typeof value === "object" ? value : {}) as Partial<TeamCanvas>;
   const record = <T>(x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, T>) : {});
+  /* Who wrote what: names only, so a malformed entry is dropped rather than trusted. */
+  const names = (x: unknown) => Object.fromEntries(Object.entries(record<unknown>(x)).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length <= 200));
   return {
     nodes: record<CanvasNode>(v.nodes),
     assets: record<Asset>(v.assets),
@@ -245,7 +458,92 @@ export function parseTeamCanvas(value: unknown): TeamCanvas {
     removed: record<CanvasNode>(v.removed),
     retired: record<Asset>(v.retired),
     stamps: record<number>(v.stamps),
+    writers: names(v.writers),
+    serverMade: names(v.serverMade),
   };
+}
+
+/* ── The live room ─────────────────────────────────────────────────────────
+ * The room keeps each node and asset whole under its id, and the order as a
+ * list. The browser writes it through its live connection
+ * (components/workspace/rig/use-team-canvas.ts) and the server through
+ * Liveblocks' storage API (lib/workbench/canvas-push.ts); both go through
+ * writeRoom, so a server change lands in the room exactly as the same change
+ * made in a window would, by the same landedWrite / landedRemoval rules the
+ * database merge uses.
+ */
+
+/** The room's storage as the team canvas uses it (structural, so a test's stand-in and both Liveblocks clients fit). */
+export type RoomStorage = {
+  nodes: { get(id: string): unknown; set(id: string, value: unknown): void; delete(id: string): void };
+  assets: { get(id: string): unknown; set(id: string, value: unknown): void };
+  order(): readonly string[];
+  setOrder(order: string[]): void;
+  /** The nodes a server operation made, as the server last told the room (none until it has). */
+  serverMade(): Record<string, string>;
+  setServerMade(made: Record<string, string>): void;
+};
+
+/** A plain JSON copy: what a room may hold. */
+export const plainJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/**
+ * A patch written to the room: for a node that was already there, only the
+ * fields it changed (a teammate's edit to another field stands); a catch-up
+ * or a server write lands only where the room still holds what its sender had
+ * (`expect`); a removal a save only implied never takes off a node a server
+ * operation made.
+ */
+export function writeRoom(room: RoomStorage, patch: TeamPatch) {
+  for (const n of patch.upsertNodes) {
+    const next = landedWrite(room.nodes.get(n.id) as CanvasNode | undefined, undefined, n, patch);
+    if (next) room.nodes.set(n.id, plainJson(next));
+  }
+  const made = patch.removeNodes.length ? room.serverMade() : {};
+  for (const id of patch.removeNodes)
+    if (!heldRemoval(made, id, patch) && landedRemoval(room.nodes.get(id) as CanvasNode | undefined, id, patch)) room.nodes.delete(id);
+  for (const a of patch.upsertAssets) room.assets.set(a.id, plainJson(a));
+  if (patch.order) room.setOrder(patch.order);
+}
+
+export type RoomPoint = { x: number; y: number };
+export type RoomDrag = { id: string; dx: number; dy: number };
+/** Someone in the live room as the Rig shows them: a teammate, or Atomik (the server's writer: `agent` in its user info, with what it is doing). */
+export type RoomPeer = { id: number; name: string; color: string; cursor: RoomPoint | null; selected: string | null; drag: RoomDrag | null; agent?: boolean; doing?: string };
+
+export function roomPeer(other: { connectionId: number; info?: unknown; presence: { cursor?: RoomPoint | null; selected?: string | null; drag?: RoomDrag | null; doing?: unknown } }): RoomPeer {
+  const info = (other.info ?? {}) as { name?: string; color?: string; agent?: boolean };
+  const agent = info.agent === true;
+  return {
+    id: other.connectionId, name: info.name ?? (agent ? "Atomik" : "Teammate"), color: info.color ?? "#0A84FF",
+    cursor: other.presence.cursor ?? null, selected: other.presence.selected ?? null, drag: other.presence.drag ?? null,
+    ...(agent ? { agent, ...(typeof other.presence.doing === "string" ? { doing: other.presence.doing.slice(0, 80) } : {}) } : {}),
+  };
+}
+
+/** The shape a room is read into: live nodes, assets, the order, and nodes known to be off. */
+export type TeamCanvasView = { nodes: Record<string, CanvasNode>; assets: Record<string, Asset>; order: string[]; removedIds: string[]; serverMade?: Record<string, string> };
+
+/** A room or a window's canvas, shaped for the master guard (guardMasters): what is live, with nothing known to be off. */
+export const masterView = (canvas: Pick<TeamCanvasView, "nodes" | "assets">) => ({ nodes: canvas.nodes, assets: canvas.assets, removed: {}, retired: {} });
+
+/**
+ * A canvas as a window sees it, with its not-yet-sent edits laid over it (the same rules as writeRoom). `locks`: the
+ * masters the window knows of; an edit to one is not laid over it (guardMasters), as the server would not take it.
+ */
+export function overlay(canvas: TeamCanvasView, sent: TeamPatch | null, locks?: ReadonlySet<string>): TeamCanvasView {
+  if (!sent) return canvas;
+  const patch = locks?.size ? guardMasters(masterView(canvas), sent, { locks }).patch : sent;
+  const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
+  const removedIds = new Set(canvas.removedIds);
+  for (const n of patch.upsertNodes) {
+    const next = landedWrite(nodes[n.id], removedIds.has(n.id) ? n : undefined, n, patch);
+    if (next) { nodes[n.id] = next; removedIds.delete(n.id); }
+  }
+  for (const id of patch.removeNodes)
+    if (!heldRemoval(canvas.serverMade, id, patch) && landedRemoval(nodes[id], id, patch)) { delete nodes[id]; removedIds.add(id); }
+  for (const a of patch.upsertAssets) assets[a.id] = a;
+  return { ...canvas, nodes, assets, order: patch.order ?? canvas.order, removedIds: [...removedIds] };
 }
 
 /**

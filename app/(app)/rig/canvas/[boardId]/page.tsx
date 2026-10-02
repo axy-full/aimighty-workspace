@@ -35,6 +35,7 @@ import {
 } from "@/components/rig/nodes";
 import { createBoardSaver, reapplyAdditions, type BoardSaver, type Graph, type SaveState } from "@/lib/boardSaver";
 import { boardUrlFor } from "@/lib/rigCanvasUrl";
+import { newRigFor, OPEN_FAILED } from "@/lib/workspace/rig-import";
 
 /**
  * Rig · Canvas (design/particl-v2/README.md §8; board 6a), value for value.
@@ -145,30 +146,45 @@ function Canvas() {
 
   /* The board is the unit of edit: every change writes the whole graph, a beat later — through a saver that
      keeps the graph until the server has it and sends the revision it was edited from (lib/boardSaver.ts). */
-  const [saveState, setSaveState] = useState<SaveState>({ kind: "saved" });
+  const [saveState, setSaveStateView] = useState<SaveState>({ kind: "saved" });
+  /* Read by "Open in the new Rig", which waits for the board to be saved before it leaves. */
+  const saveStateNow = useRef<SaveState>({ kind: "saved" });
+  const setSaveState = useCallback((next: SaveState) => { saveStateNow.current = next; setSaveStateView(next); }, []);
   const saver = useRef<{ id: string; saver: BoardSaver } | null>(null);
   /* The graph the server holds at `updatedAt` — as loaded, or as reloaded after a conflict. */
   const baseGraph = useRef<{ id: string; graph: Graph } | null>(null);
   useEffect(() => { if (loaded && baseGraph.current?.id !== loaded.board.id) baseGraph.current = { id: loaded.board.id, graph: { nodes: loaded.board.nodes, wires: loaded.board.wires } }; }, [loaded]);
+  const sendBoard = useCallback((next: Board) => {
+    if (saver.current?.id !== next.id) {
+      saver.current = {
+        id: next.id,
+        saver: createBoardSaver({
+          baseUpdatedAt: next.updatedAt,
+          baseGraph: baseGraph.current?.id === next.id ? baseGraph.current.graph : undefined,
+          onState: setSaveState,
+          put: (body) => fetch(`/api/rig/boards/${encodeURIComponent(next.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body }),
+        }),
+      };
+    }
+    saver.current.saver.save({ nodes: next.nodes, wires: next.wires });
+  }, [setSaveState]);
   const commit = useCallback((next: Board) => {
     setBoard(next);
     latest.current = next;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      if (saver.current?.id !== next.id) {
-        saver.current = {
-          id: next.id,
-          saver: createBoardSaver({
-            baseUpdatedAt: next.updatedAt,
-            baseGraph: baseGraph.current?.id === next.id ? baseGraph.current.graph : undefined,
-            onState: setSaveState,
-            put: (body) => fetch(`/api/rig/boards/${encodeURIComponent(next.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body }),
-          }),
-        };
-      }
-      saver.current.saver.save({ nodes: next.nodes, wires: next.wires });
-    }, 400);
-  }, []);
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; sendBoard(next); }, 400);
+  }, [sendBoard]);
+  /* The board as the server holds it before it is opened elsewhere: a change still waiting goes now, and the save is waited for. */
+  const flushBoard = useCallback(async (): Promise<boolean> => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      if (latest.current) sendBoard(latest.current);
+    }
+    for (let i = 0; i < 150 && saver.current?.saver.dirty(); i++) await new Promise((resolve) => setTimeout(resolve, 100));
+    const state = saveStateNow.current.kind;
+    return !saver.current?.saver.dirty() && state !== "failed" && state !== "conflict";
+  }, [sendBoard]);
   /* A teammate saved first: take the board as it stands, and put back the nodes
      this person added since (lib/boardSaver.ts › reapplyAdditions). Their moves
      and edits of existing nodes are not merged, and the banner said so. */
@@ -193,7 +209,7 @@ function Canvas() {
       setBoard(next);
       latest.current = next;
     }
-  }, [commit, toast]);
+  }, [commit, toast, setSaveState]);
   /* An unsaved graph is not left behind without a word. */
   useEffect(() => {
     if (saveState.kind !== "failed") return;
@@ -442,6 +458,25 @@ function Canvas() {
       setRunning((r) => { const s = new Set(r); s.delete(n.id); return s; });
     }
   };
+  /* "Open in the new Rig": this person's own draft of the board's production (or the production opened for them), on its
+     Rig, which brings the board across onto the team canvas (lib/workspace/rig-import.ts). This board is only read: it
+     stays as it is, and stays editable here. Free. */
+  const [opening, setOpening] = useState(false);
+  const openInNewRig = async () => {
+    const b = latest.current;
+    if (!b || opening) return;
+    if (!requestScope) { toast("Reload this page in the intended account and workspace before opening the new Rig."); return; }
+    setOpening(true);
+    try {
+      if (!(await flushBoard())) { toast("This board has changes that are not saved yet. Save them, then open it in the new Rig."); return; }
+      router.push(await newRigFor({ production: b.projectId, boardId: b.id, scope: requestScope }));
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : OPEN_FAILED);
+    } finally {
+      setOpening(false);
+    }
+  };
+
   const runUnrun = async () => { for (const n of latest.current?.nodes ?? []) if ((n.kind === "image" || n.kind === "video") && !n.output?.genId) await runNode(n); };
 
   /* `Save as recipe`: the board's generate nodes become stages, in board order, each with its engine and its price. */
@@ -521,6 +556,7 @@ function Canvas() {
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
         <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
+        <NewRigRow opening={opening} onOpen={() => void openInNewRig()} />
         <PhoneBoard board={b} fmt={fmt} priceOf={(n) => costOf(b, n)} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
@@ -555,6 +591,7 @@ function Canvas() {
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={saveAsRecipe}>Save as recipe</Button>
         </>} />
       <SaveBanner state={saveState} onRetry={() => saver.current?.saver.retry()} onReload={() => void reloadAfterConflict()} />
+      <NewRigRow opening={opening} onOpen={() => void openInNewRig()} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
@@ -905,6 +942,22 @@ function Stuck({ line, onRetry }: { line: string; onRetry?: () => void }) {
     <div role="alert" className="flex flex-col items-start gap-[12px] p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>
       <span>{line}</span>
       {onRetry && <button type="button" onClick={onRetry} className="tap44 h-[44px] rounded-pill border border-border-mid px-[16px] text-[13px] font-medium leading-none text-ink">Try again</button>}
+    </div>
+  );
+}
+
+/* ── the way to the new Rig ─────────────────────────────────────────── */
+/** "Open in the new Rig": its own slim row under the bar (it never widens the bar), a thumb-sized button on a touch screen. */
+function NewRigRow({ opening, onOpen }: { opening: boolean; onOpen: () => void }) {
+  return (
+    <div className="flex flex-none flex-wrap items-center gap-x-[12px] gap-y-[6px] border-b border-border px-[16px] py-[6px]" data-new-rig="">
+      <span className="min-w-0 flex-1 text-[13px] leading-[1.4] text-ink-body max-md:hidden" style={{ textWrap: "pretty" }}>
+        The new Rig is the canvas your team shares live. This board opens there as it is, and stays here too. Free.
+      </span>
+      <button type="button" onClick={onOpen} disabled={opening} data-testid="open-new-rig"
+        className="flex h-[36px] items-center justify-center whitespace-nowrap rounded-pill border border-border-mid px-[14px] text-[13px] font-medium leading-none text-ink disabled:text-ink-body pointer-coarse:h-[44px] max-md:h-[44px] max-md:w-full">
+        {opening ? "Opening the new Rig…" : "Open in the new Rig"}
+      </button>
     </div>
   );
 }

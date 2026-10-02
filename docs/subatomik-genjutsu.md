@@ -16,10 +16,10 @@ The official model catalogue exposes two operations:
 
 | Operation | Developer endpoint |
 | --- | --- |
-| Motion Transfer | `higgsfiled/genjutsu/motion-transfer/v1.0` |
-| Object Swap | `higgsfiled/genjutsu/object-swap/v1.0` |
+| Motion Transfer | `higgsfield/genjutsu/motion-transfer/v1.0` |
+| Object Swap | `higgsfield/genjutsu/object-swap/v1.0` |
 
-The provider spells these identifiers `higgsfiled`. Requests contain one `video_url`, up to eight ordered `image_urls`, an optional `prompt`, and `resolution` of `480p` or `720p`. The catalogue specifies an input duration of 1–30 seconds. Particl's creative text limit is 5,000 characters; this is a local bound, not a claimed Higgsfield limit.
+New quotes and submissions use these canonical routes; requests accepted under the older `higgsfiled` spelling keep polling their saved status URLs. Requests contain one `video_url`, one to eight ordered `image_urls`, an optional `prompt`, and `resolution` of `480p`, `720p` or `1080p`. The model documentation requires a source of at least 4 seconds and trims anything longer than 30; Particl accepts 4–30 seconds and refuses longer sources rather than let them be trimmed. Object Swap also requires at least 409,600 pixels per source frame (width × height). Both limits are checked on the measured original before a quote and again at dispatch. The documentation lists 480p and 720p; 1080p is offered because the provider's estimate prices it, and like the other sizes its quote is always that live estimate for the actual source. Particl's creative text limit is 5,000 characters; this is a local bound, not a claimed Higgsfield limit.
 
 Use the existing private `HF_CREDENTIALS` connection. Each quote uses the authenticated `/estimate/<model path>` endpoint; a missing or invalid live estimate blocks submission. No public-list discount is assumed. Server validation resolves tenant-owned originals, inspects source duration and preserves reference order. Browser-supplied URLs and claimed duration cannot substitute for retained media.
 
@@ -28,6 +28,8 @@ Submission uses the standard generation credit reservation and idempotency bound
 Queued Cloud jobs can request cancellation. An HTTP 202 only means requested; Subatomik continues polling the existing job until cancellation is confirmed. It does not promise a refund or dispatch a replacement while the result is uncertain.
 
 ## Billing default and override
+
+> **Retired 28 September 2026.** Particl uses provider APIs and loginless MCP only, so nothing may need a Higgsfield sign-in (`CLAUDE.md` ground rule 10). Genjutsu runs on the Cloud developer connection above, with one to eight references. The connected-account default and the account path below are kept as the record of what was built.
 
 The connected account is the silent default. When the workspace owner has a connected account, `/subatomik` generates with connected credits and shows no billing toggle; the page reads the owner's connection status from `/api/higgsfield/consumer/connection` on open. Members always use Particl workspace (Cloud) billing, as only the owner can spend the connected account's credits. Without a connection the page keeps the Cloud path and shows the connection prompt (Workspace settings → Engines); it does not offer a choice in the main flow.
 

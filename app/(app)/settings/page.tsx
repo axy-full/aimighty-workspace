@@ -25,7 +25,6 @@ import ManagementPage, {
 import WorkspaceAudit from "@/components/management/WorkspaceAudit";
 import OpenAIConnection from "@/components/management/OpenAIConnection";
 import HiggsfieldConnection from "@/components/management/HiggsfieldConnection";
-import HiggsfieldConsumerConnection from "@/components/management/HiggsfieldConsumerConnection";
 
 type Me = {
   name: string;
@@ -536,7 +535,6 @@ function SettingsContent() {
                     <>
                       {owner && <OpenAIConnection key={`openai:${session.requestScope}`} />}
                       {owner && <HiggsfieldConnection key={session.requestScope} />}
-                      {owner && <HiggsfieldConsumerConnection key={`consumer:${session.requestScope}`} />}
                       <ManagementCard
                         title="Available engines"
                         description="Choose which models Atomik may recommend. Every paid request still needs your approval."

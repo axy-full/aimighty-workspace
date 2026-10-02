@@ -3,8 +3,10 @@ import { stableId } from "../workbench/stable-id";
 
 /**
  * Production › Cast & Elements (owner's brief, 23 September): the film's
- * characters and elements, each built with Soul Cinema on the connected
- * account and saved in the library as Cast or Elements.
+ * characters and elements, saved in the library as Cast or Elements. A
+ * character renders with a Soul ID trained in this workspace on the platform's
+ * key (28 September: no signed-in account features); builds made earlier on
+ * the connected account keep their fields here and their stills in the Library.
  */
 export type CastKind = "character" | "element";
 /** Soul Studio's models on the connected account: cinema stills, Soul 2, scenes without people, and personas from text. */
@@ -27,11 +29,21 @@ export type CastEntry = {
   /** The connected job in flight, so a reload keeps following it. */
   job?: { id: string; status: "quoted" | "submitted" };
   /** Which Soul model builds it (by kind when unset), its quality, and Soul Cast's budget. */
-  model?: SoulModelId; quality?: "1.5k" | "2k"; budget?: number;
+  /* A connected-account Soul model id (SOUL_MODELS, or another soul_* an older project saved). */
+  model?: string; quality?: "1.5k" | "2k"; budget?: number;
   /** What sort of element it is — and the reference element the account keeps for it, once saved. */
   category?: ElementCategory; elementId?: string;
+  /** A character's Soul ID in this workspace (a trained identity), rendered on the platform's key. */
+  identityId?: string;
+  /** Its render settings: likeness strength, stills per request, size. */
+  soulStrength?: number; soulBatch?: 1 | 4; soulResolution?: "720p" | "1080p";
+  /** Its renders in flight, so a reload keeps following them. */
+  pending?: CastRender[];
 };
+export type CastRender = { jobId: string; at: string; batch: 1 | 4 };
 export type Cast = { entries: CastEntry[]; agentJobId?: string };
+/** A character renders as a 3:4 character sheet. */
+export const CAST_RENDER_RATIO = "3:4";
 
 export const CAST_LIMITS = { entries: 100, name: 120, description: 2000, prompt: 5000, takes: 20 } as const;
 export const SOUL_CINEMA = "soul_cinematic";
@@ -44,10 +56,27 @@ export function newEntry(kind: CastKind, name = "", description = "", prompt = "
 }
 /** The id of the entry `name` an agent run (or the beat sheet, `source` "beats") made. */
 export const sourcedCastId = (source: string, name: string) => stableId("cast", source, name.trim().toLowerCase());
+/** The connected account's Soul models that have a family on the platform's key (Soul 2, Soul Cinema); the others are gone. */
+const KEY_FAMILY: Readonly<Record<string, string>> = { soul_2: "Soul 2", soul_cinematic: "Soul Cinema" };
+/**
+ * An entry built earlier on the connected account with a Soul model the
+ * platform's key has no family for (Soul Location, Soul Cast): its model's
+ * name, for a read-only card (its stills stay in the Library), else null. An
+ * entry never built is not old: it stays editable whatever model it names.
+ */
+export function retiredModelOf(entry: Pick<CastEntry, "model" | "takes" | "job" | "elementId">): string | null {
+  const model = entry.model;
+  if (!model || KEY_FAMILY[model]) return null;
+  if (!entry.takes.length && !entry.job && !entry.elementId) return null;
+  return SOUL_MODELS.find((m) => m.id === model)?.label ?? "a connected-account Soul model";
+}
+/** A Soul ID trained on the connected account: it cannot render on the platform's key, so the character needs training again here. */
+export const accountSoulIdOf = (entry: Pick<CastEntry, "kind" | "soulId" | "identityId">): string | null =>
+  entry.kind === "character" && entry.soulId && !entry.identityId ? entry.soulId : null;
 /** An entry's category: what it says, else a character for the cast and a prop otherwise. */
 export const entryCategory = (e: Pick<CastEntry, "kind" | "category">): ElementCategory => e.category ?? (e.kind === "character" ? "character" : "prop");
 /** An entry's Soul model: what it says, else Soul Location for a place, Soul Cinema for everything else. */
-export const entryModel = (e: Pick<CastEntry, "kind" | "category" | "model">): SoulModelId => e.model ?? (entryCategory(e) === "environment" ? "soul_location" : "soul_cinematic");
+export const entryModel = (e: Pick<CastEntry, "kind" | "category" | "model">): string => e.model ?? (entryCategory(e) === "environment" ? "soul_location" : "soul_cinematic");
 
 type ModelShape = { parameters: { name: string; options?: (string | number)[]; default?: unknown; min?: number; max?: number }[]; aspectRatios: string[]; medias: unknown[] };
 /** Only the settings the account's model declares: quality, Soul ID, Soul Cast's budget, and the ratio it offers. */

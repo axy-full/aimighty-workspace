@@ -1,4 +1,6 @@
 import { GENJUTSU_MODELS, GENJUTSU_LABELS } from "./genjutsuTypes";
+import { SOUL_RENDER_MODELS, SOUL_RENDER_RATIOS, SOUL_RENDER_RESOLUTIONS, SOUL_VERSIONS, SOUL_VERSION_LABELS, isSoulRenderModel } from "./soulRenderTypes";
+import { CINEMA_STUDIO_MODEL_ID, CINEMA_STUDIO_RATIOS, CINEMA_STUDIO_RESOLUTIONS, CINEMA_STUDIO_LIMITS } from "./cinemaStudioTypes";
 import { hasVendorName, neutralModelText } from "./vendorNames";
 import type { TaskId } from "./tasks";
 import { FPS } from "./transport";
@@ -104,6 +106,8 @@ export type ModelDef = {
   /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
   marketing?: boolean;
   genjutsu?: boolean;
+  /** Cinema Studio 4.0 on the commercial key: approximately quoted, settled on its delivered output. */
+  cinemaStudio?: boolean;
   /** Which tasks this engine can be asked for. Absent means generate only.
    *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
    *  (three reference videos, fifteen seconds combined) show it was never
@@ -155,9 +159,13 @@ export type ModelDef = {
 };
 
 export const MARKETING_IMAGE_MODEL_ID = "higgsfield/marketing-studio-image";
-export const isHiggsfieldImageModel = (id: string) => id === SOUL_CHARACTER_MODEL_ID || id === MARKETING_IMAGE_MODEL_ID;
+/** A trained-identity render: its binding (reference, connection, quoted price) rides in the `soul*` params. */
+export const isSoulIdentityModel = (id: string) => id === SOUL_CHARACTER_MODEL_ID || isSoulRenderModel(id);
+export const isHiggsfieldImageModel = (id: string) => isSoulIdentityModel(id) || id === MARKETING_IMAGE_MODEL_ID;
 
 export const SOUL_CHARACTER_MODEL_ID = "hf-soul-character";
+/** Every Higgsfield still model (isHiggsfieldImageModel), for the collectors' SQL model lists. */
+export const HIGGSFIELD_IMAGE_MODELS: readonly string[] = [SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, ...Object.values(SOUL_RENDER_MODELS)];
 
 /** GPT Image models: id, label, short, flexible sizes?, what it is for. */
 const OPENAI_IMAGE_MODELS: [string, string, string, boolean, string][] = [
@@ -477,10 +485,26 @@ export const MODELS: ModelDef[] = [
   ...Object.entries(GENJUTSU_MODELS).map(([variant, id]): ModelDef => ({
     id, label: GENJUTSU_LABELS[variant as keyof typeof GENJUTSU_LABELS], short: "TRANSFORM", family: "genjutsu",
     provider: "higgsfield", kind: "video", billing: "second", genjutsu: true, hidden: true, paramStyle: "fields",
-    supportsTasks: ["genjutsu"], resolutions: ["720p", "480p"], ratios: ["adaptive"], durations: [],
+    supportsTasks: ["genjutsu"], resolutions: ["720p", "480p", "1080p"], ratios: ["adaptive"], durations: [],
     supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 8, maxReferenceVideos: 1, maxVideoSecondsTotal: 30,
     use: "Transform an original video with optional image references. A live quote is required.",
   })),
+  /* Cinema Studio 4.0 (commercial API key): text-to-video, or reference-to-video
+     from saved stills and clips. Token-metered on the output frame and the
+     seconds billed (lib/cinemaStudio.ts): quoted approximately, settled on the
+     delivered output. Offered to every workspace; HF_CINEMA_STUDIO_ENABLED=0
+     switches it off. */
+  {
+    id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", short: "CINEMA 4", family: "cinema-studio",
+    provider: "higgsfield", kind: "video", billing: "token", cinemaStudio: true, paramStyle: "fields",
+    resolutions: [...CINEMA_STUDIO_RESOLUTIONS], ratios: [...CINEMA_STUDIO_RATIOS],
+    durations: seconds(CINEMA_STUDIO_LIMITS.minSeconds, CINEMA_STUDIO_LIMITS.maxSeconds),
+    supportsAudio: true, supportsCameraFixed: false,
+    maxReferenceImages: CINEMA_STUDIO_LIMITS.maxImages, maxReferenceVideos: CINEMA_STUDIO_LIMITS.maxVideos,
+    maxVideoSecondsTotal: CINEMA_STUDIO_LIMITS.maxVideoSeconds,
+    use: "Directed cinematic shots from a prompt, stills or clips.",
+    note: "Cinema Studio 4.0 — 4–30 s at 480p or 720p, optional sound; reference stills and clips are cited in the prompt.",
+  },
   {
     id: MARKETING_IMAGE_MODEL_ID, label: "Marketing Studio Image", short: "Marketing", family: "higgsfield-marketing",
     provider: "higgsfield", kind: "image", billing: "image", marketing: true, hidden: true, paramStyle: "fields",
@@ -498,6 +522,16 @@ export const MODELS: ModelDef[] = [
     use: "Generate a still from a trained identity.",
     note: "Requires a ready identity and a verified identity-rendering connection.",
   },
+  /* Soul Standard, Soul 2 and Soul Cinema on the platform's key: each renders only identities trained for its
+     family (lib/soulRenderTypes.ts), 1 or 4 stills per request, priced by the provider's live estimate. */
+  ...SOUL_VERSIONS.map((version): ModelDef => ({
+    id: SOUL_RENDER_MODELS[version], label: SOUL_VERSION_LABELS[version], short: SOUL_VERSION_LABELS[version].toUpperCase(),
+    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
+    resolutions: [...SOUL_RENDER_RESOLUTIONS], ratios: [...SOUL_RENDER_RATIOS],
+    durations: [], supportsAudio: false, supportsCameraFixed: false,
+    maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
+    use: "Stills of a Soul ID trained for this family. A live quote is required.",
+  })),
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.
     // Reached from the Studio's identity screen, never the composer: the

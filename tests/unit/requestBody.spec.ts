@@ -177,6 +177,25 @@ function route(file: string) {
     "@/lib/workbench/atomik-response": {
       atomikPublicResponse: (value: unknown) => value,
     },
+    "@/lib/atomikMemory": {
+      MemoryError: class MemoryError extends Error {},
+      addMemory: blocked("memory-add"),
+      importMemory: blocked("memory-import"),
+      findForForget: blocked("memory-find"),
+      forgetMemory: blocked("memory-forget"),
+      listMemory: blocked("memory-list"),
+      memoryView: blocked("memory-view"),
+    },
+    "@/lib/atomikSkillsText": {
+      SkillTextError: class SkillTextError extends Error {},
+    },
+    "@/lib/atomikSkills": {
+      draftFromRun: blocked("skill-draft"),
+      listSkills: blocked("skill-list"),
+      savableRuns: blocked("skill-runs"),
+      saveSkillFromRun: blocked("skill-save"),
+      runSkill: blocked("skill-run"),
+    },
     "@/lib/workbench/atomik-server": {
       atomikRequestSchema,
       quoteAtomikJob: blocked("quote"),
@@ -217,6 +236,9 @@ function route(file: string) {
 for (const [file, limit] of [
   ["app/api/auth/login/route.ts", 8192],
   ["app/api/workbench/atomik/route.ts", 20000],
+  ["app/api/atomik/memory/route.ts", 100_000],
+  ["app/api/atomik/skills/route.ts", 64_000],
+  ["app/api/atomik/skills/[id]/run/route.ts", 16_000],
   ["app/api/pipelines/route.ts", 1_000_000],
   ["app/api/pipelines/[id]/route.ts", 4096],
 ] as const) {

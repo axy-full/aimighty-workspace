@@ -1,12 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { retiredFindings } from "./helpers/retiredSignIn";
 import { signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * The public site (app/(marketing)/site, served by proxy.ts). A visitor sees
  * it at the product's own paths; a member at / still gets the app. Every
- * page is checked at the five sizes for overflow and phone targets, and the
- * hero's handoff is followed into Gen, where the quote on Gen's own button
- * must equal the one the site printed.
+ * page is checked at the five sizes for overflow, phone targets, copy about
+ * charging, and anything that needs a Higgsfield sign-in, none of which the
+ * public site carries. The hero's handoff is followed into Gen, which prices
+ * the take itself.
  */
 
 const PAGES: [string, string][] = [
@@ -29,7 +31,7 @@ async function fits(page: Page) {
 }
 
 for (const [path, tab] of PAGES) {
-  test(`a visitor sees the site at ${path}`, async ({ page }) => {
+  test(`a visitor sees the site at ${path}`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const res = await page.goto(path);
@@ -40,6 +42,21 @@ for (const [path, tab] of PAGES) {
     const { overflow, small } = await fits(page);
     expect(overflow, `${path} is wider than the window`).toBe(false);
     expect(small, `${path} has phone targets under 44px`).toEqual([]);
+    /* The public site does not describe how work is charged. */
+    expect(await page.locator("main").innerText(), `${path} talks about charging`).not.toMatch(/\bquot(e|es|ed|ing)\b|\bestimat|\bcharg|\bbill(ed|ing)? (at|there|in|from)|never billed|\bwallet\b/i);
+    /* Nor does it offer what needs a Higgsfield sign-in (CLAUDE.md, ground rule 10): not in the
+       page, its title or description, or a screenshot's path or caption. */
+    const said = await page.evaluate(() => [
+      document.body.innerText, document.title,
+      document.querySelector('meta[name="description"]')?.getAttribute("content") ?? "",
+      ...Array.from(document.querySelectorAll("img"), (img) => `${img.alt} ${img.getAttribute("src") ?? ""}`),
+    ].join("\n"));
+    expect(retiredFindings(said), `${path} offers what needs a Higgsfield sign-in`).toEqual([]);
+    /* Every picture it shows is served (once: the files are the same at every size). */
+    if (info.project.name === DESKTOP) {
+      const sources = await page.locator("img").evaluateAll((all) => [...new Set(all.map((img) => (img as HTMLImageElement).src))]);
+      for (const src of sources) expect((await page.request.get(src)).status(), src).toBe(200);
+    }
     expect(errors).toEqual([]);
   });
 }
@@ -78,15 +95,17 @@ test("a member keeps the app at /, and the site offers the app instead of sign-i
   await expect(page.locator(".mk-header").getByRole("link", { name: "Sign in" })).toHaveCount(0);
 });
 
-test("the hero keeps a visitor's prompt and opens it in Gen, quoted as the site said", async ({ page }, info) => {
+test("the hero keeps a visitor's prompt and opens it in Gen, which prices the take live", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one handoff");
   await page.goto("/");
   const go = page.locator(".mk-go");
-  const quoted = (await go.textContent())!.match(/(\d[\d,]*) cr/)![1];
+  /* The public hero prints no price. */
+  await expect(go).toHaveText("Generate");
   await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
   await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fview%3Dgen");
+  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
 
   await signInLocally(page.request);
   await page.goto("/suites?view=gen");
@@ -95,5 +114,5 @@ test("the hero keeps a visitor's prompt and opens it in Gen, quoted as the site 
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
   /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
-  await expect(page.getByTestId("gen-generate")).toContainText(`${quoted} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]* cr/, { timeout: 30_000 });
 });

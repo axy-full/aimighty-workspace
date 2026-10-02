@@ -10,6 +10,7 @@ import type {
 import { currentTenant, requireTenant } from "./tenant";
 import { db } from "./db";
 import { creditsApply, quotedCredits } from "./credits";
+import type { EstimateTerms } from "./billingTerms";
 import { billedTo } from "./providers";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
 import {
@@ -75,8 +76,10 @@ export function admissionCheckpoint(
   actor: AdmissionActor,
   kind: PreparedAdmission["kind"],
   usd: number,
-  margin: string,
+  /* The margin key, or the exact terms the reservation will charge (lib/credits.ts quotedCredits). */
+  margin: EstimateTerms,
   compiled: Record<string, unknown>,
+  terms: { approximate?: boolean } = {},
 ): AdmissionReply | undefined {
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
@@ -109,6 +112,7 @@ export function admissionCheckpoint(
     estimatedCredits,
     price: unit === "cr" ? estimatedCredits : usd,
     unit,
+    ...(terms.approximate ? { approximate: true as const } : {}),
   } as const;
   return options.checkpoint({
     kind,
@@ -163,10 +167,18 @@ export async function prepareAdmission(
   };
 }
 
+/**
+ * The fingerprint a prepared admission's durable claim is made under (admitPrepared): what a
+ * caller asks checkGenerationRequest with to learn what became of a request whose reply was lost.
+ */
+export function preparedClaimFingerprint(prepared: PreparedAdmission, namespace: "generation" | "audio" = prepared.kind === "audio" ? "audio" : "generation"): string {
+  return generationFingerprint({ namespace: `pipeline-${namespace}-v1`, prepared });
+}
+
 export async function admitPrepared(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
   namespace: "generation" | "audio",
   execute: AdmissionExecutor,
 ): Promise<AdmissionReply> {
@@ -191,16 +203,14 @@ export async function admitPrepared(
     {
       userId: actor.user.id,
       key: options.requestKey,
-      fingerprint: generationFingerprint({
-        namespace: `pipeline-${namespace}-v1`,
-        prepared,
-      }),
+      fingerprint: preparedClaimFingerprint(prepared, namespace),
     },
     async (requestClaim) =>
       admissionResponse(
         await execute(prepared.request, actor, {
           requestClaim,
           defer: options.defer,
+          ...(options.run ? { run: options.run } : {}),
           checkpoint: (current) =>
             current.kind !== prepared.kind ||
             current.quote.fingerprint !== prepared.quote.fingerprint

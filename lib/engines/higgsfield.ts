@@ -1,19 +1,24 @@
 import { isGenjutsuModel } from "../genjutsuTypes";
-import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem } from "../genjutsu";
+import { CINEMA_STUDIO_PATH, isCinemaStudioModel, isHiggsfieldVideoModel } from "../cinemaStudioTypes";
+import { cinemaStudioInput, cinemaStudioPreflightError, cinemaStudioQuoteUsd } from "../cinemaStudio";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem, genjutsuFrameProblem } from "../genjutsu";
 import { isIP } from "node:net";
 import type { EngineAdapter, PollResult, StillRenderRequest } from "./types";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "../models";
 import { estimateImageCostUsd } from "../vendorPricing";
-import { soulCharacterGenerationEnabled } from "../vendorRates";
+import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from "../vendorRates";
 import { recoveryFetch } from "../recovery";
-import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId } from "../mock";
+import { engineMock, fixtureUrl, isMockJob, mockDone, mockJobId, mockTag } from "../mock";
 import { fixtureBytes } from "../mockFs";
 import {
-  HiggsfieldHttpError, higgsfieldConfigured, higgsfieldCredentials,
-  higgsfieldCredentialFingerprint,
+  HiggsfieldHttpError, boundedBody, higgsfieldConfigured, higgsfieldCredentials,
+  higgsfieldCredentialFingerprint, higgsfieldCollectionCredentials, higgsfieldCorrelationId, higgsfieldKeyHeaders,
+  responseCorrelationId, CORRELATION_HEADER, type HiggsfieldCredentials,
 } from "../higgsfield";
 
-import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, MARKETING_PATH } from "../higgsfieldMarketing";
+import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, marketingPath, higgsfieldBalanceRefusal } from "../higgsfieldMarketing";
+import { isSoulRenderModel, soulVersionOf, SOUL_RENDER_BATCHES } from "../soulRenderTypes";
+import { estimateSoulRender, soulRenderInput, soulRenderPreflightError, SOUL_RENDER_PATHS } from "../soulRender";
 
 const API_ORIGIN = "https://api.higgsfield.ai";
 const ENDPOINT = `${API_ORIGIN}/higgsfield-ai/soul/character`;
@@ -60,22 +65,39 @@ function sameCredentials(expected?: string): void {
     throw new HiggsfieldHttpError(401, "The identity account connection changed. Restore the original connection before collecting this request.");
 }
 
-async function call(url: string, method: "POST" | "GET", body?: unknown): Promise<Record<string, unknown>> {
-  const credentials = higgsfieldCredentials();
+/**
+ * One request on the commercial API. A submission sends on the key in effect
+ * now; a status read passes the key its request was accepted under
+ * (higgsfieldCollectionCredentials). The answer's correlation id — the
+ * provider's own, else ours if it went out — comes back beside the body.
+ */
+async function call(url: string, method: "POST" | "GET", body?: unknown,
+  options: { credentials?: HiggsfieldCredentials; correlationId?: string } = {}): Promise<{ data: Record<string, unknown>; correlationId: string | null }> {
+  const credentials = options.credentials ?? higgsfieldCredentials();
+  const headers = higgsfieldKeyHeaders(credentials, { correlationId: options.correlationId });
   const response = await recoveryFetch(url, {
     method, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(60_000),
-    headers: { Authorization: `Key ${credentials.keyId}:${credentials.keySecret}`, "Content-Type": "application/json" },
+    headers,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  const correlationId = responseCorrelationId(response) ?? headers[CORRELATION_HEADER] ?? null;
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`);
+    // A bounded copy of the provider's own reason (its FastAPI detail[] or
+    // concurrency message) travels with the error; the rest is cancelled.
+    const body = await boundedBody(response);
+    // 403 is the provider's documented "insufficient credits": the request was not accepted.
+    if (method === "POST" && response.status === 403)
+      throw new HiggsfieldHttpError(403, `${higgsfieldBalanceRefusal("higgsfield-submission").message} The request was not accepted.`, body);
+    throw new HiggsfieldHttpError(response.status, `The identity account ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`, body);
   }
   const data: unknown = await marketingJson(response);
   if (!data || typeof data !== "object" || Array.isArray(data))
     throw new Error("The connected account returned an unreadable response. The submission will not be repeated.");
-  return data as Record<string, unknown>;
+  return { data: data as Record<string, unknown>, correlationId };
 }
+
+/** The handle's correlation id: what the submission's answer carried (a fixture's own under ENGINE_MOCK). Never a key or a fingerprint. */
+const correlated = (correlationId: string | null | undefined) => (correlationId ? { correlationId } : {});
 
 function imageUrl(value: unknown): string {
   if (typeof value !== "string") throw new Error("The connected account returned no image master. The request remains available for collection.");
@@ -93,71 +115,118 @@ export const higgsfield: EngineAdapter = {
   kinds: ["image", "video"],
   configured: () => higgsfieldConfigured(),
   estimate(req) {
-    if (req.kind === "video" && isGenjutsuModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
+    if (req.kind === "video" && isHiggsfieldVideoModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
     if (req.kind === "image" && req.model.id === MARKETING_IMAGE_MODEL_ID) return req.higgsfieldVendorCostUsd ?? null;
+    if (req.kind === "image" && isSoulRenderModel(req.model.id)) return req.soulVendorCostUsd ?? null;
     if (req.kind !== "image" || req.model.id !== SOUL_CHARACTER_MODEL_ID || !soulCharacterGenerationEnabled()) return null;
     return estimateImageCostUsd(req.model.id, req.size, 0)?.net ?? null;
   },
   async render(req) {
+    if (req.kind === "video" && isCinemaStudioModel(req.model.id)) {
+      const fingerprint = req.params.higgsfieldCredentialFingerprint;
+      let input: Awaited<ReturnType<typeof cinemaStudioInput>>;
+      try {
+        sameCredentials(fingerprint);
+        // The approximate quote is frozen on the take. Send only while the switch
+        // is on and the same settings and references still give the same figure.
+        if (req.task.id !== "generate" || req.source ||
+            Boolean(req.params.hasVideoInput) !== req.references.some(r => r.kind === "video")) throw new Error("source");
+        const fresh = cinemaStudioEnabled() ? cinemaStudioQuoteUsd(req.params) : null;
+        if (!(req.params.higgsfieldVendorCostUsd! > 0) || fresh !== req.params.higgsfieldVendorCostUsd) throw new Error("price");
+        input = await cinemaStudioInput(req.prompt, req.params, req.references);
+      } catch { throw cinemaStudioPreflightError(); }
+      const correlationId = higgsfieldCorrelationId(req.genId, "submit");
+      if (engineMock()) return { handle: { provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint, correlationId } };
+      // Exactly one POST. Ambiguous failures retain the durable paid claim.
+      const { data: result, correlationId: said } = await call(`${API_ORIGIN}/${CINEMA_STUDIO_PATH}`, "POST", input, { correlationId });
+      const ref = typeof result.request_id === "string" ? result.request_id : "";
+      if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
+      return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint: typeof result.status_url === "string" ? result.status_url : undefined, cancelUrl: typeof result.cancel_url === "string" ? result.cancel_url : undefined, credentialFingerprint: fingerprint, ...correlated(said) } };
+    }
     if (req.kind === "video" && isGenjutsuModel(req.model.id)) {
       const fingerprint = req.params.higgsfieldCredentialFingerprint;
       let input: Awaited<ReturnType<typeof genjutsuInput>>;
       try {
         sameCredentials(fingerprint);
-        if (req.task.id !== "genjutsu" || !req.params.genjutsuSource || genjutsuSourceProblem(req.params.genjutsuSource.seconds)) throw new Error("source");
+        const measured = req.params.genjutsuSource;
+        if (req.task.id !== "genjutsu" || !measured || genjutsuSourceProblem(measured.seconds) ||
+            genjutsuFrameProblem(req.model.id, measured.width, measured.height)) throw new Error("source");
         const images = req.references.filter(r => r.kind === "image");
         if (req.references.filter(r => r.kind === "video").length !== 1 || !req.source || !req.references.some(r => r.kind === "video" && r.id === req.source!.id && r.fromGeneration === req.source!.fromGeneration)) throw new Error("source");
         input = await genjutsuInput(req.model.id, req.prompt, req.params.resolution, req.source, images);
         const fresh = await estimateGenjutsuInput(req.model.id, input);
         if (!(req.params.higgsfieldVendorCostUsd! > 0) || fresh !== req.params.higgsfieldVendorCostUsd) throw new Error("price");
       } catch { throw genjutsuPreflightError(); }
-      if (engineMock()) return { handle: { provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint } };
-      const result = await call(`${API_ORIGIN}/${genjutsuPath(req.model.id)}`, "POST", input);
+      const correlationId = higgsfieldCorrelationId(req.genId, "submit");
+      if (engineMock()) return { handle: { provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint, correlationId } };
+      const { data: result, correlationId: said } = await call(`${API_ORIGIN}/${genjutsuPath(req.model.id)}`, "POST", input, { correlationId });
       const ref = typeof result.request_id === "string" ? result.request_id : "";
       if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
-      return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint: typeof result.status_url === "string" ? result.status_url : undefined, cancelUrl: typeof result.cancel_url === "string" ? result.cancel_url : undefined, credentialFingerprint: fingerprint } };
+      return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint: typeof result.status_url === "string" ? result.status_url : undefined, cancelUrl: typeof result.cancel_url === "string" ? result.cancel_url : undefined, credentialFingerprint: fingerprint, ...correlated(said) } };
     }
     if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Choose a supported connected model.");
     const marketing = req.model.id === MARKETING_IMAGE_MODEL_ID;
+    const soulVersion = soulVersionOf(req.model.id);
     const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
     sameCredentials(fingerprint);
     let input: Record<string, unknown>;
+    let path = "";
     if (marketing) {
       // This is a read-only check before the sole paid POST. An unavailable or
-      // changed live price proves that this worker has submitted nothing.
+      // changed price (the live estimate, or a 2.5 build's approximate quote)
+      // proves that this worker has submitted nothing.
       try {
-        input = marketingInput(req.prompt, req.ratio, req.size, marketingSettings(req.marketing), await marketingReferenceUrls(req.references));
-        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>);
+        const settings = marketingSettings(req.marketing);
+        input = marketingInput(req.prompt, req.ratio, req.size, settings, await marketingReferenceUrls(req.references));
+        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>, settings.variant ?? "alpha");
         if (!(req.higgsfieldVendorCostUsd! > 0) || fresh !== req.higgsfieldVendorCostUsd) throw new Error("changed quote");
+        path = marketingPath(settings);
       } catch { throw marketingPreflightError(); }
+    } else if (soulVersion) {
+      // Soul Standard / Soul 2 / Soul Cinema: the same body priced again, read-only,
+      // before the sole paid POST. A changed or missing price sends nothing.
+      try {
+        if (req.references.length) throw new Error("references");
+        const body = soulRenderInput(req.model.id, { prompt: req.prompt, referenceId: req.soulReferenceId ?? "", strength: req.soulStrength ?? 1,
+          batch: req.soulBatch ?? 1, resolution: req.size, ratio: req.ratio });
+        const fresh = await estimateSoulRender(req.model.id, body);
+        if (!(req.soulVendorCostUsd! > 0) || fresh !== req.soulVendorCostUsd) throw new Error("changed quote");
+        input = body;
+      } catch { throw soulRenderPreflightError(); }
     } else {
       input = soulCharacterInput(req);
       if (!soulCharacterGenerationEnabled())
         throw new HiggsfieldHttpError(400, "Identity render is awaiting verified availability and pricing.");
     }
+    const correlationId = higgsfieldCorrelationId(req.genId, "submit");
     if (engineMock()) return { handle: {
-      provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint,
+      // A mock batch says its size in its id, so the mock collection returns that many stills.
+      provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield", soulVersion ? `b${req.soulBatch ?? 1}` : undefined), credentialFingerprint: fingerprint, correlationId,
     } };
     // Exactly one POST. Ambiguous failures retain the durable paid claim.
-    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : ENDPOINT, "POST", input);
+    const { data: result, correlationId: said } = await call(marketing ? `${API_ORIGIN}/${path}` : soulVersion ? `${API_ORIGIN}/${SOUL_RENDER_PATHS[soulVersion]}` : ENDPOINT, "POST", input, { correlationId });
     const ref = typeof result.request_id === "string" ? result.request_id : "";
     if (!UUID.test(ref)) throw new Error("The connected account returned no usable request identifier. The submission will not be repeated.");
     // Persist an accepted UUID even if its status URL is malformed. Poll validates
     // the exact origin/path before sending credentials, leaving the id recoverable.
     const endpoint = typeof result.status_url === "string" ? result.status_url : undefined;
     return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint,
-      credentialFingerprint: fingerprint } };
+      credentialFingerprint: fingerprint, ...correlated(said) } };
   },
   async poll(handle): Promise<PollResult> {
-    if (handle.provider !== "higgsfield" || (!isHiggsfieldImageModel(handle.model) && !isGenjutsuModel(handle.model)))
+    if (handle.provider !== "higgsfield" || (!isHiggsfieldImageModel(handle.model) && !isHiggsfieldVideoModel(handle.model)))
       throw new Error("Unsupported connected-account request handle.");
-    // Collection remains possible after an operator disables new submissions.
-    sameCredentials(handle.credentialFingerprint);
+    // Collection remains possible after an operator disables new submissions, and after the key
+    // rotates: it reads with the key the request was accepted under, found by its pinned fingerprint.
+    // With that key gone (and no alias to the current one) nothing is asked (HiggsfieldKeyChangedError).
+    const credentials = higgsfieldCollectionCredentials(handle.credentialFingerprint);
     let raw: Record<string, unknown>;
     if (engineMock() && isMockJob(handle.ref)) {
-      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: [{ url: fixtureUrl("still.png") }], video: { url: fixtureUrl("clip.mp4") } };
+      const stills = isSoulRenderModel(handle.model) ? Math.max(1, Number(mockTag(handle.ref)?.replace(/^b/, "")) || 1) : 1;
+      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: Array.from({ length: stills }, () => ({ url: fixtureUrl("still.png") })), video: { url: fixtureUrl("clip.mp4") } };
     } else {
-      raw = await call(soulStatusUrl(handle.endpoint, handle.ref), "GET");
+      raw = (await call(soulStatusUrl(handle.endpoint, handle.ref), "GET", undefined,
+        { credentials, correlationId: higgsfieldCorrelationId(handle.ref, "status") })).data;
       if (raw.request_id !== handle.ref) throw new Error("The connected account returned a different request identifier.");
     }
     const statuses: Record<string, PollResult["status"]> = {
@@ -166,32 +235,35 @@ export const higgsfield: EngineAdapter = {
     const status = statuses[String(raw.status)];
     if (!status) throw new Error("The connected account returned an unknown request status.");
     let master: string | null = null;
+    let masters: string[] | null = null;
     let video: string | null = null;
-    if (status === "succeeded" && isGenjutsuModel(handle.model)) {
+    if (status === "succeeded" && isHiggsfieldVideoModel(handle.model)) {
       const output = raw.video;
       if (!output || typeof output !== "object" || Array.isArray(output) || typeof (output as Record<string, unknown>).url !== "string")
         throw new Error("The connected account returned no recognized original video. The accepted request remains available for collection.");
       video = engineMock() && isMockJob(handle.ref) ? fixtureUrl("clip.mp4") : imageUrl((output as Record<string, unknown>).url);
     }
-    if (status === "succeeded" && !isGenjutsuModel(handle.model)) {
+    if (status === "succeeded" && !isHiggsfieldVideoModel(handle.model)) {
       const images = raw.images;
-      if (!Array.isArray(images) || images.length !== 1)
+      /* A Soul render delivers its batch (1 or 4 stills); every other still request exactly one. */
+      const most = isSoulRenderModel(handle.model) ? Math.max(...SOUL_RENDER_BATCHES) : 1;
+      if (!Array.isArray(images) || images.length < 1 || images.length > most)
         throw new Error("The connected account returned an unexpected image count. The request remains available for collection.");
-      master = engineMock() && isMockJob(handle.ref) ? fixtureUrl("still.png") : imageUrl(images[0]?.url);
+      masters = images.map((image) => engineMock() && isMockJob(handle.ref) ? fixtureUrl("still.png") : imageUrl((image as { url?: unknown } | null)?.url));
+      master = masters[0];
     }
-    return { status, imageUrl: master, videoUrl: video, totalTokens: null,
+    return { status, imageUrl: master, imageUrls: masters, videoUrl: video, totalTokens: null,
       error: raw.status === "nsfw" ? "The connected account rejected this generation during moderation." :
         status === "failed" ? "The connected account could not complete this generation." : null,
       vendorStartedAt: null, vendorEndedAt: null, raw };
   },
   async cancel(handle) {
-    if (handle.provider !== "higgsfield" || !isGenjutsuModel(handle.model)) throw new HiggsfieldHttpError(422, "Choose a transform request.");
-    sameCredentials(handle.credentialFingerprint);
+    if (handle.provider !== "higgsfield" || !isHiggsfieldVideoModel(handle.model)) throw new HiggsfieldHttpError(422, "Choose a video request.");
+    const credentials = higgsfieldCollectionCredentials(handle.credentialFingerprint);
     if (!UUID.test(handle.ref) || handle.cancelUrl !== `${API_ORIGIN}/requests/${handle.ref}/cancel`)
       throw new HiggsfieldHttpError(409, "This request has no verified cancellation URL.");
-    const { keyId, keySecret } = higgsfieldCredentials();
     const response = await recoveryFetch(handle.cancelUrl, { method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(30_000),
-      headers: { Authorization: `Key ${keyId}:${keySecret}` } });
+      headers: higgsfieldKeyHeaders(credentials, { correlationId: higgsfieldCorrelationId(handle.ref, "cancel"), json: false }) });
     await response.body?.cancel();
     if (response.status !== 202) throw new HiggsfieldHttpError(response.status === 400 ? 409 : 503,
       "The connected account did not confirm cancellation. The request may have started; refresh its status.");

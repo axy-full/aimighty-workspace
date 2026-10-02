@@ -1,6 +1,6 @@
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
-import { isGenjutsuModel } from "./genjutsuTypes";
+import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { isConsumerVideoModel, isConsumerOriginalParams } from "./higgsfield-consumer/original-identity";
 import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
@@ -8,7 +8,7 @@ import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
-import { costUsd, SOUL_CHARACTER_MODEL_ID } from "./models";
+import { costUsd, isSoulIdentityModel } from "./models";
 import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
 import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
@@ -29,6 +29,8 @@ import {
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
 import { restoreHiggsfieldGenerationReceipts, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
+import { clearKeyChanged, KEY_GONE_END, KEY_GONE_MS } from "./higgsfieldKeyAlerts";
+import { POOL_MARK } from "./sharedKeyTerms";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
@@ -37,6 +39,9 @@ import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./h
 import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
+import { fundedOutcome, outcomeOfPoll, outcomeProviderFor } from "./providerFailure";
+import { failureCopy } from "./errors";
+import { noAnswerOutcome, parseOutcome, serializeOutcome, takeFailure, type TakeFailure } from "./providerOutcome";
 
 export type Generation = {
   id: string;
@@ -70,6 +75,12 @@ export type Generation = {
   refineInTokens: number | null;
   refineOutTokens: number | null;
   error: string | null;
+  /**
+   * A failed or cancelled take: the provider's own code, words and — when
+   * this viewer may see it — what it did with the charge (lib/providerOutcome.ts).
+   * Null for any other status. Routes add `charge`, Particl's own ledger.
+   */
+  failure: TakeFailure | null;
   createdBy: string;
   authorName: string | null;
   /** Which shot this is a take of, and which take. */
@@ -124,6 +135,8 @@ function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 function heldForBrowser(held: Record<string, unknown>, inCredits: boolean, kind: string, model: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (typeof held.why === "string") out.why = held.why;
+  /* Waiting for the platform's shared pool rather than this workspace's own slots (lib/providerPool.ts). */
+  if (held.pool === POOL_MARK) out.pool = POOL_MARK;
   const needs = heldPriceNow(held, kind, model);
   /* A changed quote needs approval even if the take originally waited only for a slot. */
   const approved = typeof held.needs === "number" && Number.isSafeInteger(held.needs) && held.needs >= 0 ? held.needs : null;
@@ -181,6 +194,13 @@ export function rowToGeneration(r: any): Generation {
     params = withoutVendorDollars(params);
     if (vendorUnits) { delete params.estCredits; delete params.credits; delete params.tier; }
   }
+  const outcome = r.provider_outcome == null ? null : parseOutcome(String(r.provider_outcome));
+  const failed = r.status === "failed" || r.status === "cancelled";
+  const failure = failed ? takeFailure(outcome, { credits: inCredits }) : null;
+  // A held take discarded before admission has a server-written receipt of
+  // that fact even though it never needed a meter reservation.
+  if (failure && inCredits && r.status === "cancelled" && typeof params.discardedAt === "number")
+    failure.charge = { credits: 0, settled: true };
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -219,7 +239,9 @@ export function rowToGeneration(r: any): Generation {
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
     refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
-    error: r.error ?? null,
+    error: r.provider_outcome != null && (inCredits || outcome?.funding !== "own")
+      ? failureCopy(outcome?.kind ?? "unknown", "platform").what : r.error ?? null,
+    failure,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,
     shotId: r.shot_id ?? null,
@@ -400,7 +422,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     try { await reconcileHiggsfieldImage(gen.id); } catch (error) { if (options.strict) throw error; }
     return (await getGeneration(gen.id)) ?? gen;
   }
-  if (gen.kind === "video" && gen.provider === "higgsfield" && isGenjutsuModel(gen.model)) {
+  if (gen.kind === "video" && gen.provider === "higgsfield" && isHiggsfieldVideoModel(gen.model)) {
     try { await reconcileGenjutsuVideo(gen.id); } catch (error) { if (options.strict) throw error; }
     return (await getGeneration(gen.id)) ?? gen;
   }
@@ -543,9 +565,14 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
        was before the update, so only the one real transition writes its token;
        a repair write on an already-finished row leaves it alone. */
     const settledBy = `${ts}:${Math.random().toString(36).slice(2)}`;
+    /* A task the provider ended without a result: its own code, words and charge (lib/providerOutcome.ts). */
+    const failedOutcome = TERMINAL.has(task.status) && task.status !== "succeeded"
+      ? await fundedOutcome(outcomeOfPoll(gen.provider, task.raw), gen.id, gen.provider).catch(() => null)
+      : null;
     const outcomeWrite = {
       sql: `UPDATE generations
             SET status=?, source_url=?, stored_url=COALESCE(stored_url, ?), total_tokens=?,
+                provider_outcome=COALESCE(?, provider_outcome),
                 cost_usd=COALESCE(?, cost_usd),
                 rate_usd_per_m=COALESCE(?, rate_usd_per_m),
                 duration_ms=COALESCE(duration_ms, ?),
@@ -562,6 +589,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
         task.videoUrl,
         storedUrl,
         task.totalTokens,
+        failedOutcome ? serializeOutcome(failedOutcome) : null,
         cost,
         rate,
         durationMs,
@@ -601,6 +629,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       durationMs,
       projectId: gen.projectId,
       shotId: gen.shotId,
+      ...(failedOutcome ? { providerOutcome: failedOutcome } : {}),
     };
     if (TERMINAL.has(task.status)) {
       const changed = await writeGenerationOutcome(outcomeWrite, event);
@@ -656,7 +685,11 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
       durationS: deliveredSeconds ?? gen.durationS,
       costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
       creditsBilled: (await getGeneration(gen.id))?.creditsBilled ?? null,
-      error: task.error,
+      error: failedOutcome && (creditsApply(currentTenant()?.workspace) || failedOutcome.funding !== "own")
+        ? failureCopy(failedOutcome.kind, "platform").what : task.error,
+      failure: TERMINAL.has(task.status) && task.status !== "succeeded"
+        ? takeFailure(failedOutcome, { credits: creditsApply(currentTenant()?.workspace) })
+        : null,
       updatedAt: ts,
     };
   } finally {
@@ -802,25 +835,31 @@ export async function syncPending(
           if (gen.kind === "image" && gen.provider === "higgsfield" && params.paidClaim != null && !TERMINAL.has(gen.status)) {
             const handle = Boolean(params.higgsfieldStillHandle);
             const since = Number(params.paidClaim) || gen.createdAt;
-            if (handle ? collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
-              const price = gen.model === SOUL_CHARACTER_MODEL_ID ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
+            /* Waiting on a key that is gone (lib/higgsfieldKeyAlerts.ts) is not a failing collection; it ends only
+               once the provider no longer keeps what it made. */
+            const keyGone = handle && Number(params.providerKeyChanged) > 0 && Number(params.providerKeyChanged) < now() - KEY_GONE_MS;
+            if (handle ? keyGone || collectionAbandoned(params.higgsfieldStillCollection, now()) : since < now() - HIGGSFIELD_UNCONFIRMED_MS) {
+              const price = isSoulIdentityModel(gen.model) ? params.soulVendorCostUsd : params.higgsfieldVendorCostUsd;
               const known = handle && typeof price === "number" && Number.isFinite(price) && price > 0 ? price : null;
+              /* Sent, and the provider never said how it went: its charge is unknown. */
+              const silent = await fundedOutcome(noAnswerOutcome("higgsfield", handle ? "run" : "submit"), gen.id, gen.provider).catch(() => null);
               await writeGenerationOutcome(
                 {
-                  sql: `UPDATE generations SET status='failed',error=?,cost_usd=COALESCE(cost_usd,?),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+                  sql: `UPDATE generations SET status='failed',error=?,cost_usd=COALESCE(cost_usd,?),provider_outcome=COALESCE(?,provider_outcome),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
                     WHERE id=? AND status IN ('queued','running') AND deleted=0`,
                   args: [
-                    handle
+                    keyGone ? KEY_GONE_END : handle
                       ? "The connected account stopped answering about this request, so its result could not be collected. Its cost stays charged; it will not be sent again."
                       : "The connected account never confirmed this request. Its estimated cost stays charged; it will not be sent again.",
-                    known, now(), gen.id,
+                    known, silent ? serializeOutcome(silent) : null, now(), gen.id,
                   ],
                 },
                 { id: gen.id, kind: "image", engine: billedTo(gen.provider), model: gen.model, status: "failed",
-                  engineCostUsd: known, projectId: gen.projectId, shotId: gen.shotId },
+                  engineCostUsd: known, projectId: gen.projectId, shotId: gen.shotId, providerOutcome: silent },
               );
               await deliverGenerationSettlement(gen.id);
               await settleHiggsfieldGenerationReceipt(gen.id).catch(() => false);
+              if (keyGone) await clearKeyChanged(gen.id).catch(() => {});
               return;
             }
           }
@@ -842,6 +881,8 @@ export async function syncPending(
                released. The guard is in the write, so a worker that claims it
                at this very moment keeps it. */
             const unsent = orphan && params.paidClaim == null && !params.producedOutcome;
+            /* Sent (or maybe sent), and the provider never answered: its charge is unknown. */
+            const silent = unsent ? null : await fundedOutcome(noAnswerOutcome(outcomeProviderFor(gen.provider), gen.arkTaskId ? "run" : "submit"), gen.id, gen.provider).catch(() => null);
             // An expired function/handle does not prove the vendor refunded anything.
             // Keep its reservation, end the execution slot, and retain the permanent paid claim.
             await writeGenerationOutcome(
@@ -854,10 +895,11 @@ export async function syncPending(
                     args: ["This take never started, so nothing was charged. Generate it again.", now(), gen.id],
                   }
                 : {
-                    sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+                    sql: `UPDATE generations SET status='failed',error=?,provider_outcome=COALESCE(?,provider_outcome),params=json_set(params,'$.outcomeUncertain',1),updated_at=?
             WHERE id=? AND status IN ('queued','running') AND deleted=0`,
                     args: [
                       "This attempt was interrupted after it was sent, and the provider never confirmed the outcome. Its estimated cost stays charged; it will not be sent again.",
+                      silent ? serializeOutcome(silent) : null,
                       now(),
                       gen.id,
                     ],
@@ -873,6 +915,7 @@ export async function syncPending(
                 engineCostUsd: unsent ? 0 : null,
                 projectId: gen.projectId,
                 shotId: gen.shotId,
+                providerOutcome: silent,
               },
             );
             await deliverGenerationSettlement(gen.id);

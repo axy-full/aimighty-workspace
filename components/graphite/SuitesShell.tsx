@@ -23,7 +23,7 @@ import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
-import { BusinessView } from "./business/BusinessView";
+import { BusinessSuite } from "./business/BusinessSuite";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { GenView } from "./GenView";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
@@ -34,6 +34,8 @@ import { stillCurrent } from "@/lib/shell/asset-link";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
+import { MemoryView } from "./atomik/MemoryView";
+import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -42,8 +44,8 @@ import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
-import { WorkflowHosts } from "./tools/WorkflowHost";
-import { WORKFLOW_SURFACES } from "@/lib/shell/workflows";
+import { useCompact } from "@/lib/shell/use-compact";
+import { Glyph } from "./icons";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
@@ -324,6 +326,25 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
+  const projectHead = (
+    <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
+      onPick={pickProject} onCreate={createProject} />
+  );
+  const genHead = (
+    <div className="gx-pagehead" data-row="page">
+      <h1 className="gx-h1" data-testid="page-title">Generate</h1>
+      <span className="gx-hint">Video · Images · Audio</span>
+      <span className="gx-spacer" />
+      {!shell.wide ? (<>
+        <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="stack" size={18} /></span><span className="gx-hbtn-label">Library</span></button>
+        <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="info" size={18} /></span><span className="gx-hbtn-label">Inspector</span></button>
+      </>) : null}
+    </div>
+  );
+  /* A phone's top bar carries the project switcher in its second row, beside the page strip (or Gen's own buttons):
+     one glass island instead of four rows between the screen's edge and the page (app/phone-chrome.css). */
+  const compact = useCompact();
+  const bar = compact && (shell.view === "suite" || shell.view === "gen") ? <>{projectHead}{shell.view === "gen" ? genHead : <StageStrip />}</> : null;
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
      Moving to another page, project or selection gives it a fresh go. */
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
@@ -338,8 +359,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        <Header account={account} />
-        <StageStrip />
+        <Header account={account} bar={bar} />
+        {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
           <AtomikGate />
@@ -361,8 +382,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
               </Boundary>
             ) : null}
             <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
-              <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
-                onPick={pickProject} onCreate={createProject} />
+              {bar ? null : projectHead}
               {/* Keep Gen's draft editable while generation waits for the project list to recover.
                   "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
               {shell.view === "gen" && projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
@@ -370,15 +390,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 <div className="gx-stage gx-scroll" data-testid="content">{linkCard}</div>
               ) : shell.view === "gen" ? (
                 <>
-                  <div className="gx-pagehead" data-row="page">
-                    <h1 className="gx-h1" data-testid="page-title">Generate</h1>
-                    <span className="gx-hint">Video · Images · Audio</span>
-                    <span className="gx-spacer" />
-                    {!shell.wide ? (<>
-                      <button type="button" className="gx-hbtn" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library">Library</button>
-                      <button type="button" className="gx-hbtn" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector">Inspector</button>
-                    </>) : null}
-                  </div>
+                  {bar ? null : genHead}
                   {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
                   <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
                     <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
@@ -413,26 +425,18 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
                       <div className="gx-stage-host" key={shell.page.id}>
                         {firstRunAbove}
-                        {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
-                          <div className="gx-extras" data-testid="page-workflows">
-                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
-                          </div>
-                        ) : null}
                         {shell.page.id === "astra" ? <AstraOutputs /> : null}
                         <StageView page={shell.page.legacy.page} project={project} scope={scope} />
                       </div>
                     ) : shell.page.own && shell.suite.id === "business" ? (
-                      <BusinessView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "ads" | "dtc" | "setup"} />
+                      <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView /> : (<>
+                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
                       {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                        {WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`] ? (
-                          <div className="gx-extras" data-testid="page-workflows">
-                            <WorkflowHosts surfaces={WORKFLOW_SURFACES[`${shell.suite.id}:${shell.page.id}`]} scope={scope} project={project} />
-                          </div>
-                        ) : null}
                         {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>

@@ -6,10 +6,12 @@ import { smallTargets, smallText } from "./phoneFloors";
 
 /**
  * GLASS_SPEC §3 / §5, mobile: Home shows only "Where to?", six suite tiles
- * with a live fact each and the Assets row; the tab bar floats 22px above the
- * bottom with the active pill; the top bar is a glass island with the context
- * badge; the Studio tile opens the stage grid with a Home back; sheets are
- * glass; nothing hides under the tab bar; every target is 44px.
+ * with a live fact each and the Assets row; the tab bar floats above the
+ * bottom with the active pill (10px up and 58px tall since the compact phone
+ * chrome, 27 September 2026: app/phone-chrome.css); the top bar is a glass
+ * island with the context badge; the Studio tile opens the stage grid with a
+ * Home back; sheets are glass; nothing hides under the tab bar; every target
+ * is 44px.
  */
 const PHONES = ["workbench-360x640", "workbench-390x844"];
 const fixture = (): Project => ({
@@ -63,7 +65,10 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   /* The brief has words, one take exists and one shot is cut: Brief, Takes and Edit & Sound are done. */
   await expect(page.getByTestId("home-fact-studio")).toHaveText("3 of 10 done");
   await expect(page.getByTestId("home-fact-gen")).toHaveText("Seedance 2.5 · default");
-  await expect(page.getByTestId("home-fact-business")).toHaveText("UGC · 15 s · quoted in Ads");
+  /* Viral runs on Particl's API key: its tile keeps its own fact, nothing retired. Business is Particl's own tools. */
+  await expect(page.getByTestId("home-fact-business")).toHaveText("Brand · product · briefs · design");
+  await expect(page.getByTestId("home-fact-viral")).toHaveText("720p · quoted on the source");
+  await expect(page.getByTestId("home-suite-viral")).not.toHaveAttribute("data-retired", "true");
   await expect(page.getByTestId("home-fact-atomik")).toHaveText("0 awaiting approval");
   await expect(page.getByTestId("home-fact-crew")).toHaveText("3 seats");
   expect(await page.getByTestId("home-fact-studio").evaluate((el) => getComputedStyle(el).color)).toBe("rgb(10, 132, 255)");
@@ -77,12 +82,12 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   expect(await smallText(page, ".gx-where"), "text under 12px").toEqual([]);
   expect(await smallTargets(page, ".gx-where, .gx-tabbar"), "targets under 44×44").toEqual([]);
 
-  /* The tab bar floats: fixed, 12px in, 22px up, 66px tall, glass, the active tab a pill. */
+  /* The tab bar floats: fixed, 12px in, 10px up (22px over a home indicator), 58px tall, glass, the active tab a pill. */
   const bar = page.getByTestId("tabbar");
   await expect(bar).toHaveCSS("position", "fixed");
-  await expect(bar).toHaveCSS("bottom", "22px");
+  await expect(bar).toHaveCSS("bottom", "10px");
   await expect(bar).toHaveCSS("left", "12px");
-  await expect(bar).toHaveCSS("height", "66px");
+  await expect(bar).toHaveCSS("height", "58px");
   await expect(bar).toHaveCSS("border-radius", "999px");
   expect(await css(page, ".gx-tabbar", "backdrop-filter")).toContain(blur("40px"));
   await expect(bar.getByRole("button")).toHaveText(["Home", "Gen", "Suites", "Assets", "More"]);
@@ -92,23 +97,28 @@ test("phone: Home is the suite picker; the tab bar and top bar float as glass; S
   await expect(homeTab).toHaveCSS("border-radius", "999px");
   const barTop = await bar.evaluate((el) => el.getBoundingClientRect().top);
   const viewport = page.viewportSize()!;
-  expect(barTop + 66 + 22).toBeCloseTo(viewport.height, 0);
+  expect(barTop + 58 + 10).toBeCloseTo(viewport.height, 0);
 
-  /* The top bar is a glass island with the mark and the context badge; mark, credits and avatar share one row. */
+  /* The top bar is a glass island with the mark and the context badge; mark, badge, credits and avatar share one row.
+     Search waits behind the badge with the Suites, one tap away. */
   const header = page.locator(".gx-header").first();
-  await expect(page.getByTestId("header-search")).toBeVisible();
-  await expect(page.getByTestId("header-search")).toHaveCSS("width", "44px");
-  const rowTops = await page.evaluate(() => [".gx-brand", '[data-testid="header-search"]', '[data-testid="workspace-credits"]', '[data-testid="workspace-avatar"]'].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
+  const rowTops = await page.evaluate(() => [".gx-brand", '[data-testid="suites-menu"]', '[data-testid="workspace-credits"]', '[data-testid="workspace-avatar"]'].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
   expect(new Set(rowTops).size, `one row: ${rowTops.join(", ")}`).toBe(1);
+  await expect(page.getByTestId("header-search")).toBeHidden();
+  await page.getByTestId("suites-menu").click();
+  await expect(page.getByTestId("header-search")).toBeVisible();
+  await expect(page.getByTestId("header-search")).toHaveCSS("height", "48px");
+  await page.getByTestId("suites-menu").click();
+  await expect(page.getByTestId("header-search")).toBeHidden();
   await expect(header).toHaveCSS("border-radius", "24px");
   expect(await css(page, ".gx-header", "backdrop-filter")).toContain(blur("40px"));
   expect(await css(page, ".gx-header", "margin-left")).toBe("10px");
   expect(await css(page, ".gx", "background-image")).toContain("radial-gradient");
 
-  /* Nothing hides under the bar: every scroll region ends 110px above its own bottom. */
-  await expect(page.getByTestId("content")).toHaveCSS("padding-bottom", "110px");
+  /* Nothing hides under the bar: every scroll region keeps the bar, its gap and 12px clear under its last row. */
+  await expect(page.getByTestId("content")).toHaveCSS("padding-bottom", "80px");
   await page.getByTestId("tabbar-more").click();
-  await expect(page.getByTestId("workspace-view")).toHaveCSS("padding-bottom", "110px");
+  await expect(page.getByTestId("workspace-view")).toHaveCSS("padding-bottom", "80px");
   await page.getByTestId("tabbar-home").click();
   await expect(home).toBeVisible();
   await page.getByTestId("content").evaluate((el) => { el.scrollTop = el.scrollHeight; });

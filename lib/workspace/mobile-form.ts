@@ -20,9 +20,9 @@ import type { GenjutsuVariant } from "../genjutsuTypes";
  * GET /api/higgsfield/consumer/genjutsu. Its staleness rule is the desktop's,
  * kept literally: a quote counts only while it is `quoted`, was taken for a
  * byte-identical input, has not expired and has not been attempted. Anything
- * else blocks submission — and the phone never runs the paid dispatch itself:
- * the page's Atomik plan prices this same request at its gate, which is the one
- * approval path (components/workspace/spec/tools/SubatomikTool.tsx).
+ * else blocks submission — and the phone never runs the paid dispatch itself.
+ * Atomik's Motion Transfer and Object Swap plans no longer take this form's
+ * request: they run on the API-key transform engines only (lib/workspace/plans.ts).
  *
  * Everything here is pure so the blocking rule is unit-tested.
  */
@@ -195,7 +195,7 @@ export const FORM_QUOTE_NOTE: Record<FormQuoteState, string> = {
   changed: "This composition changed since the last estimate, so that price no longer applies.",
   expired: "The last estimate has aged out and must be taken again.",
   attempted: "This estimate was already submitted once; it will not be sent again.",
-  ready: "Approved against this exact amount and wallet. A missing or stale estimate blocks submission.",
+  ready: "Approved against this estimate and wallet. A missing or stale estimate blocks submission.",
 };
 
 /**

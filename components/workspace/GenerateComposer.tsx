@@ -9,15 +9,12 @@ import { resolveGenInput } from "@/lib/genAssetInput";
 import type { Project } from "@/lib/workbench/studio";
 import {
   AUDIO_SECONDS,
-  BILLING_LABELS,
   COMPOSER_TYPES,
   TYPE_LABELS,
   audioSeconds,
-  type BillingSource,
   type ComposerType,
 } from "@/lib/workspace/composer";
 import { useComposer } from "@/lib/workspace/use-composer";
-import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useSecondsField } from "@/lib/workspace/use-seconds-field";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Button, Field, Input, Segmented, Select } from "./ui";
@@ -51,8 +48,6 @@ export function GenerateComposer({
   const ws = useWorkspace();
   const open = ws.state.composer;
   const composer = useComposer({ scope, open, project, onProject, workspaceName });
-  /* The connected account is the owner's: a member is not offered it (idea 19). */
-  const { owner } = useConnectedCapability(scope, { read: false });
   const panel = useRef<HTMLDivElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const prompt = useRef<HTMLTextAreaElement | null>(null);
@@ -211,18 +206,7 @@ export function GenerateComposer({
               </Field>
             ) : null}
 
-            {/* Billing: this workspace's credits by default, the connected account as a switch — the owner's alone. */}
-            {owner ? <Field label="Credits">
-              {() => (
-                <Segmented<BillingSource>
-                  label="Credits used"
-                  fill
-                  value={state.billing}
-                  onChange={(value) => composer.dispatch({ type: "billing", value })}
-                  options={(["workspace", "connected"] as BillingSource[]).map((source) => ({ id: source, label: BILLING_LABELS[source] }))}
-                />
-              )}
-            </Field> : null}
+            {/* Billing: this workspace's credits. A signed-in account's catalogue is not offered (28 Sep 2026: API-key and direct engines only). */}
             <p className="pxw-composer-billing" data-testid="composer-billing">{composer.wording}</p>
 
             {state.type === "audio" ? null : (

@@ -361,7 +361,22 @@ retains both. Provider acceptance without durable handle persistence requires
 support investigation; automated recovery cannot safely invent the missing
 provider ID.
 
+### Rig master locks
+
+Every tenant snapshot includes `element_lock_events`, the append-only history of
+each element lock and unlock (the Rig's locked masters): who, when, whether
+Atomik did it, the reason an unlock gave, and a snapshot of what the lock froze
+(each attribute's current version with the sha256 of its source). The element
+row itself keeps only its last lock state, and `attribute_versions.sha256` keeps
+the hash recorded when a lock first froze that version. Nothing in either is paid
+or priced. Restore both with the elements they describe; never edit or delete
+history rows. A master whose source was changed or re-rendered after a restore is
+reported by the Rig's source check against the restored snapshot, not repaired
+by rewriting it.
+
 ### Higgsfield consumer jobs
+
+> **Sign-in retired 28 September 2026.** Particl uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10), so it no longer connects to a Higgsfield account. `higgsfield_consumer_jobs` stays in every snapshot as history and the dispositions below still describe restored rows, but a disposition that needs the old connection is reconciled from the saved receipt and the provider's own records, never by signing in again.
 
 Every tenant snapshot includes `higgsfield_consumer_jobs`, its immutable payload
 and quote fingerprints, original asset IDs, OAuth connection generation,
@@ -402,6 +417,82 @@ allocation; for confirmed rejection/refund use the existing idempotent ledger
 path. Never rebuild balances from a sum of grants or edit lot balances by hand.
 Credits that expired or changed funding source after the backup need reconciliation
 against the original event and incident interval, not a new paid action.
+
+### Rig Verify checks
+
+Every tenant snapshot includes `take_verifications`: each finished check of a
+take against its masters (the Rig's Verify card), with the key it is stored
+under (the take, digests of its master set and frame points, the rubric), the
+masters and frames it used, each check's verdict and reasons, the judge model,
+the development job that ran it (its meter event) and the credits it was
+charged. The table is created the first time a check is asked for, so older
+snapshots simply lack it. A row is written in the same database write that
+marks its job succeeded, so a restored job and its row agree. Never edit or
+delete rows to "re-run" a check; a new master version is a new key, and a
+check still marked running after a restore follows the development-job rules
+above (an uncertain phase is never resubmitted).
+
+### Rig canvas operations
+
+Opening an old Rig board in the new Rig never writes the board itself: its
+nodes, wires and `updated_at` stay as they were. Two nullable columns on
+`boards`, `imported_at` and `imported_to`, record when its cards last came
+across and which production's team canvas holds them; the cards carry
+`imported` (the board and card each came from), and each batch is an `import`
+row in `rig_canvas_ops`, below. After a restore, opening a board again is
+safe: cards are keyed by stable ids, so nothing is made twice and a card
+someone took off stays off.
+
+Every tenant snapshot includes `rig_canvas_ops`, the append-only record of each
+change the server made to a production's shared Rig canvas (a Tidy, an Atomik
+run's cards): who asked, the run, each card's fields before and after, and
+whether the live room has taken it. The table is created the first time the
+server changes a canvas, so older snapshots simply lack it. Nothing in it is
+paid or priced. A row still marked `pending` after a restore is safe to push
+again: a pushed change lands in the live room only where the room still holds
+what the canvas had before it, and a room with no canvas is started from the
+restored `workbench_team_canvas` by the first window that opens it. Never
+delete rows to "clear" the outbox; a row that cannot be pushed only stays
+pending, and the saved canvas is already correct.
+
+### Atomik board runs
+
+Every tenant snapshot includes `rig_agent_runs` and `rig_agent_steps`: each
+time someone asked Atomik to build a production's Rig board, the request, the
+proposal the person approved (and its fingerprint), the run's state, and each
+step's batch of canvas operations with what became of them. Both tables are
+created the first time someone asks, so older snapshots simply lack them.
+Placing cards is free. A run also records the limit the person approved for it
+(and every raise), and each render after the build records its price, who
+approved it, its request key (saved before anything was sent), the job it made
+and the credits reserved and settled; these columns are added to an older
+table when the workspace next uses it. After a restore, a run still marked
+`planning`, `running`, `paused` or `needs_you` is safe to wake: a step applied
+again changes nothing, because its canvas op id is already in
+`rig_canvas_ops`; a planning turn that had started is not sent again (the run
+asks the person to ask again, and its reserved planning charge is released);
+and a render whose key was saved is asked about by that key — followed if it
+landed, fenced if it never arrived — and never sent again. The charges
+themselves live in the platform ledger: each reservation names its run
+(`generation_reservations.run_id`, with its band in `run_band`), and a run's
+limit is counted from there. Never delete runs, steps or reservations; an undo
+takes a build's cards off the canvas softly and records itself on the run.
+
+### Atomik skills
+
+Every tenant snapshot includes `atomik_skills` and `atomik_skill_versions`:
+the runs a workspace saved as skills (lib/atomikSkills.ts). Each row carries
+`workspace_id`; the first holds a skill's current name, command, who sees it
+(personal or workspace), its maker, its current version and whether it is
+archived, and the second holds every version as it was saved, append-only.
+A version is a template: steps with their engines and settings, and named
+parameters with their defaults. Nothing in either table is paid, priced or
+produced; running a skill files ordinary proposals in `atomik_chats`,
+`atomik_messages` and `atomik_steps`, each approved on its own. Both tables
+are created the first time a workspace reads or saves a skill, so older
+snapshots simply lack them. Archive is a flag on the skill's row, never a
+delete: restore it from the snapshot as it is, and never remove a version to
+"tidy" a skill's history.
 
 ## Verification evidence
 

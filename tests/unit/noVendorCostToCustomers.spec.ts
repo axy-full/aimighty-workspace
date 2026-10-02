@@ -75,6 +75,8 @@ async function seed(ws: TenantWorkspace) {
       { sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES('s_margin','p_margin','SH010',?,?)", args: [at, at] },
       { sql: take, args: ["g_take", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "A harbour at dawn", JSON.stringify({ resolution: "1080p", duration: 5, ...INTERNALS }),
         "u_member", at, at, "byteplus", COST.take, COST.writer, "anthropic/claude-test", "tok_margin", "/api/media/g_take", 244800] },
+      { sql: take, args: ["g_failed", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Failed harbour", "{}",
+        "u_member", at + 10, at + 10, "xai", null, null, null, null, null, null] },
       { sql: take, args: ["g_still", "p_margin", "s_margin", "image", "gemini-3.1-flash-image", "A crane at dusk", "{}",
         "u_owner", at + 1, at + 1, "google", COST.still, null, null, null, "/api/media/g_still", null] },
       { sql: take, args: ["g_dub", "p_margin", null, "audio", "eleven_dubbing_v1", "Dub · harbour → French",
@@ -101,6 +103,25 @@ async function seed(ws: TenantWorkspace) {
               VALUES(?,?,'wb_margin','Land the harbour open','{}','grok-test',1,?,?,?,?)`,
         args: [`crew_${u.id}`, u.id, ws.usesPlatformKeys ? 1 : null, COST.turn, u.id, at],
       })),
+    ], "write");
+    await db().execute({ sql: "UPDATE generations SET status='failed',error=?,provider_outcome=? WHERE id='g_failed'", args: [
+      `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
+      JSON.stringify({ v: 1, provider: "xai", stage: "run", code: "content_moderated", kind: "content_filter",
+        message: `Provider cost $${COST.take}; token=sk-private1234567890abcdefghijklmnop`,
+        billing: { state: "billed", amount: COST.take, unit: "usd", basis: "xai-ticks" }, funding: "platform", at }),
+    ] });
+  });
+  /* A workspace skill saved from that plan: a template of its steps, engines and settings, never a figure. */
+  const { skillsReady } = await import("../../lib/atomikSkills");
+  await runInTenant(ws, async () => {
+    await skillsReady();
+    const template = { parameters: [{ key: "place", label: "Place", default: "harbour" }],
+      steps: [{ kind: "video", title: "Harbour wide", prompt: "A {{place}} at dawn", model: DEFAULT_MODEL_ID, params: { seconds: 5, ratio: "16:9", resolution: "1080p" } }] };
+    await db().batch([
+      { sql: `INSERT INTO atomik_skills(workspace_id,id,slug,name,description,scope,owner_id,version,status,source_chat_id,created_at,updated_at)
+              VALUES(?,'skl_margin01','harbour-plan','Harbour plan','A wide for any place.','workspace','u_member',1,'active','ach_margin',?,?)`, args: [ws.id, at, at] },
+      { sql: `INSERT INTO atomik_skill_versions(workspace_id,skill_id,version,name,slug,description,scope,template,note,created_by,created_at)
+              VALUES(?,'skl_margin01',1,'Harbour plan','harbour-plan','A wide for any place.','workspace',?,'Saved from a run','u_member',?)`, args: [ws.id, JSON.stringify(template), at] },
     ], "write");
   });
   await platformReady();
@@ -130,12 +151,18 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/shots", file: "app/api/shots/route.ts", url: "/api/shots?projectId=p_margin", ownKeys: true },
   { name: "GET /api/productions", file: "app/api/productions/route.ts", url: "/api/productions", ownKeys: true },
   { name: "GET /api/jobs", file: "app/api/jobs/route.ts", url: "/api/jobs?sync=0", ownKeys: true },
+  { name: "GET /api/jobs/[id] (a failed provider job)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_failed?sync=0", params: { id: "g_failed" } },
   { name: "GET /api/jobs/[id] (a dub)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_dub?sync=0", params: { id: "g_dub" } },
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },
   { name: "GET /api/atomik/steps/[id]", file: "app/api/atomik/steps/[id]/route.ts", url: "/api/atomik/steps/ast_margin", params: { id: "ast_margin" } },
+  { name: "GET /api/atomik/memory", file: "app/api/atomik/memory/route.ts", url: "/api/atomik/memory?projectId=p_margin", scoped: true },
+  { name: "GET /api/atomik/skills", file: "app/api/atomik/skills/route.ts", url: "/api/atomik/skills" },
+  { name: "GET /api/atomik/skills?runs=1", file: "app/api/atomik/skills/route.ts", url: "/api/atomik/skills?runs=1&projectId=p_margin" },
+  { name: "GET /api/atomik/skills/[id]", file: "app/api/atomik/skills/[id]/route.ts", url: "/api/atomik/skills/skl_margin01", params: { id: "skl_margin01" } },
+  { name: "GET /api/atomik/skills/[id]?version=1", file: "app/api/atomik/skills/[id]/route.ts", url: "/api/atomik/skills/skl_margin01?version=1", params: { id: "skl_margin01" } },
   { name: "GET /api/analytics", file: "app/api/analytics/route.ts", url: "/api/analytics", ownKeys: true },
   { name: "GET /api/usage", file: "app/api/usage/route.ts", url: "/api/usage" },
   { name: "GET /api/usage?rows=1", file: "app/api/usage/route.ts", url: "/api/usage?rows=1" },

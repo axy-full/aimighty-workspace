@@ -164,8 +164,12 @@ test("a card carries the spec chip, the prompt, the author and the settled cost"
   const live = makeCard(gen({ id: "b", status: "queued", creditsBilled: null }), NOW);
   expect(live.cost).toBeNull();
   expect(live.rendering).toBe(true);
-  /* Failed: said, not hidden, and not billed. */
-  expect(makeCard(gen({ id: "c", status: "failed", creditsBilled: 0 }), NOW).cost).toBe("not billed");
+  /* Failed: said, not hidden — "not billed" only when the ledger confirms it, nothing claimed otherwise. */
+  const ledger = (credits: number, settled = true) => ({ provider: null, stage: null, code: "unknown", kind: "unknown" as const, message: null, billing: null, payer: "platform" as const, charge: { credits, settled } });
+  expect(makeCard(gen({ id: "c", status: "failed", creditsBilled: 0, failure: ledger(0) }), NOW).cost).toBe("not billed");
+  expect(makeCard(gen({ id: "c2", status: "failed", creditsBilled: 12, failure: ledger(12) }), NOW).cost).toBe("12 cr");
+  expect(makeCard(gen({ id: "c3", status: "failed", creditsBilled: 0 }), NOW).cost).toBeNull();
+  expect(makeCard(gen({ id: "c4", status: "failed", creditsBilled: 0, failure: ledger(0, false) }), NOW).cost).toBeNull();
   /* No recorded author: the age alone rather than an invented name. */
   expect(makeCard(gen({ id: "d", authorName: null }), NOW).by).toBe("12 min");
 });

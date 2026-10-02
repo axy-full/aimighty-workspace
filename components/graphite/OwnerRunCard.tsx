@@ -1,10 +1,9 @@
 "use client";
 import type { GenPreset } from "@/lib/shell/assets";
 import {
-  ALTERNATIVE_LABEL, OWNER_RUNS, alternativePrice, ownerRunEyebrow, ownerRunTitle, type OwnerRunSurface,
+  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, HISTORY_KEPT, OWNER_RUNS, alternativePrice, ownerRunEyebrow, type OwnerRunSurface,
 } from "@/lib/shell/connected-capability";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
-import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useStudioAlternative } from "@/lib/shell/use-studio-alternative";
 import { useShell } from "@/lib/shell/state";
 import { Glyph } from "./icons";
@@ -20,29 +19,29 @@ export function openGenOn(shell: ReturnType<typeof useShell>, preset: GenPreset)
 }
 
 /**
- * What a member sees where the owner's Higgsfield account would run (idea
- * 19): who runs those tools, by name, and — where a Studio engine makes the
- * same kind of thing — that engine on this workspace's credits at its exact
- * price, with the way into Gen. One card, no connect prompt, nothing read
- * from the account. `page` stands in for a whole page (Business, Viral);
- * without it the card sits inside a page that still works for a member
- * (Cast, Edit & Sound).
+ * What everyone sees where the connected Higgsfield account used to run: the
+ * sign-in is retired (lib/higgsfield-consumer/retired.ts), so the card says
+ * what ran there, that Particl no longer signs in to Higgsfield and that past
+ * results stay in the Library — and, where a Studio engine makes the same
+ * kind of thing, that engine on this workspace's credits at its price, with
+ * the way into Gen. One card, no connect prompt, nothing read from the
+ * account. `page` stands in for a whole page (Business, Viral); without it
+ * the card sits inside a page that still works (Cast).
  */
 export function OwnerRunCard({ surface, scope, aspect, tools, page = false }: {
   surface: OwnerRunSurface; scope: string; aspect?: string | null; tools?: readonly string[]; page?: boolean;
 }) {
   const shell = useShell();
-  const { ownerName } = useConnectedCapability(scope, { read: false });
   const run = OWNER_RUNS[surface];
   const alt = run.alternative;
   const studio = useStudioAlternative(alt ? scope : null, alt?.type ?? null, aspect);
   const priced = studio.model ? alternativePrice(studio.model.label, studio.price) : null;
-  const title = ownerRunTitle(ownerName);
+  const title = ACCOUNT_RETIRED;
   const card = (
     <section className="gx-gen-card gx-owner-run" aria-label={title} data-testid={`owner-run-${surface}`} data-section={surface === "cast" ? "soul" : undefined}>
       <span className="gx-owner-run-eyebrow" data-functional-label=""><Glyph name="key" size={13} className="gx-glyph" />{ownerRunEyebrow(surface, tools)}</span>
       <h2 className="gx-workflow-title" data-testid={`owner-run-${surface}-title`}>{title}</h2>
-      <p className="gx-owner-run-line">{run.line}</p>
+      <p className="gx-owner-run-line">{run.line} {HISTORY_KEPT}</p>
       {alt ? (
         <div className="gx-owner-run-alt" data-testid={`owner-run-${surface}-alt`}>
           <span className="gx-owner-run-label" data-functional-label="">{ALTERNATIVE_LABEL}</span>

@@ -11,6 +11,8 @@ import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
+import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
+import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
  * Atomik on a phone (design/particl-v2-mobile/README.md; board M3, live):
@@ -43,12 +45,14 @@ export default function AtomikSheet() {
   }, [cur]);
   const close = () => setAtomikRail("closed");
   const expanded = rail.state === "expanded";
-  const step: Step | null = cur.kind === "checkpoint" ? cur.step : cur.kind === "plan" ? (cur.steps.find((s) => s.status === "proposed") ?? null) : null;
+  const step: Step | null = cur.kind === "checkpoint" ? cur.step : cur.kind === "plan" ? (cur.steps.find((s) => s.status === "proposed" && !a.isReadOnly(s)) ?? null) : null;
+  /* An older plan made only of steps on the connected account: shown, read-only, with nothing to approve. */
+  const readOnly = cur.kind === "plan" && cur.steps.every(a.isReadOnly);
   const done = cur.kind === "checkpoint" ? cur.done : cur.kind === "done" ? cur.steps : a.plan.filter((s) => s.status === "done");
   const spent = cur.kind === "checkpoint" || cur.kind === "done" ? cur.spentCredits : 0;
   const total = a.plan.length;
   const context = total ? `${done.length} of ${total}` : a.chat?.title ?? null;
-  const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : "Nothing needs you";
+  const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : readOnly ? "Read-only" : "Nothing needs you";
   const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none";
   const action = "tap44 flex h-[34px] items-center rounded-ctl border border-border-mid px-[10px] text-[12.5px] font-medium leading-none text-ink";
 
@@ -68,12 +72,14 @@ export default function AtomikSheet() {
             </div>
           ))}
           {a.plan.length > 0 && (
-            <div className="overflow-hidden rounded-card border border-border-mid bg-card" role="list" aria-label="Plan">
+            /* shrink-0: clipped for its corners, the list would otherwise be squeezed to nothing once the conversation fills the sheet. */
+            <div className="shrink-0 overflow-hidden rounded-card border border-border-mid bg-card" role="list" aria-label="Plan">
               {a.plan.map((s, i) => {
                 const at = step?.id === s.id;
                 return (
                   <div key={s.id} role="listitem">
-                    <div className={`grid h-[48px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${at ? "bg-selected" : ""}`}>
+                    <div title={a.isReadOnly(s) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(s) ? "" : undefined} data-library-step={keyStepFamily(s.model) ?? undefined}
+                      className={`grid h-[48px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${at ? "bg-selected" : ""}`}>
                       <span className="ui-mono tracking-normal text-ink-muted">{String(i + 1).padStart(2, "0")}</span>
                       <span className="flex min-w-0 flex-col gap-[4px]"><span className="truncate text-[13px] font-medium leading-[1.2] text-ink">{s.title}</span><Mono className="truncate">{a.engineLabel(s.model)}</Mono></span>
                       <Mono cost tone="ink">{a.priceLabel(s)}</Mono>
@@ -96,21 +102,22 @@ export default function AtomikSheet() {
             : "Nothing needs you."}
         </span>
         <span className="text-[14px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>
-          {step ? `Next: ${step.title.toLowerCase()} on ${a.engineLabel(step.model)}.`
+          {step ? `Next: ${step.title.toLowerCase()} on ${a.engineLabel(step.model)}.${keyStepInputsLine(step) ? ` ${keyStepInputsLine(step)}` : ""}`
             : cur.kind === "question" ? "Pick a response, then review the planning estimate below."
             : cur.kind === "planning" ? "Atomik is working out what to render."
             : cur.kind === "done" ? `${done.length} ${done.length === 1 ? "take" : "takes"} on the grid; approve them there.`
+            : readOnly ? ACCOUNT_STEP_NOTE
             : "Ask below, or open a project and Atomik plans it from there."}
         </span>
         {step && (
           <>
             <button type="button" onClick={() => a.approve(step)} disabled={a.busy || !a.approvable(step)} data-continue=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
-              Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.approveLabel(step)}</span>
+              Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.priceLabel(step)}</span>
             </button>
-            {a.stepQuoteError && !a.isConnected(step) && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
+            {a.stepQuoteError && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.stepQuoteError}</span>}
             <span className="flex gap-[8px]">
-              {!a.isConnected(step) && <button type="button" className={`${secondary} text-ink`} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>}
+              <button type="button" className={`${secondary} text-ink disabled:opacity-60`} disabled={!engineChoices(a.engines, step).length} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>
               <button type="button" className={`${secondary} text-ink-body`} onClick={() => a.stop(step)} disabled={a.busy}>Stop here</button>
             </span>
             <Mono className="text-center">{a.fmt(spent)} of {a.fmt(a.totals.total)}{a.totals.unpriced ? ` + ${a.totals.unpriced} at checkpoint` : ""}{a.totals.planning ? ` · planning ${a.fmt(a.totals.planning)}` : ""}</Mono>
@@ -125,7 +132,7 @@ export default function AtomikSheet() {
             not start — so a phone is told, as the rail tells a desktop. */}
         {a.error && <span role="alert" className="text-[13px] leading-[1.45] text-ink-body">{a.error}</span>}
       </div>
-      {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={a.engines.filter((e) => e.kind === engineMenu.step.kind && !e.connected).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
+      {engineMenu && <Menu x={engineMenu.x} y={engineMenu.y} title="Engine" items={engineChoices(a.engines, engineMenu.step).map((e): MenuItem => ({ kind: "item", label: e.label, onSelect: () => a.changeEngine(engineMenu.step, e.id) }))} onClose={() => setEngineMenu(null)} />}
     </Sheet>
   );
 }

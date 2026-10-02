@@ -102,7 +102,7 @@ export type GatewayReply = { ok: boolean; status: number; text: string };
  */
 export async function gatewayPost(
   body: string,
-  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" } = {},
+  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" } = {},
 ): Promise<GatewayReply> {
   if (engineMock()) return mockCompletion(opts.mock ?? "prompt", body);
   const input = JSON.parse(body) as Record<string, unknown>;
@@ -129,7 +129,7 @@ export async function gatewayPost(
  */
 export type ChatCall = {
   model: string; system: string; user: string; maxTokens?: number;
-  auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots";
+  auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory";
 };
 
 /** The body of one chat call. Pure, so the shape can be read in a test. */

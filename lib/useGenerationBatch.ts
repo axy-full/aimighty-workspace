@@ -223,7 +223,7 @@ export function useGenerationBatch(surface: string, active: boolean) {
               }
             });
             const each = (n: number) => (batch.display.unit === "usd" ? `$${n.toFixed(2)}` : `${n.toLocaleString("en-US")} cr`);
-            throw new Error(`The price is now ${each(outcome.price)} a take; this batch was approved at ${each(approved.price)}. Its remaining takes were not sent, and nothing was charged for them.`);
+            throw new Error(`The estimate is now about ${each(outcome.price)} a take; this batch was approved at about ${each(approved.price)}. Its remaining takes were not sent, and nothing was charged for them.`);
           }
           if (how === "ask") {
             /* Set aside there, never made: it goes again under a new key, at the price the batch showed. */

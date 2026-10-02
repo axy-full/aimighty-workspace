@@ -1,18 +1,23 @@
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
-import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem } from "@/lib/genjutsu";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
+import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
+import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
+import { scheduleHiggsfieldPricingCheck } from "@/lib/higgsfieldPricingWatch";
 import {
   generatedReferenceSeconds,
   videoReferenceSeconds,
 } from "@/lib/referenceDuration";
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
 import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
-import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
+import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput, MARKETING_25_PRICING_WATCH } from "@/lib/higgsfieldMarketing";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
+import { isSoulRenderBatch, isSoulRenderModel } from "@/lib/soulRenderTypes";
+import { estimateSoulRender, soulRenderInput, SoulRenderError } from "@/lib/soulRender";
 
 import { allowanceCheck, paidByPlatform, renderKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
@@ -72,7 +77,12 @@ import {
   heldCount,
   notifyHeld,
   HELD_LIMIT,
+  holdForPool,
+  poolHold,
+  type HeldInfo,
 } from "@/lib/held";
+import { POOL_QUEUED, SHARED_POOL, poolAdmission, queueForPool, releasePoolWaiters, type PoolVerdict } from "@/lib/providerPool";
+import { POOL_BUSY_FOR_RUN } from "@/lib/sharedKeyTerms";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
@@ -105,6 +115,7 @@ import {
   claimBinding,
   reserveGenerationSpend,
   SpendReservationError,
+  ProviderPoolBusyError,
 } from "@/lib/generationRequests";
 
 import type {
@@ -289,6 +300,30 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
 }
 
 /**
+ * Generate parked a take behind the platform's shared provider pool: it joins
+ * the pool's line (from the moment it was held) and the person hears it is
+ * queued. Nothing was reserved or sent; it starts, once, when a slot frees.
+ * When slots are free but other takes are ahead of it, the line is asked to
+ * move now rather than at the next settlement.
+ */
+async function inPoolLine(
+  genId: string,
+  hold: HeldInfo,
+  verdict: PoolVerdict | null,
+  defer: AdmissionExecution["defer"],
+  alreadyQueued = false,
+): Promise<AdmissionReply> {
+  if (!alreadyQueued)
+    await queueForPool(SHARED_POOL, { id: genId, workspaceId: requireTenant().id, queuedAt: hold.at }).catch(() => {});
+  if (verdict && !verdict.admit && verdict.why === "line")
+    await Promise.resolve(defer(async () => { await releasePoolWaiters(); })).catch(() => {});
+  return admissionReply(
+    { id: genId, status: "held", held: true, why: "slots", notices: [POOL_QUEUED] },
+    { status: 202 },
+  );
+}
+
+/**
  * Must this job have a confirmed price before it is admitted?
  *
  * A quote (the checkpoint) never states a price nobody can compute. Neither
@@ -444,6 +479,16 @@ export async function executeGenerationAdmission(
       const draft = await readDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
     }
+    const cinema = isCinemaStudioModel(modelId);
+    // The deploy-time switch (HF_CINEMA_STUDIO_ENABLED=0) stops new takes; accepted ones still collect.
+    if (cinema && !cinemaStudioEnabled())
+      return admissionReply({ error: "Cinema Studio is switched off on this platform right now." }, { status: 503 });
+    /* Cinema Studio's creative controls: only its documented parameters and values, only on its own engine.
+       They direct the shot and never enter the price (lib/cinemaStudio.ts). */
+    if (body.cinema != null && !cinema)
+      return admissionReply({ error: "Cinema Studio’s controls need the Cinema Studio 4.0 engine." }, { status: 400 });
+    const cinemaControls = readCinemaControls(body.cinema);
+    if (!cinemaControls.ok) return admissionReply({ error: cinemaControls.error }, { status: 400 });
     if (model.marketing && !options.checkpoint)
       return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
@@ -458,14 +503,29 @@ export async function executeGenerationAdmission(
     }))) return admissionReply({ error: "Choose up to 16 saved image uploads or generations; external URLs are not accepted." }, { status: 400 });
     let soulBinding: Awaited<ReturnType<typeof requireReadySoulIdentity>> | undefined;
     let soulStrength: number | undefined;
+    let soulBatch: number | undefined;
+    /* Soul Standard / Soul 2 / Soul Cinema on the platform's key: a live estimate of the exact request, 1 or 4 stills. */
+    const soulRender = isSoulRenderModel(modelId);
     if (model.soulIdentity) {
-      if (!soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
+      if (soulRender && !options.checkpoint)
+        return admissionReply({ error: "Review a live Soul render quote before submitting this take." }, { status: 400 });
+      if (!soulRender && !soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
       if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready identity before generating." }, { status: 400 });
       soulStrength = body.soulStrength ?? 1;
-      if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1) return admissionReply({ error: "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+      if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1 || (soulRender && soulStrength === 0))
+        return admissionReply({ error: soulRender ? "Likeness strength is above 0 and at most 1." : "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+      if (soulRender) {
+        soulBatch = body.soulBatch ?? 1;
+        if (!isSoulRenderBatch(soulBatch)) return admissionReply({ error: "A Soul render makes 1 or 4 stills." }, { status: 400 });
+      } else if (body.soulBatch != null) return admissionReply({ error: "Only Soul Standard, Soul 2 and Soul Cinema render a batch." }, { status: 400 });
       try { soulBinding = await requireReadySoulIdentity(body.soulIdentityId, body.projectId ? String(body.projectId) : undefined, body.workbenchProjectId ? String(body.workbenchProjectId) : undefined); }
       catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That identity is unavailable." }, { status: 400 }); }
-    } else if (body.soulIdentityId != null) {
+      /* An identity renders only with the family it was trained for, and only once trained on the production host. */
+      if (soulRender && soulBinding.renderModel !== modelId)
+        return admissionReply({ error: soulBinding.renderModel
+          ? `This Soul ID renders with ${getModel(soulBinding.renderModel).label}.`
+          : "This Soul ID was trained on the earlier host and cannot render here. It stays in the workspace, read-only." }, { status: 409 });
+    } else if (body.soulIdentityId != null || body.soulBatch != null) {
       return admissionReply({ error: "This engine cannot use a trained identity. Choose the identity engine or use the reference image." }, { status: 400 });
     }
     // No key, no row: better a 400 now than a "running" render that fails later.
@@ -720,14 +780,15 @@ export async function executeGenerationAdmission(
         notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {
-        try {
-          genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes);
-          const problem = genjutsuSourceProblem(genjutsuSource.seconds);
-          if (problem) throw new Error(problem);
-          sourceSeconds = genjutsuSource.seconds;
-          sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
-          sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
-        } catch { return admissionReply({ error: "Transform needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
+        try { genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes); }
+        catch { return admissionReply({ error: `Transform needs a readable original video between ${GENJUTSU_LIMITS.minSeconds} and ${GENJUTSU_LIMITS.maxSeconds} seconds, no larger than 200 MB.` }, { status: 400 }); }
+        // Refused before any estimate: the documented source floor, and Object Swap's pixel floor.
+        const problem = genjutsuSourceProblem(genjutsuSource.seconds) ??
+          genjutsuFrameProblem(modelId, genjutsuSource.width, genjutsuSource.height);
+        if (problem) return admissionReply({ error: problem }, { status: 400 });
+        sourceSeconds = genjutsuSource.seconds;
+        sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
+        sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
       }
       // A stored render without a recorded ratio or length (a connected-account
       // render, or one from before the columns) is measured once from the
@@ -817,6 +878,8 @@ export async function executeGenerationAdmission(
     )
       params.ratio = sourceRatio;
     if (task.id === "edit" && sourceSeconds) params.duration = sourceSeconds;
+    /* Kept on the take as checked: dispatch sends exactly these (lib/cinemaStudio.ts › cinemaStudioInput) and Recreate brings them back. */
+    if (cinema && Object.keys(cinemaControls.controls).length) params.cinema = cinemaControls.controls;
 
     /* ── Reference images ────────────────────────────────────────────── */
     const wanted: { uploadId: string; role: ImageRole }[] = Array.isArray(
@@ -892,7 +955,9 @@ export async function executeGenerationAdmission(
         }
         if (row.kind === "audio") {
           return admissionReply(
-            { error: "A sound can't be a visual reference." },
+            { error: cinema
+              ? "Cinema Studio takes sound references as WAV files uploaded to this workspace. Generated sounds are MP3: upload a WAV instead."
+              : "A sound can't be a visual reference." },
             { status: 400 },
           );
         }
@@ -959,23 +1024,45 @@ export async function executeGenerationAdmission(
       }
 
       // The KIND is the database's word, never the client's: a video row is a
-      // reference_video no matter what role the request claimed.
+      // reference_video no matter what role the request claimed, and a sound
+      // row is a reference_audio.
       const enriched = wanted.map((w) => {
         const row = byId.get(w.uploadId)!;
-        const kind = row.kind === "video" ? "video" : "image";
+        const kind = row.kind === "video" ? "video" : row.kind === "audio" ? "audio" : "image";
         return {
           uploadId: w.uploadId,
-          role: (model.kind === "image"
-            ? "reference_image"
-            : kind === "video"
-              ? "reference_video"
-              : w.role === "reference_video"
-                ? "reference_image"
-                : w.role) as ImageRole,
+          role: (kind === "audio"
+            ? "reference_audio"
+            : model.kind === "image"
+              ? "reference_image"
+              : kind === "video"
+                ? "reference_video"
+                : w.role === "reference_video"
+                  ? "reference_image"
+                  : w.role) as ImageRole,
           kind,
           durationS: row.duration_s,
         };
       });
+
+      /* Sound references are Cinema Studio's alone: WAV uploads of this workspace (the provider
+         documents WAV as its audio input), each with a measured length, within its documented
+         count and its 30-second sound budget. They are cited as @Audio1… and never priced: the
+         published formula counts no audio input. */
+      const sounds = enriched.filter((r) => r.kind === "audio");
+      if (sounds.length) {
+        if (!cinema)
+          return admissionReply({ error: "A sound can't be a visual reference." }, { status: 400 });
+        if (sounds.length > CINEMA_STUDIO_LIMITS.maxAudios)
+          return admissionReply({ error: `Cinema Studio takes up to ${CINEMA_STUDIO_LIMITS.maxAudios} sound references.` }, { status: 400 });
+        if (sounds.some((s) => !isCinemaStudioAudioMime(byId.get(s.uploadId)!.mime)))
+          return admissionReply({ error: "Cinema Studio takes sound references as WAV files. Upload the sound as a WAV." }, { status: 400 });
+        if (sounds.some((s) => !(typeof s.durationS === "number" && Number.isFinite(s.durationS) && s.durationS > 0)))
+          return admissionReply({ error: "A sound reference's length is unavailable. Upload it again before generating." }, { status: 400 });
+        const soundSeconds = sounds.reduce((sum, s) => sum + Number(s.durationS), 0);
+        if (soundSeconds > CINEMA_STUDIO_LIMITS.maxAudioSeconds)
+          return admissionReply({ error: `Sound references total ${soundSeconds.toFixed(1)} s. Cinema Studio takes ${CINEMA_STUDIO_LIMITS.maxAudioSeconds} s combined.` }, { status: 400 });
+      }
 
       if (model.kind === "image") {
         if (enriched.some((r) => r.kind === "video")) {
@@ -995,7 +1082,8 @@ export async function executeGenerationAdmission(
           );
         }
       }
-      referenceDurations.push(...enriched);
+      // Sound is outside the video engines' reference rules and seconds (checked above, for Cinema Studio).
+      referenceDurations.push(...enriched.filter((r) => r.kind !== "audio"));
 
       // Preserve the order the user arranged — @Image1 is the first image.
       references = enriched.map((w) => {
@@ -1006,7 +1094,7 @@ export async function executeGenerationAdmission(
           ext: row.ext,
           storedUrl: row.stored_url,
           role: w.role,
-          kind: w.kind as "image" | "video",
+          kind: w.kind as Reference["kind"],
           deliveryUrl: row.derivative_url ?? null,
         };
       });
@@ -1125,6 +1213,8 @@ export async function executeGenerationAdmission(
       const rolesProblem = videoReferenceProblem(model, references, params.resolution);
       if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
     }
+    if (cinema && references.some((r) => r.role === "first_frame" || r.role === "last_frame"))
+      return admissionReply({ error: "Cinema Studio takes reference stills and clips, cited in the prompt. It has no first or last frame." }, { status: 400 });
 
     /* Motion control moves a character: it needs the still as well as the clip. */
     if (task.needsImage && !references.some((r) => r.kind === "image")) {
@@ -1151,6 +1241,8 @@ export async function executeGenerationAdmission(
     if (model.kind === "image") {
       if (model.marketing && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
         return admissionReply({ error: "Choose a supported Marketing Studio size and aspect." }, { status: 400 });
+      if (soulRender && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
+        return admissionReply({ error: "Choose 720p or 1080p and a supported aspect ratio." }, { status: 400 });
       const ratio = model.ratios.includes(body.ratio)
         ? String(body.ratio)
         : model.ratios[0];
@@ -1241,9 +1333,17 @@ export async function executeGenerationAdmission(
       if (marketing) {
         await requireMarketingPreset(marketing);
         marketingFingerprint = higgsfieldCredentialFingerprint();
-        marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
+        const variant = marketing.variant ?? "alpha";
+        marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)), variant);
+        // A 2.5 build is quoted approximately from its published rates: now and then, check them.
+        if (variant !== "alpha") scheduleHiggsfieldPricingCheck(MARKETING_25_PRICING_WATCH[variant]);
       }
-      const estStillUsd = marketingUsd ?? (trained
+      /* The provider's own estimate of exactly this request; no number, no render (SoulRenderError below). */
+      const soulRenderUsd = soulRender && soulBinding
+        ? await estimateSoulRender(modelId, soulRenderInput(modelId, { prompt: stillPrompt, referenceId: soulBinding.providerReferenceId,
+            strength: soulStrength!, batch: soulBatch!, resolution: size, ratio }))
+        : undefined;
+      const estStillUsd = marketingUsd ?? soulRenderUsd ?? (trained
         ? renderUsdForRatio(ratio)
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
@@ -1295,6 +1395,10 @@ export async function executeGenerationAdmission(
         return admissionReply({ error: limStill.error }, { status: 429 });
       if (!holdStill && !limStill.allow)
         holdStill = heldInfo(estStillUsd, "image", modelId, "slots");
+      /* On the platform's shared provider key, a take also needs a slot of its pool (lib/providerPool.ts). */
+      const lineStill = holdStill ? null : await poolAdmission(billedTo(model.provider), "image", requireTenant().id);
+      if (lineStill && !lineStill.admit)
+        holdStill = poolHold(heldInfo(estStillUsd, "image", modelId, "slots"));
       const quotaStill = await checkQuota(0);
       if (!quotaStill.allow)
         return admissionReply({ error: quotaStill.error }, { status: 507 });
@@ -1306,10 +1410,11 @@ export async function executeGenerationAdmission(
           },
           { status: 400 },
         );
-      /* A trained likeness is priced as its own render; Marketing Studio by its live estimate. */
+      /* A trained likeness is priced as its own render; Marketing Studio by its live estimate (2.0) or its published rates (2.5). */
       if (
         !trained &&
         !model.marketing &&
+        !soulRender &&
         !estimateImageCostUsd(modelId, size, stillRefs.length) &&
         needsConfirmedPrice(options, model.provider)
       )
@@ -1354,7 +1459,7 @@ export async function executeGenerationAdmission(
               shotId: stillShot,
               createdBy: got.user.id,
             },
-            { token: got.token },
+            { token: got.token, run: options.run },
           );
         } catch (e) {
           await meter({
@@ -1398,6 +1503,7 @@ export async function executeGenerationAdmission(
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
+          ...(soulRender ? { soulBatch } : {}),
           workbenchProjectId: body.workbenchProjectId ? String(body.workbenchProjectId) : undefined } : {}),
         topaz,
         topazOutput,
@@ -1454,10 +1560,20 @@ export async function executeGenerationAdmission(
           references: stillRefs,
           rules: rules.map((r) => r.id),
         },
+        { approximate: Boolean(marketing && (marketing.variant ?? "alpha") !== "alpha") },
       );
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
+      if (soulRender && body.maxCredits == null)
+        return admissionReply({ error: "Approve the quoted credit ceiling before rendering with a Soul ID." }, { status: 400 });
+      /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
+         run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+      if (holdStill && options.run)
+        return admissionReply(
+          { error: holdStill.why === "slots" ? slotsMessage(limStill.standing.running, limStill.limits.concurrency) : !wallStill.ok ? wallStill.error : "Out of credits.", runHold: holdStill.why },
+          { status: holdStill.why === "slots" ? 409 : 402 },
+        );
 
       // The claim is bound in the same write: a claim naming no job proves there is none.
       const stillBinding = await claimBinding(requestClaim, genId);
@@ -1493,6 +1609,7 @@ export async function executeGenerationAdmission(
       });
       invalidate(PROJECTS_KEY);
       if (holdStill) {
+        if (holdStill.pool) return inPoolLine(genId, holdStill, lineStill, options.defer);
         if (holdStill.why === "slots") {
           return admissionReply(
             {
@@ -1538,16 +1655,22 @@ export async function executeGenerationAdmission(
             shotId: stillShot,
             createdBy: got.user.id,
           },
-          { token: got.token },
+          { token: got.token, run: options.run },
         );
       } catch (e) {
+        /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
+           run's take never waits held (it could start later by itself, outside the run's approved limit): it is
+           refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+        const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estStillUsd, "image", modelId, "slots") : null;
+        if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+        const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
         await db().execute({
           sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-          args: [(e as Error).message, now(), genId],
+          args: [error, now(), genId],
         });
         invalidate(PROJECTS_KEY);
         return admissionReply(
-          { id: genId, status: "failed", error: (e as Error).message },
+          { id: genId, status: "failed", error },
           { status: e instanceof SpendReservationError ? e.status : 503 },
         );
       }
@@ -1653,6 +1776,9 @@ export async function executeGenerationAdmission(
         ...references
           .filter((r) => r.kind === "video")
           .map((_, i) => `@Video${i + 1} (video)`),
+        ...references
+          .filter((r) => r.kind === "audio")
+          .map((_, i) => `@Audio${i + 1} (sound)`),
       ];
       try {
         // The engine and the length steer the form: 2.5 takes integer-second
@@ -1768,12 +1894,15 @@ export async function executeGenerationAdmission(
         };
         const choice = named ?? fromModel ?? inferred;
 
+        /* Cinema Studio takes its camera move, light, camera body and palette as parameters. Where one is
+           picked, that parameter directs the shot and the words get no second, competing module for it. */
+        const directed = params.cinema ?? {};
         // Camera, plus the light and look the author already named — each from
         // the bank, so the wording is identical on every render that uses it.
         const craft = craftModules({
-          [choice.kind]: choice.value,
-          light: spec.light ?? "",
-          look: spec.look ?? "",
+          ...(directed.camera_movement ? {} : { [choice.kind]: choice.value }),
+          light: directed.light ? "" : (spec.light ?? ""),
+          look: directed.color_palette || directed.camera_model ? "" : (spec.look ?? ""),
         });
         if (craft) finalPrompt = `${finalPrompt.trim()}\n\n${craft}`;
       }
@@ -1852,6 +1981,24 @@ export async function executeGenerationAdmission(
     /* Whether the input includes video decides the token rate. A final sends no input of its own:
        its rate, and its input seconds, are its draft's (lib/draftFinal.ts). */
     const hasVideoInput = final ? final.hasVideoInput : references.some((r) => r.kind === "video");
+    if (cinema) {
+      // An approximate quote from the published token formula, kept on the take:
+      // dispatch sends only while the same settings price the same, and the take
+      // settles on its delivered output. Now and then, check the published text.
+      // (Cinema Studio has no draft mode, so it is never a final.)
+      scheduleHiggsfieldPricingCheck(CINEMA_STUDIO_PRICING_WATCH);
+      const usd = cinemaStudioQuoteUsd({
+        resolution: params.resolution,
+        ratio: params.ratio,
+        duration: params.duration,
+        hasVideoInput,
+        inputSeconds: hasVideoInput ? inputSeconds : undefined,
+      });
+      if (usd == null)
+        return admissionReply({ error: "Cinema Studio has no confirmed price for these settings." }, { status: 400 });
+      params.higgsfieldCredentialFingerprint = higgsfieldCredentialFingerprint();
+      params.higgsfieldVendorCostUsd = usd;
+    }
     const estUsd = params.higgsfieldVendorCostUsd ??
       estimateCostUsd(
         modelId,
@@ -1905,6 +2052,9 @@ export async function executeGenerationAdmission(
     if (!lim.allow && lim.why === "rate")
       return admissionReply({ error: lim.error }, { status: 429 });
     if (!hold && !lim.allow) hold = heldInfo(estUsd, "video", modelId, "slots");
+    /* On the platform's shared provider key, a take also needs a slot of its pool (lib/providerPool.ts). */
+    const line = hold ? null : await poolAdmission(billedTo(model.provider ?? "byteplus"), "video", requireTenant().id);
+    if (line && !line.admit) hold = poolHold(heldInfo(estUsd, "video", modelId, "slots"));
     const quota = await checkQuota(0);
     if (!quota.allow)
       return admissionReply({ error: quota.error }, { status: 507 });
@@ -2004,12 +2154,22 @@ export async function executeGenerationAdmission(
           source: sourceRef,
           rules: rules.map((r) => r.id),
         },
+        { approximate: cinema },
       );
       if (stopped) return stopped;
     }
+    /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
+       run's approved limit): a take that would wait for credits or a slot is refused, and the run asks. */
+    if (hold && options.run)
+      return admissionReply(
+        { error: hold.why === "slots" ? slotsMessage(lim.standing.running, lim.limits.concurrency) : !wall.ok ? wall.error : "Out of credits.", runHold: hold.why },
+        { status: hold.why === "slots" ? 409 : 402 },
+      );
 
     if (genjutsu && body.maxCredits == null)
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
+    if (cinema && body.maxCredits == null)
+      return admissionReply({ error: "Review the approximate credit price before generating with Cinema Studio." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     // The claim is bound in the same write: a claim naming no job proves there is none.
@@ -2120,6 +2280,7 @@ export async function executeGenerationAdmission(
 
     invalidate(PROJECTS_KEY);
     if (hold) {
+      if (hold.pool) return inPoolLine(genId, hold, line, options.defer);
       if (hold.why === "slots") {
         return admissionReply(
           {
@@ -2160,16 +2321,22 @@ export async function executeGenerationAdmission(
           shotId,
           createdBy: got.user.id,
         },
-        { token: got.token },
+        { token: got.token, run: options.run },
       );
     } catch (e) {
+      /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
+         run's take never waits held (it could start later by itself, outside the run's approved limit): it is
+         refused like any take its reservation turns away, nothing reserved or sent, and the run asks. */
+      const waits = e instanceof ProviderPoolBusyError && !options.run ? heldInfo(estUsd, "video", modelId, "slots") : null;
+      if (waits && (await holdForPool(genId, waits))) return inPoolLine(genId, poolHold(waits), null, options.defer, true);
+      const error = e instanceof ProviderPoolBusyError && options.run ? POOL_BUSY_FOR_RUN : (e as Error).message;
       await db().execute({
         sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-        args: [(e as Error).message, now(), genId],
+        args: [error, now(), genId],
       });
       invalidate(PROJECTS_KEY);
       return admissionReply(
-        { id: genId, status: "failed", error: (e as Error).message },
+        { id: genId, status: "failed", error },
         { status: e instanceof SpendReservationError ? e.status : 503 },
       );
     }
@@ -2186,6 +2353,7 @@ export async function executeGenerationAdmission(
     );
   } catch (error) {
     if (error instanceof MarketingError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
+    if (error instanceof SoulRenderError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof MediaSourceError)
       return admissionReply({ error: error.message }, { status: 409 });
     if (error instanceof DraftClaimedError)
@@ -2211,7 +2379,7 @@ export function quoteGeneration(prepared: PreparedAdmission) {
 export function admitGeneration(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
 ): Promise<AdmissionReply> {
   return admitPrepared(
     prepared,

@@ -1,5 +1,7 @@
 "use client";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 import { useAgentAttachments } from "./use-agent-attachments";
 import { PromptAttach, attachedAsset, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { isDroppable, readDrop } from "@/lib/drop";
@@ -31,7 +33,7 @@ import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
 
-type Generation = { id: string; status: string; error?: string | null };
+type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
 /** Library pictures an entry can use: renders and uploads, images only. */
 const isPicture = (e: LibraryEntry) => e.media === "image" && Boolean(e.url);
@@ -67,7 +69,11 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   const latest = useRef(p);
   useEffect(() => { latest.current = p; }, [p]);
 
-  const setEnv = useCallback((fn: (e: Environment) => Environment) => editor.change((old) => ({ ...old, production: { ...old.production, environment: fn(old.production?.environment ?? DEFAULT_ENVIRONMENT) } })), [editor]);
+  /* An update that hands back what it was given changes nothing: no edit, no save. */
+  const setEnv = useCallback((fn: (e: Environment) => Environment) => editor.change((old) => {
+    const was = old.production?.environment ?? DEFAULT_ENVIRONMENT, next = fn(was);
+    return next === was ? old : { ...old, production: { ...old.production, environment: next } };
+  }), [editor]);
   const setEntry = useCallback((id: string, fn: (e: EnvironmentEntry) => EnvironmentEntry) => setEnv((e) => ({ ...e, entries: e.entries.map((x) => (x.id === id ? fn(x) : x)) })), [setEnv]);
   const fail = (id: string, error: unknown, fallback: string) => setErrors((x) => ({ ...x, [id]: error instanceof Error ? error.message : fallback }));
 
@@ -127,7 +133,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
             const assets = ok && !old.assets.some((a) => a.id === asset.id) && old.assets.length < PROJECT_LIMITS.assets ? [...old.assets, asset] : old.assets;
             return { ...old, assets, production: { ...old.production, environment: { ...e, entries: e.entries.map((x) => (x.id === entry.id ? next : x)) } } };
           });
-          if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.error || "This plate did not render. Nothing was billed for a failed render." }));
+          if (!ok) setErrors((x) => ({ ...x, [entry.id]: generation.failure ? failureLine(generation.failure).text : generation.error || "This plate did not render." }));
           void editor.ensureSaved().then(() => { if (ok) { void refreshProjectLibrary(scope, latest.current.id); confirm(CONFIRM.plateBuilt(entry.name)); } });
         } catch { /* the next tick reads it again */ }
         if (!alive) break;
@@ -242,6 +248,16 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
   };
 
   const fromBeats = useMemo(() => environmentsFromBeats(p.production?.beats, env.entries), [p.production?.beats, env.entries]);
+  /* What the button counted, less what is listed by the time the click lands — decided on the places as they are then, not as
+     this render saw them: the agent's world may have landed in between, and a place is never listed twice. None left: no edit. */
+  const addFromBeats = () => {
+    const sheet = p.production?.beats, counted = new Set(fromBeats.map((e) => e.id));
+    setEnv((x) => {
+      const missing = environmentsFromBeats(sheet, x.entries).filter((e) => counted.has(e.id));
+      return missing.length ? { ...x, entries: [...x.entries, ...missing].slice(0, ENVIRONMENT_LIMITS.entries) } : x;
+    });
+    void editor.ensureSaved();
+  };
   const agentModel = agent.model;
   const q = runs.quote && runs.quote.input.model === agentModel?.id && runs.quote.input.effort === agent.effort && runs.quote.input.kind === "environment" ? runs.quote : null;
   const blocked = !runs.loaded ? "Reading the agent’s runs…" : runs.pending ? "An earlier agent request is unconfirmed. Recover it first." : activeEnv ? "The agent is working."
@@ -279,7 +295,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
         </div>
         <div className="gx-gen-enhance">
           <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined}
-            onClick={() => { setEnv((x) => ({ ...x, entries: [...x.entries, ...fromBeats].slice(0, ENVIRONMENT_LIMITS.entries) })); void editor.ensureSaved(); }} data-testid="environment-from-beats">
+            onClick={addFromBeats} data-testid="environment-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} ${fromBeats.length === 1 ? "place" : "places"} from the beat sheet` : "Add places from the beat sheet"}
           </button>
           {!p.production?.beats ? <button type="button" className="gx-hbtn" onClick={onBeats}>Open Beats</button> : null}

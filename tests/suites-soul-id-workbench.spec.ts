@@ -1,83 +1,149 @@
 import { test, expect, type Page } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject, type Project } from "../lib/workbench/studio";
-import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { createClient } from "@libsql/client";
+import { randomUUID } from "node:crypto";
+import sharp from "sharp";
+import { newProject } from "../lib/workbench/studio";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { dimLabels, smallTargets } from "./phoneFloors";
 
 /**
- * Studio › Cast › Build identity on the connected account (FINAL_SPEC §3 ›
- * Soul ID): the card blocks with the reason until a name, 5–20 stills and
- * the plan gate are in place; the button asks once more with the exact
- * request on it; the account's reply is shown word for word; the account's
- * existing Soul IDs are listed with Use in Gen on the ready ones.
+ * Studio › Cast › Build identity on the platform's key, in a managed
+ * workspace (credits), against a local ENGINE_MOCK=1 server: the real
+ * /api/soul/identities route with the mock trainer. The card says what is
+ * missing; only versions with a training price are offered (Soul Standard;
+ * Soul 2 and Soul Cinema once priced); the price is on the button before anything is
+ * sent; a reply lost after the server took the request is recovered by asking
+ * about that saved request (same key, same body), never by training twice; the
+ * list is this workspace's own Soul IDs, and nothing of the connected account
+ * is read.
  */
-const SIZES = ["workbench-1440x900", "workbench-390x844"];
-const fixture = (): Project => ({ ...newProject("Dune Studies"), id: "ws-soul", productionProjectId: "prod-soul", shotMappings: {} });
+const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
+const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const CONSUMER = /\/api\/higgsfield\/consumer\//;
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
-async function open(page: Page, plan: unknown, build: unknown) {
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  await mockProjects(page, { current: fixture() });
-  await mockLibrary(page, {
-    uploads: [1, 2, 3].map((n) => upload({ id: `up_${n}`, filename: `mira-${n}.webp` })),
-    generations: [4, 5, 6].map((n) => generation({ id: `gen_${n}`, title: `Mira ${n}`, prompt: `Mira ${n}` })),
-  });
-  const calls: Record<string, unknown>[] = [];
-  await page.route("**/api/higgsfield/consumer/generation", async (route) => {
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    calls.push(body);
-    if (body.action === "characters-plan") return route.fulfill({ json: { plan } });
-    if (body.action === "characters") return route.fulfill({ json: { connected: true, available: true, characters: [{ soulId: "soul_ready", name: "Ada", type: "soul_cinematic", status: "ready", previewUrl: null }, { soulId: "soul_train", name: "Kai", type: "soul_2", status: "training", previewUrl: null }] } });
-    if (body.action === "characters-create") return route.fulfill({ json: { build } });
-    return route.fallback();
-  });
+type Terms = { versions: { version: string; trainingCredits: number }[] };
+type Identity = { id: string; name: string; status: string; renderModel: string | null };
+
+async function setup(page: Page) {
+  const account = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try { await platform.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), account.workspace.id, 5000, "Soul ID test", "admin", "test", Date.now()] }); }
+  finally { platform.close(); }
+  const project = newProject(`Soul ID ${randomUUID().slice(0, 6)}`);
+  project.production = { cast: { entries: [{ id: "cast-mira", kind: "character", name: "Mira", description: "", prompt: "Mira on the quay", takes: [] }] } };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const stills: { id: string }[] = [];
+  for (const [i, background] of ["#7a6152", "#52617a"].entries()) {
+    const buffer = await sharp({ create: { width: 360, height: 480, channels: 3, background } }).png().toBuffer();
+    const uploaded = await page.request.post("/api/uploads", { headers, multipart: { file: { name: `mira-${i + 1}.png`, mimeType: "image/png", buffer } } });
+    expect(uploaded.ok(), await uploaded.text()).toBe(true);
+    const still = await uploaded.json();
+    const filed = await page.request.post("/api/workbench/library", { headers, data: { projectId: project.id, uploadId: still.id } });
+    expect(filed.ok(), await filed.text()).toBe(true);
+    stills.push(still);
+  }
+  const consumer: string[] = [];
   const errors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!CONSUMER.test(url.pathname)) return;
+    /* The shell's collector (lib/shell/connected-collector.ts) lists the open project's earlier connected jobs on every page,
+       so paid work already on the account still lands. That listing is not Cast's; anything else would be. */
+    if (request.method() === "GET" && url.pathname === "/api/higgsfield/consumer/generation" && url.searchParams.has("draftId")) return;
+    consumer.push(`${request.method()} ${url.pathname}${url.search}`);
+  });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=studio&page=cast");
-  await expect(page.getByTestId("project-name")).toHaveText("Dune Studies");
-  return { errors, calls };
+  const read = async () => (await page.request.get(`/api/soul/identities?projectId=${project.id}`, { headers }).then((r) => r.json())) as { identities: Identity[]; terms: Terms };
+  return { project, headers, stills, consumer, errors, read };
 }
 
-test("Build identity: the reasons, the plan gate, the confirm with the exact request, the account's answer, and the list", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
-  const { errors, calls } = await open(page, { connected: true, available: true, plan: "Pro", paid: true }, { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } });
+async function noSideScroll(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
+  expect(await page.getByTestId("soul-card").evaluate((el) => el.scrollWidth - el.clientWidth), "the card keeps its content inside").toBeLessThanOrEqual(1);
+}
+
+test("Build identity on the key: the reasons, the priced versions, the fixed price on the button, a lost reply recovered by its saved request, trained once in this workspace", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "the five sizes");
+  test.setTimeout(180_000);
+  const f = await setup(page);
+  const { terms } = await f.read();
+  /* Soul 2 and Soul Cinema have no price until the operator sets one: only Soul Standard is offered here. */
+  expect(terms.versions.map((v) => v.version)).toEqual(["v1"]);
+  const credits = terms.versions.find((v) => v.version === "v1")!.trainingCredits;
+  expect(credits).toBeGreaterThan(0);
+  await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
   const card = page.getByTestId("soul-card");
-  await expect(card).toBeVisible();
-  await expect(page.getByTestId("soul-blocked")).toHaveText("Name the identity.");
-  await page.getByTestId("soul-name").fill("Mira");
-  await expect(page.getByTestId("soul-blocked")).toHaveText("Pick 5–20 stills of the same person (0 picked).");
-  await expect(page.getByTestId("soul-plan")).toContainText("The account reads as Pro — a paid plan.");
-  await expect(page.getByTestId("soul-plan")).toContainText("billed by the connected account at its plan’s rate; the account offers no quote for it");
+  await expect(card).toBeVisible({ timeout: 60_000 });
+  await expect(card.getByRole("heading", { name: "Build identity" })).toBeVisible();
+  await expect(card.getByTestId("soul-list")).toContainText("No Soul ID in this workspace yet. Particl lists only the ones trained here.");
 
-  /* The six stills of this project: three uploads, three renders. Five picked. */
-  const stills = page.getByTestId("soul-stills").getByRole("button");
-  await expect(stills).toHaveCount(6);
-  for (const id of ["up_1", "up_2", "up_3", "gen_4", "gen_5"]) await page.getByTestId(`soul-still-${id}`).click();
+  /* What is missing, one thing at a time, before the button can be pressed. */
+  const build = page.getByTestId("soul-build");
+  await expect(page.getByTestId("soul-blocked")).toHaveText("Name the Soul ID.");
+  await expect(build).toBeDisabled();
+  await page.getByTestId("soul-name").fill("Mira");
+  await expect(page.getByTestId("soul-blocked")).toHaveText("Pick 1–40 stills of the same person (0 picked).");
+  await expect(card.getByRole("radiogroup", { name: "Renders with" }).getByRole("radio")).toHaveText(["Soul Standard"]);
+  await expect(page.getByTestId("soul-version-v1")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("soul-versions-unpriced")).toHaveText("Soul 2 and Soul Cinema training is not offered until it has a price.");
+  await expect(page.getByTestId("soul-stills").getByRole("button")).toHaveCount(2);
+  for (const still of f.stills) await page.getByTestId(`soul-still-${still.id}`).click();
+  await expect(page.getByTestId("soul-blocked")).toHaveText("Confirm you have the rights and consent to train this likeness.");
+  await page.getByTestId("soul-consent").check();
   await expect(page.getByTestId("soul-blocked")).toHaveCount(0);
-  await page.getByTestId("soul-type-soul_cinematic").click();
+  await expect(build).toBeEnabled();
+  /* The fixed training price, on the button, before anything is sent. */
+  await expect(build).toHaveText(`Train · Soul Standard · about ${credits} cr`);
+  await expect(page.getByTestId("soul-terms")).toHaveText("Charged once the trainer accepts it, even if training then fails.");
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="soul-card"]')).toEqual([]);
+  expect(await dimLabels(page, '[data-testid="soul-card"]')).toEqual([]);
+  await card.scrollIntoViewIfNeeded();
+  await noSideScroll(page);
+  await page.screenshot({ path: info.outputPath("soul-id-ready-to-train.png") });
 
-  /* Particl-built identities only (the route already narrowed them), with Use in Gen only on the ready one. */
-  await expect(page.getByTestId("soul-row-soul_ready")).toContainText("Ada");
-  await expect(page.getByTestId("soul-row-soul_ready").getByRole("button", { name: "Use in Gen" })).toBeEnabled();
-  await expect(page.getByTestId("soul-row-soul_train").getByRole("button", { name: "Use in Gen" })).toBeDisabled();
+  /* The first reply is lost after the server took the request. */
+  const posts: { key: string | undefined; body: string }[] = [];
+  let lose = true;
+  await page.route("**/api/soul/identities", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.fallback();
+    posts.push({ key: request.headers()["idempotency-key"], body: request.postData() ?? "" });
+    const response = await route.fetch();
+    if (lose) { lose = false; return route.abort("connectionreset"); }
+    return route.fulfill({ response });
+  });
+  await build.click();
+  const recover = page.getByTestId("soul-recover");
+  await expect(recover).toContainText("A training request was sent but its reply was lost: Mira.");
+  expect(posts).toHaveLength(1);
+  expect(posts[0].key).toBeTruthy();
+  expect(JSON.parse(posts[0].body)).toEqual({ projectId: f.project.id, name: "Mira", description: "", subjectType: "character", consent: true, modelVersion: "v1",
+    maxCredits: credits, references: f.stills.map((s) => ({ uploadId: s.id })) });
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="soul-card"]')).toEqual([]);
+  await noSideScroll(page);
 
-  /* Confirm once more with the exact request; the account's reply is shown. */
-  await page.getByTestId("soul-build").click();
-  await expect(page.getByTestId("soul-build-confirm")).toHaveText("Train Mira · Soul Cinematic · 5 stills");
-  await page.getByTestId("soul-build-confirm").click();
-  await expect(page.getByTestId("soul-outcome")).toHaveText("Mira · Soul 2 · Training · soul_id soul_new");
-  const create = calls.find((c) => c.action === "characters-create")!;
-  expect(create).toEqual({ action: "characters-create", name: "Mira", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { uploadId: "up_3" }, { genId: "gen_4" }, { genId: "gen_5" }], projectId: "ws-soul" });
-  await expect(page.getByTestId("toast")).toHaveText("Mira is training on the account");
-  expect(errors).toEqual([]);
-});
+  /* Recovering asks about that same request — the same key and body — and trains nothing new. */
+  await page.getByTestId("soul-recover-run").click();
+  await expect(recover).toHaveCount(0);
+  expect(posts).toHaveLength(2);
+  expect(posts[1]).toEqual(posts[0]);
+  await expect(page.getByTestId("soul-outcome")).toHaveText("Mira is training for Soul Standard. It is listed below; characters can render with it once it is ready.");
+  const { identities } = await f.read();
+  expect(identities.map((i) => [i.name, i.renderModel])).toEqual([["Mira", "hf-soul-standard"]]);
+  const row = page.getByTestId(`soul-row-${identities[0].id}`);
+  await expect(row).toContainText("Mira");
+  await expect(row).toContainText(`Soul Standard · Ready · ${credits} cr`, { timeout: 45_000 });
+  await expect(page.getByTestId("soul-name")).toHaveValue("");
 
-test("a free plan blocks before the button; a refusal comes back in the account's words", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
-  const { errors } = await open(page, { connected: true, available: true, plan: "Free", paid: false }, { state: "refused", reason: "Soul ID training requires a paid plan." });
-  await page.getByTestId("soul-name").fill("Mira");
-  for (const id of ["up_1", "up_2", "up_3", "gen_4", "gen_5"]) await page.getByTestId(`soul-still-${id}`).click();
-  await expect(page.getByTestId("soul-blocked")).toHaveText("A paid Higgsfield plan is required — the account reads as Free.");
-  await expect(page.getByTestId("soul-build")).toBeDisabled();
-  expect(errors).toEqual([]);
+  /* Ready: the character above can choose it now, by the family it renders with. */
+  const mira = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Mira"]') });
+  await expect(mira.getByTestId("cast-identity").locator("option")).toHaveText(["None", "Mira · Soul Standard"]);
+  await noSideScroll(page);
+  await page.screenshot({ path: info.outputPath("soul-id-trained.png") });
+  expect(f.consumer, "nothing of the connected account is read or sent").toEqual([]);
+  expect(f.errors).toEqual([]);
 });

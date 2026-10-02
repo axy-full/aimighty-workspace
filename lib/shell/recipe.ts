@@ -1,6 +1,7 @@
 import type { Generation } from "../jobs";
 import { displayModelName } from "../models";
 import { AUDIO_SECONDS, type BillingSource, type ComposerModel, type ComposerPicks, type ComposerSettings, type ComposerType } from "../workspace/composer";
+import { cleanCinemaControls } from "../cinemaStudioTypes";
 
 /**
  * Recreate (README › Interactions, the asset's "Retry"): a take's whole
@@ -33,6 +34,8 @@ export type GenPreset = {
   picks?: ComposerPicks;
   references?: RecipeReference[];
   shotSpec?: Record<string, string>;
+  /** A Cinema Studio 4.0 take's creative controls (params.cinema), documented pairs only. */
+  cinema?: Record<string, string>;
   sound?: RecipeSound;
   /** A connected take: whether the account was asked to enhance the words (settings.enhance_prompt). */
   enhance?: boolean;
@@ -86,7 +89,7 @@ export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | 
   /* A final has no recipe of its own: its words, references and settings are its draft's (lib/draftFinal.ts). */
   if (typeof p.finalOf === "string") return "A 1080p final is made from its draft. Recreate the draft instead.";
   if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
-  if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business, with its product and setup. Make it again from Ads.";
+  if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield.";
   /* Anything else Gen did not make itself. Every original the connected account delivered is receipted
      in these credits (lib/higgsfield-consumer/video-original.ts). */
   const onAccount = p.consumerCreditUnit === "higgsfield_credits";
@@ -134,6 +137,7 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
   const shotSpec = record(params.shotSpec)
     ? Object.fromEntries(Object.entries(params.shotSpec).filter((pair): pair is [string, string] => typeof pair[1] === "string" && pair[1].length > 0).slice(0, 20))
     : {};
+  const cinema: Record<string, string> = cleanCinemaControls(params.cinema);
 
   const sound: RecipeSound = {};
   if (type === "audio" && !connected) {
@@ -152,6 +156,7 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
     picks,
     ...(references.length ? { references } : {}),
     ...(Object.keys(shotSpec).length ? { shotSpec } : {}),
+    ...(Object.keys(cinema).length ? { cinema } : {}),
     ...(Object.keys(sound).length ? { sound } : {}),
     ...(enhance !== undefined ? { enhance } : {}),
     from: { id: g.id, name: options.name },
@@ -162,17 +167,19 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
 
 /* ── Citations ─────────────────────────────────────────────────────────── */
 
-type Citable = "image" | "video";
-const TAG_WORD: Record<Citable, string> = { image: "Image", video: "Video" };
+type Citable = "image" | "video" | "audio";
+const TAG_WORD: Record<Citable, string> = { image: "Image", video: "Video", audio: "Audio" };
+const citable = (kind: string | undefined): kind is Citable => kind === "image" || kind === "video" || kind === "audio";
 
 /**
- * How each reference is cited: @Image1, @Video1 — counted within its own
- * kind, in order, the way the engine numbers what it is sent (lib/ark.ts ›
- * buildRequestBody). Anything else (a sound) has no tag.
+ * How each reference is cited: @Image1, @Video1, @Audio1 — counted within its
+ * own kind, in order, the way the engine numbers what it is sent (lib/ark.ts ›
+ * buildRequestBody; a sound only Cinema Studio takes, lib/cinemaStudio.ts ›
+ * cinemaStudioPrompt). Anything else (a document) has no tag.
  */
 export function referenceTags(kinds: readonly (string | undefined)[]): (string | null)[] {
-  const seen: Record<Citable, number> = { image: 0, video: 0 };
-  return kinds.map((kind) => (kind === "image" || kind === "video" ? `@${TAG_WORD[kind]}${++seen[kind]}` : null));
+  const seen: Record<Citable, number> = { image: 0, video: 0, audio: 0 };
+  return kinds.map((kind) => (citable(kind) ? `@${TAG_WORD[kind]}${++seen[kind]}` : null));
 }
 
 /**
@@ -190,16 +197,16 @@ export function retagRecipe(prompt: string, refs: readonly { kind: string | unde
 } {
   const was = referenceTags(refs.map((r) => r.kind));
   const now: (string | null)[] = refs.map(() => null);
-  const next: Record<Citable, number> = { image: 0, video: 0 };
+  const next: Record<Citable, number> = { image: 0, video: 0, audio: 0 };
   for (const found of [true, false]) {
     refs.forEach((r, i) => {
-      if (r.found !== found || (r.kind !== "image" && r.kind !== "video")) return;
+      if (r.found !== found || !citable(r.kind)) return;
       now[i] = `@${TAG_WORD[r.kind]}${++next[r.kind]}`;
     });
   }
   const moves = new Map<string, string>();
   was.forEach((tag, i) => { if (tag && now[i] && tag !== now[i]) moves.set(tag, now[i]!); });
-  const moved = moves.size ? prompt.replace(/@(?:Image|Video)\d+(?!\d)/g, (tag) => moves.get(tag) ?? tag) : prompt;
+  const moved = moves.size ? prompt.replace(/@(?:Image|Video|Audio)\d+(?!\d)/g, (tag) => moves.get(tag) ?? tag) : prompt;
   return { prompt: moved, was, now };
 }
 
@@ -279,7 +286,8 @@ export function recipeChips(input: {
   const sameModel = !lostAccount && model.id === preset.model;
   if (sameModel) chips.push({ key: "model", label: "Model", value: model.label, state: "kept" });
   else {
-    const why = lostAccount ? (input.owner ? "Studio engines chosen" : "The connected account is the owner’s")
+    /* Gen offers no signed-in account's catalogue (28 September 2026): an account take recreates on Studio engines, for everyone. */
+    const why = lostAccount ? "Gen runs on Studio engines only"
       : input.type !== preset.type || input.billing !== preset.billing || input.models.some((m) => m.id === preset.model) ? "Changed here"
       : "Not offered here now";
     const now = model.label === wanted ? (input.billing === "connected" ? "account" : "Studio engine") : model.label;
@@ -307,7 +315,7 @@ export function recipeChips(input: {
     const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");
     if (!model.soulId) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: `${model.label} takes no identity` });
     else if (!input.identities) chips.push({ key: "identity", label: "Identity", value: "Identity", state: "reading" });
-    else if (!found) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "No longer on the account" });
+    else if (!found) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
     else if (settings.soulId === picks.soulId) chips.push({ key: "identity", label: "Identity", value: found.name, state: "kept" });
     else chips.push({ key: "identity", label: "Identity", value: `${found.name} → none`, state: "changed", why: "Changed here" });
   }

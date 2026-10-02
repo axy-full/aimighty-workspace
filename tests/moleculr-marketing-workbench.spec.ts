@@ -4,6 +4,7 @@ import { newProject, type Asset, type Project } from "../lib/workbench/studio";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { projectSchema } from "../lib/workbench/studio-schema";
 import { legacyShell } from "./helpers/legacyShell";
+import { smallTargets } from "./phoneFloors";
 
 test("Moleculr discovers real preset IDs, saves selection and quotes ordered image references without submitting", async ({
   page,
@@ -110,8 +111,10 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
         ],
       });
     if (url.pathname === "/api/generate/quote") {
-      quotes.push(request.postDataJSON());
-      return json({ estimatedCredits: 3, fingerprint: "f".repeat(64) });
+      const body = request.postDataJSON();
+      quotes.push(body);
+      /* A 2.5 build is quoted approximately from its published rates. */
+      return json({ estimatedCredits: 3, fingerprint: "f".repeat(64), ...(body.marketing?.variant ? { approximate: true } : {}) });
     }
     if (url.pathname === "/api/jobs") return json({ generations: [] });
     if (
@@ -182,6 +185,22 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   await expect(
     panel.getByRole("button", { name: /Studio product portrait/ }),
   ).toHaveAttribute("aria-pressed", "true");
+  /* A 2.5 build keeps the chosen quality with a preset, up to max, and is priced approximately. */
+  await expect(panel.getByLabel("Marketing Studio build")).toHaveValue("alpha");
+  await panel.getByLabel("Marketing Studio build").selectOption("flare");
+  await expect(panel.getByText("Priced approximately; the delivered image settles it.")).toBeVisible();
+  await expect(panel.getByLabel("Image quality")).toBeEnabled();
+  await panel.getByLabel("Image quality").selectOption("max");
+  await expect.poll(() => project.moleculr?.marketing).toMatchObject({ variant: "flare", quality: "max", enhancePrompt: true, presetId });
+  await panel.getByLabel("Marketing Studio build").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("moleculr-image-presets-25.png") });
+  await panel.getByLabel("Product image").selectOption("product-b");
+  await panel.getByRole("button", { name: "Review campaign image" }).click();
+  const review = page.getByRole("dialog");
+  await expect(review.getByRole("button", { name: "Generate · about 3 cr", exact: true })).toBeEnabled();
+  expect(quotes.at(-1)).toMatchObject({ marketing: { variant: "flare", quality: "max", enhancePrompt: true, presetId } });
+  await expect(review.getByLabel("Marketing image quality")).toBeEnabled();
+  await page.keyboard.press("Escape");
   expect(catalogScopes.every(Boolean)).toBe(true);
   expect(dispatched).toEqual([]);
   expect(
@@ -189,4 +208,65 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   ).toBe(true);
+});
+
+/**
+ * The preset catalogue is a read (GET /api/higgsfield/marketing/presets, on the
+ * platform's key): when it fails the panel says why and offers Try again — the
+ * read failures' word; "Retry" is a paid re-render — and Try again reads the
+ * catalogue again. On a phone Try again is a 44×44 target like any other.
+ * Nothing is sent but reads.
+ */
+test("a preset catalogue that could not be read says so with Try again, and Try again reads it again", async ({ page }, info) => {
+  const phone = ["workbench-360x640", "workbench-390x844", "workbench-844x390"].includes(info.project.name);
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  const project: Project = {
+    ...newProject("Brand campaign"),
+    id: "marketing-draft",
+    productionProjectId: "marketing-production",
+    moleculr: { ...EMPTY_MOLECULR, productName: "Camera", hooks: ["Carry your perspective"] },
+  };
+  let reads = 0;
+  let failing = true;
+  const sent: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(), url = new URL(request.url());
+    const json = (value: unknown, status = 200) => route.fulfill({ json: value, status });
+    if (url.pathname === "/api/me") return json(me);
+    if (url.pathname === "/api/workbench/projects") {
+      if (request.method() === "PUT") return json({ revision: 2, productionProjectId: project.productionProjectId, shotMappings: {} });
+      if (request.method() === "POST") return json({ productionProjectId: project.productionProjectId, shotId: "marketing-shot" });
+      return json({ project, revision: 1, projects: [{ id: project.id, name: project.name }], productions: [] });
+    }
+    if (url.pathname === "/api/higgsfield/marketing/presets") {
+      reads++;
+      /* What the route answers when the provider's catalogue does not come back. */
+      if (failing) return json({ configured: true, error: "Marketing Studio presets are temporarily unavailable." }, 503);
+      return json({ configured: true, total: 1, items: [{ id: "96c22aa0-9d48-4f71-8c24-b9e5cf6e9ced", name: "Studio product portrait", type: "ads" }], cursor: null });
+    }
+    if (url.pathname === "/api/jobs") return json({ generations: [] });
+    if (url.pathname === "/api/workbench/atomik" || url.pathname === "/api/workbench/development") return json({ models: [], jobs: [] });
+    if (url.pathname === "/api/workbench/agent" || url.pathname === "/api/workbench/engines") return json({ models: [] });
+    if (request.method() !== "GET") { sent.push(url.pathname); return json({ error: "Paid generation disabled in fixture." }, 409); }
+    return json({});
+  });
+  await page.goto(await legacyShell(page, "/workbench?project=marketing-draft&suite=moleculr&page=brand"));
+  await expect(page.getByRole("heading", { name: "Build a brand worth knowing." })).toBeVisible();
+  await page.getByRole("link", { name: "Variants", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Marketing Studio images" });
+  const alert = panel.getByRole("alert");
+  await expect(alert).toContainText("Marketing Studio presets are temporarily unavailable.");
+  if (phone) expect(await smallTargets(page, '[aria-label="Marketing Studio images"] .suite-alert'), "Try again under 44×44").toEqual([]);
+  const again = alert.getByRole("button", { name: "Try again", exact: true });
+  await expect(again).toBeVisible();
+  await expect(panel.getByRole("button", { name: /retry/i })).toHaveCount(0);
+  const before = reads;
+  failing = false;
+  await again.click();
+  await expect.poll(() => reads).toBe(before + 1);
+  await expect(alert).toHaveCount(0);
+  await panel.getByRole("button", { name: /^Provider preset/ }).click();
+  await expect(panel.getByRole("button", { name: /Studio product portrait/ })).toBeVisible();
+  expect(sent).toEqual([]);
 });

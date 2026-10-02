@@ -148,6 +148,8 @@ export class ElevenLabsError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** ElevenLabs' own parsed error (`detail: {type, code, message}`), when it sent one. */
+    public readonly body: unknown = null,
   ) {
     super(message);
     this.name = "ElevenLabsError";
@@ -238,7 +240,7 @@ async function callAudio(
     } catch {
       json = { message: text.slice(0, 300) };
     }
-    throw new ElevenLabsError(res.status, explain(res.status, json));
+    throw new ElevenLabsError(res.status, explain(res.status, json), json);
   }
   const bytes = Buffer.from(await res.arrayBuffer());
   // The API documents no cost header, so the caller prices from the
@@ -543,7 +545,7 @@ async function callAudioMultipart(
     const text = await res.text();
     let json: unknown = null;
     try { json = JSON.parse(text); } catch { json = { message: text.slice(0, 300) }; }
-    throw new ElevenLabsError(res.status, explain(res.status, json));
+    throw new ElevenLabsError(res.status, explain(res.status, json), json);
   }
   return {
     bytes: Buffer.from(await res.arrayBuffer()),
@@ -640,7 +642,7 @@ export async function submitDubbing(opts: {
   const text = await res.text();
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
-  if (!res.ok) throw new ElevenLabsError(res.status, explain(res.status, json));
+  if (!res.ok) throw new ElevenLabsError(res.status, explain(res.status, json), json);
   const j = (json ?? {}) as { dubbing_id?: string; expected_duration_sec?: number };
   if (!j.dubbing_id || typeof j.dubbing_id !== "string") throw new Error("The audio service accepted the dubbing request without a project id. The outcome is unconfirmed.");
   return { dubbingId: j.dubbing_id, expectedDurationSec: Number.isFinite(Number(j.expected_duration_sec)) ? Number(j.expected_duration_sec) : null };
@@ -666,7 +668,7 @@ export async function downloadDubbedAudio(dubbingId: string, languageCode: strin
     const text = await res.text();
     let json: unknown = null;
     try { json = JSON.parse(text); } catch { json = { message: text.slice(0, 300) }; }
-    throw new ElevenLabsError(res.status, explain(res.status, json));
+    throw new ElevenLabsError(res.status, explain(res.status, json), json);
   }
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) { await res.body?.cancel(); throw new Error("The dubbed audio exceeds the download limit."); }

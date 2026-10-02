@@ -8,7 +8,9 @@ export type MediaJob = {
   title?:string|null;
   /** The stored original's own length in seconds, when the server read it. */
   durationS?:number|null;
-  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>; task?:string; dubbingStatus?:string; held?:{why?:string; needs?:number}};
+  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>; task?:string; dubbingStatus?:string; held?:{why?:string; needs?:number; pool?:string}; providerKeyChanged?:number};
+  /** A failed job's outcome: why, and what its provider or Particl's ledger did with the charge (lib/providerOutcome.ts). */
+  failure?:import('../providerOutcome').TakeFailure|null;
 };
 /** Sound tools file their output under the name the server gave it (source · dubbed (Language)), not the lane node's title. */
 const SOURCE_NAMED_TASKS=new Set(['dub','voiceChange']);
