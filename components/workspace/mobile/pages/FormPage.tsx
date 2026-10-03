@@ -105,7 +105,7 @@ function useTransformJobs(scope: string, projectId: string | null) {
 }
 
 /**
- * Taking the live estimate: the desktop's quote step (ConsumerGenjutsu `act("quote")`), with
+ * Taking the live estimate: the desktop's quote step (its connected form, since removed), with
  * its recovery record, so a lost answer is finished with the same key rather than copying
  * the originals twice. The record goes only when an estimate is in, or when the person
  * discards it, as on the desktop. It prices; it never submits.

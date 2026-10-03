@@ -1,5 +1,5 @@
 import { GENJUTSU_MODELS, GENJUTSU_LABELS } from "./genjutsuTypes";
-import { SOUL_RENDER_MODELS, SOUL_RENDER_RATIOS, SOUL_RENDER_RESOLUTIONS, SOUL_VERSIONS, SOUL_VERSION_LABELS, isSoulRenderModel } from "./soulRenderTypes";
+import { SOUL_RENDER_MODELS, SOUL_RENDER_RATIOS, SOUL_RENDER_RESOLUTIONS, SOUL_VERSIONS, SOUL_VERSION_LABELS, SOUL_VERSION_SHORTS, isSoulRenderModel } from "./soulRenderTypes";
 import { CINEMA_STUDIO_MODEL_ID, CINEMA_STUDIO_RATIOS, CINEMA_STUDIO_RESOLUTIONS, CINEMA_STUDIO_LIMITS } from "./cinemaStudioTypes";
 import { hasVendorName, neutralModelText } from "./vendorNames";
 import type { TaskId } from "./tasks";
@@ -101,6 +101,13 @@ export type ModelDef = {
   kind: "video" | "image";
   /** Not offered in the composer's model menu — reached from its own screen. */
   hidden?: boolean;
+  /** No longer offered for NEW work, anywhere. Not `hidden` (which means
+   *  "reached from its own screen"): a retired model is in no offer list and
+   *  admission refuses it (`retiredReason`), but it stays in the registry so
+   *  `getModel` and the display names keep resolving every past job made with
+   *  it — Library, Inspector, ledger, statements and exports read as before,
+   *  and nothing a past job was charged changes. */
+  retired?: true;
   /** Requires a tenant-owned, completed Soul identity resolved by admission. */
   soulIdentity?: boolean;
   /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
@@ -522,15 +529,15 @@ export const MODELS: ModelDef[] = [
     use: "Generate a still from a trained identity.",
     note: "Requires a ready identity and a verified identity-rendering connection.",
   },
-  /* Soul Standard, Soul 2 and Soul Cinema on the platform's key: each renders only identities trained for its
-     family (lib/soulRenderTypes.ts), 1 or 4 stills per request, priced by the provider's live estimate. */
+  /* The three identity-still families on the platform's key (lib/soulRenderTypes.ts). RETIRED: no longer
+     offered for new renders; kept here so every past render still resolves its name, kind and provider. */
   ...SOUL_VERSIONS.map((version): ModelDef => ({
-    id: SOUL_RENDER_MODELS[version], label: SOUL_VERSION_LABELS[version], short: SOUL_VERSION_LABELS[version].toUpperCase(),
-    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
+    id: SOUL_RENDER_MODELS[version], label: SOUL_VERSION_LABELS[version], short: SOUL_VERSION_SHORTS[version],
+    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, retired: true, paramStyle: "fields",
     resolutions: [...SOUL_RENDER_RESOLUTIONS], ratios: [...SOUL_RENDER_RATIOS],
     durations: [], supportsAudio: false, supportsCameraFixed: false,
     maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
-    use: "Stills of a Soul ID trained for this family. A live quote is required.",
+    use: "Stills of an identity trained for this family. No longer offered for new renders.",
   })),
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.
@@ -561,10 +568,32 @@ export const MODELS: ModelDef[] = [
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
 
+/** Resolves every registered id, RETIRED ones included: history must keep reading them. Throws on an unknown id. */
 export function getModel(id: string): ModelDef {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
+}
+
+/** `getModel` that answers null instead of throwing, for paths that must not fail on an id no longer registered. */
+export function findModel(id: string | null | undefined): ModelDef | null {
+  return MODELS.find((x) => x.id === id) ?? null;
+}
+
+/** The provider serving a model, or null for an id not in the registry. Never throws (failure paths rely on it). */
+export function providerOf(id: string | null | undefined): string | null {
+  return findModel(id)?.provider ?? null;
+}
+
+/** May this model be offered for new work? Every offer list filters on this; `hidden` is a separate question. */
+export const isOffered = (model: Pick<ModelDef, "retired">): boolean => model.retired !== true;
+/** The registry without its retired models: the base of every offer list. */
+export const offeredModels = (models: readonly ModelDef[] = MODELS): ModelDef[] => models.filter(isOffered);
+export const isRetiredModel = (id: string | null | undefined): boolean => findModel(id)?.retired === true;
+/** What admission says when a new job names a retired model; null when the model may still be asked for. */
+export const RETIRED_REASON = "This engine is no longer offered for new renders. Past results stay in the Library.";
+export function retiredReason(modelId: string | null | undefined): string | null {
+  return isRetiredModel(modelId) ? RETIRED_REASON : null;
 }
 
 /** Engines that render sound rather than pictures live outside the video
@@ -589,6 +618,40 @@ const WORKFLOW_LABELS: Record<string, { label: string; short: string }> = {
   hf_mult_motion_control: { label: "Motion Transfer", short: "MOTION TRANSFER" },
   hf_mult_replace_object: { label: "Object Swap", short: "OBJECT SWAP" },
 };
+
+/**
+ * Ids that were never in MODELS but sit on stored rows: the connected
+ * catalogue's models and workflows, from when work could start on a signed-in
+ * account (off since 2 October 2026; past results stay in the Library). A
+ * past job names what it made and that it came from the earlier account —
+ * never the vendor, and never the raw id. Display only: no row is rewritten.
+ */
+const EARLIER = {
+  identity: { label: "Identity still (earlier account)", short: "IDENTITY" },
+  image: { label: "Image (earlier account)", short: "IMAGE" },
+  video: { label: "Video (earlier account)", short: "VIDEO" },
+  audio: { label: "Audio (earlier account)", short: "AUDIO" },
+  model3d: { label: "3D model (earlier account)", short: "3D" },
+  marketing: { label: "Marketing image (earlier account)", short: "MARKETING" },
+  analysis: { label: "Video analysis (earlier account)", short: "ANALYSIS" },
+} as const;
+export const RETIRED_LABELS: Readonly<Record<string, { label: string; short: string }>> = {
+  soul_2: EARLIER.identity, soul_v2: EARLIER.identity, text2image_soul_v2: EARLIER.identity,
+  soul_cinematic: EARLIER.identity, soul_cast: EARLIER.identity, soul_location: EARLIER.identity,
+  marketing_studio_image: EARLIER.marketing, ms_image: EARLIER.marketing,
+  gpt_image_2: EARLIER.image, gpt_image_2_5: EARLIER.image, cinematic_studio_2_5: EARLIER.image,
+  veo3: EARLIER.video, veo3_1: EARLIER.video, veo3_1_lite: EARLIER.video, veo_3_1: EARLIER.video,
+  cinematic_studio_3_0: EARLIER.video, cinematic_studio_video: EARLIER.video, cinematic_studio_video_v2: EARLIER.video,
+  higgsfield_preset: EARLIER.video,
+  seed_audio: EARLIER.audio,
+  image_to_3d: EARLIER.model3d, multi_image_to_3d: EARLIER.model3d,
+  meshy_image_to_3d: EARLIER.model3d, meshy_multi_image_to_3d: EARLIER.model3d,
+  virality_predictor: EARLIER.analysis,
+};
+/** What a retired connected-catalogue id made, for a kind-aware fallback (lib/workspace/engines.ts). */
+export function retiredLabel(modelId: string | null | undefined): { label: string; short: string } | null {
+  return (modelId != null && Object.hasOwn(RETIRED_LABELS, modelId) ? RETIRED_LABELS[modelId] : null) ?? null;
+}
 
 /** Thinking-model lines, by the id's owner — the real product line each id
  *  belongs to. Directly integrated, so directly named (rule 1). */
@@ -683,7 +746,8 @@ const DIRECT_FAMILIES: [RegExp, string][] = [
 export function displayModelName(modelId: string): string {
   const known = WORKFLOW_LABELS[modelId]?.label
     ?? MODELS.find((m) => m.id === modelId)?.label
-    ?? AUDIO_LABELS[modelId]?.label;
+    ?? AUDIO_LABELS[modelId]?.label
+    ?? retiredLabel(modelId)?.label;
   if (known) return known;
   const thinking = thinkingModelDisplayName(modelId);
   if (thinking) return thinking;
@@ -704,7 +768,8 @@ export function modelLabel(modelId: string): string {
 export function shortLabel(modelId: string): string {
   const known = WORKFLOW_LABELS[modelId]?.short
     ?? MODELS.find((m) => m.id === modelId)?.short
-    ?? AUDIO_LABELS[modelId]?.short;
+    ?? AUDIO_LABELS[modelId]?.short
+    ?? retiredLabel(modelId)?.short;
   if (known) return known;
   return displayModelName(modelId).toUpperCase();
 }

@@ -37,7 +37,7 @@ export const SITE_SUITES: SiteSuite[] = [
   { id: "viral", href: "/viral", tab: "Viral", tag: "04 Viral", name: "Viral Studio",
     blurb: "Recast motion and swap elements in footage you own.",
     pages: ["Motion Transfer", "Object Swap", "Sources", "Compare", "History"] },
-  { id: "atomik", href: "/atomik", tab: "Atomik", tag: "05 Atomik", name: "Super Agent",
+  { id: "atomik", href: "/atomik", tab: "Atomik", tag: "05 Atomik", name: "Agent",
     blurb: "The production agent. Plans and runs the work.",
     pages: ["Agent", "Runs", "Recipes", "Builds", "Tools", "Models", "Approvals", "Budget"] },
   { id: "workspace", href: "/workspace", tab: "Workspace", tag: "06 Workspace", name: "Workspace",

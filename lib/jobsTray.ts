@@ -30,7 +30,7 @@ import { KEY_CHANGED_LABEL, KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnC
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
 export type TrayTone = "blue" | "amber" | "green" | "red" | "idle";
 /** The one thing a row offers: see the take, start a held one, make a failed one again, or go where it was made. */
-export type TrayAction = "open" | "release" | "recreate" | "gen" | "ads" | "viral";
+export type TrayAction = "open" | "release" | "recreate" | "gen" | "viral";
 export type TrayPrice = { amount: number; unit: "cr" | "usd" | "account-cr" };
 
 export type TrayJob = {
@@ -267,8 +267,9 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
     id: row.id, source: "account" as const, kind, name, mediaUrl: null, reason: null, progress: null,
     createdAt: row.createdAt, settledAt: null, draftId: row.draftId, projectName: row.projectName, price: quoted, action: null,
   };
-  /* Where the job's own card is (with Check again and Dismiss), for one nobody can confirm from here. */
-  const where: TrayAction | null = row.workflow === "generation" ? "gen" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
+  /* Where the job's own card is (with Check again and Dismiss), for one nobody can confirm from here.
+     A Business ad's page is gone (Business › Ads was removed): its row opens Takes, where its results are. */
+  const where: TrayAction | null = row.workflow === "generation" ? "gen" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "open" : null;
   switch (row.status) {
     case "completed":
       return {
@@ -277,7 +278,7 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
       };
     case "failed": {
       const kept = row.failureCode === "invalid_result";
-      const action: TrayAction | null = preset ? "recreate" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "ads" : null;
+      const action: TrayAction | null = preset ? "recreate" : row.workflow === "genjutsu" ? "viral" : row.workflow.startsWith("marketing") ? "open" : null;
       /* The account's own reason when it gave one; "refunded" or "charged" only once its own ledger names the job. */
       const failure = row.outcome ? accountFailure(row.outcome, row.failureCode) : null;
       return {
@@ -303,7 +304,9 @@ export function accountTrayJob(row: AccountRow, preset: GenPreset | null = null)
 const STAGES: ReadonlySet<string> = new Set(["submitting", "queued", "rendering", "confirming", "held", "unconfirmed", "complete", "failed", "cancelled", "aside"]);
 const KINDS: ReadonlySet<string> = new Set(["video", "image", "audio", "other"]);
 const TONES: ReadonlySet<string> = new Set(["blue", "amber", "green", "red", "idle"]);
-const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "gen", "ads", "viral"]);
+const ACTIONS: ReadonlySet<string> = new Set(["open", "release", "recreate", "gen", "viral"]);
+/** An action a reply may still carry for a page that is gone (Business › Ads), and the one that stands in: Takes, with no take named. */
+const RETIRED_ACTIONS: Readonly<Record<string, TrayAction>> = { ads: "open" };
 const UNITS: ReadonlySet<string> = new Set(["cr", "usd", "account-cr"]);
 const TAKE_ID = /^generation:[A-Za-z0-9_-]{1,160}$/;
 /** A recipe as Gen's letterbox takes it: words, and the take it came from. */
@@ -328,7 +331,10 @@ export function parseTrayReply(value: unknown): TrayReply | null {
     const takeId = typeof job.takeId === "string" && TAKE_ID.test(job.takeId) ? job.takeId : null;
     const preset = parsePreset(job.preset);
     const releaseCredits = Number.isSafeInteger(job.releaseCredits) && Number(job.releaseCredits) > 0 ? Number(job.releaseCredits) : null;
-    const action = job.action && ACTIONS.has(job.action) && (job.action !== "open" || takeId) && (job.action !== "recreate" || preset) && (job.action !== "release" || releaseCredits) ? job.action : null;
+    /* "open" with a take lands on it; a Business ad's "open" names no take and opens Takes itself. */
+    const asked = job.action ? RETIRED_ACTIONS[job.action] ?? job.action : null;
+    const pageless = asked === "open" && !takeId && job.source === "account";
+    const action = asked && ACTIONS.has(asked) && (asked !== "open" || takeId || pageless) && (asked !== "recreate" || preset) && (asked !== "release" || releaseCredits) ? asked : null;
     return [{
       ...job,
       kind: KINDS.has(job.kind) ? job.kind : "other",
@@ -429,7 +435,7 @@ export function traySummary(jobs: readonly TrayJob[], seen: ReadonlySet<string> 
   return { kind: "quiet", ...counts, text: "Jobs", short: "", tone: "idle" };
 }
 
-export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Gen", ads: "Open Ads", viral: "Open Viral" };
+export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Gen", viral: "Open Viral" };
 
 /** The ledger's own words for a figure: "13 cr", "$0.840"; a connected job's is the account's own credits, said so ("40 connected cr"). */
 export function priceLabel(price: TrayPrice | null): string | null {

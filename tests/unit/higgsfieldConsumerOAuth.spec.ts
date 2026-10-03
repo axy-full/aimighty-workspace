@@ -1132,7 +1132,7 @@ test("the connection read still learns which account an old grant belongs to (on
   // A reconnect is retired with the sign-in: it answers 410 and neither reads nor starts anything.
   const reconnect = await route.request("connect", "POST", scope);
   expect(reconnect.status).toBe(410);
-  expect(await reconnect.json()).toEqual({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." });
+  expect(await reconnect.json()).toEqual({ code: "retired", error: "The connected account is no longer used. Past results stay in your Library." });
   expect(route.backfills()).toBe(1);
   expect(route.counts()).toEqual({ starts: 0, disconnects: 0 });
   // Rate-limited: the read still answers, it just does not look the account up.

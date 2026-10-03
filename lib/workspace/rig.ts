@@ -223,7 +223,7 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
   const filed = project.assets.filter((a) => a.nodeId === shotId && a.generationId && visual(a));
   for (const asset of filed) {
     const job = byId.get(asset.generationId!);
-    rows.push({ id: asset.id, v: `v${asset.version}`, label: [node.assetId === asset.id ? "Current" : "Take", engineLabel(asset.description || job?.model).long].join(" · "),
+    rows.push({ id: asset.id, v: `v${asset.version}`, label: [node.assetId === asset.id ? "Current" : "Take", engineLabel(asset.description || job?.model, job?.kind).long].join(" · "),
       meta: relativeAge(job?.createdAt, now), current: node.assetId === asset.id, state: "rendered", order: asset.version, at: job?.createdAt ?? 0 });
   }
   const seen = new Set(filed.map((a) => a.generationId));
@@ -236,7 +236,7 @@ export function shotVersions(project: Project, shotId: string, jobs: readonly Me
     const label = state === "failed" ? endedLabel(job)
       : state === "rendering" ? (job.status === "held" ? (reason ? `Held · ${reason}` : heldLabel(job)) : waitsOnChangedKey(job.params) ? KEY_CHANGED_LINE
         : liveJob(job) && job.status === "queued" ? "Queued" : "Rendering")
-      : `Rendered · ${engineLabel(job.model).long}`;
+      : `Rendered · ${engineLabel(job.model, job.kind).long}`;
     rows.push({ id: job.id, v: `v${job.version ?? 1}`, label, meta: relativeAge(job.createdAt, now), current: false, state, order: job.version ?? 1, at: job.createdAt ?? 0,
       ...(job.status === "held" ? { held: true as const } : {}), ...(reason ? { note: reason } : {}) });
   }

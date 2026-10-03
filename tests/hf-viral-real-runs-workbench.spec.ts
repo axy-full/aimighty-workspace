@@ -203,7 +203,7 @@ test("the real route: the runs view pages runs by cursor and the saved-jobs list
   for (const action of ["quote", "submit"]) {
     const refused = await post({ action, draftId: "ws-runs-real" });
     expect(refused.status(), action).toBe(410);
-    expect(await refused.json()).toEqual({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." });
+    expect(await refused.json()).toEqual({ code: "retired", error: "The connected account is no longer used. Past results stay in your Library." });
   }
   const status = await post({ action: "status", draftId: "ws-runs-real", id: "44444444-4444-4444-8444-000000000001" });
   expect(status.status()).not.toBe(410);

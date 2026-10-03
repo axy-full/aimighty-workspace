@@ -7,17 +7,14 @@ import {
   composerButtonLabel,
   composerReducer,
   composerSettings,
-  connectedModels,
   INITIAL_COMPOSER,
   liveCredits,
-  offeredModels,
   quoteKeyFor,
   workspaceModels,
   type ComposerModel,
   type ComposerQuote,
   type ComposerState,
   type EngineRow,
-  secondsIn,
   audioSeconds,
   composerVoices,
   stepAudioSeconds,
@@ -51,7 +48,7 @@ const catalogue = { loading: false, error: null };
 
 function keyOf(state: ComposerState, model: ComposerModel | null) {
   return quoteKeyFor({
-    billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
+    type: state.type, modelId: model?.id ?? "", settings,
     references: state.references, prompt: state.prompt.trim(), seconds: state.seconds,
     instrumental: state.instrumental, voiceId: state.voiceId,
   });
@@ -70,13 +67,15 @@ test("the composer opens on Image with a defaulted model, so it works untouched"
     { id: "nano_banana_2", label: "Nano Banana 2", type: "image" }, { id: "gpt_image_2_5", label: "GPT Image 2.5", type: "image" },
     { id: "sonilo_music", label: "Sonilo Music", type: "audio" }, { id: "seed_audio", label: "Seed Audio 1.0", type: "audio" },
   ];
-  const connected = { ...INITIAL_COMPOSER, billing: "connected" as const };
-  expect(activeModel({ ...connected, type: "video" }, catalogue)?.id).toBe("seedance_2_5");
-  expect(activeModel({ ...connected, type: "image" }, catalogue)?.id).toBe("gpt_image_2_5");
-  expect(activeModel({ ...connected, type: "audio" }, catalogue)?.id).toBe("seed_audio");
-  /* A pick still wins over the default; a list without the default falls back to its first. */
-  expect(activeModel({ ...connected, type: "video", chosen: { "connected:video": "seedance_2_0" } }, catalogue)?.id).toBe("seedance_2_0");
-  expect(activeModel({ ...connected, type: "video" }, catalogue.filter((m) => m.id !== "seedance_2_5"))?.id).toBe("seedance_2_0");
+  /* A state saved on the retired connected source reads like any other: one source, one set of picks. */
+  const saved = { ...INITIAL_COMPOSER, billing: "connected" as const };
+  expect(activeModel({ ...saved, type: "video" }, catalogue)?.id).toBe("seedance_2_5");
+  expect(activeModel({ ...saved, type: "image" }, catalogue)?.id).toBe("gpt_image_2_5");
+  expect(activeModel({ ...saved, type: "audio" }, catalogue)?.id).toBe("seed_audio");
+  /* A pick still wins over the default; one kept under the connected source is not read; a list without the default falls back to its first. */
+  expect(activeModel({ ...saved, type: "video", chosen: { "workspace:video": "seedance_2_0" } }, catalogue)?.id).toBe("seedance_2_0");
+  expect(activeModel({ ...saved, type: "video", chosen: { "connected:video": "seedance_2_0" } }, catalogue)?.id).toBe("seedance_2_5");
+  expect(activeModel({ ...saved, type: "video" }, catalogue.filter((m) => m.id !== "seedance_2_5"))?.id).toBe("seedance_2_0");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "video" }, models)?.id).toBe("dreamina-seedance-2-5-260628");
   expect(activeModel({ ...INITIAL_COMPOSER, type: "audio" }, models)?.id).toBe("eleven_sfx");
   /* Every label is the product's own display name; the composer writes none of
@@ -98,7 +97,7 @@ test("a workspace on Grok Voice alone offers its speech model with its voices, a
   expect(workspaceModels(engines, { ...grokOnly, vendors: { elevenlabs: true, xai: true } }).filter((m) => m.type === "audio").map((m) => m.audioTask)).toEqual(["sound", "music", "speech"]);
 });
 
-test("a chosen model is kept per type and per billing source, and falls back when withdrawn", () => {
+test("a chosen model is kept per type, and falls back when withdrawn", () => {
   const models = workspaceModels(engines, audio);
   let state = composerReducer(INITIAL_COMPOSER, { type: "type", value: "video" });
   state = composerReducer(state, { type: "model", value: "fal-ai/kling-video/v3/standard" });
@@ -110,32 +109,39 @@ test("a chosen model is kept per type and per billing source, and falls back whe
   /* A withdrawn engine falls back to the list's default rather than sending an id the account has lost. */
   const withoutKling = models.filter((m) => m.id !== "fal-ai/kling-video/v3/standard");
   expect(activeModel(state, withoutKling)?.id).toBe("dreamina-seedance-2-5-260628");
-  /* Switching to the connected source carries no workspace model over. */
-  const connected = composerReducer(state, { type: "billing", value: "connected" });
-  expect(activeModel(connected, connectedModels([{ id: "cm-video", name: "Motion", outputType: "video" }]))?.id).toBe("cm-video");
+  /* There is no other source to switch to: asking for the connected one leaves the composer, and its pick, as they are. */
+  const asked = composerReducer(state, { type: "billing", value: "connected" });
+  expect(asked).toBe(state);
+  expect(activeModel(asked, models)?.id).toBe("fal-ai/kling-video/v3/standard");
 });
 
-test("the billing switch changes the model list and the price source", () => {
-  const rows = [
-    { id: "cm-image", name: "Connected image", outputType: "image", medias: [{ roles: ["reference_image"] }] },
-    { id: "cm-video", name: "Connected video", outputType: "video" },
-    { id: "cm-3d", name: "Connected 3D", outputType: "3d" },
-  ];
-  const connected = connectedModels(rows);
-  /* 3D is not one of the composer's three types, so it is not offered. */
-  expect(connected.map((m) => m.id)).toEqual(["cm-image", "cm-video"]);
-  expect(connected[0].referenceRoles).toEqual(["reference_image"]);
-  const state = composerReducer(INITIAL_COMPOSER, { type: "billing", value: "connected" });
-  expect(state.billing).toBe("connected");
-  expect(offeredModels(state, connected).map((m) => m.id)).toEqual(["cm-image"]);
-  /* The price belongs to a source: the same inputs under the other source are a different quote. */
-  expect(keyOf(state, connected[0])).not.toBe(keyOf({ ...state, billing: "workspace" }, connected[0]));
-  /* And the wording says which credits are charged, without naming the provider. */
-  expect(billingWording("workspace", { workspaceName: "Northside" })).toContain("Northside");
-  const wording = billingWording("connected", { walletName: "Studio wallet" });
-  expect(wording).toContain("connected account");
-  expect(wording).toContain("Studio wallet");
-  expect(`${billingWording("workspace", {})} ${wording}`).not.toMatch(/Higgsfield|Seedance|Kling/i);
+test("one source: every way a composer could be put on the connected account lands on this workspace's credits, and nothing throws", () => {
+  /* The switch, a recipe, an Undo and a reset: none of them leaves the composer on the retired source. */
+  expect(composerReducer(INITIAL_COMPOSER, { type: "billing", value: "connected" }).billing).toBe("workspace");
+  const saved: ComposerState = { ...INITIAL_COMPOSER, billing: "connected", type: "video", prompt: "a wave", chosen: { "connected:video": "veo_3_1" }, notice: "The price moved." };
+  expect(composerReducer(saved, { type: "billing", value: "connected" })).toMatchObject({ billing: "workspace", prompt: "a wave", notice: null });
+  expect(composerReducer(INITIAL_COMPOSER, { type: "restore", value: saved })).toMatchObject({ billing: "workspace", type: "video", prompt: "a wave", notice: null });
+  const recreated = composerReducer(INITIAL_COMPOSER, { type: "recipe", value: { type: "video", billing: "connected", model: "veo_3_1", picks: { duration: 8 }, prompt: "a wave" } });
+  expect(recreated).toMatchObject({ billing: "workspace", type: "video", prompt: "a wave", picks: { duration: 8 } });
+  expect(recreated.chosen).toEqual({ "workspace:video": "veo_3_1" });
+  /* The model the take named is not offered: the composer falls back to the list's own default. */
+  expect(activeModel(recreated, workspaceModels(engines, audio))?.id).toBe("dreamina-seedance-2-5-260628");
+  /* The price's key does not depend on the word a saved state carries: the recovery keys already kept still match. */
+  const model = workspaceModels(engines, audio).find((m) => m.type === "video")!;
+  expect(keyOf(saved, model)).toBe(keyOf({ ...saved, billing: "workspace" }, model));
+  expect(quoteKeyFor({ billing: "connected", type: "video", modelId: model.id, settings, references: [], prompt: "", seconds: 10, instrumental: true, voiceId: "" }))
+    .toBe(JSON.stringify(["workspace", "video", model.id, "16:9", "720p", 5, "", [], "", 10, true, ""]));
+  /* And the wording says which credits are charged, without naming a provider. */
+  expect(billingWording({ workspaceName: "Northside" })).toBe("Charged to Northside’s credits.");
+  expect(billingWording({})).toBe("Charged to this workspace’s credits.");
+});
+
+test("an engine no longer offered for new renders is left out of the list, whatever the route lists", () => {
+  const rows: EngineRow[] = [...engines, { id: "hf-soul-standard", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [] }, { id: "hf-soul-cinema", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [], soulIdentity: true }];
+  const ids = workspaceModels(rows, audio).map((m) => m.id);
+  expect(ids).not.toContain("hf-soul-standard");
+  expect(ids).not.toContain("hf-soul-cinema");
+  expect(ids).toEqual(workspaceModels(engines, audio).map((m) => m.id));
 });
 
 test("a missing or stale quote blocks the send with a visible reason", () => {
@@ -143,7 +149,7 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   const model = activeModel(INITIAL_COMPOSER, models)!;
   const withPrompt = composerReducer(INITIAL_COMPOSER, { type: "prompt", value: "a lighthouse at dusk" });
   const key = keyOf(withPrompt, model);
-  const base = { state: withPrompt, model, quoteKey: key, submitting: false, capability: null, catalogue };
+  const base = { state: withPrompt, model, quoteKey: key, submitting: false, catalogue };
 
   /* Nothing written yet. */
   expect(composerBlock({ ...base, state: INITIAL_COMPOSER, quote: ready(keyOf(INITIAL_COMPOSER, model), 3) })).toBe("Write what to generate.");
@@ -152,7 +158,7 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   /* A quote for other inputs is stale: it blocks, and its figure is never used. */
   expect(composerBlock({ ...base, quote: ready("some other key", 18) })).toBe("Getting the live price…");
   expect(liveCredits(ready("some other key", 18), key)).toBeNull();
-  expect(composerButtonLabel({ billing: "workspace", quote: ready("some other key", 18), quoteKey: key, submitting: false })).toBe("Generate");
+  expect(composerButtonLabel({ quote: ready("some other key", 18), quoteKey: key, submitting: false })).toBe("Generate");
   /* A refused price says why. */
   expect(composerBlock({ ...base, quote: { key, credits: null, state: "unavailable", reason: "This engine is unavailable." } })).toBe("This engine is unavailable.");
   expect(composerBlock({ ...base, quote: { key, credits: null, state: "loading", reason: null } })).toBe("Getting the live price…");
@@ -161,12 +167,12 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   expect(composerBlock({ ...base, quote: ready(key, 18), projects: "loading" })).toBe("Reading the projects…");
   expect(composerBlock({ ...base, quote: ready(key, 18), projects: "error" })).toContain("Try again");
   expect(composerBlock({ ...base, quote: ready(key, 18), projects: "ready" })).toBeNull();
-  expect(composerButtonLabel({ billing: "workspace", quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
-  expect(composerButtonLabel({ billing: "connected", quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 connected cr");
+  expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
+  expect(composerButtonLabel({ quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 cr");
   /* An approximate figure (an engine that settles on what it delivers) never reads as exact. */
-  expect(composerButtonLabel({ billing: "workspace", quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr");
-  expect(composerButtonLabel({ billing: "workspace", quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr");
-  expect(composerButtonLabel({ billing: "workspace", quote: ready(key, 18), quoteKey: key, submitting: true })).toBe("Submitting…");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr");
+  expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: true })).toBe("Submitting…");
   expect(composerBlock({ ...base, quote: ready(key, 18), submitting: true })).toBe("Submitting this generation…");
   /* Changing the model moves the key, so the old figure cannot be sent. */
   const another = composerReducer(withPrompt, { type: "type", value: "video" });
@@ -181,27 +187,19 @@ test("every input that moves the price is in the quote key", () => {
   expect(keyOf({ ...state, references: [{ key: "upload:a", id: "a", origin: "upload", kind: "image", name: "a.png", url: "/api/uploads/a" }] }, video)).not.toBe(key);
   expect(quoteKeyFor({ billing: "workspace", type: "video", modelId: video.id, settings: { ...settings, resolution: "1080p" }, references: [], prompt: "", seconds: 10, instrumental: true, voiceId: "" }))
     .not.toBe(quoteKeyFor({ billing: "workspace", type: "video", modelId: video.id, settings, references: [], prompt: "", seconds: 10, instrumental: true, voiceId: "" }));
-  /* Video is not priced by its prompt; sound and the connected account are. */
+  /* Video is not priced by its prompt; sound is. */
   expect(keyOf({ ...state, prompt: "another wave" }, video)).toBe(key);
   const sound: ComposerState = { ...INITIAL_COMPOSER, type: "audio", prompt: "rain" };
   expect(keyOf({ ...sound, prompt: "thunder" }, models.find((m) => m.audioTask === "sound")!)).not.toBe(keyOf(sound, models.find((m) => m.audioTask === "sound")!));
   expect(keyOf({ ...sound, seconds: 20 }, models.find((m) => m.audioTask === "sound")!)).not.toBe(keyOf(sound, models.find((m) => m.audioTask === "sound")!));
 });
 
-test("the connected source blocks with its own reasons until it can pay", () => {
-  const model = connectedModels([{ id: "cm-image", name: "Connected image", outputType: "image" }])[0];
-  const state = composerReducer(composerReducer(INITIAL_COMPOSER, { type: "billing", value: "connected" }), { type: "prompt", value: "a lighthouse" });
-  const key = keyOf(state, model);
-  const base = { state, model, quote: ready(key, 9), quoteKey: key, submitting: false, catalogue };
-  expect(composerBlock({ ...base, capability: null })).toBe("Reading the connected account…");
-  expect(composerBlock({ ...base, capability: { owner: false, connected: false, suspended: false } })).toMatch(/workspace owner/);
-  expect(composerBlock({ ...base, capability: { owner: true, connected: false, suspended: false } })).toMatch(/No account is connected/);
-  expect(composerBlock({ ...base, capability: { owner: true, connected: true, suspended: true } })).toMatch(/paused/);
-  expect(composerBlock({ ...base, capability: { owner: true, connected: true, suspended: false } })).toBeNull();
-  /* A catalogue that cannot be read is said so, not silently empty. */
-  expect(composerBlock({ ...base, capability: { owner: true, connected: true, suspended: false }, model: null, catalogue: { loading: true, error: null } })).toBe("Reading the available models…");
-  expect(composerBlock({ ...base, capability: { owner: true, connected: true, suspended: false }, model: null, catalogue: { loading: false, error: null } }))
-    .toBe("No image model is available on this account.");
+test("a model list that cannot be read, or is empty, is said so — not silently empty", () => {
+  const state = composerReducer(INITIAL_COMPOSER, { type: "prompt", value: "a lighthouse" });
+  const base = { state, model: null, quote: null, quoteKey: "k", submitting: false };
+  expect(composerBlock({ ...base, catalogue: { loading: true, error: null } })).toBe("Reading the available models…");
+  expect(composerBlock({ ...base, catalogue: { loading: false, error: "The available models could not be read." } })).toBe("The available models could not be read.");
+  expect(composerBlock({ ...base, catalogue: { loading: false, error: null } })).toBe("No image model is available on this account.");
 });
 
 test("a line needs a voice to be read in, and a model's own settings are what it renders with", () => {
@@ -210,11 +208,11 @@ test("a line needs a voice to be read in, and a model's own settings are what it
   const state: ComposerState = { ...INITIAL_COMPOSER, type: "audio", prompt: "Read this line." };
   const key = keyOf(state, speech);
   /* The composer hands in the voice the line is read in (the pick, else the model's first): none at all blocks, and says what to do. */
-  expect(composerBlock({ state, model: speech, quote: ready(key, 2), quoteKey: key, submitting: false, capability: null, catalogue }))
+  expect(composerBlock({ state, model: speech, quote: ready(key, 2), quoteKey: key, submitting: false, catalogue }))
     .toBe(`${speech.label} has no voice to read in here. Choose another model.`);
   const voiced = composerReducer(state, { type: "voice", value: "v1" });
   const voicedKey = keyOf(voiced, speech);
-  expect(composerBlock({ state: voiced, model: speech, quote: ready(voicedKey, 2), quoteKey: voicedKey, submitting: false, capability: null, catalogue })).toBeNull();
+  expect(composerBlock({ state: voiced, model: speech, quote: ready(voicedKey, 2), quoteKey: voicedKey, submitting: false, catalogue })).toBeNull();
   /* Settings come from the engine, and the project's aspect wins where the engine allows it. */
   const video = models.find((m) => m.id === "dreamina-seedance-2-5-260628")!;
   expect(composerSettings(video)).toEqual({ ratio: "16:9", resolution: "720p", duration: 5 });
@@ -223,7 +221,7 @@ test("a line needs a voice to be read in, and a model's own settings are what it
   expect(composerSettings(models.find((m) => m.id === "fal-ai/kling-video/v3/standard")!).resolution).toBe("1080p");
 });
 
-test("changing type drops what the new type cannot use, and reset keeps the source", () => {
+test("changing type drops what the new type cannot use, and reset lands on this workspace's credits", () => {
   const reference = { key: "upload:a", id: "a", origin: "upload" as const, kind: "image" as const, name: "a.png", url: "/api/uploads/a" };
   let state = composerReducer(INITIAL_COMPOSER, { type: "addReference", value: reference });
   expect(state.references).toHaveLength(1);
@@ -234,7 +232,7 @@ test("changing type drops what the new type cannot use, and reset keeps the sour
   expect(composerReducer(state, { type: "type", value: "audio" }).references).toEqual([]);
   expect(composerReducer(state, { type: "removeReference", key: "upload:a" }).references).toEqual([]);
   const noticed = composerReducer({ ...state, billing: "connected", notice: "The price moved." }, { type: "reset" });
-  expect(noticed.billing).toBe("connected");
+  expect(noticed.billing).toBe("workspace");
   expect(noticed.prompt).toBe("");
   expect(noticed.notice).toBeNull();
   /* Any edit clears a stale notice, so a moved price is never shown beside new inputs. */
@@ -333,7 +331,7 @@ test("Gen's copy promises only the outputs its composer makes: no 3D while the c
   expect(`${gen.blurb} · ${gen.pages.join(" · ")}`).not.toMatch(/3D/i);
   expect(readFileSync("app/(marketing)/site/_pages/gen/index.tsx", "utf8")).not.toMatch(/3D/i);
   /* In the app: the Home tile's line (lib/shell/studio-home.ts). */
-  expect(suiteTiles([], { rendering: 0, videoEngine: "", adMode: "", adSeconds: 0, viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
+  expect(suiteTiles([], { rendering: 0, videoEngine: "", viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
 });
 
 /* ── The keymap and the palette ─────────────────────────────────────────── */
@@ -422,34 +420,6 @@ test("a pick is used only where the engine allows it; anything else falls back t
   expect(composerReducer(picked, { type: "pick", value: { ratio: "9:16" } }).picks).toEqual({ duration: 12, ratio: "9:16" });
 });
 
-test("a connected model's chips come from its live catalogue entry: every second of a range, exactly a closed list, its roles, prompt-only, enhance", () => {
-  const rows = [
-    { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", description: "Omni-reference video", aspectRatios: ["auto", "16:9", "9:16"], durationRange: { min: 4, max: 30 }, medias: [{ name: "medias", roles: ["start_image", "end_image", "image_references", "video_references", "audio_references"] }], parameters: [{ name: "resolution", options: ["480p", "720p", "1080p"] }, { name: "mode", options: ["t2v", "omni_reference"] }] },
-    { id: "veo_3_1", name: "Veo 3.1", outputType: "video", aspectRatios: ["16:9", "9:16"], durations: [4, 6, 8], medias: [{ name: "start_image", roles: ["start_image"], max: 1 }], parameters: [{ name: "enhance_prompt", type: "bool" }] },
-    { id: "z_image", name: "Z Image", outputType: "image", aspectRatios: ["1:1"], medias: [], parameters: [] },
-    { id: "brain_activity", name: "Virality Predictor", outputType: "text" },
-  ];
-  const models = connectedModels(rows);
-  expect(models.map((m) => m.id)).toEqual(["seedance_2_5", "veo_3_1", "z_image"]);
-  const [seedance, veo, z] = models;
-  expect(seedance.durations).toHaveLength(27);
-  expect(seedance.durations?.[0]).toBe(4); expect(seedance.durations?.at(-1)).toBe(30);
-  expect(seedance.resolutions).toEqual(["480p", "720p", "1080p"]);
-  expect(seedance.referenceRoles).toEqual(["start_image", "end_image", "image_references", "video_references", "audio_references"]);
-  expect(seedance).toMatchObject({ connected: true, promptOnly: false, enhanceable: false, description: "Omni-reference video" });
-  expect(veo.durations).toEqual([4, 6, 8]);
-  expect(veo).toMatchObject({ enhanceable: true, mediaMax: 1, referenceRoles: ["start_image"] });
-  expect(z).toMatchObject({ promptOnly: true, referenceRoles: [] });
-  expect(secondsIn({ min: 4, max: 30 })).toHaveLength(27);
-  expect(secondsIn({ min: 6, max: 5 })).toEqual([]);
-  /* The picks follow the entry: 12 s is fine for a range, not for Veo's closed list. */
-  expect(composerSettings(seedance, undefined, { duration: 12 }).duration).toBe(12);
-  expect(composerSettings(veo, undefined, { duration: 12 }).duration).toBe(4);
-  const withRole = composerReducer({ ...INITIAL_COMPOSER, references: [{ key: "k", id: "u1", origin: "upload", kind: "image", name: "a", url: "" }] }, { type: "referenceRole", key: "k", role: "end_image" });
-  expect(withRole.references[0].role).toBe("end_image");
-  expect(composerReducer(INITIAL_COMPOSER, { type: "enhance", value: true }).enhance).toBe(true);
-});
-
 test("takes per Generate: the stepper clamps to 1–4 and the button says the count times the take's price", async () => {
   const { INITIAL_COMPOSER, TAKES_MAX, composerButtonLabel, composerReducer } = await import("../../lib/workspace/composer");
   expect(TAKES_MAX).toBe(4);
@@ -457,22 +427,20 @@ test("takes per Generate: the stepper clamps to 1–4 and the button says the co
   expect(composerReducer(INITIAL_COMPOSER, { type: "count", value: 0 }).count).toBe(1);
   expect(composerReducer(INITIAL_COMPOSER, { type: "count", value: 9 }).count).toBe(4);
   const quote = { key: "k", credits: 43, state: "ready" as const, reason: null };
-  expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 43 connected cr");
-  expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 2 })).toBe("Generate 2 takes · 86 connected cr");
-  expect(composerButtonLabel({ billing: "workspace", quote: null, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes");
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: true, count: 3 })).toBe("Submitting…");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 43 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 2 })).toBe("Generate 2 takes · 86 cr");
+  expect(composerButtonLabel({ quote: null, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: true, count: 3 })).toBe("Submitting…");
 });
 
-test("a Soul model declares soul_id: the pick becomes a setting only there, and moves the quote key", async () => {
-  const { connectedModels, composerSettings, quoteKeyFor } = await import("../../lib/workspace/composer");
-  const [soul] = connectedModels([{ id: "soul_2", name: "Soul 2", outputType: "image", aspectRatios: ["1:1"], medias: [{ name: "image", roles: ["image_references"], max: 1 }], parameters: [{ name: "soul_id", type: "string" }] }]);
-  const [plain] = connectedModels([{ id: "z_image", name: "Z Image", outputType: "image", aspectRatios: ["1:1"], medias: [], parameters: [] }]);
-  expect(soul.soulId).toBe(true);
-  expect(plain.soulId).toBe(false);
-  expect(composerSettings(soul, undefined, { soulId: "soul_9f2a" }).soulId).toBe("soul_9f2a");
-  expect(composerSettings(plain, undefined, { soulId: "soul_9f2a" }).soulId).toBeUndefined();
-  const base = { billing: "connected" as const, type: "image" as const, modelId: "soul_2", references: [], prompt: "Mira at dusk", seconds: 10, instrumental: true, voiceId: "" };
-  const without = quoteKeyFor({ ...base, settings: composerSettings(soul) });
-  const withId = quoteKeyFor({ ...base, settings: composerSettings(soul, undefined, { soulId: "soul_9f2a" }) });
-  expect(withId).not.toBe(without);
+test("an identity is a setting only on a model that carries one, and no engine Gen offers does", async () => {
+  const { composerSettings, quoteKeyFor, workspaceModels } = await import("../../lib/workspace/composer");
+  /* Nothing workspaceModels builds carries an identity, so a pick a recreated take brought is never sent or priced. */
+  for (const model of workspaceModels(engines, audio)) {
+    expect(model.soulId, model.id).toBeUndefined();
+    expect(composerSettings(model, undefined, { soulId: "soul_9f2a" }).soulId, model.id).toBeUndefined();
+  }
+  const plain = workspaceModels(engines, audio)[0];
+  const base = { type: "image" as const, modelId: plain.id, references: [], prompt: "a portrait at dusk", seconds: 10, instrumental: true, voiceId: "" };
+  expect(quoteKeyFor({ ...base, settings: composerSettings(plain, undefined, { soulId: "soul_9f2a" }) })).toBe(quoteKeyFor({ ...base, settings: composerSettings(plain) }));
 });

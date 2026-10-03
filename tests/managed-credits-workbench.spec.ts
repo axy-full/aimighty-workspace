@@ -5,7 +5,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts): every request for new work on the account
    answers this, before anything is read or priced. */
-const RETIRED = { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." };
+const RETIRED = { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." };
 
 test("an old workspace flag cannot authorize provider-wallet spending after migration", async ({ page }) => {
   const { workspace } = await signInLocally(page.request);

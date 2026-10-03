@@ -49,6 +49,15 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | **xAI** | Grok Imagine Image 2.0, Grok Imagine Image, Grok Imagine Video 1.5, Grok Imagine Video, Grok Voice | Stills, short clips and spoken lines. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
+**AMENDED 4 October 2026 — D0 removals (design/particl-graphite/README.md › "What this design removes or renames").** The Higgsfield row above is narrowed, and the vendor's name is no longer shown to customers anywhere:
+
+- **Still running, on Particl's API key:** Motion Transfer and Object Swap (Viral), Marketing Studio Image (Business › Image ads) and Cinema Studio 4.0 (Gen, priced "quoted" in the model sheet).
+- **No longer offered:** Soul Standard, Soul 2 and Soul Cinema. A new render or a new training on them is refused before any reservation or vendor call. Past renders stay in the Library and read "Identity still · Standard", "Identity still · 2" and "Identity still · Cinema". Cast's select is **Identity**, and "Build identity" uses Particl's own trainer (`/api/identities`, 54 cr at 1,500 steps on the rate card).
+- **Open:** an identity built that way cannot yet be rendered from Cast or Gen (the quoted admission flow refuses trained-identity stages). "Render with identity" on Flux · Identity is not built.
+- **Removed from the product:** Business › Ads (Business opens on Image ads; an old Ads link lands there), Cast's reference-elements line, the connected-account billing source in Gen, and the unused `SoulIdHost` and `ConsumerGenjutsu` components. Results made on the retired connected account keep neutral names ("Video (earlier account)" and the like).
+- **Names:** the Business suite is "Moleculr Business Suite"; Atomik is "Atomik Agent".
+
+
 **Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit costs and the monthly cap. **Nowhere else, and never on anything that spends.**
 
 Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.

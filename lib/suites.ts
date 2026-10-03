@@ -17,7 +17,7 @@ export const SUITES: {
   },
   {
     id: "atomik",
-    name: "Atomik Super Agent",
+    name: "Atomik Agent",
     description: "The production agent",
     color: "#F0B23E",
   },

@@ -3,7 +3,6 @@ import {
   IMAGE_AD_ASPECTS, IMAGE_AD_BUILDS, IMAGE_AD_MAX, IMAGE_AD_RESOLUTIONS, INITIAL_IMAGE_AD, PRESET_STILLS_MAX, imageAdBlock, imageAdBuild, imageAdMedias, imageAdRequest,
   imageAdRoom, imageAdSettings, mergePresets, presetGroup, presetShelves, qualityLabel, qualityOff, restoreImageAd, withBuild, withPreset, withProductStill, type ImageAdState, type PresetItem,
 } from "../../lib/shell/image-ads";
-import { PRESET_TYPES } from "../../lib/shell/business";
 import { MARKETING_CAPABILITIES, MARKETING_VARIANTS, marketingInput, marketingPath, marketingSettings } from "../../lib/higgsfieldMarketing";
 import { MARKETING_BUILDS, marketingQualities, marketingQualityFor, type MarketingQuality } from "../../lib/workbench/moleculr";
 import { MARKETING_IMAGE_MODEL_ID } from "../../lib/models";
@@ -45,8 +44,6 @@ test("the builds are Moleculr's: 2.0 Alpha priced live, 2.5 Flare and Sunburst p
   expect([...IMAGE_AD_RESOLUTIONS]).toEqual([...MARKETING_CAPABILITIES.resolutions]);
   expect([...IMAGE_AD_ASPECTS].sort()).toEqual([...MARKETING_CAPABILITIES.ratios].sort());
   expect(IMAGE_AD_MAX).toBe(MARKETING_CAPABILITIES.maxImages);
-  /* Image ads takes nothing from the connected account's setup, so Setup offers it nothing. */
-  expect(PRESET_TYPES.dtc).toEqual([]);
 });
 
 test("Generate image says why it cannot run, in order", () => {

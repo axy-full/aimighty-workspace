@@ -196,7 +196,7 @@ function AddMemory({ api, scope, project, projectId, entries, onSaved }: { api: 
 
 /**
  * The open project's Cast & Elements — its characters and elements — and the
- * Soul IDs trained in this workspace that are ready, to pick one as an
+ * identities trained in this workspace that are ready, to pick one as an
  * approved identity. Memory keeps a reference to the element, not a copy:
  * Atomik reads its name as it is when it plans, and leaves it out once it is
  * gone.
@@ -210,7 +210,7 @@ function ElementPicker({ scope, project, entries, picked, onPick }: { scope: str
   const kept = new Set(entries.flatMap((e) => (e.assetId ? [e.assetId] : [])));
   const options = [
     ...(project.production?.cast?.entries ?? []).map((e) => ({ ref: castRef(productionId, e.id), name: e.name.trim() || "Unnamed", what: `${e.kind === "character" ? "Character" : "Element"} · Cast & Elements` })),
-    ...(identities.state.data?.identities ?? []).filter((i) => i.status === "ready").map((i) => ({ ref: soulRef(i.id), name: i.name.trim() || "Soul ID", what: `Soul ID · ${i.subjectType === "character" ? "character" : "element"}` })),
+    ...(identities.state.data?.identities ?? []).filter((i) => i.status === "ready").map((i) => ({ ref: soulRef(i.id), name: i.name.trim() || REF_SOURCE_LABEL.soul, what: `${REF_SOURCE_LABEL.soul} · ${i.subjectType === "character" ? "character" : "element"}` })),
   ];
   const status = identities.state.status;
   return (
@@ -224,11 +224,11 @@ function ElementPicker({ scope, project, entries, picked, onPick }: { scope: str
           </span>
         </label>
       ))}
-      {status === "idle" || status === "loading" ? <p className="tc-note" role="status">Reading the Soul IDs…</p> : null}
-      {status === "error" ? <LoadBanner banner={{ tone: "error", message: identities.state.error ?? "Soul IDs could not be read." }} onRetry={identities.refresh} testId="memory-elements-error" compact /> : null}
+      {status === "idle" || status === "loading" ? <p className="tc-note" role="status">Reading the identities…</p> : null}
+      {status === "error" ? <LoadBanner banner={{ tone: "error", message: identities.state.error ?? "Identities could not be read." }} onRetry={identities.refresh} testId="memory-elements-error" compact /> : null}
       {!options.length && status === "ready" ? (
         <div className="am-none" data-testid="memory-elements-empty">
-          <p className="tc-note">Nothing in Cast & Elements yet: add characters and elements there, or train a Soul ID.</p>
+          <p className="tc-note">Nothing in Cast & Elements yet: add characters and elements there.</p>
           <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("studio", "cast")} data-testid="memory-elements-go">Open Cast & Elements</button>
         </div>
       ) : null}
@@ -343,7 +343,7 @@ function sourceLine(entry: Entry): { what: string | null; gone: string } {
     : source === "cast" ? `${REF_SOURCE_LABEL.cast}${entry.assetKind ? ` · ${entry.assetKind === "character" ? "Character" : "Element"}` : ""}`
     : source === "soul" ? REF_SOURCE_LABEL.soul : null;
   const gone = source === "cast" ? "No longer in Cast & Elements, so Atomik leaves it out."
-    : source === "soul" ? "This Soul ID is no longer in the workspace, so Atomik leaves it out."
+    : source === "soul" ? "This identity is no longer in the workspace, so Atomik leaves it out."
     : "No longer in the Library, so Atomik leaves it out.";
   return { what, gone };
 }
@@ -373,7 +373,7 @@ function MemoryRow({ entry, api, projectId, projectName, onChanged }: { entry: E
   const accept = () => act(() => api.update(entry.id, { accept: true, updatedAt: entry.updatedAt }), "Kept. Atomik will remember it.", "That could not be kept. Try again.");
   const forget = () => act(() => api.forget([entry.id], waiting ? "dismissed" : "forgotten"), waiting ? "Dismissed." : "Forgotten. A copy stays in the workspace archive.", "That could not be forgotten. Try again.");
   const scopeLabel = entry.scope === "project" ? (projectName ? `This project · ${projectName}` : "This project") : "Whole workspace";
-  /* A Library asset is a reference or an approved identity; a Soul ID or an entry of Cast & Elements is an approved identity only. */
+  /* A Library asset is a reference or an approved identity; a trained identity or an entry of Cast & Elements is an approved identity only. */
   const kinds: MemoryKind[] = !entry.assetId ? TEXT_KINDS : refSource(entry.assetId) === "library" ? ["reference", "identity"] : ["identity"];
   return (
     <div className="am-row" data-testid="memory-row" data-id={entry.id} data-kind={entry.kind} data-status={entry.status} data-scope={entry.scope}>

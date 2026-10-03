@@ -253,7 +253,7 @@ export default function SubatomikWorkspace({
               <section className="suite-panel" aria-label="Shorts" data-testid="subatomik-shorts-retired">
                 <h2>Shorts</h2>
                 <p className={styles.hint}>
-                  Shorts ran on a signed-in Higgsfield account. {ACCOUNT_RETIRED}. {HISTORY_KEPT}
+                  Shorts is retired. {ACCOUNT_RETIRED}. {HISTORY_KEPT}
                 </p>
               </section>
             ) : (

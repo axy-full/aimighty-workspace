@@ -18,7 +18,9 @@ const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-
 const minutesAgo = (m: number) => Date.now() - m * 60_000;
 const stuck = { id: "11111111-1111-4111-8111-111111111111", draftId: "ws-connected", projectName: "Coastal light study", workflow: "generation", status: "uncertain", createdAt: minutesAgo(40), releasable: true };
 const fresh = { id: "22222222-2222-4222-8222-222222222222", draftId: "ws-other", projectName: "Harbour spot", workflow: "marketing-video", status: "accepted", createdAt: minutesAgo(3), releasable: false };
-const RETIRED = "Particl no longer signs in to Higgsfield. Past results stay in your Library.";
+const RETIRED = "The connected account is no longer used. Past results stay in your Library.";
+/* The row's own words (lib/shell/connected-capability › ACCOUNT_RETIRED, HISTORY_KEPT): no vendor name. */
+const ROW_RETIRED = "The connected account is no longer used. Past results stay in your Library.";
 
 async function open(page: Page, path: string, connection: Record<string, unknown> = { connected: true, requiresReconnect: false, capacity: { limit: 4, active: 4, mine: [stuck, fresh] } }) {
   await signInLocally(page.request);
@@ -59,9 +61,10 @@ test("Engines: a grant still held says the sign-in is retired, lists the running
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, posts, started, disconnects } = await open(page, "/suites?view=workspace&tab=engines");
   const card = page.getByTestId("engine-connected-account");
-  await expect(card).toContainText("Higgsfield account");
+  await expect(card).toContainText("Earlier connected account");
+  await expect(card).not.toContainText(/Higgsfield/i);
   await expect(card).toContainText("Sign-in retired");
-  await expect(page.getByTestId("connected-account-retired")).toHaveText(`${RETIRED} Jobs already running are still collected; disconnect once none are left.`);
+  await expect(page.getByTestId("connected-account-retired")).toHaveText(`${ROW_RETIRED} Jobs already running are still collected; disconnect once none are left.`);
   /* No way to connect or reconnect, and no developer-API check. */
   await expect(card.getByRole("button", { name: /Connect|Reconnect/ })).toHaveCount(0);
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
@@ -100,7 +103,7 @@ test("Engines: a grant still held says the sign-in is retired, lists the running
   expect(disconnects()).toBe(1);
   /* The grant is gone: no Disconnect, and the job still listed can still be seen. */
   await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
-  await expect(page.getByTestId("connected-account-retired")).toHaveText(RETIRED);
+  await expect(page.getByTestId("connected-account-retired")).toHaveText(ROW_RETIRED);
   expect(started).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -116,7 +119,7 @@ test("Engines: with no grant and nothing running the row is not there; a sign-in
   /* The callback of a sign-in started before the retirement lands here with `?higgsfield=retired`. */
   await page.goto("/suites?view=workspace&tab=engines&higgsfield=retired");
   await expect(page.getByTestId("engine-connected-account")).toBeVisible();
-  await expect(page.getByTestId("connected-account-retired")).toHaveText(RETIRED);
+  await expect(page.getByTestId("connected-account-retired")).toHaveText(ROW_RETIRED);
   await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => new URLSearchParams(location.search).get("higgsfield"))).toBeNull();
 

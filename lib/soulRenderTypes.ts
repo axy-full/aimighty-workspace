@@ -3,7 +3,13 @@
  * shapes only, no prices). A trained identity carries the render family it was
  * trained for (`model_version` v1, v2 or cinema on the provider's
  * custom-reference API) and renders only with that family's model:
- * v1 → Soul Standard, v2 → Soul 2, cinema → Soul Cinema.
+ * v1 → hf-soul-standard, v2 → hf-soul-2, cinema → hf-soul-cinema.
+ *
+ * RETIRED for new renders (owner's decision, D0.2): the three render models
+ * are `retired` in lib/models.ts. The ids and versions stay exactly as they
+ * are, because stored identities and past takes resolve through them
+ * (lib/soulIdentities.ts maps a stored `model_version` to its model and
+ * price); only what a person reads changed.
  */
 export const SOUL_VERSIONS = ["v1", "v2", "cinema"] as const;
 export type SoulVersion = (typeof SOUL_VERSIONS)[number];
@@ -14,11 +20,17 @@ export const SOUL_RENDER_MODELS: Readonly<Record<SoulVersion, string>> = {
   v2: "hf-soul-2",
   cinema: "hf-soul-cinema",
 };
-/** What a person reads for each family. */
+/** What a person reads for each family, on past renders (History, Inspector, ledger, statements, exports). */
 export const SOUL_VERSION_LABELS: Readonly<Record<SoulVersion, string>> = {
-  v1: "Soul Standard",
-  v2: "Soul 2",
-  cinema: "Soul Cinema",
+  v1: "Identity still · Standard",
+  v2: "Identity still · 2",
+  cinema: "Identity still · Cinema",
+};
+/** The badge-sized form of the same names. */
+export const SOUL_VERSION_SHORTS: Readonly<Record<SoulVersion, string>> = {
+  v1: "ID STANDARD",
+  v2: "ID 2",
+  cinema: "ID CINEMA",
 };
 /** The provider's documented request limits, shared by the three families. */
 export const SOUL_RENDER_BATCHES = [1, 4] as const;

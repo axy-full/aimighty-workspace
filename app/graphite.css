@@ -63,6 +63,10 @@
   --gx-waiting: #FF9F0A;
   --gx-waiting-text: #FFB340;
   --gx-failed: #FF453A;
+  /* Failure text. Not in the README's list: danger red (#FF453A) as text sits under the label floor
+     the specs enforce (#7C7C84), so words use the lighter red the product already shipped. The one
+     colour added to the README's set; borders, dots and fills stay --gx-failed. */
+  --gx-failed-text: #FF6961;
   --gx-purple: #BF5AF2;                         /* Crew, Audio port */
   --gx-cyan: #64D2FF;                           /* Music lane */
   --gx-owner: var(--gx-waiting-text);

@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, displayModelName, type ModelDef } from "../models";
+import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, displayModelName, isOffered, retiredLabel, type ModelDef } from "../models";
 
 /**
  * Engines as the Rig names and constrains them.
@@ -38,6 +38,10 @@ const FIXED: Record<string, EngineLabel> = {
   "higgsfield/marketing-studio-image": { short: "Marketing", long: "Marketing image" },
   marketing_studio_video: { short: "Marketing", long: "Marketing video" },
   "hf-soul-character": { short: "Identity", long: "Identity render" },
+  /* Retired for new renders; past takes keep a name (the long one comes from displayModelName). */
+  "hf-soul-standard": { short: "Identity", long: "Identity still · Standard" },
+  "hf-soul-2": { short: "Identity", long: "Identity still · 2" },
+  "hf-soul-cinema": { short: "Identity", long: "Identity still · Cinema" },
   "higgsfield-cinema-studio-4.0": { short: "Cinema 4", long: "Cinema Studio 4.0" },
   "fal-ai/flux-lora": { short: "Identity", long: "Flux · Identity" },
 };
@@ -50,8 +54,21 @@ function audioLabel(modelId: string): EngineLabel | null {
   return { short, long: displayModelName(modelId) };
 }
 
-/** A label for any model id; unknown or retired ids never leak their raw id. */
-export function engineLabel(modelId: string | null | undefined): EngineLabel {
+/** What a generation is, when the caller knows it: an id no longer in the registry cannot say. */
+export type EngineKind = "video" | "image" | "audio";
+const BY_KIND: Record<EngineKind, EngineLabel> = {
+  video: { short: "Engine", long: "Video engine" },
+  image: { short: "Image", long: "Image engine" },
+  audio: { short: "Audio", long: "Audio engine" },
+};
+
+/**
+ * A label for any model id; unknown or retired ids never leak their raw id.
+ * `kind` is the generation's own kind where the caller has it (a take's row
+ * does): the registry's kind wins for an id it knows, and an id it does not
+ * know falls back to the caller's kind rather than being called a video.
+ */
+export function engineLabel(modelId: string | null | undefined, kind?: EngineKind | string | null): EngineLabel {
   const id = modelId ?? "";
   const fixed = FIXED[id];
   if (fixed) return { short: fixed.short, long: displayModelName(id) };
@@ -60,14 +77,17 @@ export function engineLabel(modelId: string | null | undefined): EngineLabel {
   /* Retired dated Seedance builds keep their family's name. */
   if (/seedance-2-5/.test(id)) return FIXED["dreamina-seedance-2-5-260628"];
   if (/seedance-2-0/.test(id)) return FIXED["dreamina-seedance-2-0-260128"];
+  const said = kind === "image" || kind === "audio" || kind === "video" ? kind : null;
+  /* A connected-catalogue id on a stored row: what it made, from the earlier account. */
+  const retired = retiredLabel(id);
+  if (retired) return { short: said ? BY_KIND[said].short : retired.short.charAt(0) + retired.short.slice(1).toLowerCase(), long: retired.label };
   const model = MODELS.find((m) => m.id === id);
-  if (model?.kind === "image") return { short: "Image", long: "Image engine" };
-  return { short: "Engine", long: "Video engine" };
+  return BY_KIND[model?.kind ?? said ?? "video"];
 }
 
 /** Engines a shot may render with: generation engines from the public catalogue, not tools. */
 export function shotEngines(models: ModelDef[] = MODELS): ModelDef[] {
-  return models.filter((m) => !m.hidden && !m.stillTask && (m.supportsTasks ?? ["generate"]).includes("generate"));
+  return models.filter((m) => isOffered(m) && !m.hidden && !m.stillTask && (m.supportsTasks ?? ["generate"]).includes("generate"));
 }
 
 export const DEFAULT_SHOT_ENGINE = DEFAULT_MODEL_ID;

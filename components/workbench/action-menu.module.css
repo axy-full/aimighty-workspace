@@ -45,7 +45,7 @@
   color: var(--gx-text);
 }
 .item[data-danger] {
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
 }
 .item[data-disabled] {
   opacity: 0.4;
