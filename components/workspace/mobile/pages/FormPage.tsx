@@ -35,7 +35,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { MobileRing, RING } from "../MobileRing";
 import type { MobilePageProps } from "../screens/registry";
-import "@/app/workspace-assets.css";
+import "@/components/workspace/pages/assets.css";
 
 /**
  * Form (05-mobile, template 6): the source video card, the ordered reference

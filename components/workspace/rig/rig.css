@@ -130,7 +130,7 @@
 .pxw .pxw-graph-tools button:hover { background: var(--gx-input-hover); }
 .pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
-/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in app/production.css, whose 44 px rules stop at
+/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in components/graphite/production/production.css, whose 44 px rules stop at
    759 px wide): on any touch screen, a landscape phone included, its head link, group chips and "+" are thumb-sized targets. */
 @media (pointer: coarse) {
   .gx .pxw-rig-library .pxw-rig-library-head .pxw-link-button,
@@ -308,7 +308,7 @@
   .gx .pxw .pxw-graph-node .pxw-graph-port:hover,
   .gx .pxw .pxw-graph-node .pxw-graph-port[data-armed] { border-color: transparent; box-shadow: inset 0 0 0 1.5px var(--pxw-blue); }
 
-  /* The shot Inspector: the phone sheet's own floors (app/workspace-mobile.css › The Inspector sheet). */
+  /* The shot Inspector: the phone sheet's own floors (components/workspace/mobile/mobile.css › The Inspector sheet). */
   .pxw [data-inspector-body="shot"] .pxw-kicker,
   .pxw [data-inspector-body="shot"] .pxw-field-label,
   .pxw [data-inspector-body="shot"] .pxw-pill-label,

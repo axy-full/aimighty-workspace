@@ -1,5 +1,6 @@
 "use client";
 
+import "./ProvenanceCard.css";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";

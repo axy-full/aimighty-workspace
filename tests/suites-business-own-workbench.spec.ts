@@ -257,7 +257,7 @@ test("a member works in Business's own tools: the pages are there, the retired c
   const strip = page.getByRole("navigation", { name: "Pages" });
   await expect(strip.getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
   await expect(strip.getByRole("button")).toHaveCount(9);
-  /* A phone keeps the Suites behind its context badge (app/phone-chrome.css). */
+  /* A phone keeps the Suites behind its context badge (components/graphite/phone.css). */
   await openSuitesMenu(page);
   await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
   /* Nor on Viral's: it runs on Particl's API key for every member. */

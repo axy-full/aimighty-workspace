@@ -279,7 +279,7 @@ test("every error page retries with retry(), never reset(): only retry() fetches
 });
 
 test("no error page drops under the 12px floor, under 44px targets, or sends people to a legacy destination", () => {
-  for (const path of ["app/error.tsx", "app/(app)/error.tsx", "app/global-error.tsx", "app/not-found.tsx", "components/Boundary.tsx", "components/graphite/PanelFault.tsx", "components/graphite/FaultPage.tsx", "app/fault.css"]) {
+  for (const path of ["app/error.tsx", "app/(app)/error.tsx", "app/global-error.tsx", "app/not-found.tsx", "components/Boundary.tsx", "components/graphite/PanelFault.tsx", "components/graphite/FaultPage.tsx", "components/graphite/fault.css"]) {
     const source = read(path);
     expect(source, path).not.toMatch(/text-\[(\d|1[01])(\.\d+)?px\]/);
     expect(source, path).not.toMatch(/font-size:\s*(\d|1[01])(\.\d+)?px/);

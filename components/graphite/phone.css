@@ -79,7 +79,7 @@
 
   /* ── The tab bar: the same floating bar, 8px slimmer and resting lower; every region keeps it clear. ── */
   .gx .gx-tabbar { bottom: var(--ph-bar-gap); height: var(--ph-bar-h); min-height: 0; padding: 5px; }
-  .gx .gx-stage, .gx .gx-ws, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .cw-room, .gx .cw-page { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
+  .gx .gx-stage, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .cw-room, .gx .cw-page { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
   /* The clearance follows the page's last row: a page body is as tall as its content (it still fills a short page),
      never held to the pane's height with the overflow running past the padding and the last row under the bar (#389). */
   .gx .gx-stage > *, .gx .gx-stage > .gx-legacy.pxw { flex-shrink: 0; flex-basis: auto; }

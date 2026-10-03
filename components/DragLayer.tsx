@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { hasFiles, ID_TYPE, writeAssetDrag } from "@/lib/drop";
 import { DRAG_TYPE } from "@/lib/dnd";
 import { assetIdFromUrl } from "@/lib/preview";
+import "./DragLayer.css";
 
 /** Files dropped where no target took them; a page that can keep them (the Suites shell, with a project open) sets `handled`. */
 export type FilesDropDetail = { files: File[]; handled: boolean };

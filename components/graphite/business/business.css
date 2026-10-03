@@ -1,13 +1,8 @@
-/* Business = Marketing Studio (FINAL_SPEC §2). Graphite tokens; scoped under .bz. */
+/* Business = Marketing Studio (FINAL_SPEC §2; components/graphite/business). Graphite tokens; scoped under .bz. The bz-
+   classes other views use too (bz-intro, bz-note, bz-role) are in components/graphite/shell.css › Shared primitives. */
 .bz .gx-gen-card { max-width: 560px; }
-.bz-intro { margin: 0; color: var(--gx-text-2); font-size: 13px; line-height: 1.5; }
-/* A label's note reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the card. */
-.bz-note { color: var(--gx-text-2); text-transform: none; letter-spacing: 0; font-family: var(--gx-font); font-size: 11.5px; }
 .bz .gx-chip[data-off="true"] { opacity: .4; cursor: not-allowed; }
 .bz [data-off="true"] > .gx-eyebrow { opacity: .6; }
-.bz-idrow { display: flex; flex-direction: column; gap: 6px; }
-.bz-idrow code, .bz code { font-family: var(--gx-mono); font-size: 11.5px; color: var(--gx-text); }
-.bz-role { height: 22px; padding: 0 6px; border-radius: 4px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .06em; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); flex: none; }
 .bz-setup { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; padding: 20px; align-items: start; }
 .bz-setup-list { display: flex; flex-direction: column; gap: 14px; max-width: 1040px; }
 .bz-group { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
@@ -28,12 +23,8 @@
   .bz-setup.gx-enter { animation-name: bz-fade; }
 }
 @keyframes bz-fade { from { opacity: 0; } to { opacity: 1; } }
-/* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
+/* The thumb's floors on a phone: the sheet's close is a 44px target. */
 @media (max-width: 767px), (pointer: coarse) {
-  .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
-  button.bz-role { height: 44px; }
-  .bz-note, .bz code, .bz-idrow code { font-size: 12px; }
-  .bz .gx-seg--sm .gx-seg-btn { height: auto; min-height: 44px; }
   .bz-detail-x { width: 44px; height: 44px; margin: -8px -8px -8px 0; }
 }
 

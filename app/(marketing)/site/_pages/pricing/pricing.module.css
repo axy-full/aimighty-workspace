@@ -1,5 +1,5 @@
 /* The pricing page (design/particl-graphite, Pricing.dc.html): plans,
-   packs and the rate card. Everything else comes from app/marketing.css. */
+   packs and the rate card. Everything else comes from components/marketing/marketing.css. */
 
 /* ── Plans ─────────────────────────────────────────────────────────────── */
 section.plans { background: var(--gx-root); }

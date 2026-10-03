@@ -1,0 +1,20 @@
+/* statement.css — the rules of app/(app)/statements/[month]/page.tsx, moved out of app/globals.css
+   beside the file that uses them (D0 1c). Plain CSS: the class names are global
+   and unchanged. Imported by app/(app)/statements/[month]/page.tsx. */
+
+/* ── Statements: a page on paper, printable ──────────────────────────── */
+.statement { min-height: 100dvh; padding: 24px clamp(16px, 4vw, 48px) 48px; background: var(--color-desk); color: var(--color-ink); }
+.statement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+.statement-actions > span { flex-wrap: wrap; }
+@media (max-width: 767px), (pointer: coarse) {
+  .statement-actions > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .statement-actions .chip-dd, .statement-actions .btn-primary, .statement-actions .btn-secondary { min-height: 44px; }
+}
+.statement-head { margin-bottom: 20px; }
+.statement-head .h1 { overflow-wrap: anywhere; }
+.statement-project { margin-top: 22px; }
+.statement-foot { margin-top: 26px; padding-top: 12px; border-top: 2px solid var(--color-ink); color: var(--color-ink); }
+@media print {
+  .statement-actions { display: none !important; }
+  .statement { padding: 0; background: var(--gx-root); min-height: 0; }
+}

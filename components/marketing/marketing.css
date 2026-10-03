@@ -13,7 +13,6 @@
 .mk a:hover { color: var(--gx-accent-text-hover); }
 .mk ::placeholder { color: var(--gx-eyebrow); }
 .mk img { max-width: 100%; display: block; }
-@keyframes mk-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 @keyframes mk-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ── Header ───────────────────────────────────────────────────────────── */
@@ -78,7 +77,6 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-green { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--gx-done-tint); border: 1px solid color-mix(in srgb, var(--gx-done) 35%, transparent); color: var(--gx-done-text); font: 10px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
 .mk-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 .mk-dot--done { background: var(--gx-done); }
-.mk-dot--run { background: var(--gx-accent); box-shadow: var(--gx-glow-live); animation: mk-pulse 1.4s ease-in-out infinite; }
 .mk-dot--idle { border: 1.5px solid var(--gx-hover-border); }
 
 /* Group card (Business, Workspace): a head and rows. */
@@ -139,11 +137,6 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-footer-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 20px; border-top: 1px solid var(--gx-hair); font-size: 12.5px; color: var(--gx-text-2); }
 .mk-footer-bottom .mk-tag { letter-spacing: .08em; font-size: 11px; color: var(--gx-text-2); }
 
-/* ── Shell: phone panel ───────────────────────────────────────────────── */
-.mk-phone { width: min(100%, 300px); border-radius: 34px; padding: 10px; background: var(--gx-panel); border: 1px solid var(--gx-dialog-border); box-shadow: var(--gx-shadow-dialog); justify-self: center; }
-.mk-sticky { position: sticky; top: 84px; }
-.mk-phone img { border-radius: 26px; width: 100%; height: auto; }
-
 /* ── Small parts ──────────────────────────────────────────────────────── */
 .mk-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .mk-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -169,7 +162,6 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-prompt-meta { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .04em; color: var(--gx-text-2); }
 .mk-go.mk-btn { border-radius: 10px; }
 .mk-hero-status { min-height: 44px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mk-running { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); font-size: 13px; box-shadow: none; }
 .mk-take { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; max-width: 680px; width: 100%; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: none; animation: mk-rise .4s var(--gx-ease) both; }
 .mk-take-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px; }
 .mk-take-prompt { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -188,7 +180,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
   .mk-brand { flex: 1 1 auto; }
   .mk-nav { order: 3; flex: 1 1 100%; margin: 0; padding: 2px 0 8px; }
 }
-/* ≤ 720: Sign in hidden, 44px targets, the sticky column becomes static. */
+/* ≤ 720: Sign in hidden, 44px targets. */
 @media (max-width: 720px) {
   .mk-hide-phone { display: none !important; }
   .mk-tab { padding: 11px 10px; min-height: 44px; }
@@ -200,7 +192,6 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
   .mk-header .mk-btn { height: 44px; }
   .mk-btn { min-height: 44px; }
   .mk-wrap-text { white-space: normal !important; }
-  .mk-sticky { position: static !important; }
   .mk-hero { min-height: 0; }
   .mk-hero-in { padding-top: 104px; padding-bottom: 36px; }
   .mk-go.mk-btn { flex: 1 1 100%; }

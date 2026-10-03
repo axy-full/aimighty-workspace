@@ -1,6 +1,6 @@
 /*
  * Production suite (owner's brief, 23 September): the agent-driven Studio
- * stages — Brief & Script first. Scoped under `.gx` like the shell's own sheet, so
+ * stages — Brief & Script first (components/graphite/production). Scoped under `.gx` like the shell's own sheet, so
  * bundler sheet order never decides it. No serif anywhere; the script reads in
  * the shell's mono.
  */
@@ -26,6 +26,10 @@
 .gx .pd-progress { gap: 10px; }
 .gx .pd-meter { height: 4px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
 .gx .pd-meter > span { display: block; height: 100%; background: var(--gx-accent); transition: width .4s ease; }
+/* .pd-review names two things. This one is Brief's review card (BriefStage.tsx, a .gx-gen-card); the one under "Takes
+   as the review desk" below is Edit's row of review buttons (EditStage.tsx). Both rules reach both, so Brief's card also
+   takes the later rule's display, flex-wrap, align-items, gap (8px, not this 12px) and min-width. Left as it is: telling
+   them apart would change how Brief's card is laid out. */
 .gx .pd-review { gap: 12px; }
 .gx .pd-review .gx-workflow-title { margin: 0; }
 .gx .pd-review > .gx-hint { margin: 0; }
@@ -52,9 +56,6 @@
   .gx .pd-prompt { min-height: 160px; }
   .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
 }
-/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
-.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: none; }
-.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
 
 /* Beats: a beat board — one card per scene, its beats as numbered cards, its shots beneath. */
 .gx .pd-gate { gap: 10px; }
@@ -215,9 +216,6 @@
 .gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); font-family: var(--gx-mono); }
 .gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
-.gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
-.gx .pd-asset-group-name { font-weight: 600; font-size: 13px; flex: 1; }
-.gx .pd-take-file { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: var(--gx-panel); font-size: 28px; color: var(--gx-text-3); }
 /* Takes in the card contract (components/graphite/TakeTile.tsx): the picture holds the project's frame. */
 .gx .pd-take-cell { position: relative; display: flex; min-width: 0; }
 .gx .pd-take-cell > .pd-take { flex: 1; }
@@ -245,9 +243,6 @@
 .gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); }
 @media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }
-.gx .pd-soul-models { flex-wrap: wrap; }
-.gx .pd-budget { width: 80px; }
-.gx .pd-finish { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
 
 /* Storyboards: pick frames to storyboard together; a picked frame is outlined. */
 .gx .pd-select-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -328,6 +323,7 @@
 .gx .pd-selected-chip { position: relative; display: inline-flex; flex: none; }
 .gx .pd-selected-chip .gx-tile-chip { position: static; max-width: none; }
 .gx .pd-selected-step { display: inline-flex; gap: 6px; flex: none; }
+/* Edit's review buttons. The same class as Brief's review card above, which this rule reaches too (see there). */
 .gx .pd-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .gx .pd-review-btn[aria-pressed="true"] { color: var(--gx-text); font-weight: 600; }
 .gx .pd-review-btn[data-review="picked"][aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-tint); }
@@ -357,4 +353,16 @@
   .gx .pd-desk-search { flex-basis: 100%; max-width: none; }
   .gx .pd-selected-step { width: 100%; }
   .gx .pd-selected-step .gx-hbtn { flex: 1; }
+}
+
+/* The thumb's floors on any phone, either way up. The rules above stop at 759px or ask for a coarse pointer, one or the
+   other: this closes what each leaves (760–767px wide, a touch screen wider than 759px, a narrow window with a mouse). */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .pd-order .gx-hbtn { min-width: 44px; }
+  .gx .pd-soul select, .gx .pd-drawing select, .gx .pd-act-select, .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; }
+  .gx .pd-view-toggle button, .gx .pxw-insp-row-actions button, .gx .pxw-rig-library-groups button { min-height: 44px; }
+  .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
+  .gx .pd-ref-chip { width: 72px; height: 54px; }
+  .gx .pd-ref-chip .gx-hbtn { min-width: 44px; height: 44px; top: 0; right: 0; }
+  .gx .pd-graph-zoom button { min-width: 44px; height: 44px; }
 }

@@ -1,15 +1,13 @@
-/* Viral = Genjutsu (FINAL_SPEC §1 step 3). Graphite tokens; scoped under .vr. */
+/* Viral = Genjutsu (FINAL_SPEC §1 step 3; components/graphite/viral). Graphite tokens; scoped under .vr. The row itself
+   (.vr-job, .vr-job-name) is in components/graphite/shell.css › Shared primitives: ResumedJobs.tsx draws it in Gen and
+   Business too. */
 .vr .gx-gen-card { max-width: 560px; }
 .vr-well { flex-direction: column; align-items: stretch; }
 .vr-well .gx-ref { max-width: 100%; }
 .vr-source { border-color: var(--gx-tint-border); background: var(--gx-tint); }
-/* A Recent row: the direction and its state on top; resolution, refs, credits and time below, with the next step at the end. */
-.vr-job { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
 .vr-job > .vr-dot { grid-column: 1; grid-row: 1; }
 .vr-job > .vr-status { grid-column: 3; grid-row: 1; justify-self: end; }
-.vr-job-name { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vr-history { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
-.vr-others { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .vr-compare { width: min(1040px, 100%); }
 .vr-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
 .vr-compare-grid figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -29,8 +27,6 @@
 .vr-job-note { grid-column: 2 / -1; grid-row: 3; min-width: 0; font-size: 11.5px; }
 /* A failed run's line: why · what the account's ledger shows for the charge · the next step. */
 .vr-job-fail { font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
-/* A read that failed (reconnect, storage, an outage), under the note and above the next step. */
-.vr-job-problem { grid-column: 2 / -1; grid-row: 4; min-width: 0; }
 .vr-job-act { grid-column: 2 / -1; grid-row: 5; justify-self: start; margin-top: 4px; }
 .vr-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; text-align: center; background: var(--gx-input); }
 .vr-veil-note { position: relative; max-width: 100%; font-size: 11px; line-height: 1.3; color: var(--gx-text-2); }
@@ -52,5 +48,7 @@
 .vr-source-tools { margin-top: 2px; }
 
 /* A phone reads the feed two across, so a run and its neighbour share the screen. */
-@media (max-width: 767px) { .vr-job { min-height: 44px; } .vr-history .gx-gen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+@media (max-width: 767px) { .vr-history .gx-gen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
 @media (prefers-reduced-motion: reduce) { .vr-dot, .vr-veil::before, .vr-skel { animation: none; } }
+/* The 12px floor on any phone, either way up: a run's state, its note and the veil's line. */
+@media (max-width: 767px), (pointer: coarse) { .vr-status, .vr-job-note, .vr-veil-note { font-size: 12px; } }

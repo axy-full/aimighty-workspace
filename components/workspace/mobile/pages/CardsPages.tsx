@@ -11,7 +11,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { matchesFilter, takeCost, takeStatus, versionLabel } from "../../pages/TakesPage";
 import { TONE } from "../../pages/CastPage";
 import type { MobilePageProps } from "../screens/registry";
-import "@/app/workspace-assets.css";
+import "@/components/workspace/pages/assets.css";
 
 /**
  * Cards (05-mobile, template 3): 2-up cards with media, a badge, the name and a

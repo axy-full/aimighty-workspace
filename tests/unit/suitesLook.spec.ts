@@ -28,7 +28,7 @@ test("project posters: the sample palette for the sample names, a stable swatch 
 
 test("the shell's sheets are flat: no glass or flair layer, no blur, and a gradient only on a project swatch and an avatar", () => {
   for (const layer of ["glass", "flair"]) expect(existsSync(join(process.cwd(), "app", `${layer}.css`)), layer).toBe(false);
-  const sheets = { shell: read("components", "graphite", "shell.css"), phone: read("app", "phone-chrome.css"), fault: read("app", "fault.css") };
+  const sheets = { shell: read("components", "graphite", "shell.css"), phone: read("components", "graphite", "phone.css"), fault: read("components", "graphite", "fault.css") };
   for (const [name, css] of Object.entries(sheets)) {
     /* No blur behind or on anything, and none of the two removed layers' variables or keyframes (gl-, om-). */
     expect(css, name).not.toMatch(/backdrop|blur\(|--(gl|om)-|\bom-[a-z]/);

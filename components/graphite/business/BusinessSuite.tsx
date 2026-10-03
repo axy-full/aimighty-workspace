@@ -1,5 +1,5 @@
 "use client";
-import "@/app/business-own.css";
+import "./business-own.css";
 import type { Project } from "@/lib/workbench/studio";
 import { isOwnPage } from "@/lib/shell/business-own";
 import { BusinessOwnView } from "./BusinessOwnView";

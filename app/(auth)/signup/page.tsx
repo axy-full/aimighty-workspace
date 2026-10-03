@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
 import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
-import "../../commercial.css";
+import "@/components/commercial/commercial.css";
 
 type SignupAvailability = {
   email?: string;

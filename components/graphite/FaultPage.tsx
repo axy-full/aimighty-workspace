@@ -7,7 +7,7 @@ import { FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF, faultMessage, faultPrima
 import { Glyph, SUITE_LOOK } from "./icons";
 import { CopyDetails, FaultIcon } from "./PanelFault";
 import "@/components/graphite/shell.css";
-import "@/app/fault.css";
+import "./fault.css";
 
 /**
  * The Suites header without the live shell behind it (Header.tsx needs the

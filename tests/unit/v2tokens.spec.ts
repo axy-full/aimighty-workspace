@@ -179,7 +179,10 @@ test("globals.css is flat and dark: no blur, no gradient, no light theme", () =>
 });
 
 test("Graphite radii and selection preserve primitive typography and motion", () => {
-  for (const [name, value] of [["badge", "var(--gx-r-xs)"], ["chip", "var(--gx-r-ctl)"], ["ctl", "var(--gx-r-ctl)"], ["tile", "var(--gx-r-card)"], ["card", "var(--gx-r-card)"], ["mobile", "12px"], ["pill", "var(--gx-r-pill)"]] as const) {
+  /* `--radius-chip` is gone with the last `rounded-chip` (D0 1c): no utility
+     and no rule named it. */
+  expect(declIn(css, "--radius-chip"), "--radius-chip").toBeUndefined();
+  for (const [name, value] of [["badge", "var(--gx-r-xs)"], ["ctl", "var(--gx-r-ctl)"], ["tile", "var(--gx-r-card)"], ["card", "var(--gx-r-card)"], ["mobile", "12px"], ["pill", "var(--gx-r-pill)"]] as const) {
     expect(declIn(css, `--radius-${name}`), `--radius-${name}`).toBe(value);
   }
   expect(css).toMatch(/\.ui-node-selected\s*\{\s*border-color:\s*var\(--graphite-accent\);\s*box-shadow:\s*var\(--gx-ring-selected\);/);

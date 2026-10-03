@@ -14,7 +14,7 @@ import { useProjectLibrary } from "@/lib/workspace/library";
 import { assembly, mmss, shotAt, stemRequests, stemRows, type StemId, type StemRow } from "@/lib/workspace/stems";
 import { Button } from "../ui";
 import type { PageBodyProps } from "./registry";
-import "@/app/workspace-assets.css";
+import "@/components/workspace/pages/assets.css";
 import { TimelineCut } from "@/components/graphite/production/TimelineCut";
 
 const STATE: Record<StemRow["state"], { label: string; dot: string }> = {

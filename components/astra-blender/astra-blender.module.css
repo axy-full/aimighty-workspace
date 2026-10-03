@@ -156,7 +156,7 @@
   @container astra-workspace (max-width: 819px) { .layout { grid-template-columns: 155px minmax(230px, 1fr) 230px; } .header { padding: 12px; } .inspectorBody { padding: 14px 10px; } .segment button span { display: none; } .objectRow .rowIcon { width: 19px; } .sceneItem small { display: none; } .fps { display: none; } .keyButton span { font-size: 9px; } .viewportLabel > span:last-child { display: none; } }
 }
 @media (max-width: 900px) and (min-width: 768px) { .layout { grid-template-columns: 140px minmax(200px, 1fr) 210px; } .brand p { max-width: 200px; overflow: hidden; white-space: nowrap; } .headerActions { gap: 2px; } .assistantButton { padding: 7px; } .templatePicker { min-width: 98px; } }
-/* A phone, upright or on its side (the test app/phone-chrome.css uses for the Suites shell's phone): one panel at a
+/* A phone, upright or on its side (the test components/graphite/phone.css uses for the Suites shell's phone): one panel at a
    time under the panel tabs, the actions on their own line when the name beside them would not fit, the name wrapped
    rather than clipped, and 16px fields a phone does not zoom into. */
 @media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {

@@ -1,5 +1,6 @@
 "use client";
 
+import "./review.css";
 import { use, useCallback, useEffect, useState } from "react";
 import { posterSrc } from "@/lib/format";
 

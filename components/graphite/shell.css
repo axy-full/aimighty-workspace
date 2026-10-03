@@ -55,7 +55,7 @@
 .gx-credits-n { font-family: var(--gx-mono); font-size: 13px; font-weight: 600; }
 .gx-credits-u { color: var(--gx-text-2); font-size: 12px; }
 /* The balance cannot pay for the last price quoted here: amber, and it still opens Plans & credits. */
-.gx .gx-hbtn.gx-credits[data-low] { color: var(--gx-waiting-text); background: rgba(255, 159, 10, .14); border-color: rgba(255, 159, 10, .6); }
+.gx .gx-hbtn.gx-credits[data-low] { color: var(--gx-waiting-text); background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 60%, transparent); }
 .gx .gx-hbtn.gx-credits[data-low] .gx-credits-u { color: var(--gx-waiting-text); }
 .gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
 .gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
@@ -64,9 +64,9 @@
    the pill on desktop and on a phone on its side, a bottom sheet on a phone.
    Every word in it is at least #7C7C84 on its ground (--gx-text-2 or a
    tone), and no figure is ever cut short. ── */
-.gx-jobs[data-tone="amber"] { background: rgba(255, 159, 10, .14); border-color: rgba(255, 159, 10, .4); color: var(--gx-waiting-text); }
-.gx-jobs[data-tone="green"] { background: rgba(48, 209, 88, .12); border-color: rgba(48, 209, 88, .36); color: #5BE07F; }
-.gx-jobs[data-tone="red"] { background: rgba(255, 69, 58, .12); border-color: rgba(255, 69, 58, .38); color: #FF6961; }
+.gx-jobs[data-tone="amber"] { background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 40%, transparent); color: var(--gx-waiting-text); }
+.gx-jobs[data-tone="green"] { background: color-mix(in srgb, var(--gx-done) 12%, transparent); border-color: color-mix(in srgb, var(--gx-done) 36%, transparent); color: var(--gx-done-text); }
+.gx-jobs[data-tone="red"] { background: color-mix(in srgb, var(--gx-failed) 12%, transparent); border-color: color-mix(in srgb, var(--gx-failed) 38%, transparent); color: var(--gx-failed); }
 .gx-jobs[data-tone="idle"] { background: var(--gx-input); border-color: var(--gx-hair); color: var(--gx-text-2); }
 .gx-jobs[data-tone="amber"] .gx-jobs-dot { background: var(--gx-waiting); }
 .gx-jobs[data-tone="green"] .gx-jobs-dot { background: var(--gx-done); animation: none; }
@@ -102,8 +102,8 @@
 .gx-jobs-stage { font-weight: 600; color: var(--gx-text-2); }
 .gx-jobs-row[data-tone="blue"] .gx-jobs-stage { color: var(--gx-accent-text); }
 .gx-jobs-row[data-tone="amber"] .gx-jobs-stage { color: var(--gx-waiting-text); }
-.gx-jobs-row[data-tone="green"] .gx-jobs-stage { color: #5BE07F; }
-.gx-jobs-row[data-tone="red"] .gx-jobs-stage { color: #FF6961; }
+.gx-jobs-row[data-tone="green"] .gx-jobs-stage { color: var(--gx-done-text); }
+.gx-jobs-row[data-tone="red"] .gx-jobs-stage { color: var(--gx-failed); }
 .gx-jobs-reason, .gx-jobs-problem { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gx-jobs-problem { color: var(--gx-waiting-text); }
 /* No engine reports a percentage: an indeterminate bar says it is moving, and nothing more. */
@@ -332,8 +332,6 @@
 }
 
 /* ── Workspace view ────────────────────────────────────────────────────── */
-.gx-ws { flex: 1; min-height: 0; overflow: auto; background: var(--gx-panel); }
-.gx-ws-inner { max-width: 1040px; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
 .gx-card { padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); display: flex; flex-direction: column; gap: 12px; }
 .gx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
 .gx-rowlink { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 44px; padding: 0 14px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--gx-text); }
@@ -368,11 +366,11 @@
 .gx-recipe-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-recipe-chips, .gx-recipe-why { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .gx-recipe-chips li { max-width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; display: block; line-height: 22px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text); background: var(--gx-input); border: 1px solid var(--gx-hair); }
-.gx-recipe-chips li[data-state="changed"] { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .4); }
+.gx-recipe-chips li[data-state="changed"] { color: var(--gx-waiting); border-color: color-mix(in srgb, var(--gx-waiting) 40%, transparent); }
 .gx-recipe-chips li[data-state="reading"] { color: var(--gx-text-3); animation: gx-pulse 1.6s ease-in-out infinite; }
 .gx-recipe-why { flex-direction: column; gap: 2px; font-size: 12px; color: var(--gx-text-2); }
 .gx-recipe-why li { min-width: 0; overflow-wrap: anywhere; }
-.gx-recipe-why li[data-alert] { color: var(--gx-failed, #FF6B6B); }
+.gx-recipe-why li[data-alert] { color: var(--gx-failed, var(--gx-failed)); }
 .gx-recipe-why b { font-weight: 600; color: var(--gx-text); margin-right: 4px; }
 /* On a phone the card rises to the top of the composer (GenView scrolls it to the start), above the sticky Generate band: tighter. */
 @media (max-width: 767px) { .gx-recipe { gap: 6px; padding: 8px 8px 10px 12px; scroll-margin: 8px; } }
@@ -426,7 +424,7 @@
 .gx-fv-tile:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
 .gx-fv-tile[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
 .gx-fv-tile[aria-pressed="true"] .gx-fv-media { box-shadow: 0 0 0 2px var(--gx-accent); }
-.gx-fv-media { position: relative; display: block; aspect-ratio: 16 / 9; margin-bottom: 4px; border-radius: 6px; overflow: hidden; background: #111114; border: 1px solid var(--gx-hair); }
+.gx-fv-media { position: relative; display: block; aspect-ratio: 16 / 9; margin-bottom: 4px; border-radius: 6px; overflow: hidden; background: var(--gx-panel); border: 1px solid var(--gx-hair); }
 .gx-fv-media > svg, .gx-fv-media > video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .gx-fv-media > video { object-fit: cover; opacity: 0; transition: opacity .25s; }
 .gx-fv-media > video[data-ready] { opacity: 1; }
@@ -440,21 +438,21 @@
 .gx-fv-tile[data-plain] .gx-fv-name { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 /* The drawings: figures, frames and moves in the shell's greys, the move itself in the accent. */
 .gx-fv-glyph { color: var(--gx-text-2); }
-.gx-fv-g-fig { fill: #8C8C95; }
-.gx-fv-g-dim { fill: #3A3A41; }
-.gx-fv-g-eye { fill: #111114; }
-.gx-fv-g-face { fill: #1B1B20; }
-.gx-fv-g-ground { fill: #202026; }
-.gx-fv-g-frame { fill: none; stroke: rgba(235, 235, 245, .35); stroke-width: 1.5; }
-.gx-fv-g-line { fill: none; stroke: rgba(235, 235, 245, .3); stroke-width: 1.5; stroke-linecap: round; }
+.gx-fv-g-fig { fill: var(--gx-text-2); }
+.gx-fv-g-dim { fill: var(--gx-thumb); }
+.gx-fv-g-eye { fill: var(--gx-panel); }
+.gx-fv-g-face { fill: var(--gx-input); }
+.gx-fv-g-ground { fill: var(--gx-input-hover); }
+.gx-fv-g-frame { fill: none; stroke: var(--gx-idle); stroke-width: 1.5; }
+.gx-fv-g-line { fill: none; stroke: var(--gx-idle); stroke-width: 1.5; stroke-linecap: round; }
 .gx-fv-g-acc { fill: none; stroke: var(--gx-accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .gx-fv-g-accfill { fill: var(--gx-accent); }
-.gx-fv-g-cam { fill: #D7D7DE; }
-.gx-fv-g-wedge { fill: rgba(10, 132, 255, .22); stroke: var(--gx-accent); stroke-width: 1.5; }
-.gx-fv-g-bokeh { fill: rgba(120, 180, 255, .28); stroke: rgba(160, 205, 255, .7); stroke-width: 1; }
-.gx-fv-g-flare { stroke: #7FC4FF; stroke-width: 2; stroke-linecap: round; opacity: .8; }
-.gx-fv-g-blur { fill: #8C8C95; opacity: .35; }
-.gx-fv-g-scan { stroke: rgba(0, 0, 0, .28); stroke-width: 1; }
+.gx-fv-g-cam { fill: var(--gx-text); }
+.gx-fv-g-wedge { fill: color-mix(in srgb, var(--gx-accent) 22%, transparent); stroke: var(--gx-accent); stroke-width: 1.5; }
+.gx-fv-g-bokeh { fill: var(--gx-tint-border); stroke: var(--gx-accent-text); stroke-width: 1; }
+.gx-fv-g-flare { stroke: var(--gx-accent-text); stroke-width: 2; stroke-linecap: round; opacity: .8; }
+.gx-fv-g-blur { fill: var(--gx-text-2); opacity: .35; }
+.gx-fv-g-scan { stroke: var(--gx-scrim); stroke-width: 1; }
 @media (max-width: 767px), (pointer: coarse) {
   .gx-fv-chip { min-height: 48px; }
   .gx-fv-chip-label, .gx-fv-hash-chip { font-size: 12px; }
@@ -534,7 +532,7 @@
 }
 .gx-gen-foot { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
 .gx-gen-note { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
-.gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, #FF6B6B); }
+.gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, var(--gx-failed)); }
 /* Where focus waits after a Try again whose row went away (BusinessView ReadProblem); the row itself is main's .gx-retry. */
 [data-focus-home]:focus { outline: none; }
 .gx-gen-results { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -556,13 +554,13 @@
 .gx-batch .gx-batch-take[data-tone="blue"] > .gx-asset-meta { color: var(--gx-accent-text); }
 .gx-batch .gx-batch-take[data-tone="green"] > .gx-asset-meta { color: var(--gx-done); }
 /* The danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
-.gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: #FF6961; }
+.gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed); }
 .gx-batch .gx-batch-take[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
 /* A draft's next step under its strip (components/graphite/DraftFinal.tsx): its facts, the priced final and the
    final's approval. Words on --gx-text-2 or a tone, never dimmer; the red is the danger text colour, as above. */
 .gx-draft-bar { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
 .gx-draft-facts, .gx-draft-status { margin: 0; font-size: 12.5px; color: var(--gx-text-2); overflow-wrap: anywhere; }
-.gx-draft-status[data-tone="red"] { color: #FF6961; }
+.gx-draft-status[data-tone="red"] { color: var(--gx-failed); }
 .gx-draft-status[data-tone="green"] { color: var(--gx-done); }
 .gx .gx-gen-go.gx-draft-go { width: auto; align-self: flex-start; max-width: 100%; padding-left: 14px; padding-right: 14px; }
 .gx-draft-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
@@ -604,7 +602,7 @@
 .gx-sheet-row--spec { align-items: center; padding: 10px 16px 10px 12px; text-align: left; }
 .gx-sheet-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .gx-sheet-specs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.gx-spec { height: 20px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--gx-text-2); background: rgba(255, 255, 255, .05); border: 1px solid var(--gx-hair); }
+.gx-spec { height: 20px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--gx-text-2); background: var(--gx-hair-soft); border: 1px solid var(--gx-hair); }
 .gx-spec[data-spec="audio"], .gx-spec[data-spec="enhance"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); }
 .gx-sheet-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 64px; text-align: right; }
 .gx-sheet-price b { font-family: var(--gx-mono); font-size: 13.5px; font-weight: 600; color: var(--gx-text); white-space: nowrap; }
@@ -659,14 +657,14 @@
 .gx-tile-media { position: relative; }
 .gx-tile .gx-asset-thumb, .gx-asset.gx-skel .gx-skel-thumb { aspect-ratio: var(--tile-aspect, 4 / 3); }
 .gx-tile-face { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gx-text-3); }
-.gx-tile-face[data-face="failed"] { background-color: rgba(255, 69, 58, .08); }
+.gx-tile-face[data-face="failed"] { background-color: color-mix(in srgb, var(--gx-failed) 8%, transparent); }
 .gx-tile-face[data-face="stopped"] .gx-tile-glyph { color: var(--gx-text-2); }
-.gx-tile-face[data-face="held"] { background-color: rgba(255, 159, 10, .07); }
+.gx-tile-face[data-face="held"] { background-color: color-mix(in srgb, var(--gx-waiting) 7%, transparent); }
 .gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
 .gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
 /* The mark in the danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
-.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: #FF6961; border-color: rgba(255, 69, 58, .45); }
-.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: rgba(255, 159, 10, .45); }
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed); border-color: color-mix(in srgb, var(--gx-failed) 45%, transparent); }
+.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: color-mix(in srgb, var(--gx-waiting) 45%, transparent); }
 /* Paused, not stopped: two bars drawn, so no font turns them into a square. */
 .gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
 .gx-tile-face[data-face="live"] .gx-tile-glyph { border: 0; }
@@ -680,10 +678,10 @@
 .gx-tile-chip[data-tone="picked"] .gx-tile-chip-dot { background: var(--gx-accent); }
 .gx-tile-chip[data-tone="waiting"] .gx-tile-chip-dot { background: var(--gx-waiting); }
 .gx-tile-chip[data-tone="done"] .gx-tile-chip-dot { background: var(--gx-done); }
-.gx-tile-chip[data-tone="failed"] { color: #FFB4AE; border-color: rgba(255, 69, 58, .4); }
+.gx-tile-chip[data-tone="failed"] { color: var(--gx-failed); border-color: color-mix(in srgb, var(--gx-failed) 40%, transparent); }
 .gx-tile-chip[data-tone="failed"] .gx-tile-chip-dot { background: var(--gx-failed); }
 .gx-tile-reason { display: block; margin-top: 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.gx-tile-reason[data-tone="failed"] { color: #FF8A80; }
+.gx-tile-reason[data-tone="failed"] { color: var(--gx-failed); }
 .gx-tile-reason[data-tone="waiting"] { color: var(--gx-waiting); }
 .gx-asset.gx-tile > .gx-tile-reason { padding: 0 2px; }
 /* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
@@ -702,10 +700,10 @@
 /* Release on a take held for credits: the price on the button; a refusal says why, with the way to more credits. */
 .gx-release { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
 .gx-release[data-place="inspector"] { margin-top: 0; flex: 1 1 100%; }
-.gx .gx-hbtn.gx-release-btn { justify-content: center; width: 100%; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: center; line-height: 1.25; color: #FFC46B; border-color: rgba(255, 159, 10, .45); }
+.gx .gx-hbtn.gx-release-btn { justify-content: center; width: 100%; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: center; line-height: 1.25; color: var(--gx-waiting-text); border-color: color-mix(in srgb, var(--gx-waiting) 45%, transparent); }
 .gx-release[data-place="inspector"] .gx-release-btn { width: auto; align-self: flex-start; }
-.gx-release-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; line-height: 1.4; color: #FF8A80; overflow-wrap: anywhere; min-width: 0; }
-.gx-release-note[data-tone="short"] { color: #FFC46B; }
+.gx-release-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; line-height: 1.4; color: var(--gx-failed); overflow-wrap: anywhere; min-width: 0; }
+.gx-release-note[data-tone="short"] { color: var(--gx-waiting-text); }
 .gx-release-ask { color: var(--gx-text-2); }
 .pd-take-cell > .gx-release { margin-top: 6px; }
 /* Release sits under the take it starts, never beside it. */
@@ -725,8 +723,8 @@
 .gx-skel-line--short { width: 44%; margin-top: 6px; }
 /* A read that failed: one line and Try again, never an empty grid. */
 .gx-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 12px; border-radius: 10px; font-size: 12.5px; color: var(--gx-text);
-  border: 1px solid rgba(255, 69, 58, .35); background: rgba(255, 69, 58, .08); }
-.gx-banner[data-tone="stale"] { border-color: rgba(255, 159, 10, .35); background: rgba(255, 159, 10, .08); }
+  border: 1px solid color-mix(in srgb, var(--gx-failed) 35%, transparent); background: color-mix(in srgb, var(--gx-failed) 8%, transparent); }
+.gx-banner[data-tone="stale"] { border-color: color-mix(in srgb, var(--gx-waiting) 35%, transparent); background: color-mix(in srgb, var(--gx-waiting) 8%, transparent); }
 .gx-banner-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--gx-failed); }
 .gx-banner[data-tone="stale"] .gx-banner-dot { background: var(--gx-waiting); }
 .gx-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -764,7 +762,7 @@
 .gx-insp-sub { color: var(--gx-text-2); font-size: 12.5px; margin-top: -6px; }
 .gx-facts { margin: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--gx-hair); border-bottom: 1px solid var(--gx-hair); }
 .gx-facts > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; font-size: 12.5px; }
-.gx-facts dt { color: rgba(235, 235, 245, 0.62); }
+.gx-facts dt { color: var(--gx-text-2); }
 .gx-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .gx-insp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Next (components/graphite/AssetNextActions.tsx): the tool each take goes on to, in the Inspector and on the selected take. */
@@ -782,7 +780,7 @@
 .gx-next-panel-title { font-weight: 600; font-size: 14px; }
 .gx-next-label { color: var(--gx-text-2); font-size: 12px; overflow-wrap: anywhere; }
 .gx-next-note { margin: 0; color: var(--gx-text-2); font-size: 12.5px; overflow-wrap: anywhere; }
-.gx-next-note[data-tone="red"] { color: #FF6961; }
+.gx-next-note[data-tone="red"] { color: var(--gx-failed); }
 .gx-next-fields { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .gx-next-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gx-next-seg, .gx-next-toggle { align-self: flex-start; max-width: 100%; }
@@ -792,7 +790,7 @@
 .gx .gx-gen-go.gx-next-go { width: auto; flex: 1 1 auto; max-width: 100%; padding-left: 14px; padding-right: 14px; }
 .gx-next-done { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
 @media (max-width: 767px) { .gx .gx-gen-go.gx-next-go { flex-basis: 100%; } }
-.gx-hbtn--danger { color: #FF6961; }
+.gx-hbtn--danger { color: var(--gx-failed); }
 /* A Rig row that will take the asset being dragged over it. */
 .gx .pxw-rig-row[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: -2px; background: var(--gx-tint); }
 /* The same on a Rig canvas node: the shot that will take the asset. */
@@ -808,7 +806,7 @@
 .tc-lead { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .tc-intro { margin: 0; max-width: 72ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
 .tc-note { margin: 0; padding: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--gx-text-2); }
-.tc-warn { padding-top: 8px; color: #FFC266; }
+.tc-warn { padding-top: 8px; color: var(--gx-waiting-text); }
 .tc-problem { padding-top: 8px; }
 .tc-card { display: flex; flex-direction: column; min-width: 0; padding: 4px 18px 12px; border-radius: 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
 .tc-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 48px; padding: 8px 0; }
@@ -830,17 +828,17 @@
 .tc-name { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
 .tc-mono { font-family: var(--gx-mono); font-size: 12.5px; }
 .tc-side { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.tc-pill { padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .02em; color: var(--gx-text-2); background: rgba(255, 255, 255, .05); border: 1px solid var(--gx-hair); }
-.tc-pill[data-status="built-in"], .tc-pill[data-status="available"] { color: #7DE39A; background: rgba(48, 209, 88, .10); border-color: rgba(48, 209, 88, .28); }
-.tc-pill[data-status="spends"] { color: #FFC266; background: rgba(255, 159, 10, .10); border-color: rgba(255, 159, 10, .28); }
-.tc-pill[data-status="error"] { color: #FF8A80; background: rgba(255, 69, 58, .10); border-color: rgba(255, 69, 58, .28); }
+.tc-pill { padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .02em; color: var(--gx-text-2); background: var(--gx-hair-soft); border: 1px solid var(--gx-hair); }
+.tc-pill[data-status="built-in"], .tc-pill[data-status="available"] { color: var(--gx-done-text); background: color-mix(in srgb, var(--gx-done) 10%, transparent); border-color: color-mix(in srgb, var(--gx-done) 28%, transparent); }
+.tc-pill[data-status="spends"] { color: var(--gx-waiting-text); background: color-mix(in srgb, var(--gx-waiting) 10%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 28%, transparent); }
+.tc-pill[data-status="error"] { color: var(--gx-failed); background: color-mix(in srgb, var(--gx-failed) 10%, transparent); border-color: color-mix(in srgb, var(--gx-failed) 28%, transparent); }
 .tc-pad { margin: 0; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
 .tc-meter { display: block; max-width: 240px; height: 4px; margin-top: 4px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
 .tc-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--gx-accent); }
 .tc-meter > span[data-full="true"] { background: var(--gx-failed); }
 .tc-fresh { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; padding: 14px; border-radius: 10px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
-.tc-secret { padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, .35); font-family: var(--gx-mono); font-size: 12.5px; overflow-wrap: anywhere; user-select: all; }
-.tc-danger { color: #FF6961; }
+.tc-secret { padding: 10px 12px; border-radius: 8px; background: var(--gx-scrim); font-family: var(--gx-mono); font-size: 12.5px; overflow-wrap: anywhere; user-select: all; }
+.tc-danger { color: var(--gx-failed); }
 .tc-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gx-hair); }
 .tc-field-name { flex: 1 1 200px; width: auto; min-width: 0; }
 .tc-ceiling { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; }
@@ -871,6 +869,7 @@
 }
 @media (max-width: 767px), (pointer: coarse) {
   .tc-packs > summary { min-height: 52px; }
+  .tc-n, .tc-pill, .tc-cmd { font-size: 12px; }
 }
 .tc-insp { display: flex; flex-direction: column; gap: 4px; padding: 16px; }
 .tc-insp-title { font-size: 16px; font-weight: 600; letter-spacing: -.016em; }
@@ -890,7 +889,7 @@
 .am-asset { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
 .am-text { margin: 0; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .am-meta, .am-confirm { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
-.am-gone { color: #FFC266; }
+.am-gone { color: var(--gx-waiting-text); }
 .am-confirm { flex: 1 1 100%; text-align: right; }
 /* A list to tick or pick (Cast & Elements, the brand kit, what Atomik read): each row is its own 44px target. */
 .am-picks { display: grid; gap: 6px; min-width: 0; }
@@ -937,7 +936,7 @@
 .mdx-table th { color: var(--gx-text-2); font-weight: 600; font-size: 12px; }
 .mdx-table [data-numeric] { text-align: right; font-family: var(--gx-mono); }
 .mdx-table tr[data-clickable] { cursor: pointer; }
-.mdx-table tr[data-clickable]:hover td { background: rgba(255, 255, 255, .04); }
+.mdx-table tr[data-clickable]:hover td { background: var(--gx-hair-soft); }
 .mdx-ledger { display: flex; flex-direction: column; gap: 12px; }
 .wsx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
 .wsx-label { display: flex; flex-direction: column; gap: 6px; }
@@ -997,7 +996,7 @@
   .wsx-ledger-state { text-align: left; }
 }
 .wsx-ledger-state[data-state="held"], .wsx-ledger-state[data-state="pending"], .wsx-ledger-state[data-state="uncertain"] { color: var(--gx-waiting); }
-.wsx-ledger-state[data-state="failed-charged"] { color: #FF6961; }
+.wsx-ledger-state[data-state="failed-charged"] { color: var(--gx-failed); }
 /* A failed job's why, and what its provider did with the charge: a full-width line under the row. */
 .wsx-ledger-why { grid-column: 1 / -1; font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
 .wsx-ledger-more { align-self: flex-start; }
@@ -1125,7 +1124,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-atomik-step[data-tone="gate"] .gx-atomik-mark { color: var(--gx-waiting); border-color: var(--gx-waiting); }
 .gx-atomik-step[data-tone="failed"] .gx-atomik-mark { color: var(--gx-failed); border-color: var(--gx-failed); }
 .gx-atomik-meta { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); white-space: nowrap; }
-.gx-atomik-gate { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255, 159, 10, .3); background: rgba(255, 159, 10, .08); }
+.gx-atomik-gate { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--gx-waiting) 30%, transparent); background: color-mix(in srgb, var(--gx-waiting) 8%, transparent); }
 .gx-atomik-gate-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; color: var(--gx-waiting); }
 .gx-atomik-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .gx-atomik-foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--gx-hair); }
@@ -1185,11 +1184,12 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-owner-run-price { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-family: var(--gx-mono); font-size: 13px; color: var(--gx-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .gx-owner-run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 @media (max-width: 1023px) { .gx-owner-run-page { padding: 12px; } .gx-owner-run-actions > button { flex: 1 1 160px; justify-content: center; min-height: 44px; } .gx-owner-run-eyebrow, .gx-owner-run-label { font-size: 12px; } }
+@media (pointer: coarse) { .gx-owner-run-eyebrow, .gx-owner-run-label { font-size: 12px; } }
 /* The badge: key + "Owner" beside the label; a key alone on the glyph's shoulder wherever the header drops to icons. */
-.gx-header .gx-seg-btn > .gx-owner-badge { position: relative; height: 16px; padding: 0 5px 0 4px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; font-family: var(--gx-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-owner); background: rgba(242, 198, 97, .12); border: 1px solid rgba(242, 198, 97, .32); }
+.gx-header .gx-seg-btn > .gx-owner-badge { position: relative; height: 16px; padding: 0 5px 0 4px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; font-family: var(--gx-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-owner); background: color-mix(in srgb, var(--gx-owner) 12%, transparent); border: 1px solid color-mix(in srgb, var(--gx-owner) 32%, transparent); }
 .gx-owner-badge-key { flex: none; }
 @media (max-width: 1179px) {
-  .gx-header .gx-seg-btn > .gx-owner-badge { position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; padding: 0; justify-content: center; border-radius: 50%; background: #1C1A14; }
+  .gx-header .gx-seg-btn > .gx-owner-badge { position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; padding: 0; justify-content: center; border-radius: 50%; background: var(--gx-card); }
   .gx-header .gx-seg-btn > .gx-owner-badge > .gx-owner-badge-label { display: none; }
 }
 /* The phone's Home: an owner-run suite's live fact is who runs it. */
@@ -1197,7 +1197,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-where-tile[data-owner-run] .gx-where-fact .gx-owner-badge-key { flex: none; margin-top: 2px; }
 
 /* ── Header details ────────────────────────────────────────────────────── */
-/* The header is the containing block for what opens under it on a phone (app/phone-chrome.css), and each of its
+/* The header is the containing block for what opens under it on a phone (components/graphite/phone.css), and each of its
    items is a layer of its own. On a desktop it clips to its 56px. */
 .gx-header { position: relative; overflow: hidden; isolation: isolate; }
 .gx-header > * { position: relative; z-index: 1; }
@@ -1225,7 +1225,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 
 /* ── Phone, below 768px: the header is a bar with a margin round it, the suite tabs set the glyph over the label,
    a tab bar floats at the foot, every veil is a bottom sheet and Gen's Generate sticks above the bar. All of it
-   flat: an opaque fill and a hairline. app/phone-chrome.css tightens these numbers for the live shell. ── */
+   flat: an opaque fill and a hairline. components/graphite/phone.css tightens these numbers for the live shell. ── */
 .gx-tabbar { display: none; }
 @media (max-width: 767px) {
   .gx-header { height: auto; overflow: visible; }
@@ -1251,7 +1251,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-tabbar-label { font-size: 12px; font-weight: 500; }
   .gx-tabbar-btn[aria-current="page"] .gx-tabbar-label { font-weight: 600; }
   /* Every scroll region keeps its last row clear of the bar. */
-  .gx .gx-stage, .gx .gx-ws, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .gx-sheet-list, .gx .cw-room, .gx .cw-page { padding-bottom: 110px; }
+  .gx .gx-stage, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .gx-sheet-list, .gx .cw-room, .gx .cw-page { padding-bottom: 110px; }
   /* Sheets rise from the foot of the screen under a grab handle. */
   .gx-veil { place-items: end center; padding: 0; animation: gx-in .2s ease-out both; }
   /* 82% of the screen, by the viewport: a percentage of the veil's auto-height grid area never capped a long list, which then ran off the bottom. */
@@ -1388,3 +1388,50 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-search { flex: 0 0 44px; min-width: 44px; padding: 0; justify-content: center; }
   .gx-search .gx-search-label { display: none; }
 }
+
+/* ── Shared primitives. Classes that carry another view's prefix (cw- from Crew, bz- from Business, vr- from Viral) and
+   are used across the shell: Workspace, Gen, Business, Viral, Atomik and Management all draw with them. They sit at the
+   end of this sheet, in the order their sheets load (crew, production, business, viral), so each keeps winning and
+   losing the ties it always did: after everything above, before every view's own sheet. Keep them last. ── */
+/* Crew's: the engine line, quiet and mono text, a select, the foot and notice lines, the empty state, a text link, a row of small actions. */
+.cw-engine { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; flex: none; }
+.cw-engine-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cw-engine-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-done); }
+.cw-engine[data-ok="false"] .cw-engine-dot { background: var(--gx-failed); }
+.cw-dim { color: var(--gx-text-2); font-size: 12px; }
+.cw-mono { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.cw-select { width: 100%; border-radius: 6px; font-size: 13px; background-color: var(--gx-input); border: 1px solid var(--gx-hair); }
+.cw-select { height: 36px; padding: 0 34px 0 12px; appearance: none; -webkit-appearance: none; min-width: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A1A1A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+.cw-select option { background: var(--gx-card); color: var(--gx-text); }
+.cw-select:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.cw-foot { margin: 0; padding: 0 4px; font-size: 12px; color: var(--gx-text-2); }
+.cw-notice { margin: 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); color: var(--gx-text); }
+.cw-empty { padding: 28px; border-radius: 8px; border: 1px dashed var(--gx-hair-strong); text-align: center; color: var(--gx-text-2); margin: 0; }
+.cw-link { font-size: 12px; color: var(--gx-accent-text); min-height: 28px; padding: 0 4px; }
+.cw-link:hover { color: var(--gx-accent-text-hover); }
+.cw-sol-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cw-sol-actions .gx-hbtn { height: 28px; padding: 0 10px; font-size: 12px; font-weight: 600; }
+@media (max-width: 767px), (pointer: coarse) {
+  .cw-select { height: 44px; font-size: 16px; }
+  .cw-sol-actions .gx-hbtn { height: 44px; min-width: 44px; }
+  .cw-link { min-height: 44px; min-width: 44px; }
+}
+/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
+.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: none; }
+.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+/* Business's: a composer's intro line, a label's note, a reference's role. */
+.bz-intro { margin: 0; color: var(--gx-text-2); font-size: 13px; line-height: 1.5; }
+/* A label's note reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the card. */
+.bz-note { color: var(--gx-text-2); text-transform: none; letter-spacing: 0; font-family: var(--gx-font); font-size: 11.5px; }
+.bz-role { height: 22px; padding: 0 6px; border-radius: 4px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .06em; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); flex: none; }
+/* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
+  button.bz-role { height: 44px; }
+  .bz-note { font-size: 12px; }
+}
+/* A Recent row: the direction and its state on top; resolution, refs, credits and time below, with the next step at the end. */
+.vr-job { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
+.vr-job-name { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) { .vr-job { min-height: 44px; } }
