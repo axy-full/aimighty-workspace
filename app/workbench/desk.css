@@ -55,7 +55,7 @@
 .ps select{width:100%;padding:10px 12px;color:var(--graphite-ink);background:var(--graphite-control);border:1px solid var(--graphite-edge);border-radius:6px;min-height:42px;font:inherit}
 .ps option{background:var(--graphite-control);color:var(--graphite-ink)}
 .ps .dialog-fields textarea{min-height:100px}
-.ps .save-problem{color:var(--gx-failed)}
+.ps .save-problem{color: var(--gx-failed-text)}
 
 /* Keep every node control reachable when a landscape viewport is shorter than the monitor and inspector chrome. */
 @media(max-height:560px) and (min-width:760px){

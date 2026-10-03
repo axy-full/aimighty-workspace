@@ -112,7 +112,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
         {shell.wsTab === "general" ? (
           <div className="wsx-card">
             <span className="gx-eyebrow">{name}{session.role ? ` · ${session.role}` : ""}</span>
-            {error ? <p role="alert" style={{ margin: 0, color: "var(--gx-failed)" }}>{error}</p> : null}
+            {error ? <p role="alert" style={{ margin: 0, color: "var(--gx-failed-text)" }}>{error}</p> : null}
             {others.map((w) => (
               <button key={w.id} type="button" className="gx-rowlink" disabled={busy} onClick={() => change("switch", w.id)}><span>Switch to {w.name}</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
             ))}

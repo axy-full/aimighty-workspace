@@ -231,7 +231,7 @@
 .pxw .pxw-graph-master { color: inherit; }
 
 /* Delete shot: quiet until needed, red when it matters. */
-.pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: var(--gx-failed); font-size: 13px; }
+.pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: var(--gx-failed-text); font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
 /* The team canvas: teammates' cursors, selections and drags; cards move by dragging. */
 .pxw .pxw-graph-node .pxw-graph-hit { cursor: grab; }

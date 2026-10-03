@@ -301,7 +301,7 @@
 .gx-ctx-item { width: 100%; height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 16px; font-size: 13px; }
 .gx-ctx-item:hover:not(:disabled) { background: var(--gx-input-hover); }
 .gx-ctx-item:disabled { color: var(--gx-placeholder); }
-.gx-ctx-item[data-danger="true"]:not(:disabled) { color: var(--gx-failed); }
+.gx-ctx-item[data-danger="true"]:not(:disabled) { color: var(--gx-failed-text); }
 .gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
@@ -1123,7 +1123,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-atomik-step[data-tone="now"] { color: var(--gx-text); }
 .gx-atomik-step[data-tone="now"] .gx-atomik-mark { color: var(--gx-accent-text); border-color: var(--gx-accent); }
 .gx-atomik-step[data-tone="gate"] .gx-atomik-mark { color: var(--gx-waiting); border-color: var(--gx-waiting); }
-.gx-atomik-step[data-tone="failed"] .gx-atomik-mark { color: var(--gx-failed); border-color: var(--gx-failed); }
+.gx-atomik-step[data-tone="failed"] .gx-atomik-mark { color: var(--gx-failed-text); border-color: var(--gx-failed); }
 .gx-atomik-meta { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); white-space: nowrap; }
 .gx-atomik-gate { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255, 159, 10, .3); background: rgba(255, 159, 10, .08); }
 .gx-atomik-gate-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; color: var(--gx-waiting); }
@@ -1149,12 +1149,12 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-resumed-row[data-tone="idle"] .gx-resumed-dot { background: var(--gx-idle); }
 .gx-resumed-state { color: var(--gx-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gx-resumed-row[data-tone="green"] .gx-resumed-state { color: var(--gx-done); }
-.gx-resumed-row[data-tone="red"] .gx-resumed-state { color: var(--gx-failed); }
+.gx-resumed-row[data-tone="red"] .gx-resumed-state { color: var(--gx-failed-text); }
 .gx-resumed-row[data-tone="amber"] .gx-resumed-state { color: var(--gx-waiting); }
 .gx-resumed-x { height: 28px; }
 .gx-resumed-problem { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--gx-waiting); }
 .gx-asset[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
-.gx-asset[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed); }
+.gx-asset[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed-text); }
 /* Nobody is asking after it any more (settled, or no read can move it): the ring and dot stop pulsing. */
 .gx-asset[data-following="false"] .gx-ring { animation: none; }
 /* A picked-up card's state can be a few words ("Set aside · never sent again"): it wraps rather than hides. */

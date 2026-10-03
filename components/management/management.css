@@ -180,7 +180,7 @@
   border-color: var(--graphite-primary-hover);
 }
 .management-button.danger {
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
   border-color: var(--gx-failed);
 }
 .management-button.small {
@@ -387,7 +387,7 @@
 }
 .management-notice.is-error {
   border-color: var(--gx-failed);
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
   background: var(--gx-card);
 }
 .management-empty {
@@ -970,5 +970,5 @@
   .management .management-plan h3 { font-size: 20px; font-weight: 500; }
   .management .management-plan p { font-size: 13px; line-height: 1.6; }
   .management .management-notice { font-size: 13px; line-height: 1.6; background: var(--gx-panel); }
-  .management .management-notice.is-error { color: var(--gx-failed); border-color: var(--gx-failed); }
+  .management .management-notice.is-error { color: var(--gx-failed-text); border-color: var(--gx-failed); }
 }

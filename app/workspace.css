@@ -65,7 +65,7 @@
   --pxw-atomik-panel-gold: var(--gx-text);
   --pxw-neutral-state: var(--gx-eyebrow);
   --pxw-red: var(--gx-failed);
-  --pxw-red-ink: var(--gx-failed);
+  --pxw-red-ink: var(--gx-failed-text);
   --pxw-red-tint: color-mix(in srgb, var(--gx-failed) 12%, transparent);
 
   /* Interaction values the prototype uses alongside the table */

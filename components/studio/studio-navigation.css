@@ -36,7 +36,7 @@
 .studio-account-workspace-item{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}
 .studio-account-workspace-item>span{overflow-wrap:anywhere}
 .studio-account-workspace-item small{font-size:11px;color:var(--graphite-muted);text-transform:capitalize}
-.studio-menu-error,.studio-navigation-error{color:var(--gx-failed);font-size:12px;line-height:1.5;padding:8px 10px;max-width:280px}
+.studio-menu-error,.studio-navigation-error{color: var(--gx-failed-text);font-size:12px;line-height:1.5;padding:8px 10px;max-width:280px}
 .studio-navigation-error{position:absolute;right:16px;top:100%;z-index:110;background:var(--graphite-card);border:1px solid var(--graphite-edge);border-radius:6px}
 .studio-sections-error{right:0;min-width:200px}
 .studio-section-dock{display:none}

@@ -25,7 +25,7 @@
 .quote { padding:10px 12px; margin:12px 0; background:var(--graphite-ground); border:1px solid var(--graphite-edge); border-radius:8px; }
 .quote p { margin:0 0 10px; }
 .hint { color:var(--graphite-muted); font-size:11px; margin:10px 0 0; }
-.error { color:var(--gx-failed); background:var(--gx-input-hover); border:1px solid color-mix(in srgb, var(--gx-failed) 35%, transparent); padding:10px; border-radius:6px; overflow-wrap:anywhere; }
+.error { color: var(--gx-failed-text); background:var(--gx-input-hover); border:1px solid color-mix(in srgb, var(--gx-failed) 35%, transparent); padding:10px; border-radius:6px; overflow-wrap:anywhere; }
 .notice { color:var(--graphite-body); background:var(--gx-tint-08); padding:10px; border:1px solid var(--graphite-edge); border-radius:6px; }
 .runs { border-top:1px solid var(--graphite-line); margin-top:16px; padding-top:12px; }
 .runs h4 { font-size:12px; font-weight:600; margin:0 0 8px; }

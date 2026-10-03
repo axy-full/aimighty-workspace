@@ -128,7 +128,7 @@
   padding-top: 3px;
 }
 .error {
-  color: var(--gx-failed) !important;
+  color: var(--gx-failed-text) !important;
 }
 .actions {
   margin-top: 12px;

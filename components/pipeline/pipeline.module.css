@@ -223,7 +223,7 @@
   border-radius: 8px;
   padding: 14px;
   margin: 20px 0;
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
   font-size: 13px;
 }
 .empty {
@@ -319,7 +319,7 @@
 .take p {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
   overflow-wrap: anywhere;
 }
 .take img,
@@ -571,5 +571,5 @@
   .workspace .stageActions button { width: auto; flex: 1 1 auto; }
   .workspace .review { gap: 6px; margin-top: 12px; }
   .workspace .empty { padding: 20px 16px; background: var(--gx-card); border-color: var(--gx-dashed); border-radius: 12px; }
-  .workspace .error { flex-direction: column; align-items: stretch; background: var(--gx-input); border-color: color-mix(in srgb, var(--gx-failed) 35%, transparent); color: var(--gx-failed); }
+  .workspace .error { flex-direction: column; align-items: stretch; background: var(--gx-input); border-color: color-mix(in srgb, var(--gx-failed) 35%, transparent); color: var(--gx-failed-text); }
 }
