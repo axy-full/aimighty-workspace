@@ -168,7 +168,7 @@
   padding: 6px 8px;
 }
 .error {
-  color: var(--gx-failed) !important;
+  color: var(--gx-failed-text) !important;
 }
 @media (max-width: 759px) {
   .panel { margin-top: 12px; padding: 14px 16px 16px; border: 1px solid var(--graphite-edge); border-radius: 12px; background: var(--graphite-card); }

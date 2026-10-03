@@ -54,7 +54,7 @@
   --ps-faint: var(--gx-eyebrow);
   --ps-track: var(--gx-thumb);
   --ps-emphasis: var(--gx-accent);
-  --ps-error: var(--gx-failed);
+  --ps-error: var(--gx-failed-text);
   --ps-hairline: var(--gx-card-border);
   --ps-line: var(--gx-card-border);
   --ps-edge: var(--gx-dashed);

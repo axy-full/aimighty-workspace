@@ -84,7 +84,7 @@
   --color-ok: var(--graphite-success);
   --color-warn: var(--graphite-warning);
   --color-approved: var(--graphite-success);
-  --color-lift: var(--gx-failed);
+  --color-lift: var(--gx-failed-text);
   --color-red: var(--gx-failed);
   --color-note: var(--graphite-card);
   --color-switch-off: var(--gx-thumb);

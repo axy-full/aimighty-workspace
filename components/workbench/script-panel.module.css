@@ -122,7 +122,7 @@
 .error {
   border-color: color-mix(in srgb, var(--gx-failed) 35%, transparent);
   background: var(--gx-input-hover);
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
 }
 .importReview {
   border: 1px solid var(--graphite-edge);

@@ -74,7 +74,7 @@
   overflow-wrap: anywhere;
 }
 .error {
-  color: var(--gx-failed);
+  color: var(--gx-failed-text);
   background: color-mix(in srgb, var(--gx-failed) 14%, transparent);
 }
 .recovery {

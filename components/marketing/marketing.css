@@ -125,7 +125,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-input:focus { border-color: var(--gx-accent); }
 .mk-access-form .mk-btn { height: 44px; }
 .mk-sent { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 16px; border-radius: 8px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); font-size: 14px; margin-top: 8px; animation: mk-rise .4s var(--gx-ease) both; text-align: left; }
-.mk-error { color: var(--gx-failed); font-size: 13.5px; margin: 0; }
+.mk-error { color: var(--gx-failed-text); font-size: 13.5px; margin: 0; }
 .mk-footer { border-top: 1px solid var(--gx-hair-strong); background: var(--gx-root); }
 .mk-footer .mk-wrap { padding-top: 40px; padding-bottom: 32px; gap: 28px; }
 .mk-footer-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 28px; }
