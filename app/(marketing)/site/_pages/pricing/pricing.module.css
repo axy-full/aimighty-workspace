@@ -2,7 +2,7 @@
    packs and the rate card. Everything else comes from app/marketing.css. */
 
 /* ── Plans ─────────────────────────────────────────────────────────────── */
-section.plans { background: radial-gradient(70% 60% at 50% 0%, rgba(10, 132, 255, .16), transparent 60%), var(--gx-root); }
+section.plans { background: var(--gx-root); }
 .plans > :global(.mk-wrap) { padding-top: clamp(56px, 8vw, 96px); padding-bottom: clamp(56px, 7vw, 80px); gap: 36px; }
 
 .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; }
@@ -10,22 +10,22 @@ section.plans { background: radial-gradient(70% 60% at 50% 0%, rgba(10, 132, 255
 .head .lead { font-size: 17px; max-width: 56ch; }
 
 /* Segmented control: Monthly | Yearly. */
-.seg { display: inline-flex; align-items: center; gap: 12px; margin-top: 6px; padding: 3px; border-radius: 8px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .10); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); max-width: 100%; }
+.seg { display: inline-flex; align-items: center; gap: 12px; margin-top: 6px; padding: 3px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-search); max-width: 100%; }
 .seg button { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
-.seg button[aria-pressed="true"] { background: linear-gradient(180deg, #45454C, #2E2E34); box-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
+.seg button[aria-pressed="true"] { background: var(--gx-thumb); box-shadow: none; }
 .seg button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .off { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .08em; color: var(--gx-accent-text); }
 
 .plans .plan { gap: 14px; padding: 22px; border-radius: 12px; }
-.plans .planHl { border-color: rgba(10, 132, 255, .5); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 4px rgba(10, 132, 255, .10), 0 12px 30px rgba(10, 132, 255, .12); }
+.plans .planHl { border-color: var(--gx-tint-border-50); box-shadow: 0 0 0 4px var(--gx-tint-10); }
 /* Every card's top row is the badge's height, so the four prices line up. */
 .planTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
 .badge { font-family: "Kode Mono", monospace; font-size: 10px; line-height: 14px; letter-spacing: .1em; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); white-space: nowrap; }
 .price { font-family: Outfit, sans-serif; font-weight: 600; font-size: 40px; letter-spacing: -.03em; line-height: 1; }
-.price small { font-size: 15px; font-weight: 500; color: rgba(235, 235, 245, .6); letter-spacing: 0; }
-.billing { font-size: 12.5px; color: rgba(235, 235, 245, .6); margin-top: 6px; min-height: 18px; }
-.audience { font-size: 14px; color: rgba(235, 235, 245, .78); margin: 0; }
-.lines { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid rgba(255, 255, 255, .08); display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.45; color: rgba(235, 235, 245, .72); flex: 1; }
+.price small { font-size: 15px; font-weight: 500; color: var(--gx-text-2); letter-spacing: 0; }
+.billing { font-size: 12.5px; color: var(--gx-text-2); margin-top: 6px; min-height: 18px; }
+.audience { font-size: 14px; color: var(--gx-text-2); margin: 0; }
+.lines { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--gx-hair); display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.45; color: var(--gx-text-2); flex: 1; }
 .lines strong { color: var(--gx-text); font-weight: 600; }
 .plans .notes { gap: 10px; }
 
@@ -56,7 +56,7 @@ section.plans { background: radial-gradient(70% 60% at 50% 0%, rgba(10, 132, 255
 .packPrice { font-family: Outfit, sans-serif; font-weight: 600; font-size: 32px; letter-spacing: -.03em; line-height: 1; }
 .packCredits { font-family: "Kode Mono", monospace; font-size: 14px; color: var(--gx-text); margin-top: 6px; }
 .bonus { color: var(--gx-accent-text); }
-.perCredit { font-size: 12.5px; color: rgba(235, 235, 245, .6); }
+.perCredit { font-size: 12.5px; color: var(--gx-text-2); }
 
 .rates .copy { gap: 14px; }
 .copy p { font-size: 15px; max-width: 48ch; }
@@ -64,13 +64,13 @@ section.plans { background: radial-gradient(70% 60% at 50% 0%, rgba(10, 132, 255
 
 .rates .table { padding: 0; gap: 0; border-radius: 12px; overflow: hidden; }
 .table table { width: 100%; border-collapse: collapse; }
-.table th { padding: 12px 18px; border-bottom: 1px solid rgba(255, 255, 255, .08); font: 500 10.5px "Kode Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: rgba(235, 235, 245, .6); text-align: left; }
-.table td { padding: 11px 18px; border-bottom: 1px solid rgba(255, 255, 255, .06); font-size: 14px; vertical-align: baseline; }
+.table th { padding: 12px 18px; border-bottom: 1px solid var(--gx-hair); font: 500 10.5px "Kode Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); text-align: left; }
+.table td { padding: 11px 18px; border-bottom: 1px solid var(--gx-hair-soft); font-size: 14px; vertical-align: baseline; }
 .table th:first-child, .table td:first-child { padding-right: 8px; }
 .table th:last-child, .table td:last-child { padding-left: 8px; text-align: right; white-space: nowrap; }
-.spec { color: rgba(235, 235, 245, .6); font-size: 13px; }
+.spec { color: var(--gx-text-2); font-size: 13px; }
 .cr { font-family: "Kode Mono", monospace; font-size: 14px; font-weight: 600; }
-.foot { margin: 0; padding: 12px 18px; font-size: 12.5px; line-height: 1.5; color: rgba(235, 235, 245, .6); }
+.foot { margin: 0; padding: 12px 18px; font-size: 12.5px; line-height: 1.5; color: var(--gx-text-2); }
 
 /* ≤ 720, and any touch screen (a phone on its side is 844 wide): every
    control at least 44px tall. */

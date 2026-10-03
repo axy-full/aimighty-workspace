@@ -65,7 +65,7 @@ function Shell() {
         <div className="mk-head">
           <div className="mk-eyebrow">On a phone</div>
           <h3 className="mk-h3">The same room, one hand.</h3>
-          <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a glass tab bar, stage sheets that pull up over the work. Every tap target is at least 44 px.</p>
+          <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a tab bar, stage sheets that pull up over the work. Every tap target is at least 44 px.</p>
           <Chips items={["Home", "Workflow", "Canvas", "Takes", "Edit", "≥ 44 px targets"]} />
         </div>
       </Cols>

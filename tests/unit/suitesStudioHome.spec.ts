@@ -43,7 +43,7 @@ test("every card's line and dot come from the project and the library", () => {
   expect(recentTakes([take("g1"), take("u1", "UPLOAD"), take("g2")]).map((e) => e.take.id)).toEqual(["g1", "g2"]);
 });
 
-/* GLASS_SPEC §3 › Home: six tiles in order, the lines verbatim, the facts from the figures given. */
+/* design/particl-graphite/README.md › Phone, Home: six tiles in order, the lines verbatim, the facts from the figures given. */
 test("the Home tiles carry the prototype's lines and live facts; the Assets row counts the project", () => {
   const cards = stageCards({ ...newProject("Dune Studies"), brief: "A fox crosses a frozen harbour at dusk" }, []);
   const facts = { rendering: 0, videoEngine: "Seedance 2.5", adMode: "UGC", adSeconds: 15, viralResolution: "720p", awaiting: 2, seats: 7 };

@@ -17,7 +17,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { Glyph, SUITE_LOOK } from "../icons";
 
 /**
- * The phone's Home (GLASS_SPEC §3 › "Where to?"): the project's name as the
+ * The phone's Home (design/particl-graphite/README.md › Phone): the project's name as the
  * eyebrow, the display title, six suite tiles with a live fact each, and one
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
  * the takes behind Assets. Every figure is the project's own; a suite whose
@@ -73,7 +73,6 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
           const retired = isOwnerRunSuite(t.id);
           return (
             <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`} data-retired={retired || undefined}>
-              <span className="gx-where-glow" aria-hidden="true" />
               <span className="gx-where-ic" aria-hidden="true"><Glyph name={SUITE_LOOK[t.id]?.glyph ?? "spark"} size={22} /></span>
               <span className="gx-where-name">{t.label}</span>
               <span className="gx-where-line">{t.line}</span>

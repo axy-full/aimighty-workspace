@@ -33,7 +33,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
           {toast.text}
           {toast.undo && (
             <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}
-              className="h-[30px] shrink-0 rounded-pill border border-[rgba(11,13,17,.25)] bg-transparent px-[12px] text-[13px] font-medium leading-none text-ground">
+              className="h-[30px] shrink-0 rounded-pill border border-ground/25 bg-transparent px-[12px] text-[13px] font-medium leading-none text-ground">
               Undo
             </button>
           )}

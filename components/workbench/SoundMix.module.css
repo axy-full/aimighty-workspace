@@ -122,13 +122,13 @@
   position: absolute;
   inset: 0;
   text-align: center;
-  background: #502e28;
-  color: #fff;
+  background: color-mix(in srgb, var(--gx-failed) 14%, var(--gx-card));
+  color: var(--gx-text);
   font-size: 11px;
   padding-top: 3px;
 }
 .error {
-  color: #f5a49a !important;
+  color: var(--gx-failed) !important;
 }
 .actions {
   margin-top: 12px;

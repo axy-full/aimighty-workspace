@@ -1,6 +1,6 @@
 .entry {
   flex: none;
-  color: var(--ink, #f5f6f8);
+  color: var(--ink, var(--gx-text));
 }
 .link {
   display: flex;
@@ -8,17 +8,17 @@
   gap: 10px;
   min-height: 68px;
   padding: 12px;
-  border: 1px solid var(--border-mid, #ffffff26);
+  border: 1px solid var(--border-mid, var(--gx-dialog-border));
   border-radius: 10px;
-  background: var(--card, #17191d);
+  background: var(--card, var(--gx-card));
   text-decoration: none;
   transition:
     background 120ms,
     border-color 120ms;
 }
 .link:hover {
-  background: var(--selected, #25272c);
-  border-color: #ffffff40;
+  background: var(--selected, var(--gx-input-hover));
+  border-color: var(--gx-hover-border);
 }
 .link:focus-visible {
   outline: 2px solid currentColor;
@@ -30,7 +30,7 @@
   width: 32px;
   height: 32px;
   flex: none;
-  border: 1px solid var(--border-mid, #ffffff26);
+  border: 1px solid var(--border-mid, var(--gx-dialog-border));
   border-radius: 8px;
 }
 .copy {
@@ -47,7 +47,7 @@
 }
 .copy > span,
 .entry > p {
-  color: var(--ink-body, #b7bac2);
+  color: var(--ink-body, var(--gx-text-2));
   font-size: 12px;
   line-height: 1.4;
 }
@@ -56,5 +56,5 @@
 }
 .arrow {
   flex: none;
-  color: var(--ink-muted, #9297a0);
+  color: var(--ink-muted, var(--gx-text-2));
 }

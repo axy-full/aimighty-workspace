@@ -205,7 +205,7 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
         className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
         style={{
           backgroundImage:
-            "radial-gradient(circle at 1px 1px, var(--color-hair) 1px, transparent 0)",
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='1' cy='1' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E\")",
           backgroundSize: `${GRID * scale}px ${GRID * scale}px`,
           backgroundPosition: `${pan.x}px ${pan.y}px`,
         }}

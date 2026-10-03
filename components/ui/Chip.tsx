@@ -42,9 +42,9 @@ const LOOK: Record<Variant, string> = {
   pill: "h-[32px] rounded-pill border border-border-mid px-[12px] text-[12.5px] font-medium text-ink-body",
   need: "h-[30px] gap-[7px] rounded-pill border border-border-mid px-[10px] text-[12.5px] font-medium text-ink",
   needHeader: "h-[34px] gap-[8px] rounded-pill border border-border-mid px-[12px] text-[13px] font-medium text-ink",
-  filter: "rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium",
-  composer: "rounded-pill border border-[rgba(245,246,248,.12)] px-[9px] py-[6px] text-[12px] font-medium text-ink",
-  dashed: "rounded-pill border border-dashed border-[rgba(245,246,248,.22)] px-[9px] py-[6px] text-[12px] font-medium text-ink-body",
+  filter: "rounded-pill border border-[var(--gx-pop-border)] px-[11px] py-[8px] text-[12.5px] font-medium",
+  composer: "rounded-pill border border-[var(--gx-pop-border)] px-[9px] py-[6px] text-[12px] font-medium text-ink",
+  dashed: "rounded-pill border border-dashed border-[var(--gx-dashed)] px-[9px] py-[6px] text-[12px] font-medium text-ink-body",
   mono: "gap-[8px] rounded-pill border border-border-mid px-[10px] py-[7px] text-ink",
   scrim: "ui-chip-scrim gap-[6px] rounded-badge px-[6px] py-[4px]",
 };
@@ -53,7 +53,7 @@ export default function Chip({ variant = "pill", tone = "body", active, children
   const isMono = variant === "mono" || variant === "scrim";
   const cls = `inline-flex items-center whitespace-nowrap leading-none ${LOOK[variant]} ${
     variant === "filter" ? (tone === "ink" ? "text-ink" : "text-ink-body") : ""} ${
-    active ? "bg-[rgba(245,246,248,.1)] text-ink" : ""} ${
+    active ? "bg-[var(--gx-input-hover)] text-ink" : ""} ${
     rest.onClick ? "tap44 hover:border-border-hover" : ""} ${className}`;
   const dot = variant === "need" ? 7 : variant === "needHeader" ? 8 : 0;
   const body = (

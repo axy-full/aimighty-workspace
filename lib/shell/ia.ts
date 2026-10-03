@@ -56,7 +56,7 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The two screens outside the strip (GLASS_SPEC §3): `home` is the phone's
+ * The two screens outside the strip (design/particl-graphite/README.md › Phone): `home` is the phone's
  * suite picker — "Where to?" — that the Home tab and the phone's mark return
  * to; `stages` is the Studio home: the stage grid behind the phone's Studio
  * tile (with a Home back), and where the mark goes on a desktop. Both share

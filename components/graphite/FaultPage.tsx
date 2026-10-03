@@ -6,9 +6,7 @@ import { signInHrefFor } from "@/lib/session";
 import { FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
 import { Glyph, SUITE_LOOK } from "./icons";
 import { CopyDetails, FaultIcon } from "./PanelFault";
-import "@/app/graphite.css";
-import "@/app/flair.css";
-import "@/app/glass.css";
+import "@/components/graphite/shell.css";
 import "@/app/fault.css";
 
 /**
@@ -36,10 +34,8 @@ export function StaticHeader({ member = true }: { member?: boolean }) {
   }, [member]);
   return (
     <header ref={header} className="gx-header" data-row="header" data-static="true" data-member={member}>
-      <div className="gx-aurora" aria-hidden="true" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
       <a className="gx-brand" href={member ? STUDIO_HREF : HOME_HREF} aria-label="particl home">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
-          <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>
+        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
         </svg>
         <span className="gx-brand-name">particl</span>

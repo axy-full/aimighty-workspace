@@ -5,7 +5,7 @@
   min-width: 0;
   background: var(--graphite-panel);
   color: var(--graphite-ink);
-  font: 400 13px/1.4 var(--graphite-font);
+  font: 400 13px/1.4 var(--gx-font);
 }
 
 .legacy-projects-toolbar,

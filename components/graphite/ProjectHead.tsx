@@ -7,12 +7,12 @@ import { posterOf } from "./icons";
 
 function posterStyle(name: string): React.CSSProperties {
   const p = posterOf(name);
-  return { "--poster-from": p.from, "--poster-to": p.to, "--poster-glow": p.glow } as React.CSSProperties;
+  return { "--poster-from": p.from, "--poster-to": p.to } as React.CSSProperties;
 }
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
 }
-/** A project's poster tile: its initials over the colour its name picks. */
+/** A project's poster tile: its initials over the two colours its name picks. */
 export function ProjectTile({ name }: { name: string }) {
   return <span className="gx-project-tile" aria-hidden="true" style={posterStyle(name)}>{initials(name)}</span>;
 }

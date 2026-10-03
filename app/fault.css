@@ -1,11 +1,11 @@
 /* ── Faults (components/graphite/PanelFault.tsx, FaultPage.tsx) — a panel that
-   threw, the Suites error page and the 404, in the shell's material. Scoped
+   threw, the Suites error page and the 404, as the shell's own cards. Scoped
    under `.gx` like the rest of the Suites CSS; nothing here reaches another
    shell. 12px is the floor; every target is 44px on a coarse pointer (the
-   .gx-hbtn / .gx-primary rules in graphite.css already say so). ─────────── */
-.gx .gx-fault { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; width: min(460px, 100%); margin: 40px auto; padding: 28px 24px 22px; border-radius: 18px; background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .03)); border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10); animation: gx-in .3s var(--gx-ease) both; }
-.gx .gx-fault-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--gx-waiting); background: rgba(255, 159, 10, .12); border: 1px solid rgba(255, 159, 10, .32); box-shadow: 0 0 22px rgba(255, 159, 10, .18); }
-.gx .gx-fault-icon[data-tone="info"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); box-shadow: 0 0 22px rgba(10, 132, 255, .22); }
+   .gx-hbtn / .gx-primary rules in shell.css already say so). ─────────── */
+.gx .gx-fault { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; width: min(460px, 100%); margin: 40px auto; padding: 28px 24px 22px; border-radius: 18px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-in .3s var(--gx-ease) both; }
+.gx .gx-fault-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--gx-waiting); background: rgba(255, 159, 10, .12); border: 1px solid rgba(255, 159, 10, .32); }
+.gx .gx-fault-icon[data-tone="info"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); }
 .gx .gx-fault-title { margin: 4px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .gx .gx-fault-sub { margin: 0; max-width: 40ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
 .gx .gx-fault-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
@@ -22,13 +22,13 @@
 .gx .gx-fault-host .gx-fault { margin: 0; padding: 22px 16px 18px; }
 /* Search that threw: the card is the dialog, on the veil, and scrolls itself on a short landscape phone. */
 .gx .gx-fault-dialog { width: min(460px, 100%); max-height: calc(100dvh - 12vh - 16px); display: flex; }
-.gx .gx-fault-dialog > .gx-fault { margin: 0; max-height: 100%; overflow: auto; background: var(--gx-card); box-shadow: 0 30px 80px rgba(0, 0, 0, .7); }
-/* A whole view (Crew, Workspace) that threw: the card on the wallpaper. */
+.gx .gx-fault-dialog > .gx-fault { margin: 0; max-height: 100%; overflow: auto; box-shadow: var(--gx-shadow-dialog); }
+/* A whole view (Crew, Workspace) that threw: the card on the view's ground. */
 .gx .gx-fault-view { flex: 1; min-height: 0; overflow: auto; padding: 10px 16px 40px; }
 
 /* One row: a tile, the strip, the composer dock. */
 .gx .gx-fault[data-variant="inline"] { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; text-align: left; width: 100%; margin: 0; padding: 10px 12px; gap: 10px; border-radius: 12px; border-style: dashed; animation: none; }
-.gx .gx-fault[data-variant="inline"] .gx-fault-icon { width: 32px; height: 32px; box-shadow: none; }
+.gx .gx-fault[data-variant="inline"] .gx-fault-icon { width: 32px; height: 32px; }
 .gx .gx-fault[data-variant="inline"] .gx-fault-icon svg { width: 16px; height: 16px; }
 .gx .gx-fault-line { flex: 1 1 140px; min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .gx .gx-fault-line strong { font-weight: 600; }
@@ -68,7 +68,7 @@
    tab bar. Visual order only; the DOM keeps title, line, actions, ref. */
 @media (max-width: 767px), (max-height: 500px) {
   .gx .gx-fault[data-variant="panel"] { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 10px; text-align: left; margin: 12px auto; padding: 14px 16px 16px; }
-  .gx .gx-fault[data-variant="panel"] .gx-fault-icon { width: 36px; height: 36px; box-shadow: none; }
+  .gx .gx-fault[data-variant="panel"] .gx-fault-icon { width: 36px; height: 36px; }
   .gx .gx-fault[data-variant="panel"] .gx-fault-icon svg { width: 18px; height: 18px; }
   .gx .gx-fault[data-variant="panel"] .gx-fault-title { margin: 0; font-size: 16px; }
   .gx .gx-fault[data-variant="panel"] .gx-fault-actions { grid-column: 1 / -1; order: 3; margin-top: 0; justify-content: flex-start; }
@@ -78,16 +78,16 @@
   /* In Search's or Atomik's sheet the card is the sheet: flush, and clear of the home indicator. */
   .gx .gx-fault-dialog > .gx-fault[data-variant="panel"] { margin: 0; padding-bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px)); }
 }
-/* On a phone every veil is a bottom sheet (flair.css): Search's card rises the same way and clears the home indicator. */
+/* On a phone every veil is a bottom sheet (shell.css): Search's card rises the same way and clears the home indicator. */
 @media (max-width: 767px) {
-  /* 100vw, not 100%: the veil's grid centres an auto track (graphite.css), which a percentage would shrink-wrap. */
+  /* 100vw, not 100%: the veil's grid centres an auto track (shell.css), which a percentage would shrink-wrap. */
   .gx .gx-fault-dialog { width: 100vw; max-height: 82dvh; }
-  .gx .gx-fault-dialog > .gx-fault { width: 100%; border-radius: 26px 26px 0 0; border-width: 1px 0 0; padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)); background: var(--gl-sheet, var(--gx-card)); animation: om-up .32s var(--om-ease) both; }
+  .gx .gx-fault-dialog > .gx-fault { width: 100%; border-radius: 26px 26px 0 0; border-width: 1px 0 0; padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)); animation: gx-in .32s var(--gx-ease) both; }
 }
 
 /* A take that threw keeps its tile, at its size, so the grid does not jump. */
 .gx .gx-fault-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--gx-text-2); border: 1px dashed rgba(255, 159, 10, .35); }
-.gx .gx-fault-tile .gx-fault-icon { width: 32px; height: 32px; box-shadow: none; }
+.gx .gx-fault-tile .gx-fault-icon { width: 32px; height: 32px; }
 .gx .gx-fault-tile .gx-fault-icon svg { width: 16px; height: 16px; }
 .gx .gx-fault-tile:hover { color: var(--gx-text); }
 /* Its ref is what a person quotes: text-2, above the floor, where a tile's meta line is text-3. */

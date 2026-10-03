@@ -56,7 +56,7 @@ export function stageCards(project: Project | null, items: readonly LibraryEntry
   });
 }
 
-/** GLASS_SPEC §3 › Home: one tile per suite, its colour, its line (verbatim) and a live fact in mono. */
+/** design/particl-graphite/README.md › Phone, Home: one tile per suite, its colour, its line (verbatim) and a live fact in mono. */
 export type SuiteTile = { id: "studio" | "gen" | "business" | "viral" | "atomik" | "crew"; label: string; color: string; line: string; fact: string };
 export type HomeFacts = {
   /** Generations in flight (the running pill) and the workspace's default video engine's name (Workspace › General). */

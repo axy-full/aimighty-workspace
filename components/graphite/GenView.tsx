@@ -766,7 +766,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           <div className="gx-retry" data-testid="gen-connection-retry"><button type="button" className="gx-hbtn" onClick={composer.retryConnection}>Try again</button></div>
         ) : null}
         {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
-            sticky Generate (GLASS_SPEC §3) is the button and its one-line foot, nothing taller. */}
+            sticky Generate (design/particl-graphite/README.md › Phone) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">
             {/* A draft goes one at a time: its final is made from it (lib/draftFinal.ts). */}
             <span className="gx-hint">{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
@@ -868,7 +868,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         </Boundary>
       </section>
 
-      {/* The veil leaves the stage island: a `backdrop-filter` ancestor would contain its `position: fixed`
+      {/* The veil leaves the stage: an ancestor that contains fixed descendants would hold its `position: fixed`
           (the sheet then rises inside the scroll region, under the phone's tab bar). It lands on the shell
           root so the tokens still reach it. */}
       {sheet ? createPortal(

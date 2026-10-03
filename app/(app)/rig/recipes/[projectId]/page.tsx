@@ -80,7 +80,7 @@ function Recipes() {
                 {recipe.stages.map((s) => (
                   <div key={s.id} role="listitem" className="flex flex-col gap-[8px] rounded-card border border-border bg-card p-[10px]">
                     <span className="flex items-center gap-[6px]"><span className="ui-mono !tracking-[.1em] text-ink-muted">{two(s.num)}</span><span className="truncate text-[13px] font-semibold leading-[1.1] text-ink">{s.name}</span></span>
-                    <span className="h-[62px] rounded-[6px] border border-dashed border-[rgba(245,246,248,.16)]" />
+                    <span className="h-[62px] rounded-[6px] border border-dashed border-[color:var(--gx-dashed)]" />
                     <span className="flex flex-col gap-[4px]">
                       <span className="ui-mono !tracking-[.1em] text-ink-muted">{s.kind}{s.inputs.length ? ` · after ${s.inputs.map((id) => two(recipe.stages.find((x) => x.id === id)?.num ?? 0)).join(", ")}` : ""}</span>
                       <span className="flex justify-between ui-mono ui-mono-cost text-ink-muted"><span className="truncate">{s.engine ? engineLabel(s.engine) : "—"}</span><span className="ml-[6px] flex-none text-ink">{fmt(s.credits)}{s.totalUnits > 1 ? ` · ×${s.totalUnits}` : ""}</span></span>

@@ -191,7 +191,7 @@ export default function SubatomikWorkspace({
         {!embedded && <header className="suite-page-intro">
           <div>
             <span className="suite-kicker">
-              <i className="suite-dot" style={{ background: "#D48CF5" }} />
+              <i className="suite-dot" style={{ background: "var(--gx-purple)" }} />
               Subatomik{project ? ` / ${project.name}` : ""}
             </span>
             <h1>Subatomik Viral Studio</h1>

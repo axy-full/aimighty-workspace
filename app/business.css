@@ -18,11 +18,11 @@
 .bz-detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); position: sticky; top: 0; }
 @media (max-width: 1023px) { .bz-setup { grid-template-columns: minmax(0, 1fr); padding: 12px; } .bz-detail { position: static; } }
 .bz-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
-/* On a phone the picked item rises as a sheet just above the floating tab bar (glass.css: bottom 22 + 66), so its action is always in reach,
+/* On a phone the picked item rises as a sheet just above the floating tab bar (bottom 22 + 66), so its action is always in reach,
    however little of the stage shows under the header. The list keeps room to scroll clear of it. */
 @media (max-width: 767px) {
   .bz-detail { position: fixed; top: auto; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 40; max-height: min(50vh, 320px); overflow-y: auto; overscroll-behavior: contain;
-    padding: 12px 14px 14px; border-radius: 24px; background: rgba(28, 28, 34, .97); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 18px 50px rgba(0, 0, 0, .6); animation: gx-in .2s var(--gx-ease) both; }
+    padding: 12px 14px 14px; border-radius: 24px; background: var(--gx-input); border: 1px solid var(--gx-dashed); box-shadow: var(--gx-shadow-pop); animation: gx-in .2s var(--gx-ease) both; }
   .bz-setup[data-detail] { padding-bottom: 220px; }
   /* The list fades in without a transform: a transformed ancestor would pin the sheet to the list instead of the screen. */
   .bz-setup.gx-enter { animation-name: bz-fade; }

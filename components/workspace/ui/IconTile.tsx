@@ -1,11 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 
-/** Tile tints from the prototype, cycled by group or card index. */
+/** Tile tints (accent, done, waiting, purple), cycled by group or card index. */
 export const TILE = [
-  { bg: "rgba(10,132,255,.1)", border: "rgba(10,132,255,.26)", glyph: "#4DA3FF" },
-  { bg: "rgba(52,199,89,.09)", border: "rgba(52,199,89,.24)", glyph: "#34C759" },
-  { bg: "rgba(240,178,62,.09)", border: "rgba(240,178,62,.24)", glyph: "#E0B95E" },
-  { bg: "rgba(212,140,245,.08)", border: "rgba(212,140,245,.22)", glyph: "#C89AE8" },
+  { bg: "var(--gx-tint-10)", border: "var(--gx-tint-border)", glyph: "var(--gx-accent-text)" },
+  { bg: "var(--gx-done-tint)", border: "color-mix(in srgb, var(--gx-done) 35%, transparent)", glyph: "var(--gx-done-text)" },
+  { bg: "color-mix(in srgb, var(--gx-waiting) 14%, transparent)", border: "color-mix(in srgb, var(--gx-waiting) 35%, transparent)", glyph: "var(--gx-waiting-text)" },
+  { bg: "color-mix(in srgb, var(--gx-purple) 14%, transparent)", border: "color-mix(in srgb, var(--gx-purple) 35%, transparent)", glyph: "var(--gx-purple)" },
 ] as const;
 
 /** 30px on cards, 32px in the Library; radius 9, 1px tinted border, 15px glyph. */

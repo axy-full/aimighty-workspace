@@ -23,23 +23,23 @@ const CSS = `
   body {
     margin: 0; min-height: 100dvh;
     display: grid; place-items: center; padding: 24px;
-    background: #1D1F24; color: #F5F6F8;
+    background: #000000; color: #F5F5F7;
     font: 400 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   .box { max-width: 46ch; text-align: center; }
   h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-  p { margin: 10px 0 0; color: #9A9EA6; }
+  p { margin: 10px 0 0; color: rgba(235, 235, 245, 0.6); }
   .row { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   button, a.btn {
     font: inherit; font-size: 14px; font-weight: 500;
     padding: 9px 18px; border-radius: 999px; border: 0; cursor: pointer;
     text-decoration: none; display: inline-flex; align-items: center; min-height: 44px;
   }
-  .primary { background: #007AFF; color: #fff; }
-  .plain { background: rgba(255,255,255,.09); color: #F5F6F8; }
+  .primary { background: #0A84FF; color: #FFFFFF; }
+  .plain { background: #1B1B1F; color: #F5F5F7; }
   .ref {
-    margin-top: 18px; font-size: 12px; color: #8C9098; word-break: break-word;
+    margin-top: 18px; font-size: 12px; color: rgba(235, 235, 245, 0.45); word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 `;

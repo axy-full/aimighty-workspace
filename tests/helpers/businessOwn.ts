@@ -74,8 +74,8 @@ export async function openBusiness(page: Page, sp: string, start: Project, optio
 /**
  * The functional labels in `scope` dimmer than #7C7C84 as they land on screen: the colour's alpha and any opacity
  * composited over the ground above it. The measure of tests/phoneFloors.ts › dimLabels, one step stricter, as in
- * tests/suites-next-actions-workbench.spec.ts: a layer painted by a gradient, an image or glass counts as black
- * beneath it, the darkest ground there is, so the estimate is never brighter than the screen (the glass cards
+ * tests/suites-next-actions-workbench.spec.ts: a layer painted by a gradient, an image or a translucent fill counts as black
+ * beneath it, the darkest ground there is, so the estimate is never brighter than the screen (the translucent cards
  * these pages sit on are gradients).
  */
 export async function labelsUnderFloor(page: Page, scope: string): Promise<string[]> {

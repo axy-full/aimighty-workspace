@@ -164,7 +164,7 @@ test("phones land on the Suites shell as well, at the same mapped URLs", async (
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
     await expect(page.getByTestId("page-title"), from).toHaveText(title);
-    /* The glass tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
+    /* The tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
     if (info.project.name !== "workbench-844x390") await expect(page.getByTestId("tabbar"), from).toBeVisible();
     await expect(legacyShell(page), from).toHaveCount(0);
   }

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import "../../graphite.css";
-import "../../flair.css";
+import "@/components/graphite/shell.css";
 import "../../marketing.css";
 
 export const metadata: Metadata = {

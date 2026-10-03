@@ -60,19 +60,19 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
 
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-auto" style={{ backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: "24px 24px" }} aria-label="Board" role="region">
+      <div className="min-h-0 flex-1 overflow-auto" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E\")", backgroundSize: "24px 24px" }} aria-label="Board" role="region">
         <div className="flex flex-col gap-[60px] p-[16px]" data-phone-board="">
           {stack.map((item, i) => {
             const last = i === stack.length - 1;
-            const wire = i > 0 && <span aria-hidden="true" className={`absolute left-1/2 -top-[60px] block h-[60px] -translate-x-1/2 ${i === 1 ? "w-[2px] bg-ink" : "w-[1.5px] bg-[rgba(245,246,248,.3)]"}`} />;
-            const box = "relative rounded-card border border-[rgba(245,246,248,.1)] bg-card";
+            const wire = i > 0 && <span aria-hidden="true" className={`absolute left-1/2 -top-[60px] block h-[60px] -translate-x-1/2 ${i === 1 ? "w-[2px] bg-ink" : "w-[1.5px] bg-[color:var(--gx-hover-border)]"}`} />;
+            const box = "relative rounded-card border border-[color:var(--gx-card-border)] bg-card";
             if (item === "assets") return (
               <div key="assets" className={box} aria-label="Assets in this board">
                 <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag("asset")}<span className="text-[13px] font-semibold leading-none text-ink">Assets in this board</span><Mono className="ml-auto">{wired} wired</Mono></div>
                 <div className="flex gap-[6px] overflow-x-auto px-[10px] pb-[10px]" style={{ scrollSnapType: "x mandatory" }}>
                   {assets.flatMap((n) => n.ports.map((p) => (
                     <span key={`${n.id}:${p.id}`} className="flex w-[96px] flex-none flex-col gap-[5px]" style={{ scrollSnapAlign: "start" }}>
-                      <span className="relative block h-[56px] rounded-[7px] border border-border bg-[#1A1D24] ui-placeholder">
+                      <span className="relative block h-[56px] rounded-[7px] border border-border bg-[color:var(--gx-input)] ui-placeholder">
                         <span className="ui-chip-scrim absolute left-[5px] top-[5px] rounded-badge px-[5px] py-[3px]"><span className="ui-mono ui-mono-cost text-ink">{p.label}</span></span>
                       </span>
                       <span className="truncate text-[12px] font-medium leading-[1.2] text-ink">{n.label} <span className="text-ink-muted">{p.version ?? ""}</span></span>
@@ -98,7 +98,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                       const port = src?.kind === "asset" ? src.ports.find((p) => p.id === found!.wire.from.portId) ?? null : null;
                       return (
                         <button key={s.id} type="button" onClick={() => onSlot({ nodeId: n.id, slotId: s.id })} aria-label={`${s.label} slot`}
-                          className={`flex h-[44px] items-center gap-[10px] rounded-ctl px-[6px] text-left ${on ? "bg-[rgba(245,246,248,.06)] ui-node-selected" : ""}`}>
+                          className={`flex h-[44px] items-center gap-[10px] rounded-ctl px-[6px] text-left ${on ? "bg-[color:var(--gx-input)] ui-node-selected" : ""}`}>
                           <span className="relative h-[30px] w-[48px] flex-none overflow-hidden rounded-[5px] border border-border ui-placeholder" />
                           <span className={`ui-mono ${src ? "text-ink" : "text-ink-muted"}`}>{s.label}</span>
                           <span className="ml-auto ui-mono tracking-normal text-ink-body">{src ? (src.kind === "asset" ? (port?.version ?? "current") : src.kind === "prompt" ? "1 line" : src.label) : "—"}</span>
@@ -119,7 +119,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
               <div key={n.id} className={box} aria-label={`${KIND_WORD[n.kind]} node`}>
                 {wire}{i > 0 && dot("top")}
                 <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag(n.kind)}<span className="text-[13px] font-semibold leading-none text-ink">{KIND_WORD[n.kind]}</span></div>
-                <div className="mx-[10px] mb-[10px] rounded-ctl border border-[rgba(245,246,248,.1)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink">{n.text || <span className="text-ink-muted">Empty</span>}</div>
+                <div className="mx-[10px] mb-[10px] rounded-ctl border border-[color:var(--gx-card-border)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink">{n.text || <span className="text-ink-muted">Empty</span>}</div>
                 {!last && dot("bottom")}
               </div>
             );
@@ -144,7 +144,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     {[0, 1, 2, 3].map((k) => {
                       const v = n.output?.variants?.[k] ?? (k === 0 && n.output?.url ? { genId: n.output.genId ?? "", url: n.output.url, chosen: true } : null);
                       return (
-                        <span key={k} className={`relative box-border aspect-square overflow-hidden rounded-[6px] border ui-placeholder ${v?.chosen ? "border-2 border-ink" : "border-[rgba(245,246,248,.08)]"}`}>
+                        <span key={k} className={`relative box-border aspect-square overflow-hidden rounded-[6px] border ui-placeholder ${v?.chosen ? "border-2 border-ink" : "border-[color:var(--gx-hair)]"}`}>
                           {v?.url && <LazyMedia url={v.url} kind="image" className="absolute inset-0 h-full w-full object-cover" />}
                           {busy && k === 0 && <span className="absolute inset-0 flex items-center justify-center"><Loader size={LOADER_SIZES.message} /></span>}
                           {v?.chosen && <span className="absolute bottom-[4px] left-[4px] rounded-[3px] bg-ink px-[4px] py-[3px] ui-mono tracking-normal text-ground">Out</span>}
@@ -153,7 +153,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     })}
                   </div>
                 ) : (
-                  <div className={`relative mx-[10px] box-border flex aspect-video items-center justify-center overflow-hidden rounded-ctl border ${done || busy ? "border-border ui-placeholder" : "border-dashed border-[rgba(245,246,248,.2)] bg-ground"}`}>
+                  <div className={`relative mx-[10px] box-border flex aspect-video items-center justify-center overflow-hidden rounded-ctl border ${done || busy ? "border-border ui-placeholder" : "border-dashed border-[color:var(--gx-hover-border)] bg-ground"}`}>
                     {busy ? <Loader size={LOADER_SIZES.well} /> : done ? (
                       <>
                         {n.output?.url && <LazyMedia url={n.output.url} kind={n.output.kind === "image" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" />}
@@ -164,7 +164,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                   </div>
                 )}
                 <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(n.id); onRun(n); }} disabled={busy || !runnable || unpriced}
-                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[rgba(245,246,248,.16)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable || unpriced ? "text-ink-body" : "text-ink"}`}>
+                  className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[44px] w-[calc(100%-20px)] items-center justify-between rounded-tile border border-[color:var(--gx-dashed)] px-[12px] text-[13px] font-medium leading-none ${filedTo || !runnable || unpriced ? "text-ink-body" : "text-ink"}`}>
                   <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (filedTo ? `Filed · ${filedTo} v${n.output!.filedTo!.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
                   {runnable && <Mono cost tone={unpriced ? "body" : "muted"} className="whitespace-nowrap">{unpriced || shown === null ? "No price" : fmt(shown)}</Mono>}
                 </button>
@@ -269,7 +269,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
       }
       footer={
         <button type="button" disabled={!canApply || busy} onClick={apply} data-apply=""
-          className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${canApply ? "bg-action text-on-action hover:bg-action-hover" : "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body"}`}>
+          className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${canApply ? "bg-action text-on-action hover:bg-action-hover" : "border border-[color:var(--gx-hover-border)] bg-transparent text-ink-body"}`}>
           <span className="truncate">{busy ? "Applying…" : canApply ? `Apply ${vNum(picked)} to ${chosen!.id}` : `Bound to ${vNum(boundId)}`}</span>
           <span className={`ui-mono ui-mono-cost !text-[12px] ${canApply ? "text-on-primary-cost" : "text-ink-muted"}`}>{canApply ? price(chosen!.list) : chosen && changing && engine && rerenderable(chosen.list).length ? "No price" : changing ? "Pick a subset" : "Pick another version"}</span>
         </button>
@@ -280,7 +280,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
             const on = v.id === picked;
             return (
               <button key={v.id} type="button" role="option" aria-selected={on} onClick={() => { setPickedId(v.id); setSubset(null); }}
-                className={`overflow-hidden rounded-tile border bg-card text-left ${on ? "border-[rgba(245,246,248,.5)] ui-node-selected" : "border-[rgba(245,246,248,.12)]"}`}>
+                className={`overflow-hidden rounded-tile border bg-card text-left ${on ? "border-[color:var(--gx-hover-border)] ui-node-selected" : "border-[color:var(--gx-pop-border)]"}`}>
                 <span className="relative block aspect-[4/3] ui-placeholder">
                   {v.uploadId && <LazyMedia url={`/api/uploads/${encodeURIComponent(v.uploadId)}`} kind="image" className="absolute inset-0 h-full w-full object-cover" />}
                   {v.id === boundId && <span className="absolute left-[5px] top-[5px] rounded-[3px] bg-ink px-[4px] py-[3px] ui-mono tracking-normal text-ground">Bound</span>}
@@ -300,14 +300,14 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
           <span className="text-[15px] font-semibold leading-[1.25] text-ink">{uses.length} {uses.length === 1 ? "shot uses" : "shots use"} {vNum(boundId)}</span>
           <span className="text-[13px] leading-[1.4] text-ink-body">{approved.length} approved · {draft.length} draft. Nothing has re-rendered yet.</span>
           <span className="flex h-[8px] gap-[2px] overflow-hidden rounded-[3px]">
-            <span className="bg-accent" style={{ flex: Math.max(approved.length, uses.length ? 0 : 1) }} /><span className="bg-[rgba(245,246,248,.22)]" style={{ flex: Math.max(draft.length, uses.length ? 0 : 1) }} />
+            <span className="bg-accent" style={{ flex: Math.max(approved.length, uses.length ? 0 : 1) }} /><span className="bg-[color:var(--gx-thumb)]" style={{ flex: Math.max(draft.length, uses.length ? 0 : 1) }} />
           </span>
           {subsets.map((o) => {
             const on = subset === o.id;
             return (
               <button key={o.id} type="button" role="radio" aria-checked={on} disabled={!o.list.length} onClick={() => setSubset(o.id)}
-                className={`flex min-h-[48px] items-center gap-[10px] rounded-tile border px-[11px] py-[9px] text-left disabled:opacity-60 ${on ? "border-[rgba(245,246,248,.5)] bg-[rgba(245,246,248,.06)]" : "border-[rgba(245,246,248,.12)]"}`}>
-                <span className={`box-border h-[18px] w-[18px] flex-none rounded-full border-[1.5px] ${on ? "border-ink bg-ink" : "border-[rgba(245,246,248,.3)]"}`} />
+                className={`flex min-h-[48px] items-center gap-[10px] rounded-tile border px-[11px] py-[9px] text-left disabled:opacity-60 ${on ? "border-[color:var(--gx-hover-border)] bg-[color:var(--gx-input)]" : "border-[color:var(--gx-pop-border)]"}`}>
+                <span className={`box-border h-[18px] w-[18px] flex-none rounded-full border-[1.5px] ${on ? "border-ink bg-ink" : "border-[color:var(--gx-hover-border)]"}`} />
                 <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13.5px] font-medium leading-[1.2] text-ink">{o.label}</span><span className="text-[12px] leading-[1.3] text-ink-body">{o.note}</span></span>
                 <Mono cost tone="ink" className="ml-auto flex-none">{price(o.list)}</Mono>
               </button>

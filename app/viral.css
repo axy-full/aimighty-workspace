@@ -13,7 +13,7 @@
 .vr-compare { width: min(1040px, 100%); }
 .vr-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
 .vr-compare-grid figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
-.vr-compare-grid video { width: 100%; border-radius: 6px; background: #000; }
+.vr-compare-grid video { width: 100%; border-radius: 6px; background: var(--gx-root); }
 @media (max-width: 767px) { .vr-compare-grid { grid-template-columns: 1fr; } .vr-history { padding: 12px; } }
 
 /* Runs: every state in words and one tone each — never the raw status code. */
@@ -34,7 +34,7 @@
 .vr-job-act { grid-column: 2 / -1; grid-row: 5; justify-self: start; margin-top: 4px; }
 .vr-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; text-align: center; background: var(--gx-input); }
 .vr-veil-note { position: relative; max-width: 100%; font-size: 11px; line-height: 1.3; color: var(--gx-text-2); }
-.vr-veil::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--vr-tone) 16%, transparent), transparent 70%); }
+.vr-veil::before { content: ""; position: absolute; inset: 0; background: var(--gx-scrim); }
 .vr-veil[data-flying="true"]::before { animation: gx-pulse 2.4s ease-in-out infinite; }
 .vr-veil > .vr-status { position: relative; }
 .vr-run[data-status="failed"] .gx-asset-thumb { opacity: .85; }

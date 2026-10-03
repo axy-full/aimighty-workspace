@@ -4,13 +4,15 @@ import PreviewLayer from "@/components/PreviewLayer";
 import DragLayer from "@/components/DragLayer";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteOrigin } from "@/lib/site";
 import "./fonts.css";
+import "./graphite.css";
 import "./globals.css";
 import "./four-suites.css";
 import "./preview.css";
 
-/* Keep the approved wordmark fonts (Outfit, Kode Mono), bundled in public/fonts
-   and declared in app/fonts.css. Graphite interface typography is defined by the
-   shared system-font tokens in globals.css. */
+/* app/graphite.css is the one token set (design/particl-graphite/README.md ›
+   Design tokens); it loads before every other sheet. Interface type is the
+   system stack with Geist as the fallback, bundled in public/fonts and declared
+   in app/fonts.css beside the wordmark fonts (Outfit, Kode Mono). */
 
 /* Absolute URLs for link previews (Slack, X, iMessage) are built on this. Next
    falls back to localhost in development; the fallback here only keeps a

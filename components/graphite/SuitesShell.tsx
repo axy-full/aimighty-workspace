@@ -342,7 +342,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     </div>
   );
   /* A phone's top bar carries the project switcher in its second row, beside the page strip (or Gen's own buttons):
-     one glass island instead of four rows between the screen's edge and the page (app/phone-chrome.css). */
+     one bar instead of four rows between the screen's edge and the page (app/phone-chrome.css). */
   const compact = useCompact();
   const bar = compact && (shell.view === "suite" || shell.view === "gen") ? <>{projectHead}{shell.view === "gen" ? genHead : <StageStrip />}</> : null;
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.

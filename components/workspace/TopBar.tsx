@@ -15,8 +15,8 @@ export function atomikButtonLook(look: AgentLook, gen: boolean) {
   const { waiting, running } = look;
   return {
     status: look.status,
-    bg: open ? "rgba(240,178,62,.14)" : waiting ? "rgba(255,159,10,.14)" : "var(--pxw-control)",
-    border: open || waiting ? "rgba(240,178,62,.42)" : "var(--pxw-control-border)",
+    bg: open ? "color-mix(in srgb, var(--gx-waiting) 14%, transparent)" : waiting ? "color-mix(in srgb, var(--gx-waiting) 14%, transparent)" : "var(--pxw-control)",
+    border: open || waiting ? "color-mix(in srgb, var(--gx-waiting) 35%, transparent)" : "var(--pxw-control-border)",
     color: open || waiting ? "var(--pxw-atomik-panel-gold)" : "var(--pxw-secondary)",
     dot: waiting ? "var(--pxw-amber)" : running || gen ? "var(--pxw-blue)" : "var(--pxw-atomik-gold)",
     badge: look.badge,

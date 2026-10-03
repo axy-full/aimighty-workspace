@@ -48,7 +48,7 @@ export function RigBar({ tab, hrefs, chip, mono, right, phoneTitle, phoneMono }:
   return (
     <div className="flex h-[44px] flex-none items-center gap-[12px] border-b border-border pl-[76px] pr-[20px]">
       <Segmented label="Rig" placement="bar" value={tab} onChange={(t) => router.push(hrefs[t])} options={tabs} />
-      <span className="flex items-center gap-[8px] whitespace-nowrap rounded-pill border border-[rgba(245,246,248,.12)] px-[10px] py-[6px] text-[13px] font-medium leading-none text-ink">{chip}</span>
+      <span className="flex items-center gap-[8px] whitespace-nowrap rounded-pill border border-[color:var(--gx-pop-border)] px-[10px] py-[6px] text-[13px] font-medium leading-none text-ink">{chip}</span>
       <Mono>{mono}</Mono>
       {right && <span className="ml-auto flex items-center gap-[8px]">{right}</span>}
     </div>
@@ -63,7 +63,7 @@ export function RigStrip() {
   return (
     <aside className="flex w-[56px] flex-none flex-col items-center gap-[14px] border-r border-border py-[14px] max-md:hidden" aria-label="Atomik">
       <button type="button" onClick={rail.toggle} aria-label="Ask Atomik"
-        className={`flex h-[36px] w-[36px] items-center justify-center rounded-tile border ${live ? "border-[rgba(245,246,248,.3)]" : "border-border-mid"}`}>
+        className={`flex h-[36px] w-[36px] items-center justify-center rounded-tile border ${live ? "border-[color:var(--gx-hover-border)]" : "border-border-mid"}`}>
         {"steps" in ring && ring.steps ? <Ring steps={ring.steps} size={18} /> : <Ring mode={"mode" in ring && ring.mode ? ring.mode : "idle"} size={16} />}
       </button>
       <Mono className="[writing-mode:vertical-rl]">{live ? "Checkpoint" : "Ask Atomik"} · ⌘J</Mono>
@@ -89,6 +89,6 @@ export function rigHrefs(projectId: string, boardId?: string | null): Record<Rig
 export function Avatar({ name, you = false }: { name: string | null; you?: boolean }) {
   const initials = (name ?? "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
   return (
-    <span className={`-ml-[6px] flex h-[26px] w-[26px] items-center justify-center rounded-full border bg-card ui-mono !text-[10px] tracking-normal text-ink ${you ? "border-ink" : "border-[rgba(245,246,248,.18)]"}`} title={name ?? undefined}>{initials}</span>
+    <span className={`-ml-[6px] flex h-[26px] w-[26px] items-center justify-center rounded-full border bg-card ui-mono !text-[10px] tracking-normal text-ink ${you ? "border-ink" : "border-[color:var(--gx-dashed)]"}`} title={name ?? undefined}>{initials}</span>
   );
 }

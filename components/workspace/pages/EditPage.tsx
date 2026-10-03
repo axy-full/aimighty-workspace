@@ -144,7 +144,7 @@ function EditBody({ project, scope, draft }: { project: Project; scope: string; 
         return (
           <div key={row.id} className="pxw-stem-wrap" data-section={row === rows[0] ? "sound" : undefined}>
             <div className="pxw-stem" data-stem={row.id} data-state={row.state}>
-              <span className="pxw-stem-bar" style={{ background: row.state === "empty" ? "#2E2E34" : row.hue }} aria-hidden="true" />
+              <span className="pxw-stem-bar" style={{ background: row.state === "empty" ? "var(--gx-input-hover)" : row.hue }} aria-hidden="true" />
               <span className="pxw-stem-name">
                 <span>{row.name}</span>
                 <span>{row.engine}</span>

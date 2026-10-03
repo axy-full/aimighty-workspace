@@ -21,7 +21,7 @@
 .preview {
   width: 100%;
   max-height: 230px;
-  background: #000;
+  background: var(--gx-root);
   border-radius: 8px;
 }
 .settings {
@@ -74,8 +74,8 @@
   overflow-wrap: anywhere;
 }
 .error {
-  color: #f6b1b1;
-  background: #e45a5a12;
+  color: var(--gx-failed);
+  background: color-mix(in srgb, var(--gx-failed) 14%, transparent);
 }
 .recovery {
   color: var(--gen-body);

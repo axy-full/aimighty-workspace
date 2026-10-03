@@ -44,7 +44,7 @@
 .bins p {
   flex-basis: 100%;
   margin: 0;
-  color: #ffbbab;
+  color: var(--gx-failed);
 }
 .dialog {
   max-width: min(440px, calc(100vw - 24px));
@@ -79,7 +79,7 @@
   margin: 4px 0 10px;
 }
 .versions [role="alert"] {
-  color: #ffbbab;
+  color: var(--gx-failed);
 }
 .versions [role="status"] {
   color: var(--graphite-success);
