@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 /**
- * The pinned block (design/particl-v2-mobile/README.md — "One primary,
+ * The pinned block (design/particl-graphite/README.md — "One primary,
  * pinned"; boards M2–M7): below 768 the screen's single filled button lives
  * in a block at the bottom, above the dock — `--ground`, a .08 rule on top,
  * `10px 16px 6px`; the dock beneath carries the safe area, the way M4 (the

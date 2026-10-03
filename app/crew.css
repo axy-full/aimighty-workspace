@@ -1,4 +1,4 @@
-/* Crew (design/particl-suites/CREW_ADDENDUM.md). Graphite tokens from
+/* Crew (design/particl-graphite/README.md). Graphite tokens from
    app/graphite.css; everything here is scoped under .cw or a cw- class. */
 .cw-strip { justify-content: space-between; gap: 16px; }
 .cw-strip-pages { display: flex; align-items: center; gap: 2px; margin: 0 auto; }

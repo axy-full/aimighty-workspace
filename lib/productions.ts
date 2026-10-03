@@ -6,7 +6,7 @@ import { currentTenant } from "./tenant";
 import { STEPS } from "@/components/ui/Stepper";
 
 /**
- * Productions › Projects (design/particl-v2/README.md §1, §6, §15).
+ * Productions › Projects (design/particl-graphite/README.md §1, §6, §15).
  *
  * A production is the client job; a project is a deliverable inside it —
  * the 30s hero, the 15s cutdown, the 9:16 socials — each with its own six

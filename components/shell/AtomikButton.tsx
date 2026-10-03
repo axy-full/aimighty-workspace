@@ -5,7 +5,7 @@ import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { useAtomikRail } from "@/lib/atomikRail";
 
 /**
- * The Atomik header button (design/particl-v2/README.md §4; boards 4a, 10a):
+ * The Atomik header button (design/particl-graphite/README.md §4; boards 4a, 10a):
  * a 36px pill, `0 12px`, Outfit 500 13px, the ring at 14 in its live state,
  * the label, and a mono suffix — `⌘J` on its own with nothing under way
  * (4a, where the label reads `Ask Atomik`), or the state before it

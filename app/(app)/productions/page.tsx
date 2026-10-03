@@ -17,7 +17,7 @@ import { clock } from "@/components/production/ProductionHeader";
 import "@/components/studio/legacy-graphite.css";
 
 /**
- * Productions (design/particl-v2/README.md §6; board 7a), value for value.
+ * Productions (design/particl-graphite/README.md §6; board 7a), value for value.
  *
  * Page header 64px, `0 24px`, 16 apart: `Productions` at 600 20px −0.02em
  * over the mono totals (`4 PRODUCTIONS · 9 PROJECTS · 8 NEED YOU · 808 OF
@@ -35,7 +35,7 @@ import "@/components/studio/legacy-graphite.css";
  * 12/1.2 `--ink-body`, the six dots and the step's name, `228 / 400 CR ·
  * 57%` over a 3px bar. The last cell is the dashed `+ Deliverable`.
  *
- * Below 768 (design/particl-v2-mobile, board M1): `16px 16px 100px`, 14
+ * Below 768 (design/particl-graphite, board M1): `16px 16px 100px`, 14
  * apart — `Productions` at 600 24/1.05 −0.02em over `4 · 9 PROJECTS · 8
  * NEED YOU`, the segmented full width, then the rows: `--card`, .08,
  * radius 14, `14px 0`, 12 apart — name and client (`0 14px`), the need

@@ -10,7 +10,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import Mono from "@/components/ui/Mono";
 
 /**
- * The account menu (design/particl-v2/README.md §4; board 4a): a 32px
+ * The account menu (design/particl-graphite/README.md §4; board 4a): a 32px
  * avatar — `--card`, 1px `--border-mid`, the initials in mono; inverted to
  * ink on ground while the menu is open — and beneath it, at `right 20px,
  * top 60px`, a 220px `--card` panel with a 1px `--border-mid` edge, radius

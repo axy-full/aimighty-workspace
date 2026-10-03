@@ -18,7 +18,7 @@ import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
- * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
+ * The Atomik rail (design/particl-graphite/README.md §5; board 10a), value for
  * value.
  *
  * Compact — 300. Header 52: the ring at 18 in its live state, `Atomik`

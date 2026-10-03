@@ -1,5 +1,5 @@
 /**
- * The Atomik ring, as data (design/particl-v2/README.md §3).
+ * The Atomik ring, as data (design/particl-graphite/README.md §3).
  *
  * Eight dots on a 200 × 200 grid, head at the top, shrinking clockwise to
  * the tail. The same eight dots draw three things: the mark (every dot ink),

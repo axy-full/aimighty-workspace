@@ -1,7 +1,7 @@
 import type { PageId, Suite } from "@/lib/workspace/types";
 
 /**
- * The Suites shell's information architecture (design/particl-suites/README.md
+ * The Suites shell's information architecture (design/particl-graphite/README.md
  * › Information architecture). Four suites plus two views that are not suites
  * (Gen, Workspace). Every page maps onto a page the state layer already knows
  * (lib/workspace/pages.ts), so navigation, selection repair and the page

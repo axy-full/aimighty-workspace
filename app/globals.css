@@ -128,7 +128,7 @@
   --radius-pill: 999px;
 }
 
-/* ── particl v2 primitives' CSS (design/particl-v2/README.md §2–§3) ──────
+/* ── particl v2 primitives' CSS (design/particl-graphite/README.md §2–§3) ──────
    Namespaced `ui-` and `atomik-` so they coexist with the classes of the
    routes not yet replaced. Only what a utility cannot say lives here. */
 
@@ -1814,7 +1814,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .dot-sm { width: 7px; height: 7px; }
 
 /* Placeholders: striped wells for a master, still, board or photo not yet made. */
-/* The placeholder stripes, at the v2 values (design/particl-v2 §2) — the
+/* The placeholder stripes, at the v2 values (design/particl-graphite §2) — the
    one declaration; `.ui-placeholder` and the older wells read the same.
    `--placeholder-fine` is not a §2 token: it is the 3px pitch the boards
    use on small thumbs (8a, 3b), kept for the older wells that read it. */
@@ -3726,7 +3726,7 @@ body:has(.pane-div.is-drag) { cursor: col-resize; user-select: none; }
 .tap44 { position: relative; }
 @media (max-width: 767px) { .tap44::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); } }
 
-/* ── v2 below 768 (design/particl-v2-mobile): the phone is the app frame.
+/* ── v2 below 768 (design/particl-graphite): the phone is the app frame.
    The screen scrolls inside it; the pinned block and the dock sit at the
    bottom (README: "One primary, pinned … above the dock"). This overrides
    the older phone rule above, which let the document scroll. A route that

@@ -95,7 +95,7 @@ test.describe("the app shell", () => {
       }
       const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
-      /* design/particl-v2-mobile (M1): Make · PRODS · Rig · Library — a 22px line icon over a 12px mono label. */
+      /* design/particl-graphite (M1): Make · PRODS · Rig · Library — a 22px line icon over a 12px mono label. */
       await expect(bar.getByRole("link")).toHaveText(["Make", "Prods", "Rig", "Library"]);
       const icons = await bar.getByRole("link").evaluateAll((els) => els.map((a) => { const s = a.querySelector("svg")!; const r = s.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), s.getAttribute("stroke-width")]; }));
       for (const [w, h, sw] of icons) { expect([w, h]).toEqual([22, 22]); expect(sw).toBe("1.6"); }
@@ -130,7 +130,7 @@ test.describe("the app shell", () => {
     });
   }
 
-  /* design/particl-v2-mobile, boards M4 and M9: on a phone the one composer
+  /* design/particl-graphite, boards M4 and M9: on a phone the one composer
      is docked — a card above the pinned Render, the full width of the
      screen, both inside the viewport without any scrolling — and opens as a
      sheet that also fills the width and pins its own Render. A phone on
@@ -193,7 +193,7 @@ test.describe("the app shell", () => {
 
 test.describe("the audio composer", () => {
   /* A visitor's composer has no models and no voices. Every track kind has
-     to open on it (design/particl-v2 §10): Dialogue reads the model list,
+     to open on it (design/particl-graphite §10): Dialogue reads the model list,
      which is the lookup that used to throw. On a phone the composer sits
      above the wall, in the flow, the same component as the desktop rail. */
   test("every track kind opens for a visitor", async ({ page }) => {
@@ -225,7 +225,7 @@ test.describe("the audio composer", () => {
 });
 
 /**
- * Productions on a phone (design/particl-v2-mobile, board M1): the title
+ * Productions on a phone (design/particl-graphite, board M1): the title
  * at 600 24/1.05 −0.02em over `N · N PROJECTS · N NEED YOU`, the
  * `Active · Delivered · All` segmented filling the row with 40px options,
  * no header buttons (a production starts on a desktop), the body at
@@ -269,7 +269,7 @@ test.describe("Projects on a phone", () => {
 });
 
 /**
- * Make on a phone (design/particl-v2-mobile, boards M4 and M9): the sticky
+ * Make on a phone (design/particl-graphite, boards M4 and M9): the sticky
  * block — `Video · Images · Audio` full width over `UNFILED · …` — no
  * search; the composer docked as a card (radius 14, `10px 12px`, the mono
  * eyebrow `COMPOSER · ENGINE · 16:9 · 5S`, `↑`) above the pinned primary
@@ -323,7 +323,7 @@ test.describe("Make on a phone", () => {
 });
 
 /**
- * Settings on a phone (design/particl-v2-mobile, board M10): the header is
+ * Settings on a phone (design/particl-graphite, board M10): the header is
  * `‹ Back` (44pt), `Settings` at 600 16, and the person's `NAME · ROLE` in
  * mono at the right — no balance, no Atomik pill, no avatar. A visitor
  * sees the header and the sign-in line; the index pills and the cards
@@ -353,7 +353,7 @@ test.describe("Settings on a phone", () => {
 });
 
 /**
- * Atomik on a phone (design/particl-v2-mobile, board M3): the header's pill
+ * Atomik on a phone (design/particl-graphite, board M3): the header's pill
  * opens the sheet compact — `#0F1116`, radius 24 above, the .14 rule, the
  * 36×4 grabber, the 48px header with the ring at 18 and `Expand ↑`, one
  * checkpoint card (20px headline), the ask field pinned at 48px — then

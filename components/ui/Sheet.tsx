@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import Mono from "./Mono";
 
 /**
- * The phone's sheet (design/particl-v2-mobile/README.md; boards M3, M5,
+ * The phone's sheet (design/particl-graphite/README.md; boards M3, M5,
  * M8, M9): every desktop right rail below 768. `#0F1116` (the rail's
  * colour), a .14 rule on top, radius 24 above, the 36×4 grabber at
  * `10px auto 0`, the scrim `rgba(5,6,8,.55)` that closes on a tap, a 48px

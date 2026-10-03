@@ -1,5 +1,5 @@
 /*
- * Graphite — the Suites shell's tokens and chrome (design/particl-suites/README.md
+ * Graphite — the Suites shell's tokens and chrome (design/particl-graphite/README.md
  * › Design tokens). Everything is scoped under `.gx`; nothing here reaches the
  * other shells. No gradients on UI, no shadows except the overlays the README
  * names (context menu, popovers, the narrow panels).

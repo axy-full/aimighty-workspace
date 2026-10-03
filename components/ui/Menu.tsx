@@ -6,10 +6,10 @@ import Sheet from "./Sheet";
 import { usePhone } from "@/lib/usePhone";
 
 /**
- * The context menu (design/particl-v2/README.md §7; board 4b) — 228px,
+ * The context menu (design/particl-graphite/README.md §7; board 4b) — 228px,
  * `--card`, a .18 rule, radius 12, 6px padding, a mono title, 36px rows at
  * 500 13.5 with the shortcut in mono, a hairline, a submenu that opens in
- * place with 34px rows — and, below 768 (design/particl-v2-mobile, M3),
+ * place with 34px rows — and, below 768 (design/particl-graphite, M3),
  * the same items as a sheet: 48px rows, the submenu as a second sheet.
  * Choosing an item closes the menu, on a desk as on a phone.
  */

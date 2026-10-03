@@ -17,7 +17,7 @@ import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { RigBar, RigStrip, rigHrefs } from "@/components/rig/RigBar";
 
 /**
- * Rig · Recipes (design/particl-v2/README.md §1, §8): a board saved as a
+ * Rig · Recipes (design/particl-graphite/README.md §1, §8): a board saved as a
  * reusable stage pipeline, with an engine and a price per stage — what
  * `Save as recipe` makes on the Canvas and what a Run executes. The handoff
  * draws no board for it, so it is set the way the run track is (§9): one

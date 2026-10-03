@@ -18,7 +18,7 @@ export const viewport = { width: "device-width", initialScale: 1, viewportFit: "
 export const metadata = { title: "Particl" };
 
 /**
- * The Particl Suites shell (design/particl-suites/README.md) — the surface
+ * The Particl Suites shell (design/particl-graphite/README.md) — the surface
  * every old entry point lands on since 22 September 2026
  * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
  * the page bodies it mounts today are the existing ones, inside the new chrome.

@@ -4,7 +4,7 @@ import { StateDot, STATE_TONE, Waveform, type DotState } from "@/components/ui";
 import LazyMedia from "@/components/LazyMedia";
 
 /**
- * The media card of board 7b (design/particl-v2/README.md §6): `--card`,
+ * The media card of board 7b (design/particl-graphite/README.md §6): `--card`,
  * .08, radius 10 (hover .24); a 16:9 well under a .06 hairline with the
  * kind chip at 7px (`TAKE / STILL / AUDIO / MASTER`), the waveform strip
  * on ground for audio, and `↓ 1080P` in the accent, bottom-right, on a

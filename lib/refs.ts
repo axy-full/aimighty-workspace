@@ -1,5 +1,5 @@
 /**
- * A reference handed to an engine (design/particl-v2/README.md §10: the
+ * A reference handed to an engine (design/particl-graphite/README.md §10: the
  * composer's reference well). The upload is the workspace's; the role is
  * what the engine is told to do with it.
  */

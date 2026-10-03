@@ -30,7 +30,7 @@ import "@/components/studio/legacy-graphite.css";
 import "./mobile.css";
 
 /**
- * Library (design/particl-v2/README.md §11; board 8b): one collection,
+ * Library (design/particl-graphite/README.md §11; board 8b): one collection,
  * three lenses — Assets (the cross-production roster), References (the
  * loose board), Unfiled (Make's takes). It indexes project media; it never
  * stores a second copy.
@@ -48,7 +48,7 @@ import "./mobile.css";
  * `Use in Make`, `Add to Canvas`; `Open full board`). The segmented says
  * which lens fills the screen.
  *
- * Below 768 (design/particl-v2-mobile, board M7): `16px 16px`, 12 apart —
+ * Below 768 (design/particl-graphite, board M7): `16px 16px`, 12 apart —
  * `Library` at 600 24/1.05 −0.02em over `14 ASSETS · 31 REFERENCES · 9
  * UNFILED`, the segmented full width, the filter pills scrolling edge to
  * edge (`Kind ▾`, `Production ▾`, `Locked`, `⌕ Search`), then the assets

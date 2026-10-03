@@ -5,7 +5,7 @@
  * app/fonts.css — none are redeclared here. What is new is layout: a page
  * that scrolls (the shell's `.gx` is a fixed-height app), sections, cards and
  * the three widths (> 1040, 720–1040, ≤ 720). Measurements follow
- * design/particl-site/README.md.
+ * design/particl-graphite/README.md.
  */
 /* The body face. app/fonts.css declares Outfit and Kode Mono; the app's Geist
    is declared per surface (app/workbench/workbench.css), so the site declares it too. */

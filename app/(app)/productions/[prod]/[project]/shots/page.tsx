@@ -27,7 +27,7 @@ import ProductionHeader, { clock } from "@/components/production/ProductionHeade
 import { useAtomikRail } from "@/lib/atomikRail";
 
 /**
- * The Shots grid (design/particl-v2/README.md §7; the grid of board 10a,
+ * The Shots grid (design/particl-graphite/README.md §7; the grid of board 10a,
  * the interactions of 4b), value for value.
  *
  * Toolbar 52px, `0 24px`, 14 apart: `Grid | Filmstrip`, the mono stats,
@@ -52,7 +52,7 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * the description to rename inline — Enter commits, Esc cancels. Every
  * action narrates in the toast.
  *
- * Below 768 (design/particl-v2-mobile, board M3): the toolbar is gone —
+ * Below 768 (design/particl-graphite, board M3): the toolbar is gone —
  * the sub-tabs are in the header, `+` (50×50) and `Render SH08–09 · 38 CR`
  * are pinned above the dock (the primary outlines while any sheet is
  * open); two columns of the phone's card, 10 apart, `12px 16px`. A long

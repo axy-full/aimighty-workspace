@@ -20,7 +20,7 @@ import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
 import { useSkillRunOpens } from "./skills/useSkillRunOpens";
 
 /**
- * Atomik, at app level (design/particl-v2/README.md §5).
+ * Atomik, at app level (design/particl-graphite/README.md §5).
  *
  * A production has threads — several conversations, each with its own plan
  * (lib/atomikThreads.ts) — and the rail shows the current thing in the one

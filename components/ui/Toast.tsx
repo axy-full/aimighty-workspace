@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
- * The bottom toast (design/particl-v2/README.md §7; board 4b): every action
+ * The bottom toast (design/particl-graphite/README.md §7; board 4b): every action
  * on the grid narrates here — `SH11 moved to Saltwater · 2 takes and 38 cr
  * went with it` — above the suite navigation, centred: ink on ground, radius
  * 12, `12px 16px`, Outfit 500 13.5px, and when the action can be undone a

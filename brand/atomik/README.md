@@ -2,8 +2,8 @@
 
 > Historical assets: this folder records the earlier six-dot compressed trail.
 > The previous website's shipped mark is the **eight-dot ring**, specified in
-> [`design/particl-v2/README.md §3`](../../design/particl-v2/README.md) and preserved
-> in [`atomik-ring-on-dark.svg`](../../design/particl-v2/assets/atomik-ring-on-dark.svg)
+> [`design/particl-graphite/README.md §3`](../../design/particl-graphite/README.md) and preserved
+> in [`atomik-ring-on-dark.svg`](../../brand/atomik/atomik-ring-on-dark.svg)
 > and its light counterpart. Use [`AtomikMark`](../../components/AtomikMark.tsx),
 > which shares the original coordinates from [`lib/ring.ts`](../../lib/ring.ts),
 > for current interfaces. The recipe below is retained for asset history.

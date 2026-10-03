@@ -5,7 +5,7 @@ import { db, ready, now } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 /**
- * The grid's order IS the sequence (design/particl-v2 §7): dragging a card
+ * The grid's order IS the sequence (design/particl-graphite §7): dragging a card
  * onto another reorders, and the filmstrip follows. One write per shot,
  * positions 0…n in the order given, scoped to one project so a stray id
  * from another cannot be pulled in.

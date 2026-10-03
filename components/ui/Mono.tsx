@@ -1,7 +1,7 @@
 import type { ElementType, HTMLAttributes } from "react";
 
 /**
- * The mono label (design/particl-v2/README.md §2): Kode Mono 500, 11px,
+ * The mono label (design/particl-graphite/README.md §2): Kode Mono 500, 11px,
  * uppercase, .12em — eyebrows, IDs (`SH04`), states (`PICKED`), engine
  * names, timestamps. A cost (`19 CR`) tightens to .08em. Muted by default
  * because most of these are labels; pass `tone="ink"` for a readout.

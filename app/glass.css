@@ -1,4 +1,4 @@
-/* ── Glass (design/particl-suites/GLASS_SPEC.md §1–2) — the material, one layer
+/* ── Glass (design/particl-graphite/README.md §1–2) — the material, one layer
    after app/graphite.css, app/flair.css and app/crew.css. Every `--gx-*` token
    stays; this file adds `--gl-*` and swaps the surfaces. It writes only
    background, border, box-shadow, border-radius and backdrop-filter — plus the

@@ -2,7 +2,7 @@ import { SHELL_SUITES, WORKSPACE_TABS } from "@/lib/shell/ia";
 
 /**
  * The public site's map: its tabs and the six places it describes. Copy is
- * the product's own (design/particl-site/README.md lists the sources);
+ * the product's own (design/particl-graphite/README.md lists the sources);
  * prices are never written here — lib/marketing/prices.server.ts computes them.
  */
 

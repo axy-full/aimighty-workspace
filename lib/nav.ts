@@ -1,5 +1,5 @@
 /**
- * The four items (design/particl-v2/README.md §1): Make · Productions · Rig
+ * The four items (design/particl-graphite/README.md §1): Make · Productions · Rig
  * · Library. Usage and Settings live in the account menu, and nowhere else.
  *
  * Each item's destination is its v2 route once that step has landed (§0);
@@ -40,7 +40,7 @@ export const NAV: readonly NavItem[] = [
   },
 ];
 
-/** The phone's dock (design/particl-v2-mobile/README.md, board M1): `Make · PRODS · Rig · Library` — the four nav items, Productions written short. */
+/** The phone's dock (design/particl-graphite/README.md, board M1): `Make · PRODS · Rig · Library` — the four nav items, Productions written short. */
 export const DOCK: readonly { label: NavItem["label"]; short: string; href: NavItem["href"]; match: (path: string) => boolean }[] = NAV.map((n) => ({
   label: n.label, short: n.label, href: n.href, match: n.match,
 }));

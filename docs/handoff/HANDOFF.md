@@ -94,7 +94,7 @@ These are owner decisions and repo law. Breaking one is a defect, not a preferen
 **Designs.** Desktop and phone handoffs (tokens, shell, pages, state, mobile) were supplied as
 `design_handoff_particl_workspace/` with two HTML prototypes. The prototypes are references — their runtime
 (`support.js`) must never be ported, and their fixture data stands in for API responses. The repo's own earlier
-mobile spec is `design/particl-v2-mobile/README.md`.
+mobile spec is `design/particl-graphite/README.md`.
 
 ## 5. What shipped 19–21 September
 

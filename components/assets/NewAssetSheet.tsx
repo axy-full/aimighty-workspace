@@ -19,7 +19,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos, trainPrice, type TrainTerms } from "@/lib/identityTraining";
 
 /**
- * The New asset sheet (design/particl-v2/README.md §12; boards 3a, 3b):
+ * The New asset sheet (design/particl-graphite/README.md §12; boards 3a, 3b):
  * one sheet, opened from the Library, Rig, a take, a Canvas selection, an
  * unknown `@name` in a prompt, or Atomik.
  *
@@ -49,7 +49,7 @@ import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos,
  * the switch is real for a character and says so for the kinds whose
  * engine is not connected yet.
  *
- * Below 768 (design/particl-v2-mobile, board M8) the same sheet is full
+ * Below 768 (design/particl-graphite, board M8) the same sheet is full
  * height from 44px: `New asset` at 600 20 over `NAME · KIND · REFERENCES
  * · THAT'S IT` with `FROM LIBRARY` at the right; the name field at 52px
  * in 20px type; the kind pills at 44px (the chosen one filled ink); the

@@ -1,5 +1,5 @@
 /**
- * State dot (design/particl-v2/README.md §3), exactly as the boards draw it
+ * State dot (design/particl-graphite/README.md §3), exactly as the boards draw it
  * (the reference's `dot()`):
  *
  *   approved · done   accent fill            — the only accent on the page

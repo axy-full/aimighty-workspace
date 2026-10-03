@@ -5,7 +5,7 @@ import { useMoney } from "@/lib/price";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 
 /**
- * The two buttons (design/particl-v2/README.md §3), in the three places the
+ * The two buttons (design/particl-graphite/README.md §3), in the three places the
  * boards put them, each at the board's own numbers:
  *
  *   header  a page header (7a, 7b): 38px pills. Primary ink-filled, Outfit

@@ -72,6 +72,8 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 ## 4. Design system
 
+**AMENDED 4 October 2026 — one design.** The look of every surface is `design/particl-graphite/` (the Graphite handoff of 3 October 2026): dark only, flat, one token set in its README § Design tokens. It replaces every earlier design handoff, which were deleted from the repo in D0. The node-graph documents below are kept for the behaviour they record; where they describe colours, type or a light theme, Graphite wins.
+
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
 **Historical theme discussion — resolved by the September 13 amendment.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.

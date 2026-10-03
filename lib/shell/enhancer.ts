@@ -1,5 +1,5 @@
 /**
- * The prompt enhancer, as data (design/particl-suites/README.md › Prompt
+ * The prompt enhancer, as data (design/particl-graphite/README.md › Prompt
  * enhancer). Pure: who rewrites, under which instruction, what may not be
  * rewritten, and what counts as a usable answer. The route
  * (app/api/prompt/enhance) only authenticates, quotes and charges.

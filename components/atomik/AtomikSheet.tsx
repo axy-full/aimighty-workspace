@@ -16,7 +16,7 @@ import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
- * Atomik on a phone (design/particl-v2-mobile/README.md; board M3, live):
+ * Atomik on a phone (design/particl-graphite/README.md; board M3, live):
  * the rail as a sheet. Compact is 58% of the screen — the header (the ring
  * at 18, `Atomik`, the run's context line, `Expand ↑`, ×), one checkpoint
  * card, and the ask field pinned under it. Expanded is 92%: the

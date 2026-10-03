@@ -184,7 +184,7 @@ test("two productions open in two tabs do not fight over the switcher", async ({
 });
 
 /**
- * One ground (design/particl-v2/README.md §2: "dark only — there is no light
+ * One ground (design/particl-graphite/README.md §2: "dark only — there is no light
  * theme"). The paper routes used to re-token themselves light; that is gone
  * with the second brand, so the thing to guard is that nothing brings it
  * back — on the wall, on an atomik route, on a statement — even on a machine
@@ -363,7 +363,7 @@ test("Shots: toolbar, one filled primary, five columns, and the 228px menu", asy
 });
 
 /**
- * Rig · Canvas (design/particl-v2 §8, board 6a): the 44px sub-bar with the
+ * Rig · Canvas (design/particl-graphite §8, board 6a): the 44px sub-bar with the
  * three tabs, the 56px strip, the 300px inspector, `+ Add node ⌘K`, and a
  * node landing on the board from ⌘K — the inspector follows the selection.
  * Nothing here runs a node: building is free, and the test keeps it so.
@@ -404,7 +404,7 @@ test("Rig · Canvas: the 6a chrome, ⌘K adds a node, the inspector follows the 
 });
 
 /**
- * Append to tests/desktop.spec.ts (design/particl-v2 §12, board 3a): the New
+ * Append to tests/desktop.spec.ts (design/particl-graphite §12, board 3a): the New
  * asset sheet from the Library — 760 wide, radius 16, the header, the 48px
  * name field and kind buttons, the dashed references well, the four port
  * tiles a character derives, the train row with its switch, the foot's
@@ -444,7 +444,7 @@ test("New asset: the 3a sheet opens from the Library at its numbers and closes o
 });
 
 /**
- * Settings (design/particl-v2 §13, board 4a): the 240px index with its nine
+ * Settings (design/particl-graphite §13, board 4a): the 240px index with its nine
  * sections, the column of `--card` sections at `18px 20px`, Workspace beside
  * Credits at `1fr 380px`, the row chips at `6px 10px`, the 34×20 switches.
  */

@@ -17,7 +17,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { KIND_TAG, KIND_WORD, isRunnable } from "@/components/rig/nodes";
 
 /**
- * The Rig on a phone (design/particl-v2-mobile/README.md, board M5):
+ * The Rig on a phone (design/particl-graphite/README.md, board M5):
  * read-and-run. The board built on a desktop is one stack down one wire —
  * the assets in this board as a strip node, the shot node with its 44px
  * slot rows, the image node with its four variants and `Again ×4 · 8 CR`,

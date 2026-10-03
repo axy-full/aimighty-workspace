@@ -1,7 +1,7 @@
 import Mono from "./Mono";
 
 /**
- * The six-step stepper (design/particl-v2/README.md §1, §3; boards 10a and
+ * The six-step stepper (design/particl-graphite/README.md §1, §3; boards 10a and
  * 7a): every project walks Brief · Shots · Boards · Takes · Approve ·
  * Deliver. In a production header: 9px dots joined by 26×1 hairlines at
  * .14, each step `gap 7px, padding 0 8px`, labels Outfit 500 13px in

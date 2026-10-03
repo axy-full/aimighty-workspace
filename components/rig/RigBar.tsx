@@ -9,7 +9,7 @@ import { useAtomikRail } from "@/lib/atomikRail";
 import type { ReactNode } from "react";
 
 /**
- * Rig's chrome (design/particl-v2/README.md §8, §9; boards 6a, 9b): the
+ * Rig's chrome (design/particl-graphite/README.md §8, §9; boards 6a, 9b): the
  * 44px sub-bar — `0 20px 0 76px`, 12 apart, a .08 hairline — with the
  * `Canvas · Recipes · Run` segmented (`6px 12px`), the context chip (.12
  * pill, `6px 10px`, 500 13px, 8 apart inside), a mono line, and whatever
@@ -18,7 +18,7 @@ import type { ReactNode } from "react";
  * checkpoint) that opens the rail, with `ASK ATOMIK · ⌘J` — or
  * `CHECKPOINT · ⌘J` — written down it.
  *
- * Below 768 (design/particl-v2-mobile, boards M5 and M6): a 52px row
+ * Below 768 (design/particl-graphite, boards M5 and M6): a 52px row
  * (`0 16px`) with the page's title at 600 14 over its mono line, 3 apart
  * (`SH04 board` / `9 NODES · 27 CR SPENT`; `Run 02` / `3 OF 8 STEPS · 19
  * OF 253 CR`), then the `Canvas · Recipes · Run` segmented full width in

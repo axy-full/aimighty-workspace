@@ -21,7 +21,7 @@ export const maxDuration = 120;
 /**
  * POST /api/prompt/enhance { prompt, provider?, model?, mode, anchored?, editing? }
  *
- * One rough idea in, one concrete prompt out (design/particl-suites/README.md
+ * One rough idea in, one concrete prompt out (design/particl-graphite/README.md
  * › Prompt enhancer). The provider is the request's, else the workspace's
  * (Workspace › General), else Higgsfield. A `raw:` prompt is never rewritten.
  *

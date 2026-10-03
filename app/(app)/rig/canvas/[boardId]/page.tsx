@@ -38,7 +38,7 @@ import { boardUrlFor } from "@/lib/rigCanvasUrl";
 import { newRigFor, OPEN_FAILED } from "@/lib/workspace/rig-import";
 
 /**
- * Rig · Canvas (design/particl-v2/README.md §8; board 6a), value for value.
+ * Rig · Canvas (design/particl-graphite/README.md §8; board 6a), value for value.
  *
  * The sub-bar: `Canvas · Recipes · Run`, the board chip (`Handbag TVC · SH04
  * board ▼`), `9 NODES · 2 RUN · 27 CR SPENT · BUILDING IS FREE`, the
@@ -60,7 +60,7 @@ import { newRigFor, OPEN_FAILED } from "@/lib/workspace/rig-import";
  * its next version through the ordinary generate route; `Save as recipe`
  * turns the board's generate nodes into stages.
  *
- * Below 768 (design/particl-v2-mobile, board M5) the Rig is read-and-run:
+ * Below 768 (design/particl-graphite, board M5) the Rig is read-and-run:
  * the board built on a desktop is shown as one stack down one wire
  * (`components/rig/PhoneBoard.tsx`), a slot opens its inspector sheet, and
  * `Run node again · 19 CR` is pinned under `BUILT ON DESKTOP · RUN AND

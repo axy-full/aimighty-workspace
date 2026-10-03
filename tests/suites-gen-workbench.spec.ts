@@ -5,7 +5,7 @@ import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Suites › Gen, build step 2 (design/particl-suites/README.md › Gen): the
+ * Suites › Gen, build step 2 (design/particl-graphite/README.md › Gen): the
  * composer on the existing useComposer host, the prompt enhancer with its
  * live price on the button, per-second length, the model sheet, and the
  * Library's assets dragged in as references.

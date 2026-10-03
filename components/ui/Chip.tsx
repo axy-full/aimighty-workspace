@@ -1,7 +1,7 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 /**
- * Pill chip (design/particl-v2/README.md §3): 1px `--border-mid`, 999
+ * Pill chip (design/particl-graphite/README.md §3): 1px `--border-mid`, 999
  * radius, 12–13px. The boards cut it seven ways, and each is copied at its
  * own numbers:
  *

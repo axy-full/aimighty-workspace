@@ -19,7 +19,7 @@ import type { ProductionRow } from "@/lib/productions";
 import type { Gen } from "@/components/GenCard";
 
 /**
- * Project › Media (design/particl-v2/README.md §6; board 7b), value for
+ * Project › Media (design/particl-graphite/README.md §6; board 7b), value for
  * value. Under the production header: a 52px sub-bar, `0 24px`, 14 apart —
  * the `Shots · Media` segmented (`8px 14px`; the board's Boards and Approve
  * had no view behind them and are left out), the kind pills (`All · 41`,
@@ -33,7 +33,7 @@ import type { Gen } from "@/components/GenCard";
  * Media belongs to the project that made it and stays when a shot is
  * deleted; a take without a shot groups under `UNFILED`.
  *
- * Below 768 (design/particl-v2-mobile, board M2): the sub-tabs live in the
+ * Below 768 (design/particl-graphite, board M2): the sub-tabs live in the
  * production header; the body is `12px 16px`, 16 apart — the kind pills
  * scrolling edge to edge, each group's line (`SH01`, the title, `N items ·
  * N cr` at the right) over two columns of tiles 8 apart — and `Download N

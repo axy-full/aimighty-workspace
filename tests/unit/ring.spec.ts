@@ -6,7 +6,7 @@ import {
 import { ATOMIK_RING } from "../../components/AtomikMark";
 
 /**
- * The Atomik ring (design/particl-v2/README.md §3).
+ * The Atomik ring (design/particl-graphite/README.md §3).
  *
  * The handoff specifies the eight dots and the per-state arithmetic to the
  * decimal, and the whole UI is going to draw from this one table: the
