@@ -572,7 +572,7 @@ function Canvas() {
           <button type="button" disabled={!target || running.has(target.id) || unpriced} onClick={() => target && runNode(target)} data-render=""
             className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${quiet ? "border border-[color:var(--gx-hover-border)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
             <span className="truncate">{target && running.has(target.id) ? "Running…" : target?.output?.genId ? "Run node again" : "Run node"}</span>
-            <span className={`ui-mono ui-mono-cost !text-[12px] ${quiet ? "text-ink-muted" : "text-on-primary-cost"}`}>{unpriced ? "No price" : targetCost === null ? "" : fmt(targetCost)}</span>
+            <span className={`ui-mono ui-mono-cost !text-[12px] ${quiet ? "text-ink-body" : "text-on-primary-cost"}`}>{unpriced ? "No price" : targetCost === null ? "" : fmt(targetCost)}</span>
           </button>
         </div>
         <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
@@ -623,7 +623,8 @@ function Canvas() {
             <button type="button" onClick={() => setZoom((z) => (z >= 1 ? 0.75 : z >= 0.75 ? 0.5 : 1))} className="ui-mono ui-mono-cost px-[10px] py-[8px] text-ink-body">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
-            <button type="button" onClick={runUnrun} disabled={!unrun.length || unrunCost == null} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · <span className="whitespace-nowrap">{unrunCost == null ? "No price" : fmt(unrunCost)}</span></button>
+            {/* Shut, it steps down a text token rather than fading: the body token is already translucent, and an opacity on top drops "No price" under the #7C7C84 floor. */}
+            <button type="button" onClick={runUnrun} disabled={!unrun.length || unrunCost == null} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink disabled:text-ink-body">Run unrun · <span className="whitespace-nowrap">{unrunCost == null ? "No price" : fmt(unrunCost)}</span></button>
           </div>
           {/* The menu sits on the surface, whose pointerdown clears it: without this a
               press on an item closed the menu before its click, and nothing was added. */}

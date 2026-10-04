@@ -143,7 +143,7 @@ test("the Inspector shows provenance and hides three ways", async ({ page }, inf
   await expect(page.getByTestId("asset-inspector")).toBeVisible();
   expect(Math.round((await page.getByTestId("inspector-preview").boundingBox())!.height)).toBe(180);
   await expect(page.getByTestId("asset-facts")).toContainText("Generation");
-  await expect(page.getByTestId("asset-facts")).toContainText("gemini-3.1-flash-image");
+  await expect(page.getByTestId("asset-facts")).toContainText("Nano Banana 2");
   await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water");
   /* The prompt the account rendered sits beside the prompt that was sent. */
   await expect(page.getByTestId("asset-facts")).toContainText("Wide on the water at dusk, 35mm, low sun · on the account");

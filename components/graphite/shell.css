@@ -1227,6 +1227,8 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
    a tab bar floats at the foot, every veil is a bottom sheet and Gen's Generate sticks above the bar. All of it
    flat: an opaque fill and a hairline. components/graphite/phone.css tightens these numbers for the live shell. ── */
 .gx-tabbar { display: none; }
+/* A phone's sheet rises from the foot of the screen (design/particl-graphite/reference/Particl iPhone.dc.html). */
+@keyframes gx-rise { from { transform: translateY(100%); } to { transform: none; } }
 @media (max-width: 767px) {
   .gx-header { height: auto; overflow: visible; }
   .gx .gx-header { margin: max(10px, env(safe-area-inset-top)) 10px 0; border: 1px solid var(--gx-pop-border); border-radius: 24px; background: var(--gx-panel); }
@@ -1255,7 +1257,7 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   /* Sheets rise from the foot of the screen under a grab handle. */
   .gx-veil { place-items: end center; padding: 0; animation: gx-in .2s ease-out both; }
   /* 82% of the screen, by the viewport: a percentage of the veil's auto-height grid area never capped a long list, which then ran off the bottom. */
-  .gx-sheet { width: 100%; max-height: 82vh; max-height: 82dvh; border: 0; border-top: 1px solid var(--gx-dialog-border); border-radius: 30px 30px 0 0; animation: gx-in .32s var(--gx-ease) both; }
+  .gx-sheet { width: 100%; max-height: 82vh; max-height: 82dvh; border: 0; border-top: 1px solid var(--gx-dialog-border); border-radius: 30px 30px 0 0; animation: gx-rise .32s var(--gx-ease) both; }
   .gx-sheet::before { content: ""; align-self: center; width: 36px; height: 5px; border-radius: var(--gx-r-pill); margin: 8px 0 4px; background: var(--gx-hover-border); }
   .gx-sheet-head { border-bottom: 0; padding: 6px 16px 10px; }
   .gx-sheet-list { padding: 0 16px 32px; gap: 8px; min-height: 0; }

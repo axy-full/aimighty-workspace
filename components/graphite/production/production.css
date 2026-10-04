@@ -334,6 +334,9 @@
 .gx .pd-desk { gap: 12px; }
 .gx .pd-desk-filters { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .gx .pd-desk-find { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+/* The kind chips may shrink to the row and wrap: .gx-chips is flex: none, which held them at one line's width and ran
+   them past the card once a phone's stage took its 12px gutter. */
+.gx .pd-desk-find > .gx-chips { flex: 0 1 auto; min-width: 0; }
 .gx .pd-desk-search { flex: 1 1 220px; width: auto; min-width: 0; max-width: 360px; }
 .gx .pd-desk-chip[data-status]:not([data-status="all"])::before { content: ""; width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; background: var(--dot); }
 .gx .pd-desk-n { margin-left: 6px; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
