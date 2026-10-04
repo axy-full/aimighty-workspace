@@ -14,7 +14,7 @@ import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, wit
 import { useConnectedCollector } from "./use-connected-collector";
 import { IMPORT_PARAM } from "@/lib/workspace/rig-import";
 import type { ComposerType } from "@/lib/workspace/composer";
-import { MAKE_PARAM, fromGenLink, readMake, type MakeTab } from "./make";
+import { MAKE_PARAM, fromMakeLink, isMakeTool, makeType, readMake, viralTool, type MakeTab } from "./make";
 import { sendGenPreset } from "./gen-preset";
 import type { GenPreset } from "./recipe";
 
@@ -27,7 +27,7 @@ import type { GenPreset } from "./recipe";
  * the clipboard and undo).
  *
  * The shell owns its search params at its route — `view`, `tab`, `sp`, `cp`,
- * `make` (the Make panel, lib/shell/make.ts),
+ * `make` (the Make panel and its quick tools, lib/shell/make.ts),
  * `room`, the selected take (`asset`), a link's own `ws` and `production`
  * (lib/shell/asset-link.ts), and an old board the Rig is bringing across
  * (`import`, lib/workspace/rig-import.ts) — and the workspace provider carries
@@ -59,15 +59,16 @@ export type Shell = {
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
-  goSuite: (suite: ShellSuiteId, page?: string) => void;
-  /** Make's panel as the address carries it (`make=`): its type or Recent, or null while it is closed. */
+  /** `closeMake`: the page is where the person is going from Make (Viral History from a quick tool), so Make closes. */
+  goSuite: (suite: ShellSuiteId, page?: string, opts?: { closeMake?: boolean }) => void;
+  /** Make's panel as the address carries it (`make=`): its type, Recent or a quick tool, or null while it is closed. */
   make: MakeTab | null;
   /** The type Make opened on last (`make=1`, and an Open with no type). */
   lastMake: ComposerType;
   /**
-   * Opens Make over whatever is on screen: on a type, on Recent, or with a preset handed over (its type, when it
-   * names one; the words, engine and settings go through Gen's letterbox, lib/shell/gen-preset.ts). With nothing,
-   * on the last type.
+   * Opens Make over whatever is on screen: on a type, on Recent, on a quick tool (Motion transfer, Object swap), or
+   * with a preset handed over (its type, when it names one; the words, engine and settings go through Gen's letterbox,
+   * lib/shell/gen-preset.ts). With nothing, where it is (a quick tool stays one), else on the last type.
    */
   openMake: (preset?: MakeTab | GenPreset) => void;
   closeMake: () => void;
@@ -118,9 +119,9 @@ export function useShell(): Shell {
 }
 
 type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; make: MakeTab | null; asset: string | null };
-/** The old Gen page (`view=gen`) reads as the page under it with Make open (lib/shell/make.ts › fromGenLink). */
+/** The old Gen page (`view=gen`) and Viral's two tools read as Make open over a page (lib/shell/make.ts › fromMakeLink). */
 function readParams(search: string, last: ComposerType = "video"): Params {
-  const q = new URLSearchParams(fromGenLink(search) ?? search);
+  const q = new URLSearchParams(fromMakeLink(search) ?? search);
   const view = q.get("view");
   const tab = q.get("tab");
   const make = readMake(q);
@@ -166,9 +167,10 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const [memory, setMemory] = useState<Partial<Record<ShellSuiteId, string>>>({});
   const [wide, setWide] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= WIDE_FROM));
   /* The type Make was last on (`make=1` reopens it), followed from the address whenever Make is on a type. */
-  const [lastMake, setLastMake] = useState<ComposerType>(() => (params.make && params.make !== "recent" ? params.make : "video"));
+  const [lastMake, setLastMake] = useState<ComposerType>(() => makeType(params.make) ?? "video");
   const lastMakeRef = useRef(lastMake);
-  if (params.make && params.make !== "recent" && params.make !== lastMake) { setLastMake(params.make); }
+  const madeType = makeType(params.make);
+  if (madeType && madeType !== lastMake) { setLastMake(madeType); }
   useEffect(() => { lastMakeRef.current = lastMake; }, [lastMake]);
   const [libTab, setLibTab] = useState<LibTab>("tools");
   const [libOpen, setLibOpen] = useState(false);
@@ -217,9 +219,17 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
     const onPop = () => {
-      /* An entry with the old Gen address reads as Make, and says so. */
-      const moved = fromGenLink(window.location.search);
-      if (moved !== null) window.history.replaceState(null, "", window.location.pathname + (moved ? "?" + moved : "") + window.location.hash);
+      /* An entry with an old Gen or Viral tool address reads as Make, and says so; a Viral tool over the page on screen. */
+      const moved = fromMakeLink(window.location.search);
+      if (moved !== null) {
+        const q = new URLSearchParams(moved);
+        const now = latestWs.current.latest(), at = liveRef.current, tool = viralTool(window.location.search);
+        if (tool && q.get(MAKE_PARAM) === tool && now.view === "studio" && at?.view === "suite") {
+          q.set("suite", now.suite); q.set("page", now.page); q.set("sp", at.page.id);
+        }
+        const text = q.toString();
+        window.history.replaceState(null, "", window.location.pathname + (text ? "?" + text : "") + window.location.hash);
+      }
       setParams(readParams(window.location.search, lastMakeRef.current));
     };
     window.addEventListener("resize", onResize);
@@ -239,7 +249,21 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     setParams(withTake); writeParams(withTake, mode);
   }, []);
 
-  const goSuite = useCallback((id: ShellSuiteId, pageId?: string) => {
+  const openMake = useCallback((preset?: MakeTab | GenPreset) => {
+    if (preset && typeof preset === "object") sendGenPreset(preset);
+    const asked = typeof preset === "string" ? preset : preset?.type;
+    /* A preset is for the composer: from a quick tool it goes to the type Make was last on. */
+    const tab: MakeTab = asked ?? (preset ? makeType(params.make) ?? lastMakeRef.current : params.make && params.make !== "recent" ? params.make : lastMakeRef.current);
+    setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
+    if (params.make === tab) return;
+    apply({ ...params, make: tab }, params.make ? "replace" : "push");
+  }, [params, apply]);
+
+  const goSuite = useCallback((id: ShellSuiteId, pageId?: string, opts?: { closeMake?: boolean }) => {
+    /* Motion Transfer and Object Swap are Make's quick tools (README § 1.2): they open over the page on screen. The
+       suite on its own opened on Motion Transfer, and still does until History is the page it remembers. */
+    const tool = id !== "viral" ? null : pageId !== undefined ? (isMakeTool(pageId) ? pageId : null) : memory.viral ? null : "motion";
+    if (tool) { openMake(tool); return; }
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
     setMemory((m) => ({ ...m, [id]: target.id }));
     setLibOpen(false); setInspOpen(false); setPaletteOpen(false); setCtx(null);
@@ -249,25 +273,16 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     /* The state layer pushed the entry when its own page changed; when two shell
        pages share one backing page it did not, and the shell pushes instead. */
     /* Make stays open over the page it moved to; on a phone, where it is the whole screen, going somewhere closes it. */
-    apply({ view: "suite", tab: "general", sp: target.id, cp: "room", make: stayMake(params.make) }, pushed ? "replace" : "push");
-  }, [ws, memory, apply, params.make]);
-
-  const openMake = useCallback((preset?: MakeTab | GenPreset) => {
-    if (preset && typeof preset === "object") sendGenPreset(preset);
-    const asked = typeof preset === "string" ? preset : preset?.type;
-    const tab: MakeTab = asked ?? (params.make && params.make !== "recent" ? params.make : lastMakeRef.current);
-    setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
-    if (params.make === tab) return;
-    apply({ ...params, make: tab }, params.make ? "replace" : "push");
-  }, [params, apply]);
+    apply({ view: "suite", tab: "general", sp: target.id, cp: "room", make: opts?.closeMake ? null : stayMake(params.make) }, pushed ? "replace" : "push");
+  }, [ws, memory, apply, params.make, openMake]);
 
   /* A page the new IA has no tab for (an old deep link) opens its suite's first page. */
   const landed = useRef(false);
   useEffect(() => {
     if (landed.current) return;
     landed.current = true;
-    /* The old Gen page's address (`view=gen`, `mode=`, `sheet=1`) becomes Make's own before anything else writes it. */
-    const moved = fromGenLink(window.location.search);
+    /* The old Gen page's address (`view=gen`, `mode=`, `sheet=1`) and Viral's two tools become Make's own before anything else writes it. */
+    const moved = fromMakeLink(window.location.search);
     if (moved !== null) window.history.replaceState(null, "", window.location.pathname + (moved ? "?" + moved : "") + window.location.hash);
     /* `make=1` names the type it opened on from here on. */
     else if (readMake(window.location.search) === "last") writeParams(params, "replace");

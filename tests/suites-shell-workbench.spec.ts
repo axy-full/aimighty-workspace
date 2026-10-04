@@ -131,11 +131,15 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
-  /* A pasted link opens the same place. */
-  await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  /* A pasted link opens the same place: History is still Viral's page; an old Object Swap link is Make's quick tool over Studio. */
+  await page.goto("/suites?suite=subatomik&page=history&sp=history");
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   await openSuitesMenu(page);
   await expect(suites.getByRole("tab", { name: "Viral" })).toHaveAttribute("aria-selected", "true");
+  await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
+  expect([param(page, "suite"), param(page, "make")]).toEqual(["particl", "swap"]);
   expect(errors).toEqual([]);
 });
 

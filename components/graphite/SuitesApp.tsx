@@ -6,6 +6,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
 import { RigProvider, RigSeams } from "@/components/workspace/rig/RigProvider";
 import { SHELL_PARAMS, ShellProvider, SUITES_PATH } from "@/lib/shell/state";
+import { fromMakeLink } from "@/lib/shell/make";
 import { SuitesShell } from "./SuitesShell";
 
 const subscribe = () => () => {};
@@ -22,7 +23,8 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
      Only the first value is used: the shell writes view, tab and sp itself,
      and each of those writes updates useSearchParams too. */
   const search = useSearchParams().toString();
-  const [initialSearch] = useState(search);
+  /* An old Gen or Viral quick-tool address is Make's own (lib/shell/make.ts), for the state layer as for the shell. */
+  const [initialSearch] = useState(() => fromMakeLink(search) ?? search);
   /* The same element every time, so a URL change re-renders this component
      alone and not every provider below it. */
   const tree = useMemo(() => (

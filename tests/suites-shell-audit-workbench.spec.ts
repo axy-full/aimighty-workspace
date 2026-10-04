@@ -115,8 +115,13 @@ test("Library › Tools: a Deliver row opens its tool; Business and Viral offer 
   await library.getByRole("button", { name: /^Master/ }).click();
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
 
+  /* Viral opens on Motion transfer, Make's quick tool, over the page: the Library shows what can be dragged into it. */
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Viral" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
+  await expect(library.getByTestId("library-assets")).toBeVisible();
+  /* Viral's page, History, offers Assets only too. */
+  await page.goto("/suites?suite=subatomik&page=history&sp=history");
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   await expect(library.getByRole("tab", { name: /Tools/ })).toHaveCount(0);
   await expect(library.getByTestId("library-assets")).toBeVisible();
   expect(errors).toEqual([]);

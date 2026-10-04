@@ -2,7 +2,7 @@
  * The prototype's glyphs (Particl Suites.dc.html › ic), as React. Stroke
  * icons at 1.8, 24-unit box; the suite glyphs carry their suite's colour.
  */
-export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key";
+export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key" | "video" | "swap";
 
 export function Glyph({ name, size = 16, color, className }: { name: GlyphName; size?: number; color?: string; className?: string }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color ?? "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, className, "aria-hidden": true, style: { display: "block" as const } };
@@ -25,6 +25,9 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
     case "home": return <svg {...p}><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></svg>;
     case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.8" /><rect x="14" y="3" width="7" height="7" rx="1.8" /><rect x="3" y="14" width="7" height="7" rx="1.8" /><rect x="14" y="14" width="7" height="7" rx="1.8" /></svg>;
     /* The owner's key: what runs only on the workspace owner's connected account (idea 19). */
+    /* Make's quick tools (the master's Motion transfer and Object swap glyphs, on this 24-unit box). */
+    case "video": return <svg {...p}><path d="M3 6h12v12H3zM15 10.5l6-3v9l-6-3" /></svg>;
+    case "swap": return <svg {...p}><path d="M4.5 9h12l-3-3M19.5 15h-12l3 3" /></svg>;
     case "key": return <svg {...p}><circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8L20 3M16.5 6.5l2.5 2.5M14 9l2 2" /></svg>;
   }
 }

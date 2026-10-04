@@ -74,7 +74,7 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 07; Business after 01 and 02; Viral after 02; Atomik after 01 and 04. */
+/** Group starts: Studio after 03 and 07; Business after 01 and 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
   own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
@@ -108,10 +108,10 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
     ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
-  /* Viral pages are the shell's own views (step 3), run on Particl's API key through /api/generate (Genjutsu on the key). */
-  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
-    ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
-    ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
+  /* Viral's History is the shell's own view (step 3). Motion Transfer and Object Swap, on Particl's API key through
+     /api/generate (Genjutsu on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
+     pages' links open Make over the page on screen, and `goSuite("viral", "motion" | "swap")` does the same. */
+  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [], [
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit

@@ -39,7 +39,9 @@ import { CINEMA_BANK, recipeCinema } from "@/lib/workspace/cinema-vocabulary";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import type { GenInputAsset } from "@/lib/genAssetInput";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
-import { Glyph } from "./icons";
+import { Glyph, type GlyphName } from "./icons";
+import { ViralTool, toolName } from "./viral/ViralView";
+import { isMakeTool, makeType, type MakeTool } from "@/lib/shell/make";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -54,6 +56,8 @@ const FILTERS = ["All", "Images", "Video", "Audio"] as const;
 type Filter = (typeof FILTERS)[number];
 const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
+/* The quick tools under Make (README § 3.2; the master's row): Social's two, each a mode of this panel. */
+const QUICK_TOOLS: { tool: MakeTool; glyph: GlyphName }[] = [{ tool: "motion", glyph: "video" }, { tool: "swap", glyph: "swap" }];
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
 /** A sound Cinema Studio can take as a reference: a WAV uploaded to this workspace (the provider documents WAV; generated sounds are MP3). */
 const cinemaSound = (asset: Pick<GenInputAsset, "kind" | "origin" | "mime">) => asset.kind === "audio" && asset.origin === "upload" && isCinemaStudioAudioMime(asset.mime);
@@ -93,7 +97,9 @@ type RecipeCard = {
  * its live price and Change, Make at that price, where it goes), then every
  * control the handoff's panel does not draw yet, exactly as Gen had them, in
  * Gen's order. Its Recent tab is Gen's results. Its models are Studio engines
- * on this workspace's credits. Takes an earlier visit left running on a
+ * on this workspace's credits. Its quick tools (`make=motion|swap`) are
+ * Motion transfer and Object swap, drawn by ViralTool in the same panel while
+ * the composer keeps its draft. Takes an earlier visit left running on a
  * signed-in account are still shown until they land (the shell's collector
  * files them); nothing new starts there.
  */
@@ -111,7 +117,9 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const opened = shell.make && shell.make !== "recent" ? shell.make : shell.lastMake;
+  const opened = makeType(shell.make) ?? shell.lastMake;
+  /* A quick tool is drawn instead of the composer, which stays mounted under it and keeps its draft. */
+  const tool = isMakeTool(shell.make) ? shell.make : null;
   const [initialType] = useState(opened);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
   const { state, model, offered, settings, blocked: waiting, buttonLabel, buttonParts, submitting } = composer;
@@ -146,7 +154,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   useEffect(() => {
     const was = synced.current;
     synced.current = { asked, type: state.type };
-    if (!asked || asked === "recent" || asked === state.type) return;
+    if (!asked || asked === "recent" || isMakeTool(asked) || asked === state.type) return;
     if (asked !== was.asked) follow.current.dispatchType(asked);
     else if (state.type !== was.type) follow.current.setMake(state.type);
   }, [asked, state.type]);
@@ -345,7 +353,8 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
-  useReferenceInbox(inbox);
+  /* A quick tool takes the letters while it is open. */
+  useReferenceInbox(tool ? null : inbox);
 
   /* A recreated take is not sent half-read: while its references are still being read, the composer holds a
      recipe without them, and a price for that is not the take's price. A citation of a reference that is gone
@@ -619,6 +628,15 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         </button>
       </div>
 
+      <div className="gx-make-tools" data-testid="make-quick-tools">
+        <span className="gx-eyebrow" data-functional-label="">Quick tools</span>
+        <div className="gx-make-tools-row">
+          {QUICK_TOOLS.map(({ tool: t, glyph }) => (
+            <button key={t} type="button" className="gx-hbtn" onClick={() => setMake(t)} data-testid={`make-tool-${t}`}><Glyph name={glyph} size={16} className="gx-glyph" /><span>{toolName(t)}</span></button>
+          ))}
+        </div>
+      </div>
+
       {/* Below: every control Make's drawn panel does not have yet (README § 3.2 draws none of them), exactly as Gen had them
           and in Gen's order — the film chips and Enhance under the words, then the output's own settings, then takes. */}
       <div className="gx-make-more" data-testid="make-more">
@@ -812,21 +830,23 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   );
 
   return (
-    <aside ref={panel} className="gx-make" aria-label="Make" data-testid="make-panel" data-tab={recentTab ? "recent" : state.type} data-beside={beside ? "" : undefined}
+    <aside ref={panel} className="gx-make" aria-label={tool ? toolName(tool) : "Make"} data-testid="make-panel" data-tab={tool ?? (recentTab ? "recent" : state.type)} data-beside={beside ? "" : undefined}
       style={aspect ? ({ "--tile-aspect": aspect } as React.CSSProperties) : undefined}>
       <div className="gx-make-head">
-        <strong className="gx-make-title">Make</strong>
-        <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Make or Recent">
-          <button type="button" role="tab" className="gx-seg-btn" aria-selected={!recentTab} onClick={() => setMake(state.type)} data-testid="make-tab-make"><span>Make</span></button>
-          <button type="button" role="tab" className="gx-seg-btn" aria-selected={recentTab} onClick={() => setMake("recent")} data-testid="make-tab-recent"><span>Recent</span></button>
-        </div>
+        <strong className="gx-make-title" data-testid="make-title">{tool ? toolName(tool) : "Make"}</strong>
+        {tool ? null : (
+          <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Make or Recent">
+            <button type="button" role="tab" className="gx-seg-btn" aria-selected={!recentTab} onClick={() => setMake(state.type)} data-testid="make-tab-make"><span>Make</span></button>
+            <button type="button" role="tab" className="gx-seg-btn" aria-selected={recentTab} onClick={() => setMake("recent")} data-testid="make-tab-recent"><span>Recent</span></button>
+          </div>
+        )}
         <span className="gx-spacer" />
         {/* Below 1280 the Library is an overlay: Make's way to it, on either tab (README › Library, drag in from it). */}
         {!shell.wide ? <button type="button" className="gx-hbtn gx-make-lib" onClick={() => shell.openLibrary("assets")} data-testid="make-open-library"><Glyph name="stack" size={16} className="gx-glyph" /><span>Library</span></button> : null}
         <button type="button" className="gx-make-close" aria-label="Close Make" title="Close · Esc" onClick={shell.closeMake} data-testid="make-close">×</button>
       </div>
       <div className="gx-make-body gx-scroll" data-testid="gen-view">
-        {recentTab ? recentView : compose}
+        {tool ? <ViralTool key={tool} scope={scope} page={tool} project={project} items={items} /> : recentTab ? recentView : compose}
       </div>
 
       {/* The veil leaves the panel: an ancestor that contains fixed descendants would hold its `position: fixed`

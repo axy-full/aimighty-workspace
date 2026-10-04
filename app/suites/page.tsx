@@ -4,7 +4,7 @@ import SuitesApp from "@/components/graphite/SuitesApp";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SessionProvider } from "@/lib/session";
 import { redirect } from "next/navigation";
-import { fromGenLink } from "@/lib/shell/make";
+import { fromMakeLink } from "@/lib/shell/make";
 import { searchStringOf } from "@/lib/workspace/switchover";
 import "@/components/workspace/workspace.css";
 import "@/components/graphite/shell.css";
@@ -27,8 +27,9 @@ export const metadata = { title: "Particl" };
  */
 export default async function Suites({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   /* The old Gen page is Make's panel now (lib/shell/make.ts): `?view=gen&mode=…` lands on the same address without them,
-     plus `make=<type>`, before sign-in so a visitor comes back to Make itself. */
-  const moved = fromGenLink(searchStringOf(await searchParams));
+     plus `make=<type>`; so do Viral's Motion Transfer and Object Swap (`?suite=subatomik&page=motion|swap`, `sp=…`), as
+     `make=motion|swap` over Studio. Before sign-in, so a visitor comes back to Make itself. Viral History stays a page. */
+  const moved = fromMakeLink(searchStringOf(await searchParams));
   if (moved !== null) redirect(`/suites${moved ? `?${moved}` : ""}`);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
   return (
