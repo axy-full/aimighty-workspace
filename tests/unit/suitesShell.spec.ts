@@ -10,8 +10,8 @@ import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palet
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
-test("the header segment reads Studio | Gen | Business | Viral | Atomik | Crew", () => {
-  expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
+test("the header segment is option B: Home · the project · Make · Atomik", () => {
+  expect(HEADER_SEGMENT.map((s) => [s.id, s.label])).toEqual([["home", "Home"], ["project", "Project"], ["make", "Make"], ["atomik", "Atomik"]]);
 });
 
 test("every suite has the README's pages, numbered in order, with its group gaps; the phone's Studio home sits outside the strip", () => {
@@ -88,7 +88,8 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
     ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
     ["AGENT", "Atomik Agent"],
   ]);
-  for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
+  /* The suites left the header: each is still a ⌘K row, under its own name, until its board ships. */
+  for (const s of SHELL_SUITES) expect(paletteIndex({ models: [], assets: [] }).find((r) => r.run.type === "suite" && r.run.suite === s.id)).toMatchObject({ label: s.label, hint: s.name });
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */

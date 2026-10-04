@@ -1,4 +1,4 @@
-import { shellSuite, type ShellSuiteId } from "./ia";
+import { shellSuite, type HeaderSegmentId } from "./ia";
 
 /**
  * When part of the Suites shell throws (components/Boundary.tsx around each
@@ -108,13 +108,18 @@ export const FIND_HREF = `/suites?${FIND_PARAM}=1`;
 /** A visitor (no session) on a dead link: the public site's front page, where proxy.ts serves the site. */
 export const HOME_HREF = "/";
 
-export type SegmentId = ShellSuiteId | "gen" | "crew";
+export type SegmentId = HeaderSegmentId;
 
-/** Each header segment as a plain link, for the pages drawn outside the live shell. */
+/**
+ * Each header segment as a plain link, for the pages drawn outside the live shell: the same places the live
+ * header opens (components/graphite/Header.tsx) — Home the Studio overview, the project its Studio pages,
+ * Make today's Gen, Atomik its suite.
+ */
 export function segmentHref(id: SegmentId): string {
-  if (id === "studio") return STUDIO_HREF;
-  if (id === "gen" || id === "crew") return `${STUDIO_HREF}?view=${id}`;
-  return `${STUDIO_HREF}?suite=${shellSuite(id).legacy}`;
+  if (id === "home") return `${STUDIO_HREF}?suite=particl&page=brief&sp=stages`;
+  if (id === "project") return `${STUDIO_HREF}?suite=particl`;
+  if (id === "make") return `${STUDIO_HREF}?view=gen`;
+  return `${STUDIO_HREF}?suite=${shellSuite("atomik").legacy}`;
 }
 
 /** True when the URL asks the shell to open search as it lands. */

@@ -1287,9 +1287,9 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     await expect.poll(() => reached.length, { timeout: 60_000 }).toBe(1);
     await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
     if (leave === "leaves Gen for Studio and comes back") {
-      await page.locator("[data-suite-tab=studio]").click();
+      await page.locator("[data-suite-tab=project]").click();
       await expect(page.getByTestId("gen-view")).toHaveCount(0, { timeout: 30_000 });
-      await page.locator("[data-suite-tab=gen]").click();
+      await page.locator("[data-suite-tab=make]").click();
       await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
       await press(false);
     } else await press(leave === "reloads");

@@ -29,10 +29,10 @@
 .gx-enter { animation: gx-in .4s var(--gx-ease) both; }
 
 /* ── Header (56px) ─────────────────────────────────────────────────────── */
-.gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
-.gx-brand { display: flex; align-items: center; gap: 12px; flex: none; }
+.gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-brand { display: flex; align-items: center; gap: 8px; flex: none; }
 .gx-brand-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
-.gx-brand-mark { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .18em; color: var(--gx-text-3); text-transform: uppercase; }
+.gx-brand-mark { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .08em; color: var(--gx-text-3); text-transform: uppercase; }
 .gx-seg { display: inline-flex; padding: 3px; border-radius: 6px; background: var(--gx-track); border: 1px solid var(--gx-hair); flex: none; }
 .gx-seg--fill { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
 .gx-seg-btn { position: relative; height: 28px; padding: 0 14px; border-radius: 4px; font-size: 13px; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -135,17 +135,19 @@
   .gx-jobs-row:has(> .gx-jobs-act) { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 12px; row-gap: 8px; align-items: start; }
   .gx-jobs-row > .gx-jobs-act { grid-column: 2; justify-self: start; }
 }
-.gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid var(--gx-pop-border); flex: none; }
+.gx-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid var(--gx-pop-border); flex: none; }
 .gx-avatar:hover { background: var(--gx-input-hover); }
 
 /* ── Stage strip (46px) ────────────────────────────────────────────────── */
-.gx-strip { height: 46px; flex: none; display: flex; align-items: center; justify-content: safe center; gap: 2px; padding: 0 20px; overflow-x: auto; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
-.gx-strip-gap { width: 1px; height: 18px; background: var(--gx-hair-strong); margin: 0 8px; flex: none; }
-.gx-tab { height: 30px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--gx-text-2); flex: none; }
+/* The old pages keep their strip until their boards ship (S3, S4) and the control room (D1), drawn as the master draws
+   it: from the left, a group set off by 14px of space rather than a hairline. */
+.gx-strip { height: 46px; flex: none; display: flex; align-items: center; justify-content: flex-start; gap: 2px; padding: 0 14px; overflow-x: auto; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-strip-gap { width: 0; height: 0; margin: 0 0 0 12px; flex: none; }
+.gx-tab { height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: var(--gx-text-2); flex: none; }
 .gx-tab:hover { color: var(--gx-text); }
 /* A nav number is a functional label: --gx-text-2, since the .45 tertiary ink composites under the #7C7C84 floor. */
-.gx-tab-n { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
-.gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); font-weight: 600; }
+.gx-tab-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); }
 .gx-tab[aria-current="page"] .gx-tab-n { color: var(--gx-accent-text); }
 
 /* ── Body: [Library 280] | [Stage 1fr] | [Inspector 320] ───────────────── */
@@ -1202,7 +1204,37 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-header { position: relative; overflow: hidden; isolation: isolate; }
 .gx-header > * { position: relative; z-index: 1; }
 /* The suite badge: a mono pill in the accent tint. Hidden between 768 and 1279px (above); a phone shows it again. */
-.gx-brand-mark { height: 20px; padding: 0 8px; border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.gx-brand-mark { height: 20px; padding: 0 7px; border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+/* Header option B (README § 1): Home · <project> · Make · Atomik in a hairless track, a lit one on the thumb in the
+   page's ink at the same weight; Search in the middle of what is left; the credits a mono figure, outlined. */
+.gx-header .gx-seg { gap: 2px; border-color: transparent; }
+.gx-header .gx-seg-btn { padding: 0 11px; gap: 7px; font-size: 12.5px; }
+.gx-header .gx-seg-btn[aria-selected="true"] > span { font-weight: 500; }
+.gx-seg-swatch { position: relative; width: 16px; height: 12px; border-radius: 3px; flex: none; background: var(--gx-thumb); }
+.gx-header .gx-seg-btn[data-suite-tab="project"] > .gx-seg-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.gx-header:not([data-static]) > .gx-spacer { display: none; }
+.gx-header > .gx-search { margin: 0 auto; min-width: 150px; padding: 0 10px; font-size: 12.5px; }
+.gx-header > .gx-search .gx-search-label { font-size: 12.5px; }
+.gx-header > .gx-search .gx-key { font-size: 12px; padding: 1px 6px; border: 1px solid var(--gx-pop-border); border-radius: 4px; }
+.gx-header > .gx-credits { gap: 4px; padding: 0 11px; background: transparent; border-color: var(--gx-dialog-border); font-family: var(--gx-mono); font-size: 12px; }
+.gx-header > .gx-credits .gx-credits-n { font-size: 12px; }
+.gx-header > .gx-credits .gx-credits-u { font-family: var(--gx-mono); color: inherit; }
+/* Settings behind the avatar (components/graphite/SettingsMenu): a menu under it, the master's account menu. */
+.gx-settings-veil { position: fixed; inset: 0; z-index: 70; }
+/* A phone on its side has less height than six 44px rows: the menu scrolls inside the screen rather than run past it. */
+.gx-settings-menu { position: fixed; top: var(--menu-top, 62px); right: var(--menu-right, 14px); width: min(250px, calc(100vw - 24px)); max-height: calc(100dvh - var(--menu-top, 62px) - 12px); overflow-y: auto; overscroll-behavior: contain; padding: 6px; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop .15s var(--gx-ease) both; }
+.gx-settings-who { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; min-width: 0; }
+.gx-settings-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.gx-settings-meta { font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-settings-rule { height: 1px; margin: 4px 0; background: var(--gx-hair); }
+.gx-settings-item { width: 100%; min-height: 32px; padding: 7px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--gx-text); }
+.gx-settings-item:hover, .gx-settings-item:focus-visible { background: var(--gx-input); }
+.gx-settings-problem { margin: 6px 10px; font-size: 12px; color: var(--gx-failed-text); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-settings-item { min-height: 44px; font-size: 14px; }
+  /* A glyph-only segment (Home, Make) is still a 44px target on touch, here and on the error page's header. */
+  .gx-header .gx-seg-btn { min-width: 44px; }
+}
 @media (max-width: 1279px) { .gx-brand-mark { display: none; } }
 /* Suite picker: glyph, label and a 5px dot in the suite's colour (--suite). The glyph sits over the thumb and takes that colour when its suite is open. */
 .gx-seg-btn .gx-glyph { position: relative; color: var(--gx-text-2); }
@@ -1212,14 +1244,16 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-library .gx-seg-btn .gx-glyph { color: var(--gx-text-2); }
 .gx-library .gx-seg-btn[aria-selected="true"] .gx-seg-count { color: var(--gx-accent-text); background: var(--gx-tint); border-radius: var(--gx-r-pill); padding: 0 6px; }
 /* Below 1180px the labels give way to the glyphs; each stays in the accessible name (clipped, not removed). A phone shows them again under the glyph. */
-@media (max-width: 1179px) { .gx-header .gx-seg-btn > .gx-seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .gx-header .gx-seg-btn { padding: 0 10px; } }
+@media (max-width: 1179px) {
+  .gx-header .gx-seg-btn > .gx-seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .gx-header .gx-seg-btn { padding: 0 10px; }
+  /* The project's name is the segment: it stays, shorter. */
+  .gx-header .gx-seg-btn[data-suite-tab="project"] > .gx-seg-label { position: relative; width: auto; height: auto; clip: auto; max-width: 120px; }
+}
 @media (max-width: 767px) { .gx-header .gx-seg-btn > .gx-seg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; } }
 /* Search leads with its magnifier. */
 .gx-search { gap: 10px; }
 .gx-search .gx-glyph { color: var(--gx-text-3); flex: none; }
-/* Stage strip: every page carries a dot; the current page's is the accent. */
-.gx-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-idle); flex: none; }
-.gx-tab[aria-current="page"] .gx-tab-dot { background: var(--gx-accent); }
 /* Gen's Generate and the line under it. */
 .gx-gen-cta { display: flex; flex-direction: column; gap: 6px; }
 
