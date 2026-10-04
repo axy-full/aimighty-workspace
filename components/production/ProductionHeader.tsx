@@ -8,14 +8,14 @@ import { useMoney } from "@/lib/price";
 import type { ProductionRow, ProjectRow } from "@/lib/productions";
 
 /**
- * The production header (design/particl-v2/README.md §3; boards 10a, 7b):
+ * The production header (design/particl-graphite/README.md §3; boards 10a, 7b):
  * 64px, `0 24px`, 28 apart, a .08 hairline. The breadcrumb — the production
  * at Outfit 500 15px `--ink-body`, `›` muted, the project at 600 17px —
  * over the format line in mono (`16:9 · 0:30 · 10 SHOTS · DUE FRI`); the
  * six-step stepper; `228 of 400 cr` over the 180×3 bar, right-aligned; and
  * the `3 need you` pill (34px, an 8px ink dot) when something is.
  *
- * Below 768 (design/particl-v2-mobile, boards M2 and M3) the same header is
+ * Below 768 (design/particl-graphite, boards M2 and M3) the same header is
  * the sticky block under `‹ Production`: `12px 16px 10px` over a .08 rule,
  * 10 apart — the project at 600 18/1.1 over its mono line (`phoneLine`
  * when the page has a better one than the format: M3's `0:30 · 2 APPR · 3
@@ -56,7 +56,7 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
               <span key={name} className="flex items-center">
                 {i > 0 && <span aria-hidden="true" className="block h-px w-[16px] bg-border-mid" />}
                 <span className="flex items-center gap-[5px] px-[4px]">
-                  <span aria-hidden="true" className={`box-border block h-[8px] w-[8px] rounded-full ${i < project.step ? "bg-[rgba(245,246,248,.45)]" : i === project.step ? "bg-ink" : "border border-[rgba(245,246,248,.25)]"}`} />
+                  <span aria-hidden="true" className={`box-border block h-[8px] w-[8px] rounded-full ${i < project.step ? "bg-[color:var(--gx-text-3)]" : i === project.step ? "bg-ink" : "border border-[color:var(--gx-hover-border)]"}`} />
                   {i === project.step && <span className="text-[12px] font-semibold leading-none text-ink">{name}</span>}
                 </span>
               </span>

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Mono from "./Mono";
 
 /**
- * The striped well (design/particl-v2/README.md §2). In the handoff every
+ * The striped well (design/particl-graphite/README.md §2). In the handoff every
  * striped rectangle stands in for a REAL frame — the boards draw an empty
  * shot as a transparent well with one mono line (`MediaCard`'s
  * `emptyLabel`) and a take on its way as the 36px loader. So this is the

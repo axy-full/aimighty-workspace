@@ -147,7 +147,7 @@ export function ColorPreview({
             right: 12,
             top: 12,
             padding: 8,
-            background: "#191c18",
+            background: "var(--gx-card)",
             fontSize: 12,
             zIndex: 2,
           }}

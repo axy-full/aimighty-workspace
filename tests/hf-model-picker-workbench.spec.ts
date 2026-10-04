@@ -6,13 +6,15 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
 import { creditsFigure, fromDeci, toDeci } from "../lib/creditTerms";
+import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
  * every row before anything is spent. Studio engines are priced by the engines
  * route where the composer stands — its picks, the project's aspect, its
- * references, one take — so the ticked row is the figure Generate shows.
- * The connected Higgsfield catalogue went with the Higgsfield sign-in
+ * references, one take — so the ticked row is the figure Generate shows. A row
+ * with no figure reads "quoted"; Cinema Studio 4.0 always does (D0.2), its
+ * price on Generate. The connected catalogue went with the sign-in
  * (lib/higgsfield-consumer/retired.ts): nobody, the workspace owner included,
  * sees a connected switch, and the account is never read.
  */
@@ -48,7 +50,7 @@ async function open(page: Page, options: Options = {}) {
     const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
     if (listing) return route.fulfill({ json: { jobs: [] } });
     consumer.push({ url: route.request().url(), ...body });
-    return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+    return route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } });
   });
   await options.engines?.(page);
   /* The sheet's own reads of the engine list, priced where the composer stands (never a quote: no `model`). */
@@ -101,7 +103,7 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
 }
 
-test("every Studio engine wears spec chips and a price; the picked row's price is the figure Generate shows", async ({ page }, info) => {
+test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 reads quoted; the picked row's price is the figure Generate shows", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, consumer } = await open(page);
   const sheet = await openSheet(page);
@@ -111,16 +113,20 @@ test("every Studio engine wears spec chips and a price; the picked row's price i
   expect(count).toBeGreaterThanOrEqual(5);
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
+    await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^\d+(p|K)$/);
+    if (await row.getAttribute("data-model") === CINEMA_STUDIO_MODEL_ID) continue;
     await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
     await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^(about )?\d[\d,]*(?:\.\d)? cr$/);
     /* A 16:9 project and an untouched composer: length and size, and the aspect only if it is not 16:9. */
     await expect(row.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^\d+ s · \S+( · \S+)?$/);
-    await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^\d+(p|K)$/);
     await expect(row.locator('[data-spec="length"]')).toHaveText(/^\d+(–|\/)\d+ s$/);
     await expect(row.locator('[data-spec="refs"]')).toHaveText(/refs$|^Prompt only$/);
   }
-  /* Cinema Studio is priced from its published pricing and settles on the delivered take: it says "about". */
-  await expect(sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ }).getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d[\d,]*(?:\.\d)? cr$/);
+  /* Cinema Studio 4.0 stays in the sheet and reads "quoted": no figure on its row (its price is Generate's), and no vendor's name. */
+  const cinema = sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ });
+  await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "none");
+  await expect(cinema.getByTestId("gen-sheet-price")).toHaveText("quoted");
+  await expect(cinema).not.toContainText(/Higgsfield/i);
   /* The default engine is the selected row; its price is what the button asks for, once there is a prompt. */
   const selected = sheet.locator('[role="option"][aria-selected="true"]');
   await expect(selected).toHaveCount(1);
@@ -155,8 +161,9 @@ for (const aspect of ["21:9", "1:1"]) {
     const figure = await figureOf(selected);
     expect(reads.some((q) => q.get("aspect") === aspect)).toBe(true);
     await shot(page, info, `aspect-${aspect.replace(":", "x")}`);
-    /* An engine that does not offer the aspect is priced at its own default, and says which. */
-    for (const row of await sheet.getByRole("option").all()) await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
+    /* An engine that does not offer the aspect is priced at its own default, and says which. Cinema Studio 4.0 alone reads quoted. */
+    for (const row of await sheet.getByRole("option").all())
+      await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", await row.getAttribute("data-model") === CINEMA_STUDIO_MODEL_ID ? "none" : "rate");
     await closeSheet(page);
     await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour at dawn");
     await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${creditsFigure(figure)} cr`, { timeout: 30_000 });
@@ -432,7 +439,7 @@ test("the Audio output: sound effects and music carry a price and a one-liner; G
   sheet = await openSheet(page);
   await priced(page);
   const effects = sheet.getByRole("option").first();
-  await expect(effects.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^(any length|priced on Generate)$/);
+  await expect(effects.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^(any length|quoted)$/);
   await closeSheet(page);
   expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);

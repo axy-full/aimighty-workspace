@@ -5,7 +5,7 @@ import { PreflightError } from "./preflight";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { getModel, imageTokens, HIGGSFIELD_IMAGE_MODELS, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
+import { getModel, providerOf, imageTokens, HIGGSFIELD_IMAGE_MODELS, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
 import { isSoulRenderModel } from "./soulRenderTypes";
 import { soulBatchId, soulBatchTakeId, soulRenderDelivered, soulRenderSettlementUsd } from "./soulRender";
 import { isBatchId } from "./variations";
@@ -380,7 +380,8 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     // A refusal the vendor sent, or a request that never left, is released
     // here; what the vendor itself did with the charge is its own to say,
     // and travels with the take (lib/providerOutcome.ts).
-    const provider = job.kind === "audio" ? audioVendor(job.modelId) : getModel(job.modelId).provider;
+    // Non-throwing: an id no longer in the registry must still reach failJob below, or its held credits stay held.
+    const provider = job.kind === "audio" ? audioVendor(job.modelId) : providerOf(job.modelId);
     const said = await fundedOutcome(outcomeOfError(error, { provider, stage: "submit" }), job.genId, provider).catch(() => null);
     await failJob(
       job.genId,
@@ -557,7 +558,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       }
       // Transport, connection rotation and storage failures never imply a refund.
       // Preserve both the original request handle and its existing reservation.
-      const message = error instanceof Error ? error.message : "Soul collection could not complete.";
+      const message = error instanceof Error ? error.message : "The still could not be collected.";
       /* The run of failed collections is counted — since when, the latest,
          how many — so the pending sweep ends a take only while it is
          actually failing (lib/jobs.ts). A storage failure with the image in
@@ -587,7 +588,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
  */
 async function fileSoulBatch(job: StillJob, urls: string[], batchId: string): Promise<void> {
   const leader = (await db().execute({ sql: "SELECT params FROM generations WHERE id=? AND deleted=0", args: [job.genId] })).rows[0];
-  if (!leader) throw new Error("The Soul render's take is no longer available to file its batch.");
+  if (!leader) throw new Error("The take is no longer available to file its batch.");
   const own = JSON.parse(String(leader.params || "{}")) as Record<string, unknown>;
   const engine = engineFor("higgsfield");
   const sharp = (await import("sharp")).default;
@@ -910,7 +911,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
       : null;
   let engine: string;
   try {
-    engine = kind === "audio" ? audioVendor(modelId) : billedTo(getModel(modelId).provider);
+    engine = kind === "audio" ? audioVendor(modelId) : billedTo(providerOf(modelId) ?? "byteplus");
   } catch {
     engine = kind === "audio" ? "elevenlabs" : "byteplus";
   }

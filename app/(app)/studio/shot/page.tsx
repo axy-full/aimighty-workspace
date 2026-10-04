@@ -16,6 +16,7 @@
  * (lib/composeHandoff.ts), which keeps the model, the duration and the
  * references. The picks stay here as drafts; the hand-off never erases them.
  */
+import "./shot.css";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { appAlert } from "@/components/dialog";

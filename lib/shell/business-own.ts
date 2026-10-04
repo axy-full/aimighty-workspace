@@ -26,8 +26,6 @@ export type OwnPage = (typeof OWN_PAGES)[number];
 export const isOwnPage = (page: string | null | undefined): page is OwnPage => (OWN_PAGES as readonly string[]).includes(page ?? "");
 /** What each page is called where another page points at it ("Open in Product"). */
 export const OWN_PAGE_LABEL: Record<OwnPage, string> = { brand: "Brand", product: "Product", format: "Format", hooks: "Hooks", reference: "Reference", design: "Design" };
-/** The phone Home's Business fact for a member, whose Business is these tools (Ads is the owner's). */
-export const OWN_TOOLS_FACT = "Brand · product · briefs · design";
 
 /* ── Money ───────────────────────────────────────────────────────────── */
 

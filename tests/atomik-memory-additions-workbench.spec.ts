@@ -14,7 +14,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
  * and the mock model:
  *  - only amounts are refused: a descriptive price-point note is kept, an
  *    amount is refused with the new copy;
- *  - an approved identity picked from Cast & Elements, a Soul ID included,
+ *  - an approved identity picked from Cast & Elements, a trained identity included,
  *    kept by reference;
  *  - lines picked from the Business brand kit, each an ordinary entry;
  *  - Atomik reading a paste: priced first, approved at that price, its
@@ -225,7 +225,7 @@ test("Amounts only: a descriptive price-point note is kept, and an amount is ref
   expect(s.errors).toEqual([]);
 });
 
-test("Cast & Elements: an approved identity is picked from the cast or the Soul IDs, and kept by reference", async ({ page }, info) => {
+test("Cast & Elements: an approved identity is picked from the cast or the trained identities, and kept by reference", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const phone = PHONES.includes(info.project.name);
   const s = await setup(page, { soul: true });
@@ -239,7 +239,9 @@ test("Cast & Elements: an approved identity is picked from the cast or the Soul 
   await expect(picker.getByTestId("memory-element").nth(0)).toContainText("Character · Cast & Elements");
   await expect(picker.getByTestId("memory-element").nth(1)).toContainText("Element · Cast & Elements");
   await expect(picker.getByTestId("memory-element").nth(2)).toContainText("Maya on the key");
-  await expect(picker.getByTestId("memory-element").nth(2)).toContainText("Soul ID · character");
+  await expect(picker.getByTestId("memory-element").nth(2)).toContainText("Identity · character");
+  /* The old family word is not read anywhere in the picker. */
+  await expect(picker).not.toContainText(/Soul/);
   /* Nothing picked, nothing to keep. */
   await expect(view.getByTestId("memory-save")).toBeDisabled();
   await picker.locator(`[data-ref="cast:${s.productionId}:cast-maya"]`).click();
@@ -255,7 +257,7 @@ test("Cast & Elements: an approved identity is picked from the cast or the Soul 
   await expect(row.getByTestId("memory-source")).toHaveText("Cast & Elements · Character");
   await expect(row.getByTestId("memory-words")).toHaveText("The approved lead for the spring campaign.");
 
-  /* The Soul ID, for the whole workspace, with no words of its own. */
+  /* The trained identity, for the whole workspace, with no words of its own. */
   await view.getByTestId("memory-add-open").click();
   await view.getByTestId("memory-kind-identity").click();
   await view.getByTestId("memory-identity-cast").click();
@@ -265,15 +267,15 @@ test("Cast & Elements: an approved identity is picked from the cast or the Soul 
   const everyone = view.getByTestId("memory-workspace");
   await expect(everyone.getByTestId("memory-row")).toHaveCount(1);
   await expect(everyone.getByTestId("memory-asset")).toHaveText("Maya on the key");
-  await expect(everyone.getByTestId("memory-source")).toHaveText("Soul ID");
+  await expect(everyone.getByTestId("memory-source")).toHaveText("Identity");
 
   /* By reference: the element's id and the person's words, nothing copied from the element. */
   const kept = await entries(page, s);
   expect(kept.map((e) => [e.kind, e.scope, e.assetId?.replace(/^soul:soul_\w+$/, "soul:<id>"), e.assetLabel, e.assetKind, e.text]).sort()).toEqual([
     ["identity", "project", `cast:${s.productionId}:cast-maya`, "Maya", "character", "The approved lead for the spring campaign."],
-    ["identity", "workspace", "soul:<id>", "Maya on the key", "Soul ID", ""],
+    ["identity", "workspace", "soul:<id>", "Maya on the key", "Identity", ""],
   ].sort());
-  /* Renamed in the Soul IDs: the page shows the name it has now. */
+  /* Renamed among the identities: the page shows the name it has now. */
   await tenant(s.workspaceId, (db) => db.execute("UPDATE soul_identities SET name = 'Maya, approved'"));
   await page.reload();
   await expect(page.getByTestId("memory-workspace").getByTestId("memory-asset")).toHaveText("Maya, approved");

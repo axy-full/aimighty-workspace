@@ -1,5 +1,7 @@
 # Handoff: particl studio + atomik — production pipeline redesign
 
+> **Superseded 3 October 2026.** The one design for Particl is `design/particl-graphite/` (start at its `README.md`). The HTML references and the token file this document used to ship with were removed in D0; where it cites them, read the Graphite master and README § Design tokens instead. Kept for the product behaviour it records, not for the look.
+
 ## Overview
 
 A redesign of every page of **particlstudio.com** (the studio's generation app) plus the four screens of its sibling **atomik** (idea → shot list), organised around one production pipeline:
@@ -15,7 +17,7 @@ Sample production used in every mock: **Northline**, a 30s car spot, 12 shots, c
 
 ## About the design files
 
-Everything in `design-references/` is a **design reference authored in HTML** — a prototype of the intended look and behaviour, not production code to lift. Recreate these screens in particlstudio.com's own environment (its existing Next/React components, routing and styling patterns). `support.js` is a preview-only runtime so the files open standalone in a browser; do not port it. Striped grey rectangles labelled in monospace (`render · SH04 · v2`, `board 04`, `FACE · CASS`) are **image placeholders** — in production they are real masters, stills, boards and photos.
+Everything in `design/particl-graphite/` is a **design reference authored in HTML** — a prototype of the intended look and behaviour, not production code to lift. Recreate these screens in particlstudio.com's own environment (its existing Next/React components, routing and styling patterns). `support.js` is a preview-only runtime so the files open standalone in a browser; do not port it. Striped grey rectangles labelled in monospace (`render · SH04 · v2`, `board 04`, `FACE · CASS`) are **image placeholders** — in production they are real masters, stills, boards and photos.
 
 Open `Pages Overview.dc.html` first: it shows every page live at half size in pipeline order. `Particl Workflow Map.dc.html` is the swimlane map the pages were built from.
 
@@ -27,7 +29,7 @@ Open `Pages Overview.dc.html` first: it shows every page live at half size in pi
 
 ## Brand and design tokens
 
-Both brands share one palette and type system (machine-readable copy in `design-tokens.json`). **No accent colour exists in the system** except one functional state colour (approved), listed below.
+Both brands share one palette and type system (machine-readable copy in `design/particl-graphite/README.md` § Design tokens). **No accent colour exists in the system** except one functional state colour (approved), listed below.
 
 ### Colour — dark (particl app)
 
@@ -263,9 +265,9 @@ Swimlanes: rows = five roles, columns = 12 stages split by a `HANDOFF ⇄` gutte
 
 ```
 README.md                                   this document
-design-tokens.json                          machine-readable tokens (shared with the brand handoff)
+(tokens: design/particl-graphite/README.md § Design tokens)
 assets/                                     marks + app icons, both brands, SVG
-design-references/
+design/particl-graphite/                     the one design — the files below were removed in D0
   Pages Overview.dc.html                    every page live at half size, pipeline order — start here
   Particl Workflow Map.dc.html              swimlane map: roles × stages × handoffs
   Particl - Welcome.dc.html                 /welcome + /login combined

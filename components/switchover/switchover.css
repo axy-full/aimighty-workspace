@@ -11,8 +11,8 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: #000;
-  color: #7c7c84;
+  background: var(--gx-root);
+  color: var(--gx-text-3);
   font: 400 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   letter-spacing: 0.02em;
 }
@@ -22,7 +22,7 @@
 }
 
 .pxw-switch-note-link {
-  color: #d7d9de;
+  color: var(--gx-text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }

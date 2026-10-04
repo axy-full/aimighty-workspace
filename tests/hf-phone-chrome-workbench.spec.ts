@@ -418,8 +418,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await settle(page);
   for (const target of [...await suites.getByRole("tab").all(), page.getByTestId("header-search")]) await expect(target).toBeInViewport();
   expect(await smallTargets(page, ".gx-header"), "menu targets under 44×44").toEqual([]);
-  /* The page under the open menu never reads through its tiles: inside the header island its glass cannot blur the
-     page, so its fill is opaque. */
+  /* The page under the open menu never reads through its tiles: its fill is opaque. */
   expect(await opacityOf(suites), "the open menu's fill").toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-menu.png`), animations: "disabled" }); }
@@ -525,29 +524,30 @@ function desktopChrome(page: Page) {
   });
 }
 
-/* main's desktop chrome (28 September 2026), for the two desktops; W and H are the viewport. */
-const desktopBefore = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
+/* The desktop chrome on Graphite's hairline grid, for the two desktops: a 56px header and a 46px strip edge to edge,
+   then Library 280 | stage | Inspector 320 with 1px gaps. W and H are the viewport. */
+const desktopGrid = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
   const suite = {
-    header: [10, 10, W - 20, 64], strip: [10, 84, W - 20, 48], project: [301, 143, W - 642, 75], pagehead: [301, 218, W - 642, 66.7],
-    content: [301, 284.7, W - 642, H - 295.7], library: [10, 142, 280, H - 152], avatar: [W - 61, 27, 30, 30],
-    brand: [31.1, 21.8], badge: [32, 20], suites: [23, 38], search: [26, 32], credits: [26, 32], title: [232, 37.7],
+    header: [0, 0, W, 56], strip: [0, 56, W, 46], project: [281, 102, W - 602, 75], pagehead: [281, 177, W - 602, 66.7],
+    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 50, 12.5, 30, 30],
+    brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
   };
   return {
-    rig: { ...suite, views: [232.8, 36], inspector: [234.8, 32], primary: [233.8, 34] },
+    rig: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34] },
     /* Studio › Takes filters on its own desk, so its page head has no view segment. */
-    takes: { ...suite, views: null, inspector: [234.8, 32], primary: null },
+    takes: { ...suite, views: null, inspector: [193.8, 32], primary: null },
     gen: {
-      ...suite, strip: null, project: [301, 85, W - 642, 75], pagehead: [301, 160, W - 642, 66.7], content: [301, 226.7, W - 642, H - 237.7], library: [10, 84, 280, H - 94],
-      title: [174, 37.7], views: null, inspector: null, primary: null,
+      ...suite, strip: null, project: [281, 56, W - 602, 75], pagehead: [281, 131, W - 602, 66.7], content: [281, 197.7, W - 602, H - 197.7], library: [0, 56, 280, H - 56],
+      title: [145, 37.7], views: null, inspector: null, primary: null,
     },
   };
 };
 
-test("desktop: the chrome is where it was — the islands, the heads, words on the toggles, the price on one line", async ({ page }, info) => {
+test("desktop: the chrome is the hairline grid — header, strip, the heads, words on the toggles, the price on one line", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "the two desktops");
   const { width, height } = page.viewportSize()!;
   const size = info.project.name.replace("workbench-", "");
-  const expected = desktopBefore(width, height);
+  const expected = desktopGrid(width, height);
   const seen: Record<string, Record<string, number[] | null>> = {};
   for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?view=gen"]] as const) {
     await open(page, path);

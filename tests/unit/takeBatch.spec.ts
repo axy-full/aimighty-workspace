@@ -106,7 +106,7 @@ test("connected: a price that moved sends NONE of the takes and puts the new sum
     expect(readPendingBatch(storage, SCOPE, DRAFT)).toBeNull();
     /* The button now shows exactly that sum; the next press approves it. */
     const quote: ComposerQuote = { key: "k", credits: 18, state: "ready", reason: null, takes: [18, 18, 21, 18] };
-    expect(composerButtonLabel({ billing: "connected", quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 75 connected cr");
+    expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 75 cr");
     expect(shownTotal(quote, "k", 4)).toBe(75);
   });
   /* No figure at all is never an approval. */
@@ -384,14 +384,14 @@ test("workspace: a lost take whose check gets no answer stays unconfirmed, and n
 
 test("the button's total is the take's price summed per take, and a batch of one keeps the single label", () => {
   const quote: ComposerQuote = { key: "k", credits: 18, state: "ready", reason: null };
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 72 cr");
-  expect(composerButtonLabel({ billing: "connected", quote: { ...quote, credits: 6.5 }, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · 19.5 connected cr");
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 18 cr");
-  expect(composerButtonLabel({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 2 })).toBe("Generate 2 takes");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 4 })).toBe("Generate 4 takes · 72 cr");
+  expect(composerButtonLabel({ quote: { ...quote, credits: 6.5 }, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · 19.5 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 1 })).toBe("Generate · 18 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "stale", submitting: false, count: 2 })).toBe("Generate 2 takes");
   /* The same label in two parts, so a narrow button can put the whole price on its own line: never a cut figure. */
-  expect(composerButtonParts({ billing: "connected", quote: { ...quote, credits: 1234.5 }, quoteKey: "k", submitting: false, count: 4 })).toEqual({ action: "Generate 4 takes", price: "4,938 connected cr" });
-  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "stale", submitting: false, count: 1 })).toEqual({ action: "Generate", price: null });
-  expect(composerButtonParts({ billing: "workspace", quote, quoteKey: "k", submitting: true, count: 3 })).toEqual({ action: "Submitting…", price: null });
+  expect(composerButtonParts({ quote: { ...quote, credits: 1234.5 }, quoteKey: "k", submitting: false, count: 4 })).toEqual({ action: "Generate 4 takes", price: "4,938 cr" });
+  expect(composerButtonParts({ quote, quoteKey: "stale", submitting: false, count: 1 })).toEqual({ action: "Generate", price: null });
+  expect(composerButtonParts({ quote, quoteKey: "k", submitting: true, count: 3 })).toEqual({ action: "Submitting…", price: null });
   /* A batch's own figures only count for exactly that many takes. */
   expect(batchTotal(18, 3, [18, 19])).toBe(54);
   expect(batchTotal(18, 2, [18, 19])).toBe(37);

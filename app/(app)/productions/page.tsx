@@ -17,7 +17,7 @@ import { clock } from "@/components/production/ProductionHeader";
 import "@/components/studio/legacy-graphite.css";
 
 /**
- * Productions (design/particl-v2/README.md §6; board 7a), value for value.
+ * Productions (design/particl-graphite/README.md §6; board 7a), value for value.
  *
  * Page header 64px, `0 24px`, 16 apart: `Productions` at 600 20px −0.02em
  * over the mono totals (`4 PRODUCTIONS · 9 PROJECTS · 8 NEED YOU · 808 OF
@@ -35,7 +35,7 @@ import "@/components/studio/legacy-graphite.css";
  * 12/1.2 `--ink-body`, the six dots and the step's name, `228 / 400 CR ·
  * 57%` over a 3px bar. The last cell is the dashed `+ Deliverable`.
  *
- * Below 768 (design/particl-v2-mobile, board M1): `16px 16px 100px`, 14
+ * Below 768 (design/particl-graphite, board M1): `16px 16px 100px`, 14
  * apart — `Productions` at 600 24/1.05 −0.02em over `4 · 9 PROJECTS · 8
  * NEED YOU`, the segmented full width, then the rows: `--card`, .08,
  * radius 14, `14px 0`, 12 apart — name and client (`0 14px`), the need
@@ -151,11 +151,11 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
           <Mono cost tone="ink">{cap !== null && cap !== undefined ? `${fmt(spent)} of ${fmt(cap)}` : `${fmt(spent)} spent`}</Mono>
           <Mono cost>{p.projects.length} {p.projects.length === 1 ? "deliverable" : "deliverables"}</Mono>
         </span>
-        <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]"><span className="block h-full bg-ink" style={{ width: `${cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0}%` }} /></span>
+        <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[color:var(--gx-input-hover)]"><span className="block h-full bg-ink" style={{ width: `${cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0}%` }} /></span>
       </div>
       <div className="flex gap-[8px] overflow-x-auto px-[14px]" style={{ scrollSnapType: "x mandatory" }} data-strip="">
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} phone />)}
-        <button type="button" onClick={onNewProject} className="flex w-[96px] flex-none items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">+ Deliverable</button>
+        <button type="button" onClick={onNewProject} className="flex w-[96px] flex-none items-center justify-center rounded-tile border border-dashed border-[color:var(--gx-dashed)] text-[13px] font-medium leading-none text-ink-body">+ Deliverable</button>
       </div>
     </section>
   );
@@ -176,7 +176,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
       <div className="legacy-deliverable-grid grid grid-cols-5 gap-[10px]">
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} />)}
         <button type="button" onClick={onNewProject}
-          className="flex min-h-[120px] items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">
+          className="flex min-h-[120px] items-center justify-center rounded-tile border border-dashed border-[color:var(--gx-dashed)] text-[13px] font-medium leading-none text-ink-body">
           + Deliverable
         </button>
       </div>
@@ -191,7 +191,7 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
   if (phone) return (
     <Link href={`/productions/${production.id}/${j.id}/media`} style={{ scrollSnapAlign: "start" }}
       className="legacy-deliverable flex w-[200px] flex-none flex-col overflow-hidden rounded-tile border border-border bg-ground">
-      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-hairline" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
+      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-hairline" : "border-dashed border-[color:var(--gx-hover-border)]"}`}>
         {j.mediaCount ? <TileWell projectId={j.id} /> : null}
         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{j.mediaCount} media</span></span>
         {j.needYou > 0 && (
@@ -210,7 +210,7 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
   return (
     <Link href={`/productions/${production.id}/${j.id}/media`}
       className="legacy-deliverable flex flex-col overflow-hidden rounded-tile border border-border bg-ground hover:border-border-hover">
-      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-border" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
+      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-border" : "border-dashed border-[color:var(--gx-hover-border)]"}`}>
         {j.mediaCount ? <TileWell projectId={j.id} /> : null}
         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{j.mediaCount} media</span></span>
         {j.needYou > 0 && (

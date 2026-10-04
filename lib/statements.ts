@@ -160,9 +160,14 @@ type MeterRow = { id: string; kind: string; engine: string | null; model: string
 const statementKind = (kind: string): StatementLine["kind"] =>
   kind === "image" || kind === "audio" || kind === "text" || kind === "training" ? kind : "video";
 
-/** How a metered job with no take of its own reads on a statement. */
+/**
+ * How a metered job with no take of its own reads on a statement. A training
+ * run reads "Identity training" whatever trained it: the stored meter row
+ * keeps its model id (it is what was billed), and the trainer's id is not a
+ * name a customer reads.
+ */
 export function meteredLine(e: Pick<MeterRow, "kind" | "model"> & { engine?: string | null }): { take: string; what: string } {
-  if (e.kind === "training") return { take: "Training", what: `Identity training · ${e.model}` };
+  if (e.kind === "training") return { take: "Training", what: "Identity training" };
   if (e.kind === "text") return { take: "Atomik", what: `Thinking · ${e.model}` };
   if (e.engine === "vercel-sandbox") return { take: "Astra", what: "Astra render" };
   if (e.model === GROK_STT_MODEL) return { take: "Transcript", what: "Transcription" };

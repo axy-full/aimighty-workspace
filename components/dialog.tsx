@@ -107,7 +107,7 @@ export default function DialogHost() {
          stay closed. A confirm is a question; ⌘K over it would be answering
          something else. */
       data-dialog=""
-      className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5"
       // Dismiss only a true backdrop click — not a drag that ends outside the
       // card — and never let it reach the page's own click-away listeners.
       onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}

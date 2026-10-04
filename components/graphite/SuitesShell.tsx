@@ -68,7 +68,7 @@ import { FirstRun, type ProjectActions } from "./FirstRun";
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
 /**
- * One shell (design/particl-suites/README.md › Shell): header, stage strip,
+ * One shell (design/particl-graphite/README.md › Shell): header, stage strip,
  * and [Library 280] | [Stage] | [Inspector 320] with 1px hairline gutters —
  * overlays below 1280. It sits over the same state layer, Atomik host and Rig
  * provider as the shell it replaces, so every page body works from day one.
@@ -342,7 +342,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     </div>
   );
   /* A phone's top bar carries the project switcher in its second row, beside the page strip (or Gen's own buttons):
-     one glass island instead of four rows between the screen's edge and the page (app/phone-chrome.css). */
+     one bar instead of four rows between the screen's edge and the page (components/graphite/phone.css). */
   const compact = useCompact();
   const bar = compact && (shell.view === "suite" || shell.view === "gen") ? <>{projectHead}{shell.view === "gen" ? genHead : <StageStrip />}</> : null;
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.

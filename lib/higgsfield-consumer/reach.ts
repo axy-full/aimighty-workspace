@@ -42,7 +42,7 @@ export const CONNECTED_REACH: readonly ConnectedReach[] = Object.freeze([
   { id: "audio", label: "Sound", line: "Speech, music and effects on the account’s audio models", needs: [["generate_audio"]] },
   { id: "files", label: "Your files as references", line: "Pictures and clips from the project travel with the take", needs: [["media_import_url"]] },
   { id: "follow", label: "Takes that finish while you are away", line: "Followed until the file is in Takes", needs: [STATUS] },
-  { id: "characters", label: "Soul ID characters", line: "Built in Cast from the project’s own pictures", needs: [["show_characters"], ["media_import_url"]] },
+  { id: "characters", label: "Identities", line: "Built in Cast from the project’s own pictures", needs: [["show_characters"], ["media_import_url"]] },
   { id: "elements", label: "Reference elements", line: "Props, places and looks saved in Cast for reuse", needs: [["show_reference_elements"], ["media_import_url"]] },
   { id: "voice", label: "Change voice", line: "Re-voice a project video, timing kept", needs: [["voice_change"], STATUS] },
   { id: "dub", label: "Dub", line: "Translate a project video’s speech and re-voice it", needs: [["dubbing"], STATUS] },

@@ -11,7 +11,7 @@
 .panel button:hover:not(:disabled) { background:var(--graphite-hover); }
 .panel button:focus-visible,.panel textarea:focus-visible,.panel summary:focus-visible { outline:2px solid var(--graphite-accent); outline-offset:3px; }
 .providers button { flex:1; justify-content:flex-start; }
-.providers button[aria-pressed="true"] { border-color:var(--graphite-accent); background:rgba(10,132,255,.09); }
+.providers button[aria-pressed="true"] { border-color:var(--graphite-accent); background:var(--gx-tint-08); }
 .providers small { color:var(--graphite-muted); font-weight:400; }
 .controls { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:12px; }
 .controls > div { min-width:0; }
@@ -25,8 +25,8 @@
 .quote { padding:10px 12px; margin:12px 0; background:var(--graphite-ground); border:1px solid var(--graphite-edge); border-radius:8px; }
 .quote p { margin:0 0 10px; }
 .hint { color:var(--graphite-muted); font-size:11px; margin:10px 0 0; }
-.error { color:#f4c4b5; background:#302320; border:1px solid #674440; padding:10px; border-radius:6px; overflow-wrap:anywhere; }
-.notice { color:var(--graphite-body); background:rgba(10,132,255,.08); padding:10px; border:1px solid var(--graphite-edge); border-radius:6px; }
+.error { color: var(--gx-failed-text); background:var(--gx-input-hover); border:1px solid color-mix(in srgb, var(--gx-failed) 35%, transparent); padding:10px; border-radius:6px; overflow-wrap:anywhere; }
+.notice { color:var(--graphite-body); background:var(--gx-tint-08); padding:10px; border:1px solid var(--graphite-edge); border-radius:6px; }
 .runs { border-top:1px solid var(--graphite-line); margin-top:16px; padding-top:12px; }
 .runs h4 { font-size:12px; font-weight:600; margin:0 0 8px; }
 .run { margin-top:8px; border:1px solid var(--graphite-line); border-radius:8px; padding:10px; background:var(--graphite-panel); }

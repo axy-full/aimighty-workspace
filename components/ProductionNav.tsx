@@ -7,7 +7,7 @@ import { AtomikMark } from "@/components/AtomikMark";
 /**
  * The nav across the top of a production.
  *
- * Rig is the v2 Canvas (design/particl-v2 §8): the tab opens the project's
+ * Rig is the v2 Canvas (design/particl-graphite §8): the tab opens the project's
  * board. The old Nodes screen it replaces was deleted with step 6.
  *
  * It exists as a component because it was previously typed out by hand on
@@ -32,7 +32,7 @@ import { AtomikMark } from "@/components/AtomikMark";
 export type ProductionTab = "production" | "shots" | "canvas" | "rig" | "elements";
 
 export default function ProductionNav({ id, on }: { id: string; on: ProductionTab }) {
-  /* Shots is the v2 grid (design/particl-v2 §7), which lives under the
+  /* Shots is the v2 grid (design/particl-graphite §7), which lives under the
      project's production; the overview here is the cap and the numbers. */
   const { projects, setSelection } = useProject();
   const productionId = projects.find((p) => p.id === id)?.productionId ?? null;

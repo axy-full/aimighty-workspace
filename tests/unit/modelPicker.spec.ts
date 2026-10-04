@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { connectedModels, workspaceModels, type ComposerModel, type EngineRow } from "../../lib/workspace/composer";
+import { workspaceModels, type ComposerModel, type EngineRow } from "../../lib/workspace/composer";
 import {
   EMPTY_MEMORY, UNTOUCHED, lengthSpan, maxResolution, modelChips, needsPricedRead, parsePickerMemory, pickerSections, pushRecent, rateQuery, readPickerMemory,
-  recentKey, recentModels, rememberQuote, rememberRecent, rowPrice, searchModels, sheetRatesFrom, writePickerMemory, type PriceAt,
+  recentKey, recentModels, rememberRecent, rowPrice, searchModels, sheetRatesFrom, writePickerMemory, type PriceAt,
 } from "../../lib/workspace/model-picker";
 import { MODELS, type ModelDef } from "../../lib/models";
+import { CINEMA_STUDIO_MODEL_ID } from "../../lib/cinemaStudioTypes";
 import { NO_REFERENCES, quoteWorkbenchMedia, rendersSound, workbenchAudioRates, workbenchGenerationModels, workbenchRate, workbenchUse } from "../../lib/workbench/media-quote";
 import { composerSettings, type ComposerReference } from "../../lib/workspace/composer";
 import { isCreditAmount } from "../../lib/creditTerms";
@@ -45,27 +46,16 @@ test("sizes rank inside one engine's list, and lengths read as a run or a closed
   expect(lengthSpan([])).toBeNull();
 });
 
-test("every row carries its chips in one order: size, length, references, sound, enhance", () => {
+test("every row carries its chips in one order: size, length, references, sound", () => {
   const [video, image] = workspaceModels([seedance, stills], null);
   expect(video.description).toBe("Standard video.");
   expect(modelChips(video).map((c) => c.text)).toEqual(["1080p", "4–10 s", "9 image + 3 video refs", "Audio"]);
   expect(modelChips(image).map((c) => c.text)).toEqual(["10 image refs"]);
   const [none] = workspaceModels([{ ...stills, maxReferenceImages: 0 }], null);
   expect(modelChips(none).map((c) => c.text)).toEqual(["Prompt only"]);
-  /* Connected: chips from the live entry; prompt-only, roles, the schema's audio and enhance parameters.
-     The composer never sends an audio switch, so Audio shows only where the account's default is on. */
-  const connected = connectedModels([
-    { id: "veo_3_1", name: "Veo 3.1", outputType: "video", aspectRatios: ["16:9"], durations: [4, 6, 8], medias: [{ name: "start_image", roles: ["start_image"], max: 1 }], parameters: [{ name: "enhance_prompt" }, { name: "generate_audio", type: "bool", default: true }] },
-    { id: "z_image", name: "Z Image", outputType: "image", medias: [], parameters: [] },
-    { id: "seedance_2_5", name: "Seedance 2.5", outputType: "video", durationRange: { min: 4, max: 30 }, medias: [{ roles: ["start_image", "video_references"] }], parameters: [{ name: "resolution", options: ["480p", "1080p"] }, { name: "generate_audio", type: "bool", default: false }] },
-    { id: "kling_3", name: "Kling 3.0", outputType: "video", durations: [5, 10], parameters: [{ name: "sound", type: "bool" }] },
-  ]);
-  expect(modelChips(connected[0]).map((c) => c.text)).toEqual(["4/6/8 s", "1 image ref", "Audio", "Enhance"]);
-  expect(modelChips(connected[0]).find((c) => c.key === "audio")?.title).toBe("Renders sound on the account");
-  expect(modelChips(connected[3]).map((c) => c.text)).toEqual(["5/10 s", "Prompt only"]);
-  expect(modelChips(connected[1]).map((c) => c.text)).toEqual(["Prompt only"]);
-  expect(modelChips(connected[2]).map((c) => c.text)).toEqual(["1080p", "4–30 s", "Image + video refs"]);
-  expect(modelChips(connected[2]).find((c) => c.key === "refs")?.title).toBe("Reference roles: start_image, video_references");
+  expect(modelChips(video).find((c) => c.key === "audio")?.title).toBe("Takes carry sound");
+  /* A model shaped like the retired connected catalogue's (no limits declared) gets no reference or enhance chip. */
+  expect(modelChips({ id: "veo_3_1", label: "Veo 3.1", type: "video", durations: [4, 6, 8] }).map((c) => c.text)).toEqual(["4/6/8 s"]);
   /* A size the vendor lists but that was never rendered here is never the headline; the title names it. */
   const [listed] = workspaceModels([{ ...seedance, resolutions: ["480p", "720p", "1080p", "4k"], untestedResolutions: ["4k"] }], null);
   const size = modelChips(listed).find((c) => c.key === "resolution")!;
@@ -76,15 +66,16 @@ test("every row carries its chips in one order: size, length, references, sound,
   expect(sd20.untestedResolutions).toEqual(["4k"]);
 });
 
-test("a Studio row is priced where the composer stands, a connected row only by a quote this browser was given, never a guess", () => {
+test("a Studio row is priced where the composer stands, never a guess: a row with no figure reads quoted, and so does Cinema Studio 4.0", () => {
   const [video, image, pro] = workspaceModels([seedance, stills, kling], null);
   /* The untouched composer: the list's own rate is at exactly those settings. */
   expect(rowPrice(video, {})).toMatchObject({ credits: 8, unit: "cr", detail: "5 s · 480p", kind: "rate", perTake: false });
   expect(rowPrice(video, {}).title).toBe("8 cr per take at 5 s · 480p · 16:9, no references");
   /* The aspect is on the row whenever it is not the usual 16:9. */
   expect(rowPrice(image, {})).toMatchObject({ credits: 2, detail: "Medium · 1:1", kind: "rate" });
-  /* No rate from the server: the price waits for the button. */
-  expect(rowPrice(pro, {})).toMatchObject({ credits: null, kind: "none", detail: "priced on Generate" });
+  /* No rate from the server: the row says it is quoted, and the price waits for the button. */
+  expect(rowPrice(pro, {})).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
+  expect(rowPrice(pro, {}).title).toBe("Quoted live: the price shows on Generate once there is a prompt");
 
   /* Touched: the list's rate is at other settings, so it is never shown for these. */
   const touched: PriceAt = { ...UNTOUCHED, picks: { resolution: "1080p", duration: 10 } };
@@ -118,12 +109,13 @@ test("a Studio row is priced where the composer stands, a connected row only by 
   /* Several takes: the row is one take, the button multiplies. */
   expect(rowPrice(video, {}, { ...UNTOUCHED, takes: 3 })).toMatchObject({ credits: 8, perTake: true });
 
-  const [veo] = connectedModels([{ id: "veo_3_1", name: "Veo 3.1", outputType: "video" }]);
-  expect(rowPrice(veo, {})).toMatchObject({ credits: null, kind: "none" });
-  expect(rowPrice(veo, { veo_3_1: { credits: 43, at: 1, detail: "6 s" } })).toMatchObject({ credits: 43, unit: "connected cr", kind: "last", detail: "last quote" });
-  expect(rowPrice(veo, { veo_3_1: { credits: 43, at: 1, detail: "6 s" } }).title).toContain("43 connected cr at 6 s");
-  /* A connected model never borrows a Studio rate, even under the same id. */
-  expect(rowPrice({ ...veo, rate: { credits: 1, resolution: "720p", ratio: "16:9", duration: 5 } }, {}).kind).toBe("none");
+  /* Cinema Studio 4.0 reads "quoted" whatever rate the list or the sheet carries for it: its figure is on Generate. */
+  const cinema: ComposerModel = { id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", type: "video", ratios: ["16:9"], resolutions: ["720p"], durations: [5],
+    rate: { credits: 31, resolution: "720p", ratio: "16:9", duration: 5, approximate: true } };
+  expect(rowPrice(cinema, {})).toMatchObject({ credits: null, kind: "none", detail: "quoted", perTake: false });
+  expect(rowPrice(cinema, {}, UNTOUCHED, sheetRatesFrom(rateQuery(UNTOUCHED), { models: [{ id: cinema.id, rate: cinema.rate }] }), true)).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
+  /* What a browser kept of a signed-in account's last quotes (the old second argument) prices nothing. */
+  expect(rowPrice(pro, { [pro.id]: { credits: 43, at: 1, detail: "6 s" } })).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
 
   /* Sound: effects and music carry the route's rate; speech is priced by its words, on Generate. */
   const sound = workspaceModels([], { configured: true, speechModels: [{ id: "eleven_v3", label: "Eleven v3" }], defaultSpeechModel: "eleven_v3", voices: [{ id: "v1", name: "Voice" }], voicesError: null } as never);
@@ -145,8 +137,8 @@ test("the sheet asks the route for prices only when the list's own rates do not 
   expect(needsPricedRead(models, { ...UNTOUCHED, takes: 4 })).toBe(false);
   const ref: ComposerReference = { key: "r", id: "g-1", origin: "generation", kind: "image", name: "still.png", url: "/api/media/g-1" };
   expect(needsPricedRead(models, { ...UNTOUCHED, references: [ref] })).toBe(true);
-  /* Connected rows are never priced by the route. */
-  expect(needsPricedRead(connectedModels([{ id: "veo_3_1", name: "Veo 3.1", outputType: "video" }]), { ...UNTOUCHED, picks: { duration: 10 } })).toBe(false);
+  /* Cinema Studio's row shows no figure, so it never asks the route for one. */
+  expect(needsPricedRead([{ id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", type: "video", ratios: ["16:9"], resolutions: ["720p"], durations: [5, 10] }], { ...UNTOUCHED, picks: { duration: 10 } })).toBe(false);
   /* The query carries the picks, the aspect, the sound length and the references as the composer's quote cites them. */
   const query = new URLSearchParams(rateQuery({ aspect: "21:9", picks: { ratio: "1:1", resolution: "1080p", duration: 10 }, references: [ref, { ...ref, key: "u", id: "up-2", origin: "upload", kind: "video" }], seconds: 10, takes: 2 }));
   expect(Object.fromEntries([...query.keys()].map((k) => [k, query.getAll(k)]))).toEqual({
@@ -166,17 +158,19 @@ test("search matches every word across name, id, one-liner and chips", () => {
   expect(searchModels(models, "nothing like this")).toEqual([]);
 });
 
-test("Recent is the last three used for this catalogue and type, first and never twice; a query drops it", () => {
+test("Recent is the last three used for this type, first and never twice; a query drops it", () => {
   const offered: ComposerModel[] = ["a", "b", "c", "d", "e", "f"].map((id) => ({ id, label: id.toUpperCase(), type: "video" }));
   let list: string[] = [];
-  for (const id of ["a", "b", "c", "b", "d"]) list = pushRecent(list, recentKey("workspace", "video", id));
-  list = pushRecent(list, recentKey("workspace", "image", "z"));
-  list = pushRecent(list, recentKey("connected", "video", "a"));
+  for (const id of ["a", "b", "c", "b", "d"]) list = pushRecent(list, recentKey("video", id));
+  list = pushRecent(list, recentKey("image", "z"));
+  /* The keys this browser already holds keep matching, and one an older build kept for the connected catalogue is never read. */
+  expect(recentKey("video", "a")).toBe("workspace:video:a");
+  list = pushRecent(list, "connected:video:a");
   expect(list[0]).toBe("connected:video:a");
-  const recent = recentModels(list, "workspace", "video", offered);
+  const recent = recentModels(list, "video", offered);
   expect(recent.map((m) => m.id)).toEqual(["d", "b", "c"]);
   /* A model the list no longer offers is skipped, not shown. */
-  expect(recentModels(list, "workspace", "video", offered.filter((m) => m.id !== "b")).map((m) => m.id)).toEqual(["d", "c", "a"]);
+  expect(recentModels(list, "video", offered.filter((m) => m.id !== "b")).map((m) => m.id)).toEqual(["d", "c", "a"]);
   const sections = pickerSections(offered, recent, "");
   expect(sections.recent.map((m) => m.id)).toEqual(["d", "b", "c"]);
   expect(sections.rest.map((m) => m.id)).toEqual(["a", "e", "f"]);
@@ -190,22 +184,18 @@ test("what the browser remembers is parsed defensively, capped, and survives a s
   const store = new Map<string, string>();
   const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
   expect(readPickerMemory("scope-a", storage)).toEqual(EMPTY_MEMORY);
-  let memory = rememberRecent(EMPTY_MEMORY, "workspace:video:a");
+  const memory = rememberRecent(EMPTY_MEMORY, "workspace:video:a");
   expect(rememberRecent(memory, "workspace:video:a")).toBe(memory);
-  memory = rememberQuote(memory, "veo_3_1", { credits: 43, at: 5, detail: "6 s" });
-  expect(rememberQuote(memory, "veo_3_1", { credits: 43, at: 9, detail: "6 s" })).toBe(memory);
   writePickerMemory("scope-a", memory, storage);
   expect([...store.keys()]).toEqual(["particl-picker:scope-a"]);
   expect(readPickerMemory("scope-a", storage)).toEqual(memory);
   /* Per workspace scope: another scope reads nothing. */
   expect(readPickerMemory("scope-b", storage)).toEqual(EMPTY_MEMORY);
   expect(parsePickerMemory("{not json")).toEqual(EMPTY_MEMORY);
-  expect(parsePickerMemory(JSON.stringify({ recent: ["ok", 4, null], quoted: { x: { credits: "9", at: 1 }, y: { credits: -1, at: 1 }, z: { credits: 3, at: 2 } } })))
-    .toEqual({ recent: ["ok"], quoted: { z: { credits: 3, at: 2 } } });
-  let many = EMPTY_MEMORY;
-  for (let i = 0; i < 50; i++) many = rememberQuote(many, `m${i}`, { credits: i, at: i });
-  expect(Object.keys(many.quoted)).toHaveLength(40);
-  expect(many.quoted.m0).toBeUndefined();
+  /* What an older build kept of the connected catalogue — its recent picks and last quotes — is dropped on read, without throwing. */
+  expect(parsePickerMemory(JSON.stringify({ recent: ["workspace:video:a", "connected:video:b", "ok", 4, null], quoted: { x: { credits: "9", at: 1 }, z: { credits: 3, at: 2 } } })))
+    .toEqual({ recent: ["workspace:video:a"] });
+  expect(parsePickerMemory(JSON.stringify({ recent: "connected:video:b", quoted: 4 }))).toEqual(EMPTY_MEMORY);
   const broken = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); } };
   expect(readPickerMemory("scope-a", broken)).toEqual(EMPTY_MEMORY);
   expect(() => writePickerMemory("scope-a", memory, broken)).not.toThrow();

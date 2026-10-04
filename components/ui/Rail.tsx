@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * The right rail (design/particl-v2/README.md §3, §5; board 10a): `#0F1116`
+ * The right rail (design/particl-graphite/README.md §3, §5; board 10a): `#0F1116`
  * with a 1px `--border-mid` left edge (§3 names the token; 10a draws it
  * at .12), a 52px header (`gap 8px`, `0 14px` at 300
  * wide, `0 16px` at 420, a .08 hairline beneath), a scrolling body (a

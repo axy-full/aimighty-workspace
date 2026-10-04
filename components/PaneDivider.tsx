@@ -1,5 +1,6 @@
 "use client";
 
+import "./PaneDivider.css";
 import { useCallback, useRef, useState } from "react";
 import { clampWidth, usePaneWidth, type PaneSpec } from "@/lib/panes";
 

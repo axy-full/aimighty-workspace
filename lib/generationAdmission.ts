@@ -29,6 +29,7 @@ import {
   MODELS,
   dimensionsFor,
   billedFrame,
+  retiredReason,
 } from "@/lib/models";
 import {
   DRAFT_RESOLUTION,
@@ -465,6 +466,11 @@ export async function executeGenerationAdmission(
         { status: 400 },
       );
     }
+    /* An engine no longer offered for new renders (lib/models.ts › retired) stops here, for a quote and a submit
+       alike: before any identity is resolved, anything is priced or reserved, or any vendor is called. Takes it
+       already made are untouched — they are read, collected and settled elsewhere. */
+    const retired = retiredReason(modelId);
+    if (retired) return admissionReply({ error: retired, code: "engine_retired" }, { status: 410 });
     const genjutsu = isGenjutsuModel(modelId);
     if (genjutsu) {
       if (!options.checkpoint) return admissionReply({ error: "Review a live transform quote before submitting this take." }, { status: 400 });
@@ -514,23 +520,23 @@ export async function executeGenerationAdmission(
     const soulRender = isSoulRenderModel(modelId);
     if (model.soulIdentity) {
       if (soulRender && !options.checkpoint)
-        return admissionReply({ error: "Review a live Soul render quote before submitting this take." }, { status: 400 });
+        return admissionReply({ error: "Review a live identity render quote before submitting this take." }, { status: 400 });
       if (!soulRender && !soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
       if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready identity before generating." }, { status: 400 });
       soulStrength = body.soulStrength ?? 1;
       if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1 || (soulRender && soulStrength === 0))
-        return admissionReply({ error: soulRender ? "Likeness strength is above 0 and at most 1." : "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+        return admissionReply({ error: soulRender ? "Likeness strength is above 0 and at most 1." : "Likeness strength must be between 0 and 1." }, { status: 400 });
       if (soulRender) {
         soulBatch = body.soulBatch ?? 1;
-        if (!isSoulRenderBatch(soulBatch)) return admissionReply({ error: "A Soul render makes 1 or 4 stills." }, { status: 400 });
-      } else if (body.soulBatch != null) return admissionReply({ error: "Only Soul Standard, Soul 2 and Soul Cinema render a batch." }, { status: 400 });
+        if (!isSoulRenderBatch(soulBatch)) return admissionReply({ error: "An identity render makes 1 or 4 stills." }, { status: 400 });
+      } else if (body.soulBatch != null) return admissionReply({ error: "This engine renders one still per request." }, { status: 400 });
       try { soulBinding = await requireReadySoulIdentity(body.soulIdentityId, body.projectId ? String(body.projectId) : undefined, body.workbenchProjectId ? String(body.workbenchProjectId) : undefined); }
       catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That identity is unavailable." }, { status: 400 }); }
       /* An identity renders only with the family it was trained for, and only once trained on the production host. */
       if (soulRender && soulBinding.renderModel !== modelId)
         return admissionReply({ error: soulBinding.renderModel
-          ? `This Soul ID renders with ${getModel(soulBinding.renderModel).label}.`
-          : "This Soul ID was trained on the earlier host and cannot render here. It stays in the workspace, read-only." }, { status: 409 });
+          ? `This identity renders with ${getModel(soulBinding.renderModel).label}.`
+          : "This identity was trained on the earlier host and cannot render here. It stays in the workspace, read-only." }, { status: 409 });
     } else if (body.soulIdentityId != null || body.soulBatch != null) {
       return admissionReply({ error: "This engine cannot use a trained identity. Choose the identity engine or use the reference image." }, { status: 400 });
     }
@@ -1572,7 +1578,7 @@ export async function executeGenerationAdmission(
       if (model.marketing && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
       if (soulRender && body.maxCredits == null)
-        return admissionReply({ error: "Approve the quoted credit ceiling before rendering with a Soul ID." }, { status: 400 });
+        return admissionReply({ error: "Approve the quoted credit ceiling before rendering with an identity." }, { status: 400 });
       /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
          run's approved limit): a take that would wait for credits or a slot is refused, and the run asks.
          A take the shared pool would hold is refused in the pool's words, never with this workspace's own

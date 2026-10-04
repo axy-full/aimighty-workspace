@@ -25,7 +25,10 @@ function project(brief: Partial<MoleculrBrief> = {}, assets: Asset[] = []): Proj
 test("Business's own pages follow Setup in the strip, backed by the Marketing page, and none is owner-run", () => {
   const business = SHELL_SUITES.find((s) => s.id === "business")!;
   const ids = business.pages.filter((p) => !p.phoneOnly).map((p) => p.id);
-  expect(ids).toEqual(["ads", "dtc", "setup", ...OWN_PAGES]);
+  expect(ids).toEqual(["dtc", "setup", ...OWN_PAGES]);
+  /* Business › Ads is gone; the strip is numbered 01 Image ads … 08 Design, with a gap before Setup and before Brand. */
+  expect(business.pages.filter((p) => !p.phoneOnly).map((p) => p.n)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08"]);
+  expect(business.pages.filter((p) => p.gapBefore).map((p) => p.id)).toEqual(["setup", "brand"]);
   const brand = business.pages.find((p) => p.id === "brand")!;
   /* A group of their own: the hairline sits before Brand. */
   expect(brand.gapBefore).toBe(true);

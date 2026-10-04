@@ -12,7 +12,7 @@ import type { GenjutsuVariant } from "../genjutsuTypes";
  *
  * The composition — source video, ordered image references, prompt, resolution
  * — is the draft `subatomik-consumer:<projectId>:<variant>` that
- * components/suites/ConsumerGenjutsu.tsx reads and writes (lib/useDraft.ts), so
+ * the desktop's connected form read and wrote (lib/useDraft.ts; that form is removed), so
  * the phone edits the desktop's form rather than a copy of it, and the request
  * it normalises is the one `consumerGenjutsuInputSchema` accepts.
  *
@@ -49,7 +49,7 @@ export type FormCreative = {
 
 export const EMPTY_CREATIVE: FormCreative = { source: null, references: [], prompt: "", resolution: "720p" };
 
-/** The draft key ConsumerGenjutsu uses, so both surfaces hold one composition. */
+/** The draft key the desktop's connected form used, so both surfaces held one composition. */
 export const formDraftKey = (projectId: string, variant: GenjutsuVariant) => `subatomik-consumer:${projectId}:${variant}`;
 
 const MEDIA_ID = /^[A-Za-z0-9_-]{1,160}$/;
@@ -71,7 +71,7 @@ function readRef(value: unknown, kind: "image" | "video"): FormRef | null {
   };
 }
 
-/** Read the shared draft, exactly as ConsumerGenjutsu's `creative()` reads it. */
+/** Read the shared draft, exactly as the desktop's connected form read it. */
 export function readFormCreative(value: unknown): FormCreative {
   if (!object(value)) return EMPTY_CREATIVE;
   const references = Array.isArray(value.references)
@@ -102,7 +102,7 @@ export function writeFormCreative(creative: FormCreative): Record<string, unknow
 const identity = (ref: FormRef) => (ref.origin === "upload" ? { uploadId: ref.id } : { genId: ref.id });
 
 /**
- * The request this form would send — the shape ConsumerGenjutsu normalises and
+ * The request this form would send — the shape the desktop's connected form normalised and
  * the shape the page's plan prices. Null while the form cannot send one.
  */
 export function formInput(variant: GenjutsuVariant, creative: FormCreative): ConsumerGenjutsuInput | null {
@@ -257,7 +257,7 @@ export function withoutReference(creative: FormCreative, id: string): FormCreati
 /* ── Taking the estimate on the phone ──────────────────────────────────────
    The desktop's quote step, kept literally: POST the form's own request to the
    endpoint's `quote` action with an idempotency key, and keep {key, input} in
-   the SAME browser record ConsumerGenjutsu keeps, so a lost answer is finished
+   the SAME browser record the desktop's connected form kept, so a lost answer is finished
    with the same key (on either surface) instead of copying the originals twice.
    A quote copies the chosen originals to the connected account and prices them;
    it never submits a transform.
@@ -277,7 +277,7 @@ export type QuoteAttempt = { key: string; input: ConsumerGenjutsuInput };
  */
 export type StoredAttempt = QuoteAttempt | null | "unreadable" | "unavailable";
 
-/** ConsumerGenjutsu's `quoteAttemptKey`, byte for byte. */
+/** The desktop's connected form's quote-attempt key, byte for byte. */
 export const formQuoteAttemptKey = (scope: string, projectId: string) =>
   `particl-consumer-genjutsu:${encodeURIComponent(scope)}:${encodeURIComponent(projectId)}:attempts:quote`;
 

@@ -1,7 +1,7 @@
 import { ringDots, RING_VIEWBOX, type RingInput, type Paint } from "@/lib/ring";
 
 /**
- * The Atomik ring, rendered from data (design/particl-v2/README.md §3).
+ * The Atomik ring, rendered from data (design/particl-graphite/README.md §3).
  *
  * One component draws the mark, a run and Atomik's own state: pass `steps`
  * (a run, head first — each dot is one paid step) or `mode` (idle,

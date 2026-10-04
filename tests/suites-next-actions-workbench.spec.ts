@@ -61,7 +61,7 @@ const deskTile = (page: Page, name: string) => page.getByTestId("takes-grid").ge
  * dimLabels reads only a colour's RGB here, so a .45 white passed it. The colour's alpha and any opacity on the label or
  * above it are composited over the ground: each translucent background colour above the label, down to the first opaque
  * one. One step stricter than that port: where a layer's paint is not one flat colour (a gradient card, the wallpaper,
- * glass over a blurred backdrop), black stands in for everything under it, the darkest ground there is, so the estimate is
+ * a translucent layer), black stands in for everything under it, the darkest ground there is, so the estimate is
  * never brighter than the screen.
  */
 async function labelsUnderFloor(page: Page, scope: string): Promise<string[]> {
@@ -89,8 +89,8 @@ async function labelsUnderFloor(page: Page, scope: string): Promise<string[]> {
         if (style.backgroundImage !== "none") break;
         const bg = parse(style.backgroundColor);
         if (bg && bg.a > 0) layers.push(bg);
-        /* An opaque colour ends the ground; glass keeps its tint, over black for the backdrop it blurs. */
-        if ((bg && bg.a >= 1) || !["", "none"].includes(style.getPropertyValue("backdrop-filter"))) break;
+        /* An opaque colour ends the ground; a translucent layer keeps its tint, over black. */
+        if (bg && bg.a >= 1) break;
       }
       return layers.reverse().reduce((under, layer) => over(layer, under), { r: 0, g: 0, b: 0, a: 1 });
     };

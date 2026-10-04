@@ -410,7 +410,7 @@ export async function createRecipe(projectId: string | null, name: string, stage
   for (let i = 0; i < stages.length; i++) {
     const s = stages[i];
     const inputs = (s.inputs ?? []).map((n) => idOf.get(n)).filter((v): v is string => Boolean(v));
-    /* A stage's own price and unit count (design/particl-v2 §9: every stage
+    /* A stage's own price and unit count (design/particl-graphite §9: every stage
        priced as the recipe has it) live in `params`, so a recipe nobody has
        run yet still quotes what a run would cost. */
     const params: Record<string, unknown> = {};

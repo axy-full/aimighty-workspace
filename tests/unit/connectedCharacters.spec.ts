@@ -41,7 +41,7 @@ test("Build identity says why it cannot run, in the card's words, and runs when 
   expect(soulBuildBlock({ name: "  ", stills: 6, plan: paid, connected: true })).toBe("Name the identity.");
   expect(soulBuildBlock({ name: "Mira", stills: 4, plan: paid, connected: true })).toBe(`Pick ${SOUL_BUILD_STILLS.min}–${SOUL_BUILD_STILLS.max} stills of the same person (4 picked).`);
   expect(soulBuildBlock({ name: "Mira", stills: 21, plan: paid, connected: true })).toContain("21 picked");
-  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: { ...paid, plan: "Free", paid: false }, connected: true })).toBe("A paid Higgsfield plan is required — the account reads as Free.");
+  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: { ...paid, plan: "Free", paid: false }, connected: true })).toBe("A paid plan is required on the connected account — it reads as Free.");
   /* An account that does not report its plan is not blocked here: it decides at training time. */
   expect(soulBuildBlock({ name: "Mira", stills: 6, plan: { connected: true, available: false, plan: null, paid: null }, connected: true })).toBeNull();
   expect(soulBuildBlock({ name: "Mira", stills: 6, plan: paid, connected: true })).toBeNull();

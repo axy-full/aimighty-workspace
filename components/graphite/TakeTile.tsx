@@ -30,7 +30,7 @@ type Variant = "grid" | "library" | "take";
 const KIND_BADGE = { image: "IMAGE", video: "VIDEO", audio: "AUDIO", file: "FILE" } as const;
 
 /* `need` is the tail of a held take's label (" · needs 12 cr"): on the chip where the tile has room for it whole,
-   else said on its own line under the name (graphite.css) — a price is never cut. */
+   else said on its own line under the name (components/graphite/shell.css) — a price is never cut. */
 export function Chip({ label, tone, need }: { label: string; tone: ChipTone; need?: string | null }) {
   const head = need && label.endsWith(need) ? label.slice(0, -need.length) : null;
   return (

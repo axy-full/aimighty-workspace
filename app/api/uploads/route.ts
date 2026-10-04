@@ -26,7 +26,7 @@ export const maxDuration = 60;
  */
 /**
  * The workspace's uploads, newest first — the Library's References board
- * (design/particl-v2/README.md §11): loose, unversioned, free until one is
+ * (design/particl-graphite/README.md §11): loose, unversioned, free until one is
  * promoted to an asset. `?limit=` caps the page (200 by default, 500 at most).
  */
 export const GET = withTenant(async function GET(req: Request) {

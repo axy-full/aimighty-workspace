@@ -60,7 +60,7 @@ export default function SuiteHome() {
     <section className="suite-home-brief">
       <div>
         <span className="suite-kicker">
-          <i className="suite-dot" style={{ background: "#f0b23e" }} />
+          <i className="suite-dot" style={{ background: "var(--gx-suite-atomik)" }} />
           {session.signedIn
             ? (session.workspace?.name ?? "Your workspace")
             : "Four suites. One connected workspace."}

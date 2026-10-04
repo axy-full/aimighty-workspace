@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { RING_DOTS, RING_VIEWBOX, PULSE_STEP_S } from "@/lib/ring";
 
 /**
- * The loader is the ring (design/particl-v2/README.md §3, board 11a).
+ * The loader is the ring (design/particl-graphite/README.md §3, board 11a).
  *
  * It is the only loading indicator in the product: no spinner, no skeleton,
  * no shimmer. The same eight dots as `Ring`, each breathing in turn, head

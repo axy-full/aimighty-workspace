@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import Mono from "./Mono";
 
 /**
- * The phone's sheet (design/particl-v2-mobile/README.md; boards M3, M5,
+ * The phone's sheet (design/particl-graphite/README.md; boards M3, M5,
  * M8, M9): every desktop right rail below 768. `#0F1116` (the rail's
  * colour), a .14 rule on top, radius 24 above, the 36×4 grabber at
  * `10px auto 0`, the scrim `rgba(5,6,8,.55)` that closes on a tap, a 48px
@@ -64,7 +64,7 @@ export default function Sheet({ open, onClose, label, size = "auto", title, cont
       <div role="dialog" aria-modal="true" aria-label={label}
         className={`ui-rail relative flex flex-col rounded-t-[24px] border-t border-border-mid text-ink ${size === "full" && top == null ? "h-[calc(100%-44px)]" : ""}`}
         style={{ maxHeight: max ?? (top != null ? `calc(100% - ${top}px)` : MAX[size]), height: height ?? (top != null ? `calc(100% - ${top}px)` : undefined), paddingBottom: footer ? 0 : "calc(26px + env(safe-area-inset-bottom, 0px))" }}>
-        {grabber ?? <span className="mx-auto mt-[10px] block h-[4px] w-[36px] flex-none rounded-[2px] bg-[rgba(245,246,248,.25)]" aria-hidden="true" />}
+        {grabber ?? <span className="mx-auto mt-[10px] block h-[4px] w-[36px] flex-none rounded-[2px] bg-[var(--gx-thumb)]" aria-hidden="true" />}
         {header}
         {!header && (title || context || actions) && (
           <div className="flex h-[48px] flex-none items-center gap-[8px] px-[16px]">

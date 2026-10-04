@@ -46,6 +46,13 @@ test("every current and retired page id resolves", () => {
   expect(resolvePageId("elements")).toBe("cast");
   expect(resolvePageId("nope")).toBeNull();
   expect(resolveSuite("subatomic")).toBe("subatomik");
+  /* The names the tabs show open their suites: /suites?suite=business is Business. */
+  expect(resolveSuite("business")).toBe("moleculr");
+  expect(resolveSuite("viral")).toBe("subatomik");
+  expect(resolveSuite("studio")).toBe("particl");
+  expect(resolveSuite("agent")).toBe("atomik");
+  expect(resolveSuite("moleculr")).toBe("moleculr");
+  expect(resolveSuite("nope")).toBeNull();
   /* Every page the existing suites expose still opens something. */
   for (const suite of Object.keys(LEGACY_PAGES) as (keyof typeof LEGACY_PAGES)[])
     for (const page of LEGACY_PAGES[suite]) {

@@ -40,7 +40,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (await recipeOf(id)) {
     return NextResponse.json({ error: "This project already has a recipe." }, { status: 409 });
   }
-  /* `Save as recipe` on the Canvas (design/particl-v2 §8) sends the board's
+  /* `Save as recipe` on the Canvas (design/particl-graphite §8) sends the board's
      generate nodes as stages — name, engine, units, credits, and which
      stages feed which; with no body the eight default stages are written. */
   const b = await req.json().catch(() => ({}));

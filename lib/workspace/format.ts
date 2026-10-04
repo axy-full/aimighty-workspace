@@ -69,7 +69,8 @@ function hash(value: string) {
   return h >>> 0;
 }
 
-/** Project avatar gradients from the design, picked deterministically by id. */
+/** Project-tile swatches, picked deterministically by id: plain two-stop gradients, no glow. With the
+ *  avatar, the only gradients Graphite keeps (design/particl-graphite/README.md › Ground rules). */
 export const AVATAR_GRADIENTS = [
   "linear-gradient(160deg,#E9A83D,#C2761B)",
   "linear-gradient(160deg,#6E8DA6,#3E566B)",

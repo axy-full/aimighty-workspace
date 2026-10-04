@@ -10,12 +10,13 @@ import { dimLabels, smallTargets } from "./phoneFloors";
 /**
  * Production › Cast on the platform's key, in a managed workspace (credits),
  * against a local ENGINE_MOCK=1 server: every route is the real one and every
- * engine is the mock. A character renders with a Soul ID trained in this
- * workspace — Soul Standard here, the family it was trained for — 4 stills in one
- * request at the live estimate shown on the button ("about N cr"), sent once
- * with that figure as its ceiling, and every still is filed as Cast. Entries
- * built earlier on the connected account are shown read-only, a Soul ID
- * trained there asks to be trained again, and nothing of the account is read.
+ * engine is the mock. A character renders with an identity trained in this
+ * workspace — "Identity still · Standard" here, the family it was trained
+ * for — 4 stills in one request at the live estimate shown on the button
+ * ("about N cr"), sent once with that figure as its ceiling, and every still
+ * is filed as Cast. Entries built earlier on the connected account are shown
+ * read-only, an identity trained there is told apart, nothing of the account
+ * is read, and no vendor or old family word is shown.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -52,9 +53,9 @@ async function setup(page: Page, options: { scene?: { characters?: string[]; pro
     ] },
     cast: { entries: options.cast === false ? [] : [
       { id: "cast-fox", kind: "character", name: "Fox", description: "A red fox", prompt: "A red fox on the ice at dusk, three-quarter view", takes: [] },
-      /* Built earlier on the connected account with Soul Location, which the key has no family for. */
+      /* Built earlier on the connected account with a place model, which the key has no family for. */
       { id: "cast-harbour", kind: "element", name: "Frozen harbour", description: "Where the fox crosses", prompt: "The harbour, wide", takes: [{ genId: OLD_BUILD, at: "2026-09-24T10:00:00.000Z" }], model: "soul_location", category: "environment" },
-      /* A character whose Soul ID was trained on the account: it must be trained again here. */
+      /* A character whose identity was trained on the account: it needs one built here. */
       { id: "cast-nova", kind: "character", name: "Nova", description: "The harbour master", prompt: "Nova in a heavy coat", takes: [], soulId: "acct-soul-nova", model: "soul_cinematic" },
     ] },
   } as Project["production"];
@@ -64,7 +65,7 @@ async function setup(page: Page, options: { scene?: { characters?: string[]; pro
   const stills: { id: string; url: string }[] = [];
   for (const [i, background] of ["#8a6f5a", "#6f5a8a"].entries()) {
     const buffer = await sharp({ create: { width: 360, height: 480, channels: 3, background } }).png().toBuffer();
-    const uploaded = await page.request.post("/api/uploads", { headers, multipart: { file: { name: `mira-${i + 1}.png`, mimeType: "image/png", buffer } } });
+    const uploaded = await page.request.post("/api/uploads", { headers, multipart: { file: { name: `portrait-${i + 1}.png`, mimeType: "image/png", buffer } } });
     expect(uploaded.ok(), await uploaded.text()).toBe(true);
     const still = await uploaded.json();
     const filed = await page.request.post("/api/workbench/library", { headers, data: { projectId: project.id, uploadId: still.id } });
@@ -86,7 +87,7 @@ async function setup(page: Page, options: { scene?: { characters?: string[]; pro
   page.on("pageerror", (error) => errors.push(error.message));
   const read = async () => (await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers }).then((r) => r.json())).project as Project;
   const identities = async () => (await page.request.get(`/api/soul/identities?projectId=${project.id}`, { headers }).then((r) => r.json())) as { identities: Identity[]; terms: { versions: { version: string; trainingCredits: number }[] } };
-  /* Train a Soul ID through the real route (mock trainer) and wait until it is ready. */
+  /* Train an identity through the real route (mock trainer) and wait until it is ready. */
   const train = async (name: string, version: "v1" | "v2" | "cinema") => {
     const { terms } = await identities();
     const credits = terms.versions.find((v) => v.version === version)!.trainingCredits;
@@ -106,27 +107,29 @@ async function noSideScroll(page: Page) {
     expect(await card.evaluate((el) => el.scrollWidth - el.clientWidth), "a card keeps its content inside").toBeLessThanOrEqual(1);
 }
 
-test("Render with identity: a character renders 4 stills with its Soul ID at the live estimate, sent once, every still filed as Cast", async ({ page }, info) => {
+test("Render with identity: a character renders 4 stills with its identity at the live estimate, sent once, every still filed as Cast", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "the five sizes");
   test.setTimeout(180_000);
   const f = await setup(page);
-  const soul = await f.train("Mira", "v1");
+  const soul = await f.train("Ada", "v1");
   expect(soul.renderModel).toBe("hf-soul-standard");
   await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
   await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("page-title")).toHaveText("Cast & Elements");
   const fox = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Fox"]') });
 
-  /* No Soul ID chosen: the reason, no price, nothing to press. */
-  await expect(fox.getByTestId("cast-render-why")).toHaveText("Choose its Soul ID to render it.");
+  /* No identity chosen: the reason, no price, nothing to press. */
+  await expect(fox.getByTestId("cast-render-why")).toHaveText("Choose its identity to render it.");
   await expect(fox.getByTestId("cast-render-run")).toBeDisabled();
+  await expect(fox.getByTestId("cast-render-run")).toHaveText("Render with an identity");
+  await expect(fox.getByLabel("Fox identity", { exact: true })).toBeVisible();
 
-  /* Its Soul ID (listed with the family it renders with), 4 stills, 1080p: the live estimate lands on the button. */
-  await fox.getByTestId("cast-identity").selectOption({ label: "Mira · Soul Standard" });
+  /* Its identity (listed with the family it renders with), 4 stills, 1080p: the live estimate lands on the button. */
+  await fox.getByTestId("cast-identity").selectOption({ label: "Ada · Standard" });
   await fox.getByTestId("cast-batch-4").click();
   await fox.getByTestId("cast-size-1080p").click();
   const run = fox.getByTestId("cast-render-run");
-  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d[\d,]*(?:\.\d)? cr$/, { timeout: 30_000 });
+  await expect(run).toHaveText(/^Render 4 stills · Identity still · Standard · about \d[\d,]*(?:\.\d)? cr$/, { timeout: 30_000 });
   const credits = Number((await run.innerText()).match(/about (\d[\d,]*(?:\.\d)?) cr/)![1].replace(/,/g, ""));
   expect(credits).toBeGreaterThan(0);
   await expect(page.getByTestId("cast-render-why")).toHaveCount(1); // Nova's, not the fox's
@@ -137,7 +140,7 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("cast-render-priced.png") });
 
-  /* Sent once, at the price on the button as its ceiling, with the workspace's own Soul ID id — never the provider's. */
+  /* Sent once, at the price on the button as its ceiling, with the workspace's own identity id — never the provider's. */
   const sent = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/generate" && request.method() === "POST");
   await run.click();
   const request = await sent;
@@ -147,7 +150,7 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   expect(request.postData()).not.toContain("custom_reference_id");
   await expect(run).toHaveText("Rendering…");
 
-  /* The request's four stills are filed as Cast: four takes on the fox, four Character assets bound to the Soul ID. */
+  /* The request's four stills are filed as Cast: four takes on the fox, four Character assets bound to the identity. */
   await expect(fox.locator(".pd-takes [role=radio]")).toHaveCount(4, { timeout: 60_000 });
   /* The picture mounts once it is on screen (a short landscape phone scrolls to it). */
   await fox.locator(".pd-frame-image").scrollIntoViewIfNeeded();
@@ -163,17 +166,20 @@ test("Render with identity: a character renders 4 stills with its Soul ID at the
   const first = (await page.request.get(`/api/jobs/${leader}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation;
   expect(first.params.soulBatchIds).toEqual([leader, ...rest]);
   for (const id of rest) expect((await page.request.get(`/api/jobs/${id}?sync=0`, { headers: f.headers }).then((r) => r.json())).generation).toMatchObject({ status: "succeeded", creditsBilled: 0 });
-  await expect(run).toHaveText(/^Render 4 stills · Soul Standard · about \d[\d,]*(?:\.\d)? cr$/);
+  await expect(run).toHaveText(/^Render 4 stills · Identity still · Standard · about \d[\d,]*(?:\.\d)? cr$/);
 
-  /* Built earlier on the account: shown read-only; a Soul ID trained there asks to be trained again. */
+  /* Built earlier on the account: shown read-only; an identity trained there is told apart. */
   const harbour = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Frozen harbour"]') });
   await expect(harbour).toHaveAttribute("data-readonly", "");
-  await expect(harbour.getByTestId("cast-retired")).toHaveText("Built earlier with Soul Location on the connected account, which isn’t available here. Read-only: its still stays in the Library.");
+  await expect(harbour.getByTestId("cast-retired")).toHaveText("Built earlier on a connected account that is no longer used. Read-only: its still stays in the Library.");
   await expect(harbour.getByRole("textbox", { name: "Name", exact: true })).toHaveAttribute("readonly", "");
   await expect(harbour.getByTestId("cast-render-run")).toHaveCount(0);
   const nova = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Nova"]') });
-  await expect(nova.getByTestId("cast-soul-retrain")).toHaveText("Its Soul ID was trained on the connected account, which can’t be used here. Train it again below (Build identity) to render it.");
-  await expect(nova.getByTestId("cast-render-why")).toHaveText("Choose its Soul ID to render it.");
+  await expect(nova.getByTestId("cast-soul-retrain")).toHaveText("Its identity was built earlier on a connected account that is no longer used. Read-only.");
+  await expect(nova.getByTestId("cast-render-why")).toHaveText("Choose its identity to render it.");
+  /* The reference-elements line is gone, and no card reads the vendor or the old family word. */
+  await expect(page.getByTestId("cast-element")).toHaveCount(0);
+  await expect(page.getByTestId("cast-stage")).not.toContainText(/Soul|Higgsfield/);
   expect((await f.read()).production!.cast!.entries.find((e) => e.id === "cast-nova")).toMatchObject({ soulId: "acct-soul-nova", model: "soul_cinematic" });
 
   /* Filed in the Library as Cast (the desktop Library shows the filter). */
@@ -193,10 +199,10 @@ test("a render the estimate cannot price stays unsent: the reason, Try again, an
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   test.setTimeout(150_000);
   const f = await setup(page);
-  const soul = await f.train("Mira", "v1");
+  const soul = await f.train("Ada", "v1");
   /* The quote route answers with no price, as it does when the provider's estimate has no number. */
   let quotes = 0;
-  await page.route("**/api/generate/quote", (route) => { quotes++; return route.fulfill({ status: 503, json: { error: "The identity account returned no price for this Soul render. Nothing was submitted.", code: "price_unavailable" } }); });
+  await page.route("**/api/generate/quote", (route) => { quotes++; return route.fulfill({ status: 503, json: { error: "The identity account returned no price for this render. Nothing was submitted.", code: "price_unavailable" } }); });
   let paid = 0;
   await page.route("**/api/generate", (route) => { if (route.request().method() === "POST") paid++; return route.fallback(); });
   await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
@@ -205,7 +211,7 @@ test("a render the estimate cannot price stays unsent: the reason, Try again, an
   const run = fox.getByTestId("cast-render-run");
   await expect(run).toHaveText("Price unavailable", { timeout: 30_000 });
   await expect(run).toBeDisabled();
-  await expect(fox.getByRole("alert")).toHaveText("The identity account returned no price for this Soul render. Nothing was submitted.");
+  await expect(fox.getByRole("alert")).toHaveText("The identity account returned no price for this render. Nothing was submitted.");
   const before = quotes;
   await fox.getByTestId("cast-render-retry").click();
   await expect.poll(() => quotes).toBeGreaterThan(before);
@@ -275,7 +281,7 @@ test("an entry's still is made in Gen with its own words, on this workspace's cr
   const f = await setup(page);
   await page.goto(`/suites?suite=studio&page=cast&project=${f.project.id}`);
   await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 60_000 });
-  /* Cast builds on Particl's own key: nothing here is the card for what ran on the Higgsfield sign-in. */
+  /* Cast builds on Particl's own key: nothing here is the card for what ran on the retired sign-in. */
   await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
   const fox = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Fox"]') });
   const still = fox.getByTestId("cast-still-gen");

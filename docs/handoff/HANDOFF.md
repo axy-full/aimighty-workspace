@@ -84,8 +84,8 @@ These are owner decisions and repo law. Breaking one is a defect, not a preferen
 | --- | --- |
 | New workspace state, navigation, plans, cost | `lib/workspace/*` (`state.tsx`, `navigation.ts`, `pages.ts`, `plans.ts`, `run-engine.ts`, `shots.ts`, `takes.ts`, `cost.ts`, `composer.ts`, `switchover.ts`, `mobile.ts`, `progress.ts`) |
 | Desktop shell and pages | `components/workspace/*`, page bodies in `components/workspace/pages/registry.tsx` |
-| Phone shell, screens, sheets | `components/workspace/mobile/*`, styles `app/workspace-mobile.css` |
-| Design tokens | `app/workspace.css` (`--pxw-*`, all scoped under `.pxw`) |
+| Phone shell, screens, sheets | `components/workspace/mobile/*`, styles `components/workspace/mobile/mobile.css` |
+| Design tokens | `app/graphite.css` (the one token set; `--pxw-*` in `components/workspace/workspace.css` are aliases of it) |
 | Old shell (still serving phones from old routes, and every page the new shell has no home for) | `components/workbench/Studio.tsx`, `components/shell/*`, `components/suites/*` |
 | Connected account (MCP `mcp.higgsfield.ai`) | `lib/higgsfield-consumer/*`, routes `app/api/higgsfield/consumer/*` |
 | Pricing and credits | `lib/creditTerms.ts`, `lib/vendorPricing.ts`, `lib/models.ts`, `lib/rateTable.ts`, `lib/packs.ts` |
@@ -94,7 +94,7 @@ These are owner decisions and repo law. Breaking one is a defect, not a preferen
 **Designs.** Desktop and phone handoffs (tokens, shell, pages, state, mobile) were supplied as
 `design_handoff_particl_workspace/` with two HTML prototypes. The prototypes are references — their runtime
 (`support.js`) must never be ported, and their fixture data stands in for API responses. The repo's own earlier
-mobile spec is `design/particl-v2-mobile/README.md`.
+mobile spec is `design/particl-graphite/README.md`.
 
 ## 5. What shipped 19–21 September
 

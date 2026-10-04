@@ -31,7 +31,7 @@ export const GET = withTenant(async function GET(req: Request) {
 });
 
 /**
- * A new asset (design/particl-v2/README.md §11, §12): creating is free. A
+ * A new asset (design/particl-graphite/README.md §11, §12): creating is free. A
  * name and a kind make it, with its kind's attributes in place and empty; a
  * reference (`fromUploadId`) or a take (`fromGenId`) becomes the first
  * attribute's first version, current at once. Nothing here trains anything —

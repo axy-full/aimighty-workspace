@@ -78,7 +78,7 @@
   padding: 7px 10px;
   background: var(--ps-panel);
   color: var(--ps-ink);
-  box-shadow: 0 4px 14px #0003;
+  box-shadow: var(--gx-shadow-node);
   font-size: 12px;
 }
 .selectionBar span {

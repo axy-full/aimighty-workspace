@@ -6,7 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 import { closeSuitesMenu, openSuitesMenu, tapSuiteTab } from "./helpers/suitesMenu";
 
 /**
- * The Suites shell, build step 1 (design/particl-suites/README.md): one
+ * The Suites shell, build step 1 (design/particl-graphite/README.md): one
  * header, a numbered stage strip, Library | stage | Inspector at 1280 and
  * wider and overlays below it, ⌘K, ⌘J, the right-click menu, and the URL as
  * the record of where you are. Page bodies are the existing ones; this spec

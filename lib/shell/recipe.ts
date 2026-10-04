@@ -89,7 +89,7 @@ export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | 
   /* A final has no recipe of its own: its words, references and settings are its draft's (lib/draftFinal.ts). */
   if (typeof p.finalOf === "string") return "A 1080p final is made from its draft. Recreate the draft instead.";
   if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
-  if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield.";
+  if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business on a connected account that is no longer used.";
   /* Anything else Gen did not make itself. Every original the connected account delivered is receipted
      in these credits (lib/higgsfield-consumer/video-original.ts). */
   const onAccount = p.consumerCreditUnit === "higgsfield_credits";
@@ -320,7 +320,7 @@ export function recipeChips(input: {
     const found = input.identities?.find((c) => c.soulId === picks.soulId && c.status !== "training" && c.status !== "failed");
     if (!model.soulId) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: `${model.label} takes no identity` });
     else if (!input.identities) chips.push({ key: "identity", label: "Identity", value: "Identity", state: "reading" });
-    else if (!found) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
+    else if (!found) chips.push({ key: "identity", label: "Identity", value: "Identity → none", state: "changed", why: "Made on the connected account" });
     else if (settings.soulId === picks.soulId) chips.push({ key: "identity", label: "Identity", value: found.name, state: "kept" });
     else chips.push({ key: "identity", label: "Identity", value: `${found.name} → none`, state: "changed", why: "Changed here" });
   }

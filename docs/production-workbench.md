@@ -8,7 +8,7 @@ Studio, Gen and Workspace are first-class sections in the shared navigation. `/g
 
 Workspace/account settings, team, credits/plan and usage share the studio's monochrome management design. Their existing endpoints, roles and prices are unchanged. Workspace switching and sign-out clear private browser caches only after the server accepts the change. Leaving the production workbench through the section navigation or workspace menu drains pending saves first. Stripe remains deferred and checkout continues to fail closed when unconfigured.
 
-Atomik uses the original eight-dot ring in `components/AtomikMark.tsx`, matching the previous website's `design/particl-v2/assets/atomik-ring-on-dark.svg`. The prototype's orbital atom illustration is removed. The original Particl trail and branded wordmark remain intact.
+Atomik uses the original eight-dot ring in `components/AtomikMark.tsx`, matching the previous website's `brand/atomik/atomik-ring-on-dark.svg`. The prototype's orbital atom illustration is removed. The original Particl trail and branded wordmark remain intact.
 
 ## Connected workflow
 

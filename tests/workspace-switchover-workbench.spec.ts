@@ -71,7 +71,7 @@ test("every old deep link lands on the page that now holds its work", async ({ p
     { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Runs", suite: "atomik" },
     { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Motion Transfer", suite: "subatomik" },
     { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Object Swap", suite: "subatomik" },
-    { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "Marketing Studio", suite: "moleculr" },
+    { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "Image ads", suite: "moleculr" },
   ];
 
   for (const one of cases) {
@@ -113,7 +113,7 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
   await page.goto(`/workbench?project=${PROJECT}&suite=moleculr&page=brand`);
   await expect(page).toHaveURL(/[?&]page=marketing/);
   await expect(page).toHaveURL(/#brand$/);
-  await expect(page.getByTestId("page-title")).toHaveText("Marketing Studio");
+  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
 });
 
 test("a selection and any other query param survive the switch", async ({ page }, info) => {
@@ -164,7 +164,7 @@ test("phones land on the Suites shell as well, at the same mapped URLs", async (
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
     await expect(page.getByTestId("page-title"), from).toHaveText(title);
-    /* The glass tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
+    /* The tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
     if (info.project.name !== "workbench-844x390") await expect(page.getByTestId("tabbar"), from).toBeVisible();
     await expect(legacyShell(page), from).toHaveCount(0);
   }

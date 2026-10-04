@@ -3,22 +3,20 @@ import UploadRecovery from "@/components/UploadRecovery";
 import SuitesApp from "@/components/graphite/SuitesApp";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SessionProvider } from "@/lib/session";
-import "../workspace.css";
-import "../graphite.css";
-import "../flair.css";
-import "../crew.css";
-import "../glass.css";
-import "../production.css";
-import "../business.css";
-import "../viral.css";
-import "../phone-chrome.css";
+import "@/components/workspace/workspace.css";
+import "@/components/graphite/shell.css";
+import "@/components/graphite/crew/crew.css";
+import "@/components/graphite/production/production.css";
+import "@/components/graphite/business/business.css";
+import "@/components/graphite/viral/viral.css";
+import "@/components/graphite/phone.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };
 export const metadata = { title: "Particl" };
 
 /**
- * The Particl Suites shell (design/particl-suites/README.md) — the surface
+ * The Particl Suites shell (design/particl-graphite/README.md) — the surface
  * every old entry point lands on since 22 September 2026
  * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
  * the page bodies it mounts today are the existing ones, inside the new chrome.

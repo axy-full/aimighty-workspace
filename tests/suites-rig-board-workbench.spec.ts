@@ -91,7 +91,42 @@ async function showCanvas(page: Page) {
   await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
   await closeOverlay(page);
   await board.evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await boardAtRest(page);
   await page.getByTestId("rig-zoom-fit").click();
+  await fitted(page);
+}
+
+/**
+ * The board has stopped moving: its box the same across two animation frames and on two polls running (the page head's
+ * rows above it settle as the live price arrives). Fit is pressed only then. Pressed while the board is still sliding,
+ * Playwright retries the click with the button scrolled to `start`, which scrolls the board's own overflow-hidden
+ * surface: every card is carried off the board's box, and the fit, right as it is, can no longer show them.
+ */
+async function boardAtRest(page: Page) {
+  const board = page.getByTestId("rig-graph-surface");
+  let last = "";
+  await expect.poll(async () => {
+    const box = await board.evaluate((el) => new Promise<string>((done) => {
+      const read = () => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].join(","); };
+      const before = read();
+      requestAnimationFrame(() => requestAnimationFrame(() => done(read() === before ? before : "moving")));
+    }));
+    const still = box !== "moving" && box === last;
+    last = box;
+    return still;
+  }, { message: "the board is still moving" }).toBe(true);
+}
+
+/** Fit has settled: the canvas drawn at the fitted zoom, the surface unscrolled (its cards where the view puts them), every card's box still across two frames. */
+async function fitted(page: Page) {
+  const board = page.getByTestId("rig-graph-surface");
+  await expect.poll(async () => String(Math.round((await zoomOf(page)) * 100)), { message: "the canvas is drawn at the board's zoom" }).toBe(await board.getAttribute("data-zoom"));
+  expect(await board.evaluate((el) => [el.scrollLeft, el.scrollTop]), "the board's surface is not scrolled under its view").toEqual([0, 0]);
+  await expect.poll(() => page.getByTestId("rig-graph").evaluate((graph) => new Promise<boolean>((done) => {
+    const read = () => Array.from(graph.querySelectorAll(".pxw-graph-node")).map((el) => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].join(","); }).join(";");
+    const before = read();
+    requestAnimationFrame(() => requestAnimationFrame(() => done(read() === before)));
+  })), { message: "the cards are still moving" }).toBe(true);
 }
 
 /** On a phone the Inspector is a panel over the canvas: closed to reach the board. */
@@ -401,6 +436,7 @@ test("a card let go snaps to the 20 px grid (Alt places it exactly), and let go 
 
   /* Let go just under the section's title, the pickup joins that section: the title counts it, the team has it. */
   await (await reach(page, "rig-zoom-fit")).click();
+  await fitted(page);
   await toBoard(page);
   const t = (await node(page, "sec-1").boundingBox())!, e = (await node(page, "empty").boundingBox())!;
   const grab = { x: e.x + e.width / 2, y: e.y + e.height / 2 };

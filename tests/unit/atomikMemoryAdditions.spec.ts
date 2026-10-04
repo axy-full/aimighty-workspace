@@ -131,7 +131,7 @@ test("an approved identity points at Cast & Elements or a Soul ID by reference: 
     const board = await m.addMemory({ kind: "identity", text: "", assetId: castRef("prod_a", "cast-board") }, "u1");
     expect(board).toMatchObject({ assetLabel: "The red board", assetKind: "element", projectId: null });
     const faceId = await m.addMemory({ kind: "identity", text: "The face of the spring campaign.", assetId: soulRef("soul_maya") }, "u1");
-    expect(faceId).toMatchObject({ assetId: "soul:soul_maya", assetLabel: "Maya (Soul ID)", assetKind: "Soul ID" });
+    expect(faceId).toMatchObject({ assetId: "soul:soul_maya", assetLabel: "Maya (Soul ID)", assetKind: "Identity" });
 
     /* A reference, not a copy: the row holds the element's id and the words a person wrote, nothing of the element itself. */
     const { db } = await import("../../lib/db");
@@ -139,11 +139,11 @@ test("an approved identity points at Cast & Elements or a Soul ID by reference: 
     expect([row.asset_id, row.text]).toEqual(["cast:prod_a:cast-maya", "The approved lead."]);
 
     /* Refused: another kind, an element not in this person's own Cast & Elements, a Soul ID still training or out of reach, an unknown reference. */
-    await expect(m.addMemory({ kind: "brand", text: "x", assetId: soulRef("soul_maya") }, "u1")).rejects.toMatchObject({ status: 400, message: "Only an approved identity points at a Soul ID or at Cast & Elements." });
+    await expect(m.addMemory({ kind: "brand", text: "x", assetId: soulRef("soul_maya") }, "u1")).rejects.toMatchObject({ status: 400, message: "Only an approved identity points at a trained identity or at Cast & Elements." });
     await expect(m.addMemory({ kind: "identity", text: "", assetId: castRef("prod_a", "cast-nobody") }, "u1")).rejects.toMatchObject({ status: 404 });
     await expect(m.addMemory({ kind: "identity", text: "", assetId: castRef("prod_a", "cast-maya") }, "u2")).rejects.toMatchObject({ status: 404 });
     await expect(m.addMemory({ kind: "identity", text: "", assetId: castRef("prod_none", "cast-maya") }, "u1")).rejects.toMatchObject({ status: 404 });
-    await expect(m.addMemory({ kind: "identity", text: "", assetId: soulRef("soul_training") }, "u1")).rejects.toMatchObject({ status: 409, message: "That Soul ID is still training. Keep it once it is ready." });
+    await expect(m.addMemory({ kind: "identity", text: "", assetId: soulRef("soul_training") }, "u1")).rejects.toMatchObject({ status: 409, message: "That identity is still training. Keep it once it is ready." });
     await expect(m.addMemory({ kind: "identity", text: "", assetId: soulRef("soul_elsewhere") }, "u1")).rejects.toMatchObject({ status: 404 });
     await expect(m.addMemory({ kind: "identity", text: "", assetId: "element:whatever" }, "u1")).rejects.toMatchObject({ status: 400 });
 
@@ -154,7 +154,7 @@ test("an approved identity points at Cast & Elements or a Soul ID by reference: 
     expect(listed.find((e) => e.id === maya.id)).toMatchObject({ assetLabel: "Maya Okafor", available: true });
     expect(listed.find((e) => e.id === faceId.id)).toMatchObject({ assetLabel: "Maya, approved", available: true });
     const planned = await m.plannerMemory({ projectId: "prod_a", query: "Maya walks the harbour" });
-    expect(planned.filter((i) => i.kind === "identity").map((i) => i.asset)).toEqual(expect.arrayContaining([{ name: "Maya Okafor", kind: "character" }, { name: "Maya, approved", kind: "Soul ID" }, { name: "The red board", kind: "element" }]));
+    expect(planned.filter((i) => i.kind === "identity").map((i) => i.asset)).toEqual(expect.arrayContaining([{ name: "Maya Okafor", kind: "character" }, { name: "Maya, approved", kind: "Identity" }, { name: "The red board", kind: "element" }]));
     expect(await m.plannerMemoryText({ projectId: "prod_a", query: "Maya" })).toContain('- Approved identity (this project): "Maya Okafor" (character) — The approved lead.');
 
     /* Gone from Cast & Elements, or the Soul ID gone: shown as gone, and left out of every plan. */

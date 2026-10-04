@@ -478,7 +478,7 @@ export function RigGraph() {
                   data-source={edge.source}
                   data-target={edge.target}
                   data-active={active || undefined}
-                  stroke={active ? "#0A84FF" : "#2E2E34"}
+                  stroke={active ? "var(--gx-accent)" : "var(--gx-input-hover)"}
                   strokeWidth={1.5}
                   fill="none"
                   opacity={active ? 0.85 : 1}
@@ -560,7 +560,7 @@ export function RigGraph() {
           })}
           {peers.filter((p) => p.cursor).map((p) => (
             <span key={p.id} className="pxw-graph-cursor" style={{ left: p.cursor!.x, top: p.cursor!.y, color: p.color, transform: `scale(${1 / view.zoom})`, transformOrigin: "0 0" }} aria-hidden="true">
-              <svg width="14" height="18" viewBox="0 0 14 18"><path d="M1 1l12 9-5.5 1L5 17z" fill="currentColor" stroke="#fff" strokeWidth="1" /></svg>
+              <svg width="14" height="18" viewBox="0 0 14 18"><path d="M1 1l12 9-5.5 1L5 17z" fill="currentColor" stroke="var(--gx-on-accent)" strokeWidth="1" /></svg>
               <span style={{ background: p.color }}>{p.name}</span>
             </span>
           ))}

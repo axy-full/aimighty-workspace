@@ -13,7 +13,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { soulIdentityAsset } from "@/lib/workbench/soul-identity";
 import { Kicker } from "../ui";
 import type { PageBodyProps } from "./registry";
-import "@/app/workspace-assets.css";
+import "@/components/workspace/pages/assets.css";
 
 export const TONE: Record<CastTone, string> = {
   green: "var(--pxw-green)", blue: "var(--pxw-blue-ink)", amber: "var(--pxw-amber)", red: "var(--pxw-red)", grey: "var(--pxw-dimmer)",

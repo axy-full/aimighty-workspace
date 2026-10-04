@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Below 768 (design/particl-v2-mobile/README.md: the breakpoint). One
+ * Below 768 (design/particl-graphite/README.md: the breakpoint). One
  * subscription to the media query, read the same way on the server (false)
  * and on the client, so nothing hydrates differently than it rendered.
  */

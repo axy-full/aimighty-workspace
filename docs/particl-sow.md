@@ -49,6 +49,14 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | **xAI** | Grok Imagine Image 2.0, Grok Imagine Image, Grok Imagine Video 1.5, Grok Imagine Video, Grok Voice | Stills, short clips and spoken lines. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
+**AMENDED 4 October 2026 — D0 removals (design/particl-graphite/README.md › "What this design removes or renames").** The Higgsfield row above is narrowed, and the vendor's name is no longer shown to customers anywhere:
+
+- **Still running, on Particl's API key:** Motion Transfer and Object Swap (Viral), Marketing Studio Image (Business › Image ads), Cinema Studio 4.0 (Gen, priced "quoted" in the model sheet), and Soul Standard, Soul 2 and Soul Cinema (`lib/soulRender.ts`), shown as "Identity still · Standard", "Identity still · 2" and "Identity still · Cinema".
+- **Cast renders with an identity and builds identities there** (owner's decision, 4 October): the select is **Identity**, the render button carries the live quote, and "Build identity" trains through `/api/soul/identities` for Standard, 2 or Cinema at the route's live price. The identity stills are reached from Cast, not listed in Gen.
+- **Only the sign-in side is removed.** Nothing runs on a connected account; entries and identities built on one stay in the Library, read-only. No model is marked `retired` today; the mechanism (`lib/models.ts`) stays for the next retirement.
+- **Removed from the product:** Business › Ads (Business opens on Image ads; an old Ads link lands there), Cast's reference-elements line, the connected-account billing source in Gen, and the unused `SoulIdHost` and `ConsumerGenjutsu` components. Results made on the retired connected account keep neutral names ("Video (earlier account)" and the like).
+- **Names:** the Business suite is "Moleculr Business Suite"; Atomik is "Atomik Agent".
+
 **Credits are the unit. 1 credit = US$0.80, fixed.** Every price in either product is in credits, to a tenth — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next tenth of a credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `275 credits / $200 · 25 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit costs and the monthly cap. **Nowhere else, and never on anything that spends.**
 
 Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
@@ -71,6 +79,8 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 ---
 
 ## 4. Design system
+
+**AMENDED 4 October 2026 — one design.** The look of every surface is `design/particl-graphite/` (the Graphite handoff of 3 October 2026): dark only, flat, one token set in its README § Design tokens. It replaces every earlier design handoff, which were deleted from the repo in D0. The node-graph documents below are kept for the behaviour they record; where they describe colours, type or a light theme, Graphite wins.
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 

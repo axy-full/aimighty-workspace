@@ -3,11 +3,11 @@ export type Status = "approved" | "ready" | "queued" | "draft" | "review" | "sou
 /** Chip = 6px dot + label, padding 3px 9px, radius 7px, tinted background. */
 export const STATUS: Record<Status, { label: string; dot: string; color: string; bg: string }> = {
   approved: { label: "Approved", dot: "var(--pxw-green)", color: "var(--pxw-green-ink)", bg: "var(--pxw-green-tint)" },
-  ready: { label: "Ready", dot: "var(--pxw-blue)", color: "var(--pxw-blue-soft-ink)", bg: "rgba(10,132,255,.14)" },
-  queued: { label: "Queued", dot: "var(--pxw-amber)", color: "var(--pxw-amber-ink)", bg: "rgba(255,159,10,.13)" },
-  draft: { label: "Draft", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "rgba(255,255,255,.05)" },
-  review: { label: "Review", dot: "var(--pxw-amber)", color: "var(--pxw-amber-ink)", bg: "rgba(255,159,10,.13)" },
-  source: { label: "Source", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "rgba(255,255,255,.05)" },
+  ready: { label: "Ready", dot: "var(--pxw-blue)", color: "var(--pxw-blue-soft-ink)", bg: "var(--gx-tint)" },
+  queued: { label: "Queued", dot: "var(--pxw-amber)", color: "var(--pxw-amber-ink)", bg: "color-mix(in srgb, var(--gx-waiting) 14%, transparent)" },
+  draft: { label: "Draft", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "var(--gx-input)" },
+  review: { label: "Review", dot: "var(--pxw-amber)", color: "var(--pxw-amber-ink)", bg: "color-mix(in srgb, var(--gx-waiting) 14%, transparent)" },
+  source: { label: "Source", dot: "var(--pxw-neutral-state)", color: "var(--pxw-muted)", bg: "var(--gx-input)" },
   /* "not billed" only when the ledger or the provider confirms it: the caller passes that label. */
   failed: { label: "Failed", dot: "var(--pxw-red)", color: "var(--pxw-red-ink)", bg: "var(--pxw-red-tint)" },
 };

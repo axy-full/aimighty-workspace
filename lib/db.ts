@@ -79,7 +79,7 @@ const SCHEMA = [
      description TEXT NOT NULL DEFAULT '',
      created_at  INTEGER NOT NULL
    )`,
-  /* Productions (design/particl-v2 §15): the client job above the
+  /* Productions (design/particl-graphite §15): the client job above the
      deliverables. `projects` is §15's `project`; this is the level above
      it, and every project belongs to exactly one (backfilled at bootstrap). */
   `CREATE TABLE IF NOT EXISTS productions (
@@ -91,7 +91,7 @@ const SCHEMA = [
      cap_usd     REAL,
      created_at  INTEGER NOT NULL
    )`,
-  /* Boards (design/particl-v2 §8, §15): the Canvas as a generation graph.
+  /* Boards (design/particl-graphite §8, §15): the Canvas as a generation graph.
      A board belongs to a project; its nodes and wires are read and written
      whole, as JSON, because a graph has no meaning outside its board. */
   `CREATE TABLE IF NOT EXISTS boards (

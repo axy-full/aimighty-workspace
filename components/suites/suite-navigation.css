@@ -3,20 +3,20 @@
   flex: none;
 }
 .suite-top-tabs {display:flex;align-items:stretch;gap:5px;min-height:46px;}
-.suite-top-tabs a {display:flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;color:#93959f;text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap;border-bottom:2px solid transparent;transition:background .15s,color .15s;}
-.suite-top-tabs a:hover {background:#141519;color:#ededea;}
-.suite-top-tabs a[aria-current="page"] {color:#ededea;border-bottom-color:var(--suite-tab-color);background:#131418;}
-.suite-top-tabs a:focus-visible {outline:2px solid #ededea;outline-offset:-3px;}
+.suite-top-tabs a {display:flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;color:var(--gx-text-2);text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap;border-bottom:2px solid transparent;transition:background .15s,color .15s;}
+.suite-top-tabs a:hover {background:var(--gx-input);color:var(--gx-text);}
+.suite-top-tabs a[aria-current="page"] {color:var(--gx-text);border-bottom-color:var(--suite-tab-color);background:var(--gx-input);}
+.suite-top-tabs a:focus-visible {outline:2px solid var(--gx-text);outline-offset:-3px;}
 .suite-switcher-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 34px;
   padding: 0 10px;
-  border: 1px solid #2a2c33;
+  border: 1px solid var(--gx-card-border);
   border-radius: 8px;
-  background: #0c0d10;
-  color: #ededea;
+  background: var(--gx-input);
+  color: var(--gx-text);
   font: inherit;
   font-size: 13px;
   white-space: nowrap;
@@ -32,10 +32,10 @@
   z-index: 150;
   min-width: 230px;
   padding: 5px;
-  border: 1px solid #2a2c33;
+  border: 1px solid var(--gx-card-border);
   border-radius: 10px;
-  background: #0c0d10;
-  color: #ededea;
+  background: var(--gx-input);
+  color: var(--gx-text);
   box-shadow: none;
   font-family: inherit;
 }
@@ -45,11 +45,11 @@
   min-height: 54px;
   padding: 9px 10px;
   border-radius: 8px;
-  color: #ededea;
+  color: var(--gx-text);
   text-decoration: none;
 }
 .suite-switcher-menu [data-highlighted] {
-  background: #121317;
+  background: var(--gx-input);
 }
 .suite-switcher-menu a > span:nth-child(2) {
   display: flex;
@@ -62,7 +62,7 @@
   font-weight: 600;
 }
 .suite-switcher-menu small {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-size: 11px;
 }
 .suite-room-rail {
@@ -75,9 +75,9 @@
   overflow-y: auto;
   gap: 5px;
   padding: 10px 4px;
-  border-right: 1px solid #1e1f24;
-  background: #0a0a0c;
-  color: #9a9ca3;
+  border-right: 1px solid var(--gx-hair-strong);
+  background: var(--gx-panel);
+  color: var(--gx-text-2);
 }
 .suite-room-rail a {
   display: flex;
@@ -96,9 +96,9 @@
 }
 .suite-room-rail a:hover,
 .suite-room-rail a[aria-current="page"] {
-  color: #ededea;
-  background: #121317;
-  border-color: #2a2c33;
+  color: var(--gx-text);
+  background: var(--gx-input);
+  border-color: var(--gx-card-border);
 }
 .suite-page-dock {
   position: relative;
@@ -111,9 +111,9 @@
   gap: 2px;
   padding: 0 8px;
   overflow-x: auto;
-  border-top: 1px solid #1e1f24;
-  background: #0a0a0c;
-  color: #9a9ca3;
+  border-top: 1px solid var(--gx-hair-strong);
+  background: var(--gx-panel);
+  color: var(--gx-text-2);
   scrollbar-width: thin;
 }
 .suite-page-dock a {
@@ -131,23 +131,23 @@
   white-space: nowrap;
 }
 .suite-page-dock a:hover {
-  color: #ededea;
-  background: #121317;
+  color: var(--gx-text);
+  background: var(--gx-input);
 }
 .suite-page-dock a[aria-current="page"] {
-  border-top-color: var(--suite-color, #d7d9de);
-  color: #ededea;
-  background: #121317;
+  border-top-color: var(--suite-color, var(--gx-text));
+  color: var(--gx-text);
+  background: var(--gx-input);
 }
 .suite-page-dock small {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .suite-switcher-trigger:focus-visible,
 .suite-room-rail a:focus-visible,
 .suite-page-dock a:focus-visible {
-  outline: 2px solid #ededea;
+  outline: 2px solid var(--gx-text);
   outline-offset: -3px;
 }
 .suite-navigation-error {
@@ -158,9 +158,9 @@
   min-width: 200px;
   max-width: 290px;
   padding: 12px;
-  background: #121317;
-  color: #ededea;
-  border: 1px solid #2a2c33;
+  background: var(--gx-input);
+  color: var(--gx-text);
+  border: 1px solid var(--gx-card-border);
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.5;
@@ -174,8 +174,8 @@
   min-height: 52px;
   padding: 0 14px;
   gap: 14px;
-  background: #0a0a0c;
-  border-bottom: 1px solid #1e1f24;
+  background: var(--gx-panel);
+  border-bottom: 1px solid var(--gx-hair-strong);
 }
 .suite-wordmark {
   display: flex;
@@ -203,11 +203,11 @@
   padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: #ededea;
+  color: var(--gx-text);
   background: transparent;
 }
 .suite-project-picker:hover {
-  border-color: #2a2c33;
+  border-color: var(--gx-card-border);
 }
 .suite-project-picker span {
   overflow: hidden;
@@ -216,7 +216,7 @@
   font-size: 13px;
 }
 .suite-project-picker small {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-size: 11px;
 }
 .suite-header .studio-account {
@@ -235,17 +235,17 @@
 }
 .suite-header .studio-account-avatar,
 body:has(.suite-application) .studio-account-menu .studio-account-avatar {
-  background: #1e1f24;
+  background: var(--gx-input-hover);
   font-family: inherit;
 }
 .suite-header .studio-navigation :focus-visible,
 body:has(.suite-application) .studio-account-menu :focus-visible {
-  outline-color: #ededea;
+  outline-color: var(--gx-text);
 }
 body:has(.suite-application) .studio-account-menu {
   box-shadow: none;
-  background: #0c0d10;
-  border-color: #2a2c33;
+  background: var(--gx-input);
+  border-color: var(--gx-card-border);
 }
 body:has(.suite-application) .studio-menu-label {
   text-transform: none;
@@ -256,7 +256,7 @@ body:has(.suite-application) .studio-menu-label {
   flex: 1;
   text-align: center;
   font-size: 13px;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
 }
 .suite-header .suite-agent-toggle {
   display: flex;
@@ -265,16 +265,16 @@ body:has(.suite-application) .studio-menu-label {
   flex: none;
   min-width: 36px;
   height: 36px;
-  border: 1px solid #2a2c33;
+  border: 1px solid var(--gx-card-border);
   border-radius: 8px;
-  background: #0c0d10;
-  color: #ededea;
+  background: var(--gx-input);
+  color: var(--gx-text);
 }
 .suite-header-error {
   padding: 5px 14px;
-  color: #c9cbd1;
+  color: var(--gx-text-2);
   font-size: 12px;
-  background: #121317;
+  background: var(--gx-input);
 }
 .suite-application .shell-body {
   flex-direction: row;

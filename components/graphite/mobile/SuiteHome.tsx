@@ -2,8 +2,6 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_MODEL_ID, displayModelName } from "@/lib/models";
 import { useSession } from "@/lib/session";
-import { AD_MODES, INITIAL_ADS } from "@/lib/shell/business";
-import { OWN_TOOLS_FACT } from "@/lib/shell/business-own";
 import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
 import { useShell } from "@/lib/shell/state";
 import { useFreshProject } from "@/lib/shell/use-fresh-project";
@@ -17,12 +15,12 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { Glyph, SUITE_LOOK } from "../icons";
 
 /**
- * The phone's Home (GLASS_SPEC §3 › "Where to?"): the project's name as the
+ * The phone's Home (design/particl-graphite/README.md › Phone): the project's name as the
  * eyebrow, the display title, six suite tiles with a live fact each, and one
  * Assets row. Nothing else — the stage grid lives behind the Studio tile,
  * the takes behind Assets. Every figure is the project's own; a suite whose
- * pages ran on the Higgsfield account says its sign-in is retired instead, and
- * Business names Particl's own tools.
+ * pages ran only on a connected account (none now) says it is no longer
+ * available, and Business names the page it opens on, Image ads.
  */
 export function SuiteHome({ project: loaded, items }: { project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
@@ -50,8 +48,6 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
     /* Every take in flight, from any page (the jobs tray's count); the composer's own before the tray's first read, or once it stopped reading. */
     rendering: jobs && jobs.status === "ready" && !jobs.stopped ? jobs.summary?.rendering ?? 0 : state.gen ? 1 : 0,
     videoEngine: displayModelName(session.models?.video ?? DEFAULT_MODEL_ID),
-    adMode: AD_MODES.find(([id]) => id === INITIAL_ADS.mode)?.[1] ?? "UGC",
-    adSeconds: INITIAL_ADS.duration,
     viralResolution: INITIAL_VIRAL.resolution,
     awaiting,
     seats,
@@ -73,14 +69,11 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
           const retired = isOwnerRunSuite(t.id);
           return (
             <button key={t.id} type="button" role="listitem" className="gx-where-tile" style={{ "--tile": t.color } as React.CSSProperties} onClick={() => go(t.id)} data-testid={`home-suite-${t.id}`} data-retired={retired || undefined}>
-              <span className="gx-where-glow" aria-hidden="true" />
               <span className="gx-where-ic" aria-hidden="true"><Glyph name={SUITE_LOOK[t.id]?.glyph ?? "spark"} size={22} /></span>
               <span className="gx-where-name">{t.label}</span>
               <span className="gx-where-line">{t.line}</span>
               <span className="gx-where-fact gx-mono" data-testid={`home-fact-${t.id}`}>
-                {retired ? "Higgsfield sign-in retired"
-                  /* Business is Particl's own tools, for everyone: Ads, whose figures the fact names, ran on the retired sign-in. */
-                  : t.id === "business" ? OWN_TOOLS_FACT : t.fact}
+                {retired ? "No longer available" : t.fact}
               </span>
             </button>
           );

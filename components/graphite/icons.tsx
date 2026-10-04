@@ -29,7 +29,7 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
   }
 }
 
-/** Suite colours and glyphs (FINAL_SPEC §6 › Suite picker). Gen takes the violet of its aurora. */
+/** Suite colours and glyphs (the suite dots in app/graphite.css). Gen shares Crew's violet. */
 export const SUITE_LOOK: Record<string, { color: string; glyph: GlyphName }> = {
   studio: { color: "#0A84FF", glyph: "clap" },
   gen: { color: "#BF5AF2", glyph: "spark" },
@@ -40,14 +40,14 @@ export const SUITE_LOOK: Record<string, { color: string; glyph: GlyphName }> = {
 };
 /** Library › Tools department colours cycle in this order. */
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
-/** Kind dots on the asset filter chips; All is the three-stop gradient. */
+/** Kind dots on the asset filter chips; All has none of its own. */
 export const KIND_DOT: Record<string, string> = { Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" };
-/** A project's poster tint: the sample palette for the sample names, a stable pick otherwise. */
-export function posterOf(name: string): { from: string; to: string; glow: string } {
-  const sample: Record<string, [string, string, string]> = { "dune studies": ["#7A5A34", "#1A120B", "#F0B23E"], northline: ["#2E4A6A", "#0B1420", "#0A84FF"] };
+/** A project's poster swatch, the two stops of its tile: the sample palette for the sample names, a stable pick otherwise. */
+export function posterOf(name: string): { from: string; to: string } {
+  const sample: Record<string, [string, string]> = { "dune studies": ["#7A5A34", "#1A120B"], northline: ["#2E4A6A", "#0B1420"] };
   const known = sample[name.trim().toLowerCase()];
-  if (known) return { from: known[0], to: known[1], glow: known[2] };
-  if (!name.trim()) return { from: "#3A3A40", to: "#141416", glow: "#8E8E93" };
+  if (known) return { from: known[0], to: known[1] };
+  if (!name.trim()) return { from: "#3A3A40", to: "#141416" };
   const hue = [...name].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 7);
-  return { from: `hsl(${hue} 38% 34%)`, to: `hsl(${hue} 30% 9%)`, glow: `hsl(${hue} 80% 62%)` };
+  return { from: `hsl(${hue} 38% 34%)`, to: `hsl(${hue} 30% 9%)` };
 }

@@ -4,7 +4,7 @@ import Mono from "./Mono";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 
 /**
- * Media card (design/particl-v2/README.md §3), exactly the shot card of
+ * Media card (design/particl-graphite/README.md §3), exactly the shot card of
  * board 10a: `--card`, 1px `--border`, radius 12; a 16:9 well with a .06
  * hairline beneath it and the ID chip top-left and state chip top-right
  * (`rgba(11,13,17,.85)`, radius 4, `4px 6px`, mono; the state's word in
@@ -20,7 +20,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * with the 36px ring and nothing else — no skeleton. The card does not
  * fetch and does not guess.
  *
- * `phone` is the M3 cut (design/particl-v2-mobile): the same card two-up —
+ * `phone` is the M3 cut (design/particl-graphite): the same card two-up —
  * the ID chip at 7/7, the state as an 8px dot top-right, the body `9px
  * 10px 0` with the description at 400 13/1.35 (min 35), the footer at
  * `8px 10px` with each side one mono line (`4S · 19 CR` / `2 TK · 38 CR`).

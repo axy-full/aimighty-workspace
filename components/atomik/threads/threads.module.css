@@ -12,7 +12,7 @@
   height: 36px; padding: 0 10px; border: 1px solid var(--border-mid); border-radius: 9px;
   background: transparent; color: var(--ink); font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap;
 }
-.button:hover:not(:disabled) { background: rgba(245, 246, 248, .04); }
+.button:hover:not(:disabled) { background: var(--gx-input); }
 .button:disabled { opacity: .5; cursor: default; }
 .button[aria-pressed="true"] { background: var(--selected); }
 .toggle { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; }
@@ -30,7 +30,7 @@
   display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-width: 0; min-height: 44px;
   padding: 6px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); font-family: inherit; text-align: left;
 }
-.pick:hover { background: rgba(245, 246, 248, .04); }
+.pick:hover { background: var(--gx-input); }
 .pick[aria-current="true"] { background: var(--selected); }
 .line { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
 .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.25; color: var(--ink); }
@@ -64,12 +64,12 @@
 .stepBody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .stepTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.2; color: var(--ink); }
 .price { flex: none; white-space: nowrap; }
-.checkpoint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border: 1px solid rgba(245, 246, 248, .3); border-radius: 12px; }
+.checkpoint { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--gx-hover-border); border-radius: 12px; }
 .checkpointLine { font-size: 13.5px; line-height: 1.45; color: var(--ink-body); overflow-wrap: anywhere; }
 .checkpoint .actions { padding: 0; }
 .primary {
   display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: center; min-height: 36px; padding: 6px 14px; border: 0; border-radius: 9px;
-  background: var(--color-action, var(--ink)); color: var(--color-on-action, #0a0a0c); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.25; white-space: normal; text-align: center;
+  background: var(--color-action, var(--ink)); color: var(--color-on-action, var(--gx-root)); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.25; white-space: normal; text-align: center;
 }
 .primary:disabled { opacity: .55; cursor: default; }
 .composer { display: flex; min-width: 0; }

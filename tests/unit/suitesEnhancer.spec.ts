@@ -1,15 +1,17 @@
 import { test, expect } from "@playwright/test";
 import {
-  DEFAULT_ENHANCER, ENHANCER_MODELS, ENHANCER_PROVIDERS, citationsIn, enhancerMessages, enhancerSystem, isEnhancerProvider, isRawPrompt,
+  DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_MODELS, ENHANCER_NOTE, ENHANCER_PROVIDERS, citationsIn, enhancerMessages, enhancerSystem, isEnhancerProvider, isRawPrompt,
   parseEnhanced, pickEnhancerModel, stripRaw,
 } from "../../lib/shell/enhancer";
 import { isVerifiedTextModel } from "../../lib/atomikModelPolicy";
 import { DEFAULTS } from "../../lib/settings";
 
-test("Higgsfield is the default enhancer, in the request and in the workspace setting", () => {
+test("the default enhancer keeps its stored value, in the request and in the workspace setting, and reads Standard: the vendor is never named", () => {
   expect(DEFAULT_ENHANCER).toBe("higgsfield");
   expect(DEFAULTS.promptEnhancer).toBe("higgsfield");
   expect([...ENHANCER_PROVIDERS]).toEqual(["higgsfield", "claude", "openai"]);
+  expect(ENHANCER_LABEL).toEqual({ higgsfield: "Standard", claude: "Claude", openai: "OpenAI" });
+  for (const words of [...Object.values(ENHANCER_LABEL), ...Object.values(ENHANCER_NOTE)]) expect(words).not.toMatch(/Higgsfield/i);
   expect(isEnhancerProvider("claude")).toBe(true);
   expect(isEnhancerProvider("gemini")).toBe(false);
 });

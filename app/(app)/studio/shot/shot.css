@@ -1,0 +1,35 @@
+/* shot.css — the rules of app/(app)/studio/shot/page.tsx, moved out of app/globals.css
+   beside the file that uses them (D0 1c). Plain CSS: the class names are global
+   and unchanged. Imported by app/(app)/studio/shot/page.tsx. */
+
+/* The bank. */
+.bank { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; }
+.bank-tile { text-align: left; display: flex; flex-direction: column; gap: 5px; padding: 9px 10px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 7px; color: var(--color-ink); transition: border-color .12s, background .12s; }
+@media (hover: hover) { .bank-tile:hover { border-color: var(--color-edge-hover); } }
+.bank-tile.is-on { background: var(--color-fill-on); border-color: var(--color-ink); }
+.bank-name { font: 500 12.5px/1.2 var(--font-display); }
+.bank-kind { font: 400 9px/1 var(--font-kode); letter-spacing: .08em; color: var(--color-dim); }
+.bank-n { font: 400 10.5px/1 var(--font-kode); color: var(--color-ink); }
+.bank-n.is-none { color: var(--color-faint); }
+/* The twelve rows. */
+.sr-list { display: flex; flex-direction: column; border-top: 1px solid var(--color-hair); }
+.sr { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; padding: 14px 0; border-bottom: 1px solid var(--color-hair); }
+.sr-label { font: 600 13.5px/1.2 var(--font-display); color: var(--color-ink); }
+.sr-help { font: 400 11.5px/1.45 var(--font-display); color: var(--color-dim); text-wrap: pretty; }
+.sr-chips { display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; }
+.sr-chip { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-edge); background: transparent; color: var(--color-ink); font: 500 12px/1 var(--font-display); transition: border-color .12s, background .12s, color .12s; }
+@media (hover: hover) { .sr-chip:hover { border-color: var(--color-edge-hover); } }
+.sr-chip.is-on { background: var(--color-ink); border-color: var(--color-ink); color: var(--color-on-ink); }
+@media (max-width: 1023px), (max-height: 520px) {
+  .st.is-builder .bank { display: flex; gap: 6px; overflow-x: auto; margin: 0 -14px; padding: 0 14px 2px; scrollbar-width: none; }
+  .st.is-builder .bank-tile { flex: none; min-width: 104px; }
+  .sr { grid-template-columns: 1fr; gap: 8px; }
+  .sr-chip { padding: 9px 11px; border-radius: 7px; }
+}
+
+/* The camera bank's search and a used move's own last take as its tile (brief 1.4). */
+.bank-search { height: 32px; font-size: 13px; max-width: 280px; margin-left: auto; }
+.bank-tile { position: relative; }
+.bank-tile .bank-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; margin-bottom: 6px; background: var(--color-panel, var(--gx-card)); }
+.bank-tile .bank-thumb video, .bank-tile .bank-thumb img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 767px) { .bank-search { max-width: 100%; margin-left: 0; } }

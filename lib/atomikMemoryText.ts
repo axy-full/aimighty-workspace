@@ -107,7 +107,10 @@ export function refSource(assetId: string | null | undefined): RefSource | null 
 export const castRef = (productionId: string, entryId: string) => `cast:${productionId}:${entryId}`;
 export const soulRef = (identityId: string) => `soul:${identityId}`;
 /** Where an approved identity's element lives, for the line under it. */
-export const REF_SOURCE_LABEL: Record<RefSource, string> = { library: "Library", soul: "Soul ID", cast: "Cast & Elements" };
+export const REF_SOURCE_LABEL: Record<RefSource, string> = { library: "Library", soul: "Identity", cast: "Cast & Elements" };
+/** What a trained identity's kind reads as. Rows kept before the rename store the earlier word; they are mapped on read, never rewritten. */
+export const IDENTITY_ASSET_KIND = "Identity";
+export const memoryAssetKind = (kind: string | null): string | null => (kind === "Soul ID" ? IDENTITY_ASSET_KIND : kind);
 
 export function isMemoryKind(value: unknown): value is MemoryKind {
   return typeof value === "string" && (MEMORY_KINDS as readonly string[]).includes(value);

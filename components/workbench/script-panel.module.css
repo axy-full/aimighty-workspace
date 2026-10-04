@@ -107,8 +107,8 @@
 .notice,
 .error {
   padding: 10px 12px;
-  border: 1px solid rgba(10,132,255,.35);
-  background: rgba(10,132,255,.10);
+  border: 1px solid var(--gx-tint-border);
+  background: var(--gx-tint-10);
   border-radius: 8px;
   font-size: 11px;
   line-height: 1.45;
@@ -120,9 +120,9 @@
   text-decoration: underline;
 }
 .error {
-  border-color: #674440;
-  background: #302320;
-  color: #f4c4b5;
+  border-color: color-mix(in srgb, var(--gx-failed) 35%, transparent);
+  background: var(--gx-input-hover);
+  color: var(--gx-failed-text);
 }
 .importReview {
   border: 1px solid var(--graphite-edge);
@@ -359,7 +359,7 @@
 .formats button { display:grid; gap:4px; text-align:left; padding:12px; border:1px solid var(--graphite-edge); border-radius:8px; background:var(--graphite-control); color:var(--graphite-ink); cursor:pointer; }
 .formats strong { font-size:12px; font-weight:600; }
 .formats span { font-size:11px; line-height:1.4; color:var(--graphite-muted); }
-.formats button[aria-pressed="true"] { border-color:var(--graphite-accent); background:rgba(10,132,255,.08); }
+.formats button[aria-pressed="true"] { border-color:var(--graphite-accent); background:var(--gx-tint-08); }
 .formats button:disabled { opacity:.5; cursor:default; }
 @media(max-width:759px) { .formats { padding:0 12px 14px; grid-template-columns:1fr; } }
 

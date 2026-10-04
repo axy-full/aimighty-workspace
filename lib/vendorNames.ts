@@ -2,7 +2,7 @@
  * The product's naming rule, in one place.
  *
  * RETIRED FOR THE SUITES SURFACE — owner decision, 21 September 2026: "follow
- * the design and retire the rule". design/particl-suites/README.md names the
+ * the design and retire the rule". design/particl-graphite/README.md names the
  * connected account (Higgsfield), its product lines (Marketing Studio,
  * Genjutsu, Supercomputer) and every provider, and lib/shell, components/
  * graphite and app/suites print them as designed. What follows still

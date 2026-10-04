@@ -192,7 +192,7 @@ export default function SubatomikWorkspace({
         {!embedded && <header className="suite-page-intro">
           <div>
             <span className="suite-kicker">
-              <i className="suite-dot" style={{ background: "#D48CF5" }} />
+              <i className="suite-dot" style={{ background: "var(--gx-purple)" }} />
               Subatomik{project ? ` / ${project.name}` : ""}
             </span>
             <h1>Subatomik Viral Studio</h1>
@@ -254,7 +254,7 @@ export default function SubatomikWorkspace({
               <section className="suite-panel" aria-label="Shorts" data-testid="subatomik-shorts-retired">
                 <h2>Shorts</h2>
                 <p className={styles.hint}>
-                  Shorts ran on a signed-in Higgsfield account. {ACCOUNT_RETIRED}. {HISTORY_KEPT}
+                  Shorts is retired. {ACCOUNT_RETIRED}. {HISTORY_KEPT}
                 </p>
               </section>
             ) : (
