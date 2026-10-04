@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* Offline bundle: React, ReactDOM and Babel load from ./assets/vendor instead of unpkg. */window.__resources = Object.assign({}, window.__resources, { "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/vendor/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/vendor/react-dom.production.min.js", "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "assets/vendor/babel.min.js" });</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+html,body{margin:0;background:#000;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
+</style>
+</helmet>
+<div style="padding:28px 32px 48px;display:flex;flex-direction:column;gap:36px;font-size:13px;line-height:1.45">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl · step 2 · Home and the header</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Two headers, each shown on Home and on a project’s board, live at 1440 × 900. Both are interactive. Pick A or B.</p>
+  </div>
+  <sc-for list="{{ options }}" as="o" hint-placeholder-count="2">
+    <section id="{{ o.id }}" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.08em;padding:3px 9px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ o.badge }}</span><strong style="font-size:15px;font-weight:600">{{ o.title }}</strong><span style="font-size:12px;color:rgba(235,235,245,0.6)">{{ o.line }}</span></div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <sc-for list="{{ o.frames }}" as="f" hint-placeholder-count="2">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="position:relative;flex:none;width:{{ w }}px;height:{{ h }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.label }}" style="width:1440px;height:900px;border:0;display:block;transform:scale({{ scale }});transform-origin:0 0"></iframe></div>
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(235,235,245,0.6)"><span>{{ f.label }}</span><a href="{{ f.src }}" target="_blank">Open ›</a></div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { vw: window.innerWidth };
+  componentDidMount() { this._r = () => this.setState({ vw: window.innerWidth }); window.addEventListener('resize', this._r); }
+  componentWillUnmount() { window.removeEventListener('resize', this._r); }
+  renderVals() {
+    const scale = Math.max(0.3, Math.min(0.5, (this.state.vw - 80) / 2896));
+    const M = 'Particl%20Suites.dc.html';
+    const options = [
+      { id: 'a', badge: 'A', title: 'Destinations', line: 'Home · Studio · Ads · Social · Make · Atomik. Crew review becomes a panel inside boards.', frames: [{ label: 'Home', src: M + '?view=home&header=a' }, { label: 'Dune Studies · Board', src: M + '?suite=studio&page=rig&header=a' }] },
+      { id: 'b', badge: 'B', title: 'Templates', line: 'Home · the current project · Make · Atomik. Studio, Ads and Social are templates picked on Home; every board looks the same.', frames: [{ label: 'Home', src: M + '?view=home&header=b' }, { label: 'Dune Studies · Board', src: M + '?suite=studio&page=rig&header=b' }] }
+    ];
+    return { options, scale, w: Math.round(1440 * scale), h: Math.round(900 * scale) };
+  }
+}
+</script>
+</body>
+</html>
