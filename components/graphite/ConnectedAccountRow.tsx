@@ -4,7 +4,8 @@ import { ACCOUNT_RETIRED, CONNECTION_ENDPOINT, HISTORY_KEPT } from "@/lib/shell/
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
- * Workspace › Engines › Higgsfield account, for the owner only. The sign-in
+ * Workspace › Engines › Earlier connected account, for the owner only (the
+ * vendor's name is not shown: a customer reads "connected account"). The sign-in
  * is retired (lib/higgsfield-consumer/retired.ts): nothing connects or
  * reconnects here. While Particl still holds the owner's grant, or any of the
  * owner's jobs still holds one of the workspace's four slots, the row says so,
@@ -27,7 +28,7 @@ const since = (ms: number) => {
   const minutes = Math.max(1, Math.round((Date.now() - ms) / 60_000));
   return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
 };
-const UNREADABLE = "The Higgsfield account’s status could not be read.";
+const UNREADABLE = "The connected account’s status could not be read.";
 
 export function ConnectedAccountRow({ owner }: { owner: boolean }) {
   const scoped = useScopedFetch();
@@ -92,7 +93,7 @@ export function ConnectedAccountRow({ owner }: { owner: boolean }) {
   const capacity = state?.capacity;
   return (
     <div className="gx-card" data-testid="engine-connected-account">
-      <span className="gx-eyebrow">Higgsfield account</span>
+      <span className="gx-eyebrow">Earlier connected account</span>
       <div className="cw-engine-row">
         <span className="cw-engine" data-ok={false}><span className="cw-engine-dot" aria-hidden="true" />{state == null && problem?.retry ? "Status unavailable" : "Sign-in retired"}</span>
         <span className="gx-spacer" />

@@ -445,7 +445,7 @@ function cleanInput(value: CreateSoulIdentityInput): CleanInput {
   const trainingUsd = soulTrainingUsd(modelVersion);
   if (trainingUsd == null)
     throw new SoulIdentityError(
-      "This Soul ID version has no training price, so it cannot be trained.",
+      "This identity version has no training price, so it cannot be trained.",
     );
   const inCredits = creditsApply(currentTenant()?.workspace);
   if (
@@ -1017,7 +1017,7 @@ export async function purgeSoulIdentities(): Promise<void> {
     ).rows.length
   )
     throw new SoulIdentityError(
-      "Soul generation receipts must be reconciled before this workspace can be purged.",
+      "Identity generation receipts must be reconciled before this workspace can be purged.",
       409,
     );
   const rows = (

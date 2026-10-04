@@ -3,8 +3,8 @@ import UploadRecovery from "@/components/UploadRecovery";
 import WorkspaceApp from "@/components/workspace/WorkspaceApp";
 import { SessionProvider } from "@/lib/session";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
-import "../workspace.css";
-import "../workspace-mobile.css";
+import "@/components/workspace/workspace.css";
+import "@/components/workspace/mobile/mobile.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };

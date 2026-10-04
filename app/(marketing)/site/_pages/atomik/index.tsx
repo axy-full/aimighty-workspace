@@ -7,7 +7,7 @@ import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 import styles from "./atomik.module.css";
 
 export const metadata: Metadata = {
-  title: "Atomik Super Agent",
+  title: "Atomik Agent",
   description: "The production agent: it plans against your project and waits for your approval.",
 };
 
@@ -68,7 +68,7 @@ export default async function AtomikPage() {
   return (
     <SitePage active="atomik">
       <SuiteHeader
-        eyebrow="05 · Atomik Super Agent"
+        eyebrow="05 · Atomik Agent"
         title="The production agent. Plans and runs the work."
         lead="Describe the outcome; the agent plans it against this project and waits for you."
         pages={SITE_SUITES.find((s) => s.id === "atomik")!.pages}

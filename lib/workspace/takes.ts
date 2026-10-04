@@ -90,7 +90,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
         credits: null, usd: null, status: "uploaded", sha256: SHA.test(u.sha256) ? u.sha256 : null, createdAt: u.createdAt };
     }
     const g = asset.value;
-    const label = engineLabel(g.model).short;
+    const label = engineLabel(g.model, g.kind).short;
     const length = g.durationS ?? (typeof g.params.duration === "number" ? g.params.duration : null);
     const detail = g.kind === "image" ? (typeof g.params.resolution === "string" ? g.params.resolution : typeof g.params.ratio === "string" ? g.params.ratio : "")
       : length != null && length > 0 ? seconds(length) : "";

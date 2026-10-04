@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import {
-  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, CONNECTED_PROVIDER, HISTORY_KEPT, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_PAGES, OWNER_RUN_SUITES,
+  ACCOUNT_RETIRED, ALTERNATIVE_LABEL, CAPABILITY_FRESH_MS, CAPABILITY_UNREADABLE, HISTORY_KEPT, OWNER_RUNS, OWNER_RUN_LEGACY_SUITES, OWNER_RUN_PAGES, OWNER_RUN_SUITES,
   alternativePrice, capabilityOf, castStillPrompt, connectionFrom, createCapabilityStore, isOwnerRunPage, isOwnerRunSuite,
   ownerRunEyebrow, runsOnOwnerAccount, ownerAccountPlans, type ConnectionReply,
 } from "../../lib/shell/connected-capability";
@@ -229,36 +229,39 @@ test("a member is decided from the session: never loading, never connected, and 
   expect(capabilityOf(true, answered, "Harbour Owner")).toMatchObject({ owner: true, status: "ready", connected: true, ownerName: null });
 });
 
-test("the words everyone meets since the sign-in was retired: what ran on the account, that Particl no longer signs in, no owner name, and the workspace-credit way", () => {
-  expect(CONNECTED_PROVIDER).toBe("Higgsfield");
-  expect(ACCOUNT_RETIRED).toBe("Particl no longer signs in to Higgsfield");
+test("the words everyone meets since the sign-in was retired: what ran on the account, that it is no longer used, no vendor or owner name, and the workspace-credit way", () => {
+  expect(ACCOUNT_RETIRED).toBe("The connected account is no longer used");
   expect(HISTORY_KEPT).toBe("Past results stay in your Library.");
-  /* The card and the routes say the same thing. */
-  expect(`${ACCOUNT_RETIRED}. ${HISTORY_KEPT}`).toBe(SIGN_IN_RETIRED_MESSAGE);
-  expect(OWNER_RUNS.business.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
-  /* Viral runs on Particl's API key for everyone now: it has no retired card. Business's card is Ads' and Setup's. */
-  expect(Object.keys(OWNER_RUNS)).not.toContain("viral");
-  expect(OWNER_RUNS.business.line).toBe("Ads here ran on a signed-in Higgsfield account.");
+  /* The routes' own answer keeps the same promise about history. */
+  expect(SIGN_IN_RETIRED_MESSAGE).toContain(HISTORY_KEPT);
+  /* Viral and Business run on Particl's API key for everyone, and Business › Ads is removed: neither has a retired card. */
+  expect(Object.keys(OWNER_RUNS).sort()).toEqual(["cast", "workflows"]);
+  expect(OWNER_RUNS.cast.eyebrow).toBe("Cast · Identity");
   expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
   expect(OWNER_RUNS.cast.alternative?.what).toContain("Studio image engines");
   /* Dubbing, voice change and social cuts have no Studio engine that makes the same thing: no alternative is invented. */
   expect(OWNER_RUNS.workflows.alternative).toBeNull();
   expect(ownerRunEyebrow("workflows", ["Dub", "Change voice"])).toBe("Dub · Change voice");
-  expect(ownerRunEyebrow("business")).toBe(OWNER_RUNS.business.eyebrow);
+  expect(ownerRunEyebrow("cast")).toBe("Cast · Identity");
+  /* A surface with no card (a stale caller) has no eyebrow, and never throws. */
+  expect(ownerRunEyebrow("business" as never)).toBe("");
   expect(ALTERNATIVE_LABEL).toBe("On this workspace’s credits");
   for (const run of Object.values(OWNER_RUNS)) {
     /* One short line each, in the past tense, never a connect prompt, never who runs it, never the account's credits. */
     expect(run.line.split(". ").length).toBe(1);
-    expect(run.line).toMatch(/ ran on a signed-in Higgsfield account\.$/);
-    for (const words of [run.line, run.eyebrow, run.alternative?.what ?? ""]) expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|Higgsfield credits|\bbalance\b|\brun by\b|\bowner\b/i);
+    expect(run.line).toMatch(/ ran on a connected account\.$/);
+    for (const words of [run.line, run.eyebrow, run.alternative?.what ?? "", run.alternative?.action ?? "", ACCOUNT_RETIRED, HISTORY_KEPT, ALTERNATIVE_LABEL]) {
+      expect(words).not.toMatch(/\bConnect (it|the|one)\b|Engines ›|Workspace ›|connected cr|\bbalance\b|\brun by\b|\bowner\b/i);
+      /* The vendor and its product names are never printed. */
+      expect(words).not.toMatch(/Higgsfield|\bSoul\b|Marketing Studio/i);
+    }
   }
-  /* No suite ran on the account as a whole any more: Viral and Business › Image ads run on Particl's API key for everyone,
-     Business's own tools are everyone's, and the Business pages that ran on the account (Ads, Setup) are the retired card page by page. */
+  /* No suite or page runs only on the account any more: Viral and Business › Image ads run on Particl's API key for everyone,
+     Business's own tools and Setup are everyone's, and Business › Ads is removed. */
   expect(OWNER_RUN_SUITES).toEqual([]);
   expect(isOwnerRunSuite("business") || isOwnerRunSuite("viral") || isOwnerRunSuite("studio") || isOwnerRunSuite("gen") || isOwnerRunSuite("atomik") || isOwnerRunSuite(null)).toBe(false);
-  expect(OWNER_RUN_PAGES).toEqual({ business: ["ads", "setup"] });
-  for (const page of ["ads", "setup"]) expect(isOwnerRunPage("business", page), page).toBe(true);
-  for (const page of ["dtc", ...OWN_PAGES]) expect(isOwnerRunPage("business", page), page).toBe(false);
+  expect(OWNER_RUN_PAGES).toEqual({});
+  for (const page of ["ads", "dtc", "setup", ...OWN_PAGES]) expect(isOwnerRunPage("business", page), page).toBe(false);
   for (const page of ["motion", "swap", "history"]) expect(isOwnerRunPage("viral", page), page).toBe(false);
   expect(isOwnerRunPage("studio", "cast") || isOwnerRunPage("business", null) || isOwnerRunPage(null, "ads")).toBe(false);
   /* Every owner-run page names a page the suite really has. */
@@ -311,7 +314,7 @@ test("the run engine refuses a plan on the account's routes before reading or pr
   const onAccount = { ...PLANS.compare, steps: [{ ...load, executor: { type: "call" as const, backend: { method: "GET" as const, path: "/api/higgsfield/consumer/genjutsu" }, run: async () => { requests++; return {}; } } }] };
   const plans = ownerAccountPlans({ ...PLANS, compare: onAccount }, false);
   const engine = new AtomikRunEngine({ plans, context: () => ({ projectId: "film", data: {}, fetch: async () => { requests++; throw new Error("Nothing may reach the connected account."); } }) });
-  expect(engine.start("compare")).toEqual({ ok: false, reason: "Particl no longer signs in to Higgsfield." });
+  expect(engine.start("compare")).toEqual({ ok: false, reason: "The connected account is no longer used." });
   expect(engine.getState().run).toBeNull();
   expect(await engine.approve()).toEqual({ ok: false, reason: "not-waiting" });
   expect(requests).toBe(0);
@@ -321,24 +324,25 @@ test("the run engine refuses a plan on the account's routes before reading or pr
   expect(ownerAccountPlans(PLANS, true)).toBe(PLANS);
 });
 
-test("the owner's failed read of the account is said as it is on Generate — never 'no account is connected'", () => {
+test("Generate has no reason of the connected account's left: a composer state saved on that source blocks like any other", () => {
   const base = {
     state: { ...INITIAL_COMPOSER, billing: "connected" as const, prompt: "a wave" }, model: null, quote: null, quoteKey: "k", submitting: false,
     catalogue: { loading: false, error: null },
   };
-  expect(composerBlock({ ...base, capability: { owner: true, connected: false, suspended: false, unreadable: "The connected account is temporarily unavailable." } }))
-    .toBe("The connected account is temporarily unavailable.");
-  expect(composerBlock({ ...base, capability: { owner: true, connected: false, suspended: false, unreadable: null } }))
-    .toBe("No account is connected. Connect one in Workspace › Engines, or use this workspace’s credits.");
-  expect(composerBlock({ ...base, capability: null })).toBe("Reading the connected account…");
+  expect(composerBlock(base)).toBe("No image model is available on this account.");
+  expect(composerBlock({ ...base, catalogue: { loading: true, error: null } })).toBe("Reading the available models…");
+  /* Gen's composer reads nothing of the account: no capability, no catalogue, no quote, no status. */
+  const source = readFileSync("lib/workspace/use-composer.ts", "utf8") + readFileSync("lib/workspace/composer.ts", "utf8") + readFileSync("components/graphite/GenView.tsx", "utf8");
+  expect(source).not.toMatch(/\/api\/higgsfield\/consumer\/|CONNECTED_GENERATION_ENDPOINT|useConnectedCapability|higgsfield-consumer\/catalogue/);
 });
 
-test("Business, Gen's composer and the connected workflows no longer read /api/me for ownership: the session decides, once", () => {
-  for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts", "components/graphite/tools/WorkflowHost.tsx"]) {
+test("Business and the connected workflows no longer read /api/me for ownership: the session decides, once", () => {
+  for (const file of ["lib/shell/use-business.ts", "components/graphite/tools/WorkflowHost.tsx"]) {
     const source = readFileSync(file, "utf8");
     expect(source, file).not.toContain("/api/me");
     expect(source, file).toContain("useConnectedCapability");
   }
+  expect(readFileSync("lib/workspace/use-composer.ts", "utf8")).not.toContain("/api/me");
   /* The connection itself is read in one place for the shell's surfaces. */
   for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts"]) expect(readFileSync(file, "utf8"), file).not.toContain("/api/higgsfield/consumer/connection");
   /* Engines is the one place that still reads the owner's connection: to list running jobs and to Disconnect. It never starts a sign-in. */

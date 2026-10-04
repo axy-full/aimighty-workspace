@@ -1,0 +1,27 @@
+/* PaneDivider.css — the rules of components/PaneDivider.tsx, moved out of app/globals.css
+   beside the file that uses them (D0 1c). Plain CSS: the class names are global
+   and unchanged. Imported by components/PaneDivider.tsx. */
+
+/* ── Pane divider (SOW §10 4.1) ────────────────────────────────────────
+   The seam between a work surface and its rail. Absolutely positioned on
+   the boundary inside the rail, so the grid stays two columns and nothing
+   has to make room for it. Seven pixels of target, one pixel painted.
+   Below 1024 the rails are sheets, not columns — there is no seam. */
+.pane-div {
+  position: absolute; left: -4px; top: 0; bottom: 0; width: 7px; z-index: 6;
+  padding: 0; border: 0; background: transparent; cursor: col-resize;
+  touch-action: none; /* the pointer belongs to the drag, not to a scroll */
+}
+.pane-div::after {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px;
+  background: transparent; transition: background .12s ease;
+}
+.pane-div:hover::after,
+.pane-div:focus-visible::after,
+.pane-div.is-drag::after { background: var(--color-picked); }
+.pane-div:focus-visible { outline: none; }
+.pane-div.is-drag { cursor: col-resize; }
+/* While dragging, nothing else may claim the cursor or select text. */
+body:has(.pane-div.is-drag) { cursor: col-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .pane-div::after { transition: none; } }
+@media (max-width: 1023px) { .pane-div { display: none; } }

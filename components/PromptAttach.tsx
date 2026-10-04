@@ -6,6 +6,7 @@ import type { UploadedFile } from "@/lib/uploadClient";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import { resolveGenInput, type GenInputAsset } from "@/lib/genAssetInput";
 import type { Asset } from "@/lib/workbench/studio";
+import "./PromptAttach.css";
 
 /** What a prompt box was given: Library ids, the new uploads among them, and notes to show. */
 export type Attached = { ids: string[]; uploads: UploadedFile[]; notes: string[] };

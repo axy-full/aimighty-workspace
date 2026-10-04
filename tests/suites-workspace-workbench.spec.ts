@@ -54,7 +54,7 @@ async function open(page: Page, path: string) {
   await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok-4.6" } }));
   /* No grant held and nothing running: the Higgsfield account's row has nothing to show. */
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.request().method() === "POST"
-    ? route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } })
+    ? route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } })
     : route.fulfill({ json: { connected: false, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } }));
   await page.route("**/api/account/security", (route) => route.fulfill({ json: { enabled: true, requiredWorkspaces: [], pendingRecoveryBatch: null, recoveryReplacementAuthorizedUntil: null, enabledAt: 1, recoveryCodesRemaining: 8, sessions: [{ id: "s1", current: true, label: "Chrome on macOS", createdAt: Date.now() - 86_400_000, expiresAt: Date.now() + 86_400_000 }, { id: "s2", current: false, label: "Safari on iPhone", createdAt: Date.now() - 3 * 86_400_000, expiresAt: Date.now() + 86_400_000 }] } }));
   await page.route(/\/api\/workspaces\/audit(\?.*)?$/, (route) => route.fulfill({ json: { events: [{ id: "e1", workspaceId: "w", actorId: "u1", action: "member.updated", targetType: "member", targetId: "u2", details: { role: "admin" }, createdAt: Date.now() }], nextCursor: null, actors: {} } }));
@@ -189,7 +189,7 @@ test("Engines: nothing connects the Higgsfield account any more; a sign-in retur
   await page.route("**/api/higgsfield/consumer/connect", (route) => { asked++; return route.fallback(); });
   await page.route("https://clerk.higgsfield.ai/**", (route) => { asked++; return route.abort(); });
   const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=retired");
-  await expect(page.getByTestId("connected-account-retired")).toHaveText("Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  await expect(page.getByTestId("connected-account-retired")).toHaveText("The connected account is no longer used. Past results stay in your Library.");
   /* The shell's own URL keeps only its params, so a reload does not repeat it. */
   await expect.poll(() => new URL(page.url()).searchParams.get("higgsfield")).toBeNull();
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
@@ -273,7 +273,7 @@ test("a rename holds across tabs and reaches the header; Engines' Disconnect sti
   const posts: unknown[] = [];
   await page.route("**/api/higgsfield/consumer/connection", (route) => {
     if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ json: { connected: false, requiresReconnect: false } }); }
-    if (route.request().method() === "POST") { posts.push(route.request().postDataJSON()); return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } }); }
+    if (route.request().method() === "POST") { posts.push(route.request().postDataJSON()); return route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } }); }
     return route.fulfill({ json: { connected, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } });
   });
   await tabs.getByRole("tab", { name: "Engines" }).click();

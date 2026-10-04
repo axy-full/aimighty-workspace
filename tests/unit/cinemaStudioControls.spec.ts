@@ -585,7 +585,9 @@ test("the composer holds the picks, Recreate brings them back, a request carries
   });
   expect(composerBlock(input(CINEMA_STUDIO_MODEL_ID))).toBeNull();
   expect(composerBlock(input("dreamina-seedance-2-5-260628"))).toBe("Seedance 2.5 takes pictures and video as references, not sound. Remove the sound, or choose Cinema Studio 4.0.");
-  expect(composerBlock(input(CINEMA_STUDIO_MODEL_ID, "connected"))).toMatch(/not sound/);
+  /* A state saved on the retired connected source reads like any other: Cinema Studio takes the sound. */
+  expect(composerBlock(input(CINEMA_STUDIO_MODEL_ID, "connected"))).toBeNull();
+  expect(composerBlock(input("dreamina-seedance-2-5-260628", "connected"))).toMatch(/not sound/);
   expect(composerBlock({ ...input("dreamina-seedance-2-5-260628"), soundReferences: 0 })).toBeNull();
 });
 

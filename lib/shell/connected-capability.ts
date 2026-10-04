@@ -116,15 +116,13 @@ export type CapabilityStore = ReturnType<typeof createCapabilityStore>;
 
 /* The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), so the
    surfaces that ran on the connected account show one card to everyone, the
-   workspace owner included: what ran there, that Particl no longer signs in to
-   Higgsfield, and — where a Studio engine makes the same kind of thing — the
-   way to make it on this workspace's credits. No owner name, no "run by". */
+   workspace owner included: what ran there, that the connected account is no
+   longer used, and — where a Studio engine makes the same kind of thing — the
+   way to make it on this workspace's credits. No owner name, no "run by", and
+   no vendor name: customers never read "Higgsfield" (lib/vendorNames.ts). */
 
-/** The provider whose account the owner connected. */
-export const CONNECTED_PROVIDER = "Higgsfield";
-
-/** The surfaces that ran only on the connected account. (Viral and Business › Image ads run on Particl's API key for everyone.) */
-export type OwnerRunSurface = "business" | "cast" | "workflows";
+/** The surfaces that ran only on the connected account. (Viral and Business run on Particl's API key for everyone; Business › Ads is removed.) */
+export type OwnerRunSurface = "cast" | "workflows";
 /** The same kind of thing on this workspace's credits: Gen, on Studio engines, opened on one output. */
 export type OwnerRunAlternative = { type: "image" | "video"; what: string; action: string };
 export type OwnerRun = {
@@ -136,19 +134,14 @@ export type OwnerRun = {
   alternative: OwnerRunAlternative | null;
 };
 export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
-  business: {
-    eyebrow: "Business · Marketing Studio",
-    line: "Ads here ran on a signed-in Higgsfield account.",
-    alternative: { type: "image", what: "Product stills in Gen, on Studio engines", action: "Open Gen · Images" },
-  },
   cast: {
-    eyebrow: "Cast · Soul Cinema and Soul ID",
-    line: "Soul builds, reference elements and identities here ran on a signed-in Higgsfield account.",
+    eyebrow: "Cast · Identity",
+    line: "Identity builds here ran on a connected account.",
     alternative: { type: "image", what: "Reference stills in Gen, on Studio image engines", action: "Open Gen · Images" },
   },
   workflows: {
     eyebrow: "Connected workflows",
-    line: "These ran on a signed-in Higgsfield account.",
+    line: "These ran on a connected account.",
     alternative: null,
   },
 };
@@ -156,12 +149,12 @@ export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
 export const ALTERNATIVE_LABEL = "On this workspace’s credits";
 
 /** The card's title, and the reason an account plan cannot run: the one thing that changed. */
-export const ACCOUNT_RETIRED = `Particl no longer signs in to ${CONNECTED_PROVIDER}`;
+export const ACCOUNT_RETIRED = "The connected account is no longer used";
 /** Under the card's line: nothing made there is lost. */
 export const HISTORY_KEPT = "Past results stay in your Library.";
 /** The workflows card names its tools in the eyebrow ("Dub · Change voice"). */
 export function ownerRunEyebrow(surface: OwnerRunSurface, tools: readonly string[] = []): string {
-  return surface === "workflows" && tools.length ? tools.join(" · ") : OWNER_RUNS[surface].eyebrow;
+  return surface === "workflows" && tools.length ? tools.join(" · ") : OWNER_RUNS[surface]?.eyebrow ?? "";
 }
 
 /**
@@ -176,19 +169,17 @@ export function alternativePrice(label: string, price: { credits: number | null;
 
 /**
  * The shell's suites that ran only on the connected account on every page, and the state layer's suites behind
- * them: none now. Viral runs on Particl's API key for everyone, and so does Business › Image ads; the Business pages
- * that ran on the account (Ads, Setup) are the retired card page by page, so the suite keeps its tabs.
+ * them: none now. Viral runs on Particl's API key for everyone, and so does Business.
  */
 export const OWNER_RUN_SUITES: readonly string[] = [];
 export const OWNER_RUN_LEGACY_SUITES: readonly string[] = [];
 export const isOwnerRunSuite = (suite: string | null | undefined): boolean => Boolean(suite && OWNER_RUN_SUITES.includes(suite));
 /**
- * The pages that ran only on the connected account, in a suite whose other pages everyone runs: everyone meets the
- * retired card there (the sign-in is retired), and no Run stage. Business's Ads and Setup did; Image ads runs on
- * Particl's API key, and its own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts)
- * need no connected account, so the suite keeps its tabs.
+ * The pages that ran only on the connected account, in a suite whose other pages everyone runs: none now. Business's
+ * Ads did and is removed; Setup lists what Particl made in the project, Image ads runs on Particl's API key, and the
+ * suite's own tools (Brand, Product, Format, Hooks, Reference, Design — lib/shell/business-own.ts) need no account.
  */
-export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = { business: ["ads", "setup"] };
+export const OWNER_RUN_PAGES: Readonly<Record<string, readonly string[]>> = {};
 export const isOwnerRunPage = (suite: string | null | undefined, page: string | null | undefined): boolean =>
   Boolean(suite && page && OWNER_RUN_PAGES[suite]?.includes(page));
 

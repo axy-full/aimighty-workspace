@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { Fault } from "@/components/Boundary";
 import { faultMessage, faultPrimary, faultReport, isStaleBuild } from "@/lib/shell/fault";
-import "@/app/fault.css";
+import "./fault.css";
 
 /**
  * What a panel shows when it throws (components/Boundary.tsx › fallback), in

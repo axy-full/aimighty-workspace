@@ -4,7 +4,7 @@
    shell. 12px is the floor; every target is 44px on a coarse pointer (the
    .gx-hbtn / .gx-primary rules in shell.css already say so). ─────────── */
 .gx .gx-fault { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; width: min(460px, 100%); margin: 40px auto; padding: 28px 24px 22px; border-radius: 18px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-in .3s var(--gx-ease) both; }
-.gx .gx-fault-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--gx-waiting); background: rgba(255, 159, 10, .12); border: 1px solid rgba(255, 159, 10, .32); }
+.gx .gx-fault-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--gx-waiting); background: color-mix(in srgb, var(--gx-waiting) 12%, transparent); border: 1px solid color-mix(in srgb, var(--gx-waiting) 32%, transparent); }
 .gx .gx-fault-icon[data-tone="info"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); }
 .gx .gx-fault-title { margin: 4px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .gx .gx-fault-sub { margin: 0; max-width: 40ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
@@ -48,7 +48,6 @@
 .gx .gx-outside .gx-header .gx-seg-btn > span.gx-seg-label { color: var(--gx-text-2); font-weight: 500; }
 .gx .gx-outside .gx-header .gx-seg-btn:hover::before { opacity: .6; }
 .gx .gx-fault-kbd { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
-.gx .gx-primary .gx-fault-kbd { color: rgba(255, 255, 255, .75); }
 
 @media (max-width: 767px) {
   .gx .gx-fault { margin: 20px auto; padding: 24px 18px 20px; }
@@ -86,7 +85,7 @@
 }
 
 /* A take that threw keeps its tile, at its size, so the grid does not jump. */
-.gx .gx-fault-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--gx-text-2); border: 1px dashed rgba(255, 159, 10, .35); }
+.gx .gx-fault-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--gx-text-2); border: 1px dashed color-mix(in srgb, var(--gx-waiting) 35%, transparent); }
 .gx .gx-fault-tile .gx-fault-icon { width: 32px; height: 32px; }
 .gx .gx-fault-tile .gx-fault-icon svg { width: 16px; height: 16px; }
 .gx .gx-fault-tile:hover { color: var(--gx-text); }

@@ -17,7 +17,7 @@
 export const SIGN_IN_RETIRED = true as boolean;
 export const SIGN_IN_RETIRED_CODE = "retired";
 /** The one sentence every refusal and every retired surface says. */
-export const SIGN_IN_RETIRED_MESSAGE = "Particl no longer signs in to Higgsfield. Past results stay in your Library.";
+export const SIGN_IN_RETIRED_MESSAGE = "The connected account is no longer used. Past results stay in your Library.";
 
 /** The answer to any request for new work on the connected account. */
 export function retiredResponse(): Response {

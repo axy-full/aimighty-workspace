@@ -258,7 +258,7 @@ test("the toast says where a finished render went, and what the account's own le
   const done = { ...job(1, "completed"), originalAvailable: true, originalAvailability: "available" } as unknown as ConnectedJob;
   expect(settledToast(done)).toBe("Kling 3.0 finished on the connected account.");
   /* Nothing confirmed yet: never a blanket "not billed". */
-  expect(settledToast({ ...job(1, "failed") } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. The connected account reported this job as failed. Higgsfield didn't say if it charged.");
+  expect(settledToast({ ...job(1, "failed") } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. The connected account reported this job as failed. It didn't say if it charged.");
   const refunded = { provider: "higgsfield_account", stage: "run", code: "nsfw", kind: "content_filter", message: null, payer: "account", billing: { state: "refunded", amount: 12, unit: "higgsfield_credits", basis: "hf-ledger" } };
-  expect(settledToast({ ...job(1, "failed"), failure: refunded } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. Refused by the content filter. Higgsfield refunded 12 credits. Change the prompt or reference.");
+  expect(settledToast({ ...job(1, "failed"), failure: refunded } as unknown as ConnectedJob)).toBe("Kling 3.0 failed on the connected account. Refused by the content filter. The connected account refunded 12 credits. Change the prompt or reference.");
 });

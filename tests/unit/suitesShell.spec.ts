@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, WORKSPACE_TABS, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy,
+  pageAlias,
 } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
@@ -19,7 +20,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
-    business: ["01 Ads", "02 Image ads", "|03 Setup", "|04 Brand", "05 Product", "06 Format", "07 Hooks", "08 Reference", "09 Design"],
+    business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
     viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
     atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
   });
@@ -63,9 +64,18 @@ test("a state-layer page finds its shell page; a shared backing page follows the
   expect(pageOfLegacy("particl", "takes")?.id).toBe("takes");
   expect(pageOfLegacy("particl", "edit")?.id).toBe("edit");
   expect(pageOfLegacy("particl", "brief", "beats")?.id).toBe("beats");
-  expect(pageOfLegacy("moleculr", "marketing")?.id).toBe("ads");
+  /* Business opens on Image ads; Ads is gone, and an old `sp=ads` link is Image ads. */
+  expect(pageOfLegacy("moleculr", "marketing")?.id).toBe("dtc");
   expect(pageOfLegacy("moleculr", "marketing", "setup")?.id).toBe("setup");
-  expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("ads");
+  expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("dtc");
+  expect(pageOfLegacy("moleculr", "marketing", "ads")?.id).toBe("dtc");
+  expect(pageAlias("business", "ads")).toBe("dtc");
+  expect(pageAlias("business", "dtc") ?? pageAlias("studio", "ads") ?? pageAlias("business", null) ?? pageAlias("business", "toString")).toBeNull();
+  expect(shellPage("business", "ads")?.id).toBe("dtc");
+  expect(restorePage("business", "ads").id).toBe("dtc");
+  expect(firstShellPage("business").id).toBe("dtc");
+  expect(SHELL_SUITES.find((s) => s.id === "business")!.pages.some((p) => p.id === "ads")).toBe(false);
+  expect(shellPage("business", "setup")).toMatchObject({ n: "02", title: "Setup items", hint: "Saved products, brand kit and reference ad" });
 });
 
 test("suite names and marks are the design's, verbatim, with Atomik renamed by the owner", () => {
@@ -74,7 +84,7 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
     ["STUDIO", "Particl Production Studio"],
-    ["BUSINESS", "Moleculr Business Suite · Marketing Studio"],
+    ["BUSINESS", "Moleculr Business Suite"],
     ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
     ["AGENT", "Atomik Agent"],
   ]);

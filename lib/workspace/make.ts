@@ -141,7 +141,7 @@ const str = (value: unknown) => (typeof value === "string" && value.trim() ? val
 export function specChip(item: MakeSource): string {
   const seconds = item.durationS ?? (typeof item.params.duration === "number" ? item.params.duration : null);
   const parts = [
-    engineLabel(item.model).long,
+    engineLabel(item.model, item.kind).long,
     str(item.params.ratio) || str(item.params.resolution),
     seconds != null && seconds > 0 ? `${Math.round(seconds * 10) / 10}s` : "",
   ].filter(Boolean);

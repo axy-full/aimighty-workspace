@@ -65,7 +65,7 @@ export function soulBuildBlock(state: { name: string; stills: number; plan: Conn
   if (!state.connected) return "Connect the account in Workspace › Engines.";
   if (!state.name.trim()) return "Name the identity.";
   if (state.stills < SOUL_BUILD_STILLS.min || state.stills > SOUL_BUILD_STILLS.max) return `Pick ${SOUL_BUILD_STILLS.min}–${SOUL_BUILD_STILLS.max} stills of the same person (${state.stills} picked).`;
-  if (state.plan && state.plan.available && state.plan.paid === false) return `A paid Higgsfield plan is required — the account reads as ${state.plan.plan}.`;
+  if (state.plan && state.plan.available && state.plan.paid === false) return `A paid plan is required on the connected account — it reads as ${state.plan.plan}.`;
   return null;
 }
 

@@ -100,7 +100,7 @@ test("a failure its provider answered for reads in the typed words; its charge i
   const own = take(gen("o", { status: "failed", failure: { provider: "xai", stage: "run", code: "respect_moderation_false", kind: "content_filter", message: "Video filtered by moderation", billing: { state: "unknown", basis: "silent" }, payer: "own" } }));
   expect(own).toMatchObject({ reason: "Refused by the content filter", detail: "Video filtered by moderation" });
   expect(takeChargeLine(own)).toBe("xAI didn't say if it charged");
-  expect(takeChargeLine(take(gen("r", { status: "failed", failure: { ...moderated, provider: "higgsfield", billing: { state: "refunded", basis: "hf-refund" }, payer: "own" } })))).toBe("Higgsfield refunded it");
+  expect(takeChargeLine(take(gen("r", { status: "failed", failure: { ...moderated, provider: "higgsfield", billing: { state: "refunded", basis: "hf-refund" }, payer: "own" } })))).toBe("The engine refunded it");
   /* A take still settling carries no charge line; neither does one that did not fail. */
   expect(takeChargeLine({ status: "review" })).toBeNull();
   expect(takeChargeLine({ status: "failed" })).toBeNull();

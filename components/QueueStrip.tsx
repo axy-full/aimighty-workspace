@@ -1,5 +1,6 @@
 "use client";
 
+import "./QueueStrip.css";
 import { useApi } from "@/lib/useApi";
 import { useMoney } from "@/lib/price";
 import { queueCounts, failureKind, failureCopy, inTraining, type TrainingRow } from "@/lib/jobState";

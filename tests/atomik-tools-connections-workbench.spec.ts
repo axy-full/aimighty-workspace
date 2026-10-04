@@ -177,7 +177,7 @@ test("inside the shell's panel boundaries: the page fails on its own card, and T
   const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:skills"]');
   await expect(fault).toContainText("Tools & connections stopped");
   /* The chrome is untouched: header, page title, strip; and the page head still offers no Run stage.
-     A phone keeps the Suites behind its context badge (app/phone-chrome.css), one tap away. */
+     A phone keeps the Suites behind its context badge (components/graphite/phone.css), one tap away. */
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   await closeSuitesMenu(page);

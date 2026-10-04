@@ -100,7 +100,7 @@ export async function labelsUnderFloor(page: Page, scope: string): Promise<strin
         if (style.backgroundImage !== "none") break;
         const bg = parse(style.backgroundColor);
         if (bg && bg.a > 0) layers.push(bg);
-        if ((bg && bg.a >= 1) || !["", "none"].includes(style.getPropertyValue("backdrop-filter"))) break;
+        if (bg && bg.a >= 1) break;
       }
       return layers.reverse().reduce((under, layer) => over(layer, under), { r: 0, g: 0, b: 0, a: 1 });
     };

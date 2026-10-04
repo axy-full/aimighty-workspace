@@ -43,26 +43,3 @@
   .pv-btn { min-height: 44px; }
   .pv-step { width: 44px; min-height: 44px; }
 }
-
-/* The drag layer (components/DragLayer): where a dropped file goes when no target takes it. */
-.dl-hint { position: fixed; inset: 10px; z-index: 9980; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 28px; border: 2px dashed var(--gx-accent); border-radius: 18px; pointer-events: none; background: var(--gx-tint-08); }
-.dl-hint span { padding: 10px 16px; border-radius: 999px; background: var(--gx-panel); color: var(--gx-text); font-size: 13px; }
-.dl-note { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9991; padding: 10px 16px; border-radius: 999px; background: var(--gx-panel); color: var(--gx-text); font-size: 13px; border: 1px solid var(--gx-dialog-border); }
-
-
-/* Every prompt box takes media (components/PromptAttach): an Attach button under the box, paste and drop on it. */
-.pa-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.pa-wrap[data-drop] textarea, .pa-wrap[data-drop] input { outline: 2px dashed var(--gx-accent); outline-offset: 2px; }
-.pa-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.pa-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--gx-dashed); background: var(--gx-input); color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }
-.pa-btn:hover, .pa-btn:focus-visible { background: var(--gx-input-hover); outline: none; }
-.pa-btn:disabled { opacity: .7; cursor: progress; }
-.pa-hint { font-size: 12px; color: var(--gx-text-2); }
-.pa-note { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--gx-text-2); }
-@media (pointer: coarse) { .pa-btn { min-height: 44px; } }
-.pa-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.pa-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 4px 0 10px; border-radius: 999px; border: 1px solid var(--gx-dashed); background: var(--gx-tint-12); font-size: 12.5px; }
-.pa-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.pa-chip button { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 14px; cursor: pointer; }
-.pa-chip button:hover { background: var(--gx-input-hover); }
-@media (pointer: coarse) { .pa-chip { min-height: 44px; } .pa-chip button { width: 36px; height: 36px; } }

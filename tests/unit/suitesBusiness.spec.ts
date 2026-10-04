@@ -1,52 +1,15 @@
 import { test, expect } from "@playwright/test";
-import {
-  AD_DURATIONS, AD_MODES, INITIAL_ADS, INITIAL_IMAGE_ADS, SETUP_MODES, WHY, adsBlock, adsChipState, adsParameters, clampedDuration, imageAdsBlock,
-  takesSetup, withAdReference, withMode, withSetup, type AdsState, NOT_ON_THIS_PATH, catalogueBlock, retryAfterMs, ADS_MODEL, AUTO_RETRIES, QUOTE_MARGIN_MS, autoRetryMs, quoteUsableUntil } from "../../lib/shell/business";
+import { INITIAL_IMAGE_ADS, imageAdsBlock, catalogueBlock, retryAfterMs, ADS_MODEL, AUTO_RETRIES, QUOTE_MARGIN_MS, autoRetryMs, quoteUsableUntil } from "../../lib/shell/business";
+import * as business from "../../lib/shell/business";
 import { consumerVideoInputSchema, consumerVideoOriginalResult, consumerVideoParams } from "../../lib/higgsfield-consumer/video-contract";
 import { parseSetupItems } from "../../lib/higgsfield-consumer/marketing-setup";
 
 const ready = { connected: true, hasProject: true };
-const ugc: AdsState = { ...INITIAL_ADS, prompt: "Morning routine with the bottle.", productId: "p1" };
 
-test("the nine modes are the account's slugs; five of them take a hook and a setting", () => {
-  expect(AD_MODES.map((m) => m[0])).toEqual(["ugc", "ugc_how_to", "ugc_unboxing", "product_showcase", "product_review", "tv_spot", "wild_card", "ugc_virtual_try_on", "virtual_try_on"]);
-  expect([...SETUP_MODES]).toEqual(["ugc", "ugc_how_to", "ugc_unboxing", "product_review", "ugc_virtual_try_on"]);
-  expect(takesSetup("tv_spot")).toBe(false);
-  expect([...AD_DURATIONS]).toEqual([15, 30]);
-});
-
-test("hooks and settings are off outside the UGC family and with an ad reference; an ad reference is off with a hook — with the reason, never hidden", () => {
-  expect(adsChipState(ugc).hook).toEqual({ disabled: false, why: null });
-  const tv = withMode({ ...ugc, hookId: "h1", settingId: "s1" }, "tv_spot");
-  expect(tv.hookId).toBeNull(); expect(tv.settingId).toBeNull();
-  expect(adsChipState(tv).hook).toEqual({ disabled: true, why: "Hooks are not for tv_spot." });
-  const withRef = withAdReference({ ...ugc, hookId: "h1" }, "r1");
-  expect(withRef.hookId).toBeNull();
-  expect(adsChipState(withRef).hook).toEqual({ disabled: true, why: WHY.hookMode });
-  expect(adsChipState(withRef).setting.why).toBe(WHY.settingMode);
-  const withHook = withSetup(withRef, { hookId: "h2" });
-  expect(withHook.adReferenceId).toBeNull();
-  expect(adsChipState(withHook).adReference).toEqual({ disabled: true, why: WHY.adReference });
-});
-
-test("Generate ad says why it cannot run, in the prototype's words", () => {
-  expect(adsBlock(ugc, ready)).toBeNull();
-  expect(adsBlock({ ...ugc, prompt: " " }, ready)).toBe("Write the prompt.");
-  expect(adsBlock(ugc, { ...ready, connected: false })).toBe("Connect the account in Workspace › Engines.");
-  expect(adsBlock(ugc, { ...ready, hasProject: false })).toBe("Open a project first.");
-});
-
-test("the parameters are the catalogue's names, only what is set, clamped to the account's range", () => {
-  expect(adsParameters(ugc)).toEqual({ mode: "ugc", aspect_ratio: "9:16", duration: 15, resolution: "720p", generate_audio: true, product_ids: ["p1"] });
-  const full = adsParameters({ ...ugc, avatarId: "a1", hookId: "h1", settingId: "s1", duration: 30 }, { min: 4, max: 20 });
-  expect(full).toMatchObject({ avatar_ids: ["a1"], hook_id: "h1", setting_id: "s1", duration: 20 });
-  expect(clampedDuration({ ...ugc, duration: 30 }, { min: 4, max: 20 })).toBe(20);
-  expect(clampedDuration(ugc, { min: 4, max: 20 })).toBeNull();
-  /* Click-to-Ad and the other gateway-only fields never ride on this path: the tool's schema does not name them. */
-  for (const name of NOT_ON_THIS_PATH) expect(Object.keys(adsParameters({ ...ugc, avatarId: "a1", hookId: "h1", settingId: "s1" }))).not.toContain(name.split(".")[0]);
-  /* A hook never rides outside the family, whatever the state says. */
-  expect(adsParameters({ ...ugc, mode: "tv_spot", hookId: "h1" })).not.toHaveProperty("hook_id");
-  expect(adsParameters({ ...ugc, hookId: "h1", adReferenceId: "r1" })).not.toHaveProperty("hook_id");
+/* Business › Ads was removed (design/particl-graphite/README.md › What this design removes): its composer's rules went with it. */
+test("the Ads composer is gone from the Business rules; its model id stays for past jobs and records", () => {
+  for (const name of ["AD_MODES", "INITIAL_ADS", "adsBlock", "adsParameters", "clampedDuration", "adsFromPreset", "restoreAds", "pruneAds"]) expect(business, name).not.toHaveProperty(name);
+  expect(ADS_MODEL).toBe("marketing_studio_video");
 });
 
 test("Image ads needs a prompt or a reference, and a reference for aspect auto", () => {

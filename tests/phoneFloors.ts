@@ -31,7 +31,7 @@ import { expect, type Page } from "@playwright/test";
  * 05-mobile, "Rules that are not negotiable": *"Segmented options may be 40px
  * tall inside a 44px control."* The option is the ink, not the target — it sits
  * inside `.pxm-segmented`, which is itself at least 44px tall (see
- * app/workspace-mobile.css `.pxm-segmented { min-height: 44px }`), so a thumb
+ * components/workspace/mobile/mobile.css `.pxm-segmented { min-height: 44px }`), so a thumb
  * aiming at an option lands inside a 44px row whichever pixel it hits. Both
  * class names exist because two waves shipped the same control: `.pxm-seg`
  * (the page-level segmented row) and `.pxm-segment` (Make, the Library sheet).
@@ -41,7 +41,7 @@ import { expect, type Page } from "@playwright/test";
  * be under 44px is a defect, not a new entry in this list.
  */
 /* `.gx-seg-btn` inside `.gx-seg` is the same control in the Suites shell
-   (app/graphite.css): a 40px option inside a track that is 44px or more. */
+   (components/graphite/shell.css): a 40px option inside a track that is 44px or more. */
 export const SEGMENTED_OPTION_CLASSES = ["pxm-seg", "pxm-segment", "gx-seg-btn"] as const;
 export const SEGMENTED_CONTROL = ".pxm-segmented, .gx-seg";
 export const SEGMENTED_OPTION_HEIGHT = 40;

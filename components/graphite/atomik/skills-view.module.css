@@ -1,4 +1,4 @@
-/* Atomik › Skills (SkillsView.tsx): Memory's cards and rows (app/graphite.css › .tc, .am), with the
+/* Atomik › Skills (SkillsView.tsx): Memory's cards and rows (components/graphite/shell.css › .tc, .am), with the
    few layouts they lack. Controls are the shell's own (.gx-hbtn, .gx-primary, .gx-field, .gx-seg),
    which are 44px on a phone. A price never wraps or truncates. */
 

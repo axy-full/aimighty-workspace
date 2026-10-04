@@ -1,0 +1,4 @@
+/* The drag layer (components/DragLayer): where a dropped file goes when no target takes it. */
+.dl-hint { position: fixed; inset: 10px; z-index: 9980; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 28px; border: 2px dashed var(--gx-accent); border-radius: 18px; pointer-events: none; background: var(--gx-tint-08); }
+.dl-hint span { padding: 10px 16px; border-radius: 999px; background: var(--gx-panel); color: var(--gx-text); font-size: 13px; }
+.dl-note { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9991; padding: 10px 16px; border-radius: 999px; background: var(--gx-panel); color: var(--gx-text); font-size: 13px; border: 1px solid var(--gx-dialog-border); }

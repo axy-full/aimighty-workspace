@@ -1,8 +1,9 @@
 /*
  * Particl workspace (/workspace) — design tokens and base styles.
  * Values are measured from design_handoff_particl_workspace (README token
- * table and the prototype markup). Every rule is scoped under `.pxw`, and the
- * file is imported only by app/workspace/page.tsx, so nothing else changes.
+ * table and the prototype markup). Every rule is scoped under `.pxw`. It is the
+ * FIRST sheet of app/workspace/page.tsx and app/suites/page.tsx; the phone shell
+ * is mobile/mobile.css and the page bodies are pages/assets.css.
  */
 
 .pxw {
@@ -140,10 +141,8 @@
   50% { opacity: 1; }
 }
 
-.pxw .pxw-mono { font-family: var(--pxw-mono); }
 .pxw .pxw-dot { display: block; flex: none; border-radius: 50%; }
 .pxw .pxw-spacer { flex: 1; min-width: 8px; }
-.pxw .pxw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ── Primitives ─────────────────────────────────────────────────────── */
 
@@ -463,8 +462,6 @@
 .pxw .pxw-project-title { font-size: 15.5px; font-weight: 600; letter-spacing: -0.016em; white-space: nowrap; }
 .pxw .pxw-project-sub { font-size: 12px; color: var(--pxw-dimmer); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-chip { padding: 4px 10px; border-radius: 7px; flex: none; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); font-size: 12px; color: var(--pxw-body); white-space: nowrap; }
-.pxw .pxw-chip--blue { background: var(--pxw-blue-tint); border-color: var(--pxw-blue-tint-border); color: var(--pxw-blue-ink); }
-.pxw .pxw-scope .pxw-seg-item { padding: 5px 12px; }
 .pxw a.pxw-btn--control,
 .pxw a.pxw-btn--control:hover { color: var(--pxw-primary); }
 
@@ -679,8 +676,6 @@
 .pxw .pxw-brief-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
 .pxw .pxw-field-block { display: flex; flex-direction: column; gap: 6px; }
 .pxw .pxw-field-label { font-size: 12.5px; color: var(--pxw-body); }
-.pxw .pxw-textarea { width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-field-border); color: var(--pxw-primary); font-size: 13px; line-height: 1.55; resize: vertical; }
-.pxw .pxw-textarea:focus { border-color: var(--pxw-selected); outline: none; }
 .pxw .pxw-brief-actions { display: flex; gap: 8px; }
 
 .pxw .pxw-look { margin-bottom: 18px; border: 1px solid var(--pxw-card-border); border-radius: 12px; background: var(--pxw-card); padding: 12px 14px; }
@@ -703,7 +698,7 @@
 /* The delivery spec is edited in place (frame rate retimes the cut; aspect is a delivery note). */
 .pxw .pxw-package-facts > label { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); min-width: 0; }
 .pxw .pxw-package-facts > label span { font-size: 12px; color: var(--pxw-dimmer); }
-.pxw .pxw-package-facts select { min-height: 36px; padding: 0 8px; border-radius: 8px; background: var(--pxw-input, var(--gx-input)); color: var(--pxw-near-primary); border: 1px solid var(--pxw-card-border); font: inherit; font-size: 13px; }
+.pxw .pxw-package-facts select { min-height: 36px; padding: 0 8px; border-radius: 8px; background: var(--gx-input); color: var(--pxw-near-primary); border: 1px solid var(--pxw-card-border); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .pxw .pxw-package-facts select { min-height: 44px; font-size: 16px; } }
 .pxw .pxw-package-note { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 14px 0 0; text-wrap: pretty; }
 .pxw .pxw-package-error { font-size: 12.5px; color: var(--pxw-red-ink); margin: 14px 0 0; }
@@ -718,33 +713,14 @@
 .pxw .pxw-package-gaps { margin: 14px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); }
 .pxw .pxw-package-gaps ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .pxw .pxw-package-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.pxw .pxw-hook-list { margin: 14px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--pxw-body); line-height: 1.6; }
 
-/* Inspector: specification and plan */
-.pxw .pxw-insp-kicker { display: block; margin: 20px 0 10px; }
-.pxw .pxw-facts { margin: 0; }
-.pxw .pxw-fact { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--pxw-inner-rule); }
-.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); flex: none; }
-.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 11.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+/* Inspector: specification and plan. The fact list (`.pxw-insp-kicker`, `.pxw-facts`,
+   `.pxw-fact`) has ONE definition, in pages/assets.css. */
 .pxw .pxw-insp-plan-title { font-size: 14px; font-weight: 570; letter-spacing: -0.012em; }
 .pxw .pxw-insp-plan-line { font-size: 12.5px; line-height: 1.5; color: var(--pxw-dim); margin: 6px 0 0; text-wrap: pretty; }
 .pxw .pxw-insp-plan-price { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); margin-top: 8px; }
-.pxw .pxw-insp-steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.pxw .pxw-insp-step { display: grid; grid-template-columns: 20px 1fr; column-gap: 9px; align-items: center; font-size: 12.5px; }
-.pxw .pxw-insp-step-mark { grid-row: span 2; width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: var(--pxw-mono); font-size: 10px; background: var(--pxw-control); color: var(--pxw-label-floor); }
-.pxw .pxw-insp-step[data-mark="done"] .pxw-insp-step-mark { background: var(--pxw-green-tint); color: var(--pxw-green-ink); }
-.pxw .pxw-insp-step[data-mark="current"] .pxw-insp-step-mark { background: var(--pxw-blue-tint); color: var(--pxw-blue-ink); }
-.pxw .pxw-insp-step[data-mark="gate"] .pxw-insp-step-mark { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); }
-.pxw .pxw-insp-step-label { color: var(--pxw-secondary); }
-.pxw .pxw-insp-step-detail { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-dimmer); }
-.pxw .pxw-insp-gate { margin-top: 14px; padding: 12px 13px; border-radius: 11px; background: var(--pxw-amber-tint); border: 1px solid color-mix(in srgb, var(--gx-waiting) 30%, transparent); }
-.pxw .pxw-insp-gate-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--pxw-amber-ink); }
-.pxw .pxw-insp-gate-head strong { font-family: var(--pxw-mono); font-weight: 500; }
-.pxw .pxw-insp-gate p { font-size: 12px; line-height: 1.5; color: var(--pxw-body); margin: 8px 0 0; }
-.pxw .pxw-insp-gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .pxw .pxw-insp-run { width: 100%; justify-content: center; margin-top: 16px; padding: 10px; border-radius: 10px; font-size: 13px; }
 .pxw .pxw-insp-reason { font-size: 12px; line-height: 1.5; color: var(--pxw-dimmer); margin: 8px 0 0; text-wrap: pretty; }
-.pxw .pxw-insp-note { font-size: 12px; color: var(--pxw-body); margin: 10px 0 0; }
 .pxw .pxw-insp-error { font-size: 12px; color: var(--pxw-red-ink); margin: 10px 0 0; }
 
 /* ── Global Generate composer ──────────────────────────────────────── */
@@ -805,3 +781,63 @@
 }
 /* The strip also reports a composer render started from Home. */
 .pxw[data-view="home"] .pxw-gen { position: sticky; bottom: 0; }
+
+/* ── Phone floors ──────────────────────────────────────────────────────
+   This sheet's page bodies are mounted on phones too: in the Suites shell
+   (`.gx-legacy.pxw`) and, on /workspace, in the phone shell's sheets. A phone
+   has two floors — no text under 12px, no target under 44px — and the desk
+   sizes above sit under both. This block is LAST so it wins every tie; each
+   selector repeats the desk rule it raises, so nothing gains weight.
+   (`.pxw-field-label` and `.pxw-draft-status` already clear 12px above;
+   pages/assets.css ends with the same block for its own rules.) */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .pxw .pxw-kicker,
+  .pxw .pxw-keycap,
+  .pxw .pxw-pill-label,
+  .pxw .pxw-btn-key,
+  .pxw .pxw-atomik-badge,
+  .pxw .pxw-atomik-caret,
+  .pxw .pxw-credits,
+  .pxw .pxw-account-caret,
+  .pxw .pxw-account-identity small,
+  .pxw .pxw-account-kicker,
+  .pxw .pxw-account-item small,
+  .pxw .pxw-account-error,
+  .pxw .pxw-avatar,
+  .pxw .pxw-stage-num,
+  .pxw .pxw-library-media-count,
+  .pxw .pxw-library-group-count,
+  .pxw .pxw-library-item-sub,
+  .pxw .pxw-media-name,
+  .pxw .pxw-crumb-sep,
+  .pxw .pxw-gen-meta,
+  .pxw .pxw-kind-pill,
+  .pxw .pxw-status-text,
+  .pxw .pxw-status-hint .pxw-keycap,
+  .pxw .pxw-status-hint-label,
+  .pxw .pxw-atomik-panel-name,
+  .pxw .pxw-atomik-panel-state,
+  .pxw .pxw-atomik-mark,
+  .pxw .pxw-atomik-step-meta,
+  .pxw .pxw-atomik-price,
+  .pxw .pxw-atomik-run .pxw-atomik-run-key,
+  .pxw .pxw-activity-meta,
+  .pxw .pxw-home-head .pxw-kicker,
+  .pxw .pxw-project-slate,
+  .pxw .pxw-project-card-avatar,
+  .pxw .pxw-project-card-meta,
+  .pxw .pxw-feature-num,
+  .pxw .pxw-feature-state-label,
+  .pxw .pxw-palette-group,
+  .pxw .pxw-palette-hint,
+  .pxw .pxw-spec-chip,
+  .pxw .pxw-spec-card-state,
+  .pxw .pxw-look-item figcaption,
+  .pxw .pxw-package-facts span,
+  .pxw .pxw-mkt-plan-price,
+  .pxw .pxw-insp-plan-price { font-size: 12px; }
+}
+/* The composer opens over the Suites shell on a phone: its close is a 44px target there. */
+@media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-composer-close { width: 44px; height: 44px; }
+}

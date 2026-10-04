@@ -16,7 +16,7 @@ import { workbenchScopeFor } from "../lib/workbench/request-scope";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const RETIRED = "Particl no longer signs in to Higgsfield. Past results stay in your Library.";
+const RETIRED = "The connected account is no longer used. Past results stay in your Library.";
 const MIN = 60_000;
 
 async function tenantOf(workspaceId: string) {
@@ -85,7 +85,7 @@ test("the owner's account history still reads on the real routes — running job
   await page.goto("/suites?view=workspace&tab=engines");
   const card = page.getByTestId("engine-connected-account");
   await expect(card).toContainText("Sign-in retired");
-  await expect(page.getByTestId("connected-account-retired")).toHaveText(RETIRED);
+  await expect(page.getByTestId("connected-account-retired")).toHaveText("The connected account is no longer used. Past results stay in your Library.");
   await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
   await expect(card.getByRole("button", { name: /Connect|Reconnect/ })).toHaveCount(0);
   await expect(page.getByTestId("connected-account-capacity")).toContainText("2 of 4 job slots in use");

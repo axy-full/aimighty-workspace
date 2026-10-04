@@ -1,7 +1,7 @@
 /*
  * Particl workspace — the phone shell (below 768px).
  *
- * A sibling of app/workspace.css: same `.pxw` token scope, same values, but
+ * A sibling of components/workspace/workspace.css: same `.pxw` token scope, same values, but
  * every rule here is additionally scoped to `.pxw-phone`, which only the
  * phone shell sets. The desktop shell cannot be reached by anything in this
  * file, and the file is imported only by app/workspace/page.tsx.
@@ -1595,13 +1595,17 @@
 .pxw-phone .pxm-inspector.pxw-inspector-body { padding: 0; overflow: visible; flex: none; }
 .pxw-phone .pxm-inspector .pxw-kicker,
 .pxw-phone .pxm-inspector .pxw-fact,
+.pxw-phone .pxm-inspector .pxw-fact dd,
+.pxw-phone .pxm-inspector .pxw-facts--tight dd,
+.pxw-phone .pxm-inspector .pxw-insp-aside,
+.pxw-phone .pxm-inspector .pxw-identity-mark,
+.pxw-phone .pxm-inspector .pxw-play-chip,
 .pxw-phone .pxm-inspector .pxw-field-label,
 .pxw-phone .pxm-inspector .pxw-pill-label,
 .pxw-phone .pxm-inspector .pxw-keycap,
 .pxw-phone .pxm-inspector .pxw-btn-key,
 .pxw-phone .pxm-inspector .pxw-insp-estimate-meta,
 .pxw-phone .pxm-inspector .pxw-insp-output-label,
-.pxw-phone .pxm-inspector .pxw-insp-owner,
 .pxw-phone .pxm-inspector .pxw-insp-plan-price,
 .pxw-phone .pxm-inspector .pxw-insp-play,
 .pxw-phone .pxm-inspector .pxw-insp-play-key,

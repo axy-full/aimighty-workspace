@@ -702,7 +702,7 @@ test("the page always bills the Particl workspace: the owner's account is never 
   await expect(page.getByRole("region", { name: "Connected account transform", exact: true })).toHaveCount(0);
   /* Shorts ran only on the account: the page says it is retired, and asks nothing. */
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=shorts"));
-  await expect(page.getByTestId("subatomik-shorts-retired")).toContainText("Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  await expect(page.getByTestId("subatomik-shorts-retired")).toContainText("Shorts is retired. The connected account is no longer used. Past results stay in your Library.");
   expect(f.consumerPosts).toEqual([]);
   expect(f.unexpected).toEqual([]);
   expect(f.errors).toEqual([]);

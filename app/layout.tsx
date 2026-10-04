@@ -6,8 +6,7 @@ import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteOrigin } from "@/lib/site"
 import "./fonts.css";
 import "./graphite.css";
 import "./globals.css";
-import "./four-suites.css";
-import "./preview.css";
+import "@/components/suites/four-suites.css";
 
 /* app/graphite.css is the one token set (design/particl-graphite/README.md ›
    Design tokens); it loads before every other sheet. Interface type is the

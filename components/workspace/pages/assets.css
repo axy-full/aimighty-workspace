@@ -1,6 +1,6 @@
 /*
  * Particl workspace — Takes, Cast & Elements, Edit & Sound (03-pages.md).
- * Tokens come from app/workspace.css; every rule is scoped under `.pxw`.
+ * Tokens come from components/workspace/workspace.css; every rule is scoped under `.pxw`.
  */
 
 /* ── Shared ────────────────────────────────────────────────────────── */
@@ -56,8 +56,9 @@
 .pxw .pxw-play-chip { position: absolute; left: 8px; bottom: 9px; display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; background: var(--gx-on-media); font-size: 11px; font-weight: 530; color: var(--pxw-primary); }
 .pxw .pxw-facts { margin: 0; }
 .pxw .pxw-fact { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--pxw-inner-rule); }
-.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); }
-.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 12px; text-align: right; color: var(--pxw-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); flex: none; }
+/* The one definition of the fact list (the Spec Inspector uses it too): 12px, the phone floor. */
+.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 12px; text-align: right; color: var(--pxw-body); min-width: 0; overflow-wrap: anywhere; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pxw .pxw-fact dd[data-tone="primary"] { color: var(--pxw-primary); }
 .pxw .pxw-fact dd[data-tone="green"] { color: var(--pxw-green); }
 .pxw .pxw-fact dd[data-tone="blue"] { color: var(--pxw-blue-ink); }
@@ -161,3 +162,26 @@
 .pxw .pxw-sound-host textarea,
 .pxw .pxw-sound-host input:not([type="checkbox"]):not([type="range"]) { background: var(--pxw-card); border: 1px solid var(--pxw-field-border); border-radius: 9px; padding: 7px 10px; font-size: 12.5px; color: var(--pxw-primary); }
 .pxw .pxw-sound-host select { appearance: auto; -webkit-appearance: auto; }
+
+/* ── Phone floors ──────────────────────────────────────────────────────
+   The same block that ends ../workspace.css, for this sheet's own rules: it
+   has to live here because this sheet loads after that one and would win
+   the tie. Nothing under 12px on a phone. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .pxw .pxw-take-version,
+  .pxw .pxw-take-kind,
+  .pxw .pxw-take-meta,
+  .pxw .pxw-take-status,
+  .pxw .pxw-insp-aside,
+  .pxw .pxw-play-chip,
+  .pxw .pxw-group-count,
+  .pxw .pxw-cast-badge,
+  .pxw .pxw-cast-tag,
+  .pxw .pxw-cast-add-sub,
+  .pxw .pxw-identity-mark,
+  .pxw .pxw-facts--tight dd,
+  .pxw .pxw-stem-name > span:last-child,
+  .pxw .pxw-stem-chips > span,
+  .pxw .pxw-stem-state,
+  .pxw .pxw-sound-host .eyebrow { font-size: 12px; }
+}

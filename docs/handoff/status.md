@@ -1,5 +1,7 @@
 # Particl status of record
 
+> **4 October 2026: D0, one design.** `design/particl-graphite/` is the only design; the glass and flair layers, the light theme and every stylesheet under `app/` except `fonts.css`, `graphite.css` (the one token set) and `globals.css` are gone, moved beside their components (`components/graphite/shell.css` and its neighbours, `components/workspace/*.css`, `components/suites/four-suites.css`, `components/marketing/marketing.css`, `components/commercial/commercial.css`). Entries below that name `app/glass.css`, `app/flair.css`, `GLASS_SPEC`, `app/crew.css`, `app/four-suites.css` and the like are history and are left as written. The old shells and what replaces each are in [`docs/old-shells.md`](../old-shells.md).
+
 > **26 September 2026: start with [`claude-takeover-2026-09-26/README.md`](claude-takeover-2026-09-26/README.md).** It has the current state (main `6d7f438c`), the open PRs with their next steps, the work in progress, the CI memory findings and the SOW. The rest of this file dates from 19 September.
 
 > **28 September 2026: Higgsfield sign-in retired.** Particl uses provider APIs and loginless MCP only (`CLAUDE.md` ground rule 10). The connected-account work recorded below (Gen's account catalogue, Business Ads, Image ads' DTC engine and templates, Setup, Viral and Cast builds on the account, Build identity on the account, the developer API probe, Atomik's connected steps and recipes, Shorts) is retired; the entries stay as the record.

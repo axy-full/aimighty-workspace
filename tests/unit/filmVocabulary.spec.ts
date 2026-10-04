@@ -205,14 +205,13 @@ test("the composer holds the setup: picked, carried by a recipe (none is Auto), 
   expect(generationRequestBody(input)).not.toHaveProperty("shotSpec");
 });
 
-test("on the connected account, words the setup takes past its limit say so and name the chips", () => {
-  const model = { id: "seedance_2_5", label: "Seedance 2.5", type: "video" as const, connected: true as const };
-  const block = (sentPrompt: string, billing: "connected" | "workspace" = "connected") => composerBlock({
+test("words the setup makes long are never refused for their length: Gen's engines take them", () => {
+  const model = { id: "seedance_2_5", label: "Seedance 2.5", type: "video" as const };
+  const block = (billing: "connected" | "workspace") => composerBlock({
     state: { billing, type: "video", prompt: "a boat", voiceId: "" }, model, quote: null, quoteKey: "k", submitting: false,
-    capability: { owner: true, connected: true, requiresReconnect: false, suspended: false } as never, catalogue: { loading: false, error: null }, sentPrompt,
+    catalogue: { loading: false, error: null },
   });
-  expect(block("x".repeat(5001))).toBe("With the setup written in, the words run past 5,000 characters. Shorten them or set fewer chips.");
-  expect(block("x".repeat(5000))).toBe("Getting the live price…");
-  /* This workspace's own engines take the longer words. */
-  expect(block("x".repeat(5001), "workspace")).toBe("Getting the live price…");
+  expect(block("workspace")).toBe("Getting the live price…");
+  /* A state saved on the retired connected source is read like any other. */
+  expect(block("connected")).toBe("Getting the live price…");
 });

@@ -10,7 +10,7 @@ import { failedChip } from "@/lib/errors";
 import type { LibFilter } from "@/lib/workspace/types";
 import { Button } from "../ui";
 import type { PageBodyProps } from "./registry";
-import "@/app/workspace-assets.css";
+import "@/components/workspace/pages/assets.css";
 import { VirtualItems } from "../VirtualItems";
 
 /**

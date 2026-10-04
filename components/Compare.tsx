@@ -1,5 +1,6 @@
 "use client";
 
+import "./Compare.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMoney } from "@/lib/price";
 import { compareSet, compareColumns, compareCandidates, toggleCompare, canToggle, wipeAvailable, clampWipe, wipeFromPointer, COMPARE_MAX, COMPARE_MIN } from "@/lib/compare";

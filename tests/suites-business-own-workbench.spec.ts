@@ -225,10 +225,12 @@ test("Setup lists what Particl made in the project — products, the brand kit, 
   await expect(page.getByTestId("particl-setup-product")).toContainText("In use");
   await expect(page.getByTestId("particl-setup-brand_kit")).toContainText("Northline");
   await expect(page.getByTestId("particl-setup-ad_reference")).toContainText("Founder unboxing.mp4");
-  /* The account's lists ran on the retired Higgsfield sign-in: the retired card says so, for the owner too, and no connect prompt. */
-  await expect(page.getByTestId("owner-run-business")).toBeVisible();
-  await expect(page.getByTestId("owner-run-business-title")).toHaveText("Particl no longer signs in to Higgsfield");
+  /* Setup is Particl's own list and nothing else: no retired card, no connect prompt, no way to an Ads page, no vendor name. */
+  await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
+  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
   await expect(page.getByTestId("setup-connect")).toHaveCount(0);
+  await expect(page.getByTestId("primary-action")).toHaveCount(0);
+  await expect(page.getByTestId("business-setup")).not.toContainText(/Higgsfield|Open Ads|Use in Ads/);
   await expectBusinessFloors(page, info.project.name, "particl-setup", "particl-setup");
 
   await page.getByTestId("particl-setup-product").getByRole("button", { name: /Salt bottle/ }).click();
@@ -244,7 +246,7 @@ test("Setup lists what Particl made in the project — products, the brand kit, 
   expect(seen.errors).toEqual([]);
 });
 
-test("a member works in Business's own tools: the pages are there, the retired card only where the Higgsfield account ran", async ({ page, playwright }, info) => {
+test("a member works in Business's own tools: the pages are there, with no retired card and no Ads page", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(150_000);
   const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
@@ -256,8 +258,9 @@ test("a member works in Business's own tools: the pages are there, the retired c
   /* Business is not a retired suite: its pages are listed. No suite carries an Owner badge since the sign-in was retired. */
   const strip = page.getByRole("navigation", { name: "Pages" });
   await expect(strip.getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
-  await expect(strip.getByRole("button")).toHaveCount(9);
-  /* A phone keeps the Suites behind its context badge (app/phone-chrome.css). */
+  await expect(strip.getByRole("button")).toHaveCount(8);
+  await expect(strip.getByRole("button", { name: /^\s*0?1?\s*Ads/ })).toHaveCount(0);
+  /* A phone keeps the Suites behind its context badge (components/graphite/phone.css). */
   await openSuitesMenu(page);
   await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
   /* Nor on Viral's: it runs on Particl's API key for every member. */
@@ -266,11 +269,11 @@ test("a member works in Business's own tools: the pages are there, the retired c
   await page.getByTestId("brand-name").fill("Northline");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Northline");
   await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
-  /* Ads ran on the retired sign-in: the same calm card, for everyone. */
-  await strip.getByRole("button", { name: /Ads/ }).click();
-  await expect(page.getByTestId("owner-run-business")).toBeVisible();
+  /* Business › Ads is gone: the first tab is Image ads, the page the suite opens on, for everyone. */
+  await strip.getByRole("button", { name: /Image ads/ }).click();
+  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
   await expect(page.getByTestId("ads-view")).toHaveCount(0);
-  await expect(page.getByTestId("primary-action")).toHaveCount(0);
   expect(seen.account).toEqual([]);
   expect(seen.errors).toEqual([]);
 });

@@ -21,7 +21,7 @@ function initialsOf(name: string) {
  * renders, is held, or finished unseen), which opens the jobs tray; the
  * credits pill; the avatar, which opens Workspace.
  *
- * On a phone (app/phone-chrome.css) the context badge is a button: the Suites
+ * On a phone (components/graphite/phone.css) the context badge is a button: the Suites
  * and Search open under it, one tap away. `bar` is the top bar's second row
  * there — the project switcher beside the page strip or Gen's own buttons.
  */

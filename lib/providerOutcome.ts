@@ -33,8 +33,8 @@ export type BillingUnit = (typeof BILLING_UNITS)[number];
  */
 export const BASIS = {
   /* docs.higgsfield.ai/docs/help/faq */
-  "hf-refund": "Higgsfield API FAQ: failed and NSFW-flagged requests are not charged; their credits are automatically refunded.",
-  "hf-success-only": "Higgsfield API FAQ: you are only billed for successful completions.",
+  "hf-refund": "The engine's API FAQ: failed and NSFW-flagged requests are not charged; their credits are automatically refunded.",
+  "hf-success-only": "The engine's API FAQ: you are only billed for successful completions.",
   /* An explicitly verified receipt for one connected-account job. No transaction parser is enabled. */
   "hf-ledger": "The account's own credit ledger lists this job.",
   /* higgsfield.ai help centre: failed generations "usually" refund, "specific models might not", Grok is charged at start. */
@@ -60,7 +60,7 @@ export type ProviderBilling = { state: BillingState; amount?: number; unit?: Bil
 export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "xai", "fal", "elevenlabs"] as const;
 export type OutcomeProvider = (typeof OUTCOME_PROVIDERS)[number];
 export const PROVIDER_NAME: Record<OutcomeProvider, string> = {
-  higgsfield: "Higgsfield", higgsfield_account: "Higgsfield", byteplus: "BytePlus", google: "Google",
+  higgsfield: "The engine", higgsfield_account: "The connected account", byteplus: "BytePlus", google: "Google",
   gateway: "The AI Gateway", openai: "OpenAI", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs",
 };
 
