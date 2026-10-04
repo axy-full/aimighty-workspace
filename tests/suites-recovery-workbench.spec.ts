@@ -78,7 +78,8 @@ test("a failed Library read says so with Try again; Load more reaches takes past
   await expect(tiles).toHaveCount(2);
   await expect(library.getByTestId("library-more-button")).toHaveText("Load more · 3 shown");
   const box = await library.getByTestId("library-more-button").boundingBox();
-  if (!WIDE.includes(info.project.name)) expect(box!.height).toBeGreaterThanOrEqual(44);
+  /* Half a pixel for layout rounding, as tests/phoneFloors.ts allows: the button measured 43.9999 at 844x390. */
+  if (!WIDE.includes(info.project.name)) expect(box!.height).toBeGreaterThanOrEqual(44 - 0.5);
   await library.getByTestId("library-more-button").click();
   await expect(tiles).toHaveCount(3);
   await expect(library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_pier']")).toHaveCount(1);
@@ -104,7 +105,8 @@ test("the Rig's own library pages on with Load more, from the same store as the 
   const rig = page.getByTestId("rig-library");
   await expect(rig.getByTestId("rig-library-more-button")).toHaveText("Load more · 3 shown");
   const box = await rig.getByTestId("rig-library-more-button").boundingBox();
-  if (!WIDE.includes(info.project.name)) expect(box!.height).toBeGreaterThanOrEqual(44);
+  /* Half a pixel for layout rounding, as tests/phoneFloors.ts allows: the button measured 43.9999 at 844x390. */
+  if (!WIDE.includes(info.project.name)) expect(box!.height).toBeGreaterThanOrEqual(44 - 0.5);
   await rig.getByTestId("rig-library-more-button").click();
   await expect(rig.getByTestId("rig-library-more")).toHaveCount(0);
   await expect(rig.getByTestId("rig-library-Generations")).toHaveText("Generations · 3");
