@@ -4,11 +4,11 @@ import { stableId } from "../workbench/stable-id";
 /**
  * Production › Cast & Elements (owner's brief, 23 September): the film's
  * characters and elements, saved in the library as Cast or Elements. A
- * character's identity is built in this workspace (Cast › Build identity).
- * The stills engines Cast used to render with are no longer offered (D0.2):
- * every field an earlier build saved is still read here — `soulId`,
- * `elementId`, `model`, the render settings — so a saved draft parses and its
- * stills stay in the Library; nothing new is written to them.
+ * character renders with an identity trained in this workspace on the
+ * platform's key (Cast › Build identity; no signed-in account features).
+ * Builds made earlier on the connected account keep their fields here —
+ * `soulId`, `elementId`, `model` — so a saved draft parses and its stills
+ * stay in the Library; nothing new is written to them.
  */
 export type CastKind = "character" | "element";
 /** The earlier account's stills models an entry may name (`model`). Ids are stored; the labels are what a person reads. */
@@ -30,13 +30,13 @@ export type CastEntry = {
   takes: CastTake[]; selected?: string;
   /** The connected job in flight, so a reload keeps following it. */
   job?: { id: string; status: "quoted" | "submitted" };
-  /** The earlier stills model that built it (SOUL_MODELS, or another id an older project saved), its quality and budget. Read only. */
+  /** The earlier account's stills model that built it (SOUL_MODELS, or another id an older project saved), its quality and budget. Read only. */
   model?: string; quality?: "1.5k" | "2k"; budget?: number;
   /** What sort of element it is — and the reference element the earlier account kept for it (read only; not shown). */
   category?: ElementCategory; elementId?: string;
-  /** The character's identity in this workspace. */
+  /** A character's identity in this workspace (a trained identity), rendered on the platform's key. */
   identityId?: string;
-  /** An earlier render's settings: likeness strength, stills per request, size. Read only. */
+  /** Its render settings: likeness strength, stills per request, size. */
   soulStrength?: number; soulBatch?: 1 | 4; soulResolution?: "720p" | "1080p";
   /** Its renders in flight, so a reload keeps following them. */
   pending?: CastRender[];
@@ -57,11 +57,11 @@ export function newEntry(kind: CastKind, name = "", description = "", prompt = "
 }
 /** The id of the entry `name` an agent run (or the beat sheet, `source` "beats") made. */
 export const sourcedCastId = (source: string, name: string) => stableId("cast", source, name.trim().toLowerCase());
-/** The earlier models whose entries stay editable (`soul_2`, `soul_cinematic`): a character or a prop, like any other. */
+/** The earlier account's models that have a family on the platform's key (`soul_2`, `soul_cinematic`): their entries stay editable. */
 const KEY_FAMILY: Readonly<Record<string, true>> = { soul_2: true, soul_cinematic: true };
 /**
- * An entry built earlier with a stills model that made something Cast no
- * longer does (a place, a persona from words): what it was, for a read-only
+ * An entry built earlier on the connected account with a stills model the
+ * platform's key has no family for (a place, a persona from words): what it was, for a read-only
  * card (its stills stay in the Library), else null. An entry never built is
  * not old: it stays editable whatever model it names.
  */
@@ -71,7 +71,7 @@ export function retiredModelOf(entry: Pick<CastEntry, "model" | "takes" | "job" 
   if (!entry.takes.length && !entry.job && !entry.elementId) return null;
   return SOUL_MODELS.find((m) => m.id === model)?.label ?? "an earlier engine";
 }
-/** An identity trained on the earlier account, with none built here since: the character needs its identity built again. */
+/** An identity trained on the earlier account: it cannot render on the platform's key, so the character needs one built here. */
 export const accountSoulIdOf = (entry: Pick<CastEntry, "kind" | "soulId" | "identityId">): string | null =>
   entry.kind === "character" && entry.soulId && !entry.identityId ? entry.soulId : null;
 /** An entry's category: what it says, else a character for the cast and a prop otherwise. */

@@ -25,14 +25,14 @@ import { archiveAndDelete } from "./archive";
 import { claimBinding, type GenerationRequest } from "./generationRequests";
 
 /**
- * The LoRA identity trainer. Cast's "Build identity" uses it
- * (`components/graphite/production/CastIdentities.tsx`): `POST /api/identities`
- * creates the identity, `/api/identities/[id]/train` starts the training.
- * The identities once built on the connected account (`lib/soulIdentities.ts`,
- * `/api/soul/identities`) are retired with the sign-in; this is the one that
- * builds new ones. Other entry points: `components/assets/NewAssetSheet.tsx`
- * (Library, Rig canvas, Shots, Make) and `components/QueueStrip.tsx` (the
- * wall's in-flight strip).
+ * LEGACY — the older LoRA identity trainer (four-suites PR F, 19 Sep 2026).
+ * Cast & Elements and its navigation use the identity system in
+ * `lib/soulIdentities.ts` and `/api/soul/identities` (on the platform's key;
+ * Cast's "Build identity" calls that route, not this one). These routes, rows
+ * and tests stay intact for accepted trainings and their renders; nothing in
+ * the Particl suite creates new ones from the stage. Remaining entry points:
+ * `components/assets/NewAssetSheet.tsx` (Library, Rig canvas, Shots, Make)
+ * and `components/QueueStrip.tsx` (the wall's in-flight strip).
  *
  * Identities — a real face, learned.
  *

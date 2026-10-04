@@ -8,17 +8,22 @@ import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
+import { getModel } from "@/lib/models";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { CAST_CATEGORY, CAST_LIMITS, castFromBeats, entryCategory, mergeAgentCast, newEntry, retiredModelOf, type Cast, type CastEntry } from "@/lib/production/cast";
-import { renderOutcome, renderedStills } from "@/lib/production/cast-render";
+import { CAST_CATEGORY, CAST_LIMITS, accountSoulIdOf, castFromBeats, entryCategory, mergeAgentCast, newEntry, retiredModelOf, type Cast, type CastEntry } from "@/lib/production/cast";
+import { castRenderInput, renderOutcome, renderableIdentity, renderedStills } from "@/lib/production/cast-render";
+import { SOUL_RENDER_BATCHES, SOUL_RENDER_RESOLUTIONS, SOUL_RENDER_STRENGTHS, soulFamilyName } from "@/lib/soulRenderTypes";
 import { CONFIRM } from "@/lib/shell/confirmations";
 import { castStillPrompt } from "@/lib/shell/connected-capability";
-import { focusSection } from "@/lib/shell/production-tools";
 import { useShell } from "@/lib/shell/state";
 import { useConfirm } from "@/lib/shell/use-confirm";
+import { generationRequestBody } from "@/lib/workbench/generation-request";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import type { SoulIdentity } from "@/lib/workbench/soul-identity";
 import type { TakeFailure } from "@/lib/providerOutcome";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
+import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { useIdentities } from "@/lib/workspace/identities";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
@@ -26,23 +31,29 @@ import { DraftGate } from "@/components/workspace/spec/tools/DraftStatus";
 import { openGenOn } from "../OwnerRunCard";
 import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
-import { CastIdentities, buildPrice, useBuiltIdentities } from "./CastIdentities";
+import { CastIdentities } from "./CastIdentities";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
+import { useStageQuotes } from "./use-stage-quotes";
 
 const EMPTY: Cast = { entries: [] };
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null; params?: unknown };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
+/** What an identity renders with, as the registry names it ("Identity still · Standard"). */
+const modelLabel = (id: string | null | undefined) => { try { return id ? getModel(id).label : "Identity still"; } catch { return "Identity still"; } };
 
 /**
- * Production › Cast & Elements (owner's brief, 23 September): the cast list
- * comes from the beat sheet for free, or from the chosen agent with a prompt
- * per entry. A character's identity is built in this workspace (Build
- * identity, below, at the trainer's price) and chosen on its card; any
- * entry's still is made in Gen. The stills engines Cast used to render with
- * are no longer offered (D0.2): nothing here starts a render, a render still
- * in flight from before is followed until it lands and is filed as Cast, and
- * every earlier still stays on its card and in the Library.
+ * Production › Cast & Elements (owner's brief, 23 September; on the platform's
+ * key since 28 September): the cast list comes from the beat sheet for free,
+ * or from the chosen agent with a prompt per entry. A character renders with
+ * an identity trained in this workspace (Build identity, below) — Identity
+ * still · Standard, 2 or Cinema, whichever family the identity was trained
+ * for — 1 or 4 stills at a live estimate shown on the button, filed in the
+ * library as Cast. Any entry's still can also be made in Gen. Nothing here
+ * needs a signed-in provider account (owner's decision, 4 October: the renders
+ * stay on the platform's key, lib/soulRender.ts), so it works in every
+ * workspace, for every member who can render. Builds made earlier on the
+ * connected account stay in the Library, read-only.
  */
 export function CastStage({ projectId, scope, items, onBeats }: { projectId: string; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const editor = useDraftEditor(scope, projectId);
@@ -58,16 +69,9 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
   const agent = useAgentChoice(runs.models);
   useStageFacts("cast", p);
   const cast = p.production?.cast ?? EMPTY;
-  /* Identities built here (the trainer's own list and price), and the ones trained earlier on the retired stills engines (read only). */
-  const built = useBuiltIdentities(scope);
-  const earlier = useIdentities(scope, p.id).state.data?.identities;
-  const ready = useMemo(() => (built.identities ?? []).filter((i) => i.status === "ready"), [built.identities]);
-  const builtIds = useRef(new Set<string>());
-  useEffect(() => { builtIds.current = new Set((built.identities ?? []).map((i) => i.id)); }, [built.identities]);
-  const price = buildPrice(built.terms);
-  /* A character's "Build identity": the card below takes its name and comes into view. */
-  const [seed, setSeed] = useState<{ name: string; n: number } | null>(null);
-  const buildFor = (entry: CastEntry) => { setSeed((was) => ({ name: entry.name.trim(), n: (was?.n ?? 0) + 1 })); focusSection("soul"); };
+  const identities = useIdentities(scope, p.id).state.data?.identities ?? null;
+  const renderable = useMemo(() => (identities ?? []).filter(renderableIdentity), [identities]);
+  const identityOf = useCallback((entry: CastEntry): SoulIdentity | null => (entry.identityId ? renderable.find((i) => i.id === entry.identityId) ?? null : null), [renderable]);
   const [working, setWorking] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const latest = useRef(p);
@@ -95,7 +99,32 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     void editor.ensureSaved().then(() => confirm(CONFIRM.castTaken(counts)));
   }, [castRuns, cast.agentJobId, setCast, editor, confirm]);
 
-  /* ── Renders sent before the stills engines were retired: read until they land, then every still of the request is filed as Cast. ── */
+  /* ── A character's render: priced live (free), sent once at the price on its button, followed until it lands. ── */
+  const quoteInputs = Object.fromEntries(cast.entries.flatMap((entry) => {
+    const input = castRenderInput(p, entry, identityOf(entry));
+    return input ? [[entry.id, { body: generationRequestBody(input) }]] : [];
+  }));
+  const pricing = useStageQuotes(scope, quoteInputs);
+  const sending = useRef(new Set<string>());
+  const renderEntry = async (entry: CastEntry, shown: number) => {
+    const input = castRenderInput(latest.current, entry, identityOf(entry));
+    if (!input || sending.current.has(entry.id)) return;
+    sending.current.add(entry.id);
+    setWorking((w) => ({ ...w, [entry.id]: "Sending…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
+    try {
+      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering.");
+      /* A request whose reply was lost is asked about first by its own key: followed if it landed, never sent twice. */
+      const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `cast-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
+      if (outcome.state === "repriced") { pricing.reprice(entry.id, outcome.credits); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
+      if (outcome.state === "refused") { setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
+      const batch = entry.soulBatch ?? 1;
+      setEntry(entry.id, (e) => ({ ...e, pending: e.pending?.some((r) => r.jobId === outcome.jobId) ? e.pending : [...(e.pending ?? []), { jobId: outcome.jobId, at: new Date().toISOString(), batch }].slice(-10) }));
+      void editor.ensureSaved();
+    } catch (error) { setErrors((x) => ({ ...x, [entry.id]: error instanceof Error ? error.message : "The render could not be sent." })); }
+    finally { sending.current.delete(entry.id); setWorking((w) => ({ ...w, [entry.id]: "" })); }
+  };
+
+  /* ── Renders in flight: read until they land, then every still of the request is filed as Cast. ── */
   const pendingKey = cast.entries.flatMap((e) => (e.pending ?? []).map((r) => `${e.id}:${r.jobId}`)).join(",");
   useEffect(() => {
     if (!pendingKey) return;
@@ -123,9 +152,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               fresh.forEach((genId, i) => {
                 if (assets.some((a) => a.id === genId) || assets.length >= PROJECT_LIMITS.assets) return;
                 assets.push({ id: genId, generationId: genId, kind: "image", mime: "image/png", category: CAST_CATEGORY[e.kind], name: e.name || CAST_CATEGORY[e.kind], url: `/api/media/${genId}`,
-                  description: e.description, prompt: e.prompt, status: "Draft", locked: false, version: e.takes.length + i + 1, refs: [],
-                  /* The earlier identity the render was made with; an identity built here since is not it. */
-                  ...(e.identityId && !builtIds.current.has(e.identityId) ? { soulIdentityId: e.identityId } : {}) } satisfies Asset);
+                  description: e.description, prompt: e.prompt, status: "Draft", locked: false, version: e.takes.length + i + 1, refs: [], ...(e.identityId ? { soulIdentityId: e.identityId } : {}) } satisfies Asset);
               });
               return { ...old, assets, production: { ...old.production, cast: { ...c, entries: c.entries.map((x) => (x.id === e.id ? next : x)) } } };
             });
@@ -220,7 +247,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <span className="gx-spacer" />
           <span className="gx-hint" data-testid="cast-counts">{characters} characters · {cast.entries.length - characters} elements</span>
         </div>
-        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. Any entry’s still is made in Gen.</p>
+        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. A character renders with an identity built below; any entry’s still can be made in Gen.</p>
         <div className="gx-gen-enhance">
           <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={addFromBeats} data-testid="cast-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} from the beat sheet` : "Add from the beat sheet"}
@@ -240,12 +267,19 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const shown = entry.selected ?? entry.takes[0]?.genId;
           const reference = entry.referenceAssetId ? p.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
           const inFlight = (entry.pending ?? []).length > 0;
-          /* Built earlier with a stills model that made something Cast no longer does: shown, never changed. */
+          /* Built earlier with a connected-account model the key has no family for: shown, never changed. */
           if (retiredModelOf(entry)) return <RetiredEntry key={entry.id} entry={entry} aspect={p.aspect} onStill={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })} />;
+          const accountSoul = accountSoulIdOf(entry);
           const character = entry.kind === "character";
-          /* Its identity: one built here and ready, or the earlier one its saved draft names (listed, read only). */
-          const identity = entry.identityId ? ready.find((i) => i.id === entry.identityId) ?? null : null;
-          const kept = entry.identityId && !identity ? earlier?.find((i) => i.id === entry.identityId) ?? null : null;
+          const identity = identityOf(entry);
+          const family = modelLabel(identity?.renderModel);
+          const quote = pricing.quotes[entry.id];
+          const batch = entry.soulBatch ?? 1;
+          const strength = (SOUL_RENDER_STRENGTHS as readonly number[]).includes(entry.soulStrength ?? 1) ? entry.soulStrength ?? 1 : 1;
+          const why = !character ? null
+            : !p.productionProjectId ? "Save the project first."
+            : !identity ? (identities == null ? "Reading this workspace’s identities…" : renderable.length ? "Choose its identity to render it." : "Build an identity below to render it.")
+            : !entry.prompt.trim() ? "Write its prompt first." : null;
           return (
             <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"} data-drop={dropOver === entry.id || undefined}
               onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(entry.id); } }}
@@ -269,7 +303,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               <PromptAttach scope={scope} projectId={p.id} onAttach={attachToEntry(entry)} testId="cast-prompt-attach"><textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} maxLength={CAST_LIMITS.prompt} placeholder="What its still should show" onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, prompt: v })); }} data-testid="cast-prompt" /></PromptAttach>
               <div className="pd-row-head">
                 <label className="gx-hbtn pd-upload">
-                  {working[entry.id] || (reference ? "Replace reference" : "Reference image")}
+                  {reference ? "Replace reference" : "Reference image"}
                   <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`Upload a reference image for ${entry.name || "this entry"}`} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadReference(entry, f); }} />
                 </label>
                 {reference ? <span className="pd-ref-chip" {...previewAttrs(assetPreview(reference))} data-testid="cast-reference"><span className="gx-ref-thumb"><LazyMedia url={assetPreview(reference)!.url} kind="image" alt="" name={reference.name} preview={false} className="gx-lazy" /></span><span className="gx-hint">{reference.name}</span></span> : null}
@@ -282,26 +316,49 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               {character ? (
                 <div className="pd-cast-render" data-testid="cast-render">
                   <label className="pd-soul"><span className="gx-hint">Identity</span>
-                    <select aria-label={`${entry.name || "Character"} identity`} value={identity?.id ?? kept?.id ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, identityId: v || undefined })); }} data-testid="cast-identity">
+                    <select aria-label={`${entry.name || "Character"} identity`} value={identity?.id ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, identityId: v || undefined })); }} data-testid="cast-identity">
                       <option value="">None</option>
-                      {ready.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                      {kept ? <option value={kept.id} disabled>{kept.name} · earlier</option> : null}
+                      {renderable.map((i) => <option key={i.id} value={i.id}>{i.name} · {soulFamilyName(i.renderModel) ?? modelLabel(i.renderModel)}</option>)}
                     </select>
                   </label>
+                  {identity ? (
+                    <>
+                      <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Character"} stills per render`}>
+                        {SOUL_RENDER_BATCHES.map((n) => <button key={n} type="button" role="radio" className="gx-seg-btn" aria-checked={batch === n} onClick={() => setEntry(entry.id, (x) => ({ ...x, soulBatch: n }))} data-testid={`cast-batch-${n}`}><span>{n === 1 ? "1 still" : `${n} stills`}</span></button>)}
+                      </div>
+                      <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label={`${entry.name || "Character"} size`}>
+                        {SOUL_RENDER_RESOLUTIONS.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={(entry.soulResolution ?? "720p") === r} onClick={() => setEntry(entry.id, (x) => ({ ...x, soulResolution: r }))} data-testid={`cast-size-${r}`}><span>{r}</span></button>)}
+                      </div>
+                      <label className="pd-soul"><span className="gx-hint">Likeness</span>
+                        <select aria-label={`${entry.name || "Character"} likeness`} value={String(strength)} onChange={(e) => { const v = Number(e.target.value); setEntry(entry.id, (x) => ({ ...x, soulStrength: v })); }} data-testid="cast-likeness">
+                          {SOUL_RENDER_STRENGTHS.map((s) => <option key={s} value={String(s)}>{Math.round(s * 100)}%</option>)}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               <div className="gx-gen-enhance">
-                {/* A character with no identity built here: its primary opens Build identity below, at the trainer's price. */}
-                {character && !identity ? (
-                  <button type="button" className="gx-primary pd-go" onClick={() => buildFor(entry)} data-testid="cast-build-identity">
-                    {price ? `Build identity · ${price.text}` : "Build identity"}
-                  </button>
+                {character ? (
+                  <>
+                    {/* Closed while its render is in flight: one more tap never buys a second request. */}
+                    <button type="button" className="gx-primary pd-go" disabled={Boolean(why) || Boolean(working[entry.id]) || inFlight || quote?.credits == null}
+                      onClick={() => { if (quote?.credits != null && !inFlight) void renderEntry(entry, quote.credits); }} data-testid="cast-render-run">
+                      {working[entry.id] || (inFlight ? "Rendering…" : why ? `Render with ${identity ? family : "an identity"}`
+                        : quote?.credits != null ? `Render ${batch === 1 ? "1 still" : `${batch} stills`} · ${family} · about ${quote.credits.toLocaleString("en-US")} cr`
+                        : quote?.error ? "Price unavailable" : "Pricing…")}
+                    </button>
+                    {quote?.error && !why ? <button type="button" className="gx-hbtn" onClick={() => pricing.tryAgain(entry.id)} data-testid="cast-render-retry">Try again</button> : null}
+                  </>
                 ) : null}
                 <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} aria-describedby={castStillPrompt(entry) ? undefined : `cast-still-why-${entry.id}`} data-testid="cast-still-gen"
                   onClick={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (character ? "Character" : "Element")}` })}>Make a still in Gen</button>
                 <button type="button" className="gx-hbtn" aria-label={`Remove ${entry.name || "this entry"}`} onClick={() => setCast((c) => ({ ...c, entries: c.entries.filter((x) => x.id !== entry.id) }))}>Remove</button>
               </div>
+              {why && !inFlight ? <span className="gx-reason" data-testid="cast-render-why">{why}</span> : null}
               {!castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
+              {quote?.error && !why ? <p className="gx-gen-error" role="alert">{quote.error}</p> : null}
+              {accountSoul ? <span className="gx-hint" data-testid="cast-soul-retrain">Its identity was built earlier on a connected account that is no longer used. Read-only.</span> : null}
               {entry.job?.status === "submitted" ? <span className="gx-hint" data-testid="cast-earlier-build">A build sent earlier lands in the Library when it finishes.</span> : null}
               {errors[entry.id] ? <p className="gx-gen-error" role="alert" data-testid="cast-error">{errors[entry.id]}</p> : null}
             </article>
@@ -310,15 +367,15 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
         {!cast.entries.length ? <p className="gx-empty">No cast yet. Add from the beat sheet, let the agent cast the film, or add one by hand.</p> : null}
       </section>
 
-      <CastIdentities scope={scope} projectId={p.id} items={items} save={editor.ensureSaved} built={built} earlier={earlier ?? []} seed={seed} />
+      <CastIdentities scope={scope} projectId={p.id} items={items} save={editor.ensureSaved} />
       <p className="gx-hint pd-save" role="status">{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>
     </div>
   );
 }
 
 /**
- * An entry built earlier with a stills model that made something Cast no
- * longer does (lib/production/cast.ts › retiredModelOf): shown, never
+ * An entry built earlier on the connected account with a stills model the
+ * platform's key has no family for (lib/production/cast.ts › retiredModelOf): shown, never
  * changed. Its stills stay in the Library; a new still can be made in Gen.
  */
 function RetiredEntry({ entry, aspect, onStill }: { entry: CastEntry; aspect: string; onStill: () => void }) {
@@ -335,7 +392,7 @@ function RetiredEntry({ entry, aspect, onStill }: { entry: CastEntry; aspect: st
       </div>
       {entry.description ? <p className="gx-hint pd-frame-desc">{entry.description}</p> : null}
       <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} readOnly data-testid="cast-prompt" />
-      <p className="gx-hint" data-testid="cast-retired">Built earlier on an engine that is no longer offered. Read-only: {entry.takes.length ? `its ${entry.takes.length === 1 ? "still stays" : `${entry.takes.length} stills stay`} in the Library.` : "nothing of it is changed."}</p>
+      <p className="gx-hint" data-testid="cast-retired">Built earlier on a connected account that is no longer used. Read-only: {entry.takes.length ? `its ${entry.takes.length === 1 ? "still stays" : `${entry.takes.length} stills stay`} in the Library.` : "nothing of it is changed."}</p>
       <div className="gx-gen-enhance">
         <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} onClick={onStill} data-testid="cast-still-gen">Make a still in Gen</button>
       </div>

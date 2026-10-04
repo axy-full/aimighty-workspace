@@ -38,7 +38,7 @@ const FIXED: Record<string, EngineLabel> = {
   "higgsfield/marketing-studio-image": { short: "Marketing", long: "Marketing image" },
   marketing_studio_video: { short: "Marketing", long: "Marketing video" },
   "hf-soul-character": { short: "Identity", long: "Identity render" },
-  /* Retired for new renders; past takes keep a name (the long one comes from displayModelName). */
+  /* Rendered from Cast, on the platform's key (the long name comes from displayModelName). */
   "hf-soul-standard": { short: "Identity", long: "Identity still · Standard" },
   "hf-soul-2": { short: "Identity", long: "Identity still · 2" },
   "hf-soul-cinema": { short: "Identity", long: "Identity still · Cinema" },

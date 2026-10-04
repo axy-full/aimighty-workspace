@@ -29,7 +29,7 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
   ],
   cast: [
     g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Cast list", "From the beat sheet or the agent", "list"]]),
-    g("IDENTITY", [["Cast & elements", "Prompt · Identity · Still", "entries"], ["Build identity", "Photos · Consent · Train", "soul"]]),
+    g("IDENTITY", [["Cast & elements", "Prompt · Identity · Render", "entries"], ["Build identity", "Standard · 2 · Cinema", "soul"]]),
   ],
   takes: [
     g("TAKES", [["Takes", "By shot · Search · Filter", "takes"], ["Needs review", "Pick · Approve · Request changes", "review"]]),

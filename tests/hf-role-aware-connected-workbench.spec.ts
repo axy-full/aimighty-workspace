@@ -202,10 +202,9 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await expect(fox).toHaveCount(1);
   await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
   await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
-  /* Cast starts no render: the character's primary is Build identity, at the trainer's price. */
-  await expect(fox.getByTestId("cast-render-why")).toHaveCount(0);
-  await expect(fox.getByTestId("cast-render-run")).toHaveCount(0);
-  await expect(fox.getByTestId("cast-build-identity")).toHaveText(/^Build identity · [\d,]+ cr$/, { timeout: 30_000 });
+  /* Cast renders with an identity built here, on the platform's key: none yet, so the reason says so. */
+  await expect(fox.getByTestId("cast-render-why")).toHaveText("Build an identity below to render it.", { timeout: 30_000 });
+  await expect(fox.getByTestId("cast-render-run")).toBeDisabled();
   await noSideScroll(page);
   await fingerSized(soul.locator(".gx-gen-enhance"), project);
   await shot(page, "cast-owner", project);

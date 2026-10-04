@@ -3,41 +3,62 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   MODELS, RETIRED_LABELS, RETIRED_REASON, displayModelName, findModel, getModel, isOffered, isRetiredModel, modelLabel,
-  offeredModels, providerOf, retiredLabel, retiredReason, shortLabel,
+  offeredModels, providerOf, retiredLabel, retiredReason, shortLabel, type ModelDef,
 } from "../../lib/models";
-import { SOUL_RENDER_MODELS, SOUL_VERSIONS, SOUL_VERSION_LABELS, soulVersionOf } from "../../lib/soulRenderTypes";
+import { SOUL_FAMILY_NAMES, SOUL_RENDER_MODELS, SOUL_VERSIONS, SOUL_VERSION_LABELS, soulFamilyName, soulVersionOf } from "../../lib/soulRenderTypes";
 import { engineLabel, shotEngines } from "../../lib/workspace/engines";
 import { meteredLine } from "../../lib/statements";
 import { IDENTITY_ASSET_KIND, REF_SOURCE_LABEL, memoryAssetKind } from "../../lib/atomikMemoryText";
 import { vendorNameIn } from "../../lib/vendorNames";
 
 /**
- * D0.2 — removals and renames. The three identity-still families are retired
- * for NEW renders, and every past job keeps reading: `getModel` still
- * resolves them, their names are neutral, and ids that were only ever in the
- * connected catalogue never show raw.
+ * D0.2 — removals and renames. Only what needed a sign-in was removed: the
+ * three identity-still families stay on the platform's key, offered through
+ * Cast (owner's decision, 4 October 2026), under neutral names. The `retired`
+ * mechanism stays in the registry with no model marked; ids that were only
+ * ever in the connected catalogue never show raw.
  */
 const SOUL_IDS = ["hf-soul-standard", "hf-soul-2", "hf-soul-cinema"];
 const source = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-test("the three identity-still models are retired: in no offer list, and still resolved for history", () => {
+test("the three identity-still models are offered again, from Cast: not retired, admitted, hidden from Gen's own lists", () => {
   expect(Object.values(SOUL_RENDER_MODELS)).toEqual(SOUL_IDS);
-  expect(MODELS.filter((m) => m.retired).map((m) => m.id)).toEqual(SOUL_IDS);
+  expect(MODELS.filter((m) => m.retired)).toEqual([]);
   for (const id of SOUL_IDS) {
     const model = getModel(id);
-    expect(model).toMatchObject({ id, kind: "image", provider: "higgsfield", billing: "image", retired: true });
-    expect(isOffered(model)).toBe(false);
-    expect(isRetiredModel(id)).toBe(true);
-    expect(retiredReason(id)).toBe(RETIRED_REASON);
+    expect(model).toMatchObject({ id, kind: "image", provider: "higgsfield", billing: "image", soulIdentity: true, hidden: true });
+    expect(model.retired).toBeUndefined();
+    expect(isOffered(model)).toBe(true);
+    expect(isRetiredModel(id)).toBe(false);
+    expect(retiredReason(id)).toBeNull();
     expect(findModel(id)).toBe(model);
-    expect(offeredModels().some((m) => m.id === id)).toBe(false);
+    expect(offeredModels().some((m) => m.id === id)).toBe(true);
+    /* Reached from Cast, as before: `hidden` keeps them out of a shot's engines and the palette. */
     expect(shotEngines().some((m) => m.id === id)).toBe(false);
   }
   /* The stored ids and versions are untouched: an identity's `model_version` still maps to its own model. */
   expect([...SOUL_VERSIONS]).toEqual(["v1", "v2", "cinema"]);
   expect(SOUL_IDS.map(soulVersionOf)).toEqual(["v1", "v2", "cinema"]);
+  /* Cast's select and "Renders with" drop the prefix: one list, two forms. */
+  expect(SOUL_FAMILY_NAMES).toEqual({ v1: "Standard", v2: "2", cinema: "Cinema" });
+  expect(SOUL_IDS.map(soulFamilyName)).toEqual(["Standard", "2", "Cinema"]);
+  for (const v of SOUL_VERSIONS) expect(SOUL_VERSION_LABELS[v]).toBe(`Identity still · ${SOUL_FAMILY_NAMES[v]}`);
+  expect(soulFamilyName("gpt-image-2")).toBeNull();
+  expect(soulFamilyName(null)).toBeNull();
+});
+
+test("the retirement mechanism still works for a model that carries the flag", () => {
+  const live = getModel(SOUL_IDS[0]);
+  const gone: ModelDef = { ...live, id: "synthetic-retired", retired: true };
+  expect(isOffered(gone)).toBe(false);
+  expect(isOffered(live)).toBe(true);
+  expect(offeredModels([live, gone])).toEqual([live]);
+  expect(shotEngines([{ ...gone, hidden: false }])).toEqual([]);
   expect(RETIRED_REASON).toBe("This engine is no longer offered for new renders. Past results stay in the Library.");
   expect(vendorNameIn(RETIRED_REASON)).toBeNull();
+  /* Admission still asks, for a quote and a submit alike, before anything is resolved or priced. */
+  const admission = source("lib/generationAdmission.ts");
+  expect(admission).toMatch(/const retired = retiredReason\(modelId\);\s+if \(retired\) return admissionReply\(\{ error: retired, code: "engine_retired" \}, \{ status: 410 \}\);/);
 });
 
 test("what stays, stays offered: Cinema Studio 4.0, Motion Transfer, Object Swap, the marketing image and the OpenAI stills", () => {
@@ -46,7 +67,7 @@ test("what stays, stays offered: Cinema Studio 4.0, Motion Transfer, Object Swap
     expect(retiredReason(id), id).toBeNull();
   }
   expect(MODELS.filter((m) => m.genjutsu).every(isOffered)).toBe(true);
-  expect(offeredModels()).toHaveLength(MODELS.length - 3);
+  expect(offeredModels()).toHaveLength(MODELS.length);
   expect(displayModelName("higgsfield-cinema-studio-4.0")).toBe("Cinema Studio 4.0");
   expect(engineLabel("higgsfield-cinema-studio-4.0")).toEqual({ short: "Cinema 4", long: "Cinema Studio 4.0" });
   /* An id nobody registered is not "retired": admission has its own word for an unknown model. */
@@ -59,7 +80,7 @@ test("the offer lists filter on the flag: the engines route and the palette", ()
   expect(source("components/graphite/Palette.tsx")).toMatch(/MODELS\.filter\(\(m\) => isOffered\(m\) && !m\.hidden\)/);
 });
 
-test("a past identity still reads Identity still · Standard, · 2 and · Cinema, everywhere a name is made", () => {
+test("an identity still reads Identity still · Standard, · 2 and · Cinema, everywhere a name is made", () => {
   expect(SOUL_VERSION_LABELS).toEqual({ v1: "Identity still · Standard", v2: "Identity still · 2", cinema: "Identity still · Cinema" });
   const names = ["Identity still · Standard", "Identity still · 2", "Identity still · Cinema"];
   SOUL_IDS.forEach((id, i) => {

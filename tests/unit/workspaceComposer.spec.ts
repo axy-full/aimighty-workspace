@@ -136,8 +136,8 @@ test("one source: every way a composer could be put on the connected account lan
   expect(billingWording({})).toBe("Charged to this workspace’s credits.");
 });
 
-test("an engine no longer offered for new renders is left out of the list, whatever the route lists", () => {
-  const rows: EngineRow[] = [...engines, { id: "hf-soul-standard", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [] }, { id: "hf-soul-cinema", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [], soulIdentity: true }];
+test("the identity-still engines are left out of Gen's list (they render from Cast), whatever the route lists", () => {
+  const rows: EngineRow[] = [...engines, { id: "hf-soul-standard", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [], soulIdentity: true }, { id: "hf-soul-cinema", kind: "image", resolutions: ["720p"], ratios: ["3:4"], durations: [], soulIdentity: true }];
   const ids = workspaceModels(rows, audio).map((m) => m.id);
   expect(ids).not.toContain("hf-soul-standard");
   expect(ids).not.toContain("hf-soul-cinema");

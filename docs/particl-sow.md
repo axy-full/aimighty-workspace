@@ -51,9 +51,9 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 
 **AMENDED 4 October 2026 — D0 removals (design/particl-graphite/README.md › "What this design removes or renames").** The Higgsfield row above is narrowed, and the vendor's name is no longer shown to customers anywhere:
 
-- **Still running, on Particl's API key:** Motion Transfer and Object Swap (Viral), Marketing Studio Image (Business › Image ads) and Cinema Studio 4.0 (Gen, priced "quoted" in the model sheet).
-- **No longer offered:** Soul Standard, Soul 2 and Soul Cinema. A new render or a new training on them is refused before any reservation or vendor call. Past renders stay in the Library and read "Identity still · Standard", "Identity still · 2" and "Identity still · Cinema". Cast's select is **Identity**, and "Build identity" uses Particl's own trainer (`/api/identities`, 54 cr at 1,500 steps on the rate card).
-- **Open:** an identity built that way cannot yet be rendered from Cast or Gen (the quoted admission flow refuses trained-identity stages). "Render with identity" on Flux · Identity is not built.
+- **Still running, on Particl's API key:** Motion Transfer and Object Swap (Viral), Marketing Studio Image (Business › Image ads), Cinema Studio 4.0 (Gen, priced "quoted" in the model sheet), and Soul Standard, Soul 2 and Soul Cinema (`lib/soulRender.ts`), shown as "Identity still · Standard", "Identity still · 2" and "Identity still · Cinema".
+- **Cast renders with an identity and builds identities there** (owner's decision, 4 October): the select is **Identity**, the render button carries the live quote, and "Build identity" trains through `/api/soul/identities` for Standard, 2 or Cinema at the route's live price. The identity stills are reached from Cast, not listed in Gen.
+- **Only the sign-in side is removed.** Nothing runs on a connected account; entries and identities built on one stay in the Library, read-only. No model is marked `retired` today; the mechanism (`lib/models.ts`) stays for the next retirement.
 - **Removed from the product:** Business › Ads (Business opens on Image ads; an old Ads link lands there), Cast's reference-elements line, the connected-account billing source in Gen, and the unused `SoulIdHost` and `ConsumerGenjutsu` components. Results made on the retired connected account keep neutral names ("Video (earlier account)" and the like).
 - **Names:** the Business suite is "Moleculr Business Suite"; Atomik is "Atomik Agent".
 

@@ -106,7 +106,9 @@ export type ModelDef = {
    *  admission refuses it (`retiredReason`), but it stays in the registry so
    *  `getModel` and the display names keep resolving every past job made with
    *  it — Library, Inspector, ledger, statements and exports read as before,
-   *  and nothing a past job was charged changes. */
+   *  and nothing a past job was charged changes. No model carries it today
+   *  (the identity-still families are offered again through Cast, owner's
+   *  decision of 4 October 2026); the mechanism stays for the next retirement. */
   retired?: true;
   /** Requires a tenant-owned, completed Soul identity resolved by admission. */
   soulIdentity?: boolean;
@@ -529,15 +531,15 @@ export const MODELS: ModelDef[] = [
     use: "Generate a still from a trained identity.",
     note: "Requires a ready identity and a verified identity-rendering connection.",
   },
-  /* The three identity-still families on the platform's key (lib/soulRenderTypes.ts). RETIRED: no longer
-     offered for new renders; kept here so every past render still resolves its name, kind and provider. */
+  /* The three identity-still families on the platform's key (lib/soulRenderTypes.ts): each renders only identities
+     trained for its family, 1 or 4 stills per request, priced by the provider's live estimate. Reached from Cast. */
   ...SOUL_VERSIONS.map((version): ModelDef => ({
     id: SOUL_RENDER_MODELS[version], label: SOUL_VERSION_LABELS[version], short: SOUL_VERSION_SHORTS[version],
-    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, retired: true, paramStyle: "fields",
+    family: "soul", provider: "higgsfield", kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
     resolutions: [...SOUL_RENDER_RESOLUTIONS], ratios: [...SOUL_RENDER_RATIOS],
     durations: [], supportsAudio: false, supportsCameraFixed: false,
     maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
-    use: "Stills of an identity trained for this family. No longer offered for new renders.",
+    use: "Stills of an identity trained for this family. A live quote is required.",
   })),
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.

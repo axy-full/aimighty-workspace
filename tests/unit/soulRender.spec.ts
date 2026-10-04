@@ -169,13 +169,6 @@ function load<T>(file: string, overrides: Record<string, unknown> = {}): T {
 const admission = () => load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
   "@/lib/inngest": { enqueueRender: async (genId: string, kind: string) => { dispatched.push({ genId, kind }); return true; } },
 });
-/* Admission as it stood before the three identity-still engines were retired (D0.2): the same module with the
-   retirement switched off. It stands in for a take that was accepted then — such takes are still priced, collected
-   and settled, and the rules they were admitted under are still in the code. Nothing in the product can reach it. */
-const admissionBefore = () => load<typeof import("../../lib/generationAdmission")>("lib/generationAdmission.ts", {
-  "@/lib/inngest": { enqueueRender: async (genId: string, kind: string) => { dispatched.push({ genId, kind }); return true; } },
-  "@/lib/models": { ...nodeRequire(path.resolve("lib/models.ts")), retiredReason: () => null },
-});
 const noInline = () => { throw new Error("Durable dispatch acknowledged; inline work must not run"); };
 
 /** A workspace on the platform's keys with credits and a production called `project`. */
@@ -321,34 +314,8 @@ test("training: v1 keeps its price; Soul 2 and Soul Cinema are offered only at a
   }
 });
 
-test("retired: a new request for an identity-still engine is refused, quote and submit alike, before anything is resolved, priced, written or sent", async () =>
-  tenant("soul_render_retired", async (gen) => {
-    const { RETIRED_REASON } = await import("../../lib/models");
-    let asked = 0;
-    const fetchWas = globalThis.fetch;
-    globalThis.fetch = async () => { asked++; throw new Error("Nothing may reach a vendor"); };
-    try {
-      await identity("soul_v2");
-      await identity("soul_cinema", { version: "cinema" });
-      for (const patch of [{}, { soulBatch: 1 }, { model: "hf-soul-standard" }, { model: "hf-soul-cinema", soulIdentityId: "soul_cinema" }, { soulIdentityId: "missing" }, { soulBatch: 2 }]) {
-        const quote = await gen.prepareGeneration(body(patch), actor);
-        expect(quote, JSON.stringify(patch)).toMatchObject({ ok: false, status: 410, body: { error: RETIRED_REASON, code: "engine_retired" } });
-        const sent = await gen.executeGenerationAdmission({ ...body(patch), maxCredits: 999 }, actor, { requestClaim: undefined as never, defer: noInline });
-        expect(sent, JSON.stringify(patch)).toMatchObject({ status: 410, body: { error: RETIRED_REASON, code: "engine_retired" } });
-      }
-      /* The sentence a customer reads names no vendor and no old family, and says what stays. */
-      expect(RETIRED_REASON).toMatch(/no longer offered/);
-      expect(RETIRED_REASON).toMatch(/Past results stay/);
-      expect(RETIRED_REASON).not.toMatch(/Higgsfield|Soul/i);
-      expect(asked).toBe(0);
-      expect(dispatched).toEqual([]);
-      expect(await counts()).toEqual({ generations: 0, meters: 0 });
-    } finally { globalThis.fetch = fetchWas; }
-  }));
-
-test("admission as it stood before the retirement: a ready identity rendered only with its own family, at the live estimate of the exact request; 1 or 4 stills", async () =>
-  tenant("soul_render_admission", async () => {
-    const gen = admissionBefore();
+test("admission: a ready identity renders only with its own family, at the live estimate of the exact request; 1 or 4 stills", async () =>
+  tenant("soul_render_admission", async (gen) => {
     const { billCredits } = await import("../../lib/creditTerms");
     const { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
     await identity("soul_v2");
@@ -390,9 +357,8 @@ test("admission as it stood before the retirement: a ready identity rendered onl
     expect(await counts()).toEqual({ generations: 0, meters: 0 });
   }));
 
-test("no price, no render (as it stood before the retirement): an estimate without a number refuses the quote and nothing is written or sent", async () =>
-  tenant("soul_render_unpriced", async () => {
-    const gen = admissionBefore();
+test("no price, no render: an estimate without a number refuses the quote and nothing is written or sent", async () =>
+  tenant("soul_render_unpriced", async (gen) => {
     const calls = live((url) => url.includes("/estimate/") ? Response.json({ type: "description", pricing_description: "per image" }) : Response.json({ request_id: requestId }));
     await identity("soul_v2");
     const result = await gen.prepareGeneration(body(), actor);
@@ -404,9 +370,7 @@ test("no price, no render (as it stood before the retirement): an estimate witho
 
 test("isolation: identities belong to their workspace; the list is this workspace's own rows and never the provider's", async () => {
   await tenant("soul_home", async () => { await identity("soul_home_only"); });
-  await tenant("soul_other", async () => {
-    /* The identity lookup sits behind the retirement now; it is checked as it stood, so the isolation rule stays covered. */
-    const gen = admissionBefore();
+  await tenant("soul_other", async (gen) => {
     let asked = 0;
     globalThis.fetch = async () => { asked++; throw new Error("Unexpected external request"); };
     const { listSoulIdentities } = await import("../../lib/soulIdentities");
@@ -422,9 +386,8 @@ test("isolation: identities belong to their workspace; the list is this workspac
   });
 });
 
-test("a batch of 4 accepted before the retirement is still one paid request: its take carries the whole price, and the other three stills are filed once as takes of their own", async () =>
-  tenant("soul_render_batch", async () => {
-    const gen = admissionBefore();
+test("a batch of 4 is one paid request: its take carries the whole price, and the other three stills are filed once as takes of their own", async () =>
+  tenant("soul_render_batch", async (gen) => {
     const { db } = await import("../../lib/db");
     const { platformDb } = await import("../../lib/platform");
     const { loadJob, produce, reconcileHiggsfieldImage } = await import("../../lib/renderWork");
@@ -471,9 +434,8 @@ test("a batch of 4 accepted before the retirement is still one paid request: its
     for (const id of stored) await unlink(path.join(process.cwd(), ".data", "generations", `${id}.png`)).catch(() => {});
   }));
 
-test("an identity render accepted before the retirement that the provider fails settles at zero, and its card says what the ledger kept", async () =>
-  tenant("soul_render_failed", async () => {
-    const gen = admissionBefore();
+test("an identity render the provider fails settles at zero, and its card says what the ledger kept", async () =>
+  tenant("soul_render_failed", async (gen) => {
     const { reconcileHiggsfieldImage, loadJob, produce } = await import("../../lib/renderWork");
     const { getGeneration } = await import("../../lib/jobs");
     const { withLedgerCharges } = await import("../../lib/usageLedger");
@@ -499,7 +461,7 @@ test("an identity render accepted before the retirement that the provider fails 
     expect(renderOutcome(read)).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
   }));
 
-test("an earlier Cast render's request and filing still read: a character, its identity, its family's model; old entries read-only; an earlier account's identity is told apart", async () => {
+test("the Cast page's request and filing: a character, its own identity, its family's model; old entries read-only; an earlier account's identity is told apart", async () => {
   const { castRenderInput, renderedStills, renderOutcome, renderableIdentity } = await import("../../lib/production/cast-render");
   const { generationRequestBody } = await import("../../lib/workbench/generation-request");
   const { newEntry, retiredModelOf, accountSoulIdOf } = await import("../../lib/production/cast");

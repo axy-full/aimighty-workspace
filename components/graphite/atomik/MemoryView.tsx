@@ -228,7 +228,7 @@ function ElementPicker({ scope, project, entries, picked, onPick }: { scope: str
       {status === "error" ? <LoadBanner banner={{ tone: "error", message: identities.state.error ?? "Identities could not be read." }} onRetry={identities.refresh} testId="memory-elements-error" compact /> : null}
       {!options.length && status === "ready" ? (
         <div className="am-none" data-testid="memory-elements-empty">
-          <p className="tc-note">Nothing in Cast & Elements yet: add characters and elements there.</p>
+          <p className="tc-note">Nothing in Cast & Elements yet: add characters and elements there, or build an identity.</p>
           <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("studio", "cast")} data-testid="memory-elements-go">Open Cast & Elements</button>
         </div>
       ) : null}
