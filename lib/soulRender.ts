@@ -64,16 +64,16 @@ export type SoulRenderInput = {
 /** The documented request body for one family. Throws before anything is priced or sent when a setting is outside it. */
 export function soulRenderInput(modelId: string, settings: SoulRenderSettings): SoulRenderInput {
   if (!soulVersionOf(modelId))
-    throw new SoulRenderError("Choose Soul Standard, Soul 2 or Soul Cinema.", 400, "invalid_model");
+    throw new SoulRenderError("This engine does not render an identity.", 400, "invalid_model");
   if (typeof settings.prompt !== "string" || !settings.prompt.trim() || settings.prompt.length > 10_000)
-    throw new SoulRenderError("A Soul render needs a prompt of up to 10,000 characters.", 400, "invalid_input");
+    throw new SoulRenderError("An identity render needs a prompt of up to 10,000 characters.", 400, "invalid_input");
   if (typeof settings.referenceId !== "string" || !UUID.test(settings.referenceId))
-    throw new SoulRenderError("Choose a ready Soul ID for this render.", 400, "invalid_identity");
+    throw new SoulRenderError("Choose a ready identity for this render.", 400, "invalid_identity");
   /* Zero would drop the identity (Soul 2's page says to keep it above zero). */
   if (typeof settings.strength !== "number" || !Number.isFinite(settings.strength) || settings.strength <= 0 || settings.strength > 1)
     throw new SoulRenderError("Likeness strength is above 0 and at most 1.", 400, "invalid_input");
   if (!isSoulRenderBatch(settings.batch))
-    throw new SoulRenderError("A Soul render makes 1 or 4 stills.", 400, "invalid_input");
+    throw new SoulRenderError("An identity render makes 1 or 4 stills.", 400, "invalid_input");
   if (!(SOUL_RENDER_RESOLUTIONS as readonly string[]).includes(settings.resolution) ||
       !(SOUL_RENDER_RATIOS as readonly string[]).includes(settings.ratio))
     throw new SoulRenderError("Choose 720p or 1080p and a supported aspect ratio.", 400, "invalid_input");
@@ -103,10 +103,10 @@ async function estimateCall(url: string, body: unknown): Promise<Record<string, 
         await response.body?.cancel();
         const status = response.status;
         throw new SoulRenderError(
-          status === 401 || status === 403 ? "The identity account cannot price this Soul render."
+          status === 401 || status === 403 ? "The identity account cannot price this render."
             : status === 429 ? "The identity account is rate limiting requests. Try again shortly."
-            : [400, 404, 422].includes(status) ? "The identity account did not price this Soul render. Nothing was submitted."
-            : "Soul pricing is unavailable right now. Try again.",
+            : [400, 404, 422].includes(status) ? "The identity account did not price this render. Nothing was submitted."
+            : "Identity render pricing is unavailable right now. Try again.",
           status === 429 ? 429 : 503,
           status === 429 ? "rate_limited" : "price_unavailable",
         );
@@ -114,7 +114,7 @@ async function estimateCall(url: string, body: unknown): Promise<Record<string, 
       return await marketingJson(response);
     } catch (error) {
       if (error instanceof SoulRenderError) throw error;
-      throw new SoulRenderError("Soul pricing could not be reached. Try again.", 503, "price_unavailable");
+      throw new SoulRenderError("Identity render pricing could not be reached. Try again.", 503, "price_unavailable");
     }
   });
 }
@@ -122,19 +122,19 @@ async function estimateCall(url: string, body: unknown): Promise<Record<string, 
 /** The provider's own price for exactly this request, in dollars. No positive number, no price: the render is refused. */
 export async function estimateSoulRender(modelId: string, input: SoulRenderInput): Promise<number> {
   const version = soulVersionOf(modelId);
-  if (!version) throw new SoulRenderError("Choose Soul Standard, Soul 2 or Soul Cinema.", 400, "invalid_model");
+  if (!version) throw new SoulRenderError("This engine does not render an identity.", 400, "invalid_model");
   if (engineMock()) return MOCK_STILL_USD * input.batch_size;
   const result = await estimateCall(`${SOUL_RENDER_ORIGIN}/estimate/${SOUL_RENDER_PATHS[version]}`, input);
   const usd = typeof result.usd === "number" ? result.usd
     : typeof result.usd === "string" && /^\d+(?:\.\d+)?$/.test(result.usd) ? Number(result.usd) : NaN;
   if (!Number.isFinite(usd) || usd <= 0)
-    throw new SoulRenderError("The identity account returned no price for this Soul render. Nothing was submitted.", 503, "price_unavailable");
+    throw new SoulRenderError("The identity account returned no price for this render. Nothing was submitted.", 503, "price_unavailable");
   return usd;
 }
 
 /** A failed read-only preflight proves this worker sent no paid request. */
 export const soulRenderPreflightError = () => new HiggsfieldHttpError(422,
-  "The Soul render's identity, connection or price changed or could not be verified. Nothing was submitted; review a fresh quote.");
+  "The render's identity, connection or price changed or could not be verified. Nothing was submitted; review a fresh quote.");
 
 /**
  * What a finished render settles at. The provider's status reply states no

@@ -116,7 +116,6 @@ export function StudioHome({ project: loaded, items, actions, loading = false, n
       <div className="gx-home-grid" role="list" aria-label="Stages">
         {cards.map((card) => (
           <button key={card.id} type="button" role="listitem" className="gx-home-card" data-status={card.status} data-testid={`home-stage-${card.id}`} onClick={() => shell.goSuite("studio", card.id)}>
-            <span className="gx-home-card-glow" aria-hidden="true" />
             <span className="gx-home-card-head"><span className="gx-home-card-n">{card.n}</span><span className="gx-home-dot" aria-hidden="true" /></span>
             <span><span className="gx-home-card-label">{card.label}</span><span className="gx-home-card-meta">{card.meta}</span></span>
           </button>

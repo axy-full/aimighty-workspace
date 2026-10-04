@@ -63,7 +63,7 @@ export default function AccountMenu() {
 
   const row = (on: boolean) =>
     `flex items-center justify-between rounded-ctl px-[12px] py-[10px] text-[13.5px] font-medium leading-none ${
-      on ? "bg-selected text-ink" : "text-ink-body hover:bg-[rgba(245,246,248,.08)]"}`;
+      on ? "bg-selected text-ink" : "text-ink-body hover:bg-[color:var(--gx-input)]"}`;
 
   const signOut = async () => {
     setError("");

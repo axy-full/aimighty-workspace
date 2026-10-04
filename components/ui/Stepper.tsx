@@ -28,7 +28,7 @@ export default function Stepper({ current, compact = false, dot: dotPx = 8, clas
   const at = Math.max(0, Math.min(STEPS.length - 1, current));
   const dot = (i: number, px: number) => (
     <span aria-hidden="true" className={`block flex-none rounded-full ${
-      i <= at ? "bg-ink" : "border-[1.5px] border-[rgba(245,246,248,.3)]"}`} style={{ width: px, height: px }} />
+      i <= at ? "bg-ink" : "border-[1.5px] border-[var(--gx-hover-border)]"}`} style={{ width: px, height: px }} />
   );
   if (compact) {
     return (
@@ -36,7 +36,7 @@ export default function Stepper({ current, compact = false, dot: dotPx = 8, clas
         <span className="flex gap-[4px]">
           {STEPS.map((name, i) => (
             <span key={name} aria-hidden="true" style={{ width: dotPx, height: dotPx }} className={`block flex-none rounded-full ${
-              i < at ? "bg-[rgba(245,246,248,.45)]" : i === at ? "bg-ink" : "border border-[rgba(245,246,248,.25)]"}`} />
+              i < at ? "bg-[var(--gx-text-3)]" : i === at ? "bg-ink" : "border border-[var(--gx-hover-border)]"}`} />
           ))}
         </span>
         <Mono>{STEPS[at]}</Mono>

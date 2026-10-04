@@ -169,7 +169,7 @@ export default function ProjectMediaPage() {
               <Mono tone="ink">{g.code}</Mono>
               {g.title && <span className="min-w-0 truncate text-[14px] font-semibold leading-[1.2] text-ink">{g.title}</span>}
               <span className="text-[12.5px] leading-none text-ink-body max-md:ml-auto max-md:flex-none max-md:text-[12px]">{g.items.length} {g.items.length === 1 ? "item" : "items"} · {fmt(g.items.reduce((a, m) => a + (money.inCredits ? m.credits : m.usd), 0))}</span>
-              <span className="h-px flex-1 self-center bg-[rgba(245,246,248,.07)] max-md:hidden" />
+              <span className="h-px flex-1 self-center bg-[color:var(--gx-hair)] max-md:hidden" />
               {g.id !== "unfiled" && <Link href={`/shots/${g.id}`} className="ui-mono text-ink-muted max-md:hidden">Open shot →</Link>}
             </div>
             <div className="grid grid-cols-6 gap-[10px] max-md:grid-cols-2 max-md:gap-[8px]">

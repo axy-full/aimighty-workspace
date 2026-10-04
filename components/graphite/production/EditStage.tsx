@@ -44,7 +44,7 @@ const EDIT_LIMIT = 4000;
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 
 /** The status chips' dots: the tile chips' own tones. */
-const STATUS_DOT: Record<DeskFilter, string> = { all: "", review: "rgba(235, 235, 245, .6)", picked: "var(--gx-accent)", approved: "var(--gx-done)", changes: "var(--gx-waiting)", held: "var(--gx-waiting)", failed: "var(--gx-failed)" };
+const STATUS_DOT: Record<DeskFilter, string> = { all: "", review: "var(--gx-text-2)", picked: "var(--gx-accent)", approved: "var(--gx-done)", changes: "var(--gx-waiting)", held: "var(--gx-waiting)", failed: "var(--gx-failed)" };
 const KIND_CHIP_DOT: Record<DeskKind, string> = { video: KIND_DOT.Video, image: KIND_DOT.Images, audio: KIND_DOT.Audio, upload: KIND_DOT.Uploads };
 /** The review buttons, and what each says once it is the take's state (pressed again, it clears). */
 const REVIEWS = [

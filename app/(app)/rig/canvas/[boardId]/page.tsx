@@ -43,7 +43,7 @@ import { newRigFor, OPEN_FAILED } from "@/lib/workspace/rig-import";
  * The sub-bar: `Canvas · Recipes · Run`, the board chip (`Handbag TVC · SH04
  * board ▼`), `9 NODES · 2 RUN · 27 CR SPENT · BUILDING IS FREE`, the
  * collaborators, `Share`, `Save as recipe`. Then the 56px strip, the board
- * — dotted (`radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)`
+ * — dotted (an inline SVG dot, white at .07,
  * on 24px) with the `+ Add node ⌘K` pill top-left and the node kinds
  * beside it, the bottom toolbar (`Select · Hand · Wire · Note · 100% ·
  * Fit · RUN UNRUN · N CR`) — and the 300px inspector.
@@ -570,7 +570,7 @@ function Canvas() {
         <div className="flex flex-none flex-col gap-[8px] border-t border-border bg-ground px-[16px] pb-[6px] pt-[10px]" data-pinned="">
           <Mono tone={unpriced ? "body" : "muted"} className="text-center">{unpriced ? NO_CONFIRMED_PRICE : "Built on desktop · run and file from here"}</Mono>
           <button type="button" disabled={!target || running.has(target.id) || unpriced} onClick={() => target && runNode(target)} data-render=""
-            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${quiet ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
+            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${quiet ? "border border-[color:var(--gx-hover-border)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
             <span className="truncate">{target && running.has(target.id) ? "Running…" : target?.output?.genId ? "Run node again" : "Run node"}</span>
             <span className={`ui-mono ui-mono-cost !text-[12px] ${quiet ? "text-ink-muted" : "text-on-primary-cost"}`}>{unpriced ? "No price" : targetCost === null ? "" : fmt(targetCost)}</span>
           </button>
@@ -597,7 +597,7 @@ function Canvas() {
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
           aria-label="Board"
           className={`relative min-w-0 overflow-hidden ${tool === "hand" ? "cursor-grab" : tool === "wire" ? "cursor-crosshair" : ""}`}
-          style={{ backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: "24px 24px", backgroundPosition: `${pan.x}px ${pan.y}px` }}>
+          style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E\")", backgroundSize: "24px 24px", backgroundPosition: `${pan.x}px ${pan.y}px` }}>
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
             <Wires board={b} selected={selectedWire} onSelect={setSelectedWire} wiring={wiring} />
             {b.nodes.map((n) => (
@@ -611,11 +611,11 @@ function Canvas() {
               className="flex h-[36px] items-center gap-[8px] rounded-pill bg-action pl-[10px] pr-[12px] text-[13px] font-medium leading-none text-on-action hover:bg-action-hover">
               <span className="text-[16px] leading-none">+</span>Add node<span className="ui-mono ui-mono-cost text-on-primary-cost">⌘K</span>
             </button>
-            <span className="flex h-[36px] items-center whitespace-nowrap rounded-pill border border-[rgba(245,246,248,.12)] bg-card px-[12px] text-[12.5px] leading-none text-ink-body max-md:hidden">
+            <span className="flex h-[36px] items-center whitespace-nowrap rounded-pill border border-[color:var(--gx-pop-border)] bg-card px-[12px] text-[12.5px] leading-none text-ink-body max-md:hidden">
               {ADDABLE_KINDS.map((k) => KIND_WORD[k]).join(" · ")}
             </span>
           </div>
-          <div className="absolute bottom-[16px] left-1/2 z-[4] flex -translate-x-1/2 items-center gap-[2px] rounded-pill border border-[rgba(245,246,248,.12)] bg-card p-[4px]" role="toolbar" aria-label="Tools" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="absolute bottom-[16px] left-1/2 z-[4] flex -translate-x-1/2 items-center gap-[2px] rounded-pill border border-[color:var(--gx-pop-border)] bg-card p-[4px]" role="toolbar" aria-label="Tools" onPointerDown={(e) => e.stopPropagation()}>
             {(["select", "hand", "wire", "note"] as Tool[]).map((t) => (
               <button key={t} type="button" aria-pressed={tool === t} onClick={() => setTool(t)} className={`rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none ${tool === t ? "bg-selected text-ink" : "text-ink-body"}`}>{t[0].toUpperCase() + t.slice(1)}</button>
             ))}
@@ -650,7 +650,7 @@ function Wires({ board, selected, onSelect, wiring }: { board: Board; selected: 
         {board.wires.map((w) => {
           const e = endpoints(board, w); if (!e) return null;
           const on = selected === w.id;
-          const stroke = on ? "var(--ink)" : w.kind === "override" ? "var(--ink)" : w.kind === "inherited" ? "rgba(245,246,248,.3)" : "rgba(245,246,248,.35)";
+          const stroke = on ? "var(--ink)" : w.kind === "override" ? "var(--ink)" : "var(--gx-hover-border)";
           const width = on ? 2 : w.kind === "override" ? 2.5 : 1.5;
           if (w.kind === "filed") {
             const to = board.nodes.find((n) => n.id === w.to.nodeId);
@@ -691,7 +691,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
 }) {
   const w = NODE_W[n.kind];
   const tag = <span className="ui-mono rounded-badge border border-border-mid px-[4px] py-[3px] !text-[9.5px] !tracking-[.08em] text-ink-body">{KIND_TAG[n.kind]}</span>;
-  const box = `absolute box-border rounded-card border ${selected ? "border-ink ui-node-selected" : n.kind === "shot" ? "border-border-mid" : "border-[rgba(245,246,248,.12)]"} ${n.settings.locked ? "bg-card-raised" : "bg-card"}`;
+  const box = `absolute box-border rounded-card border ${selected ? "border-ink ui-node-selected" : n.kind === "shot" ? "border-border-mid" : "border-[color:var(--gx-pop-border)]"} ${n.settings.locked ? "bg-card-raised" : "bg-card"}`;
   const stale = n.state === "stale";
   const inputOf = (slotId: string) => { const wire = board.wires.find((x) => x.to.nodeId === n.id && x.to.slotId === slotId); return wire ? board.nodes.find((x) => x.id === wire.from.nodeId) ?? null : null; };
   const refsIn = board.wires.filter((x) => x.to.nodeId === n.id && x.to.slotId === "refs");
@@ -755,7 +755,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
       <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} aria-label={`${KIND_WORD[n.kind]} node`}>
         <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag}<span className="text-[13px] font-semibold leading-none text-ink">{KIND_WORD[n.kind]}</span><Mono cost className="ml-auto">{n.kind === "prompt" ? "free" : ""}</Mono></div>
         <textarea value={n.text ?? ""} onChange={(e) => onText(e.target.value)} onPointerDown={stop} placeholder={n.kind === "prompt" ? "@Noor's hands on @The bag…" : "A note"} aria-label={KIND_WORD[n.kind]}
-          className="mx-[10px] mb-[10px] box-border h-[96px] w-[calc(100%-20px)] resize-none rounded-ctl border border-[rgba(245,246,248,.1)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink outline-0 placeholder:text-ink-muted" />
+          className="mx-[10px] mb-[10px] box-border h-[96px] w-[calc(100%-20px)] resize-none rounded-ctl border border-[color:var(--gx-card-border)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink outline-0 placeholder:text-ink-muted" />
         {n.kind === "prompt" && <Dot style={{ right: -5, top: 77 }} onDown={onStartWire(n.id, "out")} title="Prompt" />}
       </article>
     );
@@ -781,7 +781,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
               <div key={slot.id} className="relative flex h-[28px] items-center gap-[8px]">
                 <Dot style={{ left: -15, top: 10 }} onUp={onLand(n, slot.id)} title={slot.label} />
                 <Mono className="whitespace-nowrap">{slot.label}{refsIn.length ? ` · ${refsIn.length}` : ""}</Mono>
-                <span className="ml-auto flex gap-[3px]">{refsIn.slice(0, 4).map((r) => <span key={r.id} className="h-[20px] w-[30px] rounded-[3px] border border-[rgba(245,246,248,.1)] ui-placeholder" />)}</span>
+                <span className="ml-auto flex gap-[3px]">{refsIn.slice(0, 4).map((r) => <span key={r.id} className="h-[20px] w-[30px] rounded-[3px] border border-[color:var(--gx-card-border)] ui-placeholder" />)}</span>
               </div>
             );
           }
@@ -794,7 +794,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
           );
         })}
         {n.kind === "video" && (
-          <label className="box-border flex h-[44px] items-center gap-[4px] overflow-hidden rounded-[7px] border border-[rgba(245,246,248,.1)] bg-ground px-[8px] py-[5px] text-[12px] leading-[1.3] text-ink-body">
+          <label className="box-border flex h-[44px] items-center gap-[4px] overflow-hidden rounded-[7px] border border-[color:var(--gx-card-border)] bg-ground px-[8px] py-[5px] text-[12px] leading-[1.3] text-ink-body">
             <span className="ui-mono !text-[10px]">Motion</span>
             <input value={String(n.settings.motion ?? "")} onChange={(e) => onSetting("motion", e.target.value)} onPointerDown={stop} placeholder="Push in, slow. One move." aria-label="Motion"
               className="min-w-0 flex-1 bg-transparent text-[12px] leading-[1.3] text-ink-body outline-0 placeholder:text-ink-muted" />
@@ -806,7 +806,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
           {[0, 1, 2, 3].map((i) => {
             const v = n.output?.variants?.[i] ?? (i === 0 && n.output?.url ? { genId: n.output.genId ?? "", url: n.output.url, chosen: true } : null);
             return (
-              <span key={i} className={`relative box-border h-[64px] overflow-hidden rounded-[6px] border ui-placeholder ${v?.chosen ? "border-2 border-ink" : "border-[rgba(245,246,248,.1)]"}`}>
+              <span key={i} className={`relative box-border h-[64px] overflow-hidden rounded-[6px] border ui-placeholder ${v?.chosen ? "border-2 border-ink" : "border-[color:var(--gx-card-border)]"}`}>
                 {v?.url && <LazyMedia url={v.url} kind="image" className="absolute inset-0 h-full w-full object-cover" />}
                 {running && i === 0 && <span className="absolute inset-0 flex items-center justify-center"><Loader size={LOADER_SIZES.message} /></span>}
                 <span className="ui-chip-scrim absolute bottom-[4px] left-[4px] rounded-[3px] px-[4px] py-[3px]"><span className="ui-mono !text-[10px] tracking-normal text-ink">S{i + 1}</span></span>
@@ -816,11 +816,11 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
           })}
         </div>
       ) : (
-        <div className={`relative mx-[10px] mt-[8px] box-border flex h-[89px] items-center justify-center overflow-hidden rounded-ctl border px-[10px] text-center ${done || running ? "border-border ui-placeholder" : "border-dashed border-[rgba(245,246,248,.2)] bg-ground"}`}>
+        <div className={`relative mx-[10px] mt-[8px] box-border flex h-[89px] items-center justify-center overflow-hidden rounded-ctl border px-[10px] text-center ${done || running ? "border-border ui-placeholder" : "border-dashed border-[color:var(--gx-hover-border)] bg-ground"}`}>
           {running ? <Loader size={LOADER_SIZES.well} /> : done ? (
             <>
               {n.output?.url && <LazyMedia url={n.output.url} kind={n.output.kind === "image" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" hoverPlay />}
-              <span className="ui-chip-scrim relative flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[rgba(245,246,248,.2)] text-[11px] font-medium leading-none text-ink">▶</span>
+              <span className="ui-chip-scrim relative flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[color:var(--gx-hover-border)] text-[11px] font-medium leading-none text-ink">▶</span>
               <span className="ui-chip-scrim absolute bottom-[5px] left-[5px] rounded-badge px-[5px] py-[3px]"><span className="ui-mono !text-[10px] !tracking-[.1em] text-ink">{n.kind === "video" ? `0:${String(secs).padStart(2, "0")} · ` : ""}{String(n.settings.resolution ?? "1080p")}</span></span>
               <span className="ui-chip-scrim absolute right-[5px] top-[5px] flex items-center gap-[4px] rounded-badge px-[5px] py-[3px]"><span className="block h-[6px] w-[6px] rounded-full bg-accent" /><span className="ui-mono !text-[10px] !tracking-[.1em] text-accent">Done</span></span>
             </>
@@ -828,7 +828,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
         </div>
       )}
       <button type="button" onClick={(e) => { e.stopPropagation(); onRun(); }} onPointerDown={stop} disabled={running || !runnable || unpriced}
-        className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[40px] w-[calc(100%-20px)] items-center justify-between rounded-[9px] border border-[rgba(245,246,248,.16)] ${n.kind === "image" ? "px-[12px] text-[13px]" : "px-[10px] text-[12.5px]"} font-medium leading-none ${unpriced ? "text-ink-body" : "text-ink"}`}>
+        className={`mx-[10px] mb-[10px] mt-[8px] box-border flex h-[40px] w-[calc(100%-20px)] items-center justify-between rounded-[9px] border border-[color:var(--gx-dashed)] ${n.kind === "image" ? "px-[12px] text-[13px]" : "px-[10px] text-[12.5px]"} font-medium leading-none ${unpriced ? "text-ink-body" : "text-ink"}`}>
         <span className="truncate">{!runnable ? "Doesn’t run on a board" : done ? (n.output?.filedTo ? `Filed · ${board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot"} v${n.output.filedTo.version}` : n.kind === "image" ? `Again ×${Number(n.settings.count ?? 1)}` : "Again") : "Generate"}</span>
         {runnable && <Mono cost tone={unpriced ? "body" : "muted"} className="whitespace-nowrap">{unpriced || shown === null ? "No price" : fmt(shown)}</Mono>}
       </button>
@@ -882,13 +882,13 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
             <Mono>Inputs</Mono>
             <div className="flex flex-col overflow-hidden rounded-tile bg-card">
               {inputs.map((i, k) => (
-                <span key={i.id} className={`flex min-h-[44px] items-center gap-[10px] px-[12px] py-[10px] ${k ? "border-t border-[rgba(245,246,248,.07)]" : ""}`}>
-                  {(i.id === "image" || i.id === "refs") && <span className="relative h-[26px] w-[40px] flex-none overflow-hidden rounded-badge border border-[rgba(245,246,248,.1)] ui-placeholder">{i.src?.output?.url && <LazyMedia url={i.src.output.url} kind="image" className="absolute inset-0 h-full w-full object-cover" />}</span>}
+                <span key={i.id} className={`flex min-h-[44px] items-center gap-[10px] px-[12px] py-[10px] ${k ? "border-t border-[color:var(--gx-hair)]" : ""}`}>
+                  {(i.id === "image" || i.id === "refs") && <span className="relative h-[26px] w-[40px] flex-none overflow-hidden rounded-badge border border-[color:var(--gx-card-border)] ui-placeholder">{i.src?.output?.url && <LazyMedia url={i.src.output.url} kind="image" className="absolute inset-0 h-full w-full object-cover" />}</span>}
                   <span className="text-[13px] font-medium leading-[1.2] text-ink">{i.id === "spec" ? "Shot spec" : i.label[0] + i.label.slice(1).toLowerCase()}</span>
                   <Mono cost className="ml-auto truncate">{i.src ? (i.src.kind === "shot" ? `${i.src.label} · ${i.src.inputs.length} slots` : i.src.output?.label ?? i.src.label) : "—"}</Mono>
                 </span>
               ))}
-              {n.kind === "video" && <span className="flex min-h-[44px] items-center gap-[10px] border-t border-[rgba(245,246,248,.07)] px-[12px] py-[10px]"><span className="text-[13px] font-medium leading-[1.2] text-ink">Motion prompt</span><Mono cost className="ml-auto">Inline</Mono></span>}
+              {n.kind === "video" && <span className="flex min-h-[44px] items-center gap-[10px] border-t border-[color:var(--gx-hair)] px-[12px] py-[10px]"><span className="text-[13px] font-medium leading-[1.2] text-ink">Motion prompt</span><Mono cost className="ml-auto">Inline</Mono></span>}
             </div>
           </div>
         )}
@@ -913,11 +913,11 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
           </div>
         )}
         {n.output?.genId && (
-          <div className="flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.1)] bg-card p-[14px]">
+          <div className="flex flex-col gap-[10px] rounded-card border border-[color:var(--gx-card-border)] bg-card p-[14px]">
             <span className="flex items-baseline justify-between"><Mono className="whitespace-nowrap">Output</Mono><span className="flex items-center gap-[5px] whitespace-nowrap ui-mono text-accent"><span className="block h-[6px] w-[6px] rounded-full bg-accent" />Done{took ? ` · ${took} min` : ""}</span></span>
             <span className="text-[13.5px] leading-[1.4] text-ink">{shot ? `${shot.code} v${n.output.filedTo?.version ?? ""} · draft${n.kind === "video" ? ` · 0:${String(Number(n.settings.seconds ?? 5)).padStart(2, "0")}` : ""} · ${fmt(n.credits)}. It shows on the Shots grid now; the director picks or approves it there.` : `${fmt(n.credits)} · unfiled. Wire a shot's spec in to file the next run.`}</span>
             <div className="flex gap-[6px]">
-              <button type="button" onClick={() => production && projectId && router.push(`/productions/${production.id}/${projectId}/shots`)} className="flex min-h-[40px] flex-1 items-center justify-center rounded-[9px] border border-[rgba(245,246,248,.16)] text-[12.5px] font-medium leading-none text-ink">Open in Shots</button>
+              <button type="button" onClick={() => production && projectId && router.push(`/productions/${production.id}/${projectId}/shots`)} className="flex min-h-[40px] flex-1 items-center justify-center rounded-[9px] border border-[color:var(--gx-dashed)] text-[12.5px] font-medium leading-none text-ink">Open in Shots</button>
             </div>
           </div>
         )}

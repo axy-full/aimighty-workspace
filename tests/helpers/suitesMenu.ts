@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 
 /**
  * In the compact phone header, Suites and Search wait behind the context
- * badge (app/phone-chrome.css): one tap opens them in either orientation.
+ * badge (components/graphite/phone.css): one tap opens them in either orientation.
  * On a desktop they are in the header already, and this does nothing.
  *
  * The tap is checked, not assumed: it is made once React is listening on the

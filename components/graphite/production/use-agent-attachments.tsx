@@ -3,6 +3,7 @@ import { useState } from "react";
 import { attachedAsset, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import type { Asset, Project } from "@/lib/workbench/studio";
+import "@/components/PromptAttach.css";
 
 /** Up to four pictures or text files ride with an agent run (lib/workbench/development-server attachmentAssetIds). */
 export const AGENT_ATTACH_MAX = 4;

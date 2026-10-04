@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
 /**
- * The public site's building blocks (app/marketing.css). Server components:
+ * The public site's building blocks (components/marketing/marketing.css). Server components:
  * no state, so every page stays server-rendered and the only JavaScript sent
  * is the prompt bar, the access form and the pricing toggle.
  */
@@ -103,7 +103,7 @@ export function Chips({ items, tint }: { items: ReactNode[]; tint?: boolean }) {
 
 export const Amber = ({ children }: { children: ReactNode }) => <span className="mk-amber">{children}</span>;
 export const Green = ({ children }: { children: ReactNode }) => <span className="mk-green">{children}</span>;
-export const Dot = ({ state }: { state: "done" | "run" | "idle" }) => <span className={`mk-dot mk-dot--${state}`} aria-hidden="true" />;
+export const Dot = ({ state }: { state: "done" | "idle" }) => <span className={`mk-dot mk-dot--${state}`} aria-hidden="true" />;
 
 /** A group card: a head, then rows of name · chip · description. */
 export function Group({ tag, note, rows }: {

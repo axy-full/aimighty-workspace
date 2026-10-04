@@ -93,7 +93,7 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
   const { jobs, summary } = tray;
   const head = jobs.length ? (summary && summary.kind !== "quiet" ? summary.text : "Nothing running") : tray.status === "loading" ? "Reading…" : "";
   const style = at ? ({ "--jobs-top": `${at.top}px`, "--jobs-right": `${at.right}px` } as React.CSSProperties) : undefined;
-  /* Out of the header island: a `backdrop-filter` ancestor would contain the fixed veil. */
+  /* Out of the header: the veil is fixed to the viewport, so it mounts on the shell root. */
   return createPortal(
     <div className="gx-veil gx-jobs-veil" onClick={close} data-testid="jobs-veil">
       <div ref={panel} className="gx-sheet gx-jobs-tray" role="dialog" aria-modal="true" aria-label="Jobs" tabIndex={-1} style={style}
@@ -156,7 +156,6 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
         shell.goSuite("studio", "takes"); onDone(); return;
       case "gen": toProject(); if (shell.view === "gen") shell.closePanels(); else shell.goGen(); onDone(); return;
-      case "ads": toProject(); shell.goSuite("business", "ads"); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
       case "release": void tray.release(job); return;
       case "recreate": {

@@ -290,7 +290,7 @@
   width: 22px;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, .6);
+  background: var(--gx-on-media);
   border: 0;
   border-radius: 4px;
   color: var(--gen-ink);
@@ -303,7 +303,7 @@
   padding: 2px 6px;
   font:
     9px var(--graphite-mono);
-  background: rgba(0, 0, 0, .6);
+  background: var(--gx-on-media);
   color: var(--gen-ink);
   font-size: 9px;
 }
@@ -665,7 +665,7 @@
   white-space: nowrap;
   padding: 2px 7px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, .14);
+  background: var(--gx-input-hover);
   font-weight: 500;
 }
 .generate:disabled {
@@ -844,7 +844,7 @@
 .composer[data-composer] .promptStage {
   position: relative; padding: 14px 16px; border: 1px solid var(--gen-line); border-radius: 10px; background: var(--gen-raised);
 }
-.composer[data-composer] .promptStage:focus-within { border-color: rgba(10, 132, 255, .5); }
+.composer[data-composer] .promptStage:focus-within { border-color: var(--gx-tint-border-50); }
 .composer[data-composer] .promptStage > h2,
 .composer[data-composer] .promptStage > .sectionLabel,
 .composer[data-composer] .settingsSection > .sectionLabel {
@@ -908,7 +908,7 @@
   top: 8px;
   padding: 2px 6px;
   color: var(--gen-ink);
-  background: rgba(0, 0, 0, .6);
+  background: var(--gx-on-media);
   border: 0;
   border-radius: 4px;
   font:
@@ -1000,7 +1000,7 @@
 .dialogOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--gx-on-media);
   z-index: 90;
 }
 .dialog {
@@ -1018,7 +1018,7 @@
   border: 1px solid var(--gen-edge);
   border-radius: 10px;
   background: var(--gen-panel);
-  box-shadow: 0 32px 80px rgba(0, 0, 0, .7);
+  box-shadow: var(--gx-shadow-dialog);
   padding: 0;
 }
 .dialogHeader {
@@ -1069,7 +1069,7 @@
 }
 .modelList button[aria-pressed="true"] {
   border-color: var(--graphite-accent);
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--gx-tint-12);
 }
 .modelList button > span:first-child {
   display: flex;
@@ -1159,7 +1159,7 @@
 }
 .addReference:hover:not(:disabled) {
   border-color: var(--graphite-accent);
-  background: rgba(10, 132, 255, 0.08);
+  background: var(--gx-tint-08);
 }
 @media (min-width: 1700px) {
   .desk {
@@ -1428,7 +1428,7 @@
     position: absolute;
     inset: 10px;
     border-radius: 4px;
-    background: rgba(0, 0, 0, .6);
+    background: var(--gx-on-media);
   }
   .reference > button svg {
     position: relative;
@@ -1761,7 +1761,7 @@
   :global(.collective-assets) .assetTitle > p,
   :global(.collective-assets) .takeInfo > span,
   :global(.collective-assets) .assetProduction { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  :global(.collective-assets) .assetTitle > button { position: absolute; right: 0; top: 0; width: 44px; height: 44px; margin: 0; pointer-events: auto; color: var(--gen-ink); background: rgba(0, 0, 0, .5); border-radius: 0 0 0 6px; }
+  :global(.collective-assets) .assetTitle > button { position: absolute; right: 0; top: 0; width: 44px; height: 44px; margin: 0; pointer-events: auto; color: var(--gen-ink); background: var(--gx-scrim); border-radius: 0 0 0 6px; }
   :global(.collective-assets) .takeKind { top: auto; bottom: 5px; left: 5px; font-size: 9px; letter-spacing: .04em; }
   :global(.collective-assets) .takeCost { top: 5px; left: 5px; right: auto; max-width: calc(100% - 48px); font-size: 8px; }
   :global(.collective-assets) .takeError { position: absolute; bottom: 22px; left: 0; right: 0; max-height: 44px; overflow: auto; margin: 0; padding: 4px; background: var(--gen-ground); pointer-events: auto; }

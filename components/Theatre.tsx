@@ -317,7 +317,7 @@ export default function Theatre({
               </>
             ) : (
               <>
-                <p className="text-[15px] font-medium text-[#FF6B60]">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</p>
+                <p className="text-[15px] font-medium text-[color: var(--gx-failed-text)]">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</p>
                 {gen.status === "failed" && (() => {
                   const f = failureCopy(failureKind(gen.error, gen.params));
                   return (

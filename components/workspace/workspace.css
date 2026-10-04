@@ -1,107 +1,94 @@
 /*
  * Particl workspace (/workspace) — design tokens and base styles.
  * Values are measured from design_handoff_particl_workspace (README token
- * table and the prototype markup). Every rule is scoped under `.pxw`, and the
- * file is imported only by app/workspace/page.tsx, so nothing else changes.
+ * table and the prototype markup). Every rule is scoped under `.pxw`. It is the
+ * FIRST sheet of app/workspace/page.tsx and app/suites/page.tsx; the phone shell
+ * is mobile/mobile.css and the page bodies are pages/assets.css.
  */
 
 .pxw {
   /* Surfaces */
-  --pxw-ground: #000000;
-  --pxw-panel: #08080a;
-  --pxw-panel-raised: #0a0a0c;
-  --pxw-card: #0c0c0e;
-  --pxw-control: #0e0e10;
-  --pxw-control-hover: #161619;
-  --pxw-selected-chip: #212126;
-  --pxw-overlay-panel: #17171b;
-  --pxw-palette-panel: #0e0e11;
-  --pxw-toast: #1a1a1f;
-  --pxw-chip-inner: #141417;
-  --pxw-stepper-button: #1c1c1f;
-  --pxw-stepper-button-hover: #28282d;
+  --pxw-ground: var(--gx-root);
+  --pxw-panel: var(--gx-panel);
+  --pxw-panel-raised: var(--gx-panel);
+  --pxw-card: var(--gx-card);
+  --pxw-control: var(--gx-input);
+  --pxw-control-hover: var(--gx-input-hover);
+  --pxw-selected-chip: var(--gx-thumb);
+  --pxw-overlay-panel: var(--gx-card);
+  --pxw-palette-panel: var(--gx-card);
+  --pxw-toast: var(--gx-card);
+  --pxw-chip-inner: var(--gx-input);
+  --pxw-stepper-button: var(--gx-track);
+  --pxw-stepper-button-hover: var(--gx-input-hover);
 
   /* Borders */
-  --pxw-hairline: #141416;
-  --pxw-divider: #161618;
-  --pxw-card-border: #1c1c20;
-  --pxw-field-border: #1e1e22;
-  --pxw-control-border: #202024;
-  --pxw-dashed: #26262a;
-  --pxw-selected: #2a425c;
-  --pxw-overlay-border: #2a2a2f;
-  --pxw-inner-rule: #18181b;
+  --pxw-hairline: var(--gx-hair-soft);
+  --pxw-divider: var(--gx-hair);
+  --pxw-card-border: var(--gx-card-border);
+  --pxw-field-border: var(--gx-input-border);
+  --pxw-control-border: var(--gx-input-border);
+  --pxw-dashed: var(--gx-dashed);
+  --pxw-selected: var(--gx-tint-border);
+  --pxw-overlay-border: var(--gx-pop-border);
+  --pxw-inner-rule: var(--gx-hair-soft);
 
   /* Ink */
-  --pxw-primary: #f5f5f7;
-  --pxw-near-primary: #e8e8ec;
-  --pxw-secondary: #dcdce1;
-  --pxw-body: #c0c0c6;
-  --pxw-muted: #9a9aa0;
-  --pxw-dim: #8a8a90;
+  --pxw-primary: var(--gx-text);
+  --pxw-near-primary: var(--gx-text);
+  --pxw-secondary: var(--gx-text);
+  --pxw-body: var(--gx-text-2);
+  --pxw-muted: var(--gx-text-2);
+  --pxw-dim: var(--gx-text-2);
   /* At the label floor, not a hair under it (#7a7a80): it inks field labels, facts, reasons and states. */
-  --pxw-dimmer: #7c7c84;
-  --pxw-label-floor: #7c7c84;
-  --pxw-faint: #6a6a70;
-  --pxw-faintest: #5a5a60;
+  --pxw-dimmer: var(--gx-text-2);
+  --pxw-label-floor: var(--gx-text-2);
+  --pxw-faint: var(--gx-text-half);
+  --pxw-faintest: var(--gx-text-3);
 
   /* Accent and state */
-  --pxw-blue: #0a84ff;
-  --pxw-blue-hover: #2b95ff;
-  --pxw-blue-ink: #4da3ff;
-  --pxw-blue-soft-ink: #8fbfff;
-  --pxw-blue-tint: rgba(10, 132, 255, 0.13);
-  --pxw-blue-tint-border: rgba(10, 132, 255, 0.3);
-  --pxw-blue-selected-row: #0d1016;
-  --pxw-green: #34c759;
-  --pxw-green-ink: #8fe3a8;
-  --pxw-green-tint: rgba(52, 199, 89, 0.12);
-  --pxw-amber: #ff9f0a;
-  --pxw-amber-ink: #ffcf7a;
-  --pxw-amber-tint: rgba(255, 159, 10, 0.09);
-  --pxw-amber-tint-strong: rgba(255, 159, 10, 0.14);
-  --pxw-atomik-gold: #e0b95e;
-  --pxw-atomik-gold-ink: #c9a44e;
-  --pxw-atomik-panel-gold: #f2e2bc;
-  --pxw-neutral-state: #5a5a60;
-  --pxw-red: #ff453a;
-  --pxw-red-ink: #ff9a93;
-  --pxw-red-tint: rgba(255, 69, 58, 0.12);
-
-  /* Suite identity — a dot only; the UI never tints per suite. */
-  --pxw-suite-particl: #d7d9de;
-  --pxw-suite-atomik: #f0b23e;
-  --pxw-suite-moleculr: #5cc8b4;
-  --pxw-suite-subatomik: #d48cf5;
-
-  /* Content placeholders */
-  --pxw-sky: #9db9ce;
-  --pxw-sand: #c79e68;
-  --pxw-chrome: #7e858f;
-  --pxw-cream: #d9d2c4;
-  --pxw-dusk: #8e7b63;
-  --pxw-pale: #b9c6cf;
+  --pxw-blue: var(--gx-accent);
+  --pxw-blue-hover: var(--gx-accent-hover);
+  --pxw-blue-ink: var(--gx-accent-text);
+  --pxw-blue-soft-ink: var(--gx-accent-text-hover);
+  --pxw-blue-tint: var(--gx-tint);
+  --pxw-blue-tint-border: var(--gx-tint-border);
+  --pxw-blue-selected-row: var(--gx-tint-08);
+  --pxw-green: var(--gx-done);
+  --pxw-green-ink: var(--gx-done-text);
+  --pxw-green-tint: var(--gx-done-tint);
+  --pxw-amber: var(--gx-waiting);
+  --pxw-amber-ink: var(--gx-waiting-text);
+  --pxw-amber-tint: color-mix(in srgb, var(--gx-waiting) 12%, transparent);
+  --pxw-amber-tint-strong: color-mix(in srgb, var(--gx-waiting) 12%, transparent);
+  --pxw-atomik-gold: var(--gx-suite-atomik);
+  --pxw-atomik-gold-ink: var(--gx-suite-atomik);
+  --pxw-atomik-panel-gold: var(--gx-text);
+  --pxw-neutral-state: var(--gx-eyebrow);
+  --pxw-red: var(--gx-failed);
+  --pxw-red-ink: var(--gx-failed-text);
+  --pxw-red-tint: color-mix(in srgb, var(--gx-failed) 12%, transparent);
 
   /* Interaction values the prototype uses alongside the table */
-  --pxw-row-hover: #121215;
-  --pxw-hover-border: #33333a;
-  --pxw-footer-hover: #111114;
-  --pxw-toggle-on: #1c1c21;
-  --pxw-toast-border: #2e2e34;
-  --pxw-avatar: #26262a;
-  --pxw-avatar-ink: #c7c7ce;
-  --pxw-tab-active: rgba(10, 132, 255, 0.14);
-  --pxw-tab-active-ink: #e8f1ff;
-  --pxw-progress-track: #1c1c1f;
+  --pxw-row-hover: var(--gx-input);
+  --pxw-hover-border: var(--gx-hover-border);
+  --pxw-footer-hover: var(--gx-input);
+  --pxw-toggle-on: var(--gx-thumb);
+  --pxw-toast-border: var(--gx-pop-border);
+  --pxw-avatar: var(--gx-input-hover);
+  --pxw-avatar-ink: var(--gx-text-2);
+  --pxw-tab-active: var(--gx-tint);
+  --pxw-tab-active-ink: var(--gx-text);
+  --pxw-progress-track: var(--gx-track);
 
   /* Type */
-  --pxw-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --pxw-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --pxw-font: var(--gx-font);
+  --pxw-mono: var(--gx-mono);
 
   /* Shadows — overlays only */
-  --pxw-shadow-atomik: 0 26px 68px rgba(0, 0, 0, 0.72);
-  --pxw-shadow-palette: 0 24px 64px rgba(0, 0, 0, 0.7);
-  --pxw-shadow-toast: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --pxw-shadow-atomik: var(--gx-shadow-dialog);
+  --pxw-shadow-palette: var(--gx-shadow-dialog);
+  --pxw-shadow-toast: var(--gx-shadow-toast);
 
   height: 100dvh;
   display: flex;
@@ -142,7 +129,7 @@
 
 .pxw ::-webkit-scrollbar { width: 11px; height: 11px; }
 .pxw ::-webkit-scrollbar-thumb {
-  background: #2a2a2e;
+  background: var(--gx-thumb);
   border-radius: 7px;
   border: 3px solid transparent;
   background-clip: padding-box;
@@ -154,10 +141,8 @@
   50% { opacity: 1; }
 }
 
-.pxw .pxw-mono { font-family: var(--pxw-mono); }
 .pxw .pxw-dot { display: block; flex: none; border-radius: 50%; }
 .pxw .pxw-spacer { flex: 1; min-width: 8px; }
-.pxw .pxw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ── Primitives ─────────────────────────────────────────────────────── */
 
@@ -240,10 +225,10 @@
 }
 .pxw .pxw-btn--control { background: var(--pxw-control); border: 1px solid var(--pxw-control-border); color: var(--pxw-primary); }
 .pxw .pxw-btn--control:hover:not(:disabled) { background: var(--pxw-control-hover); color: var(--pxw-primary); }
-.pxw .pxw-btn--primary { background: var(--pxw-blue); color: #fff; font-weight: 570; gap: 8px; padding: 7px 15px; }
-.pxw .pxw-btn--primary:hover:not(:disabled) { background: var(--pxw-blue-hover); color: #fff; }
+.pxw .pxw-btn--primary { background: var(--pxw-blue); color: var(--gx-on-accent); font-weight: 570; gap: 8px; padding: 7px 15px; }
+.pxw .pxw-btn--primary:hover:not(:disabled) { background: var(--pxw-blue-hover); color: var(--gx-on-accent); }
 .pxw .pxw-btn--primary:disabled { background: var(--pxw-control); color: var(--pxw-dimmer); border: 1px solid var(--pxw-control-border); padding: 6px 14px; }
-.pxw .pxw-btn--amber { background: var(--pxw-amber); color: #1a1200; font-weight: 620; }
+.pxw .pxw-btn--amber { background: var(--pxw-amber); color: var(--gx-root); font-weight: 620; }
 .pxw .pxw-btn--dashed {
   width: 100%;
   justify-content: center;
@@ -368,7 +353,7 @@
   border-radius: 12px;
   background: var(--pxw-panel);
   border: 1px solid var(--pxw-control-border);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--gx-shadow-pop);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -396,7 +381,7 @@
 .pxw .pxw-account-error { margin: 0 8px 6px; font-size: 11.5px; color: var(--pxw-amber-ink); }
 
 /* A suspended workspace says so on this surface too. */
-.pxw .pxw-suspended { padding: 7px 16px; font-size: 12.5px; color: var(--pxw-amber-ink); background: rgba(255, 159, 10, 0.12); border-bottom: 1px solid var(--pxw-divider); flex: none; }
+.pxw .pxw-suspended { padding: 7px 16px; font-size: 12.5px; color: var(--pxw-amber-ink); background: color-mix(in srgb, var(--gx-waiting) 12%, transparent); border-bottom: 1px solid var(--pxw-divider); flex: none; }
 .pxw .pxw-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--pxw-avatar); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 620; color: var(--pxw-avatar-ink); flex: none; }
 
 /* ── Stage tabs (44px) ──────────────────────────────────────────────── */
@@ -422,7 +407,7 @@
 .pxw .pxw-stage > .pxw-dot { width: 5px; height: 5px; }
 .pxw .pxw-stage-divider { width: 1px; height: 18px; background: var(--pxw-control-border); display: block; flex: none; margin: 0 10px; }
 .pxw .pxw-stage-atomik { display: flex; align-items: center; gap: 8px; flex: none; padding: 6px 12px; border-radius: 8px; white-space: nowrap; color: var(--pxw-atomik-gold); }
-.pxw .pxw-stage-atomik[aria-expanded="true"] { background: rgba(240, 178, 62, 0.12); }
+.pxw .pxw-stage-atomik[aria-expanded="true"] { background: color-mix(in srgb, var(--gx-suite-atomik) 12%, transparent); }
 .pxw .pxw-stage-atomik-star { font-size: 12px; }
 .pxw .pxw-stage-atomik-label { font-size: 13.5px; font-weight: 540; letter-spacing: -0.008em; }
 
@@ -471,14 +456,12 @@
 .pxw .pxw-main { flex: 1; min-width: min-content; display: flex; flex-direction: column; background: var(--pxw-ground); }
 
 .pxw .pxw-project-head { flex: none; height: 62px; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--pxw-hairline); }
-.pxw .pxw-project-avatar { width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 650; color: #1a1204; }
+.pxw .pxw-project-avatar { width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 650; color: var(--gx-root); }
 /* Project title block: 158px floor; the title never ellipsises, the subtitle does. */
 .pxw .pxw-project-title-block { min-width: 158px; }
 .pxw .pxw-project-title { font-size: 15.5px; font-weight: 600; letter-spacing: -0.016em; white-space: nowrap; }
 .pxw .pxw-project-sub { font-size: 12px; color: var(--pxw-dimmer); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-chip { padding: 4px 10px; border-radius: 7px; flex: none; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); font-size: 12px; color: var(--pxw-body); white-space: nowrap; }
-.pxw .pxw-chip--blue { background: var(--pxw-blue-tint); border-color: var(--pxw-blue-tint-border); color: var(--pxw-blue-ink); }
-.pxw .pxw-scope .pxw-seg-item { padding: 5px 12px; }
 .pxw a.pxw-btn--control,
 .pxw a.pxw-btn--control:hover { color: var(--pxw-primary); }
 
@@ -549,7 +532,7 @@
 .pxw .pxw-atomik-plan-line { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 5px; text-wrap: pretty; }
 .pxw .pxw-atomik-plan-line { margin-bottom: 0; }
 .pxw .pxw-atomik-reason { margin: 9px 0 0; font-size: 12px; line-height: 1.45; color: var(--pxw-amber-ink); }
-.pxw .pxw-atomik-elsewhere { display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); margin: 10px 16px 0; padding: 8px 11px; border-radius: 10px; background: var(--pxw-amber-tint); border: 1px solid rgba(255, 159, 10, 0.28); font-size: 12px; color: var(--pxw-amber-ink); }
+.pxw .pxw-atomik-elsewhere { display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); margin: 10px 16px 0; padding: 8px 11px; border-radius: 10px; background: var(--pxw-amber-tint); border: 1px solid color-mix(in srgb, var(--gx-waiting) 30%, transparent); font-size: 12px; color: var(--pxw-amber-ink); }
 .pxw .pxw-atomik-elsewhere > .pxw-dot { width: 6px; height: 6px; }
 .pxw .pxw-atomik-elsewhere > span:nth-child(2) { flex: 1; min-width: 0; }
 .pxw .pxw-atomik-elsewhere-go { font-weight: 560; }
@@ -559,28 +542,28 @@
 .pxw .pxw-atomik-step-label { flex: 1; min-width: 0; font-size: 13px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-atomik-step-meta { font-family: var(--pxw-mono); font-size: 10.5px; white-space: nowrap; color: var(--pxw-label-floor); }
 .pxw .pxw-atomik-step-meta[data-gate] { color: var(--pxw-atomik-gold-ink); }
-.pxw .pxw-atomik-step[data-tone="done"] .pxw-atomik-mark { background: rgba(52, 199, 89, 0.16); color: var(--pxw-green); border-color: rgba(52, 199, 89, 0.3); }
+.pxw .pxw-atomik-step[data-tone="done"] .pxw-atomik-mark { background: var(--gx-done-tint); color: var(--pxw-green); border-color: color-mix(in srgb, var(--gx-done) 30%, transparent); }
 .pxw .pxw-atomik-step[data-tone="done"] .pxw-atomik-step-label { color: var(--pxw-dim); }
-.pxw .pxw-atomik-step[data-tone="now"] .pxw-atomik-mark { background: rgba(10, 132, 255, 0.18); color: var(--pxw-blue-ink); border-color: rgba(10, 132, 255, 0.38); }
+.pxw .pxw-atomik-step[data-tone="now"] .pxw-atomik-mark { background: var(--gx-tint); color: var(--pxw-blue-ink); border-color: var(--gx-tint-border); }
 .pxw .pxw-atomik-step[data-tone="now"] .pxw-atomik-step-label { color: var(--pxw-primary); }
-.pxw .pxw-atomik-step[data-tone="gate"] .pxw-atomik-mark { background: rgba(255, 159, 10, 0.12); color: var(--pxw-amber-ink); border-color: rgba(255, 159, 10, 0.3); }
-.pxw .pxw-atomik-step[data-tone="failed"] .pxw-atomik-mark { background: var(--pxw-red-tint); color: var(--pxw-red-ink); border-color: rgba(255, 69, 58, 0.34); }
-.pxw .pxw-gate { margin: 12px 16px 0; padding: 12px 13px; border-radius: 11px; background: rgba(255, 159, 10, 0.08); border: 1px solid rgba(255, 159, 10, 0.28); }
+.pxw .pxw-atomik-step[data-tone="gate"] .pxw-atomik-mark { background: color-mix(in srgb, var(--gx-waiting) 12%, transparent); color: var(--pxw-amber-ink); border-color: color-mix(in srgb, var(--gx-waiting) 30%, transparent); }
+.pxw .pxw-atomik-step[data-tone="failed"] .pxw-atomik-mark { background: var(--pxw-red-tint); color: var(--pxw-red-ink); border-color: color-mix(in srgb, var(--gx-failed) 30%, transparent); }
+.pxw .pxw-gate { margin: 12px 16px 0; padding: 12px 13px; border-radius: 11px; background: color-mix(in srgb, var(--gx-waiting) 12%, transparent); border: 1px solid color-mix(in srgb, var(--gx-waiting) 30%, transparent); }
 .pxw .pxw-gate-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .pxw .pxw-gate-title { font-size: 12.5px; font-weight: 560; color: var(--pxw-amber-ink); }
 .pxw .pxw-gate-price { font-family: var(--pxw-mono); font-size: 13px; font-weight: 620; color: var(--pxw-amber-ink); }
-.pxw .pxw-gate-line { font-size: 12px; color: #b09c7e; line-height: 1.5; margin-top: 6px; text-wrap: pretty; }
+.pxw .pxw-gate-line { font-size: 12px; color: var(--gx-text-2); line-height: 1.5; margin-top: 6px; text-wrap: pretty; }
 .pxw .pxw-gate-notice { font-size: 12px; color: var(--pxw-amber-ink); line-height: 1.45; margin-top: 8px; }
 .pxw .pxw-gate-actions { display: flex; gap: 8px; margin-top: 11px; }
 .pxw .pxw-gate-decline { flex: 1; text-align: center; padding: 8px; border-radius: 9px; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); font-size: 12.5px; }
 .pxw .pxw-gate-decline:hover:not(:disabled) { background: var(--pxw-control-hover); }
-.pxw .pxw-gate-approve { flex: 1.4; text-align: center; padding: 8px; border-radius: 9px; background: var(--pxw-amber); color: #1a1200; font-size: 12.5px; font-weight: 620; white-space: nowrap; }
+.pxw .pxw-gate-approve { flex: 1.4; text-align: center; padding: 8px; border-radius: 9px; background: var(--pxw-amber); color: var(--gx-root); font-size: 12.5px; font-weight: 620; white-space: nowrap; }
 .pxw .pxw-gate-approve:disabled { opacity: 0.55; }
-.pxw .pxw-atomik-error { margin: 12px 16px 0; padding: 10px 12px; border-radius: 10px; background: var(--pxw-red-tint); border: 1px solid rgba(255, 69, 58, 0.3); font-size: 12px; line-height: 1.45; color: var(--pxw-red-ink); }
+.pxw .pxw-atomik-error { margin: 12px 16px 0; padding: 10px 12px; border-radius: 10px; background: var(--pxw-red-tint); border: 1px solid color-mix(in srgb, var(--gx-failed) 30%, transparent); font-size: 12px; line-height: 1.45; color: var(--pxw-red-ink); }
 .pxw .pxw-atomik-foot { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
 .pxw .pxw-atomik-price { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-label-floor); white-space: nowrap; }
 .pxw .pxw-atomik-price[data-paid] { color: var(--pxw-atomik-gold-ink); }
-.pxw .pxw-atomik-run { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 15px; border-radius: 10px; font-size: 13px; font-weight: 570; background: var(--pxw-blue); color: #fff; white-space: nowrap; }
+.pxw .pxw-atomik-run { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 15px; border-radius: 10px; font-size: 13px; font-weight: 570; background: var(--pxw-blue); color: var(--gx-on-accent); white-space: nowrap; }
 .pxw .pxw-atomik-run:hover:not(:disabled) { background: var(--pxw-blue-hover); }
 .pxw .pxw-atomik-run[data-busy] { background: var(--pxw-toggle-on); color: var(--pxw-body); }
 .pxw .pxw-atomik-run:disabled { background: var(--pxw-toggle-on); color: var(--pxw-dimmer); }
@@ -593,8 +576,8 @@
 .pxw .pxw-activity-empty { font-size: 12px; color: var(--pxw-dimmer); }
 .pxw .pxw-run-chip { background: var(--pxw-control); color: var(--pxw-body); border-color: var(--pxw-control-border); }
 .pxw .pxw-run-chip:hover { background: var(--pxw-control-hover); }
-.pxw .pxw-run-chip[data-tone="running"] { background: rgba(240, 178, 62, 0.1); color: var(--pxw-atomik-panel-gold); border-color: rgba(240, 178, 62, 0.4); }
-.pxw .pxw-run-chip[data-tone="waiting"] { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); border-color: rgba(255, 159, 10, 0.42); font-weight: 580; }
+.pxw .pxw-run-chip[data-tone="running"] { background: color-mix(in srgb, var(--gx-suite-atomik) 12%, transparent); color: var(--pxw-atomik-panel-gold); border-color: color-mix(in srgb, var(--gx-suite-atomik) 30%, transparent); }
+.pxw .pxw-run-chip[data-tone="waiting"] { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); border-color: color-mix(in srgb, var(--gx-waiting) 30%, transparent); font-weight: 580; }
 
 /* ── Home ──────────────────────────────────────────────────────────── */
 
@@ -613,10 +596,10 @@
 .pxw .pxw-project-card[aria-current="true"] { border-color: var(--pxw-selected); }
 .pxw .pxw-project-media { display: block; position: relative; aspect-ratio: 16 / 9; }
 .pxw .pxw-project-media > span { position: absolute; display: block; }
-.pxw .pxw-project-slate { left: 11px; top: 10px; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.09em; color: #121210; background: rgba(255, 255, 255, 0.76); padding: 3px 6px; border-radius: 5px; max-width: calc(100% - 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-project-slate { left: 11px; top: 10px; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.09em; color: var(--gx-text); background: var(--gx-on-media); padding: 3px 6px; border-radius: 5px; max-width: calc(100% - 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-project-body { display: block; padding: 13px 14px 14px; }
 .pxw .pxw-project-row { display: flex; align-items: center; gap: 10px; }
-.pxw .pxw-project-card-avatar { width: 26px; height: 26px; border-radius: 7px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 650; color: #1a1204; }
+.pxw .pxw-project-card-avatar { width: 26px; height: 26px; border-radius: 7px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 650; color: var(--gx-root); }
 .pxw .pxw-project-card-text { flex: 1; min-width: 0; }
 .pxw .pxw-project-card-name { display: block; font-size: 14px; font-weight: 580; letter-spacing: -0.012em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-project-card-meta { display: block; font-size: 11.5px; color: var(--pxw-dimmer); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -637,7 +620,7 @@
 
 /* ── ⌘K palette ────────────────────────────────────────────────────── */
 
-.pxw .pxw-palette { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.66); display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh; z-index: 50; }
+.pxw .pxw-palette { position: fixed; inset: 0; background: var(--gx-scrim); display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh; z-index: 50; }
 .pxw .pxw-palette-catcher { position: absolute; inset: 0; }
 .pxw .pxw-palette-panel { position: relative; width: min(560px, 92vw); background: var(--pxw-palette-panel); border: 1px solid var(--pxw-overlay-border); border-radius: 15px; box-shadow: var(--pxw-shadow-palette); overflow: hidden; }
 .pxw .pxw-palette-input { display: block; width: 100%; padding: 16px 18px; background: transparent; border: none; border-bottom: 1px solid var(--pxw-card-border); font-size: 15px; outline: none; }
@@ -693,8 +676,6 @@
 .pxw .pxw-brief-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
 .pxw .pxw-field-block { display: flex; flex-direction: column; gap: 6px; }
 .pxw .pxw-field-label { font-size: 12.5px; color: var(--pxw-body); }
-.pxw .pxw-textarea { width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-field-border); color: var(--pxw-primary); font-size: 13px; line-height: 1.55; resize: vertical; }
-.pxw .pxw-textarea:focus { border-color: var(--pxw-selected); outline: none; }
 .pxw .pxw-brief-actions { display: flex; gap: 8px; }
 
 .pxw .pxw-look { margin-bottom: 18px; border: 1px solid var(--pxw-card-border); border-radius: 12px; background: var(--pxw-card); padding: 12px 14px; }
@@ -717,7 +698,7 @@
 /* The delivery spec is edited in place (frame rate retimes the cut; aspect is a delivery note). */
 .pxw .pxw-package-facts > label { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); min-width: 0; }
 .pxw .pxw-package-facts > label span { font-size: 12px; color: var(--pxw-dimmer); }
-.pxw .pxw-package-facts select { min-height: 36px; padding: 0 8px; border-radius: 8px; background: var(--pxw-input, #111114); color: var(--pxw-near-primary); border: 1px solid var(--pxw-card-border); font: inherit; font-size: 13px; }
+.pxw .pxw-package-facts select { min-height: 36px; padding: 0 8px; border-radius: 8px; background: var(--gx-input); color: var(--pxw-near-primary); border: 1px solid var(--pxw-card-border); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .pxw .pxw-package-facts select { min-height: 44px; font-size: 16px; } }
 .pxw .pxw-package-note { font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); margin: 14px 0 0; text-wrap: pretty; }
 .pxw .pxw-package-error { font-size: 12.5px; color: var(--pxw-red-ink); margin: 14px 0 0; }
@@ -732,39 +713,20 @@
 .pxw .pxw-package-gaps { margin: 14px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--pxw-dim); }
 .pxw .pxw-package-gaps ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .pxw .pxw-package-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.pxw .pxw-hook-list { margin: 14px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--pxw-body); line-height: 1.6; }
 
-/* Inspector: specification and plan */
-.pxw .pxw-insp-kicker { display: block; margin: 20px 0 10px; }
-.pxw .pxw-facts { margin: 0; }
-.pxw .pxw-fact { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--pxw-inner-rule); }
-.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); flex: none; }
-.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 11.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+/* Inspector: specification and plan. The fact list (`.pxw-insp-kicker`, `.pxw-facts`,
+   `.pxw-fact`) has ONE definition, in pages/assets.css. */
 .pxw .pxw-insp-plan-title { font-size: 14px; font-weight: 570; letter-spacing: -0.012em; }
 .pxw .pxw-insp-plan-line { font-size: 12.5px; line-height: 1.5; color: var(--pxw-dim); margin: 6px 0 0; text-wrap: pretty; }
 .pxw .pxw-insp-plan-price { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); margin-top: 8px; }
-.pxw .pxw-insp-steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.pxw .pxw-insp-step { display: grid; grid-template-columns: 20px 1fr; column-gap: 9px; align-items: center; font-size: 12.5px; }
-.pxw .pxw-insp-step-mark { grid-row: span 2; width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: var(--pxw-mono); font-size: 10px; background: var(--pxw-control); color: var(--pxw-label-floor); }
-.pxw .pxw-insp-step[data-mark="done"] .pxw-insp-step-mark { background: var(--pxw-green-tint); color: var(--pxw-green-ink); }
-.pxw .pxw-insp-step[data-mark="current"] .pxw-insp-step-mark { background: var(--pxw-blue-tint); color: var(--pxw-blue-ink); }
-.pxw .pxw-insp-step[data-mark="gate"] .pxw-insp-step-mark { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); }
-.pxw .pxw-insp-step-label { color: var(--pxw-secondary); }
-.pxw .pxw-insp-step-detail { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-dimmer); }
-.pxw .pxw-insp-gate { margin-top: 14px; padding: 12px 13px; border-radius: 11px; background: var(--pxw-amber-tint); border: 1px solid rgba(255, 159, 10, 0.3); }
-.pxw .pxw-insp-gate-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--pxw-amber-ink); }
-.pxw .pxw-insp-gate-head strong { font-family: var(--pxw-mono); font-weight: 500; }
-.pxw .pxw-insp-gate p { font-size: 12px; line-height: 1.5; color: var(--pxw-body); margin: 8px 0 0; }
-.pxw .pxw-insp-gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .pxw .pxw-insp-run { width: 100%; justify-content: center; margin-top: 16px; padding: 10px; border-radius: 10px; font-size: 13px; }
 .pxw .pxw-insp-reason { font-size: 12px; line-height: 1.5; color: var(--pxw-dimmer); margin: 8px 0 0; text-wrap: pretty; }
-.pxw .pxw-insp-note { font-size: 12px; color: var(--pxw-body); margin: 10px 0 0; }
 .pxw .pxw-insp-error { font-size: 12px; color: var(--pxw-red-ink); margin: 10px 0 0; }
 
 /* ── Global Generate composer ──────────────────────────────────────── */
 /* An overlay over the current view, on the design's overlay tokens: the
    palette's scrim, the overlay panel and border, and an overlay shadow. */
-.pxw .pxw-composer { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.66); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; z-index: 60; }
+.pxw .pxw-composer { position: fixed; inset: 0; background: var(--gx-scrim); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; z-index: 60; }
 .pxw .pxw-composer-catcher { position: absolute; inset: 0; }
 .pxw .pxw-composer-panel {
   position: relative;
@@ -819,3 +781,63 @@
 }
 /* The strip also reports a composer render started from Home. */
 .pxw[data-view="home"] .pxw-gen { position: sticky; bottom: 0; }
+
+/* ── Phone floors ──────────────────────────────────────────────────────
+   This sheet's page bodies are mounted on phones too: in the Suites shell
+   (`.gx-legacy.pxw`) and, on /workspace, in the phone shell's sheets. A phone
+   has two floors — no text under 12px, no target under 44px — and the desk
+   sizes above sit under both. This block is LAST so it wins every tie; each
+   selector repeats the desk rule it raises, so nothing gains weight.
+   (`.pxw-field-label` and `.pxw-draft-status` already clear 12px above;
+   pages/assets.css ends with the same block for its own rules.) */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .pxw .pxw-kicker,
+  .pxw .pxw-keycap,
+  .pxw .pxw-pill-label,
+  .pxw .pxw-btn-key,
+  .pxw .pxw-atomik-badge,
+  .pxw .pxw-atomik-caret,
+  .pxw .pxw-credits,
+  .pxw .pxw-account-caret,
+  .pxw .pxw-account-identity small,
+  .pxw .pxw-account-kicker,
+  .pxw .pxw-account-item small,
+  .pxw .pxw-account-error,
+  .pxw .pxw-avatar,
+  .pxw .pxw-stage-num,
+  .pxw .pxw-library-media-count,
+  .pxw .pxw-library-group-count,
+  .pxw .pxw-library-item-sub,
+  .pxw .pxw-media-name,
+  .pxw .pxw-crumb-sep,
+  .pxw .pxw-gen-meta,
+  .pxw .pxw-kind-pill,
+  .pxw .pxw-status-text,
+  .pxw .pxw-status-hint .pxw-keycap,
+  .pxw .pxw-status-hint-label,
+  .pxw .pxw-atomik-panel-name,
+  .pxw .pxw-atomik-panel-state,
+  .pxw .pxw-atomik-mark,
+  .pxw .pxw-atomik-step-meta,
+  .pxw .pxw-atomik-price,
+  .pxw .pxw-atomik-run .pxw-atomik-run-key,
+  .pxw .pxw-activity-meta,
+  .pxw .pxw-home-head .pxw-kicker,
+  .pxw .pxw-project-slate,
+  .pxw .pxw-project-card-avatar,
+  .pxw .pxw-project-card-meta,
+  .pxw .pxw-feature-num,
+  .pxw .pxw-feature-state-label,
+  .pxw .pxw-palette-group,
+  .pxw .pxw-palette-hint,
+  .pxw .pxw-spec-chip,
+  .pxw .pxw-spec-card-state,
+  .pxw .pxw-look-item figcaption,
+  .pxw .pxw-package-facts span,
+  .pxw .pxw-mkt-plan-price,
+  .pxw .pxw-insp-plan-price { font-size: 12px; }
+}
+/* The composer opens over the Suites shell on a phone: its close is a 44px target there. */
+@media (max-width: 767px), (pointer: coarse) {
+  .pxw .pxw-composer-close { width: 44px; height: 44px; }
+}

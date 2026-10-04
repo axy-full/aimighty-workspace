@@ -12,7 +12,7 @@
   .ps .phone-project-crumb>strong { font-weight:400; }
   .ps .phone-save { display:flex;align-items:center;justify-content:center;gap:3px;font-size:12px;min-width:16px;min-height:40px;color:var(--graphite-accent-text); }
   .ps .phone-save span { display:block;max-width:46px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ps-muted); }
-  .ps .is-home .phone-save span { display:block;font:12px var(--graphite-mono);color:var(--ps-muted); }
+  .ps .is-home .phone-save span { display:block;font:12px var(--gx-mono);color:var(--ps-muted); }
   .ps .is-home .phone-save>svg { display:none; }
   .ps .phone-save.has-error { color:var(--graphite-warning); }
   .ps .phone-atomik { display:flex;align-items:center;gap:6px;min-height:33px;padding:0 8px;border:1px solid var(--ps-edge);border-radius:6px;background:var(--graphite-control);font-size:12px; }
@@ -39,13 +39,13 @@
   .ps .studio-redesign .home-project-cover { aspect-ratio:16/9;height:auto;position:relative; }
   .ps .studio-redesign .home-cover-continue { display:none; }
   .ps .phone-cover-chips { position:absolute;inset:10px 10px auto;display:flex;justify-content:space-between;gap:8px; }
-  .ps .phone-cover-chips span { font:10px var(--graphite-mono);letter-spacing:.12em;text-transform:uppercase;padding:4px 7px;border-radius:4px;background:var(--ps-scrim); }
+  .ps .phone-cover-chips span { font:10px var(--gx-mono);letter-spacing:.12em;text-transform:uppercase;padding:4px 7px;border-radius:4px;background:var(--ps-scrim); }
   .ps .studio-redesign .home-current>div:nth-child(2) { display:block;padding:14px 16px 0; }
   .ps .studio-redesign .home-current>div:nth-child(2)>div { display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:2px 7px; }
   .ps .studio-redesign .home-current>div:nth-child(2)>svg { display:none; }
   .ps .studio-redesign .home-current h2 { font-size:17px;line-height:1.5;letter-spacing:-.02em; }
   .ps .studio-redesign .home-current p { grid-column:1/-1;margin:0;line-height:1.5;font-size:13px; }
-  .ps .phone-project-meta { font:11px var(--graphite-mono);color:var(--ps-muted); }
+  .ps .phone-project-meta { font:11px var(--gx-mono);color:var(--ps-muted); }
   .ps .studio-redesign .home-current .phone-project-progress { display:block;padding:14px 16px 16px; }
   .ps .phone-project-progress>div { display:flex;gap:3px; }
   .ps .phone-project-progress i { flex:1;height:3px;border-radius:2px;background:var(--ps-selected); }
@@ -53,12 +53,12 @@
   .ps .phone-project-progress>span { display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;color:var(--ps-body); }
   .ps .phone-project-progress b { font-weight:400;color:var(--graphite-accent-text); }
   .ps .phone-new-project { min-height:88px;border:1px dashed var(--ps-hover);border-radius:8px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--ps-body);font-size:14px; }
-  .ps .phone-recent-label { margin:28px 0 10px;font:12px var(--graphite-mono);letter-spacing:.09em;color:var(--ps-muted); }
+  .ps .phone-recent-label { margin:28px 0 10px;font:12px var(--gx-mono);letter-spacing:.09em;color:var(--ps-muted); }
   .ps .mobile-home-shortcuts { display:flex;flex-direction:column;gap:0;margin:0;border:1px solid var(--ps-edge);border-radius:8px;overflow:hidden; }
   .ps .mobile-home-shortcuts button { display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px;min-height:64px;padding:8px 14px;border:0;border-bottom:1px solid var(--ps-line);border-radius:0; }
   .ps .mobile-home-shortcuts button:last-child { border-bottom:0; }
   .ps .mobile-home-shortcuts button>svg { padding:8px;width:36px;height:36px;border:1px solid var(--ps-edge);border-radius:6px;background:var(--graphite-control); }
-  .ps .mobile-home-shortcuts small { margin:0;font:11px var(--graphite-mono); }
+  .ps .mobile-home-shortcuts small { margin:0;font:11px var(--gx-mono); }
   .ps .studio-redesign .home-workflow>div { grid-template-columns:1fr;gap:0;border:1px solid var(--ps-edge);border-radius:8px;overflow:hidden; }
   .ps .studio-redesign .home-workflow button { display:grid;grid-template-columns:20px 34px 1fr;gap:3px 12px;min-height:74px;padding:12px;border:0;border-bottom:1px solid var(--ps-line);border-radius:0; }
   .ps .studio-redesign .home-workflow button>small { position:static;grid-row:1/3;align-self:center; }
@@ -152,7 +152,7 @@
   .ps .studio-redesign.is-home .project-bar,.ps .studio-redesign.is-welcome .project-bar { display:none; }
   .ps .studio-redesign.studio-shell .production-home { padding:28px 20px 30px; }
   .ps .studio-redesign.studio-shell .home-heading { margin-bottom:24px; }
-  .ps .studio-redesign.studio-shell .home-heading .eyebrow { font:12px var(--graphite-mono);letter-spacing:.09em; }
+  .ps .studio-redesign.studio-shell .home-heading .eyebrow { font:12px var(--gx-mono);letter-spacing:.09em; }
   .ps .studio-redesign.studio-shell .home-heading h1 { margin-top:7px;font-size:33px;line-height:1.15;letter-spacing:-.05em; }
   .ps .studio-redesign.studio-shell .home-project-cover { height:auto;aspect-ratio:16/9; }
   .ps.mobile-sheet.mobile-sheet-atomik .genie-intro p { font-size:14px;line-height:1.8; }

@@ -19,7 +19,7 @@ export default function AtomikButton() {
   return (
     <button type="button" onClick={toggle} aria-pressed={open} aria-keyshortcuts="Meta+J"
       className={`flex h-[36px] items-center gap-[8px] rounded-pill border px-[12px] text-[13px] font-medium leading-none text-ink ${
-        open ? "border-[rgba(245,246,248,.35)] bg-selected" : "border-border-mid"}`}>
+        open ? "border-[color:var(--gx-hover-border)] bg-selected" : "border-border-mid"}`}>
       {"steps" in ring ? <Ring steps={ring.steps} size={14} /> : <Ring mode={ring.mode} size={14} />}
       {word ? "Atomik" : "Ask Atomik"}
       <span className={`ui-mono text-ink-muted ${word ? "ui-mono-cost" : "tracking-normal"}`}>

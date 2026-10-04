@@ -142,7 +142,6 @@ test("no connected surface imports the credit rate, so none of them can apply it
   /* The rule stated as the only thing that can enforce it: a file that never
      sees creditUsd cannot multiply a provider's credits by ten cents. */
   const connected = [
-    "components/suites/ConsumerGenjutsu.tsx",
     "components/suites/ConsumerShorts.tsx",
     "components/suites/ConsumerMarketingVideo.tsx",
     "components/suites/MarketingTemplates.tsx",

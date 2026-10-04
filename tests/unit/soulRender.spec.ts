@@ -332,8 +332,8 @@ test("admission: a ready identity renders only with its own family, at the live 
         soulVendorCostUsd: 0.25 * batch, soulCredentialFingerprint: higgsfieldCredentialFingerprint(), ratio: "3:4", resolution: "1080p" });
     }
     const refusals: [Record<string, unknown>, number, RegExp][] = [
-      [{ model: "hf-soul-standard" }, 409, /renders with Soul 2/],
-      [{ model: "hf-soul-2", soulIdentityId: "soul_cinema" }, 409, /renders with Soul Cinema/],
+      [{ model: "hf-soul-standard" }, 409, /renders with Identity still · 2/],
+      [{ model: "hf-soul-2", soulIdentityId: "soul_cinema" }, 409, /renders with Identity still · Cinema/],
       [{ soulIdentityId: "soul_earlier" }, 409, /earlier host/],
       [{ soulIdentityId: "soul_training" }, 400, /not ready/],
       [{ soulIdentityId: "missing" }, 400, /not available/],
@@ -353,7 +353,7 @@ test("admission: a ready identity renders only with its own family, at the live 
     /* Without a reviewed quote (no checkpoint) nothing is admitted. */
     const direct = await gen.executeGenerationAdmission({ ...body(), maxCredits: 999 }, actor, { requestClaim: undefined as never, defer: noInline });
     expect(direct).toMatchObject({ status: 400 });
-    expect(JSON.stringify(direct.body)).toMatch(/live Soul render quote/);
+    expect(JSON.stringify(direct.body)).toMatch(/live identity render quote/);
     expect(await counts()).toEqual({ generations: 0, meters: 0 });
   }));
 
@@ -434,7 +434,7 @@ test("a batch of 4 is one paid request: its take carries the whole price, and th
     for (const id of stored) await unlink(path.join(process.cwd(), ".data", "generations", `${id}.png`)).catch(() => {});
   }));
 
-test("a Soul render the provider fails settles at zero, and its card says what the ledger kept", async () =>
+test("an identity render the provider fails settles at zero, and its card says what the ledger kept", async () =>
   tenant("soul_render_failed", async (gen) => {
     const { reconcileHiggsfieldImage, loadJob, produce } = await import("../../lib/renderWork");
     const { getGeneration } = await import("../../lib/jobs");
@@ -461,7 +461,7 @@ test("a Soul render the provider fails settles at zero, and its card says what t
     expect(renderOutcome(read)).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
   }));
 
-test("the Cast page's request and filing: a character, its own Soul ID, its family's model; old entries read-only; account Soul IDs need training again", async () => {
+test("the Cast page's request and filing: a character, its own identity, its family's model; old entries read-only; an earlier account's identity is told apart", async () => {
   const { castRenderInput, renderedStills, renderOutcome, renderableIdentity } = await import("../../lib/production/cast-render");
   const { generationRequestBody } = await import("../../lib/workbench/generation-request");
   const { newEntry, retiredModelOf, accountSoulIdOf } = await import("../../lib/production/cast");
@@ -493,21 +493,21 @@ test("the Cast page's request and filing: a character, its own Soul ID, its fami
   expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 0, settled: false } } })).toBe("Refused by the content filter · Settling · Change the prompt or reference");
   expect(renderOutcome({ status: "failed", error: "Refused by the content filter", failure: refused })).toBe("Refused by the content filter · Change the prompt or reference");
   expect(renderOutcome({ status: "failed", failure: { ...refused, payer: "own", billing: { state: "refunded", amount: 12, unit: "higgsfield_credits", basis: "hf-refund" } } }))
-    .toBe("Refused by the content filter · Higgsfield refunded 12 credits · Change the prompt or reference");
+    .toBe("Refused by the content filter · The engine refunded 12 credits · Change the prompt or reference");
   /* A held render discarded before it started: cancelled, and the receipt says nothing was kept. */
   expect(renderOutcome({ status: "cancelled", failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: null, charge: { credits: 0, settled: true } } }))
     .toBe("Cancelled · Not billed · Render again");
   /* A record from before failures were kept: its reason, and no word on the charge. */
   expect(renderOutcome({ status: "failed", error: "Stopped." })).toBe("Stopped.");
   expect(renderOutcome({ status: "cancelled" })).toBe("The render was cancelled.");
-  /* Built earlier on the account with a model the key has no family for: read-only. Never built, or Soul 2/Cinema: editable. */
+  /* Built earlier with a stills model that made a place or a persona: read-only, named without the old family word. Never built, or the two character models: editable. */
   const built = { takes: [{ genId: "gen_hfc_1", at: "2026-09-24T00:00:00.000Z" }] };
-  expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Soul Location");
-  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Soul Cast");
+  expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Location still");
+  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Persona still");
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location" })).toBeNull();
   expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_cinematic", ...built })).toBeNull();
   expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_2", ...built })).toBeNull();
-  expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_future_model", ...built })).toBe("a connected-account Soul model");
+  expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_future_model", ...built })).toBe("an earlier engine");
   expect(accountSoulIdOf({ ...newEntry("character", "Mira"), soulId: "acct-soul-1" })).toBe("acct-soul-1");
   expect(accountSoulIdOf({ ...newEntry("character", "Mira"), soulId: "acct-soul-1", identityId: "soul_a" })).toBeNull();
   expect(accountSoulIdOf({ ...newEntry("element", "Lamp"), soulId: "acct-soul-1" })).toBeNull();

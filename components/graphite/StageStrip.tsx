@@ -11,7 +11,7 @@ export function StageStrip() {
   /* A strip wider than its row (a phone) scrolls the current page to its middle, so the page it names is in sight. */
   const nav = useRef<HTMLElement>(null);
   const current = `${shell.suite.id}:${shell.page.id}`;
-  /* The phone's Home and Studio grid stand outside the strip (GLASS_SPEC §3): nothing else on those screens.
+  /* The phone's Home and Studio grid stand outside the strip (design/particl-graphite/README.md › Phone): nothing else on those screens.
      On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away.
      Every page of a suite the owner runs on the connected account is the same owner-run card for a member
      (idea 19), so a member is shown no tabs there. A strip drawn again on the same page (back from Gen) is
@@ -27,10 +27,15 @@ export function StageStrip() {
       strip.scrollLeft += at.left - box.left - (box.width - at.width) / 2;
     };
     reveal();
-    /* Rotation keeps this component mounted, but changes the space beside the project. */
-    const resize = new ResizeObserver(reveal);
+    /* Rotation keeps this component mounted, but changes the space beside the project. The strip's own box
+       can keep its size while its row is laid out again, so the window's resize is watched too, and each
+       reveal is run once more on the next frame, after that layout has settled. */
+    let frame = 0;
+    const settle = () => { reveal(); cancelAnimationFrame(frame); frame = requestAnimationFrame(reveal); };
+    const resize = new ResizeObserver(settle);
     resize.observe(strip);
-    return () => resize.disconnect();
+    window.addEventListener("resize", settle);
+    return () => { resize.disconnect(); window.removeEventListener("resize", settle); cancelAnimationFrame(frame); };
   }, [current, hidden]);
   if (hidden) return null;
   return (

@@ -173,7 +173,7 @@
 .mr-cell[data-empty] .mr-cell-cr { color: var(--graphite-body); font-weight: 400; }
 .mr-cell[data-reference] {
   border-color: var(--graphite-accent);
-  background: rgba(10, 132, 255, .14);
+  background: var(--gx-tint);
 }
 .mr-cell[data-reference] .mr-cell-cr { color: var(--graphite-accent-text); }
 .mr-legend {
@@ -190,7 +190,7 @@
   flex: none;
   border-radius: 3px;
   border: 1px solid var(--graphite-accent);
-  background: rgba(10, 132, 255, .14);
+  background: var(--gx-tint);
 }
 .mr-empty {
   margin: 0;

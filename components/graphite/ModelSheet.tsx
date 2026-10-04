@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { BillingSource, ComposerModel } from "@/lib/workspace/composer";
+import type { ComposerModel } from "@/lib/workspace/composer";
 import { modelChips, pickerSections, type RowPrice } from "@/lib/workspace/model-picker";
 
-/** A way out of an empty sheet ("Try again", "Use Studio engines"). */
+/** A way out of an empty sheet ("Try again"). */
 export type SheetAction = { label: string; onClick: () => void; testId?: string };
 
 /**
@@ -12,13 +12,11 @@ export type SheetAction = { label: string; onClick: () => void; testId?: string 
  * (lib/workspace/model-picker.ts › rowPrice), so a model is chosen knowing its
  * price rather than reading it off Generate.
  */
-export function ModelSheet({ label, groups, billing, onBilling, offered, recent, selectedId, priceOf, empty, emptyActions = [], loading, onPick, onClose }: {
+export function ModelSheet({ label, catalogue, offered, recent, selectedId, priceOf, empty, emptyActions = [], loading, onPick, onClose }: {
   /** The listbox's name ("Video models"). */
   label: string;
-  /** The catalogues this person may use; one hides the switch. */
-  groups: readonly { id: BillingSource; label: string }[];
-  billing: BillingSource;
-  onBilling: (billing: BillingSource) => void;
+  /** What the list is, named beside the title ("Studio engines"). */
+  catalogue: string;
   offered: readonly ComposerModel[];
   recent: readonly ComposerModel[];
   selectedId: string | null;
@@ -103,14 +101,7 @@ export function ModelSheet({ label, groups, billing, onBilling, offered, recent,
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
       <div className="gx-sheet-head">
         <span className="gx-panel-title">Model</span>
-        {groups.length > 1 ? (
-          <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Catalogue">
-            {groups.map((g) => <button key={g.id} type="button" role="tab" className="gx-seg-btn" aria-selected={billing === g.id} onClick={() => { setQuery(""); onBilling(g.id); }}><span>{g.label}</span></button>)}
-          </div>
-        ) : groups.length === 1 ? (
-          /* One catalogue (a member's Gen: Studio engines only) is named, not offered as a switch. */
-          <span className="gx-hint gx-sheet-catalogue" data-testid="gen-sheet-catalogue">{groups[0].label}</span>
-        ) : <span className="gx-spacer" />}
+        <span className="gx-hint gx-sheet-catalogue" data-testid="gen-sheet-catalogue">{catalogue}</span>
         <button type="button" className="gx-hbtn" onClick={onClose}>Close</button>
         {listed ? (
           <div className="gx-sheet-find">

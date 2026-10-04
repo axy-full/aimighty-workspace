@@ -1,10 +1,11 @@
 /*
  * Production suite (owner's brief, 23 September): the agent-driven Studio
- * stages — Brief & Script first. Scoped under `.gx` like the glass layer, so
+ * stages — Brief & Script first (components/graphite/production). Scoped under `.gx` like the shell's own sheet, so
  * bundler sheet order never decides it. No serif anywhere; the script reads in
  * the shell's mono.
  */
-.gx .pd-stage { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; min-width: 0; }
+.gx .pd-stage { display: flex; flex-direction: column; gap: 16px; padding: 16px var(--gx-page-pad) 24px; min-width: 0; }
+@media (max-width: 767px) { .gx .pd-stage { padding: 12px 12px 24px; } }
 .gx .pd-agent { gap: 10px; }
 .gx .pd-agent-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 220px); gap: 16px; align-items: end; }
 .gx .pd-agent-row .gx-seg { width: max-content; }
@@ -25,6 +26,10 @@
 .gx .pd-progress { gap: 10px; }
 .gx .pd-meter { height: 4px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
 .gx .pd-meter > span { display: block; height: 100%; background: var(--gx-accent); transition: width .4s ease; }
+/* .pd-review names two things. This one is Brief's review card (BriefStage.tsx, a .gx-gen-card); the one under "Takes
+   as the review desk" below is Edit's row of review buttons (EditStage.tsx). Both rules reach both, so Brief's card also
+   takes the later rule's display, flex-wrap, align-items, gap (8px, not this 12px) and min-width. Left as it is: telling
+   them apart would change how Brief's card is laid out. */
 .gx .pd-review { gap: 12px; }
 .gx .pd-review .gx-workflow-title { margin: 0; }
 .gx .pd-review > .gx-hint { margin: 0; }
@@ -51,9 +56,6 @@
   .gx .pd-prompt { min-height: 160px; }
   .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
 }
-/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
-.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12); }
-.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
 
 /* Beats: a beat board — one card per scene, its beats as numbered cards, its shots beneath. */
 .gx .pd-gate { gap: 10px; }
@@ -65,9 +67,9 @@
 .gx .pd-failed .gx-gen-error { flex: 1; min-width: 200px; }
 .gx .pd-board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx .pd-scene { gap: 12px; border-left: 3px solid var(--gx-accent); }
-.gx .pd-scene:nth-child(4n+2) { border-left-color: #BF5AF2; }
-.gx .pd-scene:nth-child(4n+3) { border-left-color: #FF9F0A; }
-.gx .pd-scene:nth-child(4n+4) { border-left-color: #30D158; }
+.gx .pd-scene:nth-child(4n+2) { border-left-color: var(--gx-purple); }
+.gx .pd-scene:nth-child(4n+3) { border-left-color: var(--gx-waiting); }
+.gx .pd-scene:nth-child(4n+4) { border-left-color: var(--gx-done); }
 /* Scene, shot and beat numbers are functional labels: --gx-text-2, since the .45 tertiary ink composites under #7C7C84. */
 .gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); flex: none; }
 .gx .pd-scene-heading { flex: 1; min-width: 160px; width: auto; font-family: var(--gx-mono); text-transform: uppercase; letter-spacing: .02em; }
@@ -80,7 +82,7 @@
 .gx .pd-beat-n { padding-top: 10px; text-align: right; }
 .gx .pd-beat-text { min-height: 44px; }
 .gx .pd-add { align-self: flex-start; }
-.gx .pd-shot { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pd-shot { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: transparent; }
 .gx .pd-seconds { display: flex; align-items: center; gap: 6px; }
 .gx .pd-seconds .gx-field { width: 84px; }
 .gx .pd-shot-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -116,7 +118,7 @@
 .gx .pd-takes img, .gx .pd-takes .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
 .gx .pd-frame-edit { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; border-top: 1px solid var(--gx-hair); }
 .gx .pd-sketch { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.gx .pd-sketch img, .gx .pd-sketch .gx-lazy { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; background: #fff; }
+.gx .pd-sketch img, .gx .pd-sketch .gx-lazy { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; background: var(--gx-text); }
 .gx .pd-upload { position: relative; align-self: flex-start; cursor: pointer; display: inline-flex; align-items: center; }
 .gx .pd-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .gx .pd-reading { margin: 0; font-size: 12.5px; }
@@ -141,9 +143,9 @@
 .gx .pd-consent { position: relative; display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; box-sizing: border-box; cursor: pointer; }
 .gx .pd-consent input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .gx .pd-check { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--gx-text-2); box-sizing: border-box; }
-.gx .pd-consent input:checked + .pd-check { background: var(--gx-accent, #0A84FF); border-color: var(--gx-accent, #0A84FF); }
-.gx .pd-consent input:checked + .pd-check::after { content: ""; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
-.gx .pd-consent input:focus-visible + .pd-check { outline: 2px solid var(--gx-accent, #0A84FF); outline-offset: 2px; }
+.gx .pd-consent input:checked + .pd-check { background: var(--gx-accent); border-color: var(--gx-accent); }
+.gx .pd-consent input:checked + .pd-check::after { content: ""; width: 9px; height: 5px; border: 2px solid var(--gx-on-accent); border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
+.gx .pd-consent input:focus-visible + .pd-check { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .gx .pd-consent .gx-hint { margin: 0; }
 .gx .pd-soul-versions { flex-wrap: wrap; max-width: 100%; }
 .gx .pd-cast-render .gx-seg { max-width: 100%; }
@@ -158,14 +160,14 @@
 .gx .pd-take-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .gx .pd-take { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); text-align: left; min-width: 0; }
 .gx .pd-take[aria-checked="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
-.gx .pd-take img, .gx .pd-take video, .gx .pd-take .gx-lazy { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #0c0c0e; }
+.gx .pd-take img, .gx .pd-take video, .gx .pd-take .gx-lazy { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--gx-panel); }
 .gx .pd-take .gx-badge { position: absolute; top: 12px; left: 12px; }
 .gx .pd-take-name { font-size: 12px; color: var(--gx-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gx .pd-take-add { align-self: flex-start; }
 .gx .pd-cut { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; min-width: 0; }
 .gx .pd-cut-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.gx .pd-cut-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
-.gx .pd-cut-thumb { width: 72px; height: 40px; border-radius: 4px; overflow: hidden; background: #0c0c0e; }
+.gx .pd-cut-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: transparent; }
+.gx .pd-cut-thumb { width: 72px; height: 40px; border-radius: 4px; overflow: hidden; background: var(--gx-panel); }
 .gx .pd-cut-thumb img, .gx .pd-cut-thumb video, .gx .pd-cut-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
 .gx .pd-cut-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 759px) {
@@ -176,7 +178,7 @@
 
 /* Rig: the shot's inputs with pictures and actions; the ways to add one; condense; build from Storyboards. */
 .gx .pxw-insp-row--input { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: center; }
-.gx .pxw-insp-row-thumb--media { width: 48px; height: 36px; border-radius: 4px; overflow: hidden; background: #0c0c0e; display: block; }
+.gx .pxw-insp-row-thumb--media { width: 48px; height: 36px; border-radius: 4px; overflow: hidden; background: var(--gx-panel); display: block; }
 .gx .pxw-insp-row-thumb--media img, .gx .pxw-insp-row-thumb--media video, .gx .pxw-insp-row-thumb--media .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
 .gx .pxw-insp-row-actions { grid-column: 2; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
 .gx .pxw-rig-add-inputs { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
@@ -190,17 +192,17 @@
 @media (max-width: 759px) { .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; } .gx .pxw-insp-row-actions button { min-height: 44px; } }
 .gx .pd-agent--bare { padding: 0; }
 .gx .pd-drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.gx .pd-drawing { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); min-width: 0; }
+.gx .pd-drawing { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: transparent; min-width: 0; }
 .gx .pd-drawing-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.gx .pd-drawing-pair img, .gx .pd-drawing-pair .gx-lazy, .gx .pd-drawing-out { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: #fff; }
+.gx .pd-drawing-pair img, .gx .pd-drawing-pair .gx-lazy, .gx .pd-drawing-out { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--gx-text); }
 .gx .pd-drawing-out { display: grid; place-items: center; background: var(--gx-input); overflow: hidden; }
 .gx .pd-drawing select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-drawing select { min-height: 44px; font-size: 16px; } .gx .pd-drawings { grid-template-columns: minmax(0, 1fr); } }
 
 /* Beat board, like a Final Draft beat board: an act header tile, then the act's scene cards in a grid, tinted by act. */
-.gx .pd-act { display: flex; flex-direction: column; gap: 10px; --act: #5fbfa6; --act-bg: rgba(95, 191, 166, .16); }
-.gx .pd-act[data-act="2"] { --act: #4f9cf0; --act-bg: rgba(79, 156, 240, .16); }
-.gx .pd-act[data-act="3"] { --act: #8c9ee6; --act-bg: rgba(140, 158, 230, .16); }
+.gx .pd-act { display: flex; flex-direction: column; gap: 10px; --act: var(--gx-done); --act-bg: var(--gx-done-tint); }
+.gx .pd-act[data-act="2"] { --act: var(--gx-accent); --act-bg: var(--gx-tint); }
+.gx .pd-act[data-act="3"] { --act: var(--gx-purple); --act-bg: color-mix(in srgb, var(--gx-purple) 14%, transparent); }
 .gx .pd-act-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--act-bg); border: 1px solid var(--act); width: min(100%, 420px); }
 .gx .pd-act-name { font-size: 20px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
 .gx .pd-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
@@ -214,13 +216,10 @@
 .gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); font-family: var(--gx-mono); }
 .gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
 @media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
-.gx .pd-asset-group { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
-.gx .pd-asset-group-name { font-weight: 600; font-size: 13px; flex: 1; }
-.gx .pd-take-file { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: #0c0c0e; font-size: 28px; color: var(--gx-text-3); }
 /* Takes in the card contract (components/graphite/TakeTile.tsx): the picture holds the project's frame. */
 .gx .pd-take-cell { position: relative; display: flex; min-width: 0; }
 .gx .pd-take-cell > .pd-take { flex: 1; }
-.gx .pd-take-media { position: relative; display: block; width: 100%; aspect-ratio: var(--tile-aspect, 16 / 9); border-radius: 6px; overflow: hidden; background: #0c0c0e; }
+.gx .pd-take-media { position: relative; display: block; width: 100%; aspect-ratio: var(--tile-aspect, 16 / 9); border-radius: 6px; overflow: hidden; background: var(--gx-panel); }
 .gx .pd-take-media img, .gx .pd-take-media video, .gx .pd-take-media .gx-lazy { aspect-ratio: auto; width: 100%; height: 100%; border-radius: 0; }
 .gx .pd-take-media .gx-badge { top: 6px; left: 6px; }
 .gx .pd-take-cell > .gx-tile-over { inset: 7px 7px auto; aspect-ratio: var(--tile-aspect, 16 / 9); }
@@ -229,7 +228,7 @@
 .gx .pd-take.gx-skel { border-color: transparent; }
 
 /* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
-.gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: rgba(255, 255, 255, .02); }
+.gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: transparent; }
 .gx .pxw-rig-library-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .gx .pxw-rig-library-head .pxw-link-button { font-weight: 600; }
 .gx .pxw-rig-library-hint { font-size: 12px; color: var(--gx-text-2); }
@@ -239,21 +238,18 @@
 .gx .pxw-rig-library-groups button:disabled { opacity: .45; }
 .gx .pxw-rig-library-items { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .gx .pxw-rig-library-item { flex: none; width: 128px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); cursor: grab; position: relative; }
-.gx .pxw-rig-library-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; background: #0c0c0e; color: var(--gx-text-3); font-size: 20px; }
+.gx .pxw-rig-library-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; background: var(--gx-panel); color: var(--gx-text-3); font-size: 20px; }
 .gx .pxw-rig-library-thumb img, .gx .pxw-rig-library-thumb video, .gx .pxw-rig-library-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
 .gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; }
+.gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); }
 @media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }
-.gx .pd-soul-models { flex-wrap: wrap; }
-.gx .pd-budget { width: 80px; }
-.gx .pd-finish { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
 
 /* Storyboards: pick frames to storyboard together; a picked frame is outlined. */
 .gx .pd-select-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .gx .pd-frame { position: relative; }
-.gx .pd-frame[data-picked] { outline: 2px solid var(--gx-accent, #0A84FF); outline-offset: -2px; }
+.gx .pd-frame[data-picked] { outline: 2px solid var(--gx-accent); outline-offset: -2px; }
 .gx .pd-frame-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); cursor: pointer; min-height: 44px; }
-.gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent, #0A84FF); }
+.gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent); }
 /* Environment's library pickers (a reference, a plate), styled like the stage's other pickers. The widest file name in
    the list never widens the row past the screen, and on a touch screen each is a 44px target. */
 .gx .pd-frame > .pd-row-head > select { flex: 1 1 200px; min-width: 0; max-width: 100%; min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
@@ -264,7 +260,7 @@
 .gx .pd-drawing-delete { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Grok transcription on a take: the lines by speaker, readable at a glance. */
-.gx .pd-transcript { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); border: 1px solid var(--gx-hair); }
+.gx .pd-transcript { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding: 12px; border-radius: 14px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
 .gx .pd-transcript-line { margin: 0; font-size: 14px; line-height: 1.5; color: var(--gx-text); }
 .gx .pd-transcript-line .gx-eyebrow { margin-right: 6px; }
 /* Environment: a place's references, as small thumbnails with a remove button; a Library tile hovering a place lights it. */
@@ -277,41 +273,41 @@
 /* Beats as a graph: act lanes, scenes along the story spine, beats beneath; pinch / ⌘-wheel zooms, wheel or drag pans. */
 .gx .pd-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); }
 .gx .pd-view-toggle button { min-height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text-2); font: inherit; font-size: 13px; cursor: pointer; }
-.gx .pd-view-toggle button[aria-checked="true"] { background: rgba(255, 255, 255, .1); color: var(--gx-text); }
+.gx .pd-view-toggle button[aria-checked="true"] { background: var(--gx-input-hover); color: var(--gx-text); }
 @media (max-width: 759px), (pointer: coarse) { .gx .pd-view-toggle button { min-height: 44px; } }
 .gx .pd-graph-layout { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .gx .pd-graph-frame { position: relative; }
 /* The open scene's editor floats over the graph's right side, like a properties panel; on a phone it covers the graph until Done. */
-.gx .pd-graph-panel { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; width: min(440px, 50%); overflow: auto; overscroll-behavior: contain; border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, .55); }
-.gx .pd-graph-panel { background: #121215; border: 1px solid var(--gx-hair); }
-.gx .pd-graph-panel > .pd-scene { margin: 0; min-height: 100%; background: #121215; border: 0; box-shadow: none; }
+.gx .pd-graph-panel { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; width: min(440px, 50%); overflow: auto; overscroll-behavior: contain; border-radius: 12px; box-shadow: var(--gx-shadow-pop); }
+.gx .pd-graph-panel { background: var(--gx-card); border: 1px solid var(--gx-hair); }
+.gx .pd-graph-panel > .pd-scene { margin: 0; min-height: 100%; background: var(--gx-card); border: 0; box-shadow: none; }
 @media (max-width: 759px) { .gx .pd-graph-panel { left: 8px; width: auto; } .gx .pd-graph-surface { height: clamp(320px, calc(100dvh - 400px), 560px); } .gx .pd-graph-zoom { position: static; margin-top: 8px; width: max-content; } }
 .gx .pd-graph { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.gx .pd-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 300px), 1100px); border-radius: 12px; border: 1px solid var(--gx-hair); touch-action: none; cursor: grab; background-color: rgba(255, 255, 255, .015); background-image: radial-gradient(rgba(255, 255, 255, .07) 1px, transparent 1.2px); }
+.gx .pd-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 300px), 1100px); border-radius: 12px; border: 1px solid var(--gx-hair); touch-action: none; cursor: grab; background-color: var(--gx-viewport); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E"); }
 .gx .pd-graph-surface:active { cursor: grabbing; }
 .gx .pd-graph-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.gx .pd-graph-lane { position: absolute; left: 0; --act: #5fbfa6; --act-bg: rgba(95, 191, 166, .06); background: var(--act-bg); border-top: 1px solid color-mix(in srgb, var(--act) 40%, transparent); }
-.gx .pd-graph-lane[data-act="2"] { --act: #4f9cf0; --act-bg: rgba(79, 156, 240, .06); }
-.gx .pd-graph-lane[data-act="3"] { --act: #8c9ee6; --act-bg: rgba(140, 158, 230, .06); }
+.gx .pd-graph-lane { position: absolute; left: 0; --act: var(--gx-done); --act-bg: color-mix(in srgb, var(--gx-done) 6%, transparent); background: var(--act-bg); border-top: 1px solid color-mix(in srgb, var(--act) 40%, transparent); }
+.gx .pd-graph-lane[data-act="2"] { --act: var(--gx-accent); --act-bg: color-mix(in srgb, var(--gx-accent) 6%, transparent); }
+.gx .pd-graph-lane[data-act="3"] { --act: var(--gx-purple); --act-bg: color-mix(in srgb, var(--gx-purple) 6%, transparent); }
 .gx .pd-graph-lane-name { position: absolute; left: 24px; top: 10px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--act); }
 .gx .pd-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.gx .pd-graph-spine { fill: none; stroke: #6c6c76; stroke-width: 2; }
-.gx .pd-graph-chain { fill: none; stroke: #3a3a42; stroke-width: 1.5; }
-.gx .pd-graph-scene { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; text-align: left; font: inherit; color: var(--gx-text); cursor: grab; touch-action: none; --act: #5fbfa6; background: color-mix(in srgb, var(--act) 16%, #141417); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); overflow: hidden; }
-.gx .pd-graph-scene[data-act="2"] { --act: #4f9cf0; }
-.gx .pd-graph-scene[data-act="3"] { --act: #8c9ee6; }
+.gx .pd-graph-spine { fill: none; stroke: var(--gx-text-3); stroke-width: 2; }
+.gx .pd-graph-chain { fill: none; stroke: var(--gx-thumb); stroke-width: 1.5; }
+.gx .pd-graph-scene { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; text-align: left; font: inherit; color: var(--gx-text); cursor: grab; touch-action: none; --act: var(--gx-done); background: color-mix(in srgb, var(--act) 16%, var(--gx-card)); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); overflow: hidden; }
+.gx .pd-graph-scene[data-act="2"] { --act: var(--gx-accent); }
+.gx .pd-graph-scene[data-act="3"] { --act: var(--gx-purple); }
 .gx .pd-graph-scene:hover, .gx .pd-graph-scene:focus-visible { border-color: var(--act); outline: none; }
 .gx .pd-graph-scene[data-open] { border-color: var(--act); box-shadow: 0 0 0 2px var(--act); }
-.gx .pd-graph-scene[data-moving] { cursor: grabbing; z-index: 5; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+.gx .pd-graph-scene[data-moving] { cursor: grabbing; z-index: 5; box-shadow: var(--gx-shadow-pop); }
 .gx .pd-graph-scene-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .gx .pd-graph-scene-title { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx .pd-graph-scene-text { font-size: 12.5px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gx .pd-graph-scene-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
-.gx .pd-graph-beat { position: absolute; display: flex; align-items: center; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: #17171b; font-size: 12.5px; line-height: 1.35; color: var(--gx-text); overflow: hidden; cursor: pointer; }
+.gx .pd-graph-beat { position: absolute; display: flex; align-items: center; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-card); font-size: 12.5px; line-height: 1.35; color: var(--gx-text); overflow: hidden; cursor: pointer; }
 .gx .pd-graph-beat[data-more] { justify-content: center; color: var(--gx-text-3); border-style: dashed; }
-.gx .pd-graph-zoom { position: absolute; left: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #17171b; border: 1px solid var(--gx-hair); cursor: default; }
+.gx .pd-graph-zoom { position: absolute; left: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--gx-card); border: 1px solid var(--gx-hair); cursor: default; }
 .gx .pd-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
-.gx .pd-graph-zoom button:hover { background: rgba(255, 255, 255, .08); }
+.gx .pd-graph-zoom button:hover { background: var(--gx-input); }
 @media (pointer: coarse) { .gx .pd-graph-zoom button { min-width: 44px; height: 44px; } }
 .gx .pd-graph-note { margin: 0; }
 .gx .pd-import { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
@@ -327,11 +323,12 @@
 .gx .pd-selected-chip { position: relative; display: inline-flex; flex: none; }
 .gx .pd-selected-chip .gx-tile-chip { position: static; max-width: none; }
 .gx .pd-selected-step { display: inline-flex; gap: 6px; flex: none; }
+/* Edit's review buttons. The same class as Brief's review card above, which this rule reaches too (see there). */
 .gx .pd-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .gx .pd-review-btn[aria-pressed="true"] { color: var(--gx-text); font-weight: 600; }
-.gx .pd-review-btn[data-review="picked"][aria-pressed="true"] { border-color: var(--gx-accent); background: rgba(10, 132, 255, .18); }
-.gx .pd-review-btn[data-review="approved"][aria-pressed="true"] { border-color: var(--gx-done); background: rgba(48, 209, 88, .16); }
-.gx .pd-review-btn[data-review="changes"][aria-pressed="true"] { border-color: var(--gx-waiting); background: rgba(255, 159, 10, .16); }
+.gx .pd-review-btn[data-review="picked"][aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-tint); }
+.gx .pd-review-btn[data-review="approved"][aria-pressed="true"] { border-color: var(--gx-done); background: var(--gx-done-tint); }
+.gx .pd-review-btn[data-review="changes"][aria-pressed="true"] { border-color: var(--gx-waiting); background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); }
 .gx .pd-review-trail { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
 .gx .pd-review-none { margin: 0; }
 .gx .pd-desk { gap: 12px; }
@@ -356,4 +353,16 @@
   .gx .pd-desk-search { flex-basis: 100%; max-width: none; }
   .gx .pd-selected-step { width: 100%; }
   .gx .pd-selected-step .gx-hbtn { flex: 1; }
+}
+
+/* The thumb's floors on any phone, either way up. The rules above stop at 759px or ask for a coarse pointer, one or the
+   other: this closes what each leaves (760–767px wide, a touch screen wider than 759px, a narrow window with a mouse). */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .pd-order .gx-hbtn { min-width: 44px; }
+  .gx .pd-soul select, .gx .pd-drawing select, .gx .pd-act-select, .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; }
+  .gx .pd-view-toggle button, .gx .pxw-insp-row-actions button, .gx .pxw-rig-library-groups button { min-height: 44px; }
+  .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
+  .gx .pd-ref-chip { width: 72px; height: 54px; }
+  .gx .pd-ref-chip .gx-hbtn { min-width: 44px; height: 44px; top: 0; right: 0; }
+  .gx .pd-graph-zoom button { min-width: 44px; height: 44px; }
 }

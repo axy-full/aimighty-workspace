@@ -42,7 +42,7 @@ const COMING: Record<PageId, string> = {
   marketing: "Product, brand and cast, message and format, then variants and output.",
   motion: "A source video recast with your own cast, location and product.",
   swap: "One element replaced; the rest of the shot stays as filmed.",
-  shorts: "Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.",
+  shorts: "Shorts is retired. The connected account is no longer used. Past results stay in your Library.",
   sources: "Your originals, hashed and checked against what the models accept.",
   compare: "Original and result on one clock, split or wiped.",
   history: "Every result, retained in private storage, ready to recreate.",

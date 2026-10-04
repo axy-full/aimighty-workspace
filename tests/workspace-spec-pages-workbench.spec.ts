@@ -182,7 +182,7 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
     await expect(inspector.locator(".pxw-fact")).toHaveCount(5);
     const run = inspector.locator(".pxw-insp-run");
     if (runsOnOwnerAccount(PLANS[id])) {
-      await expect(inspector.getByTestId("spec-plan-owner")).toHaveText("Particl no longer signs in to Higgsfield.");
+      await expect(inspector.getByTestId("spec-plan-owner")).toHaveText("The connected account is no longer used.");
       await expect(run).toHaveCount(0);
     } else {
       await expect(run).toBeVisible();
@@ -248,7 +248,7 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
       /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
       if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
       asked.push(`${request.method()} ${path}`);
-      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
+      return json({ code: "retired", error: "The connected account is no longer used. Past results stay in your Library." }, 410);
     }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);
@@ -299,7 +299,7 @@ test("Compare's Atomik plan builds the comparison from the project's Library, fr
       /* The shell collector's list of saved jobs is a ledger read; anything else would ask the account. */
       if (request.method() === "GET" && path === "/api/higgsfield/consumer/generation") return json({ jobs: [] });
       asked.push(`${request.method()} ${path}`);
-      return json({ code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." }, 410);
+      return json({ code: "retired", error: "The connected account is no longer used. Past results stay in your Library." }, 410);
     }
     if (path === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (request.method() !== "GET") return json({ error: "No other mutation permitted." }, 409);

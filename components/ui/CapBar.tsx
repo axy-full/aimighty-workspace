@@ -32,7 +32,7 @@ export default function CapBar({ spent, cap, placement = "header", className = "
   const unit = money.inCredits ? " cr" : "";
   const pct = cap > 0 ? Math.max(0, Math.round((spent / cap) * 100)) : 0;
   const bar = (
-    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : placement === "phone" ? 110 : 160 }}>
+    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[var(--gx-track)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : placement === "phone" ? 110 : 160 }}>
       <span className="block h-full bg-ink" style={{ width: `${Math.min(100, pct)}%` }} />
     </span>
   );

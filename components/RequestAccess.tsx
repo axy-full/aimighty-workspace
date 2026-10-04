@@ -77,7 +77,7 @@ function RequestAccessDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5 backdrop-blur-[2px]"
+    <div className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5"
       onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Request an invitation"
         onClick={(e) => e.stopPropagation()}

@@ -115,7 +115,8 @@ export const PAGE_ALIASES: Record<string, PageId> = {
   "object-swap": "swap",
 };
 
-export const SUITE_ALIASES: Record<string, Suite> = { subatomic: "subatomik" };
+/** Former spellings and the names the tabs show ("Business", "Viral", "Studio", "Agent"). */
+export const SUITE_ALIASES: Record<string, Suite> = { subatomic: "subatomik", business: "moleculr", viral: "subatomik", studio: "particl", agent: "atomik" };
 
 export function isSuite(value: unknown): value is Suite {
   return typeof value === "string" && (SUITE_ORDER as string[]).includes(value);

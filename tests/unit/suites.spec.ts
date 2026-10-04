@@ -44,7 +44,7 @@ test("suite links preserve the draft ID and validate each suite page independent
 test("the four suites carry the 19 September names and the eight-stage Particl dock order", () => {
   expect(SUITES.map((suite) => suite.name)).toEqual([
     "Particl Production Studio",
-    "Atomik Super Agent",
+    "Atomik Agent",
     "Moleculr Business Suite",
     "Subatomik Viral Studio",
   ]);

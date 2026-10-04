@@ -1,5 +1,6 @@
 "use client";
 
+import "./ImpactSheet.css";
 import { useEffect, useState } from "react";
 import { fmtCredits } from "@/lib/price";
 import {

@@ -423,7 +423,7 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
       const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
       if (listing) return route.fulfill({ json: { jobs: [] } });
       asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+      return route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } });
     });
   };
   const { errors } = await open(page, { member, generations: [connected], setup });
@@ -460,7 +460,7 @@ test("the owner's Soul take is recreated on Studio engines: its identity is not 
       const listing = route.request().method() === "GET" && new URL(route.request().url()).searchParams.has("draftId");
       if (listing) return route.fulfill({ json: { jobs: [] } });
       asked.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-      return route.fulfill({ status: 410, json: { code: "retired", error: "Particl no longer signs in to Higgsfield. Past results stay in your Library." } });
+      return route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } });
     });
   };
   const { errors, priced } = await open(page, { generations: [soul], setup });

@@ -61,7 +61,7 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   expect(enhance.at(-1)).toMatchObject({ quoteOnly: true, mode: "video", prompt: "@Image1 a fox crossing a frozen harbour" });
   await button.click();
   const card = page.getByTestId("enhanced-card");
-  await expect(card).toContainText("Enhanced · Higgsfield · 1 cr");
+  await expect(card).toContainText("Enhanced · Standard · 1 cr");
   await expect(card).toContainText("@Image1 a fox crossing a frozen harbour, slow push in, rim light, tack sharp");
   expect(enhance.at(-1)).toMatchObject({ maxCredits: 1, mode: "video" });
   expect(enhance.at(-1)).not.toHaveProperty("quoteOnly");

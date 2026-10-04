@@ -13,7 +13,7 @@
   border-radius: 8px;
   background: var(--graphite-card);
   color: var(--graphite-ink);
-  box-shadow: 0 16px 40px rgba(0,0,0,.6);
+  box-shadow: var(--gx-shadow-pop);
   font:
     12px/1.4 var(--graphite-font);
 }
@@ -42,10 +42,10 @@
 }
 .item[data-highlighted] {
   background: var(--graphite-hover);
-  color: #fff;
+  color: var(--gx-text);
 }
 .item[data-danger] {
-  color: #f68c8e;
+  color: var(--gx-failed-text);
 }
 .item[data-disabled] {
   opacity: 0.4;
@@ -64,7 +64,7 @@
     position: fixed;
     inset: 0;
     z-index: 249;
-    background: rgba(0, 0, 0, .55);
+    background: var(--gx-scrim);
     pointer-events: auto;
     touch-action: none;
   }
@@ -90,7 +90,7 @@
     border-bottom: 0;
     border-radius: 18px 18px 0 0;
     background: var(--graphite-card);
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, .25);
+    box-shadow: var(--gx-shadow-pop);
     font-size: 15px;
     transform-origin: bottom center;
   }

@@ -14,7 +14,7 @@ import './mobile-handoff.css';
 import './mobile-handoff-stages.css';
 import './project-first.css';
 import '@/components/studio/project-navigation.css';
-import '../four-suites.css';
+import '@/components/suites/four-suites.css';
 export const dynamic='force-dynamic';
 export const viewport={width:'device-width',initialScale:1,viewportFit:'cover',themeColor:'#000000'};
 export const metadata={title:'Particl — Production Studio'};

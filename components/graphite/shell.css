@@ -1,0 +1,1437 @@
+/*
+ * The Suites shell's chrome (design/particl-graphite/README.md › Shell anatomy).
+ * Everything is scoped under `.gx`. Tokens are not defined here: the one token
+ * set is app/graphite.css, loaded by the root layout.
+ */
+.gx {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--gx-root);
+  color: var(--gx-text);
+  font-family: var(--gx-font);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.gx *, .gx *::before, .gx *::after { box-sizing: border-box; }
+:where(.gx) button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
+:where(.gx) button:disabled { cursor: default; }
+:where(.gx) input, :where(.gx) textarea, :where(.gx) select { font: inherit; color: inherit; outline: none; }
+.gx input::placeholder, .gx textarea::placeholder { color: var(--gx-placeholder); }
+.gx :focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.gx-mono { font-family: var(--gx-mono); }
+.gx-eyebrow { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--gx-text-3); }
+
+.gx-enter { animation: gx-in .4s var(--gx-ease) both; }
+
+/* ── Header (56px) ─────────────────────────────────────────────────────── */
+.gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-brand { display: flex; align-items: center; gap: 12px; flex: none; }
+.gx-brand-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.gx-brand-mark { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .18em; color: var(--gx-text-3); text-transform: uppercase; }
+.gx-seg { display: inline-flex; padding: 3px; border-radius: 6px; background: var(--gx-track); border: 1px solid var(--gx-hair); flex: none; }
+.gx-seg--fill { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.gx-seg-btn { position: relative; height: 28px; padding: 0 14px; border-radius: 4px; font-size: 13px; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.gx-seg--sm .gx-seg-btn { height: 26px; padding: 0 12px; font-size: 12.5px; }
+.gx-seg-btn::before { content: ""; position: absolute; inset: 0; border-radius: 4px; background: var(--gx-thumb); opacity: 0; transition: opacity .2s; }
+.gx-seg-btn[aria-selected="true"]::before { opacity: 1; }
+.gx-seg-btn > span { position: relative; color: var(--gx-text-2); font-weight: 500; }
+.gx-seg-btn[aria-selected="true"] > span { color: var(--gx-text); font-weight: 600; }
+/* Counts, the search control's words and key hints are functional labels: --gx-text-2, since the .45 tertiary and .35
+   placeholder inks composite under the #7C7C84 label floor (tests/ui-floors-audit-workbench.spec.ts). */
+.gx-seg-btn > .gx-seg-count { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); font-weight: 500; }
+.gx-search { flex: 0 1 460px; min-width: 120px; height: 32px; padding: 0 10px 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); color: var(--gx-text-2); box-shadow: var(--gx-shadow-search); }
+.gx-search:hover { background: var(--gx-input-hover); color: var(--gx-text); }
+.gx-search-label { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-key { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); flex: none; }
+.gx-spacer { flex: 1; min-width: 0; }
+.gx-hbtn { height: 32px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; background: var(--gx-input); border: 1px solid var(--gx-hair); flex: none; text-decoration: none; color: var(--gx-text); }
+.gx-hbtn:hover { background: var(--gx-input-hover); }
+.gx-hbtn[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-credits-n { font-family: var(--gx-mono); font-size: 13px; font-weight: 600; }
+.gx-credits-u { color: var(--gx-text-2); font-size: 12px; }
+/* The balance cannot pay for the last price quoted here: amber, and it still opens Plans & credits. */
+.gx .gx-hbtn.gx-credits[data-low] { color: var(--gx-waiting-text); background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 60%, transparent); }
+.gx .gx-hbtn.gx-credits[data-low] .gx-credits-u { color: var(--gx-waiting-text); }
+.gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
+.gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
+
+/* ── Jobs pill and tray (components/graphite/JobsTray.tsx): a popover under
+   the pill on desktop and on a phone on its side, a bottom sheet on a phone.
+   Every word in it is at least #7C7C84 on its ground (--gx-text-2 or a
+   tone), and no figure is ever cut short. ── */
+.gx-jobs[data-tone="amber"] { background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 40%, transparent); color: var(--gx-waiting-text); }
+.gx-jobs[data-tone="green"] { background: color-mix(in srgb, var(--gx-done) 12%, transparent); border-color: color-mix(in srgb, var(--gx-done) 36%, transparent); color: var(--gx-done-text); }
+.gx-jobs[data-tone="red"] { background: color-mix(in srgb, var(--gx-failed) 12%, transparent); border-color: color-mix(in srgb, var(--gx-failed) 38%, transparent); color: var(--gx-failed-text); }
+.gx-jobs[data-tone="idle"] { background: var(--gx-input); border-color: var(--gx-hair); color: var(--gx-text-2); }
+.gx-jobs[data-tone="amber"] .gx-jobs-dot { background: var(--gx-waiting); }
+.gx-jobs[data-tone="green"] .gx-jobs-dot { background: var(--gx-done); animation: none; }
+.gx-jobs[data-tone="red"] .gx-jobs-dot { background: var(--gx-failed); animation: none; }
+.gx-jobs[data-tone="idle"] .gx-jobs-dot { background: var(--gx-idle); animation: none; }
+.gx-jobs-long { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gx-jobs-short { display: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A phone, a phone on its side and any short window: the pill says one figure (its name says the rest), so the header keeps one row. */
+@media (max-width: 900px), (max-height: 500px) {
+  .gx-jobs-long { display: none; }
+  .gx-jobs-short { display: inline; }
+  .gx-jobs { min-width: 44px; justify-content: center; padding: 0 12px; gap: 6px; }
+  .gx-jobs[data-kind="quiet"] { padding: 0; }
+  .gx-jobs[data-kind="quiet"] .gx-jobs-dot { display: none; }
+}
+.gx-veil.gx-jobs-veil { z-index: 70; }
+.gx-jobs-tray:focus { outline: none; }
+.gx-jobs-head { gap: 10px; flex-wrap: nowrap; }
+.gx-jobs-count { min-width: 0; color: var(--gx-text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gx-jobs-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gx-jobs-row { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 8px 10px; border-radius: 10px; }
+.gx-jobs-row:hover { background: var(--gx-input); }
+.gx-jobs-thumb { position: relative; width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-jobs-thumb img, .gx-jobs-thumb video, .gx-jobs-thumb > * { width: 100%; height: 100%; object-fit: cover; }
+.gx-jobs-thumb > .gx-jobs-kind { width: auto; height: auto; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--gx-text-2); }
+.gx-jobs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.gx-jobs-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Stage · how long · figure: each part whole, and a part that does not fit starts the next line. */
+.gx-jobs-meta { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; font-size: 12px; color: var(--gx-text-2); font-variant-numeric: tabular-nums; }
+.gx-jobs-meta > span { white-space: nowrap; }
+.gx-jobs-meta > span + span::before { content: "·"; margin: 0 6px; color: var(--gx-text-2); }
+.gx-jobs-where { font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-jobs-stage { font-weight: 600; color: var(--gx-text-2); }
+.gx-jobs-row[data-tone="blue"] .gx-jobs-stage { color: var(--gx-accent-text); }
+.gx-jobs-row[data-tone="amber"] .gx-jobs-stage { color: var(--gx-waiting-text); }
+.gx-jobs-row[data-tone="green"] .gx-jobs-stage { color: var(--gx-done-text); }
+.gx-jobs-row[data-tone="red"] .gx-jobs-stage { color: var(--gx-failed-text); }
+.gx-jobs-reason, .gx-jobs-problem { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gx-jobs-problem { color: var(--gx-waiting-text); }
+/* No engine reports a percentage: an indeterminate bar says it is moving, and nothing more. */
+.gx-jobs-bar { position: relative; height: 3px; margin-top: 3px; overflow: hidden; border-radius: 999px; background: var(--gx-hair); }
+.gx-jobs-bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: inherit; background: var(--gx-accent); animation: gx-jobs-slide 1.6s var(--gx-ease) infinite; }
+@keyframes gx-jobs-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.gx-jobs-ring { --p: 0; position: relative; isolation: isolate; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); background: var(--gx-track); box-shadow: inset 0 0 0 1px var(--gx-tint-border); }
+/* Progress fills the disc from its foot: --p of its height, one flat tint under the figure. */
+.gx-jobs-ring::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 50%; background: var(--gx-tint-border); clip-path: inset(calc((1 - var(--p)) * 100%) 0 0 0); }
+.gx-jobs-act { flex: none; }
+.gx-jobs-act--primary { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-jobs-note { margin: 0 0 6px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--gx-text-2); border-radius: 10px; background: var(--gx-input); }
+.gx-jobs-note[role="alert"] { color: var(--gx-text); }
+.gx-jobs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0; padding: 18px 12px; color: var(--gx-text-2); }
+.gx-jobs-empty p { margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gx-jobs-bar::after { animation: none; width: 100%; opacity: .45; }
+}
+@media (min-width: 768px) {
+  .gx .gx-veil.gx-jobs-veil { display: block; padding: 0; background: transparent; animation: none; }
+  .gx .gx-sheet.gx-jobs-tray { position: fixed; top: var(--jobs-top, 74px); right: var(--jobs-right, 20px); width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - var(--jobs-top, 74px) - 12px); }
+}
+@media (max-width: 767px) {
+  /* The sheet is the screen's width, whatever a long name would like: the rows ellipsize inside it. Its list keeps
+     the phone's clearance under the last row (the phone section below), so that row ends above the tab bar. */
+  .gx .gx-veil.gx-jobs-veil { grid-template-columns: minmax(0, 1fr); }
+  .gx-jobs-row { border: 1px solid var(--gx-hair); border-radius: 14px; background: var(--gx-card); }
+  /* The name gets the row's width; the one action sits under it rather than beside it. */
+  .gx-jobs-row:has(> .gx-jobs-act) { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 12px; row-gap: 8px; align-items: start; }
+  .gx-jobs-row > .gx-jobs-act { grid-column: 2; justify-self: start; }
+}
+.gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid var(--gx-pop-border); flex: none; }
+.gx-avatar:hover { background: var(--gx-input-hover); }
+
+/* ── Stage strip (46px) ────────────────────────────────────────────────── */
+.gx-strip { height: 46px; flex: none; display: flex; align-items: center; justify-content: safe center; gap: 2px; padding: 0 20px; overflow-x: auto; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-strip-gap { width: 1px; height: 18px; background: var(--gx-hair-strong); margin: 0 8px; flex: none; }
+.gx-tab { height: 30px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--gx-text-2); flex: none; }
+.gx-tab:hover { color: var(--gx-text); }
+/* A nav number is a functional label: --gx-text-2, since the .45 tertiary ink composites under the #7C7C84 floor. */
+.gx-tab-n { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
+.gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); font-weight: 600; }
+.gx-tab[aria-current="page"] .gx-tab-n { color: var(--gx-accent-text); }
+
+/* ── Body: [Library 280] | [Stage 1fr] | [Inspector 320] ───────────────── */
+.gx-body { flex: 1; min-height: 0; display: grid; gap: 1px; background: var(--gx-hair-strong); position: relative; }
+.gx-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: 14px; background: var(--gx-panel); }
+.gx-library { padding: 18px 16px 12px; }
+.gx-inspector { overflow: hidden; }
+.gx-panel--overlay { position: absolute; top: 0; bottom: 0; width: min(320px, 86vw); z-index: 30; animation: gx-in .3s var(--gx-ease) both; }
+.gx-panel--overlay.gx-library { left: 0; box-shadow: 1px 0 0 var(--gx-hair-strong), var(--gx-shadow-pop); }
+.gx-panel--overlay.gx-inspector { right: 0; box-shadow: -1px 0 0 var(--gx-hair-strong), var(--gx-shadow-pop); }
+/* A landscape phone leaves the Library's asset list no room under its head, tabs, search and chips (it
+   measured 0px at 844×390): the panel scrolls, and the list keeps a height of its own to scroll in. */
+@media (max-height: 500px) {
+  .gx-panel--overlay.gx-library { overflow-y: auto; }
+  .gx-panel--overlay.gx-library > .gx-assets { flex: none; height: max(240px, 70vh); }
+}
+.gx-scrim { position: absolute; inset: 0; z-index: 29; background: var(--gx-scrim); }
+.gx-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--gx-panel); }
+.gx-stage { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+
+.gx-panel-head { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 4px; }
+.gx-panel-head .gx-panel-count { margin-left: auto; }
+.gx-panel-close { align-self: center; }
+.gx-insp-head .gx-pill { margin-left: auto; }
+.gx-panel-title { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.gx-panel-count { color: var(--gx-text-2); font-size: 13px; }
+
+/* Library › Tools */
+.gx-tools { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 18px; padding: 2px 2px 6px; }
+/* Each department is a framed card: a dot in its colour (--dept), its name, a count, then its tools as rows with a chevron. */
+.gx-tool-group { display: flex; flex-direction: column; gap: 4px; flex: none; overflow: hidden; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-tool-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 8px; }
+.gx-tool-group-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dept, var(--gx-accent)); flex: none; }
+.gx-tool-group-head > .gx-eyebrow:last-child { margin-left: auto; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; background: var(--gx-hair); color: var(--gx-text-2); letter-spacing: 0; }
+.gx-tool { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-top: 1px solid var(--gx-hair-soft); width: 100%; min-height: 44px; }
+.gx-tool::after { content: "›"; margin-left: auto; color: var(--gx-text-3); }
+.gx-tool:hover { background: var(--gx-input); }
+.gx-tool-tag { width: 36px; height: 36px; border-radius: 6px; display: grid; place-items: center; flex: none; font-family: var(--gx-mono); font-size: 11px; font-weight: 600; color: var(--gx-text-2); background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-tool-text { min-width: 0; }
+.gx-tool-name { display: block; font-weight: 600; font-size: 13px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-tool-sub { display: block; color: var(--gx-text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-empty { color: var(--gx-text-2); font-size: 13px; padding: 4px 6px; }
+
+/* Library › Assets */
+.gx-field { height: 36px; padding: 0 12px; border-radius: 6px; font-size: 13px; background: var(--gx-input); border: 1px solid var(--gx-hair); width: 100%; flex: none; }
+.gx-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: none; }
+.gx-chip { height: 28px; padding: 0 11px; border-radius: 6px; font-size: 12.5px; border: 1px solid var(--gx-hair); color: var(--gx-text-2); font-weight: 500; }
+.gx-chip:hover { color: var(--gx-text); }
+.gx-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); font-weight: 600; }
+/* A kind filter leads with a dot in the kind's colour (--kind); All, which has none, takes the label grey. */
+.gx-chip[data-kind]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; background: var(--kind, var(--gx-text-2)); }
+.gx-assets { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; padding: 2px 2px 6px; }
+.gx-asset { padding: 6px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); min-width: 0; }
+.gx-asset[data-selected="true"] { border-color: var(--gx-accent); box-shadow: var(--gx-ring-selected); }
+.gx-asset-thumb { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 6px; position: relative; overflow: hidden; background: var(--gx-input); cursor: grab; }
+.gx-asset-thumb img, .gx-asset-thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gx-badge { position: absolute; left: 6px; top: 6px; padding: 2px 6px; border-radius: 4px; font-family: var(--gx-mono); font-size: 10px; letter-spacing: .08em; background: var(--gx-on-media); color: var(--gx-text); }
+.gx-badge--new { left: auto; right: 6px; background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.gx-asset-row { display: flex; align-items: center; gap: 4px; padding: 6px 2px 2px; }
+.gx-asset-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* In a result grid the name and meta are lines of their own: one line each, clipped to the card (they overflowed into the next card). */
+.gx-asset > .gx-asset-name, .gx-asset > .gx-asset-meta { display: block; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-asset > .gx-asset-meta { font-size: 12px; color: var(--gx-text-3); margin-top: 2px; }
+/* A failed take's line — what happened · what the provider did with the charge · the next step. It wraps; a charge is never cut. */
+.gx-asset > .gx-asset-fail { display: block; margin-top: 3px; font-size: 12px; line-height: 1.35; color: var(--gx-text-2); white-space: normal; overflow-wrap: anywhere; }
+.gx-project-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
+.gx-project-new .gx-reason { grid-column: 1 / -1; margin: 0; }
+.gx-asset-add { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; background: var(--gx-input); font-size: 15px; line-height: 1; position: relative; }
+.gx-asset-add:hover { color: var(--gx-accent-text); }
+/* text-2, not text-3: text-3 composites under the #7C7C84 label floor on the panel. */
+.gx-lib-foot { flex: none; color: var(--gx-text-2); font-size: 12px; padding: 0 4px; }
+/* A take tile's meta line (model · length) is a functional label: --gx-text-2 over the rule above's .45 tertiary ink. */
+.gx .gx-asset > .gx-asset-meta { color: var(--gx-text-2); }
+/* The end of an asset list: Load more while the project has more, or a failed read with Try again. */
+.gx-lib-more, .gx-retry { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; min-width: 0; }
+.gx-lib-more .gx-gen-error, .gx-retry .gx-gen-error { flex: 1 1 100%; overflow-wrap: anywhere; }
+/* The Suites shell's Atomik gate (components/graphite/AtomikGate): one row under the stage strip. */
+.gx-gate { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 20px; background: var(--gx-card); border-bottom: 1px solid var(--gx-hair); min-width: 0; }
+.gx-gate-text { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gx-gate-title { font-size: 13px; font-weight: 600; color: var(--gx-waiting, var(--gx-text)); overflow-wrap: anywhere; }
+.gx-gate-line { font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+@media (max-width: 767px) { .gx-gate { padding: 8px 12px; } }
+
+/* ── Project head + page head ──────────────────────────────────────────── */
+.gx-project { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; position: relative; flex: none; }
+.gx-project-btn { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; }
+/* The project's poster: its initials over the two colours its name picks (posterOf, components/graphite/icons.tsx).
+   This swatch is one of the two gradients Graphite has; the other is an avatar's. */
+.gx-project-tile { width: 72px; height: 46px; border-radius: 8px; display: grid; place-items: center; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; background: linear-gradient(135deg, var(--poster-from, var(--gx-thumb)), var(--poster-to, var(--gx-panel))); border: 1px solid var(--gx-card-border); flex: none; }
+.gx-popover-item .gx-project-tile { width: 56px; height: 36px; }
+.gx-project-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.gx-project-meta { display: block; color: var(--gx-text-2); font-size: 12px; }
+.gx-popover { position: absolute; top: 62px; left: 20px; z-index: 40; width: 320px; max-width: calc(100vw - 40px); max-height: 60vh; overflow: auto; padding: 8px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop .3s var(--gx-ease) both; }
+.gx-popover-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; min-height: 44px; }
+.gx-popover-item:hover { background: var(--gx-input); }
+.gx-popover-item--new { color: var(--gx-accent-text); font-weight: 600; }
+.gx-pagehead { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; flex: none; }
+.gx-h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.03em; white-space: nowrap; }
+.gx-hint { color: var(--gx-text-2); font-size: 13px; min-width: 0; }
+.gx-primary { height: 34px; padding: 0 14px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; white-space: nowrap; color: var(--gx-on-accent); background: var(--gx-accent); flex: none; }
+.gx-primary:hover { background: var(--gx-accent-hover); }
+.gx-primary:disabled { opacity: .4; }
+.gx-reason { color: var(--gx-text-2); font-size: 12px; }
+/* Gen's line saying why Generate waits is one line tall with or without a reason (GenView), a little over the text's own
+   line so a fallback font's taller line fits inside it too: nothing below it moves when the price lands. */
+.gx-gen-reason { min-height: 1.5em; }
+
+/* ── Inspector ─────────────────────────────────────────────────────────── */
+.gx-insp-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 18px 20px 0; }
+.gx-pill { padding: 4px 10px; border-radius: 6px; font-size: 12px; color: var(--gx-accent-text); border: 1px solid var(--gx-tint-border); background: var(--gx-tint); }
+.gx-insp-body { flex: 1; min-height: 0; overflow: auto; }
+
+/* The page and inspector bodies that predate Graphite keep their own tokens
+   inside the new chrome until each stage is rebuilt (build steps 2–6). */
+.gx .gx-legacy.pxw { height: auto; min-height: 100%; display: block; overflow: visible; background: transparent; flex: 1; }
+.gx .gx-legacy--fill.pxw { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* A spec page (Atomik's Agent, Runs, Approvals, Budget, Models) is taller than the stage it sits in: it runs past the
+   wrapper's box, so the stage's own phone clearance (the phone section below) lands above its end. It keeps that clearance itself,
+   so its last row ends above the floating tab bar. */
+@media (max-width: 767px) { .gx .gx-stage > .gx-legacy.pxw .pxw-spec { padding-bottom: 144px; } }
+/* Edit & Sound (components/workspace/pages/EditPage) was held 680px wide and scrolled sideways inside a phone's page: it
+   fits the screen, the assembly's Mix and Play wrap under its picture, and a stem's description takes a line of its own. */
+@media (max-width: 767px) {
+  .gx .pxw .pxw-edit { min-width: 0; padding: 12px 12px 24px; }
+  .gx .pxw .pxw-assembly { flex-wrap: wrap; }
+  .gx .pxw .pxw-stem { flex-wrap: wrap; row-gap: 8px; }
+  .gx .pxw .pxw-stem-name { width: auto; flex: 1 1 0; }
+  .gx .pxw .pxw-stem-desc { order: 1; flex-basis: 100%; }
+}
+/* A legacy body's buttons and pickers are 44px targets on a touch screen, either way up (Deliver's package, Edit & Sound). */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .pxw .pxw-btn, .gx .pxw .pxw-package-facts select { min-height: 44px; }
+}
+
+/* ── ⌘K palette ────────────────────────────────────────────────────────── */
+.gx-veil { position: fixed; inset: 0; z-index: 60; background: var(--gx-scrim); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
+.gx-palette { width: min(600px, 92vw); padding: 8px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-dialog); animation: gx-pop .3s var(--gx-ease) both; }
+.gx-palette-input-row { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 46px; border-bottom: 1px solid var(--gx-hair); }
+.gx-palette-input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 15px; }
+/* The field, not only its row, is the 44px target on a touch screen. */
+@media (max-width: 767px), (pointer: coarse) { .gx-palette-input { min-height: 44px; } }
+.gx-palette-list { display: flex; flex-direction: column; gap: 2px; padding: 8px 2px 2px; }
+.gx-palette-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; width: 100%; }
+.gx-palette-row:hover, .gx-palette-row[aria-selected="true"] { background: var(--gx-input); }
+.gx-palette-group { font-family: var(--gx-mono); font-size: 10.5px; letter-spacing: .12em; color: var(--gx-text-2); }
+.gx-palette-label { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-palette-hint { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Context menu ──────────────────────────────────────────────────────── */
+.gx-ctx { position: fixed; z-index: 80; min-width: 220px; max-width: 280px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop .15s var(--gx-ease) both; }
+.gx-ctx-title { padding: 6px 10px; font-family: var(--gx-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-ctx-sep { display: block; height: 1px; margin: 4px 6px; background: var(--gx-hair); }
+.gx-ctx-item { width: 100%; height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 16px; font-size: 13px; }
+.gx-ctx-item:hover:not(:disabled) { background: var(--gx-input-hover); }
+.gx-ctx-item:disabled { color: var(--gx-placeholder); }
+.gx-ctx-item[data-danger="true"]:not(:disabled) { color: var(--gx-failed-text); }
+.gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+
+/* A confirmation with somewhere to go, or one the undo stack can take back: the words, then one Open (lib/shell/confirmations) or
+   Undo (lib/shell/state › pushUndo). Centred by margin, since the pop animation owns transform. */
+.gx-toast[data-open] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+/* Two lines at most: the Open says where the rest is. */
+.gx-toast-text { min-width: 0; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.gx-toast-open { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; font: inherit; font-weight: 600; white-space: nowrap; color: var(--gx-text); background: var(--gx-input-hover); border: 1px solid var(--gx-hair); cursor: pointer; }
+.gx-toast-open:hover { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+/* An Undo is the phone's ⌘Z; the "⌘Z to undo" half is for keyboards only. */
+.gx-toast-undo { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--gx-tint-border-45); background: var(--gx-tint); color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+.gx-toast-undo:hover { border-color: var(--gx-tint-border-50); }
+@media (hover: none), (pointer: coarse) { .gx-toast-kbd { display: none; } .gx-toast-undo { height: 44px; min-width: 72px; } }
+/* Phone: above the floating tab bar and the home indicator. Any touch screen: the Open is a full 44px target. */
+@media (max-width: 767px) {
+  .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); }
+  /* The Uploads chip (components/UploadRecovery) floats just above the tab bar once anything was uploaded: the toast goes above it. */
+  body:has(section[aria-label="Upload recovery"]) .gx-toast { bottom: calc(122px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Wherever that chip floats (up to 900px), a confirmation is above it (z-index 90), so no part of its Open is the chip's. */
+@media (max-width: 900px) { body:has(section[aria-label="Upload recovery"]) .gx-toast { z-index: 91; } }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-toast[data-open] { padding: 4px 4px 4px 16px; }
+  .gx-toast-open { height: 44px; min-width: 44px; padding: 0 16px; }
+}
+
+/* ── Workspace view ────────────────────────────────────────────────────── */
+.gx-card { padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); display: flex; flex-direction: column; gap: 12px; }
+.gx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
+.gx-rowlink { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 44px; padding: 0 14px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-size: 13px; font-weight: 500; text-decoration: none; color: var(--gx-text); }
+.gx-rowlink:hover { background: var(--gx-input-hover); }
+
+/* ── Narrow and phone floors: nothing under 12px, targets at 44 ─────────── */
+@media (max-width: 1279px) {
+  .gx-header { gap: 10px; padding: 0 12px; }
+  .gx-brand-mark { display: none; }
+  .gx-search { flex: 0 1 200px; }
+}
+/* ── Gen (README › Gen) ────────────────────────────────────────────────── */
+.gx-gen { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: 20px; padding: 20px; align-items: start; }
+.gx-gen-card { display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); min-width: 0; }
+.gx-gen-row { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx-textarea { width: 100%; min-height: 112px; resize: vertical; padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.5; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-textarea:focus-visible, .gx-select:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.gx-gen-enhance { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx-toggle { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 6px; border: 1px solid var(--gx-hair); color: var(--gx-text-2); font-size: 12.5px; font-weight: 500; }
+.gx-toggle-dot { width: 22px; height: 14px; border-radius: 999px; background: var(--gx-hair-strong); position: relative; transition: background .2s; }
+.gx-toggle-dot::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--gx-text); transition: transform .2s var(--gx-ease); }
+.gx-toggle[aria-checked="true"] { color: var(--gx-accent-text); border-color: var(--gx-tint-border); background: var(--gx-tint); }
+.gx-toggle[aria-checked="true"] .gx-toggle-dot { background: var(--gx-accent); }
+.gx-toggle[aria-checked="true"] .gx-toggle-dot::after { transform: translateX(8px); }
+.gx-enhanced { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 6px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); animation: gx-in .3s var(--gx-ease) both; }
+.gx-enhanced p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text); }
+.gx-enhanced-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Recreate: the take's recipe as it landed in the composer — what was kept, what changed and why, what is missing. */
+.gx-recipe { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px 12px; border-radius: 6px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); min-width: 0; scroll-margin: 12px; animation: gx-in .3s var(--gx-ease) both; }
+.gx-recipe-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gx-recipe-head .gx-eyebrow { color: var(--gx-accent-text); flex: none; }
+.gx-recipe-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-recipe-chips, .gx-recipe-why { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.gx-recipe-chips li { max-width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; display: block; line-height: 22px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text); background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-recipe-chips li[data-state="changed"] { color: var(--gx-waiting); border-color: color-mix(in srgb, var(--gx-waiting) 40%, transparent); }
+.gx-recipe-chips li[data-state="reading"] { color: var(--gx-text-3); animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-recipe-why { flex-direction: column; gap: 2px; font-size: 12px; color: var(--gx-text-2); }
+.gx-recipe-why li { min-width: 0; overflow-wrap: anywhere; }
+.gx-recipe-why li[data-alert] { color: var(--gx-failed, var(--gx-failed)); }
+.gx-recipe-why b { font-weight: 600; color: var(--gx-text); margin-right: 4px; }
+/* On a phone the card rises to the top of the composer (GenView scrolls it to the start), above the sticky Generate band: tighter. */
+@media (max-width: 767px) { .gx-recipe { gap: 6px; padding: 8px 8px 10px 12px; scroll-margin: 8px; } }
+/* A short phone (360×640) leaves about 158px between the page head and the sticky Generate: wrapped chips
+   pushed the card's notes under the band. There the card tightens and its settings run on one line that
+   swipes sideways, what changed first, so every row lands above the band. */
+@media (max-width: 767px) and (max-height: 700px) {
+  .gx-recipe { gap: 4px; padding: 6px 8px 8px 12px; }
+  .gx-recipe-chips { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-right: -8px; padding-right: 8px; }
+  .gx-recipe-chips::-webkit-scrollbar { display: none; }
+  .gx-recipe-chips li { flex: none; max-width: none; }
+  .gx-recipe-chips li:is([data-state="changed"], [data-state="reading"]) { order: -1; }
+  .gx-recipe-why { line-height: 1.35; }
+}
+
+/* Film vocabulary (components/graphite/FilmVocabulary.tsx): six chips under Direction, each Auto until picked. */
+.gx-fv { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gx-fv-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.gx-fv-chip { min-width: 0; min-height: 40px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 4px 10px; border-radius: 6px; text-align: left; background: var(--gx-input); border: 1px solid var(--gx-hair); transition: background .15s, border-color .15s; }
+.gx-fv-chip:hover { background: var(--gx-input-hover); }
+.gx-fv-chip:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.gx-fv-chip-label { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-2); line-height: 1.2; }
+.gx-fv-chip-value { max-width: 100%; font-size: 12.5px; font-weight: 500; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.gx-fv-chip[data-set] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-fv-chip[data-set] .gx-fv-chip-value { color: var(--gx-accent-text); font-weight: 600; }
+.gx-fv-extras { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-fv-extras li { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding-left: 10px; border-radius: 6px; font-size: 12px; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.gx-fv-extras li > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* # in the words: the bank as a typeahead, in the flow under the box. */
+.gx-fv-hash { scroll-margin: 12px 0; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-hair-strong); box-shadow: var(--gx-shadow-pop); overflow: hidden; animation: gx-in .15s var(--gx-ease) both; }
+.gx-fv-hash-list { position: relative; display: flex; flex-direction: column; padding: 4px; max-height: 264px; overflow-y: auto; }
+.gx-fv-hash-row { display: flex; align-items: baseline; gap: 8px; min-height: 36px; padding: 8px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.gx-fv-hash-row[aria-selected="true"], .gx-fv-hash-row:hover { background: var(--gx-input); }
+.gx-fv-hash-row[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--gx-accent); }
+.gx-fv-hash-chip { flex: none; min-width: 58px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-fv-hash-name { flex: none; font-size: 13px; font-weight: 600; }
+.gx-fv-hash-aka { min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The grid a chip opens: every entry with its loop (or a drawing of it), its name and its other name. */
+/* Two classes: the plain .gx-sheet rules come later in this file, and its 100% width is cyclic in the veil's grid. */
+.gx-sheet.gx-sheet--vocab { width: min(760px, calc(100vw - 32px)); max-height: 78vh; min-width: 0; }
+.gx-sheet--vocab:focus { outline: none; }
+.gx-fv-now { font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gx-fv-now[data-set] { color: var(--gx-accent-text); font-weight: 600; }
+.gx-fv-note { font-size: 12px; color: var(--gx-waiting); display: inline-flex; align-items: center; gap: 6px; }
+.gx-fv-list { gap: 12px; padding: 12px 14px 16px; }
+.gx-fv-group { display: flex; flex-direction: column; gap: 6px; }
+.gx-fv-group .gx-sheet-group-label { padding: 0 2px; }
+.gx-fv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
+.gx-fv-tile { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 5px 5px 7px; border-radius: 9px; text-align: left; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+.gx-fv-tile:hover { background: var(--gx-input); }
+.gx-fv-tile:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.gx-fv-tile[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-fv-tile[aria-pressed="true"] .gx-fv-media { box-shadow: 0 0 0 2px var(--gx-accent); }
+.gx-fv-media { position: relative; display: block; aspect-ratio: 16 / 9; margin-bottom: 4px; border-radius: 6px; overflow: hidden; background: var(--gx-panel); border: 1px solid var(--gx-hair); }
+.gx-fv-media > svg, .gx-fv-media > video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gx-fv-media > video { object-fit: cover; opacity: 0; transition: opacity .25s; }
+.gx-fv-media > video[data-ready] { opacity: 1; }
+.gx-fv-media[data-preview="loading"]::after { content: ""; position: absolute; inset: 0; background: var(--gx-hair-soft); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-fv-name { padding: 0 3px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-fv-aka { padding: 0 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* An entry that is a name alone (Cinema Studio's genres, eras, palettes…): no drawing, a full-size target, and the whole name. */
+.gx-fv-tile[data-plain] { justify-content: center; min-height: 48px; padding: 7px 8px; background: var(--gx-input); border-color: var(--gx-hair); }
+.gx-fv-tile[data-plain]:hover { background: var(--gx-input-hover); }
+.gx-fv-tile[data-plain][aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-fv-tile[data-plain] .gx-fv-name { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+/* The drawings: figures, frames and moves in the shell's greys, the move itself in the accent. */
+.gx-fv-glyph { color: var(--gx-text-2); }
+.gx-fv-g-fig { fill: var(--gx-text-2); }
+.gx-fv-g-dim { fill: var(--gx-thumb); }
+.gx-fv-g-eye { fill: var(--gx-panel); }
+.gx-fv-g-face { fill: var(--gx-input); }
+.gx-fv-g-ground { fill: var(--gx-input-hover); }
+.gx-fv-g-frame { fill: none; stroke: var(--gx-idle); stroke-width: 1.5; }
+.gx-fv-g-line { fill: none; stroke: var(--gx-idle); stroke-width: 1.5; stroke-linecap: round; }
+.gx-fv-g-acc { fill: none; stroke: var(--gx-accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.gx-fv-g-accfill { fill: var(--gx-accent); }
+.gx-fv-g-cam { fill: var(--gx-text); }
+.gx-fv-g-wedge { fill: color-mix(in srgb, var(--gx-accent) 22%, transparent); stroke: var(--gx-accent); stroke-width: 1.5; }
+.gx-fv-g-bokeh { fill: var(--gx-tint-border); stroke: var(--gx-accent-text); stroke-width: 1; }
+.gx-fv-g-flare { stroke: var(--gx-accent-text); stroke-width: 2; stroke-linecap: round; opacity: .8; }
+.gx-fv-g-blur { fill: var(--gx-text-2); opacity: .35; }
+.gx-fv-g-scan { stroke: var(--gx-scrim); stroke-width: 1; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-fv-chip { min-height: 48px; }
+  .gx-fv-chip-label, .gx-fv-hash-chip { font-size: 12px; }
+  .gx-fv-chip-value { font-size: 13px; }
+  /* A thumb's list is one row of pills under the words, scrolled sideways: name and chip, no other name. */
+  .gx-fv-hash-list { flex-direction: row; gap: 6px; padding: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .gx-fv-hash-list::-webkit-scrollbar { display: none; }
+  .gx-fv-hash-row { flex: none; min-height: 44px; align-items: center; padding: 0 14px; border-radius: 999px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+  .gx-fv-hash-row[aria-selected="true"] { box-shadow: none; background: var(--gx-tint); border-color: var(--gx-tint-border); }
+  .gx-fv-hash-chip { width: auto; }
+  .gx-fv-hash-aka { display: none; }
+  .gx-fv-extras li { padding-left: 12px; }
+}
+@media (max-width: 767px) {
+  /* Clear of the tab bar when the list scrolls itself into view; while it is open the Generate band stops
+     sticking, so the words, the list and the keyboard have the screen. */
+  .gx-fv-hash { scroll-margin-bottom: 104px; }
+  .gx-gen-card:has(.gx-fv-hash) .gx-gen-cta { position: static; }
+  /* The veil's one column is the screen's width (it is otherwise sized by the sheet's content), so every grid rises edge to edge. */
+  .gx-veil:has(> .gx-sheet--vocab) { grid-template-columns: minmax(0, 1fr); }
+  .gx-sheet.gx-sheet--vocab { width: 100%; max-height: 82vh; max-height: 82dvh; }
+  .gx-fv-list { padding: 4px 16px 32px; }
+  .gx-fv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .gx .gx-fv-tile { padding: 6px 6px 8px; }
+  .gx-sheet--vocab .gx-sheet-head .gx-panel-title { flex: none; }
+  /* Title, value and Close keep their row; the loops note takes its own line under them. */
+  .gx-sheet--vocab .gx-fv-note { order: 1; flex-basis: 100%; }
+  .gx-sheet--vocab .gx-sheet-find { order: 2; }
+  /* A chip brought back into view after its grid closes sits clear of the sticky Generate (a two-line button
+     since the batch price) and the tab bar. */
+  .gx-fv-chip { scroll-margin-bottom: 196px; }
+}
+@media (min-width: 500px) and (max-width: 767px) { .gx-fv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* A narrow phone: two chips to a row, so each value has room, and a long one takes a second line rather than an ellipsis. */
+@media (max-width: 400px) {
+  .gx-fv-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gx-fv-chip-value { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+}
+/* A phone on its side: the grid takes the screen's height under a tight head, as the model sheet does. */
+@media (max-height: 500px) and (min-width: 768px) {
+  .gx-veil:has(> .gx-sheet--vocab) { padding-top: 12px; padding-bottom: 12px; }
+  .gx-sheet.gx-sheet--vocab { max-height: calc(100dvh - 24px); }
+  .gx-sheet--vocab .gx-sheet-head { padding: 8px 14px; gap: 8px; }
+  /* Gen's words and its # list both fit under the page head: the box starts at three lines (it still stretches). */
+  .gx-gen-card .gx-textarea { height: 88px; min-height: 88px; }
+}
+@media (prefers-reduced-motion: reduce) { .gx-fv-media[data-preview="loading"]::after, .gx-fv-hash { animation: none; } }
+.gx-insp-why { flex-basis: 100%; margin: 0; }
+.gx-model { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 48px; }
+.gx-model:hover { background: var(--gx-input-hover); }
+.gx-model-name { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-model-sub { display: block; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-well { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 64px; padding: 10px; border-radius: 6px; border: 1px dashed var(--gx-hair-strong); background: transparent; }
+.gx-well[data-over="true"] { border-color: var(--gx-accent); background: var(--gx-tint); }
+.gx-well-hint { font-size: 12.5px; color: var(--gx-text-2); flex: 1; min-width: 0; }
+.gx-ref { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 4px 4px 4px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-ref-thumb { width: 32px; height: 32px; border-radius: 4px; overflow: hidden; background: var(--gx-root); flex: none; position: relative; }
+/* A sound reference (Cinema Studio's) has no picture: a small waveform stands in. */
+.gx-ref-wave { display: block; width: 100%; height: 100%; fill: none; stroke: var(--gx-text-2); stroke-width: 2; stroke-linecap: round; }
+.gx-ref-name { font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gx-ref-x { width: 28px; height: 28px; border-radius: 4px; display: grid; place-items: center; color: var(--gx-text-2); flex: none; }
+.gx-ref-x:hover { color: var(--gx-text); background: var(--gx-input-hover); }
+.gx-select { height: 36px; width: 100%; padding: 0 34px 0 12px; border-radius: 6px; font-size: 13px; background-color: var(--gx-input); border: 1px solid var(--gx-hair); appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A1A1A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+.gx-gen-go { width: 100%; height: 40px; justify-content: center; }
+/* Generate's label is what it does, then what it costs, and the price is never cut: when a narrow button or a wide
+   font leaves no room, the price wraps whole onto a second line and the button grows with it (never under its
+   usual height). On a phone a priced label always takes two lines, the price under the action. */
+.gx .gx-gen-go.gx-primary { height: auto; min-height: 44px; flex-wrap: wrap; align-content: center; column-gap: 0; row-gap: 2px; padding-top: 4px; padding-bottom: 4px; text-align: center; }
+.gx-go-act, .gx-go-price { white-space: nowrap; }
+.gx-go-sep { white-space: pre; }
+@media (max-width: 767px) {
+  .gx .gx-gen-go.gx-primary { min-height: 52px; }
+  .gx .gx-gen-go.gx-primary[data-priced] { flex-direction: column; flex-wrap: nowrap; row-gap: 1px; line-height: 1.15; }
+  .gx .gx-gen-go[data-priced] .gx-go-sep { display: none; }
+  .gx .gx-gen-go[data-priced] .gx-go-price { font-size: 13px; font-weight: 600; }
+}
+.gx-gen-foot { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
+.gx-gen-note { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
+.gx-gen-error { margin: 0; font-size: 12.5px; color: var(--gx-failed, var(--gx-failed)); }
+/* Where focus waits after a Try again whose row went away (BusinessView ReadProblem); the row itself is main's .gx-retry. */
+[data-focus-home]:focus { outline: none; }
+.gx-gen-results { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx-gen-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gx-gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+/* Takes 2–4 of one Generate: one strip across the grid, the takes side by side (components/graphite/TakeStrip.tsx).
+   Its words sit on --gx-text-2 or a tone, never dimmer. */
+.gx-batch { grid-column: 1 / -1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-batch-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.gx-batch-label { flex: none; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-text); }
+.gx-batch-name { flex: 1 1 120px; min-width: 0; font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-meta { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-batch-takes { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; min-width: 0; }
+.gx-batch .gx-batch-take { padding: 4px; background: var(--gx-input); }
+.gx-batch .gx-batch-take > .gx-asset-name { font-family: var(--gx-mono); }
+/* A take that has settled (made, refused, never sent) holds still: only one still being followed pulses. */
+.gx-batch .gx-batch-take[data-done="true"] .gx-ring { animation: none; }
+.gx-batch .gx-batch-take > .gx-asset-meta { color: var(--gx-text-2); }
+.gx-batch .gx-batch-take[data-tone="blue"] > .gx-asset-meta { color: var(--gx-accent-text); }
+.gx-batch .gx-batch-take[data-tone="green"] > .gx-asset-meta { color: var(--gx-done); }
+/* The danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-batch .gx-batch-take[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed-text); }
+.gx-batch .gx-batch-take[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
+/* A draft's next step under its strip (components/graphite/DraftFinal.tsx): its facts, the priced final and the
+   final's approval. Words on --gx-text-2 or a tone, never dimmer; the red is the danger text colour, as above. */
+.gx-draft-bar { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.gx-draft-facts, .gx-draft-status { margin: 0; font-size: 12.5px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-draft-status[data-tone="red"] { color: var(--gx-failed-text); }
+.gx-draft-status[data-tone="green"] { color: var(--gx-done); }
+.gx .gx-gen-go.gx-draft-go { width: auto; align-self: flex-start; max-width: 100%; padding-left: 14px; padding-right: 14px; }
+.gx-draft-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+/* The approval rises clear of the phone's tab bar when it opens (scrollIntoView honours the margin). */
+.gx-draft-approve { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-tint-border); background: var(--gx-tint); scroll-margin-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+.gx-draft-approve-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--gx-text); }
+.gx-draft-approve-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--gx-text-2); }
+.gx-draft-option, .gx-sound-option { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.gx-draft-option .gx-hint { flex: 1 1 200px; min-width: 0; margin: 0; }
+@media (max-width: 767px) { .gx .gx-gen-go.gx-draft-go { align-self: stretch; } }
+.gx-running { display: grid; place-items: center; }
+/* A 6px ring in the tone its markup sets as the background: the disc inside it is the thumb's own ground (--gx-input). */
+.gx-ring { position: relative; width: 44px; height: 44px; border-radius: 50%; animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-ring::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--gx-input); }
+/* A run that is over (Complete, or failed) holds still, as a settled batch take does; with reduced motion no ring pulses. */
+.gx-tile[data-done="true"] .gx-ring { animation: none; }
+@media (prefers-reduced-motion: reduce) { .gx-ring { animation: none; } }
+.gx-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding: 12vh 16px 16px; background: var(--gx-scrim); }
+.gx-sheet { width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-dialog); animation: gx-pop .2s var(--gx-ease) both; }
+.gx-sheet-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); flex-wrap: wrap; }
+.gx-sheet-head .gx-seg { margin-right: auto; }
+/* The one catalogue a member is offered takes the switch's place, and its room: Close stays at the end. */
+.gx-sheet-head .gx-sheet-catalogue { flex: 1; min-width: 0; }
+.gx-sheet-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.gx-sheet-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; min-height: 48px; }
+.gx-sheet-row:hover, .gx-sheet-row[aria-selected="true"] { background: var(--gx-input); }
+/* Gen's model sheet (components/graphite/ModelSheet.tsx): search, Recent, spec chips and a price on every row. */
+/* min-width 0: a one-liner never widens the sheet past a phone (the veil's grid track would grow to its min-content). */
+.gx-sheet--models { min-width: 0; }
+/* One width whichever catalogue is showing, so switching tabs or searching never makes the dialog jump. */
+@media (min-width: 768px) { .gx-sheet--models { width: min(640px, calc(100vw - 32px)); } }
+.gx-sheet--models .gx-sheet-main .gx-model-sub { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.gx-sheet-find { flex: 1 1 100%; min-width: 0; }
+.gx-sheet-find .gx-field { height: 36px; }
+.gx-sheet-find .gx-field::-webkit-search-cancel-button { cursor: pointer; }
+.gx-sheet-group { display: flex; flex-direction: column; gap: 2px; }
+.gx-sheet-group + .gx-sheet-group { margin-top: 6px; }
+.gx-sheet-group-label { padding: 6px 10px 2px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-sheet-row--spec { align-items: center; padding: 10px 16px 10px 12px; text-align: left; }
+.gx-sheet-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.gx-sheet-specs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.gx-spec { height: 20px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--gx-text-2); background: var(--gx-hair-soft); border: 1px solid var(--gx-hair); }
+.gx-spec[data-spec="audio"], .gx-spec[data-spec="enhance"] { color: var(--gx-accent-text); background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-sheet-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 64px; text-align: right; }
+.gx-sheet-price b { font-family: var(--gx-mono); font-size: 13.5px; font-weight: 600; color: var(--gx-text); white-space: nowrap; }
+.gx-sheet-price span { font-size: 11px; color: var(--gx-text-2); white-space: nowrap; }
+.gx-sheet-price[data-kind="none"] span { max-width: 76px; white-space: normal; line-height: 1.25; }
+.gx-sheet-tick { flex: none; width: 12px; color: var(--gx-accent-text); }
+.gx-sheet-none { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px; }
+.gx-sheet-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px; }
+.gx-sheet-empty .gx-empty { padding: 0; }
+.gx-sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The price of a row still being read where the composer stands. */
+.gx-sheet-price-skel { display: block; width: 44px; height: 14px; border-radius: 4px; background: var(--gx-hair); animation: gx-pulse 1.4s ease-in-out infinite; }
+/* The last row never sits on the sheet's edge. */
+@media (min-width: 768px) { .gx-sheet--models .gx-sheet-list { padding-bottom: 14px; } }
+.gx-sheet-loading { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+.gx-sheet-skel { height: 64px; border-radius: 8px; background: var(--gx-hair-soft); animation: gx-pulse 1.4s ease-in-out infinite; }
+@media (max-width: 767px) {
+  /* Title and Close on one line, the catalogue switch full width under them, then the search. */
+  .gx-sheet--models .gx-sheet-head .gx-panel-title { margin-right: auto; }
+  .gx-sheet--models .gx-sheet-head .gx-seg { order: 2; flex: 1 1 100%; margin-right: 0; }
+  .gx-sheet--models .gx-sheet-head .gx-seg-btn { flex: 1 1 0; justify-content: center; }
+  .gx-sheet--models .gx-sheet-find { order: 3; }
+  /* The name already leads the row: the two-letter tag gives its width to the chips. */
+  .gx-sheet-row--spec > .gx-tool-tag { display: none; }
+  .gx-sheet-row--spec { gap: 10px; padding: 10px 16px; }
+}
+/* A short phone: the sheet takes more of the screen and its head packs tighter, so more rows show. */
+@media (max-width: 767px) and (max-height: 700px) {
+  .gx .gx-sheet--models { max-height: calc(100dvh - 16px); }
+  .gx .gx-sheet--models::before { margin: 6px 0 2px; }
+  .gx .gx-sheet--models .gx-sheet-head { padding: 2px 16px 8px; row-gap: 8px; }
+  .gx .gx-sheet--models .gx-sheet-list { gap: 6px; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-sheet-find .gx-field { height: 44px; }
+  .gx-sheet-group-label, .gx-spec, .gx-sheet-price span { font-size: 12px; }
+  .gx-spec { height: 22px; }
+}
+/* A phone on its side: the sheet takes the screen's height rather than 70% of it under a 12vh gap. */
+@media (max-height: 500px) and (min-width: 768px) {
+  .gx-veil:has(> .gx-sheet--models) { padding-top: 12px; padding-bottom: 12px; }
+  .gx-sheet--models { max-height: calc(100dvh - 24px); }
+  .gx-sheet--models .gx-sheet-head { padding: 8px 14px; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .gx-sheet-skel, .gx-sheet-price-skel { animation: none; } }
+@media (max-width: 1023px) { .gx-gen { grid-template-columns: minmax(0, 1fr); padding: 12px; } }
+
+/* ── One card contract for takes: Gen › Results, Library › Assets, Takes ─
+   The picture area holds the project's frame (--tile-aspect, set on the shell
+   body) from the first skeleton to the landed media, so nothing jumps. */
+.gx-tile { position: relative; }
+.gx-tile-media { position: relative; }
+.gx-tile .gx-asset-thumb, .gx-asset.gx-skel .gx-skel-thumb { aspect-ratio: var(--tile-aspect, 4 / 3); }
+.gx-tile-face { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gx-text-3); }
+.gx-tile-face[data-face="failed"] { background-color: color-mix(in srgb, var(--gx-failed) 8%, transparent); }
+.gx-tile-face[data-face="stopped"] .gx-tile-glyph { color: var(--gx-text-2); }
+.gx-tile-face[data-face="held"] { background-color: color-mix(in srgb, var(--gx-waiting) 7%, transparent); }
+.gx-tile-face[data-face="unavailable"] .gx-tile-glyph { visibility: hidden; }
+.gx-tile-glyph { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700; line-height: 1; border: 1px solid var(--gx-hair-strong); }
+/* The mark in the danger text colour (#FF6961, as .gx-hbtn--danger): --gx-failed itself reads dimmer than the label floor. */
+.gx-tile-face[data-face="failed"] .gx-tile-glyph { color: var(--gx-failed-text); border-color: color-mix(in srgb, var(--gx-failed) 45%, transparent); }
+.gx-tile-face[data-face="held"] .gx-tile-glyph { color: var(--gx-waiting); border-color: color-mix(in srgb, var(--gx-waiting) 45%, transparent); }
+/* Paused, not stopped: two bars drawn, so no font turns them into a square. */
+.gx-tile-pause { width: 9px; height: 11px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.gx-tile-face[data-face="live"] .gx-tile-glyph { border: 0; }
+.gx-tile-spin { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--gx-hair-strong); border-top-color: var(--gx-accent); animation: gx-spin 1s linear infinite; }
+@keyframes gx-spin { to { transform: rotate(360deg); } }
+.gx-tile-chip { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); height: 20px; padding: 0 8px 0 7px; display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text);
+  background: var(--gx-on-media); border: 1px solid var(--gx-dialog-border); pointer-events: none; }
+.gx-tile-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--gx-idle); }
+.gx-tile-chip[data-tone="live"] .gx-tile-chip-dot { background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-tile-chip[data-tone="picked"] .gx-tile-chip-dot { background: var(--gx-accent); }
+.gx-tile-chip[data-tone="waiting"] .gx-tile-chip-dot { background: var(--gx-waiting); }
+.gx-tile-chip[data-tone="done"] .gx-tile-chip-dot { background: var(--gx-done); }
+.gx-tile-chip[data-tone="failed"] { color: var(--gx-failed-text); border-color: color-mix(in srgb, var(--gx-failed) 40%, transparent); }
+.gx-tile-chip[data-tone="failed"] .gx-tile-chip-dot { background: var(--gx-failed); }
+.gx-tile-reason { display: block; margin-top: 3px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gx-tile-reason[data-tone="failed"] { color: var(--gx-failed-text); }
+.gx-tile-reason[data-tone="waiting"] { color: var(--gx-waiting); }
+.gx-asset.gx-tile > .gx-tile-reason { padding: 0 2px; }
+/* The 2-up Library tile: the chip says the status, so the glyph steps aside; the reason may take two lines. */
+.gx-tile[data-variant="library"] .gx-tile-face:is([data-face="live"], [data-face="held"], [data-face="failed"], [data-face="stopped"]) .gx-tile-glyph { display: none; }
+.gx-tile[data-variant="library"] > .gx-tile-reason { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+/* A failed take's charge (a receipt, or its provider's own word): a line of its own that wraps whole — a charge is never cut. */
+.gx-tile .gx-tile-reason.gx-tile-charge { display: block; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; color: var(--gx-text-2); }
+/* Refresh is the tile's second action: a round button in its top-right corner, small enough that a press
+   in the middle of the smallest tile (the 2-up Library on a 360 px phone) still opens the take. */
+.gx-tile-over { position: absolute; inset: 0; display: grid; place-items: start end; padding: 6px; pointer-events: none; }
+.gx-tile-refresh { pointer-events: auto; width: 28px; height: 28px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 15px; line-height: 1;
+  color: var(--gx-text); background: var(--gx-on-media); border: 1px solid var(--gx-dialog-border); }
+.gx-tile-refresh:hover { background: var(--gx-input-hover); }
+.gx-tile-refresh:disabled { opacity: .6; cursor: default; }
+.gx-tile-refresh[aria-busy="true"] > span { animation: gx-spin 1s linear infinite; }
+/* Release on a take held for credits: the price on the button; a refusal says why, with the way to more credits. */
+.gx-release { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
+.gx-release[data-place="inspector"] { margin-top: 0; flex: 1 1 100%; }
+.gx .gx-hbtn.gx-release-btn { justify-content: center; width: 100%; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: center; line-height: 1.25; color: var(--gx-waiting-text); border-color: color-mix(in srgb, var(--gx-waiting) 45%, transparent); }
+.gx-release[data-place="inspector"] .gx-release-btn { width: auto; align-self: flex-start; }
+.gx-release-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; line-height: 1.4; color: var(--gx-failed-text); overflow-wrap: anywhere; min-width: 0; }
+.gx-release-note[data-tone="short"] { color: var(--gx-waiting-text); }
+.gx-release-ask { color: var(--gx-text-2); }
+.pd-take-cell > .gx-release { margin-top: 6px; }
+/* Release sits under the take it starts, never beside it. */
+.gx .pd-take-cell:has(> .gx-release) { flex-wrap: wrap; align-content: flex-start; }
+.gx .pd-take-cell > .gx-release { flex: 1 1 100%; }
+/* A held take's need: on the chip where the tile shows it whole, else on its own line under the name. A price is never cut. */
+.gx-tile { container-type: inline-size; }
+.gx-tile-need { display: none; }
+@container (max-width: 259px) {
+  .gx-tile-chip .gx-chip-need { display: none; }
+  .gx-tile-need { display: block; }
+}
+/* Skeletons: the card's own shape, a slow pulse, no text. */
+.gx-skel { pointer-events: none; }
+.gx-skel-thumb { display: block; width: 100%; border-radius: 6px; background: var(--gx-hair-soft); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line { display: block; width: 72%; height: 10px; margin-top: 9px; border-radius: 4px; background: var(--gx-hair-soft); animation: gx-pulse 1.4s ease-in-out infinite; }
+.gx-skel-line--short { width: 44%; margin-top: 6px; }
+/* A read that failed: one line and Try again, never an empty grid. */
+.gx-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 12px; border-radius: 10px; font-size: 12.5px; color: var(--gx-text);
+  border: 1px solid color-mix(in srgb, var(--gx-failed) 35%, transparent); background: color-mix(in srgb, var(--gx-failed) 8%, transparent); }
+.gx-banner[data-tone="stale"] { border-color: color-mix(in srgb, var(--gx-waiting) 35%, transparent); background: color-mix(in srgb, var(--gx-waiting) 8%, transparent); }
+.gx-banner-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--gx-failed); }
+.gx-banner[data-tone="stale"] .gx-banner-dot { background: var(--gx-waiting); }
+.gx-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gx-banner[data-compact] { flex-wrap: wrap; }
+.gx-banner[data-compact] .gx-banner-text { flex-basis: calc(100% - 18px); }
+.gx-banner[data-compact] .gx-hbtn { margin-left: 18px; }
+/* "Trying…" is the banner's status while its read is out, not a spent control: it keeps the #7C7C84 label floor. */
+.gx-banner .gx-hbtn:disabled { opacity: 1; color: var(--gx-text-2); }
+.gx-main > .gx-banner { flex: none; margin: 0 20px 8px; }
+/* In a stage that has nothing else to show (the project list did not load), the banner keeps the page's gutters. */
+.gx-stage > .gx-banner { flex: none; margin: 16px 20px; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-tile-refresh { width: 44px; height: 44px; font-size: 18px; }
+  .gx .gx-hbtn.gx-release-btn { min-height: 44px; }
+  .gx-tile-chip { height: 22px; font-size: 12px; }
+  .gx-main > .gx-banner { margin: 0 12px 8px; }
+  .gx-stage > .gx-banner { margin: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gx-skel-thumb, .gx-skel-line, .gx-tile-spin, .gx-tile-chip-dot, .gx-tile-refresh[aria-busy="true"] > span { animation: none; }
+}
+
+/* ── Assets on every page (FINAL_SPEC §1 step 1) ─────────────────────── */
+.gx-asset[data-cut="true"] { opacity: .45; }
+.gx-asset[data-cut="true"] .gx-asset-thumb { outline: 1px dashed var(--gx-hair-strong); outline-offset: -1px; }
+.gx-insp-x { width: 32px; padding: 0; justify-content: center; font-size: 18px; line-height: 1; margin-left: auto; }
+.gx-insp-head .gx-pill { margin-left: 0; }
+.gx-insp-asset { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 24px; }
+.gx-insp-row { display: flex; align-items: center; justify-content: space-between; }
+.gx-insp-card { position: relative; height: 180px; flex: none; border-radius: 8px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-hair); display: grid; place-items: center; }
+.gx-insp-card img, .gx-insp-card video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx-insp-card .gx-badge { position: static; }
+.gx-play { position: absolute; left: 8px; bottom: 8px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--gx-on-media); border: 1px solid var(--gx-hair); }
+.gx-insp-title { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.gx-insp-sub { color: var(--gx-text-2); font-size: 12.5px; margin-top: -6px; }
+.gx-facts { margin: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--gx-hair); border-bottom: 1px solid var(--gx-hair); }
+.gx-facts > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; font-size: 12.5px; }
+.gx-facts dt { color: var(--gx-text-2); }
+.gx-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.gx-insp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Next (components/graphite/AssetNextActions.tsx): the tool each take goes on to, in the Inspector and on the selected take. */
+.gx-next { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* Its label reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the
+   Inspector and on the selected take's card. */
+.gx-next > .gx-eyebrow { color: var(--gx-text-2); }
+.gx-next-row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.gx-next .gx-reason { margin: 0; overflow-wrap: anywhere; }
+/* A priced Next action (components/graphite/NextActionPanel.tsx): its settings, the estimate on its one button, and what came
+   of it. Labels and notes read at --gx-text-2 on the card's opaque ground (the label floor); the price wraps, never cut. */
+.gx-next-row .gx-hbtn[aria-expanded="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-next-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-hair); }
+.gx-next-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.gx-next-panel-title { font-weight: 600; font-size: 14px; }
+.gx-next-label { color: var(--gx-text-2); font-size: 12px; overflow-wrap: anywhere; }
+.gx-next-note { margin: 0; color: var(--gx-text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.gx-next-note[data-tone="red"] { color: var(--gx-failed-text); }
+.gx-next-fields { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.gx-next-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gx-next-seg, .gx-next-toggle { align-self: flex-start; max-width: 100%; }
+.gx-next-panel .gx-textarea.gx-next-text { height: 72px; min-height: 72px; }
+.gx-next-fields:disabled .gx-seg-btn, .gx-next-fields:disabled .gx-toggle, .gx-next-fields:disabled .gx-select, .gx-next-fields:disabled .gx-field, .gx-next-fields:disabled .gx-textarea, .gx-next-seg .gx-seg-btn:disabled { opacity: .5; cursor: default; }
+.gx-next-go-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.gx .gx-gen-go.gx-next-go { width: auto; flex: 1 1 auto; max-width: 100%; padding-left: 14px; padding-right: 14px; }
+.gx-next-done { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+@media (max-width: 767px) { .gx .gx-gen-go.gx-next-go { flex-basis: 100%; } }
+.gx-hbtn--danger { color: var(--gx-failed-text); }
+/* A Rig row that will take the asset being dragged over it. */
+.gx .pxw-rig-row[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: -2px; background: var(--gx-tint); }
+/* The same on a Rig canvas node: the shot that will take the asset. */
+.gx .pxw-graph-node[data-drop="true"] { outline: 2px solid var(--gx-accent); outline-offset: 2px; background: var(--gx-tint); }
+.gx-hbtn:disabled, .gx-hbtn[aria-disabled="true"] { opacity: .4; cursor: default; }
+
+/* ── Atomik › Tools & connections · Workspace (FINAL_SPEC §5) ─────────── */
+.sk, .wsx { display: flex; flex-direction: column; gap: 14px; padding: 20px; max-width: 1040px; }
+.tc { gap: 16px; min-width: 0; }
+.tc-tabs { align-self: flex-start; max-width: 100%; }
+.tc-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tc-lead-block { display: flex; flex-direction: column; gap: 4px; }
+.tc-lead { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.tc-intro { margin: 0; max-width: 72ch; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); }
+.tc-note { margin: 0; padding: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--gx-text-2); }
+.tc-warn { padding-top: 8px; color: var(--gx-waiting-text); }
+.tc-problem { padding-top: 8px; }
+.tc-card { display: flex; flex-direction: column; min-width: 0; padding: 4px 18px 12px; border-radius: 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.tc-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 48px; padding: 8px 0; }
+.tc-title { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.tc-title:focus { outline: none; }
+.tc-title:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; border-radius: 4px; }
+.tc-n { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-family: var(--gx-mono); font-size: 11px; font-weight: 600; background: var(--gx-tint); color: var(--gx-accent-text); }
+.tc-summary { font-size: 12.5px; color: var(--gx-text-2); }
+.tc-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; min-height: 52px; padding: 8px 0; border-top: 1px solid var(--gx-hair); }
+.tc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gx-idle); }
+.tc-dot[data-status="built-in"], .tc-dot[data-status="available"] { background: var(--gx-done); }
+.tc-dot[data-status="missing"], .tc-dot[data-status="off"] { background: transparent; border: 1.5px solid var(--gx-idle); }
+.tc-dot[data-status="owner-only"], .tc-dot[data-status="connect"] { background: var(--gx-waiting); }
+.tc-dot[data-status="error"] { background: var(--gx-failed); }
+.tc-dot[data-status="checking"] { animation: tc-pulse 1.2s ease-in-out infinite; }
+@keyframes tc-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .tc-dot[data-status="checking"] { animation: none; } }
+.tc-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tc-name { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+.tc-mono { font-family: var(--gx-mono); font-size: 12.5px; }
+.tc-side { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.tc-pill { padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .02em; color: var(--gx-text-2); background: var(--gx-hair-soft); border: 1px solid var(--gx-hair); }
+.tc-pill[data-status="built-in"], .tc-pill[data-status="available"] { color: var(--gx-done-text); background: color-mix(in srgb, var(--gx-done) 10%, transparent); border-color: color-mix(in srgb, var(--gx-done) 28%, transparent); }
+.tc-pill[data-status="spends"] { color: var(--gx-waiting-text); background: color-mix(in srgb, var(--gx-waiting) 10%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 28%, transparent); }
+.tc-pill[data-status="error"] { color: var(--gx-failed-text); background: color-mix(in srgb, var(--gx-failed) 10%, transparent); border-color: color-mix(in srgb, var(--gx-failed) 28%, transparent); }
+.tc-pad { margin: 0; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
+.tc-meter { display: block; max-width: 240px; height: 4px; margin-top: 4px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
+.tc-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--gx-accent); }
+.tc-meter > span[data-full="true"] { background: var(--gx-failed); }
+.tc-fresh { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; padding: 14px; border-radius: 10px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.tc-secret { padding: 10px 12px; border-radius: 8px; background: var(--gx-scrim); font-family: var(--gx-mono); font-size: 12.5px; overflow-wrap: anywhere; user-select: all; }
+.tc-danger { color: var(--gx-failed-text); }
+.tc-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gx-hair); }
+.tc-field-name { flex: 1 1 200px; width: auto; min-width: 0; }
+.tc-ceiling { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; }
+.tc-ceiling .gx-field { width: 116px; }
+.tc .gx-seg-btn[aria-pressed="true"]::before { opacity: 1; }
+.tc .gx-seg-btn[aria-pressed="true"] > span { color: var(--gx-text); font-weight: 600; }
+.tc-clients { padding-bottom: 8px; }
+.tc-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 0; border-top: 1px solid var(--gx-hair); }
+.tc-copy-label { font-size: 12.5px; color: var(--gx-text-2); }
+.tc-copy-body { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.tc-code { flex: 1 1 auto; min-width: 0; margin: 0; padding: 9px 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-family: var(--gx-mono); font-size: 12px; line-height: 1.55; color: var(--gx-text); white-space: pre; overflow-x: auto; }
+.tc-cmd { display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--gx-mono); font-size: 11.5px; color: var(--gx-text-2); }
+.tc-foot { display: flex; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
+.tc-packs > summary { list-style: none; cursor: pointer; }
+.tc-packs > summary::-webkit-details-marker { display: none; }
+.tc-packs > summary::after { content: "Show"; margin-left: auto; font-size: 12.5px; color: var(--gx-accent-text); }
+.tc-packs[open] > summary::after { content: "Hide"; }
+.tc-packs > summary:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; border-radius: 6px; }
+@media (max-width: 560px) {
+  .tc-tabs { align-self: stretch; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .tc-card { padding: 2px 12px 10px; }
+  .tc-row { grid-template-columns: 8px minmax(0, 1fr); }
+  .tc-side { grid-column: 2; justify-content: flex-start; }
+  .tc-copy-body { flex-direction: column; align-items: stretch; }
+  .tc-copy-body .gx-hbtn { align-self: flex-start; }
+  .tc-form > * { flex: 1 1 100%; }
+  .tc-ceiling .gx-field { flex: 1 1 auto; width: auto; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .tc-packs > summary { min-height: 52px; }
+  .tc-n, .tc-pill, .tc-cmd { font-size: 12px; }
+}
+.tc-insp { display: flex; flex-direction: column; gap: 4px; padding: 16px; }
+.tc-insp-title { font-size: 16px; font-weight: 600; letter-spacing: -.016em; }
+.tc-insp-sub { font-size: 12px; color: var(--gx-text-2); }
+.tc-insp-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--gx-text-2); }
+/* Atomik › Memory (components/graphite/atomik/MemoryView.tsx): the Tools page's cards, with rows that stack on a phone. */
+.am-form { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 4px 0 12px; }
+.am-form--inline { padding: 6px 0 2px; }
+.am-label { font-size: 12.5px; color: var(--gx-text-2); }
+.am-textarea { min-height: 84px; }
+.am-where { align-self: flex-start; max-width: 100%; }
+.am-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.am-form > .am-actions { justify-content: flex-start; }
+.am-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 16px; min-height: 52px; padding: 12px 0; border-top: 1px solid var(--gx-hair); }
+.am-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.am-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.am-asset { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.am-text { margin: 0; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.am-meta, .am-confirm { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+.am-gone { color: var(--gx-waiting-text); }
+.am-confirm { flex: 1 1 100%; text-align: right; }
+/* A list to tick or pick (Cast & Elements, the brand kit, what Atomik read): each row is its own 44px target. */
+.am-picks { display: grid; gap: 6px; min-width: 0; }
+.am-pick { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: var(--gx-input); cursor: pointer; }
+.am-pick:has(input:checked) { border-color: var(--gx-tint-border); background: var(--gx-tint); }
+.am-pick[data-off] { cursor: default; }
+.am-pick input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--gx-accent); }
+.am-pick-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.am-pick-name { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+.am-pick .am-text { font-size: 13px; }
+.am-none { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 4px 0 12px; }
+/* "Load a document": the file input sits inside its label, which is the target; the input itself is out of sight. */
+.am-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.am-file-btn { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+.am-file-btn input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.am-file-btn:focus-within { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+/* Atomik's read: the price before, the proposals after, in a panel of its own under the import. */
+.am-read { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0 0 12px; padding: 14px; border-radius: 10px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.am-read .tc-note { padding: 0; }
+.am-read > .am-actions { justify-content: flex-start; }
+.am-read-title { margin: 0; font-size: 13.5px; font-weight: 600; }
+@media (max-width: 767px) {
+  .am-row { grid-template-columns: minmax(0, 1fr); }
+  .am-actions { justify-content: flex-start; }
+  .am-confirm { text-align: left; }
+  .am-where { align-self: stretch; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .am-pick { min-height: 48px; }
+  .am-file-btn { min-height: 44px; }
+}
+/* The Workspace view is the shell's pane under the header: it scrolls itself (.gx clips), as .cw-page does. */
+.gx-workspace { flex: 1; min-height: 0; overflow-y: auto; }
+.wsx-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+/* Workspace › Dashboard: tiles, then tables that scroll inside the card on a phone, never the page. */
+.mdx { gap: 18px; min-width: 0; }
+.mdx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mdx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.mdx-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 10px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-width: 0; }
+.mdx-tile strong { font-family: var(--gx-mono); font-size: 22px; font-weight: 600; color: var(--gx-text); }
+.mdx-tile .cw-dim { font-size: 12px; }
+.mdx-table-wrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.mdx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mdx-table caption { text-align: left; padding: 0 0 8px; }
+.mdx-table th, .mdx-table td { padding: 8px 10px; border-bottom: 1px solid var(--gx-hair); text-align: left; white-space: nowrap; }
+.mdx-table th { color: var(--gx-text-2); font-weight: 600; font-size: 12px; }
+.mdx-table [data-numeric] { text-align: right; font-family: var(--gx-mono); }
+.mdx-table tr[data-clickable] { cursor: pointer; }
+.mdx-table tr[data-clickable]:hover td { background: var(--gx-hair-soft); }
+.mdx-ledger { display: flex; flex-direction: column; gap: 12px; }
+.wsx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.wsx-label { display: flex; flex-direction: column; gap: 6px; }
+.wsx-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--gx-hair); }
+.wsx-row:first-of-type { border-top: 0; }
+/* A member's initials are an avatar: the one gradient besides a project's swatch (README › Shell anatomy › Avatar). */
+.wsx-initials { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: linear-gradient(160deg, #3A3A3C, #1C1C1E); border: 1px solid var(--gx-pop-border); }
+.wsx-name { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-balance { font-family: var(--gx-mono); font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.wsx-packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.wsx-pack { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-pack-line { margin-bottom: 6px; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.wsx-whole { white-space: nowrap; }
+/* The buttons line up along the row's foot, however the lines above them wrap. */
+.wsx-pack .wsx-pack-go { margin-top: auto; justify-content: center; }
+/* The Plans card's labels clear the #7C7C84 floor. */
+.wsx-plans .gx-eyebrow { color: var(--gx-text-2); }
+.wsx-ask { font-size: 12.5px; color: var(--gx-text-2); }
+.wsx-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wsx-list > .gx-eyebrow { margin-bottom: 4px; }
+.wsx-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; padding: 4px 0; border-top: 1px solid var(--gx-hair); min-width: 0; }
+.wsx-list-what { min-width: 0; font-size: 13px; color: var(--gx-text); overflow-wrap: anywhere; }
+.wsx-list-row[data-status]:not([data-status="requested"]) .wsx-list-what { color: var(--gx-text-2); }
+.wsx-list-amount { flex: none; font-family: var(--gx-mono); font-size: 13px; font-weight: 600; color: var(--gx-text); }
+.wsx-bar { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12.5px; min-height: 28px; }
+.wsx-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-bar-track { height: 8px; border-radius: 999px; background: var(--gx-input); overflow: hidden; }
+.wsx-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--gx-accent); }
+.wsx-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* Usage › Ledger (idea 25): one job per row under the bars — what it was and its amount, then when, who and its state. */
+.wsx-ledger, .wsx-ledger-connected { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.wsx-ledger { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--gx-hair); }
+.wsx-ledger-connected { margin-top: 8px; }
+.wsx-ledger-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.wsx-ledger-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--gx-text); }
+.wsx-ledger-month.cw-select { width: auto; max-width: 100%; }
+.wsx-ledger-line { margin: 0; font-size: 12.5px; color: var(--gx-text-2); }
+.wsx-ledger-rows { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.wsx-ledger-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what amt" "meta state"; column-gap: 12px; row-gap: 2px; padding: 9px 0; border-top: 1px solid var(--gx-hair); }
+.wsx-ledger-row:first-child { border-top: 0; }
+.wsx-ledger-what { grid-area: what; font-weight: 600; }
+.wsx-ledger-meta { grid-area: meta; }
+.wsx-ledger-what, .wsx-ledger-meta, .wsx-ledger-when, .wsx-ledger-who { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsx-ledger-who::before { content: " · "; }
+.wsx-ledger-amt { grid-area: amt; font-family: var(--gx-mono); font-size: 12.5px; text-align: right; white-space: nowrap; }
+.wsx-ledger-meta, .wsx-ledger-state { font-size: 12px; color: var(--gx-text-2); }
+.wsx-ledger-state { grid-area: state; text-align: right; white-space: nowrap; }
+/* Wide: a ledger's columns — when, what, who, state, amount. */
+@media (min-width: 768px) {
+  .wsx-ledger-row { grid-template-columns: 124px minmax(0, 1fr) minmax(0, 180px) 150px 96px; grid-template-areas: "when what who state amt"; align-items: baseline; }
+  .wsx-ledger-rows--connected .wsx-ledger-row { grid-template-columns: 124px minmax(0, 1fr) 110px minmax(150px, max-content); grid-template-areas: "when what state amt"; }
+  .wsx-ledger-meta { display: contents; }
+  .wsx-ledger-when { grid-area: when; }
+  .wsx-ledger-who { grid-area: who; }
+  .wsx-ledger-who::before { content: none; }
+  .wsx-ledger-when, .wsx-ledger-who { font-size: 12px; color: var(--gx-text-2); }
+  .wsx-ledger-state { text-align: left; }
+}
+.wsx-ledger-state[data-state="held"], .wsx-ledger-state[data-state="pending"], .wsx-ledger-state[data-state="uncertain"] { color: var(--gx-waiting); }
+.wsx-ledger-state[data-state="failed-charged"] { color: var(--gx-failed-text); }
+/* A failed job's why, and what its provider did with the charge: a full-width line under the row. */
+.wsx-ledger-why { grid-column: 1 / -1; font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.wsx-ledger-more { align-self: flex-start; }
+@media (max-width: 767px) { .sk, .wsx { padding: 12px; } }
+
+/* Narrow layout: the header wraps and the segment takes its own row. */
+@media (max-width: 767px) {
+  .gx-header { height: auto; min-height: 56px; flex-wrap: wrap; padding: 6px 12px; row-gap: 6px; }
+  .gx-header .gx-seg { order: 5; width: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .gx-seg-btn { padding: 0 6px; }
+  .gx-search { flex: 1 1 0; min-width: 44px; }
+  .gx-search .gx-key { display: none; }
+  .gx-strip { justify-content: flex-start; padding: 0 12px; }
+  .gx-project, .gx-pagehead { padding: 10px 12px; }
+  .gx-h1 { font-size: 22px; }
+}
+/* The thumb's floors, on any phone in either orientation: 44px targets (a
+   segmented option may be 40px inside a 44px track), 12px text, 16px fields. */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-seg-btn, .gx-seg--sm .gx-seg-btn { height: 40px; }
+  .gx-seg { min-height: 46px; }
+  .gx-brand { min-height: 44px; }
+  .gx-search { height: 44px; }
+  .gx-hbtn, .gx-primary { height: 44px; }
+  .gx-avatar { width: 44px; height: 44px; }
+  .gx-strip { height: 52px; }
+  .gx-tab { height: 44px; }
+  .gx-tab-n, .gx-eyebrow, .gx-key, .gx-palette-group, .gx-palette-hint, .gx-ctx-key, .gx-seg-btn > .gx-seg-count { font-size: 12px; }
+  .gx-ctx-title, .gx-badge, .gx-tool-tag { font-size: 12px; }
+  .gx-chip { height: 44px; min-width: 44px; text-align: center; }
+  .gx-field { height: 44px; font-size: 16px; }
+  .gx-palette-input { font-size: 16px; }
+  .gx-ctx-item { height: 44px; }
+  .gx-play { height: 44px; }
+  .gx-insp-x { width: 44px; }
+  .gx-asset-add { width: 44px; height: 44px; }
+  .gx-toggle, .gx-select { height: 44px; }
+  .gx-select, .gx-textarea { font-size: 16px; }
+  .gx-ref-x { width: 44px; height: 44px; }
+  .gx-gen-go { height: 44px; }
+}
+
+/* Connected workflows on a Studio page (Deliver › Social cuts, Edit › Dub · Change voice, Astra › Draw to edit) and Gen › Analysis. */
+.gx-extras { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 0; }
+.gx-gen-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gx-workflow-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.gx-workflow .pxw { background: transparent; }
+@media (max-width: 767px) { .gx-extras { padding: 12px 12px 0; } }
+/* Takes per Generate: the prototype's stepper beside the primary. */
+.gx-gen-takes { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 13.5px; color: var(--gx-text-2); }
+.gx-stepper { display: flex; align-items: center; border-radius: 999px; background: var(--gx-hair-soft); border: 1px solid var(--gx-hair); }
+.gx-stepper button { width: 30px; height: 30px; display: grid; place-items: center; color: var(--gx-text-2); border-radius: 999px; }
+.gx-stepper button:disabled { opacity: .4; cursor: default; }
+.gx-stepper span { min-width: 22px; text-align: center; font-family: var(--gx-mono); font-weight: 600; color: var(--gx-text); }
+@media (max-width: 767px), (pointer: coarse) { .gx-stepper button { width: 44px; height: 44px; } }
+/* Gen › Audio: the length stepper and music's Instrumental switch share a row, and wrap on a narrow phone. */
+.gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
+
+/* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
+.gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }
+.gx-stage-view { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
+.gx-stage-intro { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-stage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; padding: 12px 14px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-stage-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-stage-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-stage-group { border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); overflow: hidden; }
+.gx-stage-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--gx-hair-soft); }
+.gx-stage-group-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dept, var(--gx-accent)); flex: none; }
+.gx-stage-group-head > .gx-hint { flex: 1; min-width: 0; }
+.gx-stage-count { margin-left: auto; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; background: var(--gx-hair); color: var(--gx-text-2); letter-spacing: 0; }
+.gx-stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: var(--gx-hair-soft); }
+.gx-stage-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; text-align: left; background: var(--gx-card); min-height: 132px; }
+button.gx-stage-card:hover { background: var(--gx-input); }
+button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx-accent); }
+.gx-stage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gx-stage-card-title { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
+.gx-stage-card-desc { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
+.gx-stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-chip--static { height: 22px; padding: 0 8px; font-size: 11.5px; cursor: default; }
+.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); }
+.gx-stage-card-foot[data-state="COMPLETE"] { color: var(--gx-done); }
+.gx-stage-card-foot[data-state="ACTIVE"] { color: var(--gx-accent-text); }
+.gx-stage-card-foot[data-state="WAITING"] { color: var(--gx-waiting); }
+.gx-home-dot[data-state="done"] { background: var(--gx-done); }
+.gx-home-dot[data-state="progress"] { background: var(--gx-accent); }
+.gx-home-dot[data-state="waiting"] { background: var(--gx-waiting); }
+.gx-stage-work { border-radius: 10px; border: 1px solid var(--gx-card-border); background: var(--gx-panel); overflow: hidden; }
+.gx-stage-work > .gx-stage-group-head { justify-content: space-between; }
+.gx-stage-work > .gx-stage-group-head::before { display: none; }
+.gx-stage-tool { padding: 12px 14px 18px; }
+@media (max-width: 767px) { .gx-stage-view { padding: 12px 12px 24px; } .gx-stage-grid { grid-template-columns: 1fr; } }
+@media (max-width: 767px), (pointer: coarse) { .gx-stage-facts dt { font-size: 12px; } .gx-chip--static { height: 24px; font-size: 12px; } }
+/* Gen's Output strip carries five tabs (Video · Images · Audio · Edit · Analysis): below 400px it wraps so every tab keeps the 44px floor. */
+@media (max-width: 400px) {
+  .gx-gen .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); height: auto; }
+  .gx-gen .gx-seg--fill .gx-seg-btn { min-width: 44px; }
+  /* A member's four (no Analysis) still fit one row at 44px each. */
+  .gx-gen .gx-seg--fill[data-tabs="4"] { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ── Cast › Build identity (Soul ID on the connected account): the stills picker and the account's list. ── */
+.gx-soul-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.gx-soul-still { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 44px; }
+.gx-soul-still .gx-lazy, .gx-soul-still img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx-soul-still[aria-pressed="true"] { box-shadow: var(--gx-ring-selected); }
+.gx-soul-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gx-soul-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--gx-hair); flex-wrap: wrap; }
+.gx-soul-row:first-child { border-top: 0; }
+.gx-soul-name { font-weight: 600; }
+
+/* Atomik › the page's plan (components/graphite/AtomikSheet): steps, the gate with its live price, the run. */
+.gx-atomik { max-height: min(78vh, 720px); }
+.gx-atomik-body { display: flex; flex-direction: column; gap: 12px; padding: 14px; overflow-y: auto; min-height: 0; }
+.gx-atomik-body .gx-hint { margin: 4px 0 0; }
+.gx-atomik-elsewhere { align-self: flex-start; height: auto; min-height: 36px; white-space: normal; text-align: left; color: var(--gx-waiting); }
+.gx-atomik-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.gx-atomik-step { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 32px; font-size: 13px; color: var(--gx-text-2); }
+.gx-atomik-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx-atomik-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); border: 1px solid var(--gx-hair-strong); }
+.gx-atomik-step[data-tone="done"] .gx-atomik-mark { color: var(--gx-done); border-color: var(--gx-done); }
+.gx-atomik-step[data-tone="now"] { color: var(--gx-text); }
+.gx-atomik-step[data-tone="now"] .gx-atomik-mark { color: var(--gx-accent-text); border-color: var(--gx-accent); }
+.gx-atomik-step[data-tone="gate"] .gx-atomik-mark { color: var(--gx-waiting); border-color: var(--gx-waiting); }
+.gx-atomik-step[data-tone="failed"] .gx-atomik-mark { color: var(--gx-failed-text); border-color: var(--gx-failed); }
+.gx-atomik-meta { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-3); white-space: nowrap; }
+.gx-atomik-gate { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--gx-waiting) 30%, transparent); background: color-mix(in srgb, var(--gx-waiting) 8%, transparent); }
+.gx-atomik-gate-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; color: var(--gx-waiting); }
+.gx-atomik-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.gx-atomik-foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--gx-hair); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-atomik-step, .gx-atomik-meta, .gx-atomik-mark { font-size: 12px; }
+  .gx-atomik-elsewhere { min-height: 44px; }
+}
+
+/* ── Connected jobs picked back up after the page was left (Business, Viral; Gen shows cards). ── */
+.gx-resumed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* One line: dot · name · state. A problem and the actions sit on their own line under it, actions at the end. */
+.vr-job.gx-resumed-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 6px; align-items: center; min-height: 44px; }
+.gx-resumed-row > .gx-resumed-problem, .gx-resumed-row > .gx-resumed-actions { grid-column: 1 / -1; }
+.gx-resumed-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.gx-resumed-open { color: var(--gx-accent-text); }
+.gx-resumed-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--gx-accent); }
+.gx-resumed-row[data-tone="blue"] .gx-resumed-dot { animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-resumed-row[data-tone="green"] .gx-resumed-dot { background: var(--gx-done); }
+.gx-resumed-row[data-tone="red"] .gx-resumed-dot { background: var(--gx-failed); }
+.gx-resumed-row[data-tone="amber"] .gx-resumed-dot { background: var(--gx-waiting); }
+.gx-resumed-row[data-tone="idle"] .gx-resumed-dot { background: var(--gx-idle); }
+.gx-resumed-state { color: var(--gx-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gx-resumed-row[data-tone="green"] .gx-resumed-state { color: var(--gx-done); }
+.gx-resumed-row[data-tone="red"] .gx-resumed-state { color: var(--gx-failed-text); }
+.gx-resumed-row[data-tone="amber"] .gx-resumed-state { color: var(--gx-waiting); }
+.gx-resumed-x { height: 28px; }
+.gx-resumed-problem { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--gx-waiting); }
+.gx-asset[data-tone="amber"] > .gx-asset-meta { color: var(--gx-waiting); }
+.gx-asset[data-tone="red"] > .gx-asset-meta { color: var(--gx-failed-text); }
+/* Nobody is asking after it any more (settled, or no read can move it): the ring and dot stop pulsing. */
+.gx-asset[data-following="false"] .gx-ring { animation: none; }
+/* A picked-up card's state can be a few words ("Set aside · never sent again"): it wraps rather than hides. */
+.gx-asset[data-following] > .gx-asset-meta { white-space: normal; }
+.gx-asset > .gx-resumed-note { display: block; margin-top: 4px; font-size: 12px; color: var(--gx-waiting); }
+.gx-asset > .gx-resumed-x { margin-top: 6px; }
+/* Gen on a narrow screen: the results sit under the whole composer, so its top says takes are still out. */
+.gx-resumed-jump { display: none; justify-self: start; }
+.gx-resumed-jump[data-tone="blue"] .gx-resumed-dot { animation: gx-pulse 1.6s ease-in-out infinite; }
+.gx-resumed-jump[data-tone="amber"] .gx-resumed-dot { background: var(--gx-waiting); }
+@media (max-width: 1023px) { .gx-resumed-jump { display: flex; } }
+@media (max-width: 767px), (pointer: coarse) { .gx-resumed-x, .gx-resumed-jump { height: 44px; } }
+
+/* ── Owner-run (idea 19): where the owner's Higgsfield account runs, a member meets one card — the key, who runs it, and the
+   way to make the same kind of thing on this workspace's credits — and the suites the owner runs carry the key as a badge. ── */
+.gx-owner-run-page { padding: 20px; }
+.gx-owner-run-page > .gx-owner-run { max-width: 560px; }
+.gx-owner-run { gap: 10px; }
+/* Every label here is text-2 or the owner's amber: text-3 on the card reads dimmer than the floor. */
+.gx-owner-run-eyebrow { display: flex; align-items: center; gap: 7px; min-width: 0; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-owner); overflow-wrap: anywhere; }
+.gx-owner-run-eyebrow .gx-glyph { flex: none; }
+.gx-owner-run .gx-workflow-title { overflow-wrap: anywhere; }
+.gx-owner-run-line { margin: 0; max-width: 60ch; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-owner-run-alt { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--gx-hair); }
+.gx-owner-run-label { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-owner-run-what { font-size: 14px; font-weight: 500; color: var(--gx-text); overflow-wrap: anywhere; }
+/* The price is never cut: it wraps whole. */
+.gx-owner-run-price { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-family: var(--gx-mono); font-size: 13px; color: var(--gx-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gx-owner-run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+@media (max-width: 1023px) { .gx-owner-run-page { padding: 12px; } .gx-owner-run-actions > button { flex: 1 1 160px; justify-content: center; min-height: 44px; } .gx-owner-run-eyebrow, .gx-owner-run-label { font-size: 12px; } }
+@media (pointer: coarse) { .gx-owner-run-eyebrow, .gx-owner-run-label { font-size: 12px; } }
+/* The badge: key + "Owner" beside the label; a key alone on the glyph's shoulder wherever the header drops to icons. */
+.gx-header .gx-seg-btn > .gx-owner-badge { position: relative; height: 16px; padding: 0 5px 0 4px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; font-family: var(--gx-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-owner); background: color-mix(in srgb, var(--gx-owner) 12%, transparent); border: 1px solid color-mix(in srgb, var(--gx-owner) 32%, transparent); }
+.gx-owner-badge-key { flex: none; }
+@media (max-width: 1179px) {
+  .gx-header .gx-seg-btn > .gx-owner-badge { position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; padding: 0; justify-content: center; border-radius: 50%; background: var(--gx-card); }
+  .gx-header .gx-seg-btn > .gx-owner-badge > .gx-owner-badge-label { display: none; }
+}
+/* The phone's Home: an owner-run suite's live fact is who runs it. */
+.gx-where-tile[data-owner-run] .gx-where-fact { display: flex; align-items: flex-start; gap: 5px; color: var(--gx-owner); }
+.gx-where-tile[data-owner-run] .gx-where-fact .gx-owner-badge-key { flex: none; margin-top: 2px; }
+
+/* ── Header details ────────────────────────────────────────────────────── */
+/* The header is the containing block for what opens under it on a phone (components/graphite/phone.css), and each of its
+   items is a layer of its own. On a desktop it clips to its 56px. */
+.gx-header { position: relative; overflow: hidden; isolation: isolate; }
+.gx-header > * { position: relative; z-index: 1; }
+/* The suite badge: a mono pill in the accent tint. Hidden between 768 and 1279px (above); a phone shows it again. */
+.gx-brand-mark { height: 20px; padding: 0 8px; border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+@media (max-width: 1279px) { .gx-brand-mark { display: none; } }
+/* Suite picker: glyph, label and a 5px dot in the suite's colour (--suite). The glyph sits over the thumb and takes that colour when its suite is open. */
+.gx-seg-btn .gx-glyph { position: relative; color: var(--gx-text-2); }
+.gx-seg-btn[aria-selected="true"] .gx-glyph { color: var(--suite, var(--gx-text)); }
+.gx-sig { position: relative; width: 5px; height: 5px; border-radius: 50%; background: var(--suite); opacity: .55; flex: none; }
+.gx-seg-btn[aria-selected="true"] .gx-sig { opacity: 1; }
+.gx-library .gx-seg-btn .gx-glyph { color: var(--gx-text-2); }
+.gx-library .gx-seg-btn[aria-selected="true"] .gx-seg-count { color: var(--gx-accent-text); background: var(--gx-tint); border-radius: var(--gx-r-pill); padding: 0 6px; }
+/* Below 1180px the labels give way to the glyphs; each stays in the accessible name (clipped, not removed). A phone shows them again under the glyph. */
+@media (max-width: 1179px) { .gx-header .gx-seg-btn > .gx-seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .gx-header .gx-seg-btn { padding: 0 10px; } }
+@media (max-width: 767px) { .gx-header .gx-seg-btn > .gx-seg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; } }
+/* Search leads with its magnifier. */
+.gx-search { gap: 10px; }
+.gx-search .gx-glyph { color: var(--gx-text-3); flex: none; }
+/* Stage strip: every page carries a dot; the current page's is the accent. */
+.gx-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-idle); flex: none; }
+.gx-tab[aria-current="page"] .gx-tab-dot { background: var(--gx-accent); }
+/* Gen's Generate and the line under it. */
+.gx-gen-cta { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Phone, below 768px: the header is a bar with a margin round it, the suite tabs set the glyph over the label,
+   a tab bar floats at the foot, every veil is a bottom sheet and Gen's Generate sticks above the bar. All of it
+   flat: an opaque fill and a hairline. components/graphite/phone.css tightens these numbers for the live shell. ── */
+.gx-tabbar { display: none; }
+@media (max-width: 767px) {
+  .gx-header { height: auto; overflow: visible; }
+  .gx .gx-header { margin: max(10px, env(safe-area-inset-top)) 10px 0; border: 1px solid var(--gx-pop-border); border-radius: 24px; background: var(--gx-panel); }
+  .gx-header .gx-seg { min-height: 52px; padding: 3px; }
+  .gx-header .gx-seg-btn { height: auto; min-height: 46px; padding: 5px 0; flex-direction: column; gap: 3px; }
+  .gx-header .gx-seg-btn > .gx-seg-label { font-size: 12px; }
+  .gx-header .gx-seg-btn .gx-sig { display: none; }
+  .gx .gx-strip { margin: 8px 10px 0; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-panel); }
+  /* The project row is the poster and name at left, "meta" at right. */
+  .gx-project { padding: 6px 12px; min-height: 46px; flex-wrap: nowrap; }
+  .gx-project-btn { height: 44px; max-width: 62%; gap: 8px; padding: 0 12px 0 5px; border-radius: var(--gx-r-ctl); background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+  .gx-project-btn .gx-project-tile { width: 34px; height: 24px; border-radius: var(--gx-r-sm); font-size: 12px; }
+  .gx-project-name { font-size: 13.5px; min-width: 0; }
+  /* A long name ends in an ellipsis inside the button; it never spills over the header. */
+  .gx-project-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .gx-project-btn, .gx-project-btn > span:last-child { position: static; }
+  .gx-project-meta { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; white-space: nowrap; }
+  /* The tab bar: five 44px targets in a bar that floats 12px in from the sides, over the page. */
+  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(5, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  .gx-tabbar-btn { min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--gx-r-pill); color: var(--gx-text-2); }
+  .gx-tabbar-btn[aria-current="page"] { color: var(--gx-accent-text); background: var(--gx-tint); }
+  .gx-tabbar-label { font-size: 12px; font-weight: 500; }
+  .gx-tabbar-btn[aria-current="page"] .gx-tabbar-label { font-weight: 600; }
+  /* Every scroll region keeps its last row clear of the bar. */
+  .gx .gx-stage, .gx .gx-workspace, .gx .gx-tools, .gx .gx-assets, .gx .gx-insp-body, .gx .gx-sheet-list, .gx .cw-room, .gx .cw-page { padding-bottom: 110px; }
+  /* Sheets rise from the foot of the screen under a grab handle. */
+  .gx-veil { place-items: end center; padding: 0; animation: gx-in .2s ease-out both; }
+  /* 82% of the screen, by the viewport: a percentage of the veil's auto-height grid area never capped a long list, which then ran off the bottom. */
+  .gx-sheet { width: 100%; max-height: 82vh; max-height: 82dvh; border: 0; border-top: 1px solid var(--gx-dialog-border); border-radius: 30px 30px 0 0; animation: gx-in .32s var(--gx-ease) both; }
+  .gx-sheet::before { content: ""; align-self: center; width: 36px; height: 5px; border-radius: var(--gx-r-pill); margin: 8px 0 4px; background: var(--gx-hover-border); }
+  .gx-sheet-head { border-bottom: 0; padding: 6px 16px 10px; }
+  .gx-sheet-list { padding: 0 16px 32px; gap: 8px; min-height: 0; }
+  .gx-sheet-row { min-height: 60px; border-radius: var(--gx-r-card); background: var(--gx-input); border: 1px solid var(--gx-hair); }
+  .gx-sheet-row[aria-selected="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+  /* Gen: Generate sticks to the foot of the composer, on the card's own fill with a hairline over it. Its offset is
+     counted from the stage's content box, which already ends above the tab bar. */
+  .gx-gen-cta { position: sticky; bottom: -18px; z-index: 2; margin: 0 -16px -16px; padding: 10px 16px 8px; border-radius: 0 0 7px 7px; background: var(--gx-card); box-shadow: 0 -1px 0 var(--gx-hair); }
+  .gx-gen-go { position: relative; font-size: 16px; }
+  .gx-gen-go:disabled { opacity: .45; }
+  .gx-chip { padding: 0 12px; }
+  .gx-h1 { font-size: 28px; }
+}
+
+/* ── Studio home (components/graphite/mobile/StudioHome.tsx): the stages as cards. On a phone the tab bar leads
+   here, and the header shows ‹ Studio on a stage. ── */
+.gx-back { display: none; }
+.gx-home { padding: 18px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+.gx-home-eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gx-accent-text); font-weight: 600; }
+.gx-home-title { margin: -8px 0 0; font-size: 30px; white-space: normal; }
+/* The next step: the one tinted card on the page. */
+.gx-home-next { padding: 14px; border-radius: var(--gx-r-card); display: flex; gap: 12px; align-items: center; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.gx-home-next-ic { width: 44px; height: 44px; border-radius: var(--gx-r-card); display: grid; place-items: center; flex: none; color: var(--gx-on-accent); background: var(--gx-accent); }
+.gx-home-next-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gx-home-next-title { font-weight: 600; }
+.gx-home-next-meta { font-size: 13px; color: var(--gx-text-2); }
+.gx-home-next .gx-primary { white-space: nowrap; }
+.gx-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.gx-home-card { min-height: 96px; padding: 12px 12px 10px; border-radius: var(--gx-r-card); display: flex; flex-direction: column; justify-content: space-between; text-align: left; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+/* The corner glows these two spans drew are gone; the spans stay out of their cards' layout until the markup drops them. */
+.gx-home-card-head { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+/* 12px at every width: the 844×390 landscape phone is a phone too (the 12px floor), and a desktop loses nothing. */
+.gx-home-card-n { font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-accent-text); }
+.gx-home-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-idle); }
+.gx-home-card[data-status="progress"] .gx-home-dot { background: var(--gx-accent); }
+.gx-home-card[data-status="done"] .gx-home-dot { background: var(--gx-done); }
+.gx-home-card[data-status="waiting"] .gx-home-dot { background: var(--gx-waiting); }
+.gx-home-card-label { display: block; font-weight: 600; font-size: 16px; }
+.gx-home-card-meta { display: block; font-size: 12.5px; color: var(--gx-text-2); }
+.gx-home-row-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; }
+.gx-home-row-title { font-weight: 600; font-size: 17px; letter-spacing: -.01em; }
+.gx-home-recent { margin: 0 -16px; padding: 0 16px; display: flex; gap: 10px; overflow-x: auto; }
+.gx-home-take { flex: none; width: 150px; border-radius: var(--gx-r-card); overflow: hidden; text-align: left; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-home-take-thumb { display: block; aspect-ratio: 16 / 10; background: var(--gx-input); overflow: hidden; }
+.gx-home-take-thumb .gx-lazy, .gx-home-take-thumb img, .gx-home-take-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx-home-take-name { display: block; padding: 8px 10px 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-home-take-meta { display: block; padding: 0 10px 10px; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) {
+  .gx-home-card-n, .gx-home-card-meta, .gx-home-take-meta { font-size: 12px; }
+  .gx-back { display: inline-flex; align-items: center; gap: 4px; height: 44px; font-size: 15px; font-weight: 500; color: var(--gx-text); }
+  .gx-back span { font-size: 24px; line-height: 1; color: var(--gx-text-2); }
+  .gx-header:has(.gx-back) .gx-brand { display: none; }
+  .gx-home-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Studio's first run (components/graphite/FirstRun.tsx): the card a stage shows with no project open, and the
+   Studio home's without one. New project, the starter production, the four stages in order, the recent projects. ── */
+.gx-first { flex: none; display: flex; flex-direction: column; gap: 14px; margin: 16px 20px 24px; padding: 20px; border-radius: var(--gx-r-card); background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-home .gx-first { margin: 0; }
+.gx-first-lead { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.gx-first-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.gx-first-actions > .gx-primary, .gx-first-actions > .gx-hbtn { height: 44px; padding: 0 18px; font-size: 14px; font-weight: 600; justify-content: center; }
+.gx-first-starter[aria-disabled="true"] { opacity: .7; cursor: progress; }
+.gx-first-actions > .gx-project-new { flex: 1 1 100%; max-width: 560px; padding: 0; grid-template-columns: minmax(0, 1fr) auto auto; }
+.gx-first-actions .gx-project-new .gx-field { height: 44px; font-size: 15px; }
+.gx-first-actions .gx-project-new .gx-primary, .gx-first-actions .gx-project-new .gx-hbtn { height: 44px; padding: 0 16px; justify-content: center; }
+.gx-first-note { margin: -4px 0 0; font-size: 13px; color: var(--gx-text-2); }
+/* A link to a take that cannot show it yet (components/graphite/AssetLinkCard.tsx): a long workspace or production name wraps. */
+.gx-link-card .gx-first-lead, .gx-link-card .gx-first-note { overflow-wrap: anywhere; }
+.gx-first .gx-gen-error { margin: 0; scroll-margin: 16px; }
+.gx-first-how, .gx-recent { display: flex; flex-direction: column; gap: 8px; }
+.gx-first-how-title, .gx-recent-title { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gx-accent-text); }
+.gx-first-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.gx-first-steps > li { position: relative; display: flex; min-width: 0; }
+.gx-first-steps > li + li::before { content: "→"; position: absolute; left: -10px; top: 50%; transform: translate(-50%, -50%); font-size: 14px; color: var(--gx-text-2); pointer-events: none; }
+.gx-first-step { flex: 1; min-width: 0; min-height: 76px; padding: 10px 12px; border-radius: var(--gx-r-card); display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-first-step:hover { background: var(--gx-input-hover); }
+.gx-first-step[aria-current="step"] { background: var(--gx-tint); border-color: var(--gx-tint-border); }
+.gx-first-step-n { font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-accent-text); }
+.gx-first-step-label { font-size: 15px; font-weight: 600; }
+.gx-first-step-line { font-size: 12.5px; line-height: 1.35; color: var(--gx-text-2); }
+.gx-recent-list, .gx-home-runs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.gx-recent-row, .gx-home-run { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; border-radius: var(--gx-r-card); }
+.gx-recent-row { padding: 6px 12px 6px 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
+.gx-recent-row:hover { background: var(--gx-input-hover); }
+.gx .gx-recent-row .gx-project-tile { width: 52px; height: 36px; flex: none; font-size: 12px; }
+.gx-recent-name, .gx-home-run-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-recent-age, .gx-home-run-meta { flex: none; max-width: 45%; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The Studio home's Running list: the project's takes generating, the strip's own job, a plan waiting for its gate. */
+.gx-home-running { display: flex; flex-direction: column; gap: 8px; }
+.gx-home-running > .gx-home-row-head { margin-top: 0; }
+.gx-home-run { padding: 8px 14px; background: var(--gx-tint-08); border: 1px solid var(--gx-tint-border); }
+.gx-home-run > .gx-jobs-dot { flex: none; }
+.gx-jobs-dot.gx-jobs-dot--wait { background: var(--gx-waiting); }
+.gx-home-idle { padding: 0; margin: 0; }
+/* A desktop's Studio home is the overview the mark opens: roomier than the phone's. */
+.gx-home[data-wide] { padding: 24px 28px 32px; gap: 18px; }
+@media (max-width: 767px) {
+  .gx-first { margin: 12px 12px 16px; padding: 16px; }
+  /* Brought into view above the floating tab bar, not under it. */
+  .gx-first .gx-gen-error { scroll-margin-bottom: 104px; }
+  .gx-first-actions > .gx-primary, .gx-first-actions > .gx-hbtn { flex: 1 1 100%; }
+  .gx-first-actions > .gx-project-new { grid-template-columns: 1fr 1fr; }
+  .gx-first-actions > .gx-project-new .gx-field { grid-column: 1 / -1; }
+  .gx-first-steps { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gx-first-steps > li + li::before { display: none; }
+  .gx-recent-list, .gx-home-runs { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── The phone's Home, "Where to?" (components/graphite/mobile/SuiteHome.tsx): a tile for each suite, its glyph on
+   the suite's colour (--tile), and the Assets row. ── */
+.gx-where { padding: 18px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+.gx-where-title { margin: -8px 0 0; font-size: 34px; font-weight: 700; letter-spacing: -.04em; white-space: normal; }
+.gx-where-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gx-where-tile { min-height: 158px; padding: 14px; border-radius: var(--gx-r-card); display: flex; flex-direction: column; gap: 4px; text-align: left; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-where-ic { width: 44px; height: 44px; border-radius: var(--gx-r-card); display: grid; place-items: center; margin-bottom: 8px; color: var(--gx-on-accent); background: var(--tile, var(--gx-accent)); }
+.gx-where-name { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+.gx-where-line { font-size: 13px; line-height: 1.35; color: var(--gx-text-2); }
+.gx-where-fact { margin-top: auto; padding-top: 8px; font-size: 12px; color: var(--tile, var(--gx-accent-text)); }
+.gx-where-assets { min-height: 56px; padding: 0 16px; border-radius: var(--gx-r-card); display: flex; align-items: center; gap: 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-where-assets-name { font-weight: 600; font-size: 15px; }
+.gx-where-assets-n { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-where-assets > .gx-glyph:last-child { color: var(--gx-text-3); }
+/* The phone's top row: mark, badge, search, credits and avatar on one line at 360–390px. The badge stays (it names
+   where you are, and leaves only between 768 and 1279px); the wordmark yields to it, and Search is a 44px button. */
+@media (max-width: 767px) {
+  .gx-header { gap: 8px; }
+  .gx-brand-mark { display: inline-flex; font-size: 12px; }
+  .gx-brand-name { display: none; }
+  .gx-search { flex: 0 0 44px; min-width: 44px; padding: 0; justify-content: center; }
+  .gx-search .gx-search-label { display: none; }
+}
+
+/* ── Shared primitives. Classes that carry another view's prefix (cw- from Crew, bz- from Business, vr- from Viral) and
+   are used across the shell: Workspace, Gen, Business, Viral, Atomik and Management all draw with them. They sit at the
+   end of this sheet, in the order their sheets load (crew, production, business, viral), so each keeps winning and
+   losing the ties it always did: after everything above, before every view's own sheet. Keep them last. ── */
+/* Crew's: the engine line, quiet and mono text, a select, the foot and notice lines, the empty state, a text link, a row of small actions. */
+.cw-engine { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; flex: none; }
+.cw-engine-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cw-engine-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-done); }
+.cw-engine[data-ok="false"] .cw-engine-dot { background: var(--gx-failed); }
+.cw-dim { color: var(--gx-text-2); font-size: 12px; }
+.cw-mono { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.cw-select { width: 100%; border-radius: 6px; font-size: 13px; background-color: var(--gx-input); border: 1px solid var(--gx-hair); }
+.cw-select { height: 36px; padding: 0 34px 0 12px; appearance: none; -webkit-appearance: none; min-width: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23A1A1A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+.cw-select option { background: var(--gx-card); color: var(--gx-text); }
+.cw-select:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
+.cw-foot { margin: 0; padding: 0 4px; font-size: 12px; color: var(--gx-text-2); }
+.cw-notice { margin: 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); color: var(--gx-text); }
+.cw-empty { padding: 28px; border-radius: 8px; border: 1px dashed var(--gx-hair-strong); text-align: center; color: var(--gx-text-2); margin: 0; }
+.cw-link { font-size: 12px; color: var(--gx-accent-text); min-height: 28px; padding: 0 4px; }
+.cw-link:hover { color: var(--gx-accent-text-hover); }
+.cw-sol-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cw-sol-actions .gx-hbtn { height: 28px; padding: 0 10px; font-size: 12px; font-weight: 600; }
+@media (max-width: 767px), (pointer: coarse) {
+  .cw-select { height: 44px; font-size: 16px; }
+  .cw-sol-actions .gx-hbtn { height: 44px; min-width: 44px; }
+  .cw-link { min-height: 44px; min-width: 44px; }
+}
+/* Radio segments (agent, format, look, kind) take the same thumb as the shell's tab segments. */
+.gx .gx-seg-btn[aria-checked="true"]::before { opacity: 1; box-shadow: none; }
+.gx .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+/* Business's: a composer's intro line, a label's note, a reference's role. */
+.bz-intro { margin: 0; color: var(--gx-text-2); font-size: 13px; line-height: 1.5; }
+/* A label's note reads at --gx-text-2, not the eyebrow's --gx-text-3: that .45 ink composites under the #7C7C84 label floor on the card. */
+.bz-note { color: var(--gx-text-2); text-transform: none; letter-spacing: 0; font-family: var(--gx-font); font-size: 11.5px; }
+.bz-role { height: 22px; padding: 0 6px; border-radius: 4px; font-family: var(--gx-mono); font-size: 11px; letter-spacing: .06em; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); flex: none; }
+/* The thumb's floors on a phone: a role you can cycle is a 44px target; every label and hint is 12px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .bz-role { height: 28px; min-width: 44px; font-size: 12px; }
+  button.bz-role { height: 44px; }
+  .bz-note { font-size: 12px; }
+}
+/* A Recent row: the direction and its state on top; resolution, refs, credits and time below, with the next step at the end. */
+.vr-job { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
+.vr-job-name { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) { .vr-job { min-height: 44px; } }

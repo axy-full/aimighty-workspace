@@ -56,7 +56,7 @@ export default function ProductionHeader({ production, project, runtime, phoneLi
               <span key={name} className="flex items-center">
                 {i > 0 && <span aria-hidden="true" className="block h-px w-[16px] bg-border-mid" />}
                 <span className="flex items-center gap-[5px] px-[4px]">
-                  <span aria-hidden="true" className={`box-border block h-[8px] w-[8px] rounded-full ${i < project.step ? "bg-[rgba(245,246,248,.45)]" : i === project.step ? "bg-ink" : "border border-[rgba(245,246,248,.25)]"}`} />
+                  <span aria-hidden="true" className={`box-border block h-[8px] w-[8px] rounded-full ${i < project.step ? "bg-[color:var(--gx-text-3)]" : i === project.step ? "bg-ink" : "border border-[color:var(--gx-hover-border)]"}`} />
                   {i === project.step && <span className="text-[12px] font-semibold leading-none text-ink">{name}</span>}
                 </span>
               </span>

@@ -58,7 +58,7 @@
   }
 
   .ps .studio-redesign .brief-main [for="creative-brief"] {
-    font-family: var(--graphite-mono);
+    font-family: var(--gx-mono);
     font-size: 11px;
     letter-spacing: .04em;
     color: var(--graphite-accent-text);
@@ -606,7 +606,7 @@
 
   .ps .studio-redesign .delivery-main > p { grid-row: 3; margin: -6px 0 8px; font-size: 15px; line-height: 1.6; }
   .ps .studio-redesign .delivery-thumb { grid-row: 4; aspect-ratio: 16 / 9; border: 1px solid var(--graphite-edge); border-radius: 12px; overflow: hidden; }
-  .ps .studio-redesign .delivery-thumb > span { font-family: var(--graphite-mono); font-size: 11px; }
+  .ps .studio-redesign .delivery-thumb > span { font-family: var(--gx-mono); font-size: 11px; }
   .ps .studio-redesign .export-options {
     grid-row: 5;
     margin: 0;

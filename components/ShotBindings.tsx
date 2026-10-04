@@ -1,5 +1,6 @@
 "use client";
 
+import "./ShotBindings.css";
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";

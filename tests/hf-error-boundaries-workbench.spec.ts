@@ -63,7 +63,7 @@ async function floorText(page: Page, project: string) {
   return PHONE.includes(project) ? smallText(page) : smallText(page, ".gx-header");
 }
 
-/* Entrance animations scale and fade a card in; measure targets once they have finished (the infinite aurora never does). */
+/* Entrance animations scale and fade a card in; measure targets once they have finished. */
 async function settled(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations()
     .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)

@@ -15,7 +15,7 @@
 .button.primary { color: var(--graphite-on-primary); background: var(--graphite-primary); border-color: var(--graphite-primary); }
 .button:disabled { opacity: .4; cursor: default; }
 .button:focus-visible, .panel a:focus-visible, .panel select:focus-visible, .panel summary:focus-visible { outline: 2px solid var(--graphite-accent-text); outline-offset: 2px; }
-.error { border: 1px solid color-mix(in srgb, var(--graphite-warning) 40%, var(--graphite-line)); background: var(--graphite-card); color: #ffc77c; font-size: 11px; padding: 10px; border-radius: 6px; line-height: 1.7; overflow-wrap: anywhere; }
+.error { border: 1px solid color-mix(in srgb, var(--graphite-warning) 40%, var(--graphite-line)); background: var(--graphite-card); color: var(--gx-waiting-text); font-size: 11px; padding: 10px; border-radius: 6px; line-height: 1.7; overflow-wrap: anywhere; }
 .historyHeading { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; padding-top: 15px; border-top: 1px solid var(--graphite-line); }
 .historyHeading h4 { font-size: 12px; font-weight: 600; margin: 0; }
 .refresh { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border: 1px solid var(--graphite-line); border-radius: 5px; background: var(--graphite-control); color: var(--graphite-body); cursor: pointer; }

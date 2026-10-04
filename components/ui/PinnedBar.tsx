@@ -32,7 +32,7 @@ export function PinnedPrimary({ children, cost, outlined = false, disabled = fal
   return (
     <button type="button" onClick={onClick} disabled={disabled || busy} aria-label={label} data-render=""
       className={`flex h-[50px] flex-1 items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
-        off ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
+        off ? "border border-[var(--gx-hover-border)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
       <span className="truncate">{children}</span>
       {cost !== undefined && <span className={`ui-mono ui-mono-cost !text-[12px] ${off ? "text-ink-muted" : "text-on-primary-cost"}`}>{cost}</span>}
     </button>
@@ -43,7 +43,7 @@ export function PinnedPrimary({ children, cost, outlined = false, disabled = fal
 export function PinnedSquare({ children, onClick, label }: { children: ReactNode; onClick?: () => void; label: string }) {
   return (
     <button type="button" onClick={onClick} aria-label={label}
-      className="flex h-[50px] w-[50px] flex-none items-center justify-center rounded-mobile border border-[rgba(245,246,248,.16)] text-[20px] font-medium leading-none text-ink">
+      className="flex h-[50px] w-[50px] flex-none items-center justify-center rounded-mobile border border-[var(--gx-dashed)] text-[20px] font-medium leading-none text-ink">
       {children}
     </button>
   );
