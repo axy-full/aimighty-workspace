@@ -1,11 +1,11 @@
 "use client";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { cleanRule } from "@/lib/approvalRule";
-import { MODELS, displayModelName } from "@/lib/models";
+import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
 import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
 import { WORKSPACE_TABS } from "@/lib/shell/ia";
-import { ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
+import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import {
@@ -134,7 +134,8 @@ function inForce(key: string, raw: string): string {
   if (key === "atCap") return raw === "stop" || raw === "warn" ? raw : "producer";
   return raw;
 }
-const ENGINES = (kind: "video" | "image") => MODELS.filter((m) => m.kind === kind && !m.hidden);
+/* A default engine is chosen from the ones still offered for new renders. */
+const ENGINES = (kind: "video" | "image") => MODELS.filter((m) => m.kind === kind && !m.hidden && isOffered(m));
 function General({ name, onRenamed }: { name: string; onRenamed: (name: string) => void }) {
   const session = useSession();
   const write = useWrite();
@@ -169,7 +170,7 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
     } catch (caught) { setNote(caught instanceof Error ? caught.message : "The settings could not be saved."); }
     finally { setSaving(false); }
   };
-  const enhancer: EnhancerProvider = isEnhancerProvider(value("promptEnhancer")) ? (value("promptEnhancer") as EnhancerProvider) : "higgsfield";
+  const enhancer: EnhancerProvider = isEnhancerProvider(value("promptEnhancer")) ? (value("promptEnhancer") as EnhancerProvider) : DEFAULT_ENHANCER;
   const select = (key: string, label: string, options: readonly (readonly [string, string])[], testId?: string, off = false) => (
     <label className="wsx-label"><span className="gx-eyebrow">{label}</span>
       <select className="cw-select" value={value(key)} disabled={!admin || off} onChange={(e) => set(key, e.target.value)} data-testid={testId}>

@@ -4,27 +4,25 @@
  * rewritten, and what counts as a usable answer. The route
  * (app/api/prompt/enhance) only authenticates, quotes and charges.
  *
- * Owner, 21 September 2026: Higgsfield's enhancer is the default for Gen;
- * Claude or OpenAI only when chosen.
+ * Owner, 21 September 2026: the `higgsfield` provider is the default for
+ * Gen; Claude or OpenAI only when chosen. A customer reads it as "Standard":
+ * the vendor's name is not shown, the stored value is unchanged.
  *
- * What "Higgsfield" means here, precisely. Higgsfield publishes no text-in /
- * text-out enhancer: in github.com/higgsfield-ai the only enhancer is the
- * `enhance_prompt` boolean a generation request carries, applied on their
- * servers while the job runs. What they do publish is the rule set their own
- * agents write prompts by — skills/higgsfield-generate/references/
- * prompt-engineering.md — and that is the instruction used below, verbatim in
- * substance. So the Higgsfield provider is Higgsfield's rules, run on this
- * workspace's routed writer; a catalogue job whose schema has the flag also
- * sends `enhance_prompt: true` and shows the text their servers return.
+ * What that provider is, precisely: no enhancer of the vendor's is called.
+ * It is the prompt rule set the vendor publishes for writing generation
+ * prompts — the instruction used below, verbatim in substance — run on this
+ * workspace's routed writer. (The signed-in catalogue's own `enhance_prompt`
+ * flag went with that catalogue; nothing here sends it.)
  */
 export const ENHANCER_PROVIDERS = ["higgsfield", "claude", "openai"] as const;
 export type EnhancerProvider = (typeof ENHANCER_PROVIDERS)[number];
 export const DEFAULT_ENHANCER: EnhancerProvider = "higgsfield";
 
-export const ENHANCER_LABEL: Record<EnhancerProvider, string> = { higgsfield: "Higgsfield", claude: "Claude", openai: "OpenAI" };
+/** What a person reads. The default's stored value stays `higgsfield`; only its label is neutral. */
+export const ENHANCER_LABEL: Record<EnhancerProvider, string> = { higgsfield: "Standard", claude: "Claude", openai: "OpenAI" };
 /** The note line under the Workspace › General selector. */
 export const ENHANCER_NOTE: Record<EnhancerProvider, string> = {
-  higgsfield: "Higgsfield's published prompt rules. The default.",
+  higgsfield: "Particl’s prompt rules, on this workspace’s writer. The default.",
   claude: "Anthropic's Claude writes the prompt.",
   openai: "OpenAI writes the prompt, on the direct connection.",
 };
@@ -120,7 +118,7 @@ export function parseEnhanced(text: string, original: string): ParsedEnhancement
 /**
  * Which text model writes for a provider: the first of these the catalogue is
  * serving, lightest first so an enhancement stays the smallest charge. The
- * Higgsfield provider has no model of its own (see the header), so it uses the
+ * default provider has no model of its own (see the header), so it uses the
  * workspace's routed writer and falls back to this list.
  */
 export const ENHANCER_MODELS: Record<EnhancerProvider, readonly string[]> = {

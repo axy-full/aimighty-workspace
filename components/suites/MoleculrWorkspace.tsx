@@ -166,7 +166,7 @@ export function MoleculrWorkspace({
           </p>
         </div>
         <button className="suite-button" onClick={onAgent}>
-          Ask Atomik Super Agent <ArrowUpRight size={15} />
+          Ask Atomik Agent <ArrowUpRight size={15} />
         </button>
       </header>
       <nav className="moleculr-sections-nav" aria-label="Marketing Studio sections">

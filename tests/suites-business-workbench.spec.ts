@@ -18,14 +18,12 @@ import { smallTargets } from "./phoneFloors";
  * the connected account. Only the preset catalogue read is answered here (in
  * mock mode the provider lists none).
  *
- * Ads and Setup ran on the connected Higgsfield account, whose sign-in is
- * retired (lib/higgsfield-consumer/retired.ts): for everyone, the workspace
- * owner included, they are one card, with Gen on Images (at its price) as the
- * way on. An ad made before is still a take in the Library. Nothing asks the
- * account.
+ * Business › Ads is removed (design/particl-graphite/README.md › What this
+ * design removes): the suite opens on Image ads, an old `sp=ads` link lands
+ * there with the address rewritten, and Setup is Particl's own list. An ad
+ * made before is still a take in the Library. Nothing asks the account.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-biz", productionProjectId: "prod-ws", shotMappings: {} });
 /** An image ad the account rendered earlier, filed to the project like any take. */
 const AD = "gen_hfc_" + "b".repeat(40);
@@ -52,22 +50,31 @@ async function open(page: Page) {
   return { errors, asked };
 }
 
-test("Ads and Setup are the retired card for the owner; an earlier ad is still in the Library; nothing asks the account", async ({ page }, info) => {
+test("Business opens on Image ads, an old Ads link lands there, Setup is Particl's own list; an earlier ad is still in the Library; nothing asks the account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, asked } = await open(page);
-  for (const sp of ["ads", "setup"] as const) {
-    await page.goto(`/suites?suite=moleculr&page=marketing&sp=${sp}`);
+  /* An old link to the Ads page: Image ads, and the address names it from then on. */
+  for (const old of ["/suites?suite=moleculr&page=marketing&sp=ads", "/suites?suite=moleculr&page=ads&sp=ads"]) {
+    await page.goto(old);
     await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-    const card = page.getByTestId("owner-run-business");
-    await expect(card).toBeVisible();
-    await expect(page.getByTestId("owner-run-business-title")).toHaveText("Particl no longer signs in to Higgsfield");
-    await expect(card).toContainText("Ads here ran on a signed-in Higgsfield account. Past results stay in your Library.");
-    for (const gone of ["ads-view", "setup-view", "image-ads-view", "ads-generate", "ads-connect", "setup-connect"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-    await expect(page.getByTestId("primary-action")).toHaveCount(0);
+    await expect(page.getByTestId("image-ads-view")).toBeVisible();
+    await expect(page.getByTestId("page-title")).toHaveText("Image ads");
+    await expect.poll(() => new URL(page.url()).searchParams.get("sp")).toBe("dtc");
+    for (const gone of ["ads-view", "ads-generate", "ads-connect", "owner-run-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
     await noSideScroll(page);
-    if (PHONES.includes(info.project.name))
-      for (const button of await card.getByRole("button").all()) expect(Math.round((await button.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
   }
+  /* With no page named, Business opens on Image ads too. */
+  await page.goto("/suites?suite=moleculr");
+  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+
+  /* Setup: what Particl made in this project — no retired card, no connect prompt, no Ads hand-off, no vendor name. */
+  await page.goto("/suites?suite=moleculr&page=marketing&sp=setup");
+  await expect(page.getByTestId("page-title")).toHaveText("Setup items");
+  await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
+  await expect(page.getByTestId("particl-setup")).toBeVisible();
+  for (const gone of ["owner-run-business", "setup-connect", "primary-action", "image-ads-view"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  await expect(page.getByTestId("business-setup")).not.toContainText(/Higgsfield|Open Ads|Use in Ads/);
+  await noSideScroll(page);
 
   /* An ad made before reads as a take in the Library. */
   const library = page.getByTestId("library");
@@ -75,11 +82,6 @@ test("Ads and Setup are the retired card for the owner; an earlier ad is still i
   if (opened) await page.getByTestId("toggle-library").click();
   await expect(library.locator(`.gx-asset-thumb[data-ctx='asset:generation:${AD}']`)).toBeVisible();
   if (opened) await page.getByTestId("close-library").click();
-
-  /* The way on: Gen, on Images, on this workspace's credits, priced before anything is spent. */
-  await expect(page.getByTestId("owner-run-business-price")).toContainText(/ cr|priced on Generate|No Studio engine/);
-  await page.getByTestId("owner-run-business-gen").click();
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
   expect(asked, "nothing asks the account").toEqual([]);
   expect(errors).toEqual([]);
 });

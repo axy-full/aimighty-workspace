@@ -141,9 +141,9 @@ export function connectedBatchCheckRequest(draftId: string, ids: readonly string
  */
 export function connectedFailureText(job: Pick<ConnectedJob, "failureCode"> & { failure?: TakeFailure | null }) {
   if (job.failureCode === "invalid_result") return "The account finished this job, but its result could not be kept. Its receipt is saved.";
-  if (!job.failure) return "The connected account reported this job as failed. Higgsfield didn't say if it charged.";
+  if (!job.failure) return "The connected account reported this job as failed. It didn't say if it charged.";
   const line = failureLine(job.failure);
-  return `${line.what}. ${line.charge ?? "Higgsfield didn't say if it charged"}. ${line.next}.`;
+  return `${line.what}. ${line.charge ?? "The connected account didn't say if it charged"}. ${line.next}.`;
 }
 /** A submitted job may already have reached the account: it is never re-sent, only reconciled. */
 export const connectedRecoverable = (job: Pick<ConnectedJob, "status">) => ["dispatching", "accepted", "uncertain"].includes(job.status);

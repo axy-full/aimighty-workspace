@@ -221,7 +221,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
     errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(await legacyShell(page, `/atomik?project=${f.project.id}&page=runs`));
-  const suite = page.getByRole("region", { name: "Atomik Super Agent suite", exact: true });
+  const suite = page.getByRole("region", { name: "Atomik Agent suite", exact: true });
   await expect(
     suite.getByRole("heading", { name: "Runs", exact: true }),
   ).toBeVisible();
@@ -287,7 +287,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await page.goto(`/?project=${f.project.id}`);
   await expect(
     page.locator(".suite-home-card").filter({
-      has: page.getByText("Atomik Super Agent", { exact: true }),
+      has: page.getByText("Atomik Agent", { exact: true }),
       visible: true,
     }),
   ).toHaveAttribute("href", `/atomik?project=${f.project.id}&page=runs`);

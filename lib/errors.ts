@@ -43,7 +43,7 @@ export function failureCopy(kind: FailureKind, payer: FailurePayer = null): Copy
   if (kind === "auth" || kind === "provider_quota") {
     if (payer === "platform") return { what: copy.what, next: "Try again later" };
     if (payer === "account")
-      return kind === "auth" ? { what: copy.what, next: "Reconnect in Workspace › Engines" } : { what: "The Higgsfield account is out of credits", next: "Top up the Higgsfield account" };
+      return kind === "auth" ? { what: copy.what, next: "Reconnect in Workspace › Engines" } : { what: "The connected account is out of credits", next: "Top up the connected account" };
   }
   return copy;
 }

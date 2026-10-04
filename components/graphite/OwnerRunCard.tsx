@@ -21,22 +21,24 @@ export function openGenOn(shell: ReturnType<typeof useShell>, preset: GenPreset)
 /**
  * What everyone sees where the connected Higgsfield account used to run: the
  * sign-in is retired (lib/higgsfield-consumer/retired.ts), so the card says
- * what ran there, that Particl no longer signs in to Higgsfield and that past
+ * what ran there, that the connected account is no longer used and that past
  * results stay in the Library — and, where a Studio engine makes the same
  * kind of thing, that engine on this workspace's credits at its price, with
  * the way into Gen. One card, no connect prompt, nothing read from the
- * account. `page` stands in for a whole page (Business, Viral); without it
- * the card sits inside a page that still works (Cast).
+ * account, and no vendor name. `page` stands in for a whole page; without it
+ * the card sits inside a page that still works (Cast). A surface with no
+ * entry (one that was removed, like Business › Ads) draws nothing.
  */
 export function OwnerRunCard({ surface, scope, aspect, tools, page = false }: {
   surface: OwnerRunSurface; scope: string; aspect?: string | null; tools?: readonly string[]; page?: boolean;
 }) {
   const shell = useShell();
-  const run = OWNER_RUNS[surface];
-  const alt = run.alternative;
+  const run = (OWNER_RUNS as Partial<typeof OWNER_RUNS>)[surface];
+  const alt = run?.alternative ?? null;
   const studio = useStudioAlternative(alt ? scope : null, alt?.type ?? null, aspect);
   const priced = studio.model ? alternativePrice(studio.model.label, studio.price) : null;
   const title = ACCOUNT_RETIRED;
+  if (!run) return null;
   const card = (
     <section className="gx-gen-card gx-owner-run" aria-label={title} data-testid={`owner-run-${surface}`} data-section={surface === "cast" ? "soul" : undefined}>
       <span className="gx-owner-run-eyebrow" data-functional-label=""><Glyph name="key" size={13} className="gx-glyph" />{ownerRunEyebrow(surface, tools)}</span>

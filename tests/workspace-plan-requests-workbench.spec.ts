@@ -289,7 +289,7 @@ test("Shorts ran on the Higgsfield account: its page says the sign-in is retired
   const state = await fixture(page, project);
   await page.goto(url(project.id, "subatomik", "shorts"));
   await expect(page.getByTestId("page-title")).toHaveText("Shorts");
-  await expect(page.locator('[data-page-body="shorts"]')).toContainText("Shorts ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.");
+  await expect(page.locator('[data-page-body="shorts"]')).toContainText("Shorts is retired. The connected account is no longer used. Past results stay in your Library.");
   await expect(page.getByRole("region", { name: "Shorts on the connected account", exact: true })).toHaveCount(0);
 
   await openAtomik(page);

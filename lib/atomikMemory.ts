@@ -4,7 +4,7 @@ import { requireTenant } from "./tenant";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
   CAST_REF, IMPORT_FROM, KEPT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, PROJECT_ID, SOUL_REF,
-  amountRefusal, cleanMemoryText, forgetMatches, isMemoryKind, memoryLines, mentionsMoney, parseImport, parseMemoryCommand, rankForPlanner, refSource,
+  IDENTITY_ASSET_KIND, amountRefusal, cleanMemoryText, memoryAssetKind, forgetMatches, isMemoryKind, memoryLines, mentionsMoney, parseImport, parseMemoryCommand, rankForPlanner, refSource,
   type ImportFrom, type KeptFrom, type MemoryEntry, type MemoryKind, type MemorySource, type MemoryStatus, type MemoryView, type PlannerMemoryItem,
 } from "./atomikMemoryText";
 
@@ -72,7 +72,7 @@ const text = (value: unknown) => (value == null ? null : String(value));
 function toEntry(r: Row): MemoryEntry {
   return {
     id: String(r.id), kind: (isMemoryKind(r.kind) ? r.kind : "note") as MemoryKind, text: String(r.text ?? ""),
-    projectId: text(r.project_id), assetId: text(r.asset_id), assetLabel: text(r.asset_label), assetKind: text(r.asset_kind),
+    projectId: text(r.project_id), assetId: text(r.asset_id), assetLabel: text(r.asset_label), assetKind: memoryAssetKind(text(r.asset_kind)),
     status: r.status === "proposed" ? "proposed" : "active",
     source: r.source === "atomik" || r.source === "import" ? r.source : "person",
     origin: text(r.origin), createdBy: String(r.created_by ?? ""), acceptedBy: text(r.accepted_by),
@@ -149,14 +149,14 @@ async function soulIdentity(identityId: string, by: string): Promise<{ label: st
   const production = r.production_project_id == null ? null : String(r.production_project_id);
   if (r.owner !== by && production && !(await draftsOf(production, by)).length) return null;
   /* Ready once its training settled, as the Cast page reads it (lib/soulIdentities › publicIdentity). */
-  return { label: cleanMemoryText(String(r.name ?? ""), 120) || "Soul ID", ready: r.status === "ready" && r.settled_at != null };
+  return { label: cleanMemoryText(String(r.name ?? ""), 120) || IDENTITY_ASSET_KIND, ready: r.status === "ready" && r.settled_at != null };
 }
 
 /**
  * What an approved identity may point at, checked when it is kept: a Library
  * asset; a Soul ID trained in this workspace and ready; or an entry of a
  * production's Cast & Elements in one of `by`'s own drafts of it. The label
- * is its name now, the kind what it is ("Soul ID", "character", "element").
+ * is its name now, the kind what it is ("Identity", "character", "element").
  */
 async function element(assetId: string, by: string): Promise<{ label: string; kind: string | null }> {
   if (LIBRARY_ASSET.test(assetId)) {
@@ -167,9 +167,9 @@ async function element(assetId: string, by: string): Promise<{ label: string; ki
   const soul = SOUL_REF.exec(assetId);
   if (soul) {
     const identity = await soulIdentity(soul[1], by);
-    if (!identity) throw new MemoryError("That Soul ID is not in this workspace.", 404);
-    if (!identity.ready) throw new MemoryError("That Soul ID is still training. Keep it once it is ready.", 409);
-    return { label: identity.label, kind: "Soul ID" };
+    if (!identity) throw new MemoryError("That identity is not in this workspace.", 404);
+    if (!identity.ready) throw new MemoryError("That identity is still training. Keep it once it is ready.", 409);
+    return { label: identity.label, kind: IDENTITY_ASSET_KIND };
   }
   const cast = CAST_REF.exec(assetId);
   if (cast) {
@@ -216,7 +216,7 @@ async function refsPresent(ids: string[]): Promise<Map<string, { label: string |
   for (let i = 0; i < souls.length; i += 200) {
     const chunk = souls.slice(i, i + 200);
     for (const r of await rowsOf({ sql: `SELECT id, name FROM soul_identities WHERE id IN (${chunk.map(() => "?").join(",")}) AND purged_at IS NULL`, args: chunk }))
-      present.set(`soul:${String(r.id)}`, { label: cleanMemoryText(String(r.name ?? ""), 120) || null, kind: "Soul ID" });
+      present.set(`soul:${String(r.id)}`, { label: cleanMemoryText(String(r.name ?? ""), 120) || null, kind: IDENTITY_ASSET_KIND });
   }
   for (const [production, wanted] of casts) {
     for (const draft of await draftsOf(production)) {
@@ -241,7 +241,7 @@ async function checked(input: { kind: unknown; text: unknown; projectId: unknown
   const assetId = input.assetId == null || input.assetId === "" ? null : String(input.assetId);
   if (kind === "reference" && !assetId) throw new MemoryError("A reference is an asset from the Library: open it there and choose Remember.");
   const source = refSource(assetId);
-  if ((source === "soul" || source === "cast") && kind !== "identity") throw new MemoryError("Only an approved identity points at a Soul ID or at Cast & Elements.");
+  if ((source === "soul" || source === "cast") && kind !== "identity") throw new MemoryError("Only an approved identity points at a trained identity or at Cast & Elements.");
   if (assetId && kind !== "reference" && kind !== "identity") throw new MemoryError("Only a reference or an approved identity points at an asset.");
   if (assetId && !source) throw new MemoryError("A reference is a Library asset.");
   let asset: { label: string; kind: string | null } | null = null;

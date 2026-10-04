@@ -12,8 +12,7 @@ import { getModel } from "@/lib/models";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
 import { CAST_CATEGORY, CAST_LIMITS, accountSoulIdOf, castFromBeats, entryCategory, mergeAgentCast, newEntry, retiredModelOf, type Cast, type CastEntry } from "@/lib/production/cast";
 import { castRenderInput, renderOutcome, renderableIdentity, renderedStills } from "@/lib/production/cast-render";
-import { SOUL_RENDER_BATCHES, SOUL_RENDER_RESOLUTIONS, SOUL_RENDER_STRENGTHS } from "@/lib/soulRenderTypes";
-import { elementToken } from "@/lib/higgsfield-consumer/element-parse";
+import { SOUL_RENDER_BATCHES, SOUL_RENDER_RESOLUTIONS, SOUL_RENDER_STRENGTHS, soulFamilyName } from "@/lib/soulRenderTypes";
 import { CONFIRM } from "@/lib/shell/confirmations";
 import { castStillPrompt } from "@/lib/shell/connected-capability";
 import { useShell } from "@/lib/shell/state";
@@ -40,18 +39,21 @@ import { useStageQuotes } from "./use-stage-quotes";
 const EMPTY: Cast = { entries: [] };
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null; params?: unknown };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
-const modelLabel = (id: string | null | undefined) => { try { return id ? getModel(id).label : "Soul"; } catch { return "Soul"; } };
+/** What an identity renders with, as the registry names it ("Identity still · Standard"). */
+const modelLabel = (id: string | null | undefined) => { try { return id ? getModel(id).label : "Identity still"; } catch { return "Identity still"; } };
 
 /**
  * Production › Cast & Elements (owner's brief, 23 September; on the platform's
  * key since 28 September): the cast list comes from the beat sheet for free,
- * or from the chosen agent with a prompt per entry. A character renders with a
- * Soul ID trained in this workspace (Build identity, below) — Soul Standard,
- * Soul 2 or Soul Cinema, whichever family the Soul ID was trained for — 1 or 4
- * stills at a live estimate shown on the button, filed in the library as Cast.
- * Any entry's still can also be made in Gen. Nothing here needs a signed-in
- * provider account, so it works in every workspace, for every member who can
- * render. Builds made earlier on the connected account stay in the Library.
+ * or from the chosen agent with a prompt per entry. A character renders with
+ * an identity trained in this workspace (Build identity, below) — Identity
+ * still · Standard, 2 or Cinema, whichever family the identity was trained
+ * for — 1 or 4 stills at a live estimate shown on the button, filed in the
+ * library as Cast. Any entry's still can also be made in Gen. Nothing here
+ * needs a signed-in provider account (owner's decision, 4 October: the renders
+ * stay on the platform's key, lib/soulRender.ts), so it works in every
+ * workspace, for every member who can render. Builds made earlier on the
+ * connected account stay in the Library, read-only.
  */
 export function CastStage({ projectId, scope, items, onBeats }: { projectId: string; scope: string; items: LibraryEntry[]; onBeats: () => void }) {
   const editor = useDraftEditor(scope, projectId);
@@ -245,7 +247,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           <span className="gx-spacer" />
           <span className="gx-hint" data-testid="cast-counts">{characters} characters · {cast.entries.length - characters} elements</span>
         </div>
-        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. A character renders with a Soul ID trained below; any entry’s still can be made in Gen. Every render is saved in the library as Cast or Elements.</p>
+        <p className="gx-hint">Start from the beat sheet’s characters and props, or have the agent cast the film. A character renders with an identity built below; any entry’s still can be made in Gen.</p>
         <div className="gx-gen-enhance">
           <button type="button" className="gx-hbtn" disabled={!fromBeats.length} title={!p.production?.beats ? "Break the script into beats first." : undefined} onClick={addFromBeats} data-testid="cast-from-beats">
             {p.production?.beats ? `Add ${fromBeats.length} from the beat sheet` : "Add from the beat sheet"}
@@ -266,8 +268,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const reference = entry.referenceAssetId ? p.assets.find((a) => a.id === entry.referenceAssetId) : undefined;
           const inFlight = (entry.pending ?? []).length > 0;
           /* Built earlier with a connected-account model the key has no family for: shown, never changed. */
-          const retired = retiredModelOf(entry);
-          if (retired) return <RetiredEntry key={entry.id} entry={entry} model={retired} aspect={p.aspect} onStill={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })} />;
+          if (retiredModelOf(entry)) return <RetiredEntry key={entry.id} entry={entry} aspect={p.aspect} onStill={() => openGenOn(shell, { prompt: castStillPrompt(entry), type: "image", note: `Reference still · ${entry.name.trim() || (entry.kind === "character" ? "Character" : "Element")}` })} />;
           const accountSoul = accountSoulIdOf(entry);
           const character = entry.kind === "character";
           const identity = identityOf(entry);
@@ -277,7 +278,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const strength = (SOUL_RENDER_STRENGTHS as readonly number[]).includes(entry.soulStrength ?? 1) ? entry.soulStrength ?? 1 : 1;
           const why = !character ? null
             : !p.productionProjectId ? "Save the project first."
-            : !identity ? (identities == null ? "Reading this workspace’s Soul IDs…" : renderable.length ? "Choose its Soul ID to render it." : "Train a Soul ID below to render it.")
+            : !identity ? (identities == null ? "Reading this workspace’s identities…" : renderable.length ? "Choose its identity to render it." : "Build an identity below to render it.")
             : !entry.prompt.trim() ? "Write its prompt first." : null;
           return (
             <article key={entry.id} className="gx-gen-card pd-frame" data-testid="cast-entry" data-kind={entry.kind} aria-label={entry.name || "Unnamed"} data-drop={dropOver === entry.id || undefined}
@@ -314,10 +315,10 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               ) : null}
               {character ? (
                 <div className="pd-cast-render" data-testid="cast-render">
-                  <label className="pd-soul"><span className="gx-hint">Soul ID</span>
-                    <select aria-label={`${entry.name || "Character"} Soul ID`} value={identity?.id ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, identityId: v || undefined })); }} data-testid="cast-identity">
+                  <label className="pd-soul"><span className="gx-hint">Identity</span>
+                    <select aria-label={`${entry.name || "Character"} identity`} value={identity?.id ?? ""} onChange={(e) => { const v = e.target.value; setEntry(entry.id, (x) => ({ ...x, identityId: v || undefined })); }} data-testid="cast-identity">
                       <option value="">None</option>
-                      {renderable.map((i) => <option key={i.id} value={i.id}>{i.name} · {modelLabel(i.renderModel)}</option>)}
+                      {renderable.map((i) => <option key={i.id} value={i.id}>{i.name} · {soulFamilyName(i.renderModel) ?? modelLabel(i.renderModel)}</option>)}
                     </select>
                   </label>
                   {identity ? (
@@ -343,7 +344,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
                     {/* Closed while its render is in flight: one more tap never buys a second request. */}
                     <button type="button" className="gx-primary pd-go" disabled={Boolean(why) || Boolean(working[entry.id]) || inFlight || quote?.credits == null}
                       onClick={() => { if (quote?.credits != null && !inFlight) void renderEntry(entry, quote.credits); }} data-testid="cast-render-run">
-                      {working[entry.id] || (inFlight ? "Rendering…" : why ? `Render with ${identity ? family : "a Soul ID"}`
+                      {working[entry.id] || (inFlight ? "Rendering…" : why ? `Render with ${identity ? family : "an identity"}`
                         : quote?.credits != null ? `Render ${batch === 1 ? "1 still" : `${batch} stills`} · ${family} · about ${quote.credits.toLocaleString("en-US")} cr`
                         : quote?.error ? "Price unavailable" : "Pricing…")}
                     </button>
@@ -357,8 +358,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
               {why && !inFlight ? <span className="gx-reason" data-testid="cast-render-why">{why}</span> : null}
               {!castStillPrompt(entry) ? <span className="gx-reason" id={`cast-still-why-${entry.id}`} data-testid="cast-still-why">Name it or write its prompt first.</span> : null}
               {quote?.error && !why ? <p className="gx-gen-error" role="alert">{quote.error}</p> : null}
-              {accountSoul ? <span className="gx-hint" data-testid="cast-soul-retrain">Its Soul ID was trained on the connected account, which can’t be used here. Train it again below (Build identity) to render it.</span> : null}
-              {entry.elementId ? <span className="gx-hint" data-testid="cast-element">Reference element made earlier: {elementToken(entry.elementId)} · read-only</span> : null}
+              {accountSoul ? <span className="gx-hint" data-testid="cast-soul-retrain">Its identity was built earlier on a connected account that is no longer used. Read-only.</span> : null}
               {entry.job?.status === "submitted" ? <span className="gx-hint" data-testid="cast-earlier-build">A build sent earlier lands in the Library when it finishes.</span> : null}
               {errors[entry.id] ? <p className="gx-gen-error" role="alert" data-testid="cast-error">{errors[entry.id]}</p> : null}
             </article>
@@ -374,11 +374,11 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
 }
 
 /**
- * An entry built earlier on the connected account with a Soul model the
- * platform's key has no family for (Soul Location, Soul Cast): shown, never
+ * An entry built earlier on the connected account with a stills model the
+ * platform's key has no family for (lib/production/cast.ts › retiredModelOf): shown, never
  * changed. Its stills stay in the Library; a new still can be made in Gen.
  */
-function RetiredEntry({ entry, model, aspect, onStill }: { entry: CastEntry; model: string; aspect: string; onStill: () => void }) {
+function RetiredEntry({ entry, aspect, onStill }: { entry: CastEntry; aspect: string; onStill: () => void }) {
   const shown = entry.selected ?? entry.takes[0]?.genId;
   const character = entry.kind === "character";
   return (
@@ -392,7 +392,7 @@ function RetiredEntry({ entry, model, aspect, onStill }: { entry: CastEntry; mod
       </div>
       {entry.description ? <p className="gx-hint pd-frame-desc">{entry.description}</p> : null}
       <textarea className="gx-textarea pd-small" aria-label={`${entry.name || "Entry"} prompt`} value={entry.prompt} readOnly data-testid="cast-prompt" />
-      <p className="gx-hint" data-testid="cast-retired">Built earlier with {model} on the connected account, which isn’t available here. Read-only: {entry.takes.length ? `its ${entry.takes.length === 1 ? "still stays" : `${entry.takes.length} stills stay`} in the Library.` : "nothing of it is changed."}</p>
+      <p className="gx-hint" data-testid="cast-retired">Built earlier on a connected account that is no longer used. Read-only: {entry.takes.length ? `its ${entry.takes.length === 1 ? "still stays" : `${entry.takes.length} stills stay`} in the Library.` : "nothing of it is changed."}</p>
       <div className="gx-gen-enhance">
         <button type="button" className="gx-hbtn" disabled={!castStillPrompt(entry)} onClick={onStill} data-testid="cast-still-gen">Make a still in Gen</button>
       </div>

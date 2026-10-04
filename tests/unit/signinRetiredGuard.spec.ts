@@ -289,7 +289,7 @@ test("no page mounts a surface that starts account work: the sign-in card, the d
     }
   };
   for (const root of ["app", "components", "lib"]) walk(root);
-  const retiredSurfaces = ["HiggsfieldConsumerConnection", "ConsumerVideoVerification", "DeveloperApiRow", "AtomikGenerate", "ConsumerGenjutsu", "ConsumerShorts", "ConsumerMarketingVideo", "ShortsPage", "FormPage", "WorkflowHosts"];
+  const retiredSurfaces = ["HiggsfieldConsumerConnection", "ConsumerVideoVerification", "DeveloperApiRow", "AtomikGenerate", "ConsumerShorts", "ConsumerMarketingVideo", "ShortsPage", "FormPage", "WorkflowHosts"];
   /* The retired surfaces' own files (kept, unmounted, until the account code is removed) may import each other. */
   const retiredFile = (file: string) => [...retiredSurfaces, "WorkflowHost"].some((surface) => file.endsWith(`/${surface}.tsx`));
   for (const file of files) {

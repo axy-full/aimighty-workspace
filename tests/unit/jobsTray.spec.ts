@@ -175,7 +175,14 @@ test("a connected-account job reads its stage from the account's own record, in 
   /* Finished on the account but not kept: it may have been spent, so the approved figure stays. */
   expect(accountTrayJob(account({ id: "k", status: "failed", failureCode: "invalid_result" }))).toMatchObject({ label: "Not kept · receipt saved", price: { amount: 40, unit: "account-cr" }, action: null });
   expect(accountTrayJob(account({ id: "v", status: "failed", workflow: "genjutsu" })).action).toBe("viral");
-  expect(accountTrayJob(account({ id: "m", status: "failed", workflow: "marketing-video", prompt: null })).action).toBe("ads");
+  /* Business › Ads is gone: a past ad still lists, with its name and its quote, and opens Takes — never a page that no longer exists. */
+  expect(accountTrayJob(account({ id: "m", status: "failed", workflow: "marketing-video", prompt: null })).action).toBe("open");
+  const pastAd = accountTrayJob(account({ id: "u", status: "uncertain", workflow: "marketing-video", prompt: "Morning routine with the bottle" }));
+  expect(pastAd).toMatchObject({ name: "Morning routine with the bottle", action: "open", price: { amount: 40, unit: "account-cr" } });
+  expect(pastAd.takeId).toBeUndefined();
+  /* A reply written before the page went (action "ads") reads as the same row. */
+  const kept = parseTrayReply({ jobs: [{ ...pastAd, action: "ads" }, pastAd] })!.jobs;
+  expect(kept.map((j) => [j.name, j.action, priceLabel(j.price)])).toEqual([["Morning routine with the bottle", "open", "40 connected cr"], ["Morning routine with the bottle", "open", "40 connected cr"]]);
   expect(accountTrayJob(account({ id: "n", status: "accepted", workflow: "genjutsu", prompt: null, outputType: null })).name).toBe("Motion transfer");
   expect(priceLabel({ amount: 12.5, unit: "account-cr" })).toBe("12.5 connected cr");
 });
@@ -249,7 +256,7 @@ test("figures are written the ledger's way, and ages say how long it has run or 
   expect(trayWhen(row("r", "rendering", T0), T0 + 4 * MIN)).toBe("4 min");
   expect(trayWhen(row("d", "complete", T0 - 60 * MIN, T0), T0 + 20 * MIN)).toBe("20 min ago");
   expect(trayWhen(row("d", "complete", T0, T0), T0 + 20_000)).toBe("just now");
-  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Gen", "Open Ads", "Open Viral"]);
+  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Gen", "Open Viral"]);
 });
 
 test("a reply is checked row by row before the tray draws it", () => {

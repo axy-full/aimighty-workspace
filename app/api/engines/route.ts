@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { MODELS } from "@/lib/models";
+import { offeredModels } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { safetyThreshold } from "@/lib/gemini";
@@ -49,7 +49,8 @@ export const GET = withTenant(async function GET() {
       via: providerVia(p),
       /** Google only: where its adjustable safety thresholds sit. */
       safety: p.id === "google" ? (safetyThreshold() ?? "Engine default") : undefined,
-      models: MODELS.filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
+      /* Retired models are not offered (lib/models.ts › retired); past jobs still resolve them. */
+      models: offeredModels().filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),
   });

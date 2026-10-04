@@ -92,7 +92,7 @@ test("what Gen cannot recreate says so, and the menu and the Inspector block it"
   /* Where the take was made is named when it is known (the Suites recovery's reasons). */
   const source = "This take was made from a source clip. Run that tool again from Takes.";
   const connectedTool = "This take came from a connected tool, not Gen. Run that tool again.";
-  const business = "This ad was made in Business on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield.";
+  const business = "This ad was made in Business on a connected account that is no longer used.";
   const dialogue = "A dialogue is made in Edit & Sound, not Gen.";
   for (const [blocked, why] of [
     [made("video", {}, "edit"), tool],
@@ -130,7 +130,7 @@ test("what Gen cannot recreate says so, and the menu and the Inspector block it"
 
 const seedance: ComposerModel = { id: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", type: "video", ratios: ["16:9", "9:16", "21:9"], resolutions: ["720p", "1080p"], durations: [5, 8, 10] };
 const kling: ComposerModel = { id: "kling-3-std", label: "Kling 3.0 Standard", type: "video", ratios: ["16:9", "9:16"], resolutions: ["1080p"], durations: [5, 10] };
-const soul: ComposerModel = { id: "soul_cinematic", label: "Soul Cinematic", type: "image", connected: true, soulId: true, ratios: ["3:4", "1:1"] };
+const soul: ComposerModel = { id: "soul_cinematic", label: "Soul Cinematic", type: "image", soulId: true, ratios: ["3:4", "1:1"] };
 
 const chipsFor = (input: Partial<Parameters<typeof recipeChips>[0]> & Pick<Parameters<typeof recipeChips>[0], "preset" | "model" | "settings">) =>
   recipeChips({ type: input.preset.type ?? "video", billing: "workspace", models: input.model ? [input.model] : [], reading: false, blocked: null, owner: false, identities: null, ...input });
@@ -182,8 +182,8 @@ test("a connected recipe: named by the account's list, recreated on Studio engin
   expect(chipsFor({ preset, billing: "connected", owner: true, model: soul, settings: composerSettings(soul, undefined, preset.picks) })[0]).toMatchObject({ value: "Soul Cinematic", state: "kept" });
   expect(owner(null)).toMatchObject({ state: "reading" });
   expect(owner([{ soulId: "soul_abc", name: "Mara", status: "ready" }])).toMatchObject({ value: "Mara", state: "kept" });
-  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "Made on the Higgsfield account" });
-  expect(owner([])).toMatchObject({ state: "changed", why: "Made on the Higgsfield account" });
+  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "Made on the connected account" });
+  expect(owner([])).toMatchObject({ state: "changed", why: "Made on the connected account" });
 });
 
 test("a recreated sound take: its length, Instrumental and voice read kept until Gen holds something else, and say why", () => {
@@ -221,8 +221,10 @@ test("the composer takes a recipe in one step, a settings-only one keeps its wor
   expect(full.chosen["workspace:video"]).toBe("seedance-2.5");
 
   const settingsOnly = composerReducer(before, { type: "recipe", value: { type: "image", billing: "connected", model: "soul_cinematic", picks: { ratio: "3:4", soulId: "soul_abc" } } });
-  expect(settingsOnly).toMatchObject({ prompt: "my own words", references: before.references, billing: "connected", picks: { ratio: "3:4", soulId: "soul_abc" } });
-  expect(settingsOnly.chosen["connected:image"]).toBe("soul_cinematic");
+  /* A recipe saved on the connected source lands on this workspace's credits: the only source Gen has. */
+  expect(settingsOnly).toMatchObject({ prompt: "my own words", references: before.references, billing: "workspace", picks: { ratio: "3:4", soulId: "soul_abc" } });
+  expect(settingsOnly.chosen["workspace:image"]).toBe("soul_cinematic");
+  expect(settingsOnly.chosen["connected:image"]).toBeUndefined();
 
   const sound = composerReducer(before, { type: "recipe", value: { type: "audio", billing: "workspace", model: "eleven_music", picks: {}, prompt: "a theme", sound: { seconds: 30, instrumental: false } } });
   expect(sound).toMatchObject({ type: "audio", references: [], seconds: 30, instrumental: false });
