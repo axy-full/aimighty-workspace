@@ -1,0 +1,11 @@
+particl-handoff · the seven step 7 fixes, and where each shows
+
+1. Fix allowance = 2 × (43 + 7 + 7) = "at most 114 cr" on the plan.           ?device=phone&screen=plan · ?device=phone&screen=plan&credits=short · ?view=board&frame=e
+2. On phone Home, the price button on a multi-step plan opens the plan approval screen; single items (one still, one line) approve from Home.   ?device=phone&screen=home
+3. Offline: approve/reject queue until back online; anything that spends credits is disabled with "Needs a connection".   ?device=phone&screen=states (last card)
+4. Record with the 80 % pause: the approval lines add up to the 160 cr shown (looks 12 + storyboard 9 + shots 1–2 50 + two fixes 86 + keyframe retake 3); Shot 3 shows as waiting, its 43 cr not yet spent; "Make 3 shots" is 50 cr settled with Shot 3 waiting.   ?device=phone&screen=record&paused=1
+5. Review title matches the version ("Shot 2 · v2").                           ?device=phone&screen=review
+6. Phone sizes: every label ≥ 12 px (the ATOMIK badge, version chips, You/Atomik labels); version chips and every button ≥ 44 px.   ?device=phone&screen=review · ?device=phone&screen=atomik · ?device=phone&screen=make
+7. "1080p" everywhere; the states screen's header balance is 40 cr to match the insufficient-credits card.   ?device=phone&screen=states · ?view=board&frame=g&make=1
+
+Step 8 · Handoff: README.md rewritten (IA old → new, tokens and minimums, every screen and state, actions, money rules, keyboard map, names, placeholders, open decisions); github.md screen map updated; PROMPT.md carries this round's steps. Bundle is offline: local React/Babel in assets/vendor, local stills in assets/.
