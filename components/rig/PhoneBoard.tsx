@@ -98,7 +98,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                       const port = src?.kind === "asset" ? src.ports.find((p) => p.id === found!.wire.from.portId) ?? null : null;
                       return (
                         <button key={s.id} type="button" onClick={() => onSlot({ nodeId: n.id, slotId: s.id })} aria-label={`${s.label} slot`}
-                          className={`flex h-[44px] items-center gap-[10px] rounded-ctl px-[6px] text-left ${on ? "bg-[color:var(--gx-input)] ui-node-selected" : ""}`}>
+                          className={`flex h-[44px] items-center gap-[10px] rounded-ctl px-[6px] text-left ${on ? "bg-[color:var(--gx-input-hover)] ui-node-selected" : ""}`}>
                           <span className="relative h-[30px] w-[48px] flex-none overflow-hidden rounded-[5px] border border-border ui-placeholder" />
                           <span className={`ui-mono ${src ? "text-ink" : "text-ink-muted"}`}>{s.label}</span>
                           <span className="ml-auto ui-mono tracking-normal text-ink-body">{src ? (src.kind === "asset" ? (port?.version ?? "current") : src.kind === "prompt" ? "1 line" : src.label) : "—"}</span>

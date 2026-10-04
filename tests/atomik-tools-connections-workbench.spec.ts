@@ -114,7 +114,7 @@ async function checkLayout(page: Page, phone: boolean) {
       if (!m) continue;
       const a = m[4] == null ? 1 : Number(m[4]);
       const over = (c: number, bg: number) => c * a + bg * (1 - a);
-      const l = lum(over(+m[1], 13), over(+m[2], 13), over(+m[3], 16));
+      const l = lum(over(+m[1], 0), over(+m[2], 0), over(+m[3], 0));
       if (l + 1e-6 < floor) out.push(`${el.className} text ${getComputedStyle(el).color} is dimmer than #7C7C84`);
     }
     return out;

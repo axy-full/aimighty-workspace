@@ -532,7 +532,7 @@
   .workspace .runLink:only-of-type { border-radius: 8px; }
   .workspace .runLink span { font-size: 14px; font-weight: 500; }
   .workspace .runLink small { font-size: 12px; }
-  .workspace .runLink[aria-current="page"] { background: var(--gx-input) !important; border-color: var(--gx-accent) !important; }
+  .workspace .runLink[aria-current="page"] { background: var(--gx-input-hover) !important; border-color: var(--gx-accent) !important; }
   .workspace .main { padding: 16px 0 0; }
   .workspace .sectionHeading { gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .workspace .sectionHeading h2 { font-size: 20px; letter-spacing: -.03em; line-height: 1.3; }

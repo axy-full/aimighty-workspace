@@ -10,7 +10,7 @@
 .studio-sections{position:relative;display:flex;align-items:center;gap:2px;padding:3px;background:var(--graphite-segment);border-radius:6px}
 .studio-sections>a{display:flex;align-items:center;gap:5px;min-height:28px;padding:4px 11px;border:0;border-radius:4px;color:var(--graphite-muted);font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
 .studio-sections>a[aria-current=page]{background:var(--graphite-selected);border-color:transparent;color:var(--graphite-ink)}
-.studio-sections>a:hover{color:var(--graphite-ink);background:var(--graphite-control)}
+.studio-sections>a:hover{color:var(--graphite-ink);background:var(--graphite-hover)}
 .studio-navigation-compact{min-height:47px;padding:3px 22px;background:var(--graphite-panel);gap:12px}
 .studio-navigation-compact .studio-sections>a{min-height:28px;padding:4px 11px;font-size:13px}
 .studio-account{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0}

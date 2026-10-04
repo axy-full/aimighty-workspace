@@ -12,7 +12,7 @@
   height: 36px; padding: 0 10px; border: 1px solid var(--border-mid); border-radius: 9px;
   background: transparent; color: var(--ink); font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap;
 }
-.button:hover:not(:disabled) { background: var(--gx-input); }
+.button:hover:not(:disabled) { background: var(--gx-input-hover); }
 .button:disabled { opacity: .5; cursor: default; }
 .button[aria-pressed="true"] { background: var(--selected); }
 .toggle { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; }
@@ -30,7 +30,7 @@
   display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-width: 0; min-height: 44px;
   padding: 6px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); font-family: inherit; text-align: left;
 }
-.pick:hover { background: var(--gx-input); }
+.pick:hover { background: var(--gx-input-hover); }
 .pick[aria-current="true"] { background: var(--selected); }
 .line { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
 .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.25; color: var(--ink); }

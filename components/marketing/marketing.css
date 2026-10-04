@@ -23,7 +23,7 @@
 .mk-nav { display: flex; gap: 2px; margin-left: 4px; align-items: center; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
 .mk-nav::-webkit-scrollbar { display: none; }
 .mk-tab { position: relative; display: inline-flex; align-items: center; padding: 7px 10px; border-radius: 6px; font-size: 13.5px; color: var(--gx-text-2) !important; text-decoration: none; white-space: nowrap; flex: none; }
-.mk-tab:hover { color: var(--gx-text) !important; background: var(--gx-input); }
+.mk-tab:hover { color: var(--gx-text) !important; background: var(--gx-input-hover); }
 .mk-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text) !important; font-weight: 600; }
 .mk-nav-rule { width: 1px; height: 18px; background: var(--gx-input-hover); margin: 0 6px; flex: none; }
 
