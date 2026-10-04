@@ -304,7 +304,7 @@ test("Library: the overlay's list and its closing note end above the tab bar, wh
     const tiles = Array.from(list.querySelectorAll<HTMLElement>(".gx-asset")).filter((el) => el.getClientRects().length);
     const last = tiles.at(-1)!.getBoundingClientRect();
     if (last.bottom > limit + 0.5) out.push(`the last tile ends at ${Math.round(last.bottom)}px, past ${Math.round(limit)}px`);
-    /* Landscape phones fold the note away with the rest of their compact controls (app/phone-chrome.css); where it
+    /* Landscape phones fold the note away with the rest of their compact controls (components/graphite/phone.css); where it
        shows, it is read above the bar, and a tap on it lands on it. */
     const note = document.querySelector<HTMLElement>(".gx-library > .gx-lib-foot")!;
     if (note.getClientRects().length) {

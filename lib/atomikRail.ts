@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Atomik's rail state, at app level (design/particl-v2/README.md §5):
+ * Atomik's rail state, at app level (design/particl-graphite/README.md §5):
  * `closed`, `compact` (300) or `expanded` (420), persisted per user. ⌘J
  * toggles closed ↔ the last open state; Esc closes. The header button reads
  * it (open → `.35` border and `--selected` fill); the rail renders from it

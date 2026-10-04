@@ -43,18 +43,18 @@ test("every card's line and dot come from the project and the library", () => {
   expect(recentTakes([take("g1"), take("u1", "UPLOAD"), take("g2")]).map((e) => e.take.id)).toEqual(["g1", "g2"]);
 });
 
-/* GLASS_SPEC §3 › Home: six tiles in order, the lines verbatim, the facts from the figures given. */
+/* design/particl-graphite/README.md › Phone, Home: six tiles in order, the lines verbatim, the facts from the figures given. */
 test("the Home tiles carry the prototype's lines and live facts; the Assets row counts the project", () => {
   const cards = stageCards({ ...newProject("Dune Studies"), brief: "A fox crosses a frozen harbour at dusk" }, []);
-  const facts = { rendering: 0, videoEngine: "Seedance 2.5", adMode: "UGC", adSeconds: 15, viralResolution: "720p", awaiting: 2, seats: 7 };
+  const facts = { rendering: 0, videoEngine: "Seedance 2.5", viralResolution: "720p", awaiting: 2, seats: 7 };
   const tiles = suiteTiles(cards, facts);
   expect(tiles.map((t) => t.id)).toEqual(["studio", "gen", "business", "viral", "atomik", "crew"]);
   expect(tiles.map((t) => t.line)).toEqual([
-    "Brief to delivery, ten stages.", "Video, images, audio — one composer.", "Marketing Studio: product, presenter, ad.",
+    "Brief to delivery, ten stages.", "Video, images, audio — one composer.", "Image ads, brand kit, product, briefs.",
     "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department.",
   ]);
   /* The Gen fact is the workspace's default engine, not an unchecked "ready". */
-  expect(tiles.map((t) => t.fact)).toEqual(["1 of 10 done", "Seedance 2.5 · default", "UGC · 15 s · quoted in Ads", "720p · quoted on the source", "2 awaiting approval", "7 seats"]);
+  expect(tiles.map((t) => t.fact)).toEqual(["1 of 10 done", "Seedance 2.5 · default", "Opens on Image ads", "720p · quoted on the source", "2 awaiting approval", "7 seats"]);
   expect(tiles.map((t) => t.color)).toEqual(["#0A84FF", "#BF5AF2", "#FF9F0A", "#FF453A", "#30D158", "#BF5AF2"]);
   expect(suiteTiles(cards, { ...facts, rendering: 2, seats: 1 }).map((t) => t.fact)).toEqual(expect.arrayContaining(["2 rendering", "1 seat"]));
   expect(suiteTiles(cards, { ...facts, seats: null })[5].fact).toBe("seats loading");

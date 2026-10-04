@@ -5,7 +5,7 @@ import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Suites › Gen, build step 2 (design/particl-suites/README.md › Gen): the
+ * Suites › Gen, build step 2 (design/particl-graphite/README.md › Gen): the
  * composer on the existing useComposer host, the prompt enhancer with its
  * live price on the button, per-second length, the model sheet, and the
  * Library's assets dragged in as references.
@@ -61,7 +61,7 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   expect(enhance.at(-1)).toMatchObject({ quoteOnly: true, mode: "video", prompt: "@Image1 a fox crossing a frozen harbour" });
   await button.click();
   const card = page.getByTestId("enhanced-card");
-  await expect(card).toContainText("Enhanced · Higgsfield · 1 cr");
+  await expect(card).toContainText("Enhanced · Standard · 1 cr");
   await expect(card).toContainText("@Image1 a fox crossing a frozen harbour, slow push in, rim light, tack sharp");
   expect(enhance.at(-1)).toMatchObject({ maxCredits: 1, mode: "video" });
   expect(enhance.at(-1)).not.toHaveProperty("quoteOnly");

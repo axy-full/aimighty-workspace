@@ -1,5 +1,5 @@
 /**
- * particl v2 primitives (design/particl-v2/README.md §3). Built once, used
+ * particl v2 primitives (design/particl-graphite/README.md §3). Built once, used
  * by every v2 route, each at the boards' own numbers. Nothing here fetches,
  * prices or persists.
  */

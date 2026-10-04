@@ -1,28 +1,28 @@
 .suite.suite {
   --graphite-font: var(--font-instrument-sans, system-ui, sans-serif);
   --graphite-mono: var(--graphite-font);
-  --graphite-ground: #000;
-  --graphite-panel: #0a0a0c;
-  --graphite-card: #0c0d10;
-  --graphite-control: #121317;
-  --graphite-selected: #17181c;
-  --graphite-line: #1e1f24;
-  --graphite-edge: #2a2c33;
-  --graphite-ink: #ededea;
-  --graphite-body: #c9cbd1;
-  --graphite-muted: #9a9ca3;
-  --graphite-accent: #f0b23e;
-  --graphite-accent-text: #ededea;
-  --graphite-primary: #ededea;
-  --graphite-primary-hover: #fff;
-  --graphite-on-primary: #0a0a0c;
+  --graphite-ground: var(--gx-root);
+  --graphite-panel: var(--gx-panel);
+  --graphite-card: var(--gx-card);
+  --graphite-control: var(--gx-input);
+  --graphite-selected: var(--gx-thumb);
+  --graphite-line: var(--gx-card-border);
+  --graphite-edge: var(--gx-dashed);
+  --graphite-ink: var(--gx-text);
+  --graphite-body: var(--gx-text-2);
+  --graphite-muted: var(--gx-text-half);
+  --graphite-accent: var(--gx-accent);
+  --graphite-accent-text: var(--gx-accent-text);
+  --graphite-primary: var(--gx-accent);
+  --graphite-primary-hover: var(--gx-accent-hover);
+  --graphite-on-primary: var(--gx-on-accent);
   width: 100%;
   max-width: none;
   min-width: 0;
   margin: 0;
   padding: 28px;
-  color: #ededea;
-  background: #000;
+  color: var(--gx-text);
+  background: var(--gx-root);
   font-family: var(--graphite-font);
   font-size: 13px;
   line-height: 1.5;
@@ -48,7 +48,7 @@
   margin: 0 0 8px;
 }
 .suite p {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   margin: 8px 0 0;
 }
 .suite button,
@@ -59,10 +59,10 @@
   gap: 7px;
   min-height: 36px;
   padding: 8px 12px;
-  border: 1px solid #2a2c33;
+  border: 1px solid var(--gx-dashed);
   border-radius: 8px;
-  background: #121317;
-  color: #ededea;
+  background: var(--gx-card);
+  color: var(--gx-text);
   font: 500 12px/1.4 var(--graphite-font);
   text-decoration: none;
   cursor: pointer;
@@ -73,19 +73,19 @@
 }
 .suite button:hover:not(:disabled),
 .suite a:hover {
-  background: #1b1c21;
+  background: var(--gx-input);
 }
 .suite :is(button, a, input, select):focus-visible {
-  outline: 2px solid #f0b23e;
+  outline: 2px solid var(--gx-accent);
   outline-offset: 3px;
 }
 .suite .primary {
-  background: #ededea;
-  color: #0a0a0c;
-  border-color: #ededea;
+  background: var(--gx-accent);
+  color: var(--gx-on-accent);
+  border-color: var(--gx-accent);
 }
 .suite .primary:hover:not(:disabled) {
-  background: #fff;
+  background: var(--gx-accent-hover);
 }
 .header {
   display: flex;
@@ -106,7 +106,7 @@
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: #c9cbd1;
+  color: var(--gx-text-2);
   margin: 0;
 }
 .suiteName span {
@@ -114,18 +114,18 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #f0b23e;
+  background: var(--gx-suite-atomik);
 }
 :global([data-suite="subatomic"]) .suiteName span {
-  background: #d48cf5;
+  background: var(--gx-purple);
 }
 .panel,
 .empty {
   min-width: 0;
   padding: 20px;
-  border: 1px solid #1e1f24;
+  border: 1px solid var(--gx-card-border);
   border-radius: 12px;
-  background: #0a0a0c;
+  background: var(--gx-panel);
 }
 .empty {
   padding: 32px;
@@ -142,7 +142,7 @@
   margin-bottom: 18px;
 }
 .panelHeading > span {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
 }
 .projectChoices {
   display: flex;
@@ -157,7 +157,7 @@
 }
 .runList {
   min-width: 0;
-  border-right: 1px solid #1e1f24;
+  border-right: 1px solid var(--gx-card-border);
   padding-right: 20px;
 }
 .runList > p {
@@ -172,12 +172,12 @@
   gap: 5px;
   min-height: 82px;
   width: 100%;
-  background: #0a0a0c;
+  background: var(--gx-panel);
   margin-bottom: 8px;
   padding: 13px;
 }
 .suite .runButton[aria-current="page"] {
-  border-color: #f0b23e;
+  border-color: var(--gx-accent);
 }
 .runButton strong {
   font-weight: 550;
@@ -186,7 +186,7 @@
 .runButton span,
 .runButton small {
   font-size: 11px;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
 }
 .runBody {
   min-width: 0;
@@ -206,15 +206,15 @@
   font-variant-numeric: tabular-nums;
 }
 .table th {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-weight: 500;
   padding: 0 12px 12px;
-  border-bottom: 1px solid #2a2c33;
+  border-bottom: 1px solid var(--gx-dashed);
   white-space: nowrap;
 }
 .table td {
   padding: 16px 12px;
-  border-bottom: 1px solid #1e1f24;
+  border-bottom: 1px solid var(--gx-card-border);
   vertical-align: top;
   min-width: 125px;
 }
@@ -234,12 +234,12 @@
 .table small {
   display: block;
   font-size: 11px;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   margin-top: 5px;
 }
 .stepNumber {
   display: inline-block;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   margin-right: 9px;
   font-variant-numeric: tabular-nums;
 }
@@ -247,18 +247,18 @@
 .checkpoint {
   display: inline-block;
   padding: 3px 7px;
-  border: 1px solid #2a2c33;
+  border: 1px solid var(--gx-dashed);
   border-radius: 6px;
   font-size: 11px;
   white-space: nowrap;
 }
 .checkpoint {
-  border-color: #f0b23e;
+  border-color: var(--gx-waiting);
 }
 .suite .note {
   font-size: 12px;
   line-height: 1.6;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   margin: 16px 0;
 }
 .note a {
@@ -275,13 +275,13 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  border: 1px solid #a46f48;
+  border: 1px solid color-mix(in srgb, var(--gx-waiting) 35%, transparent);
   border-radius: 10px;
   margin-bottom: 18px;
 }
 .error p {
   margin: 0;
-  color: #ededea;
+  color: var(--gx-text);
 }
 .recipeGrid {
   display: grid;
@@ -295,7 +295,7 @@
 }
 .recipeSteps li {
   padding: 9px 0;
-  border-bottom: 1px solid #1e1f24;
+  border-bottom: 1px solid var(--gx-card-border);
 }
 .recipeSteps strong {
   font-weight: 500;
@@ -303,7 +303,7 @@
 .recipeSteps span {
   display: block;
   margin-left: 18px;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-size: 12px;
 }
 .metrics {
@@ -314,7 +314,7 @@
 }
 .metrics span {
   display: block;
-  color: #9a9ca3;
+  color: var(--gx-text-2);
   font-size: 12px;
 }
 .metrics strong {
@@ -328,7 +328,7 @@
 .suite progress {
   width: 100%;
   height: 5px;
-  accent-color: #f0b23e;
+  accent-color: var(--gx-accent);
   margin: 0 0 15px;
 }
 .inlineForm {
@@ -341,7 +341,7 @@
 .suite .inlineForm label {
   min-width: 200px;
   max-width: 320px;
-  color: #c9cbd1;
+  color: var(--gx-text-2);
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -351,9 +351,9 @@
 .suite select {
   font-family: inherit;
   min-height: 36px;
-  background: #121317;
-  color: #ededea;
-  border: 1px solid #2a2c33;
+  background: var(--gx-card);
+  color: var(--gx-text);
+  border: 1px solid var(--gx-dashed);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -380,25 +380,25 @@
   letter-spacing: normal !important;
 }
 .pipeline :global([class*="contextPreview"]) {
-  border-left-color: #2a2c33;
+  border-left-color: var(--gx-dashed);
 }
 .pipeline :global([class*="primary"]) {
-  background: #ededea !important;
-  color: #0a0a0c !important;
-  border-color: #ededea !important;
+  background: var(--gx-accent) !important;
+  color: var(--gx-on-accent) !important;
+  border-color: var(--gx-accent) !important;
 }
 .pipeline :global([class*="stageTitle"]) small {
-  color: #9a9ca3;
+  color: var(--gx-text-2);
 }
 .pipeline :global([class*="number"]) {
-  background: #121317 !important;
-  color: #c9cbd1;
+  background: var(--gx-card) !important;
+  color: var(--gx-text-2);
 }
 .pipeline legend {
-  color: #c9cbd1 !important;
+  color: var(--gx-text-2) !important;
 }
 .pipeline :global([class*="note"]) {
-  color: #9a9ca3 !important;
+  color: var(--gx-text-2) !important;
 }
 @media (max-width: 1100px) {
   .suite.suite {
@@ -449,7 +449,7 @@
   }
   .runList {
     border-right: 0;
-    border-bottom: 1px solid #1e1f24;
+    border-bottom: 1px solid var(--gx-card-border);
     padding: 0 0 16px;
     margin-bottom: 18px;
   }
@@ -479,7 +479,7 @@
   }
   .metrics > div {
     padding-bottom: 16px;
-    border-bottom: 1px solid #1e1f24;
+    border-bottom: 1px solid var(--gx-card-border);
   }
   .metrics strong {
     font-size: 24px;

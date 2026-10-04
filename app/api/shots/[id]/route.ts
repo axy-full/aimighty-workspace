@@ -21,7 +21,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   let moveTo: string | null = null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const args: any[] = [];
-  /* Move to another project (design/particl-v2 §1, §7): the shot goes, and
+  /* Move to another project (design/particl-graphite §1, §7): the shot goes, and
      its media — takes, stills, masters — goes with it. Planning, takes and
      spend arrive intact; nothing is copied and nothing is deleted. */
   if (typeof body.projectId === "string" && body.projectId && body.projectId !== shot.projectId) {

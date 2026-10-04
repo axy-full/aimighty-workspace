@@ -19,7 +19,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos, trainPrice, type TrainTerms } from "@/lib/identityTraining";
 
 /**
- * The New asset sheet (design/particl-v2/README.md §12; boards 3a, 3b):
+ * The New asset sheet (design/particl-graphite/README.md §12; boards 3a, 3b):
  * one sheet, opened from the Library, Rig, a take, a Canvas selection, an
  * unknown `@name` in a prompt, or Atomik.
  *
@@ -49,7 +49,7 @@ import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos,
  * the switch is real for a character and says so for the kinds whose
  * engine is not connected yet.
  *
- * Below 768 (design/particl-v2-mobile, board M8) the same sheet is full
+ * Below 768 (design/particl-graphite, board M8) the same sheet is full
  * height from 44px: `New asset` at 600 20 over `NAME · KIND · REFERENCES
  * · THAT'S IT` with `FROM LIBRARY` at the right; the name field at 52px
  * in 20px type; the kind pills at 44px (the chosen one filled ink); the
@@ -258,7 +258,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     finally { setBusy(false); }
   };
 
-  const kindBtn = (k: ElementKind) => `tap44 h-[48px] rounded-tile border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-[rgba(245,246,248,.3)] bg-[rgba(245,246,248,.12)] text-ink" : "border-[rgba(245,246,248,.12)] text-ink-body"}`;
+  const kindBtn = (k: ElementKind) => `tap44 h-[48px] rounded-tile border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-[color:var(--gx-hover-border)] bg-[color:var(--gx-input-hover)] text-ink" : "border-[color:var(--gx-pop-border)] text-ink-body"}`;
   const source = "tap44 whitespace-nowrap rounded-pill border border-border-mid px-[9px] py-[7px] text-[12px] font-medium leading-none text-ink";
   const sourceItems: MenuItem[] = [
     { kind: "item", label: "Upload", onSelect: () => picker.current?.click() },
@@ -290,7 +290,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         <label className="flex flex-col gap-[6px]">
           <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
           <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
-            className="box-border flex h-[52px] items-center rounded-card border border-[rgba(245,246,248,.2)] bg-card px-[14px] text-[20px] font-semibold leading-none text-ink outline-0 placeholder:text-ink-muted" />
+            className="box-border flex h-[52px] items-center rounded-card border border-[color:var(--gx-hover-border)] bg-card px-[14px] text-[20px] font-semibold leading-none text-ink outline-0 placeholder:text-ink-muted" />
         </label>
         <div className="flex flex-col gap-[6px]">
           <Mono>Kind</Mono>
@@ -300,16 +300,16 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         </div>
         <div className="flex flex-col gap-[6px]">
           <Mono>References · {refs.length} · upload · a take · make · canvas</Mono>
-          <div className="flex gap-[6px] overflow-x-auto rounded-card border border-dashed border-[rgba(245,246,248,.22)] p-[8px]" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
+          <div className="flex gap-[6px] overflow-x-auto rounded-card border border-dashed border-[color:var(--gx-hover-border)] p-[8px]" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
             <input ref={picker} type="file" accept="image/*,video/*,audio/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
             {refs.map((r, i) => (
-              <span key={`${r.uploadId ?? r.genId}-${i}`} className="relative h-[64px] w-[64px] flex-none overflow-hidden rounded-ctl border border-[rgba(245,246,248,.08)] ui-placeholder">
+              <span key={`${r.uploadId ?? r.genId}-${i}`} className="relative h-[64px] w-[64px] flex-none overflow-hidden rounded-ctl border border-[color:var(--gx-hair)] ui-placeholder">
                 {r.url && r.kind === "image" && <img src={r.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                 {r.kind !== "image" && <span className="ui-mono absolute inset-0 flex items-center justify-center tracking-normal text-ink-body">{r.kind === "video" ? "Clip" : "Audio"}</span>}
                 <button type="button" onClick={() => setRefs((p) => p.filter((_, k) => k !== i))} aria-label={`Remove ${r.label}`} className="ui-chip-scrim absolute right-[2px] top-[2px] rounded-badge px-[5px] py-[3px] text-[12px] leading-none text-ink">×</button>
               </span>
             ))}
-            {uploading && <span className="flex h-[64px] w-[64px] flex-none items-center justify-center rounded-ctl border border-[rgba(245,246,248,.08)]"><Loader size={LOADER_SIZES.message} /></span>}
+            {uploading && <span className="flex h-[64px] w-[64px] flex-none items-center justify-center rounded-ctl border border-[color:var(--gx-hair)]"><Loader size={LOADER_SIZES.message} /></span>}
             <button type="button" onClick={() => setSourceMenu(true)} className="flex min-h-[64px] min-w-[64px] flex-1 items-center justify-center text-[13px] font-medium leading-none text-ink-body">+ Add</button>
           </div>
         </div>
@@ -318,7 +318,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <div className="grid grid-cols-2 gap-[6px]" role="list" aria-label="Ports">
             {ports.map((p) => (
               <span key={p.tag} role="listitem" className="flex items-center gap-[8px] rounded-tile border border-border bg-card px-[11px] py-[10px]">
-                <span className="relative h-[26px] w-[34px] flex-none overflow-hidden rounded-[5px] border border-border bg-[#1A1D24] ui-placeholder">{p.state === "ready" && stills[0]?.url && <img src={stills[0].url} alt="" className="absolute inset-0 h-full w-full object-cover" />}</span>
+                <span className="relative h-[26px] w-[34px] flex-none overflow-hidden rounded-[5px] border border-border bg-[color:var(--gx-input)] ui-placeholder">{p.state === "ready" && stills[0]?.url && <img src={stills[0].url} alt="" className="absolute inset-0 h-full w-full object-cover" />}</span>
                 <span className="flex min-w-0 flex-col gap-[3px]"><span className="ui-mono text-ink">{p.tag}</span><span className={`ui-mono ui-mono-cost ${p.state === "ready" ? "text-accent" : p.state === "later" ? "text-ink-muted" : "text-ink-body"}`}>{p.state}</span></span>
               </span>
             ))}
@@ -334,7 +334,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               )}
             </span>
             <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!!paid.pending||!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
-              className={`relative ml-auto h-[32px] w-[52px] flex-none rounded-[16px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
+              className={`relative ml-auto h-[32px] w-[52px] flex-none rounded-[16px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[color:var(--gx-thumb)]"}`}>
               <span className={`absolute top-[3px] h-[26px] w-[26px] rounded-full ${trainable && train ? "left-[23px] bg-ground" : "left-[3px] bg-ink"}`} />
             </button>
           </div>
@@ -370,17 +370,17 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           </div>
           <div className="flex flex-col gap-[8px] px-[20px] pt-[16px]">
             <span className="flex items-baseline gap-[10px]"><Mono>References · {refs.length}</Mono><span className="text-[13px] leading-[1.3] text-ink-body">{refs.length ? "The first is the canonical still." : "Drop stills of the same thing; three to six is plenty."}</span></span>
-            <div className="flex items-center gap-[8px] rounded-card border border-dashed border-[rgba(245,246,248,.22)] p-[10px] max-md:flex-wrap" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
+            <div className="flex items-center gap-[8px] rounded-card border border-dashed border-[color:var(--gx-hover-border)] p-[10px] max-md:flex-wrap" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
               <input ref={picker} type="file" accept="image/*,video/*,audio/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
               {refs.slice(0, 6).map((r, i) => (
-                <span key={`${r.uploadId ?? r.genId}-${i}`} className="relative h-[64px] w-[64px] flex-none overflow-hidden rounded-ctl border border-[rgba(245,246,248,.1)] ui-placeholder">
+                <span key={`${r.uploadId ?? r.genId}-${i}`} className="relative h-[64px] w-[64px] flex-none overflow-hidden rounded-ctl border border-[color:var(--gx-card-border)] ui-placeholder">
                   {r.url && r.kind === "image" && <img src={r.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                   {r.kind !== "image" && <span className="ui-mono absolute inset-0 flex items-center justify-center !text-[12px] tracking-normal text-ink-body">{r.kind === "video" ? "Clip" : "Audio"}</span>}
-                  {i === 5 && refs.length > 6 && <span className="ui-mono absolute inset-0 flex items-center justify-center bg-[rgba(11,13,17,.7)] !text-[12px] tracking-normal text-ink-body">+{refs.length - 5}</span>}
+                  {i === 5 && refs.length > 6 && <span className="ui-mono absolute inset-0 flex items-center justify-center bg-[color:var(--gx-on-media)] !text-[12px] tracking-normal text-ink-body">+{refs.length - 5}</span>}
                   <button type="button" onClick={() => setRefs((p) => p.filter((_, k) => k !== i))} aria-label={`Remove ${r.label}`} className="ui-chip-scrim absolute right-[2px] top-[2px] rounded-badge px-[4px] py-[2px] text-[10px] leading-none text-ink">×</button>
                 </span>
               ))}
-              {uploading && <span className="flex h-[64px] w-[64px] flex-none items-center justify-center rounded-ctl border border-[rgba(245,246,248,.1)]"><Loader size={LOADER_SIZES.message} /></span>}
+              {uploading && <span className="flex h-[64px] w-[64px] flex-none items-center justify-center rounded-ctl border border-[color:var(--gx-card-border)]"><Loader size={LOADER_SIZES.message} /></span>}
               <span className="ml-auto flex flex-none flex-col items-end gap-[6px]">
                 <span className="whitespace-nowrap text-[12.5px] leading-[1.3] text-ink-body">Drop more, or pick from</span>
                 <span className="flex gap-[4px]">
@@ -396,7 +396,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
             <span className="flex items-baseline gap-[10px]"><Mono>What particl reads from these</Mono><span className="text-[13px] leading-[1.3] text-ink-body">Each becomes a port in Rig. Nothing here costs anything.</span></span>
             <div className="grid grid-cols-4 gap-[8px] max-md:grid-cols-2" role="list" aria-label="Ports">
               {ports.map((p) => (
-                <div key={p.tag} role="listitem" className={`flex flex-col gap-[8px] rounded-tile border border-[rgba(245,246,248,.1)] bg-ground p-[8px] ${p.state === "optional" ? "opacity-60" : p.state === "later" ? "opacity-80" : ""}`}>
+                <div key={p.tag} role="listitem" className={`flex flex-col gap-[8px] rounded-tile border border-[color:var(--gx-card-border)] bg-ground p-[8px] ${p.state === "optional" ? "opacity-60" : p.state === "later" ? "opacity-80" : ""}`}>
                   <span className="relative h-[56px] rounded-[6px] border border-border ui-placeholder">
                     {p.state === "ready" && stills[0]?.url && <img src={stills[0].url} alt="" className="absolute inset-0 h-full w-full rounded-[6px] object-cover" />}
                     <span className="ui-chip-scrim absolute left-[5px] top-[5px] rounded-badge px-[5px] py-[4px]"><span className="ui-mono text-ink">{p.tag}</span></span>
@@ -411,9 +411,9 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               ))}
             </div>
           </div>
-          {trainRule !== "never" && <div className="mx-[20px] mt-[16px] flex items-center gap-[14px] rounded-card border border-[rgba(245,246,248,.1)] bg-ground px-[14px] py-[12px] max-md:flex-wrap">
+          {trainRule !== "never" && <div className="mx-[20px] mt-[16px] flex items-center gap-[14px] rounded-card border border-[color:var(--gx-card-border)] bg-ground px-[14px] py-[12px] max-md:flex-wrap">
             <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!!paid.pending||!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
-              className={`tap44 relative h-[20px] w-[36px] flex-none rounded-[10px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
+              className={`tap44 relative h-[20px] w-[36px] flex-none rounded-[10px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[color:var(--gx-thumb)]"}`}>
               <span className={`absolute top-[2px] h-[16px] w-[16px] rounded-full ${trainable && train ? "left-[18px] bg-ground" : "left-[2px] bg-ink"}`} />
             </button>
             <span className="flex min-w-0 flex-col gap-[4px]">

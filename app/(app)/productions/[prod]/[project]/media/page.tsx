@@ -19,7 +19,7 @@ import type { ProductionRow } from "@/lib/productions";
 import type { Gen } from "@/components/GenCard";
 
 /**
- * Project › Media (design/particl-v2/README.md §6; board 7b), value for
+ * Project › Media (design/particl-graphite/README.md §6; board 7b), value for
  * value. Under the production header: a 52px sub-bar, `0 24px`, 14 apart —
  * the `Shots · Media` segmented (`8px 14px`; the board's Boards and Approve
  * had no view behind them and are left out), the kind pills (`All · 41`,
@@ -33,7 +33,7 @@ import type { Gen } from "@/components/GenCard";
  * Media belongs to the project that made it and stays when a shot is
  * deleted; a take without a shot groups under `UNFILED`.
  *
- * Below 768 (design/particl-v2-mobile, board M2): the sub-tabs live in the
+ * Below 768 (design/particl-graphite, board M2): the sub-tabs live in the
  * production header; the body is `12px 16px`, 16 apart — the kind pills
  * scrolling edge to edge, each group's line (`SH01`, the title, `N items ·
  * N cr` at the right) over two columns of tiles 8 apart — and `Download N
@@ -169,7 +169,7 @@ export default function ProjectMediaPage() {
               <Mono tone="ink">{g.code}</Mono>
               {g.title && <span className="min-w-0 truncate text-[14px] font-semibold leading-[1.2] text-ink">{g.title}</span>}
               <span className="text-[12.5px] leading-none text-ink-body max-md:ml-auto max-md:flex-none max-md:text-[12px]">{g.items.length} {g.items.length === 1 ? "item" : "items"} · {fmt(g.items.reduce((a, m) => a + (money.inCredits ? m.credits : m.usd), 0))}</span>
-              <span className="h-px flex-1 self-center bg-[rgba(245,246,248,.07)] max-md:hidden" />
+              <span className="h-px flex-1 self-center bg-[color:var(--gx-hair)] max-md:hidden" />
               {g.id !== "unfiled" && <Link href={`/shots/${g.id}`} className="ui-mono text-ink-muted max-md:hidden">Open shot →</Link>}
             </div>
             <div className="grid grid-cols-6 gap-[10px] max-md:grid-cols-2 max-md:gap-[8px]">

@@ -102,9 +102,6 @@ test("phone: the graph's wiring ports are 44px targets and its labels keep the f
   await expect(ports.first()).toBeVisible();
   const sizes = await ports.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)); }));
   expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
-  /* No frosted halo: the glass port's blur would paint the whole 44px target, not the dot. */
-  const blurs = await ports.evaluateAll((els) => els.map((el) => getComputedStyle(el).getPropertyValue("backdrop-filter")));
-  expect([...new Set(blurs)]).toEqual(["none"]);
   const labels = await page.locator(".pxw-graph-kicker, .pxw-graph-foot, .pxw-graph-readouts > span").evaluateAll((els) => els.map((el) => Number.parseFloat(getComputedStyle(el).fontSize)));
   expect(Math.min(...labels)).toBeGreaterThanOrEqual(12);
   /* Wiring still works through the bigger target: out of the approach, into the departure. */

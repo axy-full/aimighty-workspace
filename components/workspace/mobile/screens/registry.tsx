@@ -55,7 +55,7 @@ export type MobilePageDef = {
 function RetiredFormPage({ page }: MobilePageProps) {
   return (
     <div className="pxm-pad-x pxm-pad-top" data-template="form" data-testid="mobile-form-retired">
-      <p className="pxm-note">{pageDef(page).title} ran on a signed-in Higgsfield account. {ACCOUNT_RETIRED}. {HISTORY_KEPT}</p>
+      <p className="pxm-note">{pageDef(page).title} is retired. {ACCOUNT_RETIRED}. {HISTORY_KEPT}</p>
     </div>
   );
 }

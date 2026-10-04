@@ -26,10 +26,11 @@ import { claimBinding, type GenerationRequest } from "./generationRequests";
 
 /**
  * LEGACY — the older LoRA identity trainer (four-suites PR F, 19 Sep 2026).
- * Cast & Elements and its navigation now use the identity system in
- * `lib/soulIdentities.ts` and `/api/soul/identities`. These routes, rows and
- * tests stay intact for accepted trainings and their renders; nothing in the
- * Particl suite creates new ones from the stage. Remaining entry points:
+ * Cast & Elements and its navigation use the identity system in
+ * `lib/soulIdentities.ts` and `/api/soul/identities` (on the platform's key;
+ * Cast's "Build identity" calls that route, not this one). These routes, rows
+ * and tests stay intact for accepted trainings and their renders; nothing in
+ * the Particl suite creates new ones from the stage. Remaining entry points:
  * `components/assets/NewAssetSheet.tsx` (Library, Rig canvas, Shots, Make)
  * and `components/QueueStrip.tsx` (the wall's in-flight strip).
  *

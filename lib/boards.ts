@@ -2,7 +2,7 @@ import { withMediaSources } from "./mediaMutation";
 import { db, ready, id as newId, now } from "./db";
 
 /**
- * Boards (design/particl-v2/README.md §8, §15): the Canvas as a generation
+ * Boards (design/particl-graphite/README.md §8, §15): the Canvas as a generation
  * graph. A board belongs to a project and holds its nodes and wires as
  * data — `node { id, kind, x, y, ports[], inputs[], output, settings,
  * state, credits, staleSince }`, `wire { from: {nodeId, portId}, to:

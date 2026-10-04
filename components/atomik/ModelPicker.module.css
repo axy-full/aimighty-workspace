@@ -16,7 +16,7 @@
   max-height: min(600px, var(--radix-popover-content-available-height, 80dvh)); overflow: hidden;
   padding: 0; border: 1px solid var(--graphite-edge); border-radius: 10px; background: var(--graphite-panel);
   color: var(--graphite-ink); font: 13px/1.45 var(--graphite-font); letter-spacing: -.01em;
-  box-shadow: 0 32px 80px rgba(0, 0, 0, .7); outline: none; color-scheme: dark; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+  box-shadow: var(--gx-shadow-dialog); outline: none; color-scheme: dark; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 .popup *, .popup *::before, .popup *::after { box-sizing: border-box; }
 .heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; font-size: 16px; font-weight: 600; flex: none; grid-column: 1 / -1; grid-row: 1; }
@@ -37,7 +37,7 @@
 .groupHeading > span:last-child { font-size: 10px; color: var(--graphite-muted); letter-spacing: 0; font-weight: 400; }
 .option { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 10px; border: 1px solid var(--graphite-line); border-radius: 6px; cursor: pointer; user-select: none; background: var(--graphite-control); margin-bottom: 4px; }
 .option[data-active="true"] { background: var(--graphite-hover); border-color: var(--graphite-line); }
-.option[data-selected="true"] { background: rgba(10, 132, 255, .12); border-color: rgba(10, 132, 255, .35); }
+.option[data-selected="true"] { background: var(--gx-tint-12); border-color: var(--gx-tint-border); }
 .optionText { display: grid; flex-direction: column; gap: 10px; min-width: 0; flex: 1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .modelName { color: var(--graphite-ink); font-size: 12px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
 .capabilities { color: var(--graphite-muted); font-size: 11px; font-weight: 400; line-height: 1.5; }
@@ -57,7 +57,7 @@
 .effortLabel { color: var(--graphite-ink); font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
 .effortText .capabilities { white-space: normal; overflow-wrap: anywhere; }
 .effortOption[data-highlighted] { background: var(--graphite-hover); outline: 1px solid var(--graphite-accent); outline-offset: -1px; }
-.effortOption[data-state="checked"] { background: rgba(10, 132, 255, .12); }
+.effortOption[data-state="checked"] { background: var(--gx-tint-12); }
 .effortOption[data-disabled] { opacity: .45; cursor: not-allowed; }
 .effortNote { margin: 6px 0 0; color: var(--graphite-body); font-size: 11px; line-height: 1.5; }
 @media (max-width: 760px) {
@@ -88,7 +88,7 @@
 /* On a phone, keep the same searchable picker in a reachable bottom sheet. */
 @media (max-width:759px) {
  :global([data-radix-popper-content-wrapper]):has(> .popup) {position:fixed!important;inset:auto 0 var(--app-keyboard-inset,0px)!important;width:100%;min-width:0!important;transform:none!important;z-index:250!important}
- .popup {display:flex;width:100%;max-width:none;max-height:min(82dvh,calc(var(--app-visible-height,100dvh) - 24px));border-radius:18px 18px 0 0;background:var(--graphite-card);box-shadow:0 0 0 100vmax #0009;padding-bottom:env(safe-area-inset-bottom)}
+ .popup {display:flex;width:100%;max-width:none;max-height:min(82dvh,calc(var(--app-visible-height,100dvh) - 24px));border-radius:18px 18px 0 0;background:var(--graphite-card);box-shadow:0 0 0 100vmax var(--gx-scrim);padding-bottom:env(safe-area-inset-bottom)}
  .popup::before {content:"";display:block;flex:none;width:36px;height:5px;margin:12px auto 0;border-radius:3px;background:var(--graphite-selected)}
  .heading {padding:14px 20px 12px;font-size:20px;letter-spacing:-.03em;font-weight:500}.heading>span:nth-child(2){margin-left:auto;font-size:11px;color:var(--graphite-muted)}
  /* A 44px target round the same 20px cross; the negative margin keeps the heading's row as it was. */

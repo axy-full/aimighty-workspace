@@ -10,23 +10,23 @@
 .modes button,
 .presets button {
   text-align: left;
-  border: 1px solid #ffffff18;
-  background: #ffffff03;
+  border: 1px solid var(--gx-hair-strong);
+  background: transparent;
   border-radius: 12px;
   padding: 16px;
-  color: #edeff2;
+  color: var(--gx-text);
   font-size: 13px;
   cursor: pointer;
 }
 .modes button[aria-pressed="true"],
 .presets button[aria-pressed="true"] {
-  border-color: #5cc8b475;
-  background: #5cc8b40a;
+  border-color: var(--gx-tint-border-45);
+  background: var(--gx-tint-08);
 }
 .modes span,
 .presets small {
   display: block;
-  color: #969aa3;
+  color: var(--gx-text-2);
   font-size: 11px;
   line-height: 1.6;
   margin-top: 6px;
@@ -38,17 +38,17 @@
 }
 .catalog {
   padding: 18px 0;
-  border-top: 1px solid #ffffff12;
+  border-top: 1px solid var(--gx-hair);
 }
 .search {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #ffffff05;
-  border: 1px solid #ffffff14;
+  background: transparent;
+  border: 1px solid var(--gx-hair);
   border-radius: 10px;
   padding: 10px 12px;
-  color: #969aa3;
+  color: var(--gx-text-2);
 }
 .panel .search input {
   border: 0;
@@ -57,12 +57,12 @@
   box-shadow: none;
   min-width: 0;
   flex: 1;
-  color: #edeff2;
+  color: var(--gx-text);
   font-size: 13px;
   outline: 0;
 }
 .search:focus-within {
-  border-color: #5cc8b4;
+  border-color: var(--gx-accent);
 }
 .presets {
   display: grid;
@@ -81,7 +81,7 @@
 .presets button svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: #5cc8b4;
+  color: var(--gx-accent-text);
 }
 .presets button span {
   flex: 1;
@@ -92,14 +92,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 14px;
-  color: #969aa3;
+  color: var(--gx-text-2);
   font-size: 11px;
 }
 .catalogFooter > span {
   margin-right: auto;
 }
 .detail {
-  border-left: 2px solid #5cc8b4;
+  border-left: 2px solid var(--gx-accent);
   padding: 3px 15px;
   margin-top: 20px;
 }
@@ -109,7 +109,7 @@
 }
 .detail p {
   font-size: 12px;
-  color: #969aa3;
+  color: var(--gx-text-2);
   line-height: 1.7;
   margin-top: 7px;
 }
@@ -126,7 +126,7 @@
   margin-top: 12px;
   overflow: hidden;
   border-radius: 9px;
-  background: #ffffff05;
+  background: transparent;
 }
 .preview img {
   width: 100%;

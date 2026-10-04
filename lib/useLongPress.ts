@@ -3,8 +3,8 @@
 import { useRef, type PointerEvent as RPointerEvent } from "react";
 
 /**
- * A long-press and a drag, told apart by the finger (design/particl-v2-
- * mobile/README.md, M3: "long-press opens the context menu sheet; drag
+ * A long-press and a drag, told apart by the finger (design/particl-graphite/README.md;
+ * the earlier phone handoff, M3: "long-press opens the context menu sheet; drag
  * reorders"). Hold still for 500ms and the press fires at the point; move
  * more sideways than down before that and a drag begins (the page keeps
  * vertical scrolling for itself via `touch-action: pan-y`); move down and

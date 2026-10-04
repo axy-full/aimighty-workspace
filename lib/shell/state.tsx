@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { isCrewPage, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { isCrewPage, pageAlias, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
@@ -222,6 +222,12 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       /* The landing replaces the entry URL: Back leaves /suites instead of re-opening the same page. */
       ws.go(target.legacy.suite, target.legacy.page, { replace: true });
       writeParams({ ...params, sp: target.id }, "replace");
+    } else if (pageAlias(suiteId, params.sp)) {
+      /* An old link to a page that left the strip (Business › Ads): the address names the page it landed on, from here on. */
+      const renamed = { ...params, sp: mapped.id };
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- One shot on landing: the retired id leaves the shell's params with the URL, so no later write puts it back.
+      setParams(renamed);
+      writeParams(renamed, "replace");
     }
     /* One shot: a reload of this URL should not reopen search. */
     if (findRequested(window.location.search)) window.history.replaceState(null, "", window.location.pathname + withoutFind(window.location.search) + window.location.hash);

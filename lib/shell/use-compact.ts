@@ -2,7 +2,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The phone's compact chrome (app/phone-chrome.css): below 768px the project
+ * The phone's compact chrome (components/graphite/phone.css): below 768px the project
  * switcher and the page strip share the top bar's second row, so the shell
  * renders them there instead of in the stage. A short landscape touch screen
  * uses one row. The query is the stylesheet's.

@@ -1,12 +1,14 @@
 # Handoff: particl — node-graph surfaces (recipes, credits, provenance)
 
+> **Superseded 3 October 2026.** The one design for Particl is `design/particl-graphite/` (start at its `README.md`). The HTML references and the token file this document used to ship with were removed in D0; where it cites them, read the Graphite master and README § Design tokens instead. Kept for the product behaviour it records, not for the look.
+
 ## Overview
 
 Seven surfaces for the graph layer of **particl**, a production tool for AI filmmaking. A *recipe* is a graph of production stages; a *run* executes it; every stage and every swap has a price in credits, and the price is always on the button before it is pressed.
 
 **1 credit = 10¢.** Every number in these designs is placeholder data from one sample production (**Northline**, 30s car spot, 12 shots, @Cass, @Workshop, @The Mule, Bleach bypass look).
 
-Two turns, both in one reference file (`design-references/Particl Node Graph.dc.html`), newest first:
+Two turns, both in one reference file (`design/particl-graphite/Particl Suites.dc.html`), newest first:
 
 | id | Surface | Size | What it answers |
 |---|---|---|---|
@@ -20,7 +22,7 @@ Two turns, both in one reference file (`design-references/Particl Node Graph.dc.
 
 ## About the design file
 
-`design-references/Particl Node Graph.dc.html` is a **design reference authored in HTML** — a prototype of the intended look and behaviour, not production code. Recreate these surfaces in the ark-video Next.js codebase. `support.js` is a preview-only runtime; do not port it. Open the file directly in a browser (keep `support.js` beside it) — the interactive parts are live: the fix options on 1a, the three choices on 1b, node selection on 1d, the attribute rows on 2b and the plate picker on 2c.
+`design/particl-graphite/Particl Suites.dc.html` is a **design reference authored in HTML** — a prototype of the intended look and behaviour, not production code. Recreate these surfaces in the ark-video Next.js codebase. `support.js` is a preview-only runtime; do not port it. Open the file directly in a browser (keep `support.js` beside it) — the interactive parts are live: the fix options on 1a, the three choices on 1b, node selection on 1d, the attribute rows on 2b and the plate picker on 2c.
 
 Every striped grey rectangle with a monospace caption is an **image placeholder**. In production these are real frames: keyframes, take thumbnails, reference photos, location plates, turntable views. The whole point of 2a is that they are pictures, so do not ship it with text where a thumbnail belongs.
 
@@ -34,7 +36,7 @@ Every striped grey rectangle with a monospace caption is an **image placeholder*
 
 ## Tokens used here (light mode)
 
-Full tables in `DESKTOP-README.md` and `design-tokens.json`. What these surfaces rely on:
+Full tables in `DESKTOP-README.md` and `design/particl-graphite/README.md` § Design tokens. What these surfaces rely on:
 
 | Token | Value |
 |---|---|
@@ -231,9 +233,9 @@ Conventions: costs are integers in credits, formatted `N cr` (lowercase in body,
 ```
 README.md                                    this document
 DESKTOP-README.md                            shared design system + the other twelve screens
-design-tokens.json                           machine-readable tokens
+(tokens: design/particl-graphite/README.md § Design tokens)
 assets/                                      particl mark, light and dark, SVG
-design-references/
+design/particl-graphite/                     the one design — the files below were removed in D0
   Particl Node Graph.dc.html                 all seven surfaces, turn 2 above turn 1
   support.js                                 preview runtime only — do not port
 ```

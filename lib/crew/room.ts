@@ -1,5 +1,5 @@
 /**
- * Crew, as data (design/particl-suites/CREW_ADDENDUM.md). Pure: who can be
+ * Crew, as data (design/particl-graphite/README.md). Pure: who can be
  * seated, what each agent is told, how an answer is read, and what a round
  * may cost at most. The phase instructions and the two regexes are the
  * prototype's, verbatim (Particl Crew.dc.html) — they are the spec.

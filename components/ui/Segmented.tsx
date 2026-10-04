@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 /**
- * Segmented control (design/particl-v2/README.md §3; board 7a): a `--card`
+ * Segmented control (design/particl-graphite/README.md §3; board 7a): a `--card`
  * pill with a 1px `--border` edge and 2px of padding, 2px between options;
  * each option a 999 pill in Outfit 500 13px, `--ink-body`, the active one
  * filled `--selected` in ink. The option padding is the board's where the
@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
  * toolbar (8a, 8b, 7b), `6px 12px` in the 44px Rig bar (9b, 6a, 3a). A
  * filter between a few views of the same thing — never a form field.
  *
- * `fill` is the phone's cut (design/particl-v2-mobile, M1–M3): the control
+ * `fill` is the phone's cut (design/particl-graphite, M1–M3): the control
  * fills its row, each option `flex:1`, 40px tall, centred.
  */
 export type SegmentedOption<T extends string> = { value: T; label: ReactNode };

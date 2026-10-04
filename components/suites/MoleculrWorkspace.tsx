@@ -156,7 +156,7 @@ export function MoleculrWorkspace({
       <header className="suite-page-intro">
         <div>
           <span className="suite-kicker">
-            <i className="suite-dot" style={{ background: "#5CC8B4" }} />
+            <i className="suite-dot" style={{ background: "var(--gx-suite-business)" }} />
             Moleculr Business Suite / {project.name}
           </span>
           <h1>Your marketing studio.</h1>
@@ -166,7 +166,7 @@ export function MoleculrWorkspace({
           </p>
         </div>
         <button className="suite-button" onClick={onAgent}>
-          Ask Atomik Super Agent <ArrowUpRight size={15} />
+          Ask Atomik Agent <ArrowUpRight size={15} />
         </button>
       </header>
       <nav className="moleculr-sections-nav" aria-label="Marketing Studio sections">

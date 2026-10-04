@@ -1,7 +1,7 @@
 import type { PageId, Suite } from "@/lib/workspace/types";
 
 /**
- * The Suites shell's information architecture (design/particl-suites/README.md
+ * The Suites shell's information architecture (design/particl-graphite/README.md
  * › Information architecture). Four suites plus two views that are not suites
  * (Gen, Workspace). Every page maps onto a page the state layer already knows
  * (lib/workspace/pages.ts), so navigation, selection repair and the page
@@ -56,7 +56,7 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The two screens outside the strip (GLASS_SPEC §3): `home` is the phone's
+ * The two screens outside the strip (design/particl-graphite/README.md › Phone): `home` is the phone's
  * suite picker — "Where to?" — that the Home tab and the phone's mark return
  * to; `stages` is the Studio home: the stage grid behind the phone's Studio
  * tile (with a Home back), and where the mark goes on a desktop. Both share
@@ -74,7 +74,7 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 07; Business after 02 and 03; Viral after 02; Atomik after 01 and 04. */
+/** Group starts: Studio after 03 and 07; Business after 01 and 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
   own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
@@ -95,12 +95,12 @@ export const SHELL_SUITES: ShellSuite[] = [
     ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
   ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them.
-     After Setup, Particl's own tools (lib/shell/business-own.ts): they need no connected account, so
-     every member of every workspace uses them. */
-  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite · Marketing Studio", "moleculr", [2, 3], [
-    ["ads", "Ads", "Marketing Studio", "Branded video: a product, who presents it, an optional hook or setting, and the mode", "marketing"],
+     Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
+     Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),
+     and an old `sp=ads` link lands on Image ads (SHELL_PAGE_ALIASES). */
+  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite", "moleculr", [1, 2], [
     ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
-    ["setup", "Setup", "Setup items", "Avatars · hooks · settings · styles", "marketing"],
+    ["setup", "Setup", "Setup items", "Saved products, brand kit and reference ad", "marketing"],
     ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
     ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
     ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Gen", "marketing"],
@@ -138,7 +138,7 @@ export const SHELL_SUITES: ShellSuite[] = [
 export const HEADER_SEGMENT: { id: ShellSuiteId | "gen" | "crew"; label: string; title: string }[] = [
   { id: "studio", label: "Studio", title: "Particl Production Studio" },
   { id: "gen", label: "Gen", title: "Generate" },
-  { id: "business", label: "Business", title: "Moleculr Business Suite · Marketing Studio" },
+  { id: "business", label: "Business", title: "Moleculr Business Suite" },
   { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
   { id: "atomik", label: "Atomik", title: "Atomik Agent" },
   /* Crew is a module with its own tables and pages, not a production suite (CREW_ADDENDUM.md). */
@@ -161,8 +161,19 @@ export function isShellSuite(value: unknown): value is ShellSuiteId {
 export function shellSuite(id: ShellSuiteId): ShellSuite {
   return SHELL_SUITES.find((s) => s.id === id)!;
 }
+/**
+ * Page ids that left the strip, and the page an old link (`sp=<id>`) or a remembered page lands on instead.
+ * Business › Ads was removed; Business opens on Image ads.
+ */
+export const SHELL_PAGE_ALIASES: Readonly<Partial<Record<ShellSuiteId, Readonly<Record<string, string>>>>> = { business: { ads: "dtc" } };
+/** The page id a retired id stands for in this suite, or null when the id is not a retired one. */
+export function pageAlias(suite: ShellSuiteId, page: string | null | undefined): string | null {
+  const aliases = SHELL_PAGE_ALIASES[suite];
+  return page && aliases && Object.hasOwn(aliases, page) ? aliases[page] : null;
+}
 export function shellPage(suite: ShellSuiteId, page: string | null | undefined): ShellPage | null {
-  return shellSuite(suite).pages.find((p) => p.id === page) ?? null;
+  const id = pageAlias(suite, page) ?? page;
+  return shellSuite(suite).pages.find((p) => p.id === id) ?? null;
 }
 export function firstShellPage(suite: ShellSuiteId): ShellPage {
   return shellSuite(suite).pages[0];
@@ -183,8 +194,10 @@ export function suiteOfLegacy(legacy: Suite): ShellSuiteId {
 export function pageOfLegacy(legacy: Suite, page: PageId, hint?: string | null): ShellPage | null {
   const suite = shellSuite(suiteOfLegacy(legacy));
   const matches = suite.pages.filter((p) => p.legacy.page === page);
+  /* A retired id in the hint (an old `sp=ads` link) is the page that replaced it. */
+  const wanted = pageAlias(suite.id, hint) ?? hint;
   /* With no hint, the stage named like its backing page wins (Storyboards over Environment, Brief over Beats). */
-  return matches.find((p) => p.id === hint) ?? matches.find((p) => p.id === page) ?? matches[0] ?? null;
+  return matches.find((p) => p.id === wanted) ?? matches.find((p) => p.id === page) ?? matches[0] ?? null;
 }
 export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_SUITES.flatMap((suite) => suite.pages.map((page) => ({ suite, page })));
 

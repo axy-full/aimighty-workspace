@@ -10,7 +10,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import Mono from "@/components/ui/Mono";
 
 /**
- * The account menu (design/particl-v2/README.md §4; board 4a): a 32px
+ * The account menu (design/particl-graphite/README.md §4; board 4a): a 32px
  * avatar — `--card`, 1px `--border-mid`, the initials in mono; inverted to
  * ink on ground while the menu is open — and beneath it, at `right 20px,
  * top 60px`, a 220px `--card` panel with a 1px `--border-mid` edge, radius
@@ -63,7 +63,7 @@ export default function AccountMenu() {
 
   const row = (on: boolean) =>
     `flex items-center justify-between rounded-ctl px-[12px] py-[10px] text-[13.5px] font-medium leading-none ${
-      on ? "bg-selected text-ink" : "text-ink-body hover:bg-[rgba(245,246,248,.08)]"}`;
+      on ? "bg-selected text-ink" : "text-ink-body hover:bg-[color:var(--gx-input)]"}`;
 
   const signOut = async () => {
     setError("");

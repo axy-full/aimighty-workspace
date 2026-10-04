@@ -1,7 +1,7 @@
 import type { BoardNode, BoardWire, NodeKind } from "@/lib/boards";
 
 /**
- * The geometry of board 6a (design/particl-v2/README.md §8), in the numbers
+ * The geometry of board 6a (design/particl-graphite/README.md §8), in the numbers
  * the Canvas and its wires share. Every node is `--card`, radius 12, a 1px
  * border, a 32px header (36 on a shot) with a 9.5px mono kind tag; widths
  * by kind; rows of fixed height so a dot — 8px, centred on the node's edge

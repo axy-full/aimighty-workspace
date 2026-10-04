@@ -32,11 +32,11 @@ function renderedCircles(svg: Svg) {
 
 test("Atomik keeps the previous website's original eight-dot SVG geometry on both grounds", () => {
   const dark = readFileSync(
-    "design/particl-v2/assets/atomik-ring-on-dark.svg",
+    "brand/atomik/atomik-ring-on-dark.svg",
     "utf8",
   );
   const light = readFileSync(
-    "design/particl-v2/assets/atomik-ring-on-light.svg",
+    "brand/atomik/atomik-ring-on-light.svg",
     "utf8",
   );
   expect(circles(dark)).toHaveLength(8);
@@ -60,7 +60,7 @@ test("the workbench uses the shared Atomik mark instead of the unrelated orbital
 
 test("the shared Particl mark preserves the previous website's seven-dot trail", () => {
   const reference = readFileSync(
-    "design/particl-v2/assets/particl-mark-on-dark.svg",
+    "brand/particl/particl-mark-on-dark.svg",
     "utf8",
   );
   const shipped = readFileSync("public/brand/particl-mark-on-dark.svg", "utf8");

@@ -40,11 +40,11 @@
 .pxw .pxw-graph-wrap { padding: 24px; }
 .pxw .pxw-graph-canvas { position: relative; transform-origin: 0 0; }
 /* The board: a bounded surface the canvas pans and zooms inside (pinch or ⌘-wheel zooms, wheel or drag pans). */
-.pxw .pxw-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 260px), 1200px); border-radius: 16px; border: 1px solid var(--pxw-control-border); touch-action: none; cursor: grab; background-color: rgba(255, 255, 255, .015); background-image: radial-gradient(rgba(255, 255, 255, .07) 1px, transparent 1.2px); }
+.pxw .pxw-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 260px), 1200px); border-radius: 16px; border: 1px solid var(--pxw-control-border); touch-action: none; cursor: grab; background-color: var(--gx-root); background-image: none; }
 .pxw .pxw-graph-surface:active { cursor: grabbing; }
 .pxw .pxw-graph-zoom { position: absolute; right: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
 .pxw .pxw-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
-.pxw .pxw-graph-zoom button:hover { background: rgba(255, 255, 255, .08); }
+.pxw .pxw-graph-zoom button:hover { background: var(--gx-input-hover); }
 .pxw .pxw-graph-zoom button:disabled { opacity: .6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-zoom button { min-width: 44px; height: 44px; } }
 .pxw .pxw-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -52,24 +52,24 @@
 .pxw .pxw-graph-node[data-shape="text"],
 .pxw .pxw-graph-node[data-shape="operator"],
 .pxw .pxw-graph-node[data-shape="flow"] { padding: 13px; }
-.pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1); }
+.pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: var(--gx-ring-selected); }
 .pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
 .pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port):not(.pxw-graph-peer):not(.pxw-graph-live) { pointer-events: none; position: relative; }
 .pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
-.pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
+.pxw .pxw-graph-hit:hover { background: var(--gx-hair-soft); }
 /* A card's kicker and footer are labels people read (its type, version, state and role): at the label floor, never under it. */
 .pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-label-floor); }
-.pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: var(--gx-accent-text); }
 /* A reference's kind (Cast, Environment, Element, Ref) is a label people read and act on: above the label floor. */
 .pxw .pxw-graph-kind { color: var(--pxw-muted); }
-.pxw .pxw-graph-node[data-selected] .pxw-graph-kind { color: #7fb6ff; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-kind { color: var(--gx-accent-text); }
 .pxw .pxw-graph-media { position: relative; display: flex; flex-direction: column; border-radius: 7px; margin-top: 9px; overflow: hidden; }
 .pxw .pxw-graph-node[data-shape="scene"] .pxw-graph-media { border-radius: 8px; margin-top: 10px; }
 .pxw .pxw-graph-media > span:not(.pxw-graph-badge) { display: block; }
 .pxw .pxw-graph-media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* A video take shows its own frame (LazyMedia), laid over the bands like a picture. */
 .pxw .pxw-rig-thumb > .pxw-thumb-video, .pxw .pxw-graph-media > .pxw-thumb-video { position: absolute; inset: 0; display: block; }
-.pxw .pxw-graph-badge { position: absolute; left: 8px; bottom: 8px; font-family: var(--pxw-mono); font-size: 8.5px; letter-spacing: 0.09em; color: var(--pxw-near-primary); background: rgba(0, 0, 0, 0.55); padding: 2px 6px; border-radius: 4px; }
+.pxw .pxw-graph-badge { position: absolute; left: 8px; bottom: 8px; font-family: var(--pxw-mono); font-size: 8.5px; letter-spacing: 0.09em; color: var(--pxw-near-primary); background: var(--gx-on-media); padding: 2px 6px; border-radius: 4px; }
 .pxw .pxw-graph-title { display: block; font-size: 13px; font-weight: 545; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pxw .pxw-graph-node[data-shape="text"] .pxw-graph-title,
 .pxw .pxw-graph-node[data-shape="operator"] .pxw-graph-title { font-weight: 560; margin-top: 9px; }
@@ -101,7 +101,7 @@
 .pxw .pxw-graph-foot { margin-top: auto; padding-top: 8px; min-width: 0; }
 .pxw .pxw-graph-kicker-label { display: inline-flex; gap: 7px; min-width: 0; }
 .pxw .pxw-graph-code { color: var(--pxw-muted); }
-.pxw .pxw-graph-node[data-selected] .pxw-graph-code { color: #7fb6ff; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-code { color: var(--gx-accent-text); }
 .pxw .pxw-graph-state { flex: none; color: var(--pxw-muted); font-weight: 560; }
 .pxw .pxw-graph-state[data-tone="red"] { color: var(--pxw-red-ink); }
 .pxw .pxw-graph-detail { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -115,9 +115,9 @@
 .pxw .pxw-graph-editor { position: relative; z-index: 2; display: block; box-sizing: border-box; width: 100%; flex: 1 1 auto; min-height: 0; margin-top: 6px; padding: 6px 8px; resize: none; border-radius: 8px; border: 1px solid var(--pxw-blue); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 12.5px; line-height: 1.5; outline: none; cursor: text; }
 /* A section title: a heading on the board, not a card — its name, what it holds, and a rule that spans its columns. */
 .pxw .pxw-graph-node[data-section],
-.gx .pxw .pxw-graph-node[data-section] { justify-content: flex-end; padding: 0 40px 8px 2px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.16); border-radius: 0; box-shadow: none; backdrop-filter: none; }
+.gx .pxw .pxw-graph-node[data-section] { justify-content: flex-end; padding: 0 40px 8px 2px; background: transparent; border: 0; border-bottom: 1px solid var(--gx-dashed); border-radius: 0; box-shadow: none; }
 .pxw .pxw-graph-node[data-section][data-selected],
-.gx .pxw .pxw-graph-node[data-section][data-selected] { background: rgba(10, 132, 255, 0.08); border: 0; border-bottom: 1.5px solid var(--pxw-blue); border-radius: 8px 8px 0 0; box-shadow: none; }
+.gx .pxw .pxw-graph-node[data-section][data-selected] { background: var(--gx-tint-08); border: 0; border-bottom: 1.5px solid var(--pxw-blue); border-radius: 8px 8px 0 0; box-shadow: none; }
 .pxw .pxw-graph-node[data-section] .pxw-graph-hit { border-radius: 8px 8px 0 0; }
 .pxw .pxw-graph-node[data-section] .pxw-graph-edit { top: 4px; }
 .pxw .pxw-graph-section-name { display: block; font-size: 20px; font-weight: 620; line-height: 1.2; letter-spacing: -0.02em; color: var(--pxw-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -127,10 +127,10 @@
 .pxw .pxw-graph-tools-strip { position: absolute; left: 12px; top: 12px; z-index: 7; }
 .pxw .pxw-graph-tools { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); cursor: default; }
 .pxw .pxw-graph-tools button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: inherit; font-size: 13px; cursor: pointer; }
-.pxw .pxw-graph-tools button:hover { background: rgba(255, 255, 255, 0.08); }
+.pxw .pxw-graph-tools button:hover { background: var(--gx-input-hover); }
 .pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
-/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in app/production.css, whose 44 px rules stop at
+/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in components/graphite/production/production.css, whose 44 px rules stop at
    759 px wide): on any touch screen, a landscape phone included, its head link, group chips and "+" are thumb-sized targets. */
 @media (pointer: coarse) {
   .gx .pxw-rig-library .pxw-rig-library-head .pxw-link-button,
@@ -144,10 +144,10 @@
 .pxw .pxw-insp-preview { position: relative; aspect-ratio: 16 / 9; border-radius: 11px; overflow: hidden; display: flex; flex-direction: column; background: var(--pxw-control); }
 .pxw .pxw-insp-preview > span:not(.pxw-insp-playhead) { display: block; }
 .pxw .pxw-insp-preview > video,
-.pxw .pxw-insp-preview > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-.pxw .pxw-insp-playhead { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0, 0, 0, 0.45); display: block; }
+.pxw .pxw-insp-preview > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--gx-viewport); }
+.pxw .pxw-insp-playhead { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--gx-on-media); display: block; }
 .pxw .pxw-insp-playhead > span { display: block; height: 100%; background: var(--pxw-blue); }
-.pxw .pxw-insp-play { position: absolute; left: 8px; bottom: 9px; display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); font-size: 11px; font-weight: 530; }
+.pxw .pxw-insp-play { position: absolute; left: 8px; bottom: 9px; display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; background: var(--gx-on-media); font-size: 11px; font-weight: 530; }
 .pxw .pxw-insp-play:disabled { opacity: 0.7; }
 .pxw .pxw-insp-play-key { font-family: var(--pxw-mono); font-size: 9.5px; opacity: 0.65; }
 .pxw .pxw-insp-tabs { margin-top: 13px; }
@@ -164,11 +164,11 @@
 .pxw .pxw-insp-field { margin-bottom: 11px; }
 .pxw .pxw-insp-pair { display: flex; gap: 9px; }
 .pxw .pxw-insp-pair > * { flex: 1; min-width: 0; }
-.pxw .pxw-insp-estimate { padding: 11px 12px; border-radius: 10px; background: #0a0e14; border: 1px solid #16212e; }
+.pxw .pxw-insp-estimate { padding: 11px 12px; border-radius: 10px; background: var(--gx-tint-08); border: 1px solid var(--gx-tint-border); }
 .pxw .pxw-insp-estimate-row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--pxw-dimmer); }
 .pxw .pxw-insp-estimate-value { font-family: var(--pxw-mono); font-size: 15px; font-weight: 620; color: var(--pxw-blue-ink); }
 .pxw .pxw-insp-estimate-meta { font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-label-floor); margin-top: 6px; }
-.pxw .pxw-insp-generate { width: 100%; text-align: center; margin-top: 11px; padding: 10px; border-radius: 10px; background: var(--pxw-blue); color: #fff; font-size: 13px; font-weight: 570; }
+.pxw .pxw-insp-generate { width: 100%; text-align: center; margin-top: 11px; padding: 10px; border-radius: 10px; background: var(--pxw-blue); color: var(--gx-on-accent); font-size: 13px; font-weight: 570; }
 .pxw .pxw-insp-generate:hover:not(:disabled) { background: var(--pxw-blue-hover); }
 .pxw .pxw-insp-generate:disabled { background: var(--pxw-control); color: var(--pxw-dimmer); border: 1px solid var(--pxw-control-border); }
 .pxw .pxw-insp-error,
@@ -231,25 +231,25 @@
 .pxw .pxw-graph-master { color: inherit; }
 
 /* Delete shot: quiet until needed, red when it matters. */
-.pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: #FF6961; font-size: 13px; }
+.pxw-insp-delete { align-self: flex-start; margin-top: 4px; color: var(--gx-failed-text); font-size: 13px; }
 .pxw-insp-delete:disabled { opacity: .45; }
 /* The team canvas: teammates' cursors, selections and drags; cards move by dragging. */
 .pxw .pxw-graph-node .pxw-graph-hit { cursor: grab; }
-.pxw .pxw-graph-node[data-moving] { z-index: 5; box-shadow: 0 18px 40px rgba(0, 0, 0, .45); }
+.pxw .pxw-graph-node[data-moving] { z-index: 5; box-shadow: var(--gx-shadow-pop); }
 .pxw .pxw-graph-node[data-moving] .pxw-graph-hit { cursor: grabbing; }
-.pxw .pxw-graph-peer { position: absolute; top: -22px; left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; pointer-events: none; }
+.pxw .pxw-graph-peer { position: absolute; top: -22px; left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--gx-on-accent); white-space: nowrap; pointer-events: none; }
 .pxw .pxw-graph-cursor { position: absolute; z-index: 6; pointer-events: none; display: flex; align-items: flex-start; gap: 2px; transition: left .08s linear, top .08s linear; }
-.pxw .pxw-graph-cursor > span { margin-top: 12px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; }
+.pxw .pxw-graph-cursor > span { margin-top: 12px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--gx-on-accent); white-space: nowrap; }
 .pxw .pxw-team { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 12.5px; color: var(--pxw-muted); }
 .pxw .pxw-team-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pxw-faint); }
-.pxw .pxw-team[data-mode="live"] .pxw-team-dot { background: #30D158; box-shadow: 0 0 0 3px rgba(48, 209, 88, .18); }
-.pxw .pxw-team-peer { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); color: var(--pxw-text, #fff); }
-.pxw .pxw-team-peer i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; }
+.pxw .pxw-team[data-mode="live"] .pxw-team-dot { background: var(--gx-done); box-shadow: 0 0 0 3px var(--gx-done-tint); }
+.pxw .pxw-team-peer { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); color: var(--pxw-text, var(--gx-on-accent)); }
+.pxw .pxw-team-peer i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: var(--gx-on-accent); }
 /* An old board coming across (components/workspace/rig/RigImport.tsx): what is happening, then what came across. */
 .pxw .pxw-import { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--pxw-control-border); background: var(--pxw-card); }
 .pxw .pxw-import-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--pxw-atomik-gold); }
-.pxw .pxw-import[data-phase="done"] .pxw-import-dot { background: #30D158; }
-.pxw .pxw-import[data-phase="failed"] .pxw-import-dot { background: #FF6961; }
+.pxw .pxw-import[data-phase="done"] .pxw-import-dot { background: var(--gx-done); }
+.pxw .pxw-import[data-phase="failed"] .pxw-import-dot { background: var(--gx-failed); }
 .pxw .pxw-import-text { flex: 1 1 220px; min-width: 0; }
 .pxw .pxw-import-line { margin: 0; font-size: 13px; line-height: 1.45; color: var(--pxw-primary); overflow-wrap: anywhere; }
 .pxw .pxw-import-note { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--pxw-muted); overflow-wrap: anywhere; }
@@ -301,8 +301,6 @@
   .pxw .pxw-graph-editor { font-size: 16px; }
   .pxw .pxw-graph-node .pxw-graph-port,
   .gx .pxw .pxw-graph-node .pxw-graph-port { width: 44px; height: 44px; margin-top: -22px; border: 16.5px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1.5px var(--pxw-hover-border); }
-  /* The glass port's blur (app/glass.css) paints the whole border box: over a 44px target it is a frosted halo, not a dot. */
-  .gx .pxw .pxw-graph-node .pxw-graph-port { backdrop-filter: none; }
   .pxw .pxw-graph-node .pxw-graph-port--in { left: -22px; }
   .pxw .pxw-graph-node .pxw-graph-port--out { right: -22px; }
   .pxw .pxw-graph-node .pxw-graph-port:hover,
@@ -310,7 +308,7 @@
   .gx .pxw .pxw-graph-node .pxw-graph-port:hover,
   .gx .pxw .pxw-graph-node .pxw-graph-port[data-armed] { border-color: transparent; box-shadow: inset 0 0 0 1.5px var(--pxw-blue); }
 
-  /* The shot Inspector: the phone sheet's own floors (app/workspace-mobile.css › The Inspector sheet). */
+  /* The shot Inspector: the phone sheet's own floors (components/workspace/mobile/mobile.css › The Inspector sheet). */
   .pxw [data-inspector-body="shot"] .pxw-kicker,
   .pxw [data-inspector-body="shot"] .pxw-field-label,
   .pxw [data-inspector-body="shot"] .pxw-pill-label,
@@ -356,12 +354,12 @@
    dims by opacity; on a phone every control is at least 44×44. */
 .pxw .pxw-agent { margin: 12px 20px; padding: 12px 14px; max-width: 760px; box-sizing: border-box; border-radius: 12px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--pxw-secondary); min-width: 0; }
 .pxw .pxw-agent-head { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
-.pxw .pxw-agent-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; background: #e0b95e; color: #1c1c1e; font-size: 12px; font-weight: 700; }
+.pxw .pxw-agent-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--gx-suite-atomik); color: var(--gx-root); font-size: 12px; font-weight: 700; }
 .pxw .pxw-agent-kicker { font-family: var(--pxw-mono); font-size: 12px; letter-spacing: .13em; color: var(--pxw-label-floor); }
 .pxw .pxw-agent-state { font-size: 13px; font-weight: 600; color: var(--pxw-primary); }
 .pxw .pxw-agent-free { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--pxw-green-ink); background: var(--pxw-green-tint); }
 /* What a run has spent of its limit: a price is never cut short, so the chip wraps to its own line instead. */
-.pxw .pxw-agent-spend { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--pxw-primary); background: rgba(255, 255, 255, .06); border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-agent-spend { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--pxw-primary); background: var(--gx-input); border: 1px solid var(--pxw-card-border); }
 .pxw .pxw-agent-limit, .pxw .pxw-agent-raise { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .pxw .pxw-agent-limit-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--pxw-secondary); white-space: nowrap; }
 .pxw .pxw-agent-number { width: 96px; min-height: 34px; box-sizing: border-box; padding: 0 8px; border-radius: 9px; border: 1px solid var(--pxw-field-border); background: var(--pxw-control); color: var(--pxw-primary); font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; }
@@ -369,7 +367,7 @@
 .pxw .pxw-agent-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .pxw .pxw-agent-option { min-height: 34px; padding: 4px 12px; border-radius: 9px; border: 1px solid var(--pxw-control-border); background: transparent; color: var(--pxw-secondary); font: inherit; font-size: 13px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
 .pxw .pxw-agent-option[aria-checked="true"] { border-color: var(--pxw-blue); background: var(--pxw-blue-tint); color: var(--pxw-primary); font-weight: 600; }
-.pxw .pxw-agent-option:hover:not([aria-checked="true"]) { background: rgba(255, 255, 255, .06); }
+.pxw .pxw-agent-option:hover:not([aria-checked="true"]) { background: var(--gx-input-hover); }
 .pxw .pxw-agent-money { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--pxw-secondary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pxw .pxw-agent-money > span { white-space: nowrap; }
 .pxw .pxw-agent-mode-line { color: var(--pxw-muted); }
@@ -406,11 +404,11 @@
 .pxw .pxw-agent-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .pxw .pxw-agent-actions > .pxw-agent-note { margin-right: auto; }
 .pxw .pxw-agent-primary, .pxw .pxw-agent-quiet { min-height: 34px; padding: 0 14px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.pxw .pxw-agent-primary { border: 1px solid transparent; background: var(--pxw-blue); color: #fff; }
+.pxw .pxw-agent-primary { border: 1px solid transparent; background: var(--pxw-blue); color: var(--gx-on-accent); }
 .pxw .pxw-agent-primary:hover:not(:disabled) { background: var(--pxw-blue-hover); }
 .pxw .pxw-agent-quiet { border: 1px solid var(--pxw-control-border); background: transparent; color: var(--pxw-secondary); }
-.pxw .pxw-agent-quiet:hover:not(:disabled) { background: rgba(255, 255, 255, .06); }
-.pxw .pxw-agent-primary:disabled { background: #173152; color: var(--pxw-secondary); cursor: default; }
+.pxw .pxw-agent-quiet:hover:not(:disabled) { background: var(--gx-input-hover); }
+.pxw .pxw-agent-primary:disabled { background: var(--gx-tint); color: var(--pxw-secondary); cursor: default; }
 .pxw .pxw-agent-quiet:disabled { color: var(--pxw-label-floor); cursor: default; }
 @media (max-width: 767px) {
   .pxw .pxw-agent { margin: 10px 12px; }

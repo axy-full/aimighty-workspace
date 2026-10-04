@@ -18,7 +18,7 @@ import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
- * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
+ * The Atomik rail (design/particl-graphite/README.md §5; board 10a), value for
  * value.
  *
  * Compact — 300. Header 52: the ring at 18 in its live state, `Atomik`
@@ -99,7 +99,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
   const { current: production } = useProject();
   const c = a.current;
   const [picking, setPicking] = useState(false);
-  const box = "flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.3)] bg-card p-[14px]";
+  const box = "flex flex-col gap-[10px] rounded-card border border-[color:var(--gx-hover-border)] bg-card p-[14px]";
   const title = "text-[16px] font-semibold leading-[1.25] text-ink";
   const body = "text-[13.5px] leading-[1.45] text-ink-body";
 
@@ -258,7 +258,7 @@ function PlanCard({ steps, checkpoint }: { steps: Step[]; checkpoint: Step | nul
   return (
     <div className="flex flex-col gap-[6px]">
       <Mono>Atomik · {a.chat?.title ?? "plan"} · {paid} paid {paid === 1 ? "step" : "steps"}</Mono>
-      <div className="overflow-hidden rounded-card border border-[rgba(245,246,248,.12)] bg-card">
+      <div className="overflow-hidden rounded-card border border-[color:var(--gx-pop-border)] bg-card">
         {steps.map((s, i) => (
           <Row key={s.id} n={i + 1} first={i === 0} step={s} checkpoint={checkpoint?.id === s.id} />
         ))}
@@ -273,7 +273,7 @@ function Row({ n, first, step, checkpoint }: { n: number; first: boolean; step: 
   return (
     <>
       <div title={a.isReadOnly(step) ? ACCOUNT_STEP_NOTE : undefined} data-read-only={a.isReadOnly(step) ? "" : undefined} data-library-step={keyStepFamily(step.model) ?? undefined}
-        className={`grid h-[46px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${first ? "bg-[rgba(245,246,248,.04)]" : ""}`}>
+        className={`grid h-[46px] grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[10px] border-b border-hairline px-[12px] ${first ? "bg-[color:var(--gx-card)]" : ""}`}>
         <Mono cost>{String(n).padStart(2, "0")}</Mono>
         <span className="flex min-w-0 flex-col gap-[4px]">
           <span className="truncate text-[13px] font-medium leading-[1.2] text-ink">{step.title} <span className="font-normal text-ink-body">· {scope}</span></span>

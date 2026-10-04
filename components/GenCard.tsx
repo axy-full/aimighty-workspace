@@ -142,7 +142,7 @@ export default function GenCard({
           </span>
         )}
         {done && (
-          <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
+          <span className="absolute right-2 top-2 rounded-full bg-[color:var(--gx-on-media)] px-2 py-0.5 text-[10.5px] font-medium text-white">
             {audio ? shortLabel(gen.model) : still ? String(p.resolution ?? "").toUpperCase() : `${p.duration ?? "—"}s`}
           </span>
         )}
@@ -151,12 +151,12 @@ export default function GenCard({
           {url && (
             <a href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : audio ? "mp3" : "mp4"}`} title="Download"
               onClick={(e) => e.stopPropagation()}
-              className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
+              className="grid h-8 w-8 place-items-center rounded-full bg-panel text-bone shadow-[var(--shadow-card)] transition-colors hover:bg-panel">
               <IconDown />
             </a>
           )}
           <button type="button" onClick={(e) => { e.stopPropagation(); remove(); }} title="Delete"
-            className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
+            className="grid h-8 w-8 place-items-center rounded-full bg-panel text-bone shadow-[var(--shadow-card)] transition-colors hover:bg-panel hover:text-lift">
             <IconTrash />
           </button>
         </span>

@@ -380,7 +380,7 @@ test("the form pages (Motion Transfer, Object Swap) ran on the Higgsfield accoun
   for (const [pageId, title] of [["motion", "Motion Transfer"], ["swap", "Object Swap"]] as const) {
     await goTo(page, pageId, "subatomik");
     const retired = page.getByTestId("mobile-form-retired");
-    await expect(retired).toHaveText(`${title} ran on a signed-in Higgsfield account. Particl no longer signs in to Higgsfield. Past results stay in your Library.`);
+    await expect(retired).toHaveText(`${title} is retired. The connected account is no longer used. Past results stay in your Library.`);
     await expect(page.getByTestId("mobile-form")).toHaveCount(0);
     await expect(page.getByTestId("mobile-form-estimate")).toHaveCount(0);
     await floors(page, `${pageId} retired`);

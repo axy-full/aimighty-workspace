@@ -33,7 +33,7 @@ async function open(page: Page, path: string) {
   return errors;
 }
 
-/* Entrance animations scale and fade a card in; measure once they have finished (the infinite aurora never does). */
+/* Entrance animations scale and fade a card in; measure once they have finished. */
 async function settled(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations()
     .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)

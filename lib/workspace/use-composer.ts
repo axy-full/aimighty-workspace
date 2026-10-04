@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { failedChip } from "../errors";
-import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
@@ -10,21 +9,7 @@ import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
 import { stableId } from "../workbench/stable-id";
 import { newProject, type Asset, type CanvasNode, type Project } from "../workbench/studio";
 import { activeMediaJob, type MediaJob } from "../workbench/job-recovery";
-import { movedOn, poll, pollAfter, type Poller } from "../poll";
-import {
-  CONNECTED_GENERATION_ENDPOINT,
-  connectedEnhancedPrompt, connectedOriginal,
-  connectedQuoteRequest,
-  connectedStatusRequest,
-  CONNECTED_READ_FLOOR_S,
-  connectedSubmitRequest,
-  parseConnectedJob,
-  type ConnectedJob,
-} from "../higgsfield-consumer/generation-client";
-import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
-import { useSession } from "../session";
-import { CAPABILITY_UNREADABLE } from "../shell/connected-capability";
-import { useConnectedCapability } from "../shell/use-connected-capability";
+import { movedOn, poll } from "../poll";
 import {
   activeModel,
   audioSeconds,
@@ -35,8 +20,6 @@ import {
   composerButtonParts,
   composerReducer,
   composerSettings,
-  type ConnectedRow,
-  connectedModels,
   INITIAL_COMPOSER,
   liveCredits,
   offeredModels,
@@ -50,17 +33,15 @@ import {
   type ComposerSettings,
   type ComposerState,
   type ComposerType,
-  type ConnectedCapability,
   type EngineRow,
 } from "./composer";
 import { formatCredits } from "./cost";
-import { releaseConnectedJob, watchConnectedJob, type LastRead } from "../shell/connected-collector";
 import { refreshProjectLibrary } from "./library";
 import { dispatchGeneration, type DispatchRequest } from "./generate-submit";
 import { rememberWorkspaceQuote } from "./last-quote";
 import {
-  batchNotice, batchPhase, batchSettledText, rememberWorkspaceBatch, sendConnectedBatch, sendWorkspaceBatch,
-  settleConnectedBatch, settleWorkspaceBatch, takesPhrase, takeView,
+  batchNotice, batchPhase, batchSettledText, rememberWorkspaceBatch, sendWorkspaceBatch,
+  settleWorkspaceBatch, takesPhrase, takeView,
   type BatchTake, type TakeRead, type TakeView,
 } from "./take-batch";
 import { newBatchId } from "../variations";
@@ -75,17 +56,14 @@ import type { Generation } from "./types";
  * The composer's live wiring. It owns nothing the shell owns: the project it
  * files into is the one the shell has open, and progress is published to the
  * shell's own GenerationStrip through `state.gen`.
+ * Money: GET /api/workbench/engines for the live figure on the button, then
+ * the shared dispatch (lib/workspace/generate-submit.ts) re-quotes POST
+ * /api/generate/quote with the exact body and submits POST /api/generate with
+ * `maxCredits` + `quoteFingerprint`. Every take is on this workspace's
+ * credits: a signed-in account's catalogue is no longer offered, and what
+ * this browser kept of one (a followed take, a take to resume) is let go on
+ * read — the shell's collector still files a take that was already running.
  *
- * Money, in one sentence per path:
- *  - this workspace's credits: GET /api/workbench/engines for the live figure
- *    on the button, then the shared dispatch (lib/workspace/generate-submit.ts)
- *    re-quotes POST /api/generate/quote with the exact body and submits POST
- *    /api/generate with `maxCredits` + `quoteFingerprint`;
- *  - the connected account: POST /api/higgsfield/consumer/generation
- *    `action: "quote"` for the exact price and wallet, then `action: "submit"`
- *    with that wallet and those exact credits — the shapes in
- *    lib/higgsfield-consumer/generation-client.ts, which the Atomik Generate
- *    page uses too.
  *
  * Sound is quoted and submitted through the existing audio admission
  * (POST /api/audio, `quoteOnly` then `maxCredits`).
@@ -102,24 +80,15 @@ import type { Generation } from "./types";
  * one record per take, named by its settings and prompt, so other takes made
  * meanwhile (here or in another tab) leave it be. The next Generate of that
  * same take takes it up again — the same shot, its claimed request checked on
- * the server (followed if it landed, never re-sent), or the connected job it
- * submitted, read back first: one the account still has as
- * quoted is sent again as itself (its first submission may still be on its
- * way in; the account takes one per job), one that did not render is made
- * again — and goes on from there, never paying for it
- * twice. A different prompt or settings is a new take at the price on the
- * button.
+ * the server (followed if it landed, never re-sent) — and goes on from there,
+ * never paying for it twice. A different prompt or settings is a new take at
+ * the price on the button.
  *
  * Two to four takes of one Generate go as ONE priced batch
  * (lib/workspace/take-batch.ts): every take is quoted before any is sent, the
- * sum is exactly the total on the button or none is sent, the connected
- * account gets one paid call for the batch, and a batch whose reply was lost
- * is checked (and fenced) before anything else is sent on the project. Every
- * take that went is followed until it settles: the connected ones with the
- * rest of this scope's connected takes (below), this workspace's here.
- *
- * Connected takes are followed once per scope, however many composers are
- * open: one poll per take, at lib/poll's pace.
+ * sum is exactly the total on the button or none is sent, and a batch whose
+ * reply was lost is checked (and fenced) before anything else is sent on the
+ * project. Every take that went is followed until it settles.
  */
 
 const API = "/api/workbench";
@@ -128,10 +97,10 @@ const FAILED_HOLD_MS = 6000;
 const QUOTE_DEBOUNCE_MS = 260;
 
 type Run = {
-  source: "workspace" | "connected";
+  source: "workspace";
   name: string;
   meta: string;
-  /** The media job id (workspace) or the connected job id, once accepted. */
+  /** The media job id, once accepted. */
   jobId: string | null;
   /** The project it files into. */
   projectId?: string;
@@ -140,7 +109,7 @@ type Run = {
 /** Takes 2–4 of one Generate (lib/workspace/take-batch.ts): every take that went is followed until it settles. */
 type BatchRun = {
   id: string;
-  source: "workspace" | "connected";
+  source: "workspace";
   projectId: string;
   name: string;
   model: string;
@@ -154,104 +123,24 @@ type SavedDraft = { project: Project; revision: number };
 
 /** What this composer is still following for a scope, so leaving Gen and coming back picks it up again. */
 const FOLLOW_KEY = (scope: string) => `particl:composer-follow:v1:${scope}`;
-type Following = { run: Run | null; connected: ConnectedJob[] };
-function readFollowing(scope: string): Following {
+function readFollowing(scope: string): Run | null {
   try {
-    const value = JSON.parse(window.sessionStorage.getItem(FOLLOW_KEY(scope)) ?? "null") as Following | null;
-    return { run: value?.run?.jobId ? value.run : null, connected: Array.isArray(value?.connected) ? value.connected : [] };
+    const value = JSON.parse(window.sessionStorage.getItem(FOLLOW_KEY(scope)) ?? "null") as { run?: Run | null } | null;
+    /* A take this browser was following on a signed-in account is not picked up here: the shell's collector files it. */
+    return value?.run?.jobId && value.run.source === "workspace" ? value.run : null;
   } catch {
-    return { run: null, connected: [] };
+    return null;
   }
 }
-function writeFollowing(scope: string, value: Following) {
+function writeFollowing(scope: string, run: Run | null) {
   try {
-    if (!value.run && !value.connected.length) window.sessionStorage.removeItem(FOLLOW_KEY(scope));
-    else window.sessionStorage.setItem(FOLLOW_KEY(scope), JSON.stringify(value));
+    if (!run) window.sessionStorage.removeItem(FOLLOW_KEY(scope));
+    else window.sessionStorage.setItem(FOLLOW_KEY(scope), JSON.stringify({ run }));
   } catch { /* following is a convenience; the takes still land */ }
-}
-const finished = (job: ConnectedJob) => job.status === "completed" || job.status === "failed";
-/** A connected take to keep polling: not done, and not one the account never got ("quoted": nothing was submitted). */
-const followed = (job: ConnectedJob) => !finished(job) && job.status !== "quoted";
-
-/**
- * Composers of one scope share what they follow: a connected take submitted by
- * a composer that has since closed (the person left Gen mid-batch) is written
- * where the next one reads it, and reaches one that is open now.
- */
-const followers = new Map<string, Set<(job: ConnectedJob) => void>>();
-function followConnected(scope: string, job: ConnectedJob) {
-  const following = readFollowing(scope);
-  writeFollowing(scope, { run: following.run, connected: [...following.connected.filter((item) => item.id !== job.id), job].filter(followed) });
-  const polled = polls.get(scope)?.jobs.get(job.id);
-  if (polled) polled.status = job.status;
-  if (!followed(job) && polled) {
-    polled.poller?.stop();
-    polls.get(scope)!.jobs.delete(job.id);
-    /* Done here: the shell's collector (lib/shell/connected-collector.ts) forgets it, or takes up one still in flight. */
-    releaseConnectedJob(job.draftId, job, lastReads.get(job.id) ?? null);
-    lastReads.delete(job.id);
-  }
-  followers.get(scope)?.forEach((listener) => listener(job));
-}
-
-/**
- * One poll per connected take per scope, however many composers follow it
- * (Gen's own and the overlay are open at once): each status goes to every
- * composer of the scope. Each take is read at lib/poll's pace, never within
- * 6 s of its last read (CONNECTED_READ_FLOOR_S: the route allows a person 30
- * status reads a minute) — longer while it is unchanged, up to 10 s, a
- * changed status starting it over; the account's pollAfterSeconds a floor,
- * including a read made moments before (a read-back); jitter that never cuts
- * a floor short; a failed read backs off; one read of a take at a time, and
- * none while the tab is hidden. A take stops being polled
- * once it is done, or once the account says it never got it. While a
- * composer polls a take, the shell's collector leaves it alone (watched);
- * when the last composer lets go, the collector follows what is still in
- * flight, one pace after the last read here — never both at once.
- */
-type Polled = { draftId: string; status: ConnectedJob["status"]; poller: Poller | null };
-const polls = new Map<string, { jobs: Map<string, Polled>; users: number }>();
-/** Each connected take's last good status read (a poll, or a read-back): the next read, here or the collector's, waits out the account's window. */
-const lastReads = new Map<string, LastRead>();
-const noteRead = (id: string, reply: unknown) => { lastReads.set(id, { at: Date.now(), hintSeconds: pollAfter(reply) }); };
-function pollConnected(scope: string, jobs: [draftId: string, id: string][]): () => void {
-  const entry = polls.get(scope) ?? { jobs: new Map<string, Polled>(), users: 0 };
-  polls.set(scope, entry);
-  for (const [draftId, id] of jobs) {
-    if (entry.jobs.has(id)) continue;
-    const polled: Polled = { draftId, status: "uncertain", poller: null };
-    entry.jobs.set(id, polled);
-    watchConnectedJob(id);
-    const last = lastReads.get(id);
-    const owed = last?.hintSeconds ? Math.max(0, (last.at + last.hintSeconds * 1000 - Date.now()) / 1000) : 0;
-    const moved = movedOn();
-    polled.poller = poll({
-      firstHint: Math.max(owed, CONNECTED_READ_FLOOR_S),
-      read: (signal) => studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
-        method: "POST", signal,
-        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-        body: JSON.stringify(connectedStatusRequest(draftId, id)),
-      }),
-      hint: (data) => Math.max(pollAfter(data) ?? 0, CONNECTED_READ_FLOOR_S),
-      moved: (data) => moved(id, parseConnectedJob(data.job, draftId).status),
-      done: (data) => !followed(parseConnectedJob(data.job, draftId)),
-      onValue: (data) => { noteRead(id, data); followConnected(scope, parseConnectedJob(data.job, draftId)); },
-    });
-  }
-  entry.users++;
-  return () => {
-    entry.users--;
-    if (entry.users > 0) return;
-    /* No composer reads them now: the shell's collector follows each one still in flight. */
-    for (const [id, { draftId, status, poller }] of entry.jobs) { poller?.stop(); releaseConnectedJob(draftId, { id, status }, lastReads.get(id) ?? null); }
-    entry.jobs.clear();
-  };
 }
 
 /** A take a Generate left unconfirmed, or the next take of a batch that stopped part way; where it is in its batch (see the note above). */
-type ResumeRecord =
-  | { kind: "workspace"; projectId: string; take: number; node: CanvasNode | null }
-  | { kind: "connected"; projectId: string; take: number; jobId: string | null };
+type ResumeRecord = { kind: "workspace"; projectId: string; take: number; node: CanvasNode | null };
 /* One record per project and take — the take named by its settings and prompt — so a take made meanwhile, here or in another tab, never replaces it. */
 const RESUME_PREFIX = "particl:composer-resume:v2:";
 const RESUME_KEY = (scope: string, projectId: string, take: string) => `${RESUME_PREFIX}${JSON.stringify([scope, projectId, stableId("take", take)])}`;
@@ -261,8 +150,8 @@ function readResume(scope: string, projectId: string, take: string): ResumeRecor
   try {
     const value = JSON.parse(window.localStorage.getItem(RESUME_KEY(scope, projectId, take)) ?? "null") as (ResumeRecord & { at?: number }) | null;
     if (!value || value.projectId !== projectId || !Number.isInteger(value.take) || value.take < 0 || typeof value.at !== "number" || Date.now() - value.at > RESUME_MS) return null;
-    if (value.kind === "workspace") return value.node === null || (value.node && typeof value.node.id === "string") ? value : null;
-    return value.kind === "connected" && (value.jobId === null || typeof value.jobId === "string") ? value : null;
+    /* A record of a take on a signed-in account (no longer offered) is dropped: nothing takes it up. */
+    return value.kind === "workspace" && (value.node === null || (value.node && typeof value.node.id === "string")) ? value : null;
   } catch {
     return null;
   }
@@ -301,20 +190,10 @@ function referenceAsset(reference: ComposerReference): Asset {
   } as unknown as Asset;
 }
 
-/** The connected job's phase, in the strip's own vocabulary. */
-function connectedPhase(job: ConnectedJob | null): { label: string; pct: number; tone: "blue" | "green" | "red"; done: boolean } {
-  if (!job) return { label: "Submitting", pct: 4, tone: "blue", done: false };
-  if (job.status === "completed") return { label: "Complete", pct: 100, tone: "green", done: true };
-  /* Refunded or charged only once the account's own ledger names the job; just "Failed" until then. */
-  if (job.status === "failed") return { label: job.failureCode === "invalid_result" ? "Finished · not kept" : failedChip(job.failure), pct: 100, tone: "red", done: true };
-  if (job.status === "accepted") return { label: "Rendering", pct: 50, tone: "blue", done: false };
-  return { label: "Queued", pct: 10, tone: "blue", done: false };
-}
-
 export type ComposerHost = {
   state: ComposerState;
   dispatch: (action: ComposerAction) => void;
-  /** Models of every type the current billing source offers. */
+  /** Models of every type on offer. */
   models: ComposerModel[];
   /** Models of the current type, in catalogue order. */
   offered: ComposerModel[];
@@ -324,8 +203,6 @@ export type ComposerHost = {
   /** The exact settings the engine would render with (ratio, resolution, duration). */
   settings: ComposerSettings;
   credits: number | null;
-  /** What the account says it rendered for the last connected take (`enhance_prompt`), once it completed; null otherwise. */
-  connectedEnhanced: string | null;
   buttonLabel: string;
   /** The same label in its two parts, what it does and what it costs, for a button that lays them out apart. */
   buttonParts: { action: string; price: string | null };
@@ -340,7 +217,6 @@ export type ComposerHost = {
   voice: { id: string; name: string } | null;
   /** A sound effect's or music's length as billed: the seconds held to the model's range. */
   seconds: number;
-  capability: ConnectedCapability | null;
   /** The project the composer files into; null until one is open or created. */
   project: Project | null;
   /** One line about a project the composer had to create. */
@@ -348,13 +224,9 @@ export type ComposerHost = {
   generate: () => void;
   /** Read the engine list again after a failed read (Gen's model sheet › Try again). */
   retryEngines: () => void;
-  /** Read the connected account again after the owner's read of it failed (`capability.unreadable` › Try again). */
-  retryConnection: () => void;
   scope: string;
   /** Batches of takes 2–4 still being followed, newest last: Gen's Results show each as one strip. */
   batches: BatchView[];
-  /** Every connected job a batch here is following: no other list shows them while it does. */
-  batchJobIds: string[];
 };
 
 export function useComposer(options: {
@@ -392,28 +264,14 @@ export function useComposer(options: {
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
-  const [catalogueAnswer, setCatalogue] = useState<{ scope: string; revision: number; rows: { id: string; name: string; outputType: string; medias?: { roles: string[] }[] }[]; error: string | null } | null>(null);
-  const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; revision: number; quote: ComposerQuote | null } | null>(null);
+  const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
-  /** Every connected take submitted here: each is followed and filed, not only the last. */
-  const [connectedJobs, setConnectedJobs] = useState<ConnectedJob[]>([]);
-  const track = useCallback((job: ConnectedJob) => setConnectedJobs((jobs) => [...jobs.filter((item) => item.id !== job.id), job]), []);
-  /* A take followed by any composer of this scope (this one, or one closed since) is followed here too. */
-  useEffect(() => {
-    const set = followers.get(scope) ?? new Set();
-    followers.set(scope, set);
-    set.add(track);
-    return () => { set.delete(track); };
-  }, [scope, track]);
-  const connectedJob = run?.source === "connected" && run.jobId ? connectedJobs.find((job) => job.id === run.jobId) ?? null : null;
-  /** Every batch sent here, followed take by take until each settles; the latest read of each workspace take's job. */
+  /** Every batch sent here, followed take by take until each settles; the latest read of each take's job. */
   const [batches, setBatches] = useState<BatchRun[]>([]);
   const [takeReads, setTakeReads] = useState<Record<string, TakeRead>>({});
   const [projectNotice, setProjectNotice] = useState<string | null>(null);
   const [created, setCreated] = useState<Project | null>(null);
-  /** The connected wallet the last quote named, for the billing line. */
-  const [walletAnswer, setWalletAnswer] = useState<{ scope: string; revision: number; name: string | null } | null>(null);
 
   /* The project the composer files into: the shell's, or the one it created
      before the shell's own read has caught up. */
@@ -442,53 +300,10 @@ export function useComposer(options: {
     return () => controller.abort();
   }, [open, scope]);
 
-  /* The connected account is only read when the switch is used, through the shell's one shared read
-     (lib/shell/use-connected-capability): who owns the workspace and whether it is suspended come from
-     the session; the connection is read once per scope for every surface, and a failed read is the
-     owner's error to retry, never a demotion to member. */
-  const wantsConnected = open && state.billing === "connected";
-  const session = useSession();
-  const suspended = session.workspace?.suspended === true;
-  const shared = useConnectedCapability(scope, { read: wantsConnected });
-  // A recalled connected preset must not strand a member behind a hidden switch.
-  // Workspace settings receive a fresh quote before Generate can enable.
-  /* Studio engines only: a signed-in account's catalogue is no longer offered to anyone (API-key and direct
-     engines only), so a composer that restores or is handed the account's source moves back to this workspace's. */
-  useEffect(() => { if (state.billing === "connected") dispatch({ type: "billing", value: "workspace" }); }, [state.billing]);
-  const capability = useMemo<ConnectedCapability | null>(() => {
-    if (!shared.owner) return { owner: false, connected: false, suspended };
-    if (shared.status === "loading") return null;
-    return { owner: true, connected: shared.status === "ready" && shared.connected, suspended, unreadable: shared.status === "error" ? shared.error ?? CAPABILITY_UNREADABLE : null };
-  }, [shared.owner, shared.status, shared.connected, shared.error, suspended]);
+  const quote = quoteAnswer?.scope === scope ? quoteAnswer.quote : null;
+  const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, quote: value }), [scope]);
 
-  const revision = shared.revision;
-  const walletName = walletAnswer?.scope === scope && walletAnswer.revision === revision ? walletAnswer.name : null;
-  // Keep the persistent recovery key unchanged. Only the transient displayed
-  // quote is invalidated when the connection changes.
-  const quote = quoteAnswer?.scope === scope && (state.billing !== "connected" || quoteAnswer.revision === revision) ? quoteAnswer.quote : null;
-  const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, revision, quote: value }), [scope, revision]);
-  const catalogue = catalogueAnswer?.scope === scope && catalogueAnswer.revision === revision ? catalogueAnswer : null;
-  const canReadCatalogue = wantsConnected && capability?.owner === true && capability.connected && !catalogue;
-  useEffect(() => {
-    if (!canReadCatalogue) return;
-    const controller = new AbortController();
-    studioRequest<{ catalogue?: { models?: ConnectedRow[] } }>(CONNECTED_GENERATION_ENDPOINT, {
-      method: "POST", signal: controller.signal,
-      headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-      body: JSON.stringify({ action: "catalogue" }),
-    })
-      .then((data) => { if (!controller.signal.aborted) setCatalogue({ scope, revision, rows: data.catalogue?.models ?? [], error: null }); })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setCatalogue({ scope, revision, rows: [], error: neutralCopy(error instanceof Error ? error.message : "The connected catalogue could not be read.", "The connected catalogue could not be read.") });
-      });
-    return () => controller.abort();
-  }, [canReadCatalogue, scope, revision]);
-
-  const models = useMemo(
-    () => (state.billing === "connected" ? connectedModels(catalogue?.rows ?? []) : workspaceModels(engines.rows, audio)),
-    [state.billing, catalogue?.rows, engines.rows, audio],
-  );
+  const models = useMemo(() => workspaceModels(engines.rows, audio), [engines.rows, audio]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
@@ -496,7 +311,7 @@ export function useComposer(options: {
      Cinema Studio 4.0 takes its own documented controls instead (lib/workspace/cinema-vocabulary.ts): sent as its
      parameters, never written into the words, and never in the price (its formula counts seconds and pixels only). */
   const compose = options.compose;
-  const cinemaModel = state.billing === "workspace" && model != null && isCinemaStudioModel(model.id);
+  const cinemaModel = model != null && isCinemaStudioModel(model.id);
   const sent = useMemo(() => {
     const words = compose ? compose(state.prompt, cinemaModel ? {} : state.shot, state.type) : { prompt: state.prompt, shotSpec: null };
     return { ...words, cinema: cinemaModel ? cinemaForSend(state.cinema) : null };
@@ -511,7 +326,7 @@ export function useComposer(options: {
   const voiceId = voice?.id ?? "";
 
   const quoteKey = quoteKeyFor({
-    billing: state.billing, type: state.type, modelId: model?.id ?? "", settings,
+    type: state.type, modelId: model?.id ?? "", settings,
     references: state.references, prompt: sent.prompt.trim(), seconds,
     instrumental: state.instrumental, voiceId,
   });
@@ -521,37 +336,7 @@ export function useComposer(options: {
     ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
-  /* The connected quote body, when it can be built at all. */
-  const connectedInput = useMemo<ConsumerGenerationInput | null>(() => {
-    if (state.billing !== "connected" || !model || !state.prompt.trim()) return null;
-    const roles = model.referenceRoles ?? [];
-    /* FINAL_SPEC §3–4: the settings the live catalogue entry declares, never
-       invented; `enhance_prompt` only when the schema declares it — true on
-       Auto, false for a raw: prompt, which is never rewritten. */
-    const raw = /^\s*raw:/i.test(sent.prompt);
-    const parameters: Record<string, string | number | boolean> = {
-      ...(model.ratios?.length ? { aspect_ratio: settings.ratio } : {}),
-      ...(model.durations?.length ? { duration: settings.duration } : {}),
-      ...(model.resolutions?.length ? { resolution: settings.resolution } : {}),
-      ...(model.enhanceable ? { enhance_prompt: state.enhance && !raw } : {}),
-      ...(model.soulId && settings.soulId ? { soul_id: settings.soulId } : {}),
-    };
-    return {
-      type: state.type, model: model.id, prompt: raw ? sent.prompt.replace(/^\s*raw:\s*/i, "").trim() : sent.prompt.trim(), parameters,
-      medias: roles.length
-        ? state.references.map((r) => ({ role: r.role && roles.includes(r.role) ? r.role : roles[0], source: r.origin === "upload" ? { uploadId: r.id } : { genId: r.id } }))
-        : [],
-    } as ConsumerGenerationInput;
-  }, [state.billing, state.type, state.prompt, sent.prompt, state.references, state.enhance, model, settings.ratio, settings.duration, settings.resolution, settings.soulId]);
-
-  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready")
-    || (state.billing === "connected" && (!capability?.owner || !capability.connected || !target));
-  const connectedKey = connectedInput ? JSON.stringify(connectedInput) : "";
-  /* A connected quote is a call to the account. One is asked per project and exact body and held
-     until it expires, so coming back to the same body (the model sheet's catalogue switched away
-     and back) shows the figure already given instead of asking again. Generate re-quotes anyway. */
-  const heldQuotes = useRef(new Map<string, { credits: number; expiresAt: number; revision: number }>());
-  useEffect(() => { heldQuotes.current.clear(); }, [scope, revision]);
+  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready");
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -559,21 +344,6 @@ export function useComposer(options: {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       const ask = async (): Promise<ComposerQuote> => {
-        if (state.billing === "connected") {
-          if (!connectedInput || !target) throw new Error("Open or create a project before pricing this generation.");
-          const heldKey = `${target.id}\n${connectedKey}`;
-          const held = heldQuotes.current.get(heldKey);
-          if (held && held.revision === revision && held.expiresAt > Date.now()) return { key: quoteKey, credits: held.credits, state: "ready", reason: null };
-          const result = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
-            method: "POST", signal: controller.signal,
-            headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify(connectedQuoteRequest(target.id, connectedInput)),
-          });
-          const job = parseConnectedJob(result.job, target.id);
-          heldQuotes.current.set(heldKey, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt, revision });
-          setWalletAnswer({ scope, revision, name: job.workspaceName });
-          return { key: quoteKey, credits: job.quoteCredits, state: "ready", reason: null };
-        }
         if (audioBody) {
           const result = await studioRequest<{ estimatedCredits?: number }>("/api/audio", {
             method: "POST", signal: controller.signal,
@@ -605,31 +375,28 @@ export function useComposer(options: {
         });
     }, QUOTE_DEBOUNCE_MS);
     return () => { clearTimeout(timer); controller.abort(); };
-    /* `quoteKey` names every input the figure prices; `connectedKey` the exact connected body. */
+    /* `quoteKey` names every input the figure prices. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockedForQuote, quoteKey, connectedKey, scope, target?.id, revision]);
+  }, [blockedForQuote, quoteKey, scope, target?.id]);
 
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
      (lib/workspace/last-quote.ts): recorded, never asked for. */
   /* A draft goes one take at a time (lib/draftFinal.ts), whatever the takes stepper held before it was switched on. */
-  const buttonTotal = state.billing === "workspace" ? shownTotal(quote, quoteKey, settings.draft ? 1 : Math.max(1, state.count)) : null;
+  const buttonTotal = shownTotal(quote, quoteKey, settings.draft ? 1 : Math.max(1, state.count));
   useEffect(() => {
     if (buttonTotal != null) rememberWorkspaceQuote(scope, buttonTotal);
   }, [scope, buttonTotal]);
   const blocked = composerBlock({
     projects: options.projects,
-    state: { ...state, voiceId }, model, quote, quoteKey, submitting, capability: state.billing === "connected" ? capability : null,
-    catalogue: state.billing === "connected"
-      ? { loading: catalogue === null, error: catalogue?.error ?? null }
-      : { loading: engines.loading, error: engines.error },
-    sentPrompt: connectedInput?.prompt,
+    state: { ...state, voiceId }, model, quote, quoteKey, submitting,
+    catalogue: { loading: engines.loading, error: engines.error },
     soundReferences: state.references.filter((r) => r.kind === "audio").length,
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent, revision });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, connectedInput, connectedKey, quoteKey, quote, sent, revision }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -653,12 +420,10 @@ export function useComposer(options: {
   const writer = useRef<{ projectId: string; writer: DraftWriter } | null>(null);
 
   /** Follow a batch: every take that went is read until it settles (below). A batch that sent nothing has nothing to follow. */
-  const followBatch = useCallback((run: BatchRun, jobs: readonly ConnectedJob[] = []) => {
+  const followBatch = useCallback((run: BatchRun) => {
     if (!run.takes.some((take) => take.jobId || take.state === "unconfirmed")) return;
     setBatches((list) => [...list.filter((item) => item.id !== run.id), run]);
-    /* Its connected takes are followed with the rest of this scope's: one poll per take, each original filed. */
-    for (const job of jobs) followConnected(scope, job);
-  }, [scope]);
+  }, []);
 
   /* The shot a batch whose price moved had already filed: the next press of the same batch goes on it, not on another empty shot. */
   const batchShot = useRef<{ key: string; projectId: string; node: CanvasNode; mapping: { shotId: string; productionProjectId: string } } | null>(null);
@@ -671,21 +436,7 @@ export function useComposer(options: {
    * answer not yet known leaves it to be asked again. The next press sends what
    * is on screen at the price on the button.
    */
-  const settleEarlier = useCallback(async (projectId: string, billing: "workspace" | "connected"): Promise<{ proceed: boolean; notice: string | null }> => {
-    if (billing === "connected") {
-      const settled = await settleConnectedBatch({ scope, draftId: projectId });
-      if (settled.state === "none") return { proceed: true, notice: null };
-      /* Never arrived, and fenced now: said before anything new is spent, and the next press sends what is on screen. */
-      if (settled.state === "lost") return { proceed: false, notice: "Your last batch never reached the connected account; nothing was charged for it. Nothing new was sent: press Generate again to send this." };
-      if (settled.state === "unknown") return { proceed: false, notice: settled.reason };
-      const first = settled.jobs[0];
-      followBatch({
-        id: first?.batch?.id ?? newBatchId(), source: "connected", projectId,
-        name: first ? first.input.prompt.trim().slice(0, 60) || `${first.model.name} take` : "Your last batch", model: first?.model.name ?? "",
-        takes: settled.jobs.map((job, i) => ({ variation: job.batch?.variation ?? i + 1, state: "queued", jobId: job.id, credits: job.quoteCredits })),
-      }, settled.jobs);
-      return { proceed: false, notice: `Your last batch had reached the connected account: its ${settled.jobs.length} takes are followed until they land. Nothing new was sent.` };
-    }
+  const settleEarlier = useCallback(async (projectId: string): Promise<{ proceed: boolean; notice: string | null }> => {
     const settled = await settleWorkspaceBatch({ scope, projectId });
     if (settled.state === "none") return { proceed: true, notice: null };
     if (settled.state === "unknown") return { proceed: false, notice: settled.reason };
@@ -700,7 +451,7 @@ export function useComposer(options: {
     });
     const landed = settled.landed.length === 1;
     return { proceed: false, notice: `${lost ? `${lost} ` : ""}${takesPhrase(settled.landed.map((take) => take.variation)).replace(/^t/, "T")} of your last batch ${landed ? "is" : "are"} on the server, followed until ${landed ? "it lands" : "they land"}. Nothing new was sent.` };
-  }, [scope, followBatch]);
+  }, [scope]);
 
   const generate = useCallback(() => {
     const now = live.current;
@@ -721,41 +472,13 @@ export function useComposer(options: {
         const project = await ensureProject();
         const settings = now.settings;
         const base = composer.prompt.trim().slice(0, 60) || `${model.label} take`;
-        const billing = composer.billing === "connected" ? "connected" : "workspace";
         /* A batch on this project whose reply was lost is asked about before anything else is sent: never twice. */
-        const earlier = await settleEarlier(project.id, billing);
+        const earlier = await settleEarlier(project.id);
         if (!earlier.proceed) { dispatch({ type: "notice", value: earlier.notice }); return; }
         const before = earlier.notice ? `${earlier.notice} ` : "";
         if (earlier.notice) dispatch({ type: "notice", value: earlier.notice });
         if (count > 1) {
           const batchId = newBatchId();
-          if (billing === "connected") {
-            const input = now.connectedInput;
-            if (!input) throw new Error("This request could not be prepared. Nothing was submitted.");
-            const outcome = await sendConnectedBatch({
-              scope, draftId: project.id, input, count, shown, batchId, composer: "gen",
-              /* The figure this press was given is the one held for this body from now on. */
-              onQuoted: (jobs) => {
-                if (jobs.every((job) => job.quoteCredits === jobs[0].quoteCredits))
-                  heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: jobs[0].quoteCredits, expiresAt: Math.min(...jobs.map((job) => job.quoteExpiresAt)), revision: now.revision });
-              },
-            });
-            if (outcome.state === "repriced") {
-              setQuote({ key: now.quoteKey, credits: outcome.takes[0], state: "ready", reason: null, takes: outcome.takes });
-              dispatch({ type: "notice", value: `${before}${outcome.reason}` });
-              return;
-            }
-            if (outcome.state !== "sent") { dispatch({ type: "notice", value: `${before}${outcome.reason}` }); return; }
-            followBatch({
-              id: batchId, source: "connected", projectId: project.id, name: base, model: model.label,
-              takes: outcome.jobs.map((job, i) => ({ variation: job.batch?.variation ?? i + 1, state: "queued", jobId: job.id, credits: job.quoteCredits })),
-            }, outcome.jobs);
-            const told = outcome.jobs.map((job, i): BatchTake => job.status === "failed"
-              ? { variation: job.batch?.variation ?? i + 1, state: "refused", jobId: job.id, credits: job.quoteCredits, reason: "the connected account refused it" }
-              : { variation: job.batch?.variation ?? i + 1, state: "queued", jobId: job.id, credits: job.quoteCredits });
-            dispatch({ type: "notice", value: `${before}${outcome.note ? `${outcome.note} ` : ""}${batchNotice(told, "connected cr")}` });
-            return;
-          }
           /* This workspace's credits: ONE shot for the whole batch (sound: its lane's node), added to the draft as the
              server holds it; the same batch again after its price moved goes on the shot it already filed. */
           const reuse = batchShot.current && batchShot.current.key === now.quoteKey && batchShot.current.projectId === project.id ? batchShot.current : null;
@@ -831,108 +554,21 @@ export function useComposer(options: {
           return;
         }
         /* This take — these settings and this prompt — as the resume records name it. */
-        const takeKey = JSON.stringify([now.quoteKey, composer.prompt.trim(), billing === "connected" ? JSON.stringify(now.connectedInput ?? null) : ""]);
+        /* This take — these settings and this prompt — as the resume records name it (the empty third part keeps the records already saved matching). */
+        const takeKey = JSON.stringify([now.quoteKey, composer.prompt.trim(), ""]);
         /* The same take left unconfirmed, or a batch of it that stopped part way: taken up again, and the batch goes on from it. */
-        const resume = readResume(scope, project.id, takeKey);
-        const again = resume && resume.kind === billing ? resume : null;
-        let start = again ? again.take : 0;
+        const again = readResume(scope, project.id, takeKey);
+        const start = again ? again.take : 0;
         const end = again ? Math.max(count, again.take + 1) : count;
-        /* The take's own job, when the account still has it as quoted: sent again as itself (below). */
-        let unsent: ConnectedJob | null = null;
-        if (again?.kind === "connected" && again.jobId) {
-          /* Read back before anything is priced: a job the account took is followed, never submitted again. */
-          const read = await studioRequest<{ job?: unknown; pollAfterSeconds?: number }>(CONNECTED_GENERATION_ENDPOINT, {
-            method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify(connectedStatusRequest(project.id, again.jobId)),
-          }).catch(() => { throw new Error("Your last take could not be checked. Nothing was submitted; press Generate again in a moment."); });
-          const job = parseConnectedJob(read.job, project.id);
-          /* Followed as the account has it — and no longer polled if the account never got it, or it did not render;
-             its poll's first read waits out this read's window. */
-          noteRead(job.id, read);
-          followConnected(scope, job);
-          if (job.status === "quoted" && shown !== null && job.quoteCredits === shown && job.quoteExpiresAt > Date.now()) {
-            /* Quoted still: its submit never reached the account, or reached it and is still being taken in. It is
-               sent again as itself, at its price (the one on the button), never as a new job: the account takes one
-               submission of a job, so the take is paid for once either way. */
-            unsent = job;
-          } else if (job.status === "quoted" || job.status === "failed") {
-            /* Never submitted, or it did not render (not billed): the take is made again, at the price on the button. */
-            writeResume(scope, project.id, takeKey, { kind: "connected", projectId: project.id, take: again.take, jobId: null });
-          } else {
-            start = again.take + 1;
-            writeResume(scope, project.id, takeKey, start < end ? { kind: "connected", projectId: project.id, take: start, jobId: null } : null);
-            if (start >= end) {
-              setRun({ source: "connected", name: count > 1 ? `${base} · take ${again.take + 1}` : base, meta: [base, model.label, `${job.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: job.id, projectId: project.id });
-              dispatch({ type: "notice", value: "That take reached the connected account. It files into Takes as it lands." });
-              return;
-            }
-          }
-        }
         /* The draft the takes file into: read fresh for the first, then carried from each save to the next. */
         let draft: SavedDraft | null = null;
         if (writer.current?.projectId !== project.id) writer.current = { projectId: project.id, writer: draftWriter() };
         const saves = writer.current.writer;
         for (let take = start; take < end; take++) {
         const name = end > 1 ? `${base} · take ${take + 1}` : base;
-        if (composer.billing === "connected") {
-          const input = now.connectedInput;
-          if (!input) throw new Error("This request could not be prepared. Nothing was submitted.");
-          let job: ConnectedJob;
-          if (unsent) {
-            job = unsent;
-            unsent = null;
-          } else {
-            /* Re-quote on click; a moved price is shown and nothing is sent. */
-            const quoted = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
-              method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-              body: JSON.stringify(connectedQuoteRequest(project.id, input, { composer: "gen" })),
-            });
-            job = parseConnectedJob(quoted.job, project.id);
-            /* The figure this click was given is the one held for this body from now on. */
-            heldQuotes.current.set(`${project.id}\n${now.connectedKey}`, { credits: job.quoteCredits, expiresAt: job.quoteExpiresAt, revision: now.revision });
-            if (shown === null || job.quoteCredits !== shown) {
-              setQuote({ key: now.quoteKey, credits: job.quoteCredits, state: "ready", reason: null });
-              dispatch({ type: "notice", value: `${before}The price is now ${job.quoteCredits.toLocaleString("en-US")} connected cr. Press Generate again to approve it.` });
-              return;
-            }
-            if (job.quoteExpiresAt <= Date.now()) { dispatch({ type: "notice", value: `${before}That price expired. Press Generate again for a fresh one.` }); return; }
-          }
-          setRun({ source: "connected", name, meta: [name, model.label, `${job.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: null, projectId: project.id });
-          /* Remembered before it is sent: a lost reply is read back on the next Generate, never submitted twice. */
-          writeResume(scope, project.id, takeKey, { kind: "connected", projectId: project.id, take, jobId: job.id });
-          let sent: { job?: unknown };
-          try {
-            sent = await studioRequest<{ job?: unknown }>(CONNECTED_GENERATION_ENDPOINT, {
-              method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-              body: JSON.stringify(connectedSubmitRequest(project.id, job)),
-            });
-          } catch (error) {
-            if (error instanceof StudioRequestError && error.data?.code === "already_submitted") {
-              /* The account took the submission whose reply was lost while this one was on its way: that is this take,
-                 followed until it lands — never sent again. */
-              writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "connected", projectId: project.id, take: take + 1, jobId: null } : null);
-              followConnected(scope, { ...job, status: "uncertain" });
-              setRun({ source: "connected", name, meta: [name, model.label, `${job.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: job.id, projectId: project.id });
-              continue;
-            }
-            /* Refused before anything was sent (busy for now): the batch goes on from this take next time. Otherwise the
-               account may have it: followed until its status says — and read back on the next Generate. */
-            if (error instanceof StudioRequestError && error.status >= 400 && error.status < 500) writeResume(scope, project.id, takeKey, { kind: "connected", projectId: project.id, take, jobId: null });
-            else followConnected(scope, { ...job, status: "uncertain" });
-            throw error;
-          }
-          /* Taken: the next Generate of this batch goes on from the take after it. */
-          writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "connected", projectId: project.id, take: take + 1, jobId: null } : null);
-          const accepted = parseConnectedJob(sent.job, project.id);
-          followConnected(scope, accepted);
-          setRun({ source: "connected", name, meta: [name, model.label, `${accepted.quoteCredits.toLocaleString("en-US")} connected cr`].join(" · "), jobId: accepted.id, projectId: project.id });
-          continue;
-        }
-
-        /* This workspace's credits: the take needs a shot to live in, so the
-           composer adds one to the draft the way Rig does (sound: its lane's
-           node, as Edit & Sound does) and maps it. */
-        let made: CanvasNode | null = take === start && again?.kind === "workspace" ? again.node : null;
+        /* The take needs a shot to live in, so the composer adds one to the draft the way Rig does (sound: its
+           lane's node, as Edit & Sound does) and maps it. */
+        let made: CanvasNode | null = take === start && again ? again.node : null;
         const remember = () => {
           const node = made as CanvasNode | null;
           /* Until the server confirms the job, the next Generate of this take takes this shot up again. */
@@ -1050,29 +686,13 @@ export function useComposer(options: {
     return () => poller.stop();
   }, [workspaceJobId, scope]);
 
-  /* Every connected take still rendering is followed — each one, not only the last submitted — once per scope, however many composers are open.
-     Keyed by the set of takes, in a fixed order: a read that moves a take to the end of the list (track) is no reason to
-     start every take's poll over. */
-  const waiting = JSON.stringify(connectedJobs.filter(followed).map((job) => [job.draftId, job.id]).sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
-  useEffect(() => {
-    const jobs = JSON.parse(waiting) as [string, string][];
-    if (!jobs.length) return;
-    return pollConnected(scope, jobs);
-  }, [waiting, scope]);
-
   /* ── A batch's takes, each followed until it settles ─────────────────── */
   const batchViews = useMemo<BatchView[]>(() => batches.map((run) => {
-    const views = run.takes.map((take) => {
-      /* A connected take reads as the scope's followed job has it (above); this workspace's from its own read (below). */
-      const read: TakeRead | undefined = take.jobId
-        ? run.source === "connected" ? { connected: connectedJobs.find((job) => job.id === take.jobId) } : takeReads[take.jobId]
-        : undefined;
-      return takeView(take, run.source, read);
-    });
+    const views = run.takes.map((take) => takeView(take, "workspace", take.jobId ? takeReads[take.jobId] : undefined));
     return { ...run, views, phase: batchPhase(views) };
-  }), [batches, takeReads, connectedJobs]);
-  /* This workspace's takes still in flight, as one key: the poll below restarts only when that set changes. */
-  const inflight = JSON.stringify(batchViews.flatMap((run) => (run.source === "workspace" ? run.views.filter((view) => view.jobId && !view.done).map((view) => view.jobId) : [])));
+  }), [batches, takeReads]);
+  /* The takes still in flight, as one key: the poll below restarts only when that set changes. */
+  const inflight = JSON.stringify(batchViews.flatMap((run) => run.views.filter((view) => view.jobId && !view.done).map((view) => view.jobId)));
   useEffect(() => {
     const ids = JSON.parse(inflight) as string[];
     if (!ids.length) return;
@@ -1088,45 +708,19 @@ export function useComposer(options: {
     return () => { for (const poller of pollers) poller.stop(); };
   }, [inflight, scope]);
 
-  /* Each completed connected original is filed into its project, once, so it reaches Takes. One
-     filing at a time, each on the draft as the server holds it then (a conflict reads it again). */
-  const filed = useRef(new Set<string>());
-  const filing = useRef<Promise<unknown>>(Promise.resolve());
-  useEffect(() => {
-    for (const job of connectedJobs) {
-      const original = connectedOriginal(job);
-      if (!original || filed.current.has(original.generationId)) continue;
-      filed.current.add(original.generationId);
-      const enhanced = connectedEnhancedPrompt(job);
-      const asset = {
-        id: original.generationId, generationId: original.generationId, url: original.url,
-        kind: original.kind === "model" ? "document" : original.kind, mime: original.mime,
-        name: `${job.model.name} · ${job.input.prompt.slice(0, 80)}`, category: "Generate",
-        description: `${job.model.name} · ${original.credits} connected credits${enhanced ? " · enhanced on the account" : ""}`, prompt: job.input.prompt,
-        status: "Draft", version: 1, locked: false, refs: [],
-      } as unknown as Asset;
-      filing.current = filing.current
-        .then(() => saveOnLatest(scope, job.draftId, null, (latest) => (latest.assets.some((item) => item.generationId === original.generationId) ? latest : { ...latest, assets: [...latest.assets, asset] })))
-        .catch(() => undefined);
-    }
-  }, [connectedJobs, scope]);
-
   /* What is still being followed survives leaving Gen: it is picked up again when the composer is back. */
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
     const following = readFollowing(scope);
-    if (!following.run && !following.connected.length) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- Browser-only session state, read once after mounting. */
-    if (following.run) setRun((current) => current ?? following.run);
-    if (following.connected.length) setConnectedJobs((jobs) => [...following.connected.filter((job) => !jobs.some((item) => item.id === job.id)), ...jobs]);
-    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Browser-only session state, read once after mounting.
+    if (following) setRun((current) => current ?? following);
   }, [scope]);
   useEffect(() => {
     if (!restored.current) return;
-    writeFollowing(scope, { run: run?.jobId ? run : null, connected: connectedJobs.filter(followed) });
-  }, [scope, run, connectedJobs]);
+    writeFollowing(scope, run?.jobId ? run : null);
+  }, [scope, run]);
 
   /* ── The shell's strip ──────────────────────────────────────────────── */
   const shown = useRef<string>("");
@@ -1138,14 +732,12 @@ export function useComposer(options: {
   const announcedBatches = useRef(new Set<string>());
   useEffect(() => {
     /* The strip shows the newest batch while it is followed, else the single take. */
-    const phase = batch ? null : !run ? null
-      : run.source === "connected" ? connectedPhase(run.jobId ? connectedJob : null)
-      : generationPhase(run.jobId ? mediaJob ?? { status: "queued" } : null);
+    const phase = batch || !run ? null : generationPhase(run.jobId ? mediaJob ?? { status: "queued" } : null);
     const went = batch ? batch.takes.filter((take) => take.state !== "refused" && take.state !== "not-sent").reduce((sum, take) => sum + take.credits, 0) : 0;
     const gen: Generation | null = batch
       ? {
           id: `batch:${batch.id}`, pct: batch.phase.pct, name: `${batch.name} · ${batch.takes.length} takes`, label: batch.phase.label, tone: batch.phase.tone,
-          meta: [batch.model, batch.source === "connected" ? `${went.toLocaleString("en-US")} connected cr` : formatCredits(went)].filter(Boolean).join(" · "),
+          meta: [batch.model, formatCredits(went)].filter(Boolean).join(" · "),
         }
       : run && phase
       ? { id: run.jobId ?? "pending:composer", pct: phase.pct, name: run.name, meta: run.meta, label: phase.label, tone: phase.tone }
@@ -1177,7 +769,7 @@ export function useComposer(options: {
       const id = run.jobId;
       holdTimer.current = setTimeout(() => setRun((r) => (r?.jobId === id ? null : r)), phase.tone === "green" ? DONE_HOLD_MS : FAILED_HOLD_MS);
     }
-  }, [run, mediaJob, connectedJob, batch, batchViews, shellDispatch, toast, scope, target?.id]);
+  }, [run, mediaJob, batch, batchViews, shellDispatch, toast, scope, target?.id]);
   /* Leaving the composer (Gen is closed) never leaves its progress frozen on every page; the take is
      still followed when the composer is back (above), and lands in Takes either way. */
   const strip = useRef(ws.state.gen);
@@ -1189,15 +781,12 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    /** What the account says it rendered for the last connected take, once it completed. */
-    connectedEnhanced: run?.source === "connected" && connectedJob ? connectedEnhancedPrompt(connectedJob) : null,
-    buttonLabel: composerButtonLabel({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    buttonParts: composerButtonParts({ billing: state.billing, quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
     blocked, submitting,
-    wording: billingWording(state.billing, { workspaceName: options.workspaceName, walletName }),
-    audio, voices, voice, seconds, capability, project: target, projectNotice, generate, retryEngines, retryConnection: shared.refresh, scope,
+    wording: billingWording({ workspaceName: options.workspaceName }),
+    audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,
     batches: batchViews,
-    batchJobIds: batches.flatMap((run) => (run.source === "connected" ? run.takes.flatMap((take) => (take.jobId ? [take.jobId] : [])) : [])),
   };
 }
 

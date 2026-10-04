@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { getModel } from "@/lib/models";
-import { SOUL_VERSIONS, SOUL_VERSION_LABELS, type SoulVersion } from "@/lib/soulRenderTypes";
+import { SOUL_FAMILY_NAMES, SOUL_VERSIONS, type SoulVersion } from "@/lib/soulRenderTypes";
 import { usePaidAction } from "@/lib/usePaidAction";
 import type { SoulIdentity, SoulTrainingVersion } from "@/lib/workbench/soul-identity";
 import { useIdentities } from "@/lib/workspace/identities";
@@ -27,16 +27,16 @@ const listOf = (names: string[]) => names.length < 2 ? names.join("") : `${names
 /** What an identity renders with, for the list. */
 function familyOf(identity: SoulIdentity): string {
   if (!identity.renderModel) return "Earlier host · read-only";
-  try { return getModel(identity.renderModel).label; } catch { return "Soul"; }
+  try { return getModel(identity.renderModel).label; } catch { return "Identity still"; }
 }
 
 /**
  * Studio › Cast › Build identity, on the platform's key: name it, choose what
- * it renders with (Soul Standard, Soul 2 or Soul Cinema — only versions with a
+ * it renders with (Standard, 2 or Cinema — only versions with a
  * training price are offered), pick 1–40 stills of the same person from this
  * project, confirm the rights, and it trains in this workspace at its fixed
  * price, shown on the button before anything is sent. Only this workspace's
- * own Soul IDs are listed (never the provider site's characters); earlier ones
+ * own identities are listed (never the provider site's characters); earlier ones
  * stay listed, read-only. A lost reply is recovered by its saved request, never
  * sent twice.
  */
@@ -63,10 +63,10 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
   const toggle = (id: string) => setPicked((all) => (all.includes(id) ? all.filter((x) => x !== id) : all.length >= max ? all : [...all, id]));
   const recovered = paid.pending ? (() => { try { return JSON.parse(paid.pending!.body) as Record<string, unknown>; } catch { return null; } })() : null;
 
-  const blocked = !data ? (state.status === "error" ? state.error ?? "This workspace’s Soul IDs could not be read." : "Reading this workspace’s Soul IDs…")
-    : !data.configured ? "Soul ID training is not set up on this platform yet."
-    : !version || !price ? "No Soul ID version has a training price yet."
-    : !name.trim() ? "Name the Soul ID."
+  const blocked = !data ? (state.status === "error" ? state.error ?? "This workspace’s identities could not be read." : "Reading this workspace’s identities…")
+    : !data.configured ? "Identity training is not set up on this platform yet."
+    : !version || !price ? "No identity version has a training price yet."
+    : !name.trim() ? "Name the identity."
     : picked.length < min || picked.length > max ? `Pick ${min}–${max} stills of the same person (${picked.length} picked).`
     : !consent ? "Confirm you have the rights and consent to train this likeness."
     : null;
@@ -80,8 +80,8 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
         body = JSON.parse(paid.pending.body);
         if (paid.pending.url !== ENDPOINT || body.projectId !== projectId) throw new Error("Return to the original project to recover this training request.");
       } else {
-        if (blocked || !version) throw new Error(blocked ?? "No Soul ID version has a training price yet.");
-        if (!(await save())) throw new Error("Save the project before training a Soul ID.");
+        if (blocked || !version) throw new Error(blocked ?? "No identity version has a training price yet.");
+        if (!(await save())) throw new Error("Save the project before building an identity.");
         const references: Reference[] = picked.flatMap((id) => {
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];
@@ -111,21 +111,21 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
   return (
     <section className="gx-gen-card gx-workflow" aria-label="Build identity" data-testid="soul-card" data-section="soul">
       <div className="gx-gen-row">
-        <span className="gx-eyebrow" data-functional-label="">Soul ID · on this workspace’s credits</span>
+        <span className="gx-eyebrow" data-functional-label="">Identity · on this workspace’s credits</span>
         <h2 className="gx-workflow-title">Build identity</h2>
-        <p className="gx-hint">Stills of one person become a Soul ID in this workspace. Choose what it renders with; a character above then renders with it.</p>
+        <p className="gx-hint">Stills of one person become an identity in this workspace. Choose what it renders with; a character above then renders with it.</p>
       </div>
       {paid.error ? <p className="gx-gen-error" role="alert">{paid.error}</p> : null}
       {paid.pending ? (
         <div className="gx-gen-row pd-recover" data-testid="soul-recover">
-          <p className="gx-hint">A training request was sent but its reply was lost: {typeof recovered?.name === "string" ? recovered.name : "a Soul ID"}. Recovering asks about that same request; it is never sent twice.</p>
+          <p className="gx-hint">A training request was sent but its reply was lost: {typeof recovered?.name === "string" ? recovered.name : "an identity"}. Recovering asks about that same request; it is never sent twice.</p>
           <button type="button" className="gx-primary" disabled={busy} onClick={() => void train()} data-testid="soul-recover-run">{busy ? "Checking…" : "Recover the training request"}</button>
         </div>
       ) : (
         <>
           <div className="gx-gen-row">
             <label className="gx-eyebrow" htmlFor="soul-name" data-functional-label="">Name</label>
-            <input id="soul-name" className="gx-field" placeholder="Mira" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} data-testid="soul-name" />
+            <input id="soul-name" className="gx-field" placeholder="Character name" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} data-testid="soul-name" />
           </div>
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Renders with</span>
@@ -133,14 +133,15 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
               <div className="gx-seg gx-seg--sm pd-soul-versions" role="radiogroup" aria-label="Renders with">
                 {offered.map((t) => (
                   <button key={t.version} type="button" role="radio" className="gx-seg-btn" aria-checked={version?.version === t.version} onClick={() => setChosen(t.version)} data-testid={`soul-version-${t.version}`}>
-                    <span>{SOUL_VERSION_LABELS[t.version]}</span>
+                    <span>{SOUL_FAMILY_NAMES[t.version]}</span>
                   </button>
                 ))}
               </div>
-            ) : <p className="gx-hint">{data ? "No Soul ID version has a training price yet." : "Reading…"}</p>}
-            {data && offered.length && offered.length < SOUL_VERSIONS.length ? (
-              <p className="gx-hint" data-testid="soul-versions-unpriced">{listOf(SOUL_VERSIONS.filter((v) => !offered.some((t) => t.version === v)).map((v) => SOUL_VERSION_LABELS[v]))} training is not offered until it has a price.</p>
-            ) : null}
+            ) : <p className="gx-hint">{data ? "No identity version has a training price yet." : "Reading…"}</p>}
+            {data && offered.length && offered.length < SOUL_VERSIONS.length ? (() => {
+              const unpriced = SOUL_VERSIONS.filter((v) => !offered.some((t) => t.version === v)).map((v) => SOUL_FAMILY_NAMES[v]);
+              return <p className="gx-hint" data-testid="soul-versions-unpriced">{listOf(unpriced)} {unpriced.length === 1 ? "is" : "are"} not offered until training has a price.</p>;
+            })() : null}
           </div>
           <div className="gx-gen-row">
             <span className="gx-eyebrow" data-functional-label="">Stills<span className="bz-note"> · {picked.length} of {min}–{max} · the same person, varied angles and light</span></span>
@@ -163,7 +164,7 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
           <p className="gx-hint" data-testid="soul-terms">Charged once the trainer accepts it, even if training then fails.</p>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-primary pd-go" disabled={Boolean(blocked) || busy} aria-describedby={blocked ? "soul-blocked" : undefined} onClick={() => void train()} data-testid="soul-build">
-              {busy ? "Sending…" : price && version ? `Train · ${SOUL_VERSION_LABELS[version.version]} · ${price}` : "Train"}
+              {busy ? "Sending…" : price && version ? `Build identity · ${price}` : "Build identity"}
             </button>
             {blocked ? <span className="gx-reason" id="soul-blocked" data-testid="soul-blocked">{blocked}</span> : null}
           </div>
@@ -172,8 +173,8 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
       {outcome ? <p className={outcome.error ? "gx-gen-error" : "gx-gen-note"} role="status" data-testid="soul-outcome">{outcome.text}</p> : null}
       <div className="gx-gen-row" data-testid="soul-list">
         <span className="gx-eyebrow" data-functional-label="">In this workspace</span>
-        {!data ? <p className="gx-hint">{state.status === "error" ? <>{state.error ?? "This workspace’s Soul IDs could not be read."} <button type="button" className="gx-hbtn" onClick={() => void refresh()}>Try again</button></> : "Reading…"}</p>
-          : !identities.length ? <p className="gx-hint">No Soul ID in this workspace yet. Particl lists only the ones trained here.</p>
+        {!data ? <p className="gx-hint">{state.status === "error" ? <>{state.error ?? "This workspace’s identities could not be read."} <button type="button" className="gx-hbtn" onClick={() => void refresh()}>Try again</button></> : "Reading…"}</p>
+          : !identities.length ? <p className="gx-hint">No identity in this workspace yet.</p>
           : (
             <ul className="gx-soul-list">
               {identities.map((identity) => (

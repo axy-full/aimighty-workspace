@@ -183,9 +183,9 @@ test("who may see the provider's charge: never on the platform's key for a credi
 test("one line per failure: what happened · what the provider did with the charge · the next step", () => {
   const account = (state: "refunded" | "billed" | "unknown", amount?: number): TakeFailure => accountFailure(
     higgsfieldAccountOutcome("nsfw", { ledger: state === "unknown" ? null : { refund: state === "refunded", spend: true, refunded: amount ?? null, spent: amount ?? null } }), "provider_failed");
-  expect(failureLine(account("refunded", 12)).text).toBe("Refused by the content filter · Higgsfield refunded 12 credits · Change the prompt or reference");
-  expect(failureLine(account("unknown")).text).toBe("Refused by the content filter · Higgsfield didn't say if it charged · Change the prompt or reference");
-  expect(failureLine(account("billed", 30)).text).toBe("Refused by the content filter · Higgsfield charged 30 credits · Change the prompt or reference");
+  expect(failureLine(account("refunded", 12)).text).toBe("Refused by the content filter · The connected account refunded 12 credits · Change the prompt or reference");
+  expect(failureLine(account("unknown")).text).toBe("Refused by the content filter · The connected account didn't say if it charged · Change the prompt or reference");
+  expect(failureLine(account("billed", 30)).text).toBe("Refused by the content filter · The connected account charged 30 credits · Change the prompt or reference");
   const ark = takeFailure({ ...arkTaskOutcome({ status: "failed", error: { code: "OutputVideoSensitiveContentDetected" } })!, funding: "own" }, { credits: false });
   expect(failureLine(ark).text).toBe("Refused by the content filter · BytePlus didn't charge · Change the prompt or reference");
   /* Particl's own ledger, for a credit workspace: "Not billed" only at zero, settled. */
@@ -203,7 +203,7 @@ test("one line per failure: what happened · what the provider did with the char
   /* The next step fits whose key it was. */
   expect(failureCopy("auth", "platform").next).toBe("Try again later");
   expect(failureCopy("auth", "own").next).toBe("Reconnect in Workspace › Engines");
-  expect(failureCopy("provider_quota", "account")).toEqual({ what: "The Higgsfield account is out of credits", next: "Top up the Higgsfield account" });
+  expect(failureCopy("provider_quota", "account")).toEqual({ what: "The connected account is out of credits", next: "Top up the connected account" });
   expect(billingSentence({ state: "billed", amount: 0.0035, unit: "usd", basis: "xai-ticks" }, "xai")).toBe("xAI charged $0.0035");
   expect(billingSentence({ state: "unknown", basis: "silent" }, null)).toBe("The provider didn't say if it charged");
   /* A provider's own words ride along when they say more. */

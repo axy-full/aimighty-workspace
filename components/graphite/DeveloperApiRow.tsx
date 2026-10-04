@@ -31,7 +31,7 @@ export function DeveloperApiRow({ connected }: { connected: boolean | null }) {
     <div className="gx-card" data-testid="engine-developer-api">
       <span className="gx-eyebrow">Connected account · developer API</span>
       <div className="cw-engine-row">
-        <span className="cw-engine" data-ok={connected === true}><span className="cw-engine-dot" aria-hidden="true" />{connected == null ? "Checking…" : connected ? "Same grant as the connected account" : "Connect the Higgsfield account above first"}</span>
+        <span className="cw-engine" data-ok={connected === true}><span className="cw-engine-dot" aria-hidden="true" />{connected == null ? "Checking…" : connected ? "Same grant as the connected account" : "No account is connected"}</span>
         <span className="gx-spacer" />
         <button type="button" className="gx-hbtn" disabled={busy || connected !== true} onClick={() => void verify()} data-testid="developer-api-verify">{busy ? "Verifying…" : "Verify"}</button>
       </div>

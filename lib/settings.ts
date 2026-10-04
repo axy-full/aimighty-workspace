@@ -77,7 +77,7 @@ export const DEFAULTS = {
    * migration anything is waiting on.
    */
   rigBackfilledAt: "",
-  /* design/particl-v2 §13 · Engines & rates: the model ids Atomik may NOT propose, as a JSON array. Empty means every engine. */
+  /* design/particl-graphite §13 · Engines & rates: the model ids Atomik may NOT propose, as a JSON array. Empty means every engine. */
   atomikEngines: "[]",
   /* §13 · Rig & locks: a new asset starts locked ("1") or open ("0"). */
   lockNewAssets: "0",

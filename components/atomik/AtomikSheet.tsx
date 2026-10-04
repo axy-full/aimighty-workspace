@@ -16,7 +16,7 @@ import { ACCOUNT_STEP_NOTE } from "@/lib/atomikAccountStep";
 import { engineChoices, keyStepFamily, keyStepInputsLine } from "@/lib/atomikKeySteps";
 
 /**
- * Atomik on a phone (design/particl-v2-mobile/README.md; board M3, live):
+ * Atomik on a phone (design/particl-graphite/README.md; board M3, live):
  * the rail as a sheet. Compact is 58% of the screen — the header (the ring
  * at 18, `Atomik`, the run's context line, `Expand ↑`, ×), one checkpoint
  * card, and the ask field pinned under it. Expanded is 92%: the
@@ -56,7 +56,7 @@ export default function AtomikSheet() {
   const total = a.plan.length;
   const context = total ? `${done.length} of ${total}` : a.chat?.title ?? null;
   const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : readOnly ? "Read-only" : "Nothing needs you";
-  const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none";
+  const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[color:var(--gx-dashed)] text-[13.5px] font-medium leading-none";
   const action = "tap44 flex h-[34px] items-center rounded-ctl border border-border-mid px-[10px] text-[12.5px] font-medium leading-none text-ink";
 
   return (
@@ -96,7 +96,7 @@ export default function AtomikSheet() {
           )}
         </>
       )}
-      <div className="flex flex-col gap-[10px] rounded-mobile border border-[rgba(245,246,248,.3)] bg-card p-[16px]" aria-label="Checkpoint" role="group">
+      <div className="flex flex-col gap-[10px] rounded-mobile border border-[color:var(--gx-hover-border)] bg-card p-[16px]" aria-label="Checkpoint" role="group">
         <Mono>{eyebrow}</Mono>
         <span className="text-[20px] font-semibold leading-[1.2] text-ink" data-headline="">
           {step ? `${done.length ? `${done[done.length - 1].title} done` : "Ready"} · ${a.fmt(spent)} spent.`
@@ -147,7 +147,7 @@ export function AtomikPhoneButton() {
   const rail = useAtomikRail();
   return (
     <button type="button" onClick={rail.toggle} aria-label="Ask Atomik" aria-expanded={rail.open}
-      className={`flex h-[44px] items-center gap-[6px] rounded-pill border px-[12px] text-[12.5px] font-medium leading-none text-ink ${rail.open ? "border-[rgba(245,246,248,.35)] bg-selected" : "border-border-mid"}`}>
+      className={`flex h-[44px] items-center gap-[6px] rounded-pill border px-[12px] text-[12.5px] font-medium leading-none text-ink ${rail.open ? "border-[color:var(--gx-hover-border)] bg-selected" : "border-border-mid"}`}>
       {"steps" in ring && ring.steps ? <Ring steps={ring.steps} size={14} /> : <Ring mode={"mode" in ring && ring.mode ? ring.mode : "idle"} size={14} />}
       Atomik{word && <Mono cost>{word}</Mono>}
     </button>

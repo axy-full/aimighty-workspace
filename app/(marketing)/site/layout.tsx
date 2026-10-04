@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import "../../graphite.css";
-import "../../flair.css";
-import "../../marketing.css";
+import "@/components/graphite/shell.css";
+import "@/components/marketing/marketing.css";
 
 export const metadata: Metadata = {
   title: { default: "particl studio", template: "%s · particl studio" },

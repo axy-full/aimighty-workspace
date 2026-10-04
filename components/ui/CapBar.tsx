@@ -2,7 +2,7 @@ import { creditsNumber, useMoney } from "@/lib/price";
 import Mono from "./Mono";
 
 /**
- * Spent of cap (design/particl-v2/README.md §3, §6), in its three places,
+ * Spent of cap (design/particl-graphite/README.md §3, §6), in its three places,
  * each exactly as the boards draw it. The bar is 3px, radius 2, on a .1
  * track; the fill is ink — spend is a fact, not progress, and the accent
  * is for done. Past the cap the bar simply fills; the number says how far.
@@ -32,7 +32,7 @@ export default function CapBar({ spent, cap, placement = "header", className = "
   const unit = money.inCredits ? " cr" : "";
   const pct = cap > 0 ? Math.max(0, Math.round((spent / cap) * 100)) : 0;
   const bar = (
-    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : placement === "phone" ? 110 : 160 }}>
+    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[var(--gx-track)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : placement === "phone" ? 110 : 160 }}>
       <span className="block h-full bg-ink" style={{ width: `${Math.min(100, pct)}%` }} />
     </span>
   );

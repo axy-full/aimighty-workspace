@@ -456,7 +456,7 @@ export function ReferenceAd({
               display: "block",
               width: "100%",
               maxHeight: 420,
-              background: "#000",
+              background: "var(--gx-root)",
               borderRadius: 12,
             }}
           />

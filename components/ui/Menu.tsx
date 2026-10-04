@@ -6,10 +6,10 @@ import Sheet from "./Sheet";
 import { usePhone } from "@/lib/usePhone";
 
 /**
- * The context menu (design/particl-v2/README.md §7; board 4b) — 228px,
+ * The context menu (design/particl-graphite/README.md §7; board 4b) — 228px,
  * `--card`, a .18 rule, radius 12, 6px padding, a mono title, 36px rows at
  * 500 13.5 with the shortcut in mono, a hairline, a submenu that opens in
- * place with 34px rows — and, below 768 (design/particl-v2-mobile, M3),
+ * place with 34px rows — and, below 768 (design/particl-graphite, M3),
  * the same items as a sheet: 48px rows, the submenu as a second sheet.
  * Choosing an item closes the menu, on a desk as on a phone.
  */
@@ -36,10 +36,10 @@ function MenuDesktop({ x, y, title, items, onClose }: { x: number; y: number; ti
   // Keep it on screen: flip left / up when it would spill past the viewport.
   const left = typeof window !== "undefined" && x + 228 + 8 > window.innerWidth ? x - 228 : x;
   const top = typeof window !== "undefined" && y + 320 > window.innerHeight ? Math.max(8, window.innerHeight - 330) : y;
-  const row = "flex h-[36px] w-full items-center justify-between rounded-ctl bg-transparent px-[10px] text-left text-[13.5px] font-medium leading-none hover:bg-[rgba(245,246,248,.08)]";
+  const row = "flex h-[36px] w-full items-center justify-between rounded-ctl bg-transparent px-[10px] text-left text-[13.5px] font-medium leading-none hover:bg-[var(--gx-input-hover)]";
   return (
     <div ref={ref} role="menu" style={{ left, top }}
-      className="fixed z-[20] flex w-[228px] flex-col rounded-card border border-[rgba(245,246,248,.18)] bg-card p-[6px] text-ink">
+      className="fixed z-[20] flex w-[228px] flex-col rounded-card border border-[var(--gx-pop-border)] bg-card p-[6px] text-ink">
       <Mono className="px-[10px] pb-[6px] pt-[8px]">{title}</Mono>
       {items.map((it, i) => {
         if (it.kind === "divider") return <span key={i} className="my-[4px] h-px bg-border" />;
@@ -53,7 +53,7 @@ function MenuDesktop({ x, y, title, items, onClose }: { x: number; y: number; ti
               <div className="flex flex-col py-[2px] pl-[10px]">
                 {it.items.map((s, k) => (
                   <button key={`${k}-${s.label}`} type="button" role="menuitem" onClick={() => { s.onSelect(); onClose(); }}
-                    className="flex h-[34px] w-full items-center justify-between rounded-ctl px-[10px] text-left text-[13px] font-medium leading-none hover:bg-[rgba(245,246,248,.08)]">
+                    className="flex h-[34px] w-full items-center justify-between rounded-ctl px-[10px] text-left text-[13px] font-medium leading-none hover:bg-[var(--gx-input-hover)]">
                     {s.label}{s.note && <Mono cost>{s.note}</Mono>}
                   </button>
                 ))}

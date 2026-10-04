@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MODELS, displayModelName } from "@/lib/models";
+import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { paletteIndex, searchPalette, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
@@ -22,7 +22,7 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
   const index = useMemo(() => paletteIndex({
-    models: MODELS.filter((m) => !m.hidden).map((m) => ({ id: m.id, name: displayModelName(m.id), kind: m.kind === "video" ? "Video" : "Images" })),
+    models: MODELS.filter((m) => isOffered(m) && !m.hidden).map((m) => ({ id: m.id, name: displayModelName(m.id), kind: m.kind === "video" ? "Video" : "Images" })),
     assets: items.map((i) => ({ id: i.take.id, name: i.take.name, kind: i.media ?? "file" })),
   }), [items]);
   const rows = useMemo(() => searchPalette(index, query), [index, query]);
@@ -32,7 +32,7 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
       case "gen": shell.goGen(); return;
       case "model": {
         /* Gen opens on the model picked, on the studio's engines (the index lists MODELS). */
-        const model = MODELS.find((m) => m.id === r.id);
+        const model = MODELS.find((m) => m.id === r.id && isOffered(m));
         if (model) sendGenPreset({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
         shell.goGen();
         return;

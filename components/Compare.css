@@ -1,0 +1,50 @@
+/* Compare.css — the rules of components/Compare.tsx, moved out of app/globals.css
+   beside the file that uses them (D0 1c). Plain CSS: the class names are global
+   and unchanged. Imported by components/Compare.tsx. */
+
+/* Compare: takes of one shot side by side and in step (brief 2.1). */
+.cmp { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: var(--gx-root); }
+.cmp-head { display: flex; align-items: center; gap: 10px; color: var(--gx-text); }
+.cmp-grid { flex: 1; display: grid; grid-template-columns: repeat(var(--cmp-cols, 2), minmax(0, 1fr)); gap: 10px; overflow: auto; align-content: start; }
+.cmp-cell { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--gx-dashed); border-radius: 10px; overflow: hidden; background: var(--gx-root); }
+.cmp-cell.is-picked { border-color: var(--color-blue); }
+.cmp-cell.is-approved { border-color: var(--gx-done); }
+.cmp-media { position: relative; aspect-ratio: 16 / 9; background: var(--gx-root); }
+.cmp-media video { width: 100%; height: 100%; object-fit: contain; }
+.cmp-mode { display: flex; gap: 6px; padding: 0 14px 8px; flex: none; }
+
+/* A/B wipe: two takes in ONE frame. Both fill the same box with the same
+   object-fit, so the pictures are registered on top of each other — a wipe
+   that did not line up would show the difference between two crops rather
+   than between two takes. The one on top is CLIPPED at the seam rather than
+   resized, so nothing moves as the handle travels. */
+.cmp-wipe { position: relative; flex: 1; min-height: 0; background: var(--gx-root); border-radius: 10px; overflow: hidden; border: 1px solid var(--gx-dashed); touch-action: none; cursor: ew-resize; }
+.cmp-wipe video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cmp-wipe-lbl { position: absolute; top: 8px; padding: 1px 6px; border-radius: var(--r-chip); background: var(--gx-scrim); color: var(--gx-text); opacity: .9; }
+.cmp-wipe-lbl.is-a { left: 10px; }
+.cmp-wipe-lbl.is-b { right: 10px; }
+/* The seam: a hairline people aim at, with a target wide enough for a thumb. */
+.cmp-seam { position: absolute; top: 0; bottom: 0; width: 28px; margin-left: -14px; cursor: ew-resize; background: transparent; }
+.cmp-seam::before { content: ""; position: absolute; left: 13px; top: 0; bottom: 0; width: 2px; background: var(--gx-text); }
+.cmp-seam::after { content: ""; position: absolute; left: 6px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--gx-text); box-shadow: 0 0 0 1px var(--gx-scrim); }
+.cmp-seam:focus-visible { outline: none; }
+.cmp-seam:focus-visible::before { background: var(--color-action); }
+
+.cmp-pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; flex: none; }
+.cmp-pick .chip:disabled { opacity: .45; cursor: not-allowed; }
+.cmp-badge { position: absolute; top: 6px; left: 8px; color: var(--gx-text); opacity: .85; }
+/* A take shorter than the longest holds its last frame rather than looping
+   to an unrelated moment. Saying so is the difference between a still frame
+   that reads as "this take ended" and one that reads as "this is broken". */
+.cmp-ended {
+  position: absolute; top: 6px; right: 8px;
+  padding: 1px 6px; border-radius: var(--r-chip);
+  background: var(--gx-scrim); color: var(--gx-text); opacity: .9;
+  letter-spacing: .08em;
+}
+.cmp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px 8px; color: var(--gx-text); }
+.cmp-acts { display: inline-flex; gap: 6px; }
+.cmp-acts .chip { min-height: 34px; }
+.cmp-bar { display: flex; align-items: center; gap: 10px; color: var(--gx-text); }
+.cmp-scrub { flex: 1; accent-color: var(--color-blue); min-width: 0; }
+@media (max-width: 767px) { .cmp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cmp-foot { font-size: 12px; } .cmp-head .mono-s { font-size: 10.5px; } }

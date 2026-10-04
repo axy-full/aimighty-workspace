@@ -30,7 +30,7 @@ import "@/components/studio/legacy-graphite.css";
 import "./mobile.css";
 
 /**
- * Library (design/particl-v2/README.md §11; board 8b): one collection,
+ * Library (design/particl-graphite/README.md §11; board 8b): one collection,
  * three lenses — Assets (the cross-production roster), References (the
  * loose board), Unfiled (Make's takes). It indexes project media; it never
  * stores a second copy.
@@ -48,7 +48,7 @@ import "./mobile.css";
  * `Use in Make`, `Add to Canvas`; `Open full board`). The segmented says
  * which lens fills the screen.
  *
- * Below 768 (design/particl-v2-mobile, board M7): `16px 16px`, 12 apart —
+ * Below 768 (design/particl-graphite, board M7): `16px 16px`, 12 apart —
  * `Library` at 600 24/1.05 −0.02em over `14 ASSETS · 31 REFERENCES · 9
  * UNFILED`, the segmented full width, the filter pills scrolling edge to
  * edge (`Kind ▾`, `Production ▾`, `Locked`, `⌕ Search`), then the assets
@@ -191,7 +191,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
   const at = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return { x: r.left, y: r.bottom + 6 }; };
 
   const counts = { assets: els?.elements.length ?? 0, refs: ups?.uploads.length ?? 0, unfiled: unfiled?.generations.length ?? 0 };
-  const filter = "tap44 flex items-center gap-[5px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none text-ink";
+  const filter = "tap44 flex items-center gap-[5px] rounded-pill border border-[color:var(--gx-pop-border)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none text-ink";
   const showAssets = lens === "assets" || (lens === "references" && !full && false);
   const showRefs = lens === "assets" || lens === "references";
 
@@ -199,7 +199,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
   if (!els || !ups || !prods) return <PageLoader what="Opening · Library" />;
 
   if (phone) {
-    const pill = (on: boolean) => `tap44 flex flex-none items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${on ? "bg-[rgba(245,246,248,.1)] text-ink" : "text-ink-body"}`;
+    const pill = (on: boolean) => `tap44 flex flex-none items-center gap-[6px] rounded-pill border border-[color:var(--gx-pop-border)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${on ? "bg-[color:var(--gx-input-hover)] text-ink" : "text-ink-body"}`;
     const refSel = refs.find((u) => u.id === refMenu) ?? null;
     const refItems: MenuItem[] = refSel ? [
       { kind: "item", label: "Promote to asset", keys: money.price(0), onSelect: () => setSheet({ refs: [{ uploadId: refSel.id, url: refSel.url, label: refSel.filename, kind: refSel.kind }], name: refSel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") }) },
@@ -258,7 +258,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
               <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) drop(e.target.files); e.target.value = ""; }} />
               {refs.map((u) => (
                 <button key={u.id} type="button" onClick={() => setRefMenu(u.id)} aria-label={`Reference · ${u.filename}`}
-                  className="relative box-border aspect-[4/3] overflow-hidden rounded-tile border border-[rgba(245,246,248,.1)] text-left ui-placeholder">
+                  className="relative box-border aspect-[4/3] overflow-hidden rounded-tile border border-[color:var(--gx-card-border)] text-left ui-placeholder">
                   {u.kind === "image" && <img src={u.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                   <span className="ui-chip-scrim absolute bottom-[6px] left-[6px] max-w-[calc(100%-12px)] truncate rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">Ref · {u.filename.replace(/\.[a-z0-9]+$/i, "").slice(0, 18)}</span></span>
                 </button>
@@ -313,7 +313,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
                   const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
                   const prod = productionOf(a.projectId);
                   return (
-                    <article key={a.id} className={`legacy-library-card flex flex-col overflow-hidden rounded-card border border-[rgba(245,246,248,.1)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                    <article key={a.id} className={`legacy-library-card flex flex-col overflow-hidden rounded-card border border-[color:var(--gx-card-border)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
                       <span className="legacy-library-media relative block aspect-[4/3] border-b border-hairline ui-placeholder">
                         {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
@@ -333,7 +333,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
           )}
           {showRefs && (
             <section className={`legacy-reference-board relative min-w-0 overflow-auto ${lens === "assets" && !full ? "border-l border-border max-md:border-l-0 max-md:border-t" : ""} max-md:min-h-[520px]`} aria-label="References"
-              style={{ backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: "24px 24px" }}
+              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E\")", backgroundSize: "24px 24px" }}
               onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) drop(e.dataTransfer.files); }}
               onPointerDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
               <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) drop(e.target.files); e.target.value = ""; }} />
@@ -346,7 +346,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
                   const on = selected === u.id;
                   return (
                     <button key={u.id} type="button" onClick={(e) => { e.stopPropagation(); setSelected(on ? null : u.id); }} aria-label={`Reference · ${u.filename}`} aria-pressed={on}
-                      className={`absolute mt-[36px] box-border overflow-hidden rounded-tile border ui-placeholder ${on ? "border-ink shadow-[0_0_0_3px_rgba(245,246,248,.1)]" : "border-[rgba(245,246,248,.1)]"}`} style={{ left: x, top: y, width: w, height: h }}>
+                      className={`absolute mt-[36px] box-border overflow-hidden rounded-tile border ui-placeholder ${on ? "border-ink shadow-[0_0_0_3px_var(--gx-card-border)]" : "border-[color:var(--gx-card-border)]"}`} style={{ left: x, top: y, width: w, height: h }}>
                       {u.kind === "image" && <img src={u.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                       <span className="ui-chip-scrim absolute bottom-[6px] left-[6px] max-w-[calc(100%-12px)] truncate rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">Ref · {u.filename.replace(/\.[a-z0-9]+$/i, "").slice(0, 18)}</span></span>
                     </button>
@@ -354,7 +354,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
                 })}
                 {sel && (() => { const p = placed.find((x) => x.u.id === sel.id)!; return (
                   <span className="absolute z-[3] flex gap-[6px]" style={{ left: p.x, top: p.y + p.h + 36 + 8 }}>
-                    <button type="button" onClick={() => setSheet({ refs: [{ uploadId: sel.id, url: sel.url, label: sel.filename, kind: sel.kind }], name: sel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") })} className="tap44 flex h-[34px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.3)] bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Promote to asset<Mono cost>0 cr</Mono></button>
+                    <button type="button" onClick={() => setSheet({ refs: [{ uploadId: sel.id, url: sel.url, label: sel.filename, kind: sel.kind }], name: sel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") })} className="tap44 flex h-[34px] items-center gap-[8px] rounded-pill border border-[color:var(--gx-hover-border)] bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Promote to asset<Mono cost>0 cr</Mono></button>
                     <button type="button" onClick={() => router.push(`/make/${sel.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(sel.id)}`)} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Use in Make</button>
                     <button type="button" onClick={() => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(sel.id)}`) : toast("Pick a project first — Canvas belongs to a project.")} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink-body">Add to Canvas</button>
                   </span>

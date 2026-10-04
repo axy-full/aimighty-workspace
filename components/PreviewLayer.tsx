@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { assetIdFromUrl, downloadUrl, galleryOf, originalUrl, readPreview, validAssetId, type PreviewItem } from "@/lib/preview";
 import { bindPreview, onBindingsEnded, type ActResult, type BoundAction, type Binding } from "@/lib/shell/preview-bridge";
+import "./PreviewLayer.css";
 
 const SELECTOR = "[data-preview-url]";
 const LONG_PRESS_MS = 550;

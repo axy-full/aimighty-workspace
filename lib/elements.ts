@@ -922,7 +922,7 @@ export async function overridesOf(elementId: string): Promise<
 }
 
 /**
- * The trained face, once the trainer is done (design/particl-v2 §12: `Train
+ * The trained face, once the trainer is done (design/particl-graphite §12: `Train
  * the face now`). A version made from an identity is written pending; this
  * asks the trainer about each one still pending and, when the identity is
  * ready, marks the version ready and makes it the attribute's current — the

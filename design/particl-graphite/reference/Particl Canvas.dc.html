@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;background:#000;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#0A84FF;text-decoration:none}a:hover{color:#409CFF}
+</style>
+</helmet>
+<div style="padding:48px;background:#000;color:#F5F5F7;font-size:13px;width:max-content">
+  <div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:center;gap:14px"><div style="width:22px;height:22px;border-radius:5px;background:linear-gradient(145deg,#5AAAFF,#0A84FF)"></div><h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.03em;white-space:nowrap">Particl · reimagined</h1></div><span style="color:rgba(235,235,245,0.45);white-space:nowrap">Rebuilt from axy-full/aimighty-workspace · every route · click a label to open it live.</span></div>
+
+  <div style="margin-top:36px;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(235,235,245,0.45);font-weight:500">Studio · Home · 10 stages · dialogs</div>
+  <div style="margin-top:12px;display:grid;grid-template-columns:repeat(4,576px);gap:28px 24px">
+    <sc-for list="{{ studio }}" as="sc" hint-placeholder-count="0">
+      <div>
+        <div style="width:576px;height:360px;overflow:hidden;border-radius:6px;border:1px solid rgba(255,255,255,0.10);background:#0D0D10"><iframe src="{{ sc.src }}" title="{{ sc.label }}" style="width:1440px;height:900px;border:0;transform:scale(0.4);transform-origin:0 0;pointer-events:none;display:block"></iframe></div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:baseline"><a href="{{ sc.src }}" target="_blank" style="font-size:13px;font-weight:600;color:#F5F5F7">{{ sc.label }}</a><span style="font-size:11px;color:rgba(235,235,245,0.45);font-family:ui-monospace,Menlo,monospace">{{ sc.route }}</span></div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top:48px;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(235,235,245,0.45);font-weight:500">Gen · Workspace · Auth · Particl v2 routes · Rig · Library · Atomik · Platform</div>
+  <div style="margin-top:12px;display:grid;grid-template-columns:repeat(4,576px);gap:28px 24px">
+    <sc-for list="{{ other }}" as="sc" hint-placeholder-count="0">
+      <div>
+        <div style="width:576px;height:360px;overflow:hidden;border-radius:6px;border:1px solid rgba(255,255,255,0.10);background:#0D0D10"><iframe src="{{ sc.src }}" title="{{ sc.label }}" style="width:1440px;height:900px;border:0;transform:scale(0.4);transform-origin:0 0;pointer-events:none;display:block"></iframe></div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:baseline"><a href="{{ sc.src }}" target="_blank" style="font-size:13px;font-weight:600;color:#F5F5F7">{{ sc.label }}</a><span style="font-size:11px;color:rgba(235,235,245,0.45);font-family:ui-monospace,Menlo,monospace">{{ sc.route }}</span></div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top:48px;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(235,235,245,0.45);font-weight:500">iPhone · Studio (Home · Workflow · Canvas · Takes · Edit + stages &amp; sheets) · Particl v2 mobile M1–M10</div>
+  <div style="margin-top:12px;display:grid;grid-template-columns:repeat(8,270px);gap:28px 24px">
+    <sc-for list="{{ phone }}" as="sc" hint-placeholder-count="0">
+      <div>
+        <div style="width:270px;height:560px;overflow:hidden;border-radius:6px;background:#000"><iframe src="{{ sc.src }}" title="{{ sc.label }}" style="width:450px;height:934px;border:0;transform:scale(0.6);transform-origin:0 0;pointer-events:none;display:block"></iframe></div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:baseline"><a href="{{ sc.src }}" target="_blank" style="font-size:13px;font-weight:600;color:#F5F5F7">{{ sc.label }}</a><span style="font-size:11px;color:rgba(235,235,245,0.45);font-family:ui-monospace,Menlo,monospace">{{ sc.route }}</span></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const D = 'Particl.dc.html?', G = 'Particl%20Gen.dc.html?', W = 'Particl%20Workspace.dc.html?', P = 'Particl%20Productions.dc.html?', M = 'Particl%20iPhone.dc.html?';
+    const studio = [['Home · Projects', '/workbench', D + 'home=1&atomik=closed'], ['Home · welcome', '/workbench', D + 'home=1&welcome=1&atomik=closed'], ['01 Brief & ideas', 'stage brief', D + 'stage=brief'], ['02 Script & breakdown', 'stage script', D + 'stage=script'], ['03 Moodboard', 'stage moodboard', D + 'stage=moodboard'], ['04 Characters', 'stage characters', D + 'stage=characters'], ['05 Elements', 'stage elements', D + 'stage=elements'], ['06 Production canvas', 'stage canvas', D + 'stage=canvas'], ['07 Storyboards', 'stage storyboard', D + 'stage=storyboard'], ['08 Assets & takes', 'stage assets', D + 'stage=assets'], ['09 Edit & sound', 'stage edit', D + 'stage=edit'], ['10 Delivery', 'stage export', D + 'stage=export'], ['Plan with Genie', 'dialog run', D + 'stage=canvas&dialog=run'], ['Generate a new take', 'dialog generate', D + 'stage=canvas&dialog=generate'], ['Choose a thinking model', 'dialog models', D + 'stage=canvas&dialog=models'], ['Signed out · look around', '/workbench', D + 'stage=canvas&auth=out']].map(([label, route, src]) => ({ label, route, src }));
+    const other = [['Gen · Video', '/generate', G + 'mode=video'], ['Gen · Images', '/generate?mode=images', G + 'mode=images'], ['Gen · Audio', '/generate?mode=audio', G + 'mode=audio'], ['Gen · Seedance 2.5 Edit', '/generate?task=edit', G + 'mode=video&task=edit'], ['Workspace & account', '/settings', W + 'tab=settings'], ['Team', '/team', W + 'tab=team'], ['Credits & plan', '/billing', W + 'tab=billing'], ['Usage', '/usage', W + 'tab=usage'], ['Account security', '/account/security', W + 'tab=security'], ['Workspace activity', '/settings · activity', W + 'tab=activity'], ['Pricing', '/pricing', W + 'screen=pricing'], ['Sign in', '/login', W + 'screen=login'], ['Request access', '/signup', W + 'screen=signup'], ['Accept invitation', '/invite/[code]', W + 'screen=invite'], ['Reset password', '/reset', W + 'screen=reset'], ['Set up the platform', '/setup', W + 'screen=setup']].map(([label, route, src]) => ({ label, route, src }));
+    const v2 = [['Projects', '/productions', 'productions'], ['Project', '/projects/[id]', 'project'], ['Shots', '/…/shots', 'shots'], ['Media', '/…/media', 'media'], ['Canvas', '/projects/[id]/canvas', 'canvas'], ['Shot bindings', '/shots/[id]', 'shot'], ['Provenance', '/takes/[id]', 'provenance'], ['Rig · assets', '/rig/canvas', 'rig'], ['Rig · stages', '/rig/recipes', 'recipe'], ['Rig · run', '/rig/run/[id]', 'run'], ['Pipelines', '/pipelines', 'pipelines'], ['Library', '/library', 'library'], ['Atomik · Ideas', '/atomik/ideas', 'ideas'], ['Atomik · Treatment', '/atomik/treatment', 'treatment'], ['Atomik · Breakdown', '/atomik/breakdown', 'breakdown'], ['Atomik · Shot list', '/atomik/shots', 'shotlist'], ['Connect', '/connect', 'connect'], ['Platform', '/platform', 'platform'], ['Admin console', '/admin', 'admin'], ['Content policy', '/policy', 'policy']].map(([label, route, id]) => ({ label, route, src: P + 'screen=' + id }));
+    const studioPhone = [['Home', 'tab=home'], ['Workflow sheet', 'tab=home&sheet=workflow'], ['01 Brief & ideas', 'tab=brief'], ['02 Script & breakdown', 'tab=script'], ['03 Moodboard', 'tab=moodboard'], ['04 Characters', 'tab=characters'], ['05 Elements', 'tab=elements'], ['06 Canvas', 'tab=canvas'], ['Canvas · Add to canvas', 'tab=canvas&sheet=library'], ['Canvas · Node controls', 'tab=canvas&sheet=inspector'], ['07 Storyboards', 'tab=storyboard'], ['08 Takes', 'tab=takes'], ['09 Edit & sound', 'tab=edit'], ['10 Delivery', 'tab=export'], ['Atomik sheet', 'tab=home&sheet=atomik'], ['Studio settings', 'tab=home&sheet=settings']].map(([l, qs]) => ({ label: 'iPhone · ' + l, route: 'workbench · mobile', src: M + qs }));
+    const v2Phone = [['M1 Productions', '/productions', 'screen=productions'], ['M2 Project · Media', '/…/media', 'screen=media'], ['M3 Shots', '/…/shots', 'screen=media&v2tab=Shots'], ['M3 Shots + Atomik sheet', '/…/shots', 'screen=media&v2tab=Shots&sheet=atomik'], ['Shot context menu', 'long-press', 'screen=media&v2tab=Shots&sheet=shotMenu'], ['Approve', '/…/approve', 'screen=media&v2tab=Approve'], ['M4 Make · Video', '/make/video', 'screen=make'], ['M9 Composer sheet', '/make/video', 'screen=make&sheet=composer'], ['M5 Rig · Canvas', '/rig/canvas/[id]', 'screen=rig'], ['M5 Slot sheet', '/rig/canvas/[id]', 'screen=rig&sheet=slot'], ['M6 Rig · Run', '/rig/run/[id]', 'screen=run'], ['M7 Library', '/library', 'screen=library'], ['M8 New asset sheet', 'modal', 'screen=library&sheet=newAsset'], ['M10 Settings', '/settings', 'screen=settings']].map(([l, route, qs]) => ({ label: 'iPhone · ' + l, route, src: M + 'app=v2&' + qs }));
+    const phone = studioPhone.concat(v2Phone);
+    return { studio, other: other.concat(v2), phone };
+  }
+}
+</script>
+</body>
+</html>

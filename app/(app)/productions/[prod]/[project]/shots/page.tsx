@@ -27,7 +27,7 @@ import ProductionHeader, { clock } from "@/components/production/ProductionHeade
 import { useAtomikRail } from "@/lib/atomikRail";
 
 /**
- * The Shots grid (design/particl-v2/README.md §7; the grid of board 10a,
+ * The Shots grid (design/particl-graphite/README.md §7; the grid of board 10a,
  * the interactions of 4b), value for value.
  *
  * Toolbar 52px, `0 24px`, 14 apart: `Grid | Filmstrip`, the mono stats,
@@ -52,7 +52,7 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * the description to rename inline — Enter commits, Esc cancels. Every
  * action narrates in the toast.
  *
- * Below 768 (design/particl-v2-mobile, board M3): the toolbar is gone —
+ * Below 768 (design/particl-graphite, board M3): the toolbar is gone —
  * the sub-tabs are in the header, `+` (50×50) and `Render SH08–09 · 38 CR`
  * are pinned above the dock (the primary outlines while any sheet is
  * open); two columns of the phone's card, 10 apart, `12px 16px`. A long
@@ -279,7 +279,7 @@ function Shots() {
                 onDragLeave={() => { if (overProd === t.project.id) setOverProd(null); }}
                 onDrop={(e) => { e.preventDefault(); const s = shots.find((x) => x.id === dragId); if (s) moveTo(s, t); }}
                 className={`flex h-[36px] items-center rounded-pill px-[12px] text-[13px] font-medium leading-none ${
-                  overProd === t.project.id ? "border border-ink bg-selected" : "border border-dashed border-[rgba(245,246,248,.35)]"}`}>
+                  overProd === t.project.id ? "border border-ink bg-selected" : "border border-dashed border-[color:var(--gx-hover-border)]"}`}>
                 {t.production.name}
               </span>
             ))}
@@ -409,7 +409,7 @@ function Filmstrip({ shots, fmt, inCredits }: { shots: ShotRow[]; fmt: (n: numbe
       <div className="flex h-[44px] gap-[3px]">
         {shots.map((s) => {
           const w = `${((s.planned ?? PLANNED) / total) * 100}%`;
-          const look = s.state === "approved" ? "border-b-2 border-b-accent ui-placeholder" : s.state === "picked" ? "bg-selected" : "border border-dashed border-[rgba(245,246,248,.2)]";
+          const look = s.state === "approved" ? "border-b-2 border-b-accent ui-placeholder" : s.state === "picked" ? "bg-selected" : "border border-dashed border-[color:var(--gx-hover-border)]";
           return (
             <button key={s.id} type="button" style={{ width: w }} onClick={() => { const k = approved.findIndex((a) => a.id === s.id); if (k >= 0) setI(k); }}
               className={`flex min-w-0 items-end justify-start overflow-hidden rounded-badge px-[6px] pb-[4px] ${look}`} title={s.code}>

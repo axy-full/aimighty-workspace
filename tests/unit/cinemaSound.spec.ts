@@ -183,7 +183,7 @@ test("the Sound switch is off by default, offered only where the engines route s
   expect(composerSettings(CINEMA_ROW, "16:9", on.picks)).toMatchObject({ generateAudio: true });
   /* Offered only on Cinema Studio where its sound is; elsewhere the pick is ignored, never sent. */
   expect(soundOffered(CINEMA_ROW)).toBe(true);
-  for (const other of [CINEMA_SILENT_ROW, SEEDANCE_ROW, { ...SEEDANCE_ROW, sound: true as const }, { ...CINEMA_ROW, connected: true as const }, { ...CINEMA_ROW, type: "image" as const }, null]) {
+  for (const other of [CINEMA_SILENT_ROW, SEEDANCE_ROW, { ...SEEDANCE_ROW, sound: true as const }, { ...CINEMA_ROW, type: "image" as const }, null]) {
     expect(soundOffered(other), JSON.stringify(other)).toBe(false);
     if (other) expect(composerSettings(other, "16:9", on.picks)).not.toHaveProperty("generateAudio");
   }
@@ -212,22 +212,20 @@ test("the Sound switch is off by default, offered only where the engines route s
   expect(generationRequestBody({ ...request, references: [{ uploadId: "room", role: "reference_audio" }] })).not.toHaveProperty("generateAudio");
 });
 
-test("the model sheet prices a row with sound only when Gen's switch is on, so the picked row's figure is still Generate's", async () => {
+test("the model sheet's priced read carries Gen's Sound switch; Cinema Studio's own row reads quoted, its figure on Generate", async () => {
   const { rateQuery, needsPricedRead, rowPrice, UNTOUCHED } = await import("../../lib/workspace/model-picker");
   const at = { ...UNTOUCHED, picks: { generateAudio: true } };
   expect(new URLSearchParams(rateQuery(at)).get("pickSound")).toBe("1");
   expect(new URLSearchParams(rateQuery(UNTOUCHED)).has("pickSound")).toBe(false);
   const silentRate = { credits: 31, resolution: "720p", ratio: "16:9", duration: 5, approximate: true as const };
   const loudRate = { ...silentRate, credits: 36, sound: true as const };
-  /* The list's own rate is for a silent take: with the switch on it no longer fits, so the sheet asks again. */
-  expect(needsPricedRead([{ ...CINEMA_ROW, rate: silentRate }], UNTOUCHED)).toBe(false);
-  expect(needsPricedRead([{ ...CINEMA_ROW, rate: silentRate }], at)).toBe(true);
-  expect(needsPricedRead([{ ...CINEMA_ROW, rate: loudRate }], at)).toBe(false);
-  /* Where the switch is not offered, the pick is ignored and the silent rate still fits. */
-  expect(needsPricedRead([{ ...CINEMA_SILENT_ROW, rate: silentRate }], at)).toBe(false);
-  /* The sheet's priced read answers with sound: that figure is the row's. */
+  /* Cinema Studio's row shows no figure (D0.2: it reads "quoted"), so no state of the switch makes the sheet ask for one. */
+  for (const row of [{ ...CINEMA_ROW, rate: silentRate }, { ...CINEMA_ROW, rate: loudRate }, { ...CINEMA_SILENT_ROW, rate: silentRate }])
+    for (const where of [UNTOUCHED, at]) expect(needsPricedRead([row], where)).toBe(false);
+  /* Whatever the list or a priced read carries for it, the row says quoted: the take's price, sound included, is the button's. */
   const sheet = { key: rateQuery(at), models: { [CINEMA_STUDIO_MODEL_ID]: loudRate }, audio: null };
-  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at, sheet)).toMatchObject({ credits: 36, kind: "rate", approximate: true });
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at, sheet)).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {})).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
 });
 
 test("Recreate brings a Cinema Studio take's Sound switch back where sound is offered, and the card says why when it cannot", async () => {

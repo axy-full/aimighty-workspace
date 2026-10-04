@@ -5,7 +5,7 @@ import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
- * Crew in the browser (design/particl-suites/CREW_ADDENDUM.md), against the
+ * Crew in the browser (design/particl-graphite/README.md), against the
  * real routes of a local ENGINE_MOCK server: the tab after Atomik, Room ·
  * Members · Sessions, a round that streams in with its price on the button,
  * solutions that route onward, the role card, and the phone floors.

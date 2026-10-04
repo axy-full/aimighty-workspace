@@ -1,5 +1,5 @@
 /**
- * particl's mark and wordmark (design/particl-v2/README.md §3; board 4a):
+ * particl's mark and wordmark (design/particl-graphite/README.md §3; board 4a):
  * the 7-dot trail on a `30 68 140 64` viewBox at 30×14, then `partıcl` —
  * Outfit 600 16px, −0.03em, dotless ı — 8px apart. On a phone (9c): 26×12,
  * 15px, 7px apart. The dots are the handoff's, verbatim.

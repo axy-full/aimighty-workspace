@@ -9,7 +9,7 @@
   border: 1px solid var(--graphite-edge);
   border-radius: 8px;
   font: 12px/1.45 var(--graphite-font);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, .6);
+  box-shadow: var(--gx-shadow-toast);
 }
 .panel summary {
   cursor: pointer;

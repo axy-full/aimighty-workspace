@@ -21,7 +21,7 @@ function initialsOf(name: string) {
  * renders, is held, or finished unseen), which opens the jobs tray; the
  * credits pill; the avatar, which opens Workspace.
  *
- * On a phone (app/phone-chrome.css) the context badge is a button: the Suites
+ * On a phone (components/graphite/phone.css) the context badge is a button: the Suites
  * and Search open under it, one tap away. `bar` is the top bar's second row
  * there — the project switcher beside the page strip or Gen's own buttons.
  */
@@ -57,14 +57,12 @@ export function Header({ account, bar = null }: { account: WorkspaceAccount | nu
   const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;
   return (
     <header className="gx-header" data-row="header" data-menu={menu ? "open" : undefined} ref={box}>
-      <div className="gx-aurora" aria-hidden="true" data-testid="header-aurora" /><div className="gx-dots" aria-hidden="true" /><div className="gx-baseline" aria-hidden="true" />
       {back ? (
         <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> <span className="gx-back-label">{back.label}</span></button>
       ) : null}
       {/* The mark goes home: on a desktop the Studio home (recent projects, what is running, the next step); on a phone Home's "Where to?". */}
       <button type="button" className="gx-brand" onClick={() => shell.goSuite("studio", shell.wide ? "stages" : "home")} aria-label="particl home" data-testid="brand-home">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="#F5F5F7" aria-hidden="true">
-          <defs><linearGradient id="gx-mark-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F5F5F7" /><stop offset="1" stopColor="#6EB4FF" /></linearGradient></defs>
+        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
           {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
         </svg>
         <span className="gx-brand-name">particl</span>
