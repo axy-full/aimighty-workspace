@@ -174,7 +174,8 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/api/workbench/projects")) saves.push(request.url()); });
   const readsTakenIn = await countStatusReads(page);
   await page.clock.install();
-  await page.goto("/suites?view=gen");
+  /* Make › Recent: what this composer has out. */
+  await page.goto("/suites?make=recent");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Harbour night shoot");
 
@@ -209,18 +210,17 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await expect(card("Nets drying").getByRole("status")).toHaveCount(0);
   for (const prompt of ["Gulls", "Nets drying", "Fog rolling"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toBeVisible();
   for (const prompt of ["A slow dolly", "Rain on the quay"]) await expect(card(prompt).getByRole("button", { name: /^Dismiss/ })).toHaveCount(0);
-  /* On a narrow screen the results sit under the composer: its top says takes are still out and jumps to them. */
+  /* The results are Make's Recent tab: the composer's top says takes are still out, at every width, and goes to them. */
   const jump = page.getByTestId("gen-resumed-jump");
+  await page.getByTestId("make-tab-make").click();
   await shootTop(page, info.project.name, "gen-top");
-  if (narrow) {
-    await expect(jump).toHaveText("2 takes still rendering");
-    const top = await jump.boundingBox();
-    expect(top!.y + top!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
-    await thumbSized(page, "2 takes still rendering", "gen-view");
-    expect(await cards.first().evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThan(page.viewportSize()!.height);
-    await jump.click();
-    await expect.poll(() => cards.first().evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight - 40; })).toBe(true);
-  } else await expect(jump).toBeHidden();
+  await expect(jump).toHaveText("2 takes still rendering");
+  const top = await jump.boundingBox();
+  expect(top!.y + top!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  if (narrow) await thumbSized(page, "2 takes still rendering", "gen-view");
+  await expect(cards).toHaveCount(0);
+  await jump.click();
+  await expect.poll(() => cards.first().evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight - 40; })).toBe(true);
   await noOverflow(page);
   await shoot(page, info.project.name, "gen-picked-up", "gen-resumed", 1);
 
@@ -249,7 +249,9 @@ test("Gen shows the takes left rendering as the collector reads them, bounds the
   await page.clock.fastForward(NEXT_READ_AFTER_FAILURES);
   await expect(card("Rain on the quay").locator(".gx-asset-meta")).toHaveText("Failed");
   await expect(card("Rain on the quay").getByRole("status")).toHaveCount(0);
-  if (narrow) await expect(jump).toHaveText("4 earlier takes to check");
+  await page.getByTestId("make-tab-make").click();
+  await expect(jump).toHaveText("4 earlier takes to check");
+  await jump.click();
   await shoot(page, info.project.name, "gen-landed", "gen-resumed");
   if (phone) await thumbSized(page, "Dismiss Rain on the quay, a lantern swings", "gen-view");
   await card("Rain on the quay").getByRole("button", { name: "Dismiss Rain on the quay, a lantern swings" }).click();
@@ -282,13 +284,16 @@ test("the jump to the takes still rendering reaches them past a long, windowed r
   const errors = await base(page, library);
   const rendering = connected(1, { status: "accepted", model: "seedance_2_5", name: "Seedance 2.5", prompt: "A slow dolly push across the wet harbour at blue hour", ago: 12 * MIN, composer: "gen" });
   await mockGeneration(page, [rendering], () => ({ json: { job: rendering, pollAfterSeconds: 60 } }));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   await expect(page.getByTestId("project-name")).toHaveText("Harbour night shoot");
-  /* A long project: the results are windowed, and the take still out sits at their head, under the composer. */
+  /* A long project: the results are windowed, and the take still out sits at their head. */
   await expect(page.locator(".gx-gen-grid")).toHaveAttribute("data-virtual", "on");
   const card = page.getByTestId("gen-resumed");
   await expect(card).toHaveCount(1);
+  /* Scrolled down Recent, then back to the composer: its jump brings the take still out into view. */
+  await page.getByTestId("gen-view").evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(card).not.toBeInViewport();
+  await page.getByTestId("make-tab-make").click();
   await page.getByTestId("gen-resumed-jump").click();
   await expect(card).toBeInViewport();
   await noOverflow(page);

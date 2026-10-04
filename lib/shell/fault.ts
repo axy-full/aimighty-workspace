@@ -113,7 +113,8 @@ export type SegmentId = ShellSuiteId | "gen" | "crew";
 /** Each header segment as a plain link, for the pages drawn outside the live shell. */
 export function segmentHref(id: SegmentId): string {
   if (id === "studio") return STUDIO_HREF;
-  if (id === "gen" || id === "crew") return `${STUDIO_HREF}?view=${id}`;
+  if (id === "gen") return `${STUDIO_HREF}?make=video`;
+  if (id === "crew") return `${STUDIO_HREF}?view=${id}`;
   return `${STUDIO_HREF}?suite=${shellSuite(id).legacy}`;
 }
 

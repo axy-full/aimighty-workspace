@@ -125,7 +125,7 @@ test.describe("the ways back in", () => {
   test("every header segment has a plain link that lands on it", () => {
     expect(Object.fromEntries(HEADER_SEGMENT.map((s) => [s.id, segmentHref(s.id)]))).toEqual({
       studio: "/suites",
-      gen: "/suites?view=gen",
+      gen: "/suites?make=video",
       business: "/suites?suite=moleculr",
       viral: "/suites?suite=subatomik",
       atomik: "/suites?suite=atomik",
@@ -233,8 +233,8 @@ test.describe("the shell's walls, in source", () => {
     expect(shell.match(/className="gx-fault-dialog" role="dialog" aria-modal="true"/g)).toHaveLength(2);
   });
 
-  test("Gen walls off its results and each take", () => {
-    const gen = read("components/graphite/GenView.tsx");
+  test("Make walls off its results and each take", () => {
+    const gen = read("components/graphite/MakePanel.tsx");
     expect(gen).toMatch(/<Boundary what="Results" probe="gen-results"/);
     expect(gen).toMatch(/<Boundary what="This take" probe=\{`take:\$\{entry\.take\.id\}`\}.*<TileFault/);
   });

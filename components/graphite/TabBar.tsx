@@ -13,17 +13,17 @@ const TABS: { id: TabId; label: string; glyph: GlyphName }[] = [
 
 /**
  * The phone's floating tab bar, shown below 768px only. Every tab is a route the shell already has: Home is the suite picker
- * ("Where to?"), Gen its composer, Suites the last non-Studio suite
+ * ("Where to?"), Gen opens Make's panel (full width here), Suites the last non-Studio suite
  * (Business until one is chosen), Assets the Library's Assets tab, More the
  * Workspace. Studio lives behind the Home tile, so the Studio pages keep
  * Home lit. The header's suite tablist stays the one place a suite is picked.
  */
 export function TabBar() {
   const shell = useShell();
-  const active: TabId = shell.libOpen ? "assets" : shell.view === "gen" ? "gen" : shell.view === "workspace" ? "more" : shell.view === "crew" || shell.suite.id !== "studio" ? "suites" : "home";
+  const active: TabId = shell.libOpen ? "assets" : shell.make ? "gen" : shell.view === "workspace" ? "more" : shell.view === "crew" || shell.suite.id !== "studio" ? "suites" : "home";
   const go = (id: TabId) => {
     if (id === "home") shell.goSuite("studio", "home");
-    else if (id === "gen") shell.goGen();
+    else if (id === "gen") shell.openMake();
     else if (id === "suites") shell.goSuite(shell.view === "suite" && shell.suite.id !== "studio" ? shell.suite.id : "business");
     else if (id === "assets") shell.openLibrary("assets");
     else shell.goWorkspace();

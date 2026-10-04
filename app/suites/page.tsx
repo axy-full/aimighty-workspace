@@ -3,6 +3,9 @@ import UploadRecovery from "@/components/UploadRecovery";
 import SuitesApp from "@/components/graphite/SuitesApp";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SessionProvider } from "@/lib/session";
+import { redirect } from "next/navigation";
+import { fromGenLink } from "@/lib/shell/make";
+import { searchStringOf } from "@/lib/workspace/switchover";
 import "@/components/workspace/workspace.css";
 import "@/components/graphite/shell.css";
 import "@/components/graphite/crew/crew.css";
@@ -10,6 +13,7 @@ import "@/components/graphite/production/production.css";
 import "@/components/graphite/business/business.css";
 import "@/components/graphite/viral/viral.css";
 import "@/components/graphite/phone.css";
+import "@/components/graphite/make.css";
 
 export const dynamic = "force-dynamic";
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#000000" };
@@ -22,6 +26,10 @@ export const metadata = { title: "Particl" };
  * the page bodies it mounts today are the existing ones, inside the new chrome.
  */
 export default async function Suites({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  /* The old Gen page is Make's panel now (lib/shell/make.ts): `?view=gen&mode=…` lands on the same address without them,
+     plus `make=<type>`, before sign-in so a visitor comes back to Make itself. */
+  const moved = fromGenLink(searchStringOf(await searchParams));
+  if (moved !== null) redirect(`/suites${moved ? `?${moved}` : ""}`);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
   return (
     <SessionProvider key={scope} value={session}>

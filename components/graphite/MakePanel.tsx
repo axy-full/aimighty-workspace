@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { failureLine } from "@/lib/errors";
 import { PromptAttach, keptNote, resolveAttached, type Attached } from "@/components/PromptAttach";
 import { dropToIds, isDroppable, readDrop } from "@/lib/drop";
@@ -15,7 +15,7 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { AUDIO_SECONDS, COMPOSER_TYPES, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, EMPTY_PROMPT, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
@@ -39,6 +39,7 @@ import { CINEMA_BANK, recipeCinema } from "@/lib/workspace/cinema-vocabulary";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import type { GenInputAsset } from "@/lib/genAssetInput";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
+import { Glyph } from "./icons";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -86,26 +87,69 @@ type RecipeCard = {
 };
 
 /**
- * Gen (README › Gen): one composer on the left, this project's results on the
- * right. Its models are Studio engines on this workspace's credits. Takes an
- * earlier visit left running on a signed-in account are still shown until
- * they land (the shell's collector files them); nothing new starts there.
+ * Make (design/particl-graphite/README.md § 3.2): a 440 px panel over any
+ * screen — full width on a phone — that was the Gen page. Its Make tab is the
+ * composer the handoff draws (type, words, references, the engine line with
+ * its live price and Change, Make at that price, where it goes), then every
+ * control the handoff's panel does not draw yet, exactly as Gen had them, in
+ * Gen's order. Its Recent tab is Gen's results. Its models are Studio engines
+ * on this workspace's credits. Takes an earlier visit left running on a
+ * signed-in account are still shown until they land (the shell's collector
+ * files them); nothing new starts there.
  */
-export function GenView({ scope, project, items, library, projects = "ready", workspaceName, onProject }: {
+export function MakePanel({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null }: {
   scope: string; project: Project | null; items: LibraryEntry[];
   /** The open project's library store (its read: skeletons, a failed read's banner); `projects` is the project list's own read. */
   library: ProjectLibrary; projects?: "loading" | "ready" | "error";
+  /** The project list failed to read: said here too, with Try again, and the draft stays editable. */
+  projectsError?: string | null; onRetry?: () => void;
   workspaceName: string | null; onProject: (id: string) => void;
+  /** The Inspector's column is open on a take (one opened from Recent): Make sits beside it rather than over it. */
+  beside?: boolean;
+  /** The project's frame, so every card and skeleton on Recent holds it (the card contract, TakeTile.tsx). */
+  aspect?: string | null;
 }) {
   const shell = useShell();
   const ws = useWorkspace();
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
-  const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
+  const opened = shell.make && shell.make !== "recent" ? shell.make : shell.lastMake;
+  const [initialType] = useState(opened);
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
+  const { state, model, offered, settings, blocked: waiting, buttonLabel, buttonParts, submitting } = composer;
+  /* Make's own words for an empty prompt; every other reason is the composer's. */
+  const blocked = waiting === EMPTY_PROMPT ? "Say what to make." : waiting;
+  const recentTab = shell.make === "recent";
+  /* The panel starts under the header, whatever height the header has on this screen. */
+  const panel = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = panel.current, root = el?.closest<HTMLElement>(".gx"), header = root?.querySelector<HTMLElement>(".gx-header");
+    if (!el || !root || !header) return;
+    /* On the shell's root, so the engine sheet (portalled there) lines up with the panel too. */
+    const place = () => root.style.setProperty("--make-top", `${Math.max(0, Math.round(header.getBoundingClientRect().bottom - root.getBoundingClientRect().top))}px`);
+    place();
+    const watch = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null;
+    watch?.observe(header); watch?.observe(root);
+    return () => { watch?.disconnect(); root.style.removeProperty("--make-top"); };
+  }, []);
   /* Cinema Studio 4.0 on this workspace's credits: its own documented controls under Direction (sent as its parameters,
      never written into the words) and WAV sound references in the well. */
   const cinemaModel = model != null && isCinemaStudioModel(model.id);
   const dispatchComposer = composer.dispatch;
   const [mode, setMode] = useState<"compose" | "edit">("compose");
+  const dispatchType = useCallback((value: ComposerType) => { setMode("compose"); dispatchComposer({ type: "type", value }); }, [dispatchComposer]);
+  /* The address and the composer name one type: a type the address moved to (a link, an Open, Back) is the composer's,
+     and a type the composer moved to (a tab here, a recipe) is the address's. Each follows only the other's change. */
+  const { setMake } = shell;
+  const asked = shell.make;
+  const follow = useRef({ dispatchType, setMake });
+  useEffect(() => { follow.current = { dispatchType, setMake }; });
+  const synced = useRef({ asked, type: state.type });
+  useEffect(() => {
+    const was = synced.current;
+    synced.current = { asked, type: state.type };
+    if (!asked || asked === "recent" || asked === state.type) return;
+    if (asked !== was.asked) follow.current.dispatchType(asked);
+    else if (state.type !== was.type) follow.current.setMake(state.type);
+  }, [asked, state.type]);
   const scopedFetch = useScopedFetch(scope);
   const [sheet, setSheet] = useState(false);
   /* What this browser remembers for the sheet (recent picks), read fresh each time it opens. */
@@ -368,7 +412,15 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   /* On a narrow screen the results sit under the whole composer: say at the top that takes are still out. The jump goes
      through smoothScrollIntoView like every smooth move in a scroller that holds a windowed list: today it runs down to
      cards above the grid's rows, and a layout that put rows on its way would otherwise stop it short. */
-  const jumpToPickedUp = () => smoothScrollIntoView(resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]'), "center");
+  const jumpPending = useRef(false);
+  const jump = () => smoothScrollIntoView(resultsRef.current?.querySelector<HTMLElement>('[data-testid="gen-resumed"]'), "center");
+  /* The takes still out are on Recent: the jump goes there first, then down to them. */
+  const jumpToPickedUp = () => { if (recentTab) { jump(); return; } jumpPending.current = true; setMake("recent"); };
+  useEffect(() => {
+    if (!recentTab || !jumpPending.current) return;
+    jumpPending.current = false;
+    requestAnimationFrame(() => jump());
+  });
   const takesReferences = state.type !== "audio";
   /* The well names each reference the way the engine counts it: @Image1, @Video1, @Audio1, within its own kind. */
   const wellTags = referenceTags(state.references.map((r) => r.kind));
@@ -478,99 +530,120 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const tabs = (
     <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={4}>
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
-        <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => { setMode("compose"); composer.dispatch({ type: "type", value: t }); }}><span>{TYPE_TAB[t]}</span></button>
+        <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => dispatchType(t)}><span>{TYPE_TAB[t]}</span></button>
       ))}
       <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
     </div>
   );
-  if (mode === "edit") {
-    return (
-      <div className="gx-gen gx-enter" data-testid="gen-view">
-        <div className="gx-gen-col">
-          <section className="gx-gen-card" aria-label="Output">{tabs}</section>
-          <SeedanceEditHost scope={scope} project={project} onBack={() => setMode("compose")} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="gx-gen gx-enter" data-testid="gen-view">
+  /* The engine line (README § 0 rule 2): the engine, what it renders and one take's live price as the composer quotes it. */
+  const engineSpec = (state.type === "audio"
+    ? [model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null]
+    : state.type === "image" ? [settings.ratio, settings.resolution]
+    : [settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter(Boolean) as string[];
+  const enginePrice = composer.credits != null ? `${composer.quote?.approximate ? "about " : ""}${composer.credits.toLocaleString("en-US")} cr` : null;
+  const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
+  const compose = mode === "edit" ? (
+    <div className="gx-make-compose">
+      <section className="gx-gen-card" aria-label="Output">{tabs}</section>
+      <SeedanceEditHost scope={scope} project={project} onBack={() => setMode("compose")} />
+    </div>
+  ) : (
+    <section className="gx-gen-card gx-make-compose" aria-label="Composer">
+      {banner}
       {pickedUp.length ? (
         <button type="button" className="gx-hbtn gx-resumed-jump" data-tone={rendering ? "blue" : "amber"} onClick={jumpToPickedUp} data-testid="gen-resumed-jump">
           <span className="gx-resumed-dot" aria-hidden="true" />
           {rendering ? `${rendering} ${rendering === 1 ? "take" : "takes"} still rendering` : `${pickedUp.length} earlier ${pickedUp.length === 1 ? "take" : "takes"} to check`}
         </button>
       ) : null}
-      <section className="gx-gen-card" aria-label="Composer">
-        {tabs}
-        {recipeCardView}
+      {tabs}
+      {recipeCardView}
 
+      <div className="gx-gen-row">
+        {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
+        <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea ref={promptBox} className="gx-textarea gx-make-words" aria-label="Direction" rows={4} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
+          onChange={(e) => { composer.dispatch({ type: "prompt", value: e.target.value }); typeahead.track(e.target); }} {...typeahead.inputProps} data-testid="gen-prompt" />{typeahead.list}</PromptAttach>
+      </div>
+
+      {takesReferences ? (
         <div className="gx-gen-row">
-          <span className="gx-eyebrow" data-functional-label="">01 / Direction</span>
-          {presetNote ? <p className="gx-gen-note" role="status" data-testid="gen-preset-note">{presetNote}</p> : null}
-          <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToGen} testId="gen-attach"><textarea ref={promptBox} className="gx-textarea" aria-label="Direction" rows={5} placeholder={PLACEHOLDER[state.type]} value={state.prompt}
-            onChange={(e) => { composer.dispatch({ type: "prompt", value: e.target.value }); typeahead.track(e.target); }} {...typeahead.inputProps} data-testid="gen-prompt" />{typeahead.list}</PromptAttach>
-          {cinemaModel
-            ? <FilmChips key="cinema" scope={scope} type={state.type} setup={state.cinema} onChange={setCinema} bank={CINEMA_BANK} testId="gen-cinema" />
-            : <FilmChips key="film" scope={scope} type={state.type} setup={state.shot} onChange={setShot} />}
-          <div className="gx-gen-enhance">
-            <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
-              <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
-            </button>
-            <span className="gx-spacer" />
-            {enhancer.blocked ? <span className="gx-reason" data-testid="enhance-reason">{enhancer.blocked}</span> : null}
-            <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance} data-testid="enhance">
-              {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance" : `Enhance · ${enhancer.credits.toLocaleString("en-US")} cr`}
-            </button>
+          <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">References</span>{state.references.length ? <span className="gx-hint">{state.references.length}</span> : null}</div>
+          <div className="gx-well" data-over={over} data-testid="gen-well"
+            onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } }} onDragLeave={() => setOver(false)}
+            onDrop={(e) => {
+              e.preventDefault(); setOver(false);
+              /* A tile from anywhere, or files from the device (uploaded into the project first). */
+              const payload = readDrop(e.dataTransfer, project?.assets);
+              void dropToIds(payload, { scope, projectId: project?.id }).then(({ ids, notes }) => { ids.forEach((id) => void drop(id)); if (notes.length) setWellError(notes.join(" ")); })
+                .catch((error: unknown) => setWellError(error instanceof Error ? error.message : "The files could not be uploaded."));
+            }}>
+            {state.references.length ? state.references.map((r, i) => (
+              <span className="gx-ref" key={r.key}>
+                <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" />
+                  : r.kind === "audio" ? <svg viewBox="0 0 32 32" aria-hidden="true" className="gx-ref-wave"><path d="M7 14v4M11 10v12M15 6v20M19 11v10M23 8v16M27 13v6" /></svg> : null}</span>
+                <span className="gx-ref-name">{wellTags[i]} · {r.name}</span>
+                <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
+              </span>
+            )) : <span className="gx-well-hint">{cinemaModel ? "Drag stills, clips or WAV sounds here from the Library." : "Drag an asset here from the Library."}</span>}
           </div>
-          {enhancer.error ? <p className="gx-gen-error" role="alert">{enhancer.error}</p> : null}
-          {enhancer.enhanced ? (
-            <div className="gx-enhanced" data-testid="enhanced-card">
-              <span className="gx-eyebrow" data-functional-label="">Enhanced · {ENHANCER_LABEL[enhancer.provider ?? DEFAULT_ENHANCER]}{enhancer.charged != null ? ` · ${enhancer.charged.toLocaleString("en-US")} cr` : ""}</span>
-              <p>{enhancer.enhanced}</p>
-              <div className="gx-enhanced-actions">
-                <button type="button" className="gx-hbtn" onClick={() => { composer.dispatch({ type: "prompt", value: enhancer.enhanced! }); enhancer.dismiss(); }} data-testid="enhanced-use">Use this</button>
-                <button type="button" className="gx-hbtn" onClick={enhancer.dismiss} data-testid="enhanced-keep">Keep mine</button>
-              </div>
-            </div>
-          ) : null}
+          {wellError ? <p className="gx-gen-error" role="alert">{wellError}</p> : null}
         </div>
+      ) : null}
 
-        <div className="gx-gen-row">
-          <span className="gx-eyebrow" data-functional-label="">02 / Model</span>
-          <button ref={modelButton} type="button" className="gx-model" aria-haspopup="dialog" aria-expanded={sheet} onClick={openSheet} data-testid="gen-model">
-            <span className="gx-tool-tag" aria-hidden="true">{(model?.label ?? "—").slice(0, 2).toUpperCase()}</span>
-            <span style={{ minWidth: 0, flex: 1 }}>
-              <span className="gx-model-name">{model?.label ?? "Choose a model"}</span>
-              <span className="gx-model-sub">Studio engine</span>
-            </span>
-            <span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>▾</span>
+      <button ref={modelButton} type="button" className="gx-make-engine" aria-haspopup="dialog" aria-expanded={sheet} onClick={openSheet} title="Studio engine · Change" data-testid="gen-model">
+        <Glyph name="spark" size={16} className="gx-glyph" />
+        <span className="gx-make-engine-line">
+          <span className="gx-model-name">{model?.label ?? "Choose an engine"}</span>
+          {engineSpec.map((part) => <span key={part} className="gx-make-engine-part">{part}</span>)}
+          {enginePrice ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price">{enginePrice}</span> : null}
+        </span>
+        <span className="gx-make-change">Change</span>
+      </button>
+
+      {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
+      {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
+      {/* Why Make waits keeps its line when there is no reason, so Make below it stays put as a price lands or a submission starts. */}
+      {block ? <p className="gx-reason gx-gen-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : <p className="gx-reason gx-gen-reason" aria-hidden="true" />}
+      <div className="gx-gen-cta gx-make-go">
+        <span className="gx-make-dest" data-testid="make-dest">To {project?.name ?? "a new project"} · Library</span>
+        {/* What it does, then what it costs: the price is its own run of text, so a narrow button (or a wide font)
+            moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
+          aria-label={submitting ? "Submitting…" : recipeWait ? "Make" : buttonLabel} data-priced={!submitting && !recipeWait && buttonParts.price ? "" : undefined}>
+          {submitting ? "Submitting…" : recipeWait ? "Make" : (
+            <>
+              <span className="gx-go-act">{buttonParts.action}</span>
+              {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Below: every control Make's drawn panel does not have yet (README § 3.2 draws none of them), exactly as Gen had them
+          and in Gen's order — the film chips and Enhance under the words, then the output's own settings, then takes. */}
+      <div className="gx-make-more" data-testid="make-more">
+        {cinemaModel
+          ? <FilmChips key="cinema" scope={scope} type={state.type} setup={state.cinema} onChange={setCinema} bank={CINEMA_BANK} testId="gen-cinema" />
+          : <FilmChips key="film" scope={scope} type={state.type} setup={state.shot} onChange={setShot} />}
+        <div className="gx-gen-enhance">
+          <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="When an enhancement is on the card, it is what gets generated.">
+            <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
+          </button>
+          <span className="gx-spacer" />
+          {enhancer.blocked ? <span className="gx-reason" data-testid="enhance-reason">{enhancer.blocked}</span> : null}
+          <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance} data-testid="enhance">
+            {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance" : `Enhance · ${enhancer.credits.toLocaleString("en-US")} cr`}
           </button>
         </div>
-
-        {takesReferences ? (
-          <div className="gx-gen-row">
-            <span className="gx-eyebrow" data-functional-label="">References</span>
-            <div className="gx-well" data-over={over} data-testid="gen-well"
-              onDragOver={(e) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } }} onDragLeave={() => setOver(false)}
-              onDrop={(e) => {
-                e.preventDefault(); setOver(false);
-                /* A tile from anywhere, or files from the device (uploaded into the project first). */
-                const payload = readDrop(e.dataTransfer, project?.assets);
-                void dropToIds(payload, { scope, projectId: project?.id }).then(({ ids, notes }) => { ids.forEach((id) => void drop(id)); if (notes.length) setWellError(notes.join(" ")); })
-                  .catch((error: unknown) => setWellError(error instanceof Error ? error.message : "The files could not be uploaded."));
-              }}>
-              {state.references.length ? state.references.map((r, i) => (
-                <span className="gx-ref" key={r.key}>
-                  <span className="gx-ref-thumb">{r.kind === "image" || r.kind === "video" ? <LazyMedia url={r.url} kind={r.kind} alt="" name={r.name} className="gx-lazy" />
-                    : r.kind === "audio" ? <svg viewBox="0 0 32 32" aria-hidden="true" className="gx-ref-wave"><path d="M7 14v4M11 10v12M15 6v20M19 11v10M23 8v16M27 13v6" /></svg> : null}</span>
-                  <span className="gx-ref-name">{wellTags[i]} · {r.name}</span>
-                  <button type="button" className="gx-ref-x" aria-label={`Remove ${r.name}`} onClick={() => composer.dispatch({ type: "removeReference", key: r.key })}>×</button>
-                </span>
-              )) : <span className="gx-well-hint">{cinemaModel ? "Drag stills, clips or WAV sounds here from the Library." : "Drag an asset here from the Library."}</span>}
-              {!shell.wide ? <button type="button" className="gx-hbtn" onClick={() => shell.openLibrary("assets")}>Open Library</button> : null}
+        {enhancer.error ? <p className="gx-gen-error" role="alert">{enhancer.error}</p> : null}
+        {enhancer.enhanced ? (
+          <div className="gx-enhanced" data-testid="enhanced-card">
+            <span className="gx-eyebrow" data-functional-label="">Enhanced · {ENHANCER_LABEL[enhancer.provider ?? DEFAULT_ENHANCER]}{enhancer.charged != null ? ` · ${enhancer.charged.toLocaleString("en-US")} cr` : ""}</span>
+            <p>{enhancer.enhanced}</p>
+            <div className="gx-enhanced-actions">
+              <button type="button" className="gx-hbtn" onClick={() => { composer.dispatch({ type: "prompt", value: enhancer.enhanced! }); enhancer.dismiss(); }} data-testid="enhanced-use">Use this</button>
+              <button type="button" className="gx-hbtn" onClick={enhancer.dismiss} data-testid="enhanced-keep">Keep mine</button>
             </div>
-            {wellError ? <p className="gx-gen-error" role="alert">{wellError}</p> : null}
           </div>
         ) : null}
 
@@ -612,7 +685,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           </div>
         ) : null}
         {/* Cinema Studio's Sound switch: off unless turned on here, whatever sound references the well holds. It is in the
-            price's key, so turning it on or off asks for the price again before Generate. */}
+            price's key, so turning it on or off asks for the price again before Make. */}
         {soundOffered(model) ? (
           <div className="gx-gen-row" data-testid="gen-sound-option">
             <span className="gx-eyebrow" data-functional-label="">Sound</span>
@@ -625,7 +698,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
           </div>
         ) : null}
         {/* Sound: a line's voice (the model's own vendor's, so the list swaps with the model), a length for effects and
-            music, and music's Instrumental. Each is in the price's key: a change is priced again before Generate. */}
+            music, and music's Instrumental. Each is in the price's key: a change is priced again before Make. */}
         {model?.audioTask === "speech" ? (
           <div className="gx-gen-row">
             <label className="gx-eyebrow" htmlFor="gx-voice" data-functional-label="">Voice</label>
@@ -651,117 +724,116 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             </div>
           </div>
         ) : null}
-
-        {state.notice ? <p className="gx-gen-note" role="status">{state.notice}</p> : null}
-        {composer.projectNotice ? <p className="gx-gen-note" role="status">{composer.projectNotice}</p> : null}
-        {/* Why Generate waits keeps its line when there is no reason: the takes stepper and Generate below it stay put as a
-            price lands or a submission starts, so a press on + made across that moment is neither lost nor carried onto Generate. */}
-        {block ? <p className="gx-reason gx-gen-reason" id="gx-gen-blocked" data-testid="gen-blocked">{block}</p> : <p className="gx-reason gx-gen-reason" aria-hidden="true" />}
-        {/* The takes stepper and the billing line sit outside the sticky block: on a phone the
-            sticky Generate (design/particl-graphite/README.md › Phone) is the button and its one-line foot, nothing taller. */}
         <div className="gx-gen-takes" data-testid="gen-takes">
-            {/* A draft goes one at a time: its final is made from it (lib/draftFinal.ts). */}
-            <span className="gx-hint">{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
-            <div className="gx-stepper" role="group" aria-label="Takes per generate">
-              <button type="button" aria-label="Fewer" disabled={Boolean(settings.draft) || state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
-              <span data-testid="gen-takes-count">{settings.draft ? 1 : state.count}</span>
-              <button type="button" aria-label="More" disabled={Boolean(settings.draft) || state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
-            </div>
-        </div>
-        <div className="gx-gen-cta">
-          {/* What it does, then what it costs: the price is its own run of text, so a narrow button (or a wide font)
-              moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
-          <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
-            aria-label={submitting ? "Submitting…" : recipeWait ? "Generate" : buttonLabel} data-priced={!submitting && !recipeWait && buttonParts.price ? "" : undefined}>
-            {submitting ? "Submitting…" : recipeWait ? "Generate" : (
-              <>
-                <span className="gx-go-act">{buttonParts.action}</span>
-                {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
-              </>
-            )}
-          </button>
-          <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
-        </div>
-        <p className="gx-gen-foot">{composer.wording}</p>
-      </section>
-
-      <section className="gx-gen-results" aria-label="Results" ref={resultsRef}>
-        <div className="gx-gen-results-head">
-          <span className="gx-panel-title">Results</span>
-          <div className="gx-chips" role="group" aria-label="Result kind">
-            {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
+          {/* A draft goes one at a time: its final is made from it (lib/draftFinal.ts). */}
+          <span className="gx-hint">{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
+          <div className="gx-stepper" role="group" aria-label="Takes per generate">
+            <button type="button" aria-label="Fewer" disabled={Boolean(settings.draft) || state.count <= 1} onClick={() => composer.dispatch({ type: "count", value: state.count - 1 })}>–</button>
+            <span data-testid="gen-takes-count">{settings.draft ? 1 : state.count}</span>
+            <button type="button" aria-label="More" disabled={Boolean(settings.draft) || state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
           </div>
         </div>
-        {view.banner ? <LoadBanner banner={view.banner} onRetry={library.refresh} testId="gen-results-error" /> : null}
-        {/* The composer above keeps its prompt when the results throw; one bad take costs only its own tile. */}
-        <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
-        <VirtualItems
-          className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
-          before={<>
-          {running ? (
-            <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>
-              <div className="gx-tile-media">
-                {/* A solid ring: no invented progress. The chip carries the job's own phase. */}
-                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[running.tone ?? "blue"] }} aria-hidden="true" /></span>
-                <span className="gx-tile-chip" data-tone={running.tone === "red" ? "failed" : running.tone === "green" ? "done" : "live"}><span className="gx-tile-chip-dot" aria-hidden="true" />{running.label ?? "Rendering"}</span>
-              </div>
-              <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
-              <span className="gx-asset-meta">{running.meta || running.label || "Running"}</span>
-            </div>
-          ) : null}
-          {pickedUp.map(({ job, problem, following }) => {
-            const phase = resumePhase(job, following);
-            return (
-              <div className="gx-asset gx-tile" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
-                {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
-                <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
-                <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
-                <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
-                {/* A failed take: why, what the account's own ledger shows for the charge, and what to do. */}
-                {job.status === "failed" && job.failure ? <span className="gx-asset-fail" data-testid="take-failure">{failureLine(job.failure).text}</span> : null}
-                {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
-                {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
-              </div>
-            );
-          })}
-          {liveBatches.map((batch) => (
-            <TakeStrip key={batch.id} batchId={batch.id} testId="gen-batch" state={batch.phase.done ? "done" : "live"}
-              label={stripLabel(batch.takes.map((take) => take.variation))} name={batch.name}
-              meta={[batch.model, approvedTotal(batch), batch.phase.label].filter(Boolean).join(" · ")}>
-              {batch.views.map((view) => {
-                const entry = view.generationId ? byGeneration.get(view.generationId) : undefined;
-                return (
-                  /* The same frame as a settled take's card, so a strip does not change height as its takes land. */
-                  <div className="gx-asset gx-tile gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
-                    {entry ? thumb(entry) : <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[view.tone] }} aria-hidden="true" /></span>}
-                    <span className="gx-asset-name">{view.label}</span>
-                    <span className="gx-asset-meta" data-testid="gen-batch-take-status">{view.status}</span>
-                  </div>
-                );
-              })}
-            </TakeStrip>
-          ))}
-          {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
-          </>}
-          renderItem={(cell: TakeCell<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : cell.kind === "draft" ? (
-            <DraftStrip scope={scope} projectId={project?.id ?? null} draft={cell.draft} finals={cell.finals} tile={pairTile} testId="gen-draft" />
-          ) : (
-            <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
-              label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
-              {cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return tile(entry, takeLabel(isVariation(v) ? v : i + 1)); })}
-            </TakeStrip>
-          )}
-        />
-        {!running && !pickedUp.length && !results.length && !liveBatches.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
-        {!running && !pickedUp.length && !results.length && !liveBatches.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
-        </Boundary>
-      </section>
+        <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
+        <p className="gx-gen-foot">{composer.wording}</p>
+      </div>
+    </section>
+  );
 
-      {/* The veil leaves the stage: an ancestor that contains fixed descendants would hold its `position: fixed`
+  const recentView = (
+    <section className="gx-gen-results gx-make-recent" aria-label="Results" ref={resultsRef}>
+      {banner}
+      <div className="gx-chips" role="group" aria-label="Result kind">
+        {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
+      </div>
+      {view.banner ? <LoadBanner banner={view.banner} onRetry={library.refresh} testId="gen-results-error" /> : null}
+      {/* The composer keeps its prompt when the results throw; one bad take costs only its own tile. */}
+      <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
+      <VirtualItems
+        className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+        before={<>
+        {running ? (
+          <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>
+            <div className="gx-tile-media">
+              {/* A solid ring: no invented progress. The chip carries the job's own phase. */}
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[running.tone ?? "blue"] }} aria-hidden="true" /></span>
+              <span className="gx-tile-chip" data-tone={running.tone === "red" ? "failed" : running.tone === "green" ? "done" : "live"}><span className="gx-tile-chip-dot" aria-hidden="true" />{running.label ?? "Rendering"}</span>
+            </div>
+            <span className="gx-asset-name">{running.name ?? "Rendering"}</span>
+            <span className="gx-asset-meta">{running.meta || running.label || "Running"}</span>
+          </div>
+        ) : null}
+        {pickedUp.map(({ job, problem, following }) => {
+          const phase = resumePhase(job, following);
+          return (
+            <div className="gx-asset gx-tile" key={job.id} data-tone={phase.tone} data-status={job.status} data-following={following} data-testid="gen-resumed" title={`${job.model.name} · ${job.quoteCredits.toLocaleString("en-US")} connected cr`}>
+              {/* The same solid ring as the composer's own run: the account reports no progress, so none is drawn. */}
+              <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[phase.tone] }} aria-hidden="true" /></span>
+              <span className="gx-asset-name" title={job.input.prompt}>{job.batch ? `${takeLabel(job.batch.variation)} · ${takeName(job)}` : takeName(job)}</span>
+              <span className="gx-asset-meta">{resumeLine(job, clock, following)}</span>
+              {/* A failed take: why, what the account's own ledger shows for the charge, and what to do. */}
+              {job.status === "failed" && job.failure ? <span className="gx-asset-fail" data-testid="take-failure">{failureLine(job.failure).text}</span> : null}
+              {problem ? <span className="gx-resumed-note" role="status">{problem}</span> : null}
+              {dismissable({ status: job.status, following }) ? <button type="button" className="gx-hbtn gx-resumed-x" onClick={() => resumed.dismiss(job.id)} aria-label={`Dismiss ${takeName(job)}`}>Dismiss</button> : null}
+            </div>
+          );
+        })}
+        {liveBatches.map((batch) => (
+          <TakeStrip key={batch.id} batchId={batch.id} testId="gen-batch" state={batch.phase.done ? "done" : "live"}
+            label={stripLabel(batch.takes.map((take) => take.variation))} name={batch.name}
+            meta={[batch.model, approvedTotal(batch), batch.phase.label].filter(Boolean).join(" · ")}>
+            {batch.views.map((view) => {
+              const entry = view.generationId ? byGeneration.get(view.generationId) : undefined;
+              return (
+                /* The same frame as a settled take's card, so a strip does not change height as its takes land. */
+                <div className="gx-asset gx-tile gx-batch-take" role="listitem" key={view.variation} data-tone={view.tone} data-status={view.status} data-done={view.done} data-variation={view.variation} data-testid="gen-batch-take">
+                  {entry ? thumb(entry) : <span className="gx-asset-thumb gx-running"><span className="gx-ring" style={{ background: RING[view.tone] }} aria-hidden="true" /></span>}
+                  <span className="gx-asset-name">{view.label}</span>
+                  <span className="gx-asset-meta" data-testid="gen-batch-take-status">{view.status}</span>
+                </div>
+              );
+            })}
+          </TakeStrip>
+        ))}
+        {view.skeletons ? <TakeSkeletons count={6} variant="grid" /> : null}
+        </>}
+        renderItem={(cell: TakeCell<LibraryEntry>) => cell.kind === "one" ? tile(cell.take) : cell.kind === "draft" ? (
+          <DraftStrip scope={scope} projectId={project?.id ?? null} draft={cell.draft} finals={cell.finals} tile={pairTile} testId="gen-draft" />
+        ) : (
+          <TakeStrip batchId={cell.batchId} testId="gen-batch" state="done" name={cell.takes[0].take.name} meta={settledTotal(cell.takes)}
+            label={stripLabel(cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return isVariation(v) ? v : i + 1; }))}>
+            {cell.takes.map((entry, i) => { const v = entryBatch(entry)?.variation; return tile(entry, takeLabel(isVariation(v) ? v : i + 1)); })}
+          </TakeStrip>
+        )}
+      />
+      {!running && !pickedUp.length && !results.length && !liveBatches.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
+      {!running && !pickedUp.length && !results.length && !liveBatches.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
+      </Boundary>
+    </section>
+  );
+
+  return (
+    <aside ref={panel} className="gx-make" aria-label="Make" data-testid="make-panel" data-tab={recentTab ? "recent" : state.type} data-beside={beside ? "" : undefined}
+      style={aspect ? ({ "--tile-aspect": aspect } as React.CSSProperties) : undefined}>
+      <div className="gx-make-head">
+        <strong className="gx-make-title">Make</strong>
+        <div className="gx-seg gx-seg--sm" role="tablist" aria-label="Make or Recent">
+          <button type="button" role="tab" className="gx-seg-btn" aria-selected={!recentTab} onClick={() => setMake(state.type)} data-testid="make-tab-make"><span>Make</span></button>
+          <button type="button" role="tab" className="gx-seg-btn" aria-selected={recentTab} onClick={() => setMake("recent")} data-testid="make-tab-recent"><span>Recent</span></button>
+        </div>
+        <span className="gx-spacer" />
+        {/* Below 1280 the Library is an overlay: Make's way to it, on either tab (README › Library, drag in from it). */}
+        {!shell.wide ? <button type="button" className="gx-hbtn gx-make-lib" onClick={() => shell.openLibrary("assets")} data-testid="make-open-library"><Glyph name="stack" size={16} className="gx-glyph" /><span>Library</span></button> : null}
+        <button type="button" className="gx-make-close" aria-label="Close Make" title="Close · Esc" onClick={shell.closeMake} data-testid="make-close">×</button>
+      </div>
+      <div className="gx-make-body gx-scroll" data-testid="gen-view">
+        {recentTab ? recentView : compose}
+      </div>
+
+      {/* The veil leaves the panel: an ancestor that contains fixed descendants would hold its `position: fixed`
           (the sheet then rises inside the scroll region, under the phone's tab bar). It lands on the shell
           root so the tokens still reach it. */}
       {sheet ? createPortal(
-        <div className="gx-veil" onClick={closeSheet} data-testid="model-sheet-veil">
+        <div className="gx-veil gx-veil--make" onClick={closeSheet} data-beside={beside ? "" : undefined} data-testid="model-sheet-veil">
           <ModelSheet label={`${TYPE_TAB[state.type]} models`} catalogue={CATALOGUE}
             offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
             loading={blocked === READING_MODELS}
@@ -772,6 +844,6 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
         </div>,
         document.querySelector(".gx") ?? document.body,
       ) : null}
-    </div>
+    </aside>
   );
 }

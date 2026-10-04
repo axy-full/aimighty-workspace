@@ -171,7 +171,15 @@ function measure(page: Page, target: string): Promise<Measure> {
       const bar = document.querySelector(".gx-tabbar");
       if (shown(bar) && getComputedStyle(bar).position === "fixed") bottom = Math.min(bottom, bar.getBoundingClientRect().top);
       const band = document.querySelector(".gx-gen-cta");
-      if (shown(band) && getComputedStyle(band).position === "sticky") bottom = Math.min(bottom, band.getBoundingClientRect().top);
+      /* A sticky band covers the page where it is stuck at the foot (Make's row sits in the flow until it sticks). */
+      const stuck = (el: HTMLElement) => {
+        let s = el.parentElement;
+        while (s && !/(auto|scroll)/.test(getComputedStyle(s).overflowY)) s = s.parentElement;
+        if (!s) return true;
+        const end = s.getBoundingClientRect().bottom - (Number.parseFloat(getComputedStyle(s).paddingBottom) || 0);
+        return el.getBoundingClientRect().bottom >= end - 2;
+      };
+      if (shown(band) && getComputedStyle(band).position === "sticky" && stuck(band)) bottom = Math.min(bottom, band.getBoundingClientRect().top);
     }
     const height = Math.max(0, Math.round(bottom - top));
     return { layers, safe, content: { top: Math.round(top), bottom: Math.round(bottom), height, share: Math.round((height / vh) * 1000) / 10 }, overflowX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth) };
@@ -182,7 +190,7 @@ type Screen = { id: string; path?: string; named?: false; atomik?: true; target:
 const SCREENS: Screen[] = [
   { id: "home", path: "/suites?suite=studio&page=brief&sp=home", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("suite-home")).toBeVisible(); } },
   { id: "takes", path: "/suites?suite=particl&page=takes&sp=takes", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("edit-takes")).toBeVisible(); } },
-  { id: "gen", path: "/suites?view=gen", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("gen-view")).toBeVisible(); await expect(page.locator(".gx-gen-go")).toBeVisible(); } },
+  { id: "gen", path: "/suites?make=video", target: "[data-testid='gen-view']", pane: "[data-testid='gen-view']", ready: async (page) => { await expect(page.getByTestId("gen-view")).toBeVisible(); await expect(page.locator(".gx-gen-go")).toBeVisible(); } },
   { id: "rig-list", path: "/suites?suite=studio&page=rig", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("rig-list").locator(".pxw-rig-row")).toHaveCount(3); } },
   { id: "rig-canvas", target: "[data-testid='rig-graph-surface']", pane: "[data-testid='content']", ready: async (page) => {
     await page.locator(".gx-pagehead").getByRole("tab", { name: "Canvas" }).click();
@@ -514,6 +522,7 @@ function desktopChrome(page: Page) {
       ["brand", ".gx-brand", false], ["badge", "[data-testid='suite-mark']", false], ["suites", ".gx-header .gx-seg", false], ["search", "[data-testid='header-search']", false],
       ["credits", "[data-testid='workspace-credits']", false], ["title", "[data-testid='page-title']", false], ["views", ".gx-pagehead .gx-seg", false],
       ["inspector", "[data-testid='toggle-inspector']", false], ["primary", "[data-testid='primary-action']", false],
+      ["make", "[data-testid='make-panel']", true],
     ] as const) {
       const el = document.querySelector<HTMLElement>(selector);
       const r = el && el.getClientRects().length ? el.getBoundingClientRect() : null;
@@ -533,13 +542,11 @@ const desktopGrid = (W: number, H: number): Record<string, Record<string, number
     brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
   };
   return {
-    rig: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34] },
+    rig: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34], make: null },
     /* Studio › Takes filters on its own desk, so its page head has no view segment. */
-    takes: { ...suite, views: null, inspector: [193.8, 32], primary: null },
-    gen: {
-      ...suite, strip: null, project: [281, 56, W - 602, 75], pagehead: [281, 131, W - 602, 66.7], content: [281, 197.7, W - 602, H - 197.7], library: [0, 56, 280, H - 56],
-      title: [145, 37.7], views: null, inspector: null, primary: null,
-    },
+    takes: { ...suite, views: null, inspector: [193.8, 32], primary: null, make: null },
+    /* Make is a 440px panel over the page (here Rig), from under the header to the foot; the page's chrome stays as it is. */
+    gen: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34], make: [W - 440, 56, 440, H - 56] },
   };
 };
 
@@ -549,9 +556,9 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
   const size = info.project.name.replace("workbench-", "");
   const expected = desktopGrid(width, height);
   const seen: Record<string, Record<string, number[] | null>> = {};
-  for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?view=gen"]] as const) {
+  for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?suite=studio&page=rig&make=video"]] as const) {
     await open(page, path);
-    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
+    if (id !== "takes") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
     if (id === "gen") await expect(page.getByTestId("gen-view")).toBeVisible();
     await settle(page);
     seen[id] = await desktopChrome(page);

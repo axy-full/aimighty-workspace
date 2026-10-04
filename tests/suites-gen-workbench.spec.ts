@@ -5,7 +5,7 @@ import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Suites › Gen, build step 2 (design/particl-graphite/README.md › Gen): the
+ * Suites › Make (design/particl-graphite/README.md § 3.2; it was Gen): the
  * composer on the existing useComposer host, the prompt enhancer with its
  * live price on the button, per-second length, the model sheet, and the
  * Library's assets dragged in as references.
@@ -37,7 +37,7 @@ async function open(page: Page) {
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   return { errors, enhance };
@@ -101,7 +101,7 @@ test("length is every second the engine allows, the sheet lists Studio engines o
   await expect(sheet).toHaveCount(0);
 
   /* The Library opens on Assets in Gen; its tile's text/plain id lands in the well. */
-  if (!wide) await page.getByTestId("toggle-library").click();
+  if (!wide) await page.getByTestId("make-open-library").click();
   const tile = page.getByTestId("library").locator("[data-ctx^='asset:']").first();
   await expect(tile).toBeVisible();
   const id = (await tile.getAttribute("data-ctx"))!.slice("asset:".length);
@@ -125,8 +125,8 @@ test("the Gen composer keeps the phone floors", async ({ page }, info) => {
   await expect(page.getByTestId("enhanced-card")).toBeVisible();
   await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
-  expect(await smallTargets(page, ".gx-gen"), "targets under 44×44").toEqual([]);
-  expect(await dimLabels(page, ".gx-gen"), "labels under #7C7C84").toEqual([]);
+  expect(await smallTargets(page, ".gx-make"), "targets under 44×44").toEqual([]);
+  expect(await dimLabels(page, ".gx-make"), "labels under #7C7C84").toEqual([]);
 });
 
 test("Gen › Edit hosts Seedance Edit on this workspace's credits, 2.5 by default, 2.0 on the picker", async ({ page }, info) => {
@@ -186,15 +186,17 @@ test("one take lands: its card says Complete with the ring held still, and the t
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.clock.install();
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
 
   await page.getByTestId("gen-prompt").fill(LONG);
   /* The first live price can wait on a cold compile. */
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => charges).toBe(1);
+  /* What was made is on Make › Recent. */
+  await page.getByTestId("make-tab-recent").click();
   const card = page.getByTestId("gen-running");
   await expect(card.locator(".gx-tile-chip")).toHaveText("Rendering");
   /* While it renders the ring pulses — never for a person who asked for less motion. */
