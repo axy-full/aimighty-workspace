@@ -33,7 +33,7 @@ export default function ResetRequestPage() {
       {sent ? (
         <div className="flex flex-col gap-4">
           <p className="rail-help !text-[13.5px] text-ink">{sent}</p>
-          <p className="rail-help">Nothing in the inbox after a few minutes? Check spam, then try again, or <RequestAccessButton className="text-ink underline-offset-2 hover:underline" label="contact management" />.</p>
+          <p className="rail-help !text-[12px] !text-lead">Nothing in the inbox after a few minutes? Check spam, then try again, or <RequestAccessButton className="text-ink underline-offset-2 hover:underline" label="contact management" />.</p>
           <Link href="/login" className="hdr-mono-link self-start">← BACK TO SIGN IN</Link>
         </div>
       ) : (
@@ -44,9 +44,9 @@ export default function ResetRequestPage() {
           </Field>
           <Submit busy={busy}>Email me a reset link</Submit>
           {err && <ErrorLine>{err}</ErrorLine>}
-          <p className="mt-4 flex items-center justify-between text-[12.5px] text-dim">
-            <Link href="/login" className="hover:text-ink">← Back to sign in</Link>
-            <RequestAccessButton className="hover:text-ink" label="Request an invite" />
+          <p className="mt-4 flex items-center justify-between text-[12.5px] text-lead">
+            <Link href="/login" className="auth-link hover:text-ink">← Back to sign in</Link>
+            <RequestAccessButton className="auth-link hover:text-ink" label="Request an invite" />
           </p>
         </form>
       )}
