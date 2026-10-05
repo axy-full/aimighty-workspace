@@ -36,7 +36,7 @@ import type { GenPreset } from "./recipe";
  */
 export const SUITES_PATH = "/suites";
 /* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS, "kind", "frame", "list", "region", "drawer", "atomik", "q"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -130,7 +130,7 @@ function readParams(search: string, last: ComposerType = "video"): Params {
   const tab = q.get("tab");
   const make = readMake(q);
   return {
-    view: view === "workspace" || view === "crew" ? view : "suite",
+    view: view === "workspace" || view === "crew" || view === "board" ? view : "suite",
     tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",

@@ -1,0 +1,72 @@
+"use client";
+import LazyMedia from "@/components/LazyMedia";
+import type { GroupData } from "@/lib/board/types";
+import type { CardProps } from "../types";
+
+/*
+ * Stream 3's plain cards: today's canvas nodes drawn simply, so a production
+ * opens as a board from day one, and the shared group frame. Each gives way
+ * to stream 4's or stream 5's card of the same kind (or id) as it lands
+ * (components/graphite/board/cards/index.ts). Notes and labels are the
+ * board's own free cards and stay stream 3's.
+ */
+
+export type Preview = { url: string; video: boolean };
+export type NodeCardData = {
+  kicker: string;
+  title: string;
+  /** The card's state in words ("Approved · Director"), or null. */
+  line: string | null;
+  tone: "green" | "gold" | "red" | "blue" | "floor";
+  text: string;
+  preview: Preview | null;
+  /** The media well's height in px; 0: a text card. */
+  well: number;
+};
+
+export function NodeCard({ data }: CardProps<NodeCardData>) {
+  return (
+    <article className="bd-card bd-node-card" data-tone={data.tone}>
+      {data.well ? (
+        <span className="bd-card-well" style={{ height: data.well }}>
+          {data.preview?.video ? <LazyMedia url={data.preview.url} kind="video" preview={false} />
+            /* eslint-disable-next-line @next/next/no-img-element */
+            : data.preview ? <img src={data.preview.url} alt="" loading="lazy" decoding="async" draggable={false} /> : null}
+        </span>
+      ) : null}
+      <span className="bd-card-body">
+        <span className="bd-eyebrow">{data.kicker}</span>
+        <span className="bd-card-title">{data.title}</span>
+        {data.text ? <span className="bd-card-text">{data.text}</span> : null}
+        {data.line ? <span className="bd-card-line"><i aria-hidden="true" />{data.line}</span> : null}
+      </span>
+    </article>
+  );
+}
+
+export type NoteData = { title: string; text: string };
+export function NoteCard({ data }: CardProps<NoteData>) {
+  return (
+    <article className="bd-card bd-note">
+      <span className="bd-eyebrow">Note</span>
+      <span className="bd-note-text">{data.text || <span className="bd-quiet">Nothing written yet.</span>}</span>
+    </article>
+  );
+}
+
+export type LabelData = { title: string };
+export function LabelCard({ data }: CardProps<LabelData>) {
+  return <div className="bd-label">{data.title}</div>;
+}
+
+/** The shared group frame (README § 3.1): a 14 px hairline frame, its label on the top border. */
+export function GroupFrame({ data }: CardProps<GroupData>) {
+  return (
+    <section className="bd-group" data-tone={data.tone} aria-label={data.title}>
+      <span className="bd-group-label">
+        <span className="bd-group-title">{data.title}</span>
+        {data.meta ? <span className="bd-group-meta">{data.meta}</span> : null}
+      </span>
+    </section>
+  );
+}

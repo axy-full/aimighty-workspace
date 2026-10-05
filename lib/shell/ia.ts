@@ -9,7 +9,7 @@ import type { PageId, Suite } from "@/lib/workspace/types";
  * give Business and Viral their own composers.
  */
 export type ShellSuiteId = "studio" | "business" | "viral" | "atomik";
-export type ShellView = "suite" | "gen" | "workspace" | "crew";
+export type ShellView = "suite" | "gen" | "workspace" | "crew" | "board";
 export type WorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
 
 export type ShellPage = {
