@@ -128,6 +128,8 @@ export type Shell = {
   setScreenParams: (patch: Readonly<Record<string, string | null>>, mode?: "push" | "replace") => void;
   /** The board reports the width of its right dock (340 open, 56 closed, 0 none): the shell sets `--board-dock`, so Make sits beside it. */
   setDockRight: (px: number) => void;
+  /** The board's right dock as it reported it (0 when there is none). */
+  dockRight: number;
   setLibTab: (tab: LibTab) => void;
   toggleLibrary: () => void;
   toggleInspector: () => void;
@@ -403,7 +405,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   const goHome = useCallback(() => {
     /* Today: the Studio overview on a desktop, the phone's "Where to?" on a phone. */
-    if (!(onRef.current && isLanded("home"))) { goSuite("studio", window.innerWidth >= PHONE_BELOW ? "stages" : "home"); return; }
+    if (!(onRef.current && isLanded("home"))) { goSuite("studio", window.innerWidth >= WIDE_FROM ? "stages" : "home"); return; }
     navigate("?view=home");
   }, [goSuite, navigate]);
 
@@ -547,6 +549,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     closeAtomik: () => setScreenParams({ atomik: null, q: null }, "push"),
     setScreenParams,
     setDockRight: setDock,
+    dockRight: dock,
     setLibTab,
     toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
     toggleInspector: () => {
@@ -610,7 +613,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, on, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik]);
+  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, on, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
