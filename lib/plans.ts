@@ -9,9 +9,9 @@
  * because a "standard panel" is not a unit this product has; a plan
  * differentiates on credits, and on the two counted ceilings Invite carries.
  *
- * **Invite's "50 cr once" is NOT an inclusion, and that is the whole reason
+ * **Invite's "250 cr once" is NOT an inclusion, and that is the whole reason
  * `includedCredits` is 0 for it.** Guardrail 1: "Free grant is one-time,
- * never recurring." The 50 is the welcome grant, already written once at
+ * never recurring." The 250 is the welcome grant, already written once at
  * sign-up by `createWorkspace` and already marked `welcome` in the ledger.
  * Putting it here would grant it again every cycle and turn a signup gift
  * into a monthly stipend for every free workspace on the platform.
@@ -38,7 +38,7 @@ export type PlanDef = {
 export const PLAN_IDS: readonly PlanId[] = ["invite", "studio", "agency", "production"];
 
 export const DEFAULT_PLANS: PlanDef[] = [
-  /* Invite includes no credits: its 50 are the one-time welcome grant. */
+  /* Invite includes no credits: its 250 are the one-time welcome grant. */
   { id: "invite", label: "Invite", priceUsd: 0, includedCredits: 0, maxProductions: 1, maxMembers: 3 },
   { id: "studio", label: "Studio", priceUsd: 49, includedCredits: 400, maxProductions: null, maxMembers: null },
   { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 1600, maxProductions: null, maxMembers: null },
