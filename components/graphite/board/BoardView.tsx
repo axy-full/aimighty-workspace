@@ -24,7 +24,8 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Project } from "@/lib/workbench/studio";
 import type { RoomPeer } from "@/lib/workbench/team-canvas-model";
 import { withBoardText } from "@/lib/workspace/rig-board";
-import { BoardAgentDock, DOCK_PANEL } from "./agent";
+import { BoardAgentDock, DOCK_PANEL, useBoardAgent } from "./agent";
+import { usePlanRun } from "./cards/plan/use-run";
 import { BoardCanvas } from "./BoardCanvas";
 import { BoardInternalsProvider, BoardSeams, type BoardInternals } from "./BoardContext";
 import { buildRegistry } from "./cards";
@@ -110,10 +111,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const board = BOARD_MODULES[kind] ?? BOARD_MODULES.studio;
   const registry = useMemo(() => buildRegistry(board.sets), [board]);
   const [now] = useState(() => Date.now());
+  /* Atomik's run on this production, for the plan card (stream 4): stream 7's seam when it has one, else a read-only read of the same GET. */
+  const agentSeam = useBoardAgent();
+  const polled = usePlanRun({ scope: rig.scope, productionId: project?.productionProjectId ?? null, draftId: project?.id ?? null, joined: rig.team.mode !== "off", enabled: !agentSeam.run });
+  const agent = agentSeam.run ?? polled;
 
   const src = useMemo<BoardSource | null>(() => (project ? {
-    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent: null, now,
-  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, now]);
+    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent, now,
+  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, agent, now]);
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);

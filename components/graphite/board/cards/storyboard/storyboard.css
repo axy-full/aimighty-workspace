@@ -30,3 +30,16 @@
 .gx-frame-body { padding: 8px 10px 10px; min-width: 0; }
 .gx-frame-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-frame-line { font-family: var(--gx-mono); font-size: 12px; line-height: 1.45; color: var(--gx-text-2); min-height: 35px; overflow-wrap: anywhere; }
+
+/* Draw the storyboard (README § 3.1 d; lead decision 28): the panel's primary button, a 34 px accent button. */
+.gx-draw { display: flex; flex-direction: column; gap: 6px; }
+.gx-draw-btn {
+  height: 34px; padding: 0 14px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.gx-draw-btn[data-quiet] { background: transparent; border: 1px solid var(--gx-btn-border); color: var(--gx-text); font-weight: 500; }
+.gx-draw-btn:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-draw-btn[data-quiet]:hover:not(:disabled) { background: transparent; border-color: var(--gx-hover-border); }
+.gx-draw-btn:disabled { opacity: .45; cursor: default; }
+.gx-draw-why { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+@media (max-width: 767px) { .gx-draw-btn { min-height: 44px; } }

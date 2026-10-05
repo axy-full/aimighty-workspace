@@ -1,16 +1,13 @@
 "use client";
-import { useState } from "react";
 import { Price, usePriceTitle } from "@/components/graphite/Price";
 import { useShell } from "@/lib/shell/state";
-import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import { readOnlyOf } from "../doc/DocCards";
 import type { CardProps } from "../types";
+import type { PlanData } from "./derive";
+import { setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
 import "./plan.css";
-
-/** The plan card's data: Atomik's run on the production, as the board reads it. */
-export type PlanData = { run: RigAgentRunView };
 
 /**
  * The plan card (design/particl-graphite/README.md § 3.1 e; lead decision 27): what the plan makes and what each
@@ -22,7 +19,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const readOnly = readOnlyOf(ctx);
   const plan = usePlan(ctx, data.run, readOnly);
   const shell = useShell();
-  const [open, setOpen] = useState(false);
+  const open = data.open;
   const model = plan.model;
   if (!model) return null;
   const proposal = model.phase === "proposal";
@@ -57,7 +54,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
       {model.modeLine ? <div className="gx-plan-mode">{model.modeLine}</div> : null}
       {model.note && model.primary?.kind !== "render" ? <div className="gx-plan-why">{model.note}</div> : null}
       {model.steps.length ? (
-        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal} onClick={() => setOpen(!open)} data-testid="board-plan-toggle"
+        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal} onClick={() => setPlanStepsOpen(data.run.id, !open)} data-testid="board-plan-toggle"
           hidden={!proposal}>{open ? "Hide the steps" : `Show the ${model.steps.length} ${model.steps.length === 1 ? "step" : "steps"}`}</button>
       ) : null}
       {(open || !proposal) && model.steps.length ? <Steps model={model} /> : null}

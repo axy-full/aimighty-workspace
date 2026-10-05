@@ -11,6 +11,7 @@ import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import type { Project } from "@/lib/workbench/studio";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { pickedLook } from "../looks/model";
 import { frameToDraw, pendingFrames, storyboard, withLandedFrame, withPendingFrame } from "./model";
 
 /**
@@ -58,7 +59,7 @@ export function useStoryboardDraw(seam: DraftSeam, readOnly: string | null): Sto
     const boards = project.production?.boards ?? DEFAULT_BOARDS;
     return Object.fromEntries(missing.flatMap((shotId) => {
       const frame = frameToDraw(project, shotId);
-      const input = frame ? frameRequest(project, boards, frame) : null;
+      const input = frame ? frameRequest(project, boards, frame, pickedLook(project)) : null;
       return input ? [[shotId, { body: generationRequestBody(input) }]] : [];
     }));
   }, [project, missing]);
@@ -88,7 +89,7 @@ export function useStoryboardDraw(seam: DraftSeam, readOnly: string | null): Sto
         if (!now) break;
         const boards = now.production?.boards ?? DEFAULT_BOARDS;
         const frame = frameToDraw(now, shotId);
-        const input = frame ? frameRequest(now, boards, frame) : null;
+        const input = frame ? frameRequest(now, boards, frame, pickedLook(now)) : null;
         if (!frame || !input) continue;
         const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, now.id, `board-${shotId}`), shown: credits!, request: { endpoint: "/api/generate", input } });
         if (outcome.state === "repriced") { pricing.reprice(shotId, outcome.credits); setProblem(outcome.reason); break; }

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
 import type { BeatSheet } from "../../lib/production/beats";
-import { NO_ANSWERS, aspectOf, castPicks, castReference, judgement, lookWords, questionsFor, withChip, withWords } from "../../components/graphite/board/cards/questions/model";
+import { NO_ANSWERS, aspectOf, castPicks, castReference, judgement, lookWords, questionsFor, showQuestions, withChip, withWords } from "../../components/graphite/board/cards/questions/model";
 
 /* Atomik's questions before the looks (design/particl-graphite/README.md § 3.1 b), built from today's project. */
 
@@ -51,4 +51,14 @@ test("answers set the aspect, the cast reference and the looks' words", () => {
   a = withWords(withChip(a, "direction", "two"), "direction", "  The light may vary.  ");
   expect(lookWords(a)).toBe("Two variations of the direction. The light may vary.");
   expect(lookWords(NO_ANSWERS)).toBe("");
+});
+
+test("the questions are asked while there is a brief, no look and no live run", () => {
+  const brief = { brief: "A runner at dawn.", production: undefined };
+  expect(showQuestions(brief, null)).toBe(true);
+  expect(showQuestions(brief, { state: "done" })).toBe(true);
+  expect(showQuestions(brief, { state: "awaiting_approval" })).toBe(false);
+  expect(showQuestions({ brief: "  ", production: undefined }, null)).toBe(false);
+  const made = { brief: "A runner at dawn.", production: { boards: { style: "live", model: "m", frames: {}, looks: { "golden-hour": { name: "Golden hour", prompt: "p", takes: [] } } } } };
+  expect(showQuestions(made as never, null)).toBe(false);
 });

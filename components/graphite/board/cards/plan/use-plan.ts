@@ -8,6 +8,7 @@ import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import type { BoardCtx } from "../types";
 import { stepRequest, stepShots } from "./estimates";
 import { planModel, type PlanModel, type PlanPrimary, type StepEstimate } from "./model";
+import { AGENT_CHANGED } from "./use-run";
 
 /*
  * The plan card's data and actions on today's backend (lead decision 27):
@@ -19,7 +20,6 @@ import { planModel, type PlanModel, type PlanPrimary, type StepEstimate } from "
  * Nothing here spends by itself: Approve sets the run's limit and starts its free build, and each render then asks.
  */
 
-export const AGENT_CHANGED = "particl:board-agent-changed";
 const API = "/api/workbench/team-canvas";
 
 /** The workspace's cost approval rule and the viewer's role, as the composer reads them. Null until read. */

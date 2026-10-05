@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { newProject, type Project } from "../../lib/workbench/studio";
+import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
 import type { BeatSheet } from "../../lib/production/beats";
 import { DEFAULT_BOARDS, frameRequest, type Boards } from "../../lib/production/boards";
 import { frameState, frameToDraw, framePicture, pendingFrames, shotName, storyboard, withLandedFrame, withPendingFrame } from "../../components/graphite/board/cards/storyboard/model";
@@ -98,6 +98,22 @@ test("drawing a missing frame sends its own prompt, or one started from the shot
   expect(frameToDraw(p, "missing")).toBeNull();
   /* No production yet: nothing can be sent. */
   expect(frameRequest(project(undefined, { productionProjectId: undefined }), DEFAULT_BOARDS, frame)).toBeNull();
+});
+
+test("a picked look joins the frame's request: its still as a second reference and its words in the prompt; none, none of it", () => {
+  const p = project();
+  const frame = frameToDraw(p, "shot-1")!;
+  const plain = frameRequest(p, DEFAULT_BOARDS, frame)!;
+  expect(frameRequest(p, DEFAULT_BOARDS, frame, null)).toEqual(plain);
+  const still: Asset = { id: "gen-look", generationId: "gen-look", kind: "image", category: "Look", name: "Look", url: "/api/media/gen-look", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
+  const withLook = frameRequest(p, DEFAULT_BOARDS, frame, { name: "Golden hour", words: "Warm low sun.", asset: still })!;
+  expect(withLook.references).toEqual([{ genId: "gen-look", role: "reference_image" }]);
+  expect(withLook.prompt).toContain("The look is Golden hour: Warm low sun.");
+  expect(withLook.prompt.startsWith(plain.prompt)).toBe(true);
+  /* A look with no still yet adds only its words. */
+  const wordsOnly = frameRequest(p, DEFAULT_BOARDS, frame, { name: "Golden hour", words: "Warm low sun.", asset: null })!;
+  expect(wordsOnly.references).toEqual([]);
+  expect(wordsOnly.prompt).not.toContain("picked look");
 });
 
 test("the List view's state until the Shots cards say more", () => {

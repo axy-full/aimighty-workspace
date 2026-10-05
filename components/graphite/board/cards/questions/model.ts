@@ -84,3 +84,13 @@ export function withChip(answers: Answers, id: QuestionId, chip: string): Answer
 export function withWords(answers: Answers, id: QuestionId, text: string): Answers {
   return { ...answers, words: { ...answers.words, [id]: text.slice(0, 1000) } };
 }
+
+/**
+ * Whether the panel asks its questions now (README § 3.1 b): the project has a brief, no look has been made, and
+ * Atomik has no live run to approve. Anything after the looks is not a question for the looks.
+ */
+export function showQuestions(project: Pick<Project, "brief" | "production">, run: { state: string } | null): boolean {
+  if (!project.brief.trim()) return false;
+  if (Object.keys(project.production?.boards?.looks ?? {}).length) return false;
+  return !run || ["done", "stopped", "failed"].includes(run.state);
+}

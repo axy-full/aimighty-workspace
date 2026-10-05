@@ -43,3 +43,14 @@
 .gx-plan-step-price, .gx-plan-step-later { flex: none; font-family: var(--gx-mono); font-size: 13px; white-space: nowrap; }
 .gx-plan-step-later { color: var(--gx-quiet); font-family: var(--gx-font); }
 @media (max-width: 767px) { .gx-plan-btn, .gx-plan-primary { min-height: 44px; } }
+
+/* "Where to next?" (README § 3.1 j; the master's card): 308 wide, 120 high, a 16 px icon at .8, the name at the bottom (15/600), the line under it (14 at .6). */
+.gx-next {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; height: 100%; padding: 14px 16px; text-align: left;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); cursor: pointer;
+}
+.gx-next:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-next:disabled { cursor: default; color: var(--gx-disabled); }
+.gx-next-icon { color: var(--gx-text-2); flex: none; }
+.gx-next-name { margin-top: auto; font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.gx-next-line { font-size: var(--gx-fs-body); line-height: 1.4; color: var(--gx-text-2); }

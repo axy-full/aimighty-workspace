@@ -271,3 +271,26 @@ export function balanceLine(model: Pick<PlanModel, "balance">): string | null {
   if (b.short != null) return `Short by ${creditsText(b.short)}`;
   return b.after == null ? null : `${creditsText(b.after)} left after`;
 }
+
+/* ── The card's box ──────────────────────────────────────────────────────── */
+
+/** The plan card's width on the board: the master's approval card (340). */
+export const PLAN_CARD_WIDTH = 340;
+
+/**
+ * The card's height before it renders (the board lays cards out from their sizes). Generous by design: the card
+ * draws only what it needs and the box keeps a little air below it, so text that wraps never meets the next card.
+ * Counted from the run alone: the lines the card may carry (the fix allowance and balance, the way renders ask,
+ * a note), and each step's row when the steps are unfolded or the run is past its proposal.
+ */
+export function planCardHeight(run: Pick<RigAgentRunView, "state" | "paid" | "reason">, unfolded: boolean): number {
+  const takes = run.paid.filter((p) => p.tool === "render").length;
+  const proposal = run.state === "awaiting_approval";
+  const lines = (chars: number) => Math.ceil(chars / 40);
+  let height = 28 + 22 + lines(80) * 21 + 10 + 30;
+  height += 10 + lines(52) * 21;
+  if (run.reason && !proposal) height += 10 + lines(run.reason.length) * 21;
+  if (proposal) height += 10 + 21 * 2 + 10 + 18;
+  if (takes && (unfolded || !proposal)) height += takes * 64 + 36;
+  return Math.ceil(height / 4) * 4;
+}

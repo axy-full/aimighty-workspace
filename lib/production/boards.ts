@@ -1,6 +1,7 @@
 import type { BeatSheet, BeatShot } from "./beats";
-import type { Project } from "../workbench/studio";
-import type { GenerationBodyInput } from "../workbench/generation-request";
+import type { Asset, Project } from "../workbench/studio";
+import type { GenerationBodyInput, GenerationReference } from "../workbench/generation-request";
+import { mediaReferenceIdentity } from "../workbench/media-reference-input";
 import type { Look } from "./looks";
 import { getModel } from "../models";
 import { moleculrAssetDependencies } from "../workbench/moleculr-bindings";
@@ -85,14 +86,27 @@ export function renderPrompt(prompt: string, style: BoardStyle, sketch: boolean)
   return `${prompt.trim()}\n\n${look}${keep}`.slice(0, 10_000);
 }
 
-/** The request one frame sends: its prompt in the chosen look, the project's ratio, and its drawing as the reference. */
-export function frameRequest(project: Project, boards: Boards, frame: BoardFrame): GenerationBodyInput | null {
+/** The look a frame is drawn in: the picked look's name and words, and its still when it has one (lib/production/looks.ts). */
+export type FrameLook = { name: string; words: string; asset: Asset | null };
+
+/**
+ * The request one frame sends: its prompt in the chosen look, the project's ratio, and its drawing as the reference.
+ * With a picked look (the board's looks, stream 4), that look's still joins as a second reference and its words join
+ * the prompt, so the frames follow it. Without one the request is exactly what the Boards stage has always sent.
+ */
+export function frameRequest(project: Project, boards: Boards, frame: BoardFrame, look?: FrameLook | null): GenerationBodyInput | null {
   if (!project.productionProjectId || !frame.prompt.trim()) return null;
   const sketch = frame.sketch ? project.assets.find((a) => a.id === frame.sketch!.assetId) : undefined;
+  const identity = look?.asset ? mediaReferenceIdentity(look.asset) : null;
+  const references: GenerationReference[] = [
+    ...(sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" as const }] : []),
+    ...(identity ? [{ ...identity, role: "reference_image" as const }] : []),
+  ];
+  const lookWords = look ? ` The look is ${look.name}: ${look.words}${identity ? " The other reference image is the picked look: match its light, colour and grade." : ""}` : "";
   return {
-    prompt: renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
+    prompt: (renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)) + lookWords).slice(0, 10_000), kind: "image", model: { id: boards.model },
     mapping: { shotId: "", productionProjectId: project.productionProjectId }, ...stillShape(getModel(boards.model), project.aspect), duration: 5,
-    references: sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" }] : [], firstFrameAssetId: "",
+    references, firstFrameAssetId: "",
   };
 }
 

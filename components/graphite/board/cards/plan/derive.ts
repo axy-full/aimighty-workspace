@@ -1,7 +1,12 @@
 import { nodesForSet, STUDIO_GROUP } from "@/lib/board/regions";
+import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import type { BoardCard, BoardSource, CardState, GroupData } from "@/lib/board/types";
 import { briefDoc, type BriefDoc } from "../doc/model";
+import { deriveLooks } from "../looks/derive";
+import { pickedLook } from "../looks/model";
 import { storyboard } from "../storyboard/model";
+import { planStepsOpen } from "./ui";
+import { nextChoices, NEXT_GROUP_TITLE, showWhereNext } from "./next";
 import { shotTakes, shotsTakeOver } from "../take/take-model";
 
 /*
@@ -17,6 +22,13 @@ export type DocData =
 
 /** One storyboard frame. */
 export type FrameData = { shotId: string; index: number; name: string; line: string; genId: string | null; rendering: boolean };
+
+/** The plan card: Atomik's run on the board, while it has something to approve, or renders to ask for. */
+export type PlanData = { run: RigAgentRunView; open: boolean };
+
+/** The run states whose plan the board shows: a proposal, and the build and renders that follow while they wait on someone. */
+const PLAN_STATES: readonly string[] = ["awaiting_approval", "running", "needs_you", "paused"];
+export const PLAN_CARD_ID = "plan:run";
 
 /** Runs of Atomik past their approval: the shots were approved to render, so the storyboard is done. */
 const APPROVED: readonly string[] = ["running", "needs_you", "paused", "done"];
@@ -40,7 +52,8 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
     });
   });
 
-  const board = storyboard(project, { approved: Boolean(src.agent && APPROVED.includes(src.agent.state)) });
+  cards.push(...deriveLooks(project));
+  const board = storyboard(project, { look: pickedLook(project)?.name ?? null, approved: Boolean(src.agent && APPROVED.includes(src.agent.state)) });
   /* Frames become takes in place (README § 3.1 f): once the Shots cards take over, the storyboard group gives way. */
   const takenOver = shotsTakeOver(shotTakes(project, src.library), src.agent);
   if (board.frames.length && !takenOver) {
@@ -56,6 +69,25 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
         data: { shotId: frame.shotId, index: frame.index, name: frame.name, line: frame.line, genId: frame.genId, rendering: frame.rendering } satisfies FrameData,
       });
     }
+  }
+  /* "Where to next?" once every shot is approved (README § 3.1 j): a frame of three cards, each a way into a tool. */
+  if (showWhereNext(shotTakes(project, src.library))) {
+    const group: GroupData = { title: NEXT_GROUP_TITLE, columns: 3 };
+    cards.push({ id: STUDIO_GROUP.next, kind: "group", region: "next", order: -1, state: "empty", data: group });
+    nextChoices(project.aspect).forEach((choice, i) => cards.push({
+      id: `next:${choice.id}`, kind: "next", region: "next", group: STUDIO_GROUP.next, order: i, state: "empty", data: choice,
+    }));
+  }
+  /* The plan sits in the Storyboard group's open slot (README § 3.1 e); once the Shots cards have taken the group's place it stands alone beside them. */
+  const run = src.agent;
+  if (run && PLAN_STATES.includes(run.state) && run.paid.some((p) => p.tool === "render")) {
+    const inGroup = cards.some((c) => c.id === STUDIO_GROUP.storyboard);
+    cards.push({
+      id: PLAN_CARD_ID, kind: "plan", region: inGroup ? "storyboard" : "shots", order: inGroup ? 10_000 : -1, ...(inGroup ? { group: STUDIO_GROUP.storyboard } : {}),
+      state: run.state === "awaiting_approval" || run.state === "needs_you" || run.state === "paused" ? "needs" : "working",
+      ...(inGroup ? {} : { summary: run.state === "awaiting_approval" ? "Plan at the gate" : run.state === "running" ? "Atomik is working" : "Waiting for you" }),
+      data: { run, open: planStepsOpen(run.id) } satisfies PlanData,
+    });
   }
   return cards;
 }
