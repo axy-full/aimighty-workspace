@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import { useMemory, useMemoryApi, type KeepReply, type MemoryApi } from "@/lib/shell/use-memory";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -13,6 +13,8 @@ import {
   type BrandKitPick, type ImportFrom, type ImportedEntry, type MemoryKind, type MemoryView as Entry,
 } from "@/lib/atomikMemoryText";
 import { LoadBanner } from "../TakeTile";
+import { Price } from "../Price";
+import { exact, upTo } from "@/lib/shell/price-words";
 
 /**
  * Atomik › Memory, built in Particl: what Atomik
@@ -245,7 +247,7 @@ function ElementPicker({ scope, project, entries, picked, onPick }: { scope: str
  * loses that sentence, or cannot be kept at all; one already kept says so.
  * The workbench agent goes on reading the kit itself.
  */
-function BrandKitMemory({ api, project, projectId, entries, ready, onSaved }: { api: MemoryApi; project: Project | null; projectId: string | null; entries: Entry[]; ready: boolean; onSaved: () => Promise<void> }) {
+export function BrandKitMemory({ api, project, projectId, entries, ready, onSaved }: { api: MemoryApi; project: Project | null; projectId: string | null; entries: Entry[]; ready: boolean; onSaved: () => Promise<void> }) {
   const shell = useShell();
   const { toast } = useWorkspace();
   const [open, setOpen] = useState(false);
@@ -518,10 +520,14 @@ const priced = (credits: number, usd?: number) => (usd === undefined ? `about ${
  * person ticks it and presses Keep; the proposals pass the same amounts-only
  * check again on the way in.
  */
-function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose, onKept }: {
+export function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose, onKept, newWords = false }: {
   scope: string; api: MemoryApi; text: string; projectId: string | null; place: Where; entries: Entry[]; open: boolean;
   onClose: () => void; onKept: (message: string) => Promise<void>;
+  /** The new interface's price words (lib/shell/price-words.ts): "up to N cr", credits only. Display alone: the quote, its cap and the read are the same. */
+  newWords?: boolean;
 }) {
+  /* The read is sent with the quote as its ceiling (`maxCredits`), so "up to" holds; a workspace not billed in credits shows no figure. */
+  const quoted = (credits: number, usd?: number): ReactNode => (!newWords ? priced(credits, usd) : usd === undefined ? <Price value={upTo(credits)} /> : "not billed in credits");
   const { toast } = useWorkspace();
   const paid = usePaidAction(`atomik-memory-read:${projectId ?? "workspace"}`, true, { signedIn: true, requestScope: scope });
   const scoped = useScopedFetch(scope);
@@ -590,7 +596,7 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
   };
   if (!open && !pending && !reply) return null;
   const value = reply?.value;
-  const billed = value ? (value.credits != null ? `${value.credits} cr` : value.costUsd != null ? `$${value.costUsd.toFixed(3)}` : null) : null;
+  const billed: ReactNode = value ? (value.credits != null ? (newWords ? <Price value={exact(value.credits)} /> : `${value.credits} cr`) : value.costUsd != null && !newWords ? `$${value.costUsd.toFixed(3)}` : null) : null;
   return (
     <div className="am-read" data-testid="memory-read">
       {value ? (
@@ -599,9 +605,9 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
           <p className="tc-note" role="status" data-testid="memory-proposals-summary">{[
             `Atomik proposed ${plural(proposals.length, "entry", "entries")}.`,
             value.skipped.money ? `${plural(value.skipped.money, "line")} with an amount left out.` : "",
-            billed ? `Read for ${billed}.` : "",
+            !newWords && billed ? `Read for ${billed}.` : "",
             "Tick what to keep; nothing is kept until you do.",
-          ].filter(Boolean).join(" ")}</p>
+          ].filter(Boolean).join(" ")}{newWords && billed ? <> Read for {billed}.</> : null}</p>
           <div className="am-picks" role="group" aria-label="What Atomik proposed" data-testid="memory-proposals">
             {proposals.map((p, i) => {
               const kept = isKept(p);
@@ -638,14 +644,16 @@ function AtomikRead({ scope, api, text, projectId, place, entries, open, onClose
           <h3 className="am-read-title">Read with Atomik</h3>
           <p className="tc-note">Atomik reads the text above{shownQuote?.value ? ` with ${thinkingModelName(shownQuote.value.model)}` : ""} and proposes entries for you to tick. Nothing is kept until you tick it.</p>
           {shownQuote?.value ? (
-            <p className="tc-note" data-testid="memory-read-estimate">{priced(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, with up to {shownQuote.value.estimateUsd === undefined ? `${shownQuote.value.estimateCredits} cr` : "that"} reserved until it finishes.</p>
+            <p className="tc-note" data-testid="memory-read-estimate">{newWords
+              ? <>{quoted(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, never more.</>
+              : <>{priced(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, with up to {shownQuote.value.estimateUsd === undefined ? `${shownQuote.value.estimateCredits} cr` : "that"} reserved until it finishes.</>}</p>
           ) : shownQuote?.error ? (
             <LoadBanner banner={{ tone: "error", message: shownQuote.error }} onRetry={() => setRound((r) => r + 1)} testId="memory-read-quote-error" compact />
           ) : <p className="tc-note" role="status">Pricing…</p>}
           {problem ? <p className="gx-gen-error" role="alert" data-testid="memory-read-problem">{problem}</p> : null}
           <div className="am-actions">
             <button type="button" className="gx-primary" disabled={phase !== "idle" || !shownQuote?.value || !body.text} onClick={start} data-testid="memory-read-go">
-              {phase === "reading" ? "Reading…" : shownQuote?.value ? `Read · ${priced(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)}` : shownQuote?.error ? "Price unavailable" : "Pricing…"}
+              {phase === "reading" ? "Reading…" : shownQuote?.value ? <>Read · {quoted(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)}</> : shownQuote?.error ? "Price unavailable" : "Pricing…"}
             </button>
             <button type="button" className="gx-hbtn" disabled={phase !== "idle"} onClick={() => { setProblem(null); onClose(); }} data-testid="memory-read-cancel">Cancel</button>
           </div>

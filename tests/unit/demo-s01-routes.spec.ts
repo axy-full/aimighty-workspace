@@ -11,6 +11,7 @@ import { SHELL_PARAMS, shellParams } from "../../lib/shell/state";
  * the registry's real modules, with `landed` set per case.
  */
 const IDS = SCREENS.map((s) => s.id);
+const NEEDS_BOARD: ScreenId[] = ["board-ads", "board-social"];
 /** The screens a case has landed. Make is landed from the start (it has been live since D0). */
 const landed = (...ids: ScreenId[]): ScreenModule[] => SCREENS.map((s) => ({ ...s, landed: s.id === "make" || ids.includes(s.id) }));
 const NONE = landed();
@@ -32,8 +33,31 @@ test("module ids are unique, every module is in the registry, and each declares 
     for (const key of s.params) expect(typeof key, s.id).toBe("string");
     for (const row of [...s.rows, ...s.fallback]) { expect(row.from.startsWith("?"), `${s.id} ${row.from}`).toBe(true); expect(row.to.startsWith("?"), `${s.id} ${row.to}`).toBe(true); }
   }
-  /* Nothing has landed yet but Make, the board and Atomik's panel: until a stream's PR flips its flag, nobody is shown a screen that is not there. */
-  expect(SCREENS.filter((s) => s.landed).map((s) => s.id)).toEqual(["board", "make", "atomik"]);
+  /* Whichever modules have landed (each stream flips its own flag in its own PR) is read from the registry, never listed here. */
+  expect(SCREENS.filter((s) => s.landed).length).toBeGreaterThan(0);
+});
+
+test("every landed module mounts and every other one falls back, whichever the registry says has landed", () => {
+  for (const screen of SCREENS) {
+    const own = (landedFlag: boolean) => SCREENS.map((s) => (s.id === screen.id ? { ...s, landed: landedFlag } : s));
+    const mounted = own(true), unmounted = own(false);
+    /* Landed (and, for a kind of board, with the board itself landed): its old addresses move to it, with the switch on only. */
+    if (isLanded(screen.id, SCREENS)) {
+      for (const row of screen.rows) {
+        expect(sameSearch(route(row.from, true), row.to), `${screen.id}: ${row.from} → ${row.to}`).toBe(true);
+        expect(sameSearch(route(row.from, false), row.to), `${screen.id} off: ${row.from}`).toBe(false);
+      }
+      for (const row of screen.fallback) expect(sameSearch(route(row.from, true), row.to), `${screen.id} fallback ${row.from}`).toBe(false);
+    }
+    /* Not landed: its new addresses open today's page, with the switch on or off. */
+    for (const row of screen.fallback) {
+      for (const on of [false, true]) expect(sameSearch(route(row.from, on, unmounted), row.to), `${screen.id} unlanded: ${row.from} (${on ? "on" : "off"})`).toBe(true);
+    }
+    for (const row of screen.rows) expect(sameSearch(route(row.from, true, unmounted), row.to), `${screen.id} unlanded row ${row.from}`).toBe(false);
+    /* The registry's own answer to "does it mount" follows the flag. */
+    expect(isLanded(screen.id, mounted) || (NEEDS_BOARD.includes(screen.id) && !isLanded("board", mounted))).toBe(true);
+    expect(isLanded(screen.id, unmounted)).toBe(false);
+  }
 });
 
 test("with the switch off every address the shell serves today is left exactly as it is", () => {
