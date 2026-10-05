@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTextIn } from "./helpers/s07Floors";
 import { newProject } from "../lib/workbench/studio";
@@ -21,7 +21,7 @@ const shot = async (page: Page, name: string, info: { project: { name: string } 
 const wide = (page: Page) => (page.viewportSize()?.width ?? 0) >= 768;
 
 async function setUp(page: Page) {
-  const workspaceId = (await signInLocally(page.request, "Panel Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Panel Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = { ...newProject("Panel fixture"), brief: "A short film about a morning market opening." };
