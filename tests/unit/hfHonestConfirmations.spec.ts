@@ -111,7 +111,9 @@ test("a toast shown where its result already is carries no Open", () => {
   expect(isHere(cast, at({}))).toBe(true);
   expect(isHere(cast, at({ page: "rig" }))).toBe(false);
   expect(isHere(cast, at({ view: "crew" })), "Crew's view is not the Cast stage").toBe(false);
-  expect(isHere({ to: "gen" }, at({ view: "gen" }))).toBe(true);
+  /* Gen is Make's panel, open over any page: there is where it is open. */
+  expect(isHere({ to: "gen" }, at({ make: true }))).toBe(true);
+  expect(isHere({ to: "gen" }, at({ view: "crew", make: true }))).toBe(true);
   expect(isHere({ to: "gen" }, at({}))).toBe(false);
   expect(isHere({ to: "library" }, at({ library: true }))).toBe(true);
   expect(isHere({ to: "library" }, at({ library: false }))).toBe(false);

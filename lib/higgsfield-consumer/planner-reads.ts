@@ -30,7 +30,7 @@ export type PlannerReadName =
   | "medias"
   | "balance"
   | "plan"
-  /** Marketing Studio setup items (`show_marketing_studio`, by type): FINAL_SPEC §2.3. */
+  /** Marketing Studio setup items (`show_marketing_studio`, by type). */
   | "setup";
 export type PlannerRead = { name: PlannerReadName; tool: string; args: Record<string, unknown> };
 

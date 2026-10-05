@@ -253,6 +253,8 @@ export function useComposer(options: {
    * the others; without it the words go as typed.
    */
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
+  /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
+  verb?: string;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -781,8 +783,8 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
+    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
     blocked, submitting,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,

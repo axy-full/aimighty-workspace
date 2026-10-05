@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /**
- * Delete is soft (FINAL_SPEC §1 step 1): PATCH /api/jobs/:id { trashed }
+ * Delete is soft: PATCH /api/jobs/:id { trashed }
  * hides a render and keeps its bytes for good — nothing is erased (owner,
  * 2026-09-24); { trashed: false } brings it back whole. Through the real
  * route on a local mock server, with the workspace database read directly.

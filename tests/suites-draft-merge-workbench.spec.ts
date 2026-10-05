@@ -677,7 +677,7 @@ test("Gen: a batch of two takes after a Brief edit elsewhere keeps the Brief edi
   const saves = watchSaves(page);
   const paid: { batchId?: string; variation?: number; shotId?: string }[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) paid.push(request.postDataJSON() as (typeof paid)[number]); });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await expect(page.getByTestId("gen-view")).toBeVisible();
   /* The page holds the project as it opened; the Brief is then written elsewhere. */
@@ -1272,7 +1272,7 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     const prompt = "A red fox crosses the frozen harbour at dusk.";
     const press = async (open: boolean) => {
       if (open) {
-        await page.goto(`/suites?view=gen&project=${project.id}`);
+        await page.goto(`/suites?make=video&project=${project.id}`);
         await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
       }
       const box = page.getByTestId("gen-prompt");
@@ -1287,9 +1287,10 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     await expect.poll(() => reached.length, { timeout: 60_000 }).toBe(1);
     await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
     if (leave === "leaves Gen for Studio and comes back") {
-      await page.locator("[data-suite-tab=studio]").click();
+      /* Make is a panel now: leaving it is closing it (Studio stays under it). */
+      await page.getByTestId("make-close").click();
       await expect(page.getByTestId("gen-view")).toHaveCount(0, { timeout: 30_000 });
-      await page.locator("[data-suite-tab=gen]").click();
+      await page.locator("[data-suite-tab=make]").click();
       await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
       await press(false);
     } else await press(leave === "reloads");
@@ -1326,19 +1327,19 @@ test("Gen sound: a new prompt at a new price is what is sent, never the lane's e
   const { project, errors, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const submits = await mockAudio(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   const go = page.getByTestId("gen-generate");
   await box.fill("Thunder rolls over the frozen harbour while the ice cracks and gulls cry.");
-  await expect(go).toHaveText(/Generate · 40 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 40 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(1);
   await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
   await box.fill("Short click.");
-  await expect(go).toHaveText(/Generate · 2 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 2 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(2);
   expect(submits[1].body.text).toBe("Short click.");
@@ -1361,14 +1362,14 @@ test("Gen sound: when Edit & Sound makes the sound lane while Gen's save is out,
     expect(answer.ok(), await answer.text()).toBe(true);
     return route.continue();
   });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("Short click.");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(/Generate · 2 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 2 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(1);
   await page.waitForTimeout(1000);
@@ -1389,7 +1390,7 @@ test("Gen, two takes: take 2's request cut off stops the batch; the next Generat
     return route.continue();
   });
   const checks = checkedKeys(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -1447,7 +1448,7 @@ test("Gen: a batch's shot saved while other saves land before and on top of it �
   });
   const paid: string[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/generate") paid.push(request.headers()["idempotency-key"] ?? ""); });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -2100,7 +2101,7 @@ test("a canvas edit to A that could not be sent before switching to B goes to A'
 
 const FOX = "A red fox crosses the frozen harbour at dusk.";
 async function openGen(page: Page, project: Project) {
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);

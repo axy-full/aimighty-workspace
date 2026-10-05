@@ -4,7 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 
 /**
- * FINAL_SPEC §5: Atomik › Tools & connections keeps the eight packs the Skills page listed; the
+ * Atomik › Tools & connections keeps the eight packs the Skills page listed; the
  * Workspace tabs are Graphite over the routes that already serve them —
  * General saves through /api/settings in the vocabulary the gate reads (and
  * renames through /api/workspaces), People reads /api/team and invites,
