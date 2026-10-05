@@ -138,7 +138,8 @@
   .gx .gx-avatar, .gx .gx-credits, .gx .gx-jobs { min-height: 44px; min-width: 44px; }
   .gx .gx-stage { padding-top: 10px; }
   .gx .gx-gen-cta { bottom: -8px; }
-  .gx .gx-toast { bottom: 12px; }
+  /* No tab bar this way up: the toast keeps the desktop's place under the header's right end, clear of the notch. */
+  .gx .gx-toast { bottom: auto; right: max(16px, env(safe-area-inset-right, 0px)); }
   /* Use the width for two compact control rows above a real asset viewport. */
   .gx .gx-library.gx-panel--overlay { width: min(640px, calc(100% - 20px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 44px 48px minmax(0, 1fr); gap: 6px 12px; }
   .gx .gx-library > .gx-panel-head { grid-column: 1; grid-row: 1; min-width: 0; gap: 6px; }

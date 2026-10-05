@@ -17,7 +17,8 @@ export type PaletteRun =
 
 export type PaletteRow = { group: string; label: string; hint: string; run: PaletteRun };
 
-export const PALETTE_ROWS = 9;
+/** At most twelve rows, as the master lists (the last is always "Ask Atomik: …" once something is typed). */
+export const PALETTE_ROWS = 12;
 
 export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
   return [

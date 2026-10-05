@@ -2,7 +2,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Fault } from "@/components/Boundary";
-import LazyMedia from "@/components/LazyMedia";
 import { ACTION_LABEL, moving, priceLabel, trayWhen, type TrayJob } from "@/lib/jobsTray";
 import { Glyph } from "./icons";
 import { SAY } from "@/lib/shell/assets";
@@ -20,8 +19,6 @@ import { useWorkspace } from "@/lib/workspace/state";
  * stage, how long it has been going or when it finished, the ledger's figure,
  * and the one thing to do about it.
  */
-const KIND_TAG: Record<TrayJob["kind"], string> = { video: "VID", image: "IMG", audio: "AUD", other: "•••" };
-
 export function JobsPill() {
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
@@ -33,7 +30,8 @@ export function JobsPill() {
   const quiet = !summary || summary.kind === "quiet";
   return (
     <>
-      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={unread ? "red" : summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"}
+      {/* The dot (the master's): blue and pulsing while anything renders, amber while something waits on credits, red for a failure or a tray it could not read, grey otherwise. */}
+      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={unread ? "red" : summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"} data-live={summary && summary.rendering > 0 ? "" : undefined}
         aria-haspopup="dialog" aria-expanded={tray.open} aria-label={unread ? "Jobs could not be read. Open to try again." : quiet ? "Jobs" : `Jobs: ${summary.text}`}
         onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
         <span className="gx-jobs-dot" aria-hidden="true" />
@@ -102,7 +100,7 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
           <span className="gx-panel-title">Jobs</span>
           {head ? <span className="gx-jobs-count" data-testid="jobs-summary">{head}</span> : null}
           <span className="gx-spacer" />
-          <button type="button" className="gx-hbtn" onClick={close} data-testid="jobs-close">Close</button>
+          <button type="button" className="gx-hbtn gx-jobs-close" onClick={close} data-testid="jobs-close">Close</button>
         </div>
         <div className="gx-sheet-list gx-scroll gx-jobs-list" data-testid="jobs-list">
           {/* A failed read keeps the last rows (or says so over none) and is asked again on its own; Try again asks at once. Said first, above the rows it is about. */}
@@ -173,10 +171,9 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
   const releaseAt = job.action === "release" ? problem?.credits ?? job.releaseCredits ?? null : null;
   const label = problem?.topUp ? "Top up" : releaseAt ? `Release · ${releaseAt.toLocaleString("en-US")}\u00a0cr` : job.action ? ACTION_LABEL[job.action] : null;
   return (
-    <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
-      <span className="gx-jobs-thumb" aria-hidden="true">
-        {job.mediaUrl && (job.kind === "image" || job.kind === "video") ? <LazyMedia url={job.mediaUrl} kind={job.kind} alt="" name={job.name} /> : <span className="gx-jobs-kind">{KIND_TAG[job.kind]}</span>}
-      </span>
+    <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-moving={moving(job) ? "" : undefined} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
+      {/* The master's row: a dot in the job's tone · its name · the mono meta · the one action. */}
+      <span className="gx-jobs-rowdot" aria-hidden="true" data-testid="jobs-dot" />
       <span className="gx-jobs-body">
         <span className="gx-jobs-name" title={where ? `${job.name} · ${where}` : job.name}>{job.name}</span>
         {/* The stage, how long it has been going (or when it finished), and the figure — each whole: a figure is never cut short. */}
