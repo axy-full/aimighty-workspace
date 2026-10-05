@@ -63,3 +63,14 @@ test("seam g: Make tells the Rig its draft was written before it tells the board
   expect(at).toBeGreaterThan(0);
   expect(at).toBeLessThan(make.indexOf("announceMade({ projectId: made.projectId"));
 });
+
+test("seam j: on a phone, `view=home` is Home even with the page the shell writes beside it (suite=particl&page=brief), and the board's addresses are the Record", async () => {
+  const { readPhone } = await import("../../components/graphite/phone/phone-model");
+  for (const search of ["?view=home", "?project=p1&suite=particl&page=brief&view=home", "?project=p1&suite=particl&page=brief&view=home&device=phone"]) {
+    expect(readPhone(search).screen, search).toBe("home");
+  }
+  for (const search of ["?view=board", "?project=p1&suite=particl&page=rig", "?project=p1&suite=particl&page=brief"]) {
+    expect(readPhone(search).screen, search).toBe("record");
+  }
+  expect(readPhone("?suite=particl&page=brief&sp=stages").screen).toBe("home");
+});

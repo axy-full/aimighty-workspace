@@ -51,7 +51,8 @@ export type PhoneRoute = {
 /** The Studio's old stages: each is a region of the board (lib/board/routes.ts), and on a phone the board is its project's Record. */
 const BOARD_PAGES: ReadonlySet<string> = new Set(["rig", "brief", "boards", "cast", "takes", "astra", "edit", "deliver"]);
 const isOverview = (q: URLSearchParams) => q.get("suite") === "particl" && q.get("page") === "brief" && (q.get("sp") === "stages" || q.get("sp") === "home");
-const isBoard = (q: URLSearchParams) => q.get("view") === "board" || (q.get("suite") === "particl" && BOARD_PAGES.has(q.get("page") ?? "") && !isOverview(q));
+/* `view=home` is Home whatever else the shell wrote beside it: it adds `suite=particl&page=brief` (the default page) to every address it lands, and those two alone name the board's Record. */
+const isBoard = (q: URLSearchParams) => q.get("view") !== "home" && (q.get("view") === "board" || (q.get("suite") === "particl" && BOARD_PAGES.has(q.get("page") ?? "") && !isOverview(q)));
 
 /** Pages a phone answers with its own screens: Home, the board (its Record) and the control room's Approvals (Home). */
 function ownAddress(q: URLSearchParams): boolean {

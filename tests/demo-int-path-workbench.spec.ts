@@ -34,7 +34,7 @@ test("the demo path: Home, board regions, Make, Atomik, the control room, Settin
   const body = page.locator(".gx");
 
   /* Home. */
-  await page.goto(at("&view=home"));
+  await page.goto("/suites?view=home");
   await expect(body).toBeVisible({ timeout: 60_000 });
   if (compact) await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
   else await expect(body).toHaveAttribute("data-screen", "home", { timeout: 60_000 });
@@ -103,10 +103,14 @@ test("the demo path: Home, board regions, Make, Atomik, the control room, Settin
 
   /* The phone, framed on a laptop (device=phone), plain at compact widths. */
   if (!compact) {
+    await page.goto("/suites?device=phone");
+    await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(1000);
+    await shot(page, "phone-framed-home");
     await page.goto(at("&device=phone"));
     await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(1000);
-    await shot(page, "phone-framed");
+    await shot(page, "phone-framed-record");
   }
   expect(problems, "no page error anywhere on the path").toEqual([]);
 });
