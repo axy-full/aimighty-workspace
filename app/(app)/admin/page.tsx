@@ -859,8 +859,8 @@ function PreviewsCard() {
         <span className="text-lead">{workspace ? (testOk ? `From ${workspace.name} (test workspace)` : `${workspace.name} is not a test workspace — switch to one, or mark one above`) : "No workspace"}</span>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" className="btn-primary !h-8 !px-3 !text-[12.5px]" disabled={!testOk || busy != null} onClick={generate}>
-          {busy === "generate" && progress ? `Rendering… ${progress.done + progress.failed} of ${plan.count}` : `Render ${plan.count} previews`}
+        <button type="button" className="btn-primary !h-8 !px-3 !text-[12.5px]" disabled={!testOk || busy != null} onClick={generate} data-spend="priced" data-spend-price={`${credits.toLocaleString("en-US")} cr`}>
+          {busy === "generate" && progress ? `Rendering… ${progress.done + progress.failed} of ${plan.count}` : `Render ${plan.count} previews · ${credits.toLocaleString("en-US")} cr`}
         </button>
         <button type="button" className="chip" disabled={!testOk || busy != null || !ready} onClick={publish}>{busy === "publish" ? "Publishing…" : `Publish ${ready} ready`}</button>
         {running > 0 && <span className="text-[12.5px] text-lead">{running} still rendering</span>}
