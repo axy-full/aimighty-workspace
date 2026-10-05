@@ -55,28 +55,36 @@ async function landsOn(page: Page, want: Record<string, string | null>) {
 /** New addresses, and the page of today's each one opens with the switch off (and with it on while that screen has not landed). */
 const TODAYS: [string, Record<string, string | null>][] = [
   ["/suites?view=home", { suite: "particl", page: "brief", view: null }],
-  ["/suites?view=board&region=cut", { suite: "particl", page: "edit", view: null, region: null }],
-  ["/suites?view=board&list=1", { suite: "particl", page: "rig", view: null, list: null }],
-  ["/suites?view=board&kind=ads&frame=2", { suite: "moleculr", page: "marketing", sp: "dtc", view: null, kind: null }],
-  ["/suites?view=board&kind=social", { suite: "subatomik", page: "history", view: null }],
   ["/suites?atomik=1", { suite: "atomik", page: "agent", atomik: null }],
   ["/suites?view=workspace&ws=team", { view: "workspace", tab: "people" }],
   ["/suites?view=workspace&ws=rules", { suite: "atomik", page: "budget", view: null }],
   ["/suites?view=workspace&tab=credits&open=usage", { view: "workspace", tab: "usage", open: null }],
   /* Old addresses are served where they are. */
-  ["/suites?suite=particl&page=rig", { suite: "particl", page: "rig" }],
-  ["/suites?suite=particl&page=brief&sp=beats", { suite: "particl", page: "brief", sp: "beats" }],
-  ["/suites?suite=moleculr&page=marketing&sp=hooks", { suite: "moleculr", page: "marketing", sp: "hooks" }],
   ["/suites?view=workspace&tab=people", { view: "workspace", tab: "people" }],
-  ["/suites?view=crew&cp=members", { view: "crew", cp: "members" }],
 ];
 
-test("switch OFF: today's shell. New addresses open today's page for them, old ones are untouched, nothing carries a new-interface marker", async ({ page }, info) => {
+/**
+ * The board is one board for everyone (owner, 5 Oct): Studio, Ads and Social open it with the switch off too, and the ten Studio
+ * stage pages, Business's pages and Crew are redirected to it. [address, where it lands, the screen it mounts].
+ */
+const BOARD: [string, Record<string, string | null>, string][] = [
+  ["/suites?view=board&region=cut", { view: "board", region: "cut" }, "board"],
+  ["/suites?view=board&list=1", { view: "board", list: "1" }, "board"],
+  ["/suites?view=board&kind=ads&frame=2", { view: "board", kind: "ads", frame: "2" }, "board-ads"],
+  ["/suites?view=board&kind=social", { view: "board", kind: "social" }, "board-social"],
+  ["/suites?suite=particl&page=rig", { view: "board", suite: null, page: null }, "board"],
+  ["/suites?suite=particl&page=brief&sp=beats", { view: "board", region: "storyboard" }, "board"],
+  ["/suites?suite=moleculr&page=marketing&sp=hooks", { view: "board", kind: "ads", card: "hooks" }, "board-ads"],
+  ["/suites?view=crew&cp=members", { view: "board", frame: "m" }, "board"],
+];
+
+test("switch OFF: today's shell for Home, Atomik and Settings; the board, Ads and Social open for everyone, and the old stage, Business and Crew addresses go to them", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const problems = await open(page, "/suites", false);
+  /* A bare landing is today's Studio overview, whose cards open the board's regions. */
   await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
   await expect(page.getByTestId("shell-body")).toBeVisible();
-  /* Header B and the Studio strip, as D0 has them. */
+  /* Header B, as D0 has it. */
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
   await closeSuitesMenu(page);
@@ -85,6 +93,14 @@ test("switch OFF: today's shell. New addresses open today's page for them, old o
     await landsOn(page, want);
     await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old");
     await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
+  }
+  /* The board opens for everyone: the same screens, the same address, with the switch off. */
+  for (const [path, want, screen] of BOARD) {
+    await page.goto(path);
+    await landsOn(page, want);
+    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old");
+    await expect(page.locator(".gx")).toHaveAttribute("data-screen", screen);
+    await expect(page.getByTestId("board")).toBeVisible();
   }
   /* `settings=1` is a switch-on affordance: off, it opens nothing. */
   await page.goto("/suites?suite=particl&page=rig&settings=1");
@@ -104,7 +120,7 @@ test("switch ON: landed screens mount, the rest open today's page; the new-inter
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
   await closeSuitesMenu(page);
-  for (const [path, today] of TODAYS) {
+  for (const [path, today] of [...TODAYS, ...BOARD.map(([address]): [string, Record<string, string | null>] => [address, {}])]) {
     const search = path.replace("/suites", "") || "";
     const routed = route(search, true);
     const screen = screenAt(routed, true);
@@ -135,22 +151,24 @@ test("switch ON: landed screens mount, the rest open today's page; the new-inter
   expect(problems).toEqual([]);
 });
 
-test("the screens' own params are kept across the shell's writes with the switch on, and dropped from today's pages with it off", async ({ page }, info) => {
+test("the screens' own params are kept across the shell's writes with the switch on; with it off only the board's are", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "the address bar is the same at every size: one desktop run");
-  await open(page, "/suites?suite=particl&page=rig&region=cut&frame=d&drawer=library&review=1&card=hooks&screen=home&device=phone&from=x&run=r&take=t", true);
+  await open(page, "/suites?view=board&region=cut&frame=d&drawer=library&review=1&card=hooks&screen=home&device=phone&from=x&run=r&take=t", true);
   /* Make opens over the page: the shell rewrites the address for it, and the params stay. */
   await page.keyboard.press("Alt+KeyM");
   await expect.poll(() => here(page).make).toBe("video");
   const kept = here(page);
   for (const key of ["region", "frame", "drawer", "review", "card", "screen", "device", "from", "run", "take"]) expect(kept[key], key).toBeTruthy();
-  /* The same address with the switch off: the shell reads none of them, and today's rewrite drops them. */
+  /* The same address with the switch off: the board's own params (region, frame…) are kept, since the board is for everyone;
+     the others (screen, device, from, run, take) are today's shell's to drop. */
   await page.context().clearCookies();
   await signInLocally(page.request);
-  await page.goto("/suites?suite=particl&page=rig&region=cut&frame=d");
+  await page.goto("/suites?view=board&region=cut&frame=d&device=phone&from=x&take=t");
   await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old");
   await page.keyboard.press("Alt+KeyM");
   await expect.poll(() => here(page).make).toBe("video");
-  expect(here(page).region).toBeUndefined();
+  expect([here(page).region, here(page).frame]).toEqual(["cut", "d"]);
+  for (const key of ["device", "from", "take"]) expect(here(page)[key], key).toBeUndefined();
 });
 
 test("workspace A on, workspace B off: B is unchanged, A is the new interface", async ({ page, browser }, info) => {

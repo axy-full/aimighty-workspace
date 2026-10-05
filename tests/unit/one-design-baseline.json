@@ -112,10 +112,6 @@
     "components/graphite/business/FormatTool.tsx": 1,
     "components/graphite/crew/CrewView.tsx": 4,
     "components/graphite/mobile/StudioHome.tsx": 1,
-    "components/graphite/production/AstraOutputs.tsx": 3,
-    "components/graphite/production/EditStage.tsx": 1,
-    "components/graphite/production/RigExtras.tsx": 1,
-    "components/graphite/production/StoryboardStage.tsx": 1,
     "components/graphite/production/TimelineCut.tsx": 1,
     "components/make/AstraUpscale.tsx": 10,
     "components/management/OpenAIConnection.tsx": 2,
@@ -136,10 +132,8 @@
     "components/workspace/rig/RigProvider.tsx": 2,
     "components/workspace/rig/use-team-canvas.ts": 1,
     "components/workspace/spec/tools/AstraTool.tsx": 1,
-    "lib/shell/confirmations.ts": 3,
     "lib/shell/enhancer.ts": 1,
-    "lib/shell/ia.ts": 10,
-    "lib/shell/production-tools.ts": 1,
+    "lib/shell/ia.ts": 6,
     "lib/shell/studio-home.ts": 1,
     "lib/shell/tools-connections.ts": 2
   }

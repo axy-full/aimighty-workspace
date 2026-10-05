@@ -20,9 +20,11 @@ Written 5 Oct 2026 on the clean slate (PR #528, `design/clean-slate`). It lists 
 | Style sheets (all `.css`, tracked) | 86: `app/graphite.css` (the one token set), `app/fonts.css` (fonts), and **84 old sheets** (84 on the allow-list) | Thu 8 Oct; the kept ones in §7 |
 | Second token names (alias layers over `app/graphite.css`, no values of their own) | 4: `app/globals.css` (83 names), `app/workbench/workbench.css` (80), `components/workspace/workspace.css` (71), and the `--graphite-*` block (22) inside `app/graphite.css` itself. Plus `components/suites/four-suites.css` (909 lines of the old four-suite look), loaded by `app/layout.tsx` on every page | flip PR / D1 |
 | Marketing and UI copy from the old structure | 56 files, 174 occurrences (the baseline; 30 in 8 marketing files are already fixed on `site/copy-names`) | Thu 8 Oct |
-| Old screens: routes (§4) and the `/suites` pages (§4b) | 44 route page files in the three old shells; 42 pages in `/suites` (10 Studio stages and 2 phone pages, 8 Business, 3 Viral, 8 Atomik, 7 Workspace tabs, 3 Crew, Gen) | streams 2-11, flip PR |
+| Old screens: routes (§4) and the `/suites` pages (§4b) | 44 route page files in the three old shells; 32 pages in `/suites` (the 10 Studio stages are deleted since 6 Oct: 2 Home pages, 8 Business, 3 Viral, 8 Atomik, 7 Workspace tabs, 3 Crew, Gen) | streams 2-11, flip PR |
 | Source files of old screens (§6) | 337 to delete, of which 26 are orphans nothing imports; 10 shell files stream 1 rebuilds in place; 85 kept with a reason | streams 2-11, flip PR |
 | Exports and pictures of old screens | 5 screenshots on the marketing pages (§8) | stream 15 |
+
+**Board PR, 6 Oct (owner decision 42: the canvas is the whole production).** The ten Studio stage pages of `/suites`, their components (`StageView`, `BriefStage`, `BeatsStage`, `BeatGraph`, `StoryboardStage`, `EnvironmentStage`, `CastStage`, `EditStage`, `AstraOutputs`, the Rig library, `VerifyBadge`), their helpers (`beat-graph`, `beats-undo`, `takes-desk`, `take-handover`), their rules in `production.css`, `shell.css` and `rig.css`, and the browser specs that drove them are gone. Studio, Ads and Social are one board for every workspace, with the switch on or off. Each old address (the app's spelling, the design file's, and a copied take link) is redirected to the board's region: the table is `lib/shell/stage-redirects.ts`, held by `tests/unit/demo-board-stage-redirects.spec.ts` and `tests/demo-board-stage-redirects-workbench.spec.ts`. The old `/workspace` and `/workbench` shells keep their own page bodies until D1.
 
 Items with no owner yet are listed in §9. The headline ones: the 3D blocking tool (Astra Blender, 9 files and 3 sheets plus the Astra stage pages), the editor and tool panels the handoff opens as they are, the primitive sets (`components/ui`, `components/workspace/ui`), the old app pages no frame draws, the orphan sweep, and the stale docs.
 
@@ -154,7 +156,7 @@ Every tracked `.css` (86 files) is listed. "Token debt" is how many custom prope
 | `components/workbench/soul-identity-panel.module.css` | 56 | module sheet | `components/workbench/SoulIdentityPanel.tsx` | 0 own, 7 foreign | none drawn: the handoff opens the existing editor/tool as it is (README 3: Cut > Open Edit & Sound) | UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workspace/mobile/mobile.css` | 1656 | screen sheet | `app/workspace/page.tsx` | 0 own, 54 foreign | phone screens (stream 10) | stream 10 (phone) + D1 retire /workspace | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/pages/assets.css` | 188 | screen sheet | `components/workspace/mobile/pages/CardsPages.tsx`, `components/workspace/mobile/pages/FormPage.tsx`, `components/workspace/pages/CastPage.tsx`, `components/workspace/pages/EditPage.tsx`, `components/workspace/pages/TakesPage.tsx` | 0 own, 26 foreign | Shots, Cast, Cut regions (stream 5) | stream 5 (cards 2) | Thu 8 Oct |
-| `components/workspace/rig/rig-verify.css` | 78 | screen sheet | `components/workspace/rig/RigVerify.tsx`, `components/workspace/rig/VerifyBadge.tsx` | 0 own, 12 foreign | - | kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
+| `components/workspace/rig/rig-verify.css` | 78 | screen sheet | `components/workspace/rig/RigVerify.tsx` | 0 own, 12 foreign | - | kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
 | `components/workspace/rig/rig.css` | 425 | screen sheet | `components/workspace/rig/RigCardInspector.tsx`, `components/workspace/rig/RigImport.tsx`, `components/workspace/rig/RigInspector.tsx`, `components/workspace/rig/RigPage.tsx` | 0 own, 36 foreign | the board, `?view=board` (stream 3) | stream 3 (board canvas) | Thu 8 Oct |
 | `components/workspace/workspace.css` | 843 | token alias layer + shell sheet | `app/suites/page.tsx`, `app/workspace/page.tsx` | 71 own, 0 foreign | /suites: Home, board, Settings (streams 2, 3, 9); phone: stream 10 | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 
@@ -203,10 +205,7 @@ Counted by `tests/helpers/uiStrings.ts`: JSX text and user-visible string litera
 | `components/graphite/business/FormatTool.tsx` | 1 | Open in Gen 1 | Open in Gen | goes with the file: stream 11 (Ads and Social) | Thu 8 Oct |
 | `components/graphite/crew/CrewView.tsx` | 4 | Rig 3, Open in Gen 1 | A draft shot on the Rig | goes with the file: stream 7 (Atomik: Crew review, frame m) | Thu 8 Oct |
 | `components/graphite/mobile/StudioHome.tsx` | 1 | Rig 1 | Open in Rig | goes with the file: stream 2 (Home) + stream 10 (phone Home) | Thu 8 Oct |
-| `components/graphite/production/AstraOutputs.tsx` | 3 | Rig 2, Astra 1 | Astra outputs | goes with the file; UNOWNED (§9): Astra outputs page | Thu 8 Oct |
-| `components/graphite/production/EditStage.tsx` | 1 | Rig 1 | Nothing generated yet. Frames from Storyboards, builds from Cast and s | goes with the file: stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/production/RigExtras.tsx` | 1 | Rig 1 | Rig library | goes with the file: stream 3 (board canvas) | Thu 8 Oct |
-| `components/graphite/production/StoryboardStage.tsx` | 1 | Rig 1 | Take the frames to Rig › | goes with the file: stream 4 (cards 1) | Thu 8 Oct |
 | `components/graphite/production/TimelineCut.tsx` | 1 | Rig 1 | No takes yet — render them in Storyboards, Cast, Rig or Edit. | goes with the file: stream 5 (cards 2) | Thu 8 Oct |
 | `components/make/AstraUpscale.tsx` | 10 | Astra 10 | Choose a video for Astra upscale. | stream 6 (Make): say "Topaz upscale"; the file is the Topaz Astra upscale form | Thu 8 Oct |
 | `components/management/OpenAIConnection.tsx` | 2 | Astra 2 | Astra appears in this key’s model catalogue. | stream 9 (Settings > Advanced): the model-catalogue note | Thu 8 Oct |
@@ -277,11 +276,7 @@ The redirect pages (`/images`, `/audio`, `/make/[kind]`, `/all`, `/canvas/[id]`,
 
 | Pages (query form) | Component | Replacement | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| Studio: Brief, Beats (`page=brief`, `sp=beats`), Storyboards (`page=boards`) | `production/BriefStage`, `BeatsStage`, `BeatGraph`, `StoryboardStage` | Brief, Looks, Storyboard regions | stream 4 | Thu 8 Oct |
-| Studio: Environment, Cast (`page=boards&sp=environment`, `page=cast`) | `production/EnvironmentStage`, `CastStage`, `CastIdentities` | Cast region | stream 5 | Thu 8 Oct |
-| Studio: Astra 3D (`page=astra`) | `production/AstraOutputs`, `spec/tools/AstraTool`, `astra-blender/*` | 3D blocking, a tool on a shot card | UNOWNED (§9) | Thu 8 Oct |
-| Studio: Rig (`page=rig`) | `workspace/rig/RigPage` and friends | the board `?view=board` | stream 3 | Thu 8 Oct |
-| Studio: Takes, Edit & Sound, Deliver (`page=takes`, `edit`, `deliver`) | `production/EditStage`, `TimelineCut`, `spec/tools/DeliverTool`, `workspace/pages/*` | Shots region, Cut card, Deliver card | stream 5 | Thu 8 Oct |
+| ~~Studio: Brief, Beats, Storyboards, Environment, Cast, Astra 3D, Rig, Takes, Edit & Sound, Deliver~~ (`page=brief`, `sp=beats`, `page=boards`, `sp=environment`, `page=cast`, `astra`, `rig`, `takes`, `edit`, `deliver`) | `production/{Brief,Beats,Storyboard,Environment,Cast,Edit}Stage`, `BeatGraph`, `AstraOutputs`, `StageView`, the Rig library | the board's regions (table in `lib/shell/stage-redirects.ts`) | **DELETED by the board PR, 6 Oct** (owner decision 42): every address redirects to its region, for every workspace. Left in the repo on purpose, unmounted: `TranscribePanel` (no board card yet), `spec/tools/AstraTool` and `astra-blender/*` (3D blocking has no card yet), `RigPage` and friends (the old `/workspace` shell still mounts them) | done |
 | Studio overview and the phone's "Where to?" (`sp=stages`, `sp=home`) | `mobile/StudioHome`, `mobile/SuiteHome` | Home; phone Home and Record | streams 2 and 10 | Thu 8 Oct |
 | Business, 8 pages (`suite=business`) | `business/*`, `suites/MoleculrWorkspace` | Ads board | stream 11 | Thu 8 Oct |
 | Viral, 3 pages (`suite=viral`) | `viral/ViralView`, `suites/SubatomikWorkspace` | Make quick tools; Social board; Make > Recent | streams 6 and 11 | Thu 8 Oct |
@@ -365,7 +360,6 @@ Replacement: the board outline rail (stream 3). Deleting: stream 1 / stream 3 (p
 | `components/graphite/PageHead.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 1 / stream 3 (page strip goes) | Thu 8 Oct |
 | `components/graphite/ProjectHead.tsx` | component | `components/graphite/FirstRun.tsx`, `components/graphite/SuitesShell.tsx` | stream 1 / stream 3 (page strip goes) | Thu 8 Oct |
 | `components/graphite/StageStrip.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 1 / stream 3 (page strip goes) | Thu 8 Oct |
-| `components/graphite/StageView.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 1 / stream 3 (page strip goes) | Thu 8 Oct |
 
 #### S_HOME: Studio overview / phone Where to? (3)
 
@@ -392,10 +386,6 @@ Replacement: Brief, Looks, Storyboard regions (stream 4). Deleting: stream 4 (ca
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
 | `components/graphite/FilmVocabulary.tsx` | component | `components/graphite/GenView.tsx` | stream 4 (cards 1) | Thu 8 Oct |
-| `components/graphite/production/BeatGraph.tsx` | component | `components/graphite/production/BeatsStage.tsx` | stream 4 (cards 1) | Thu 8 Oct |
-| `components/graphite/production/BeatsStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 4 (cards 1) | Thu 8 Oct |
-| `components/graphite/production/BriefStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 4 (cards 1) | Thu 8 Oct |
-| `components/graphite/production/StoryboardStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 4 (cards 1) | Thu 8 Oct |
 
 #### S_CAST: Studio stage pages (6)
 
@@ -403,12 +393,9 @@ Replacement: Cast, Shots, Cut, Deliver (stream 5). Deleting: stream 5 (cards 2).
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `components/graphite/production/CastIdentities.tsx` | component | `components/graphite/production/CastStage.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/production/CastStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/production/EditStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/production/EnvironmentStage.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/production/CastIdentities.tsx` | component | `components/graphite/board/inspector/CastBody.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/production/TimelineCut.tsx` | component | `components/workspace/pages/EditPage.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/production/TranscribePanel.tsx` | component | `components/graphite/production/EditStage.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/production/TranscribePanel.tsx` | component | none (unmounted since the board PR: Transcribe, a priced action, has no board card yet; `lib/workbench/transcription-request.ts` and `tests/unit/transcriptionRecovery.spec.ts` stay with it) | stream 5 (cards 2): give it a card, or the owner decides to drop it | Thu 8 Oct |
 
 #### S_TAKES: old take tiles and Inspector (9)
 
@@ -418,7 +405,7 @@ Replacement: board Inspector, take card, review mode (stream 5). Deleting: strea
 |---|---|---|---|---|
 | `components/graphite/AssetInspector.tsx` | component | `components/graphite/Inspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/AssetLinkCard.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/production/EditStage.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/DraftFinal.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/GenView.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/Inspector.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/NextActionPanel.tsx` | component | `components/graphite/AssetNextActions.tsx` | stream 5 (cards 2) | Thu 8 Oct |
@@ -433,7 +420,7 @@ Replacement: Library drawer (stream 3). Deleting: stream 3 (board canvas). Targe
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
 | `components/graphite/Library.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 3 (board canvas) | Thu 8 Oct |
-| `components/graphite/LibraryMore.tsx` | component | `components/graphite/Library.tsx`, `components/graphite/production/EditStage.tsx`, `components/graphite/production/RigExtras.tsx` | stream 3 (board canvas) | Thu 8 Oct |
+| `components/graphite/LibraryMore.tsx` | component | `components/graphite/Library.tsx` | stream 3 (board canvas) | Thu 8 Oct |
 | `components/graphite/production/RigExtras.tsx` | component | `components/graphite/SuitesShell.tsx`, `components/workspace/rig/RigInspector.tsx`, `components/workspace/rig/RigList.tsx` | stream 3 (board canvas) | Thu 8 Oct |
 
 #### S_ASTRA_OUT: Astra outputs page (1)
@@ -442,7 +429,6 @@ Replacement: 3D blocking tool on a shot card; no stream plans it. Deleting: UNOW
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `components/graphite/production/AstraOutputs.tsx` | component | `components/graphite/SuitesShell.tsx` | UNOWNED: 3D blocking outputs | Thu 8 Oct |
 
 #### S_HELPERS_S4S5: helpers of the old stage pages (7)
 
@@ -450,13 +436,13 @@ Replacement: the cards' own logic (lib/production/*). Deleting: streams 4 and 5 
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `components/graphite/production/AgentAction.tsx` | component | `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/CastStage.tsx`, `components/graphite/production/EnvironmentStage.tsx` +2 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/AgentBar.tsx` | component | `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/BriefStage.tsx`, `components/graphite/production/CastStage.tsx` +4 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/agent-price.ts` | module | `components/graphite/production/AgentAction.tsx`, `components/graphite/production/BriefStage.tsx`, `components/workbench/DevelopmentPanel.tsx` +2 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/use-agent-attachments.tsx` | hook | `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/BriefStage.tsx`, `components/graphite/production/EnvironmentStage.tsx` +1 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/use-agent-runs.ts` | hook | `components/graphite/production/AgentAction.tsx`, `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/BriefStage.tsx` +5 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/use-stage-facts.ts` | hook | `components/graphite/business/BusinessOwnView.tsx`, `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/BriefStage.tsx` +4 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
-| `components/graphite/production/use-stage-quotes.ts` | hook | `components/graphite/production/CastStage.tsx`, `components/graphite/production/EditStage.tsx`, `components/graphite/production/EnvironmentStage.tsx` +2 | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/AgentAction.tsx` | component | `components/graphite/production/RigExtras.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/AgentBar.tsx` | component | `components/graphite/production/RigExtras.tsx`, `components/workspace/rig/RigVerify.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/agent-price.ts` | module | `components/graphite/production/AgentAction.tsx`, `components/workbench/DevelopmentPanel.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/use-agent-attachments.tsx` | hook | `components/workbench/DevelopmentPanel.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/use-agent-runs.ts` | hook | `components/graphite/production/AgentAction.tsx`, `components/graphite/production/RigExtras.tsx`, `components/workspace/rig/RigVerify.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/use-stage-facts.ts` | hook | `components/graphite/business/BusinessOwnView.tsx` | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
+| `components/graphite/production/use-stage-quotes.ts` | hook | none | streams 4 and 5 (helpers that go with their rows) | Thu 8 Oct |
 
 #### S_MAKE: Gen page (3)
 
@@ -466,7 +452,7 @@ Replacement: Make panel (stream 6). Deleting: stream 6 (Make). Target: Thu 8 Oct
 |---|---|---|---|---|
 | `components/graphite/GenView.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 6 (Make) | Thu 8 Oct |
 | `components/graphite/ModelSheet.tsx` | component | `components/graphite/GenView.tsx` | stream 6 (Make) | Thu 8 Oct |
-| `components/graphite/tools/SeedanceEditHost.tsx` | component | `components/graphite/GenView.tsx`, `components/graphite/production/EditStage.tsx` | stream 6 (Make) | Thu 8 Oct |
+| `components/graphite/tools/SeedanceEditHost.tsx` | component | `components/graphite/MakePanel.tsx`, `components/graphite/board/inspector/TakeBody.tsx` | stream 6 (Make) | Thu 8 Oct |
 
 #### S_ATOMIK_GATE: page-plan sheet and gate (2)
 
@@ -492,7 +478,7 @@ Replacement: Approvals, Activity, Skills, Memory (stream 8). Deleting: stream 8 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
 | `components/graphite/ManagementDashboard.tsx` | component | `components/graphite/WorkspaceView.tsx` | stream 8 (control room) | Thu 8 Oct |
-| `components/graphite/OwnerRunCard.tsx` | component | `components/graphite/production/CastStage.tsx`, `components/graphite/tools/WorkflowHost.tsx` | stream 8 (control room) | Thu 8 Oct |
+| `components/graphite/OwnerRunCard.tsx` | component | `components/graphite/board/cards/cast/CastCard.tsx`, `components/graphite/tools/WorkflowHost.tsx` | stream 8 (control room) | Thu 8 Oct |
 | `components/graphite/atomik/MemoryView.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/Inspector.tsx`, `components/graphite/SuitesShell.tsx` | stream 8 (control room) | Thu 8 Oct |
 | `components/graphite/atomik/SkillsView.tsx` | component | `components/graphite/Inspector.tsx`, `components/graphite/SuitesShell.tsx` | stream 8 (control room) | Thu 8 Oct |
 | `components/suites/AtomikSuite.tsx` | component | `app/(app)/atomik/page.tsx`, `components/workspace/spec/tools/AtomikTool.tsx` | stream 8 (control room) | Thu 8 Oct |
@@ -600,7 +586,7 @@ Replacement: /suites: Home, board, Settings (streams 2, 3, 9); phone: stream 10.
 | `components/workspace/StageTabs.tsx` | component | `components/workspace/WorkspaceShell.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/StatusBar.tsx` | component | `components/workspace/WorkspaceShell.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/TopBar.tsx` | component | `components/workspace/WorkspaceShell.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
-| `components/workspace/VirtualItems.tsx` | component | `components/graphite/GenView.tsx`, `components/graphite/Library.tsx`, `components/graphite/production/EditStage.tsx` +4 | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/workspace/VirtualItems.tsx` | component | `components/graphite/Library.tsx`, `components/graphite/MakePanel.tsx`, `components/graphite/make/Recent.tsx` +2 | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/WorkspaceApp.tsx` | component | `app/workspace/page.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/WorkspaceShell.tsx` | component | `components/graphite/SuitesShell.tsx`, `components/workspace/WorkspaceApp.tsx`, `components/workspace/rig/RigProvider.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/icons.ts` | module | `components/workspace/Home.tsx`, `components/workspace/Library.tsx` | flip PR, then D1 retire /workspace (lead) | Thu 8 Oct (needs the owner's yes) |
@@ -707,10 +693,10 @@ Replacement: the board (stream 3). Deleting: D1 retire /workspace + stage pages 
 |---|---|---|---|---|
 | `components/workspace/spec/SpecInspector.tsx` | component | `components/workspace/inspector/registry.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/spec/SpecPage.tsx` | component | `components/workspace/pages/registry.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
-| `components/workspace/spec/SpecTool.tsx` | component | `components/graphite/StageView.tsx`, `components/workspace/pages/registry.tsx`, `components/workspace/spec/SpecPage.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
-| `components/workspace/spec/tools/DraftStatus.tsx` | component | `components/graphite/production/BeatsStage.tsx`, `components/graphite/production/BriefStage.tsx`, `components/graphite/production/CastStage.tsx` +8 | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/workspace/spec/SpecTool.tsx` | component | `components/workspace/pages/registry.tsx`, `components/workspace/spec/SpecPage.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/workspace/spec/tools/DraftStatus.tsx` | component | `components/workspace/pages/ShortsPage.tsx`, `components/workspace/spec/tools/AstraTool.tsx`, `components/workspace/spec/tools/BoardsTool.tsx` +3 | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/workspace/spec/tools/studio-css.ts` | module | `components/workspace/spec/tools/AstraTool.tsx`, `components/workspace/spec/tools/BoardsTool.tsx`, `components/workspace/spec/tools/BriefTool.tsx` +2 | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
-| `components/workspace/spec/use-spec-data.ts` | hook | `components/graphite/StageView.tsx`, `components/workspace/mobile/pages/RowsPage.tsx`, `components/workspace/spec/SpecPage.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/workspace/spec/use-spec-data.ts` | hook | `components/graphite/board/cards/group/GroupCard.tsx`, `components/workspace/mobile/pages/RowsPage.tsx`, `components/workspace/spec/SpecPage.tsx` | D1 retire /workspace + stage pages (lead) | Thu 8 Oct (needs the owner's yes) |
 
 #### WS_PAGES: stage pages (4)
 
@@ -1083,7 +1069,7 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 | `components/workbench/AssetPreview.tsx` | source | `components/pipeline/PipelineRun.tsx`, `components/suites/MarketingPresets.tsx`, `components/suites/MoleculrWorkspace.tsx` +3 | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/AtomikRunDialog.tsx` | source | `components/astra-blender/AstraAgentPanel.tsx`, `components/graphite/business/HooksTool.tsx`, `components/graphite/business/ReferenceTool.tsx` +3 | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/ColorPreview.tsx` | source | `components/workbench/TimelinePreview.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
-| `components/workbench/DevelopmentPanel.tsx` | source | `components/graphite/production/BriefStage.tsx`, `components/workbench/Studio.tsx`, `components/workspace/spec/tools/BriefTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
+| `components/workbench/DevelopmentPanel.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/spec/tools/BriefTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/DraftUploadInput.tsx` | source | `components/workspace/spec/tools/MarketingTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/GenerationDialog.tsx` | source | `components/astra-blender/AstraAgentPanel.tsx`, `components/astra-blender/AstraExportPanel.tsx`, `components/astra-blender/AstraRenderPanel.tsx` +23 | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/MovieExport.tsx` | source | `components/workbench/MoviePage.tsx`, `components/workspace/spec/tools/DeliverTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
@@ -1091,7 +1077,7 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 | `components/workbench/ProjectAssetLibrary.tsx` | source | `components/workbench/ProjectLibraryPage.tsx`, `components/workbench/Studio.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/ProjectLibraryPage.tsx` | source | `app/(app)/library/page.tsx`, `components/make/GenWorkspace.tsx`, `components/suites/SubatomikWorkspace.tsx` +1 | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/ScreenplayOcrReview.tsx` | source | `components/workbench/ScriptPanel.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
-| `components/workbench/ScriptPanel.tsx` | source | `components/graphite/production/BriefStage.tsx`, `components/workbench/Studio.tsx`, `components/workspace/spec/tools/BriefTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
+| `components/workbench/ScriptPanel.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/spec/tools/BriefTool.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/SoulIdentityPanel.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/pages/CastPage.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/SoundGenerate.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/pages/EditPage.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
 | `components/workbench/SoundMix.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/pages/EditPage.tsx` | functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide) | Thu 8 Oct |
@@ -1123,7 +1109,7 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 | `components/atomik/ModelPicker.module.css` | sheet | `components/atomik/ModelPicker.tsx` | shared widget sheet, no screen of its own: kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
 | `components/atomik/skills/skills.module.css` | sheet | `components/atomik/skills/ComposerSkills.tsx`, `components/atomik/skills/SkillForms.tsx` | shared widget sheet, no screen of its own: kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
 | `components/upload-recovery.module.css` | sheet | `components/UploadRecovery.tsx` | shared widget sheet, no screen of its own: kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
-| `components/workspace/rig/rig-verify.css` | sheet | `components/workspace/rig/RigVerify.tsx`, `components/workspace/rig/VerifyBadge.tsx` | shared widget sheet, no screen of its own: kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
+| `components/workspace/rig/rig-verify.css` | sheet | `components/workspace/rig/RigVerify.tsx` | shared widget sheet, no screen of its own: kept: shared widget used by the new screens; restyle review (lead) | Thu 8 Oct |
 
 ## 8. Exports and pictures of old screens
 
@@ -1143,7 +1129,7 @@ The marketing pictures are old-design exports that depend on the new screens exi
 
 Items no stream plan covers. Each needs a name from the lead or an answer from the owner before Thursday.
 
-1. **3D blocking (Astra Blender).** `components/astra-blender/*` (9 files, 3 sheets), `spec/tools/AstraTool.tsx`, `production/AstraOutputs.tsx`, `AtomikRunDialog` "Build with Astra", and 49 "Astra" strings. README § 1.2 makes it "a tool on a shot card (Inspector › Advanced)", but no stream plans it. Until someone does, the strings stay in the baseline.
+1. **3D blocking (Astra Blender).** `components/astra-blender/*` (9 files, 3 sheets), `spec/tools/AstraTool.tsx`, `AtomikRunDialog` "Build with Astra" (the Astra outputs page is deleted with the stage pages; the tool itself has no host in `/suites` now), and 49 "Astra" strings. README § 1.2 makes it "a tool on a shot card (Inspector › Advanced)", but no stream plans it. Until someone does, the strings stay in the baseline.
 2. **Editors and tool panels the handoff opens as they are** (`components/workbench/` Script, Development, Sound, Sequence color, Movie export, Identity panel, Asset library, Generation dialog; their module sheets). The handoff says "Open Edit & Sound opens the existing editor" and draws no restyle. They read graphite tokens already (most). Decision needed: keep them as tools with a restyle review, or assign each to a stream. Listed in §7 until then.
 3. **Primitive sets.** `components/ui/*` (16 files, built from the 3 October README) and `components/workspace/ui/*` (10) are two old component sets; no plan builds a replacement, so the new screens either reuse them or each ship their own. Decide before the flip PR.
 4. **Old app pages no frame draws:** `/projects/[id]` and its canvas and element pages, `/takes/[id]`, `/shots/[id]`, `/elements/[id]`, `/studio/shot`, `/atomik/ideas|treatment|breakdown|shots`, `/rig/recipes`, `/workbench/movie` (the `?snapshot=` hand-off from pipeline runs). They retire only if the owner accepts losing them, or Claude Design draws them.

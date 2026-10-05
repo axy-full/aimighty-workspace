@@ -68,6 +68,21 @@ const TOMBSTONES = [
   "app/workbench/mobile-hand" + "off.css",
   "app/workbench/mobile-hand" + "off-stages.css",
   "components/studio/legacy-" + "graphite.css",
+  /* The ten Studio stage pages of /suites, deleted by the board PR (the board is the whole production): their pages, helpers and rows. */
+  "components/graphite/StageView.tsx",
+  "components/graphite/production/AstraOutputs.tsx",
+  "components/graphite/production/BeatGraph.tsx",
+  "components/graphite/production/BeatsStage.tsx",
+  "components/graphite/production/BriefStage.tsx",
+  "components/graphite/production/CastStage.tsx",
+  "components/graphite/production/EditStage.tsx",
+  "components/graphite/production/EnvironmentStage.tsx",
+  "components/graphite/production/StoryboardStage.tsx",
+  "components/workspace/rig/VerifyBadge.tsx",
+  "lib/production/beat-graph.ts",
+  "lib/production/beats-undo.ts",
+  "lib/workspace/takes-desk.ts",
+  "lib/shell/take-handover.ts",
 ];
 
 test("(a) nothing the clean slate deleted comes back, and design/ holds one design", () => {
