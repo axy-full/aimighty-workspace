@@ -723,4 +723,23 @@ test.describe("second review fixes", () => {
       expect(Number((await db().execute(`SELECT cap_credits FROM rig_agent_runs WHERE id='s6_run'`)).rows[0].cap_credits)).toBe(480);
     });
   });
+
+  test("M3: the merge at $0.80 seeds $0.80 though the last job was at $0.10, and stays open until CREDIT_USD changes", async () => {
+    const { createClient } = await import("@libsql/client");
+    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, LEDGER_UNIT_SCHEMA } = await import("../../lib/ledgerUnit");
+    const c = createClient({ url: `file:${path.join(dir, "seed-m3.db")}` });
+    await c.execute(LEDGER_UNIT_SCHEMA);
+    await c.execute(`CREATE TABLE meter_events(id TEXT, credit_usd REAL, created_at INTEGER)`);
+    await c.execute(`INSERT INTO meter_events VALUES('before_cutover',0.1,1)`); // nothing metered since the price moved
+    process.env.CREDIT_USD = "0.80";
+    await seedLedgerUnit(c, 1000);
+    expect(await ledgerUnitTx(c)).toBe(0.8);
+    expect(await pausedSinceTx(c)).toBeNull();
+    // The owner sets 0.10 and redeploys: that boot pauses, which closes the window the conversion converts.
+    process.env.CREDIT_USD = "0.10";
+    await seedLedgerUnit(c, 2000);
+    expect(await ledgerUnitTx(c)).toBe(0.8);
+    expect(await pausedSinceTx(c)).toBe(2000);
+    c.close();
+  });
 });

@@ -20,10 +20,11 @@ import { creditUsd } from "./creditTerms";
  * resumes it. A reversal puts a workspace back in the old unit, which pauses
  * paid work there until it is converted again or CREDIT_USD is put back too.
  *
- * The row is seeded once, from `creditUsd()`, the first time the billing
- * tables are made (lib/billingLedger.ts billingReady). A deployment of this
- * code therefore starts open at whatever price it runs at; it is the CHANGE
- * of price after that which pauses. The house workspace is never billed in
+ * The row is seeded once, the first time the billing tables are made
+ * (lib/billingLedger.ts billingReady): at `creditUsd()`, unless the price has
+ * come down since the last job was approved (seedLedgerUnit). A deployment of
+ * this code therefore starts open at the price it runs at; it is the CHANGE of
+ * price after that which pauses. The house workspace is never billed in
  * credits and is never paused by this.
  */
 export const LEDGER_UNIT_PAUSED =
@@ -44,17 +45,21 @@ export const LEDGER_UNIT_SCHEMA = `CREATE TABLE IF NOT EXISTS billing_unit(id IN
 /**
  * Seed and watch the row, once per server instance (lib/billingLedger.ts billingReady).
  *
- * Seeded from the price the last job was approved at, falling back to CREDIT_USD: a deployment
- * whose first boot of this code is already at a new price still counts its record in the old
- * one, and pauses. When an instance boots at a price the record does not count in, the moment is
- * kept (`paused_since`): the end of the old price's window, which the conversion converts up to
- * and never past (lib/creditConversion.ts).
+ * Seeded at CREDIT_USD, unless the last job was approved at a HIGHER price: a deployment whose
+ * first boot of this code is already at a lower price (US$0.10 over a record last written at
+ * US$0.80) still counts its record in the old one, and pauses. A first boot at a higher price
+ * than the last job (the merge at US$0.80 when nothing was metered since the price moved there)
+ * seeds at CREDIT_USD, the price its newest rows were written at, and stays open.
+ *
+ * When an instance boots at a price the record does not count in, the moment is kept
+ * (`paused_since`): the end of the old price's window, which the conversion converts up to and
+ * never past (lib/creditConversion.ts).
  */
 export async function seedLedgerUnit(c: Pick<Transaction, "execute">, at: number): Promise<void> {
   let seed = creditUsd();
   try {
-    const last = (await c.execute(`SELECT credit_usd FROM meter_events WHERE credit_usd IS NOT NULL ORDER BY created_at DESC LIMIT 1`)).rows[0];
-    if (Number(last?.credit_usd) > 0) seed = Number(last!.credit_usd);
+    const last = Number((await c.execute(`SELECT credit_usd FROM meter_events WHERE credit_usd IS NOT NULL ORDER BY created_at DESC LIMIT 1`)).rows[0]?.credit_usd);
+    if (last > seed && !samePrice(last, seed)) seed = last;
   } catch { /* no meter yet */ }
   await c.execute({ sql: `INSERT OR IGNORE INTO billing_unit(id,unit_usd,updated_at,updated_by) VALUES(1,?,?,'boot')`, args: [seed, at] });
   const unit = await ledgerUnitTx(c);
