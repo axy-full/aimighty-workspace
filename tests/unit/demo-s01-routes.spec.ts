@@ -44,7 +44,9 @@ test("every landed module mounts and every other one falls back, whichever the r
     /* Landed (and, for a kind of board, with the board itself landed): its old addresses move to it, with the switch on only. */
     if (isLanded(screen.id, SCREENS)) {
       for (const row of screen.rows) {
-        expect(sameSearch(route(row.from, true), row.to), `${screen.id}: ${row.from} → ${row.to}`).toBe(true);
+        /* The address may also gain Home's own `view=home` (a panel over Home), so it carries every param the row sets, not only them. */
+        const out = params(route(row.from, true));
+        for (const [key, value] of Object.entries(params(row.to))) expect(out[key], `${screen.id}: ${row.from} → ${row.to}`).toBe(value);
         expect(sameSearch(route(row.from, false), row.to), `${screen.id} off: ${row.from}`).toBe(false);
       }
       for (const row of screen.fallback) expect(sameSearch(route(row.from, true), row.to), `${screen.id} fallback ${row.from}`).toBe(false);
