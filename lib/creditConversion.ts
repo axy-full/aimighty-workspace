@@ -873,6 +873,7 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun) {
     checkWindow(o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt, firstOldPriceJobAt, at);
     if (!(Number(o.endAt) > 0) && recorded != null) await checkRecordedWindowHolds(o.fromUsd);
+    else if (!(Number(o.endAt) > 0) && endAt != null) await checkPausedWindowHolds(o.fromUsd, endAt);
   }
   const base = {
     action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
@@ -959,6 +960,27 @@ async function checkRecordedWindowHolds(fromUsd: number): Promise<void> {
   })).rows[0];
   if (Number(ran?.t) > 0)
     throw new Error(`particl.si ran at ${dollars(fromUsd)} again after the reversal (a paid job on ${new Date(Number(ran!.t)).toISOString()}): the window the first conversion recorded no longer covers the record. Stop and ask Claude; do not give endAt to force it.`);
+}
+
+/** Old instances may finish requests already under way for a few minutes after the new build goes live. */
+export const ROLLOUT_GRACE_MS = 15 * 60_000;
+
+/**
+ * The default window ends when this code first ran at the new price (pausedSince). It describes the
+ * record only if the old price never ran again afterwards: after an Instant Rollback to the $0.80
+ * build and a redeploy, pausedSince still names the first boot, and rows the $0.80 build wrote in
+ * between would fall outside the window. A paid job approved at the old price well after pausedSince
+ * shows it; then the default is refused and the owner gives endAt (the redeploy's live time).
+ * Grants alone written by a rolled-back build leave no such mark: the runbook asks for endAt
+ * after any rollback.
+ */
+export async function checkPausedWindowHolds(fromUsd: number, endAt: number): Promise<void> {
+  const ran = (await platformDb().execute({
+    sql: `SELECT MAX(created_at) AS t FROM meter_events WHERE paid_by_platform=1 AND workspace_id<>? AND ROUND(credit_usd*1000000)=ROUND(?*1000000) AND created_at>?`,
+    args: [HOUSE_WORKSPACE_ID, fromUsd, endAt + ROLLOUT_GRACE_MS],
+  })).rows[0];
+  if (Number(ran?.t) > 0)
+    throw new Error(`particl.si ran at ${dollars(fromUsd)} after the window's end (${new Date(endAt).toISOString()}): a paid job on ${new Date(Number(ran!.t)).toISOString()}. After a rollback, give endAt: the time the redeployed build went live.`);
 }
 
 /**
