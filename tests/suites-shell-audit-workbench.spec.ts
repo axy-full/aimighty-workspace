@@ -43,8 +43,9 @@ async function open(page: Page, path: string, store = { current: fixture() }) {
 
 test("Recreate pressed on Gen lands at once, with the take's own references, and nothing replays when Gen opens again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
@@ -56,11 +57,10 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
   await expect(page.getByTestId("gen-well")).toContainText("harbour-plate.webp");
 
-  /* Leave and come back: the composer starts as it should, not with the old recipe laid over it. */
+  /* Close Make and open it again: the composer starts as it should, not with the old recipe laid over it. */
   await page.getByTestId("gen-prompt").fill("my own words");
   const suites = page.getByRole("tablist", { name: "Suites" });
-  await openSuitesMenu(page);
-  await suites.locator('[data-suite-tab="project"]').click();
+  await page.getByTestId("make-close").click();
   await expect(page.getByTestId("gen-view")).toHaveCount(0);
   await openSuitesMenu(page);
   await suites.getByRole("tab", { name: "Make" }).click();

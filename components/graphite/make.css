@@ -1,0 +1,96 @@
+/*
+ * Make (components/graphite/MakePanel.tsx; design/particl-graphite/README.md § 3.2): a 440 px panel at the right of
+ * whatever is on screen, from under the header to the foot, black with a hairline at its left edge. Beside the
+ * Inspector's column when that is open. Below 768 px it is the screen's width, its targets 44 px, its end clear of
+ * the floating tab bar. Overlays (the Library and Inspector below 1280 px, sheets, menus, toasts) sit above it.
+ * Loaded after phone.css.
+ */
+.gx .gx-make {
+  position: absolute; top: var(--make-top, 56px); bottom: 0; right: 0; z-index: 28;
+  width: min(440px, 100%); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--gx-root); border-left: 1px solid var(--gx-hair-strong);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.6);
+  animation: gx-in .2s var(--gx-ease) both;
+}
+.gx .gx-make[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
+.gx-make-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
+.gx-make-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.gx .gx-make-close { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--gx-text-2); }
+.gx .gx-make-close:hover { color: var(--gx-text); background: var(--gx-input-hover); }
+.gx .gx-make-lib { gap: 6px; }
+.gx-make-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+
+/* The composer: no card of its own inside the panel; the panel is the card. */
+.gx .gx-make .gx-gen-card { padding: 0 16px 16px; gap: 14px; border: 0; border-radius: 0; background: transparent; }
+.gx-make-compose { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx .gx-make .gx-make-words { min-height: 92px; font-size: 15px; line-height: 1.5; }
+.gx-make-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+/* The engine line: what renders it and its price on one line, Change at its end; the whole line opens the sheet. */
+.gx .gx-make-engine { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--gx-hair); background: transparent; }
+.gx .gx-make-engine:hover { background: var(--gx-input-hover); }
+.gx-make-engine > .gx-glyph { flex: none; color: var(--gx-text-2); }
+.gx-make-engine-line { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx .gx-make-engine-line > .gx-model-name { display: inline; font-size: 13.5px; }
+.gx-make-engine-part::before { content: " · "; color: var(--gx-text-2); }
+.gx-make-engine-part { color: var(--gx-text); }
+.gx-make-change { flex: none; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); }
+
+/* Make, where it goes, and its price: always in reach — the row sticks to the panel's foot while the controls under
+   it scroll. Its price wraps whole, never cut (shell.css › .gx-gen-go). */
+.gx .gx-make .gx-gen-cta.gx-make-go {
+  position: sticky; bottom: 0; z-index: 2; margin: 0 -16px; padding: 10px 16px; border-radius: 0;
+  display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  background: var(--gx-root); box-shadow: 0 -1px 0 var(--gx-hair);
+}
+.gx-make-dest { min-width: 0; flex: 1 1 140px; font-size: 13px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx .gx-make .gx-gen-go { width: auto; flex: 0 1 auto; max-width: 100%; padding-left: 16px; padding-right: 16px; }
+
+/* Takes still out are on Recent: the composer says so at every width. */
+.gx .gx-make .gx-resumed-jump { display: flex; align-self: flex-start; }
+
+/* A recreated take's card comes into view clear of Make's sticky row. */
+.gx .gx-make .gx-recipe { scroll-margin-bottom: 84px; }
+
+/* What the drawn panel does not have yet, as Gen had it, under a hairline. */
+.gx-make-more { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--gx-hair); }
+
+/* Recent: Gen's results, two to a row. */
+.gx .gx-make-recent { padding: 0 16px 16px; }
+
+/* The engine sheet (Change): over Make's own column from 768 px, the rest of the screen dimmed; a bottom sheet on a
+   phone, as every sheet is. No two-letter tiles; the engine in use is tinted. */
+@media (min-width: 768px) {
+  .gx .gx-veil.gx-veil--make { display: flex; justify-content: flex-end; align-items: stretch; padding: var(--make-top, 56px) 0 0; background: rgba(0, 0, 0, 0.55); }
+  .gx .gx-veil--make[data-beside] { padding-right: calc(var(--gx-w-inspector, 320px) + 1px); }
+  .gx .gx-veil--make > .gx-sheet.gx-sheet--models { width: min(440px, 100%); max-height: none; border-radius: 0; border: 0; border-left: 1px solid var(--gx-hair-strong); background: var(--gx-root); box-shadow: none; animation: gx-in .2s var(--gx-ease) both; }
+}
+.gx-veil--make .gx-sheet-row--spec > .gx-tool-tag { display: none; }
+.gx .gx-veil--make .gx-sheet-row[aria-selected="true"] { background: var(--gx-tint); box-shadow: inset 0 0 0 1px var(--gx-tint-border); }
+
+/* Four type tabs keep the 44 px floor on the narrowest phones. */
+@media (max-width: 400px) {
+  .gx-make .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(4, 1fr); height: auto; }
+  .gx-make .gx-seg--fill .gx-seg-btn { min-width: 44px; padding: 0 4px; }
+}
+
+/* Touch: every target 44 px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-make-close, .gx .gx-make-lib { min-width: 44px; height: 44px; }
+  .gx-make-head { gap: 8px; padding: 8px 8px 8px 16px; }
+  .gx .gx-make .gx-seg-btn { min-height: 44px; }
+  .gx .gx-make .gx-make-engine { min-height: 48px; }
+}
+
+@media (max-width: 767px) {
+  /* Make is the screen: the top bar keeps its first row, and Make's own head takes the second (the project switcher's
+     and the page strip's, as Gen's buttons did); where it goes is on Make's row. */
+  .gx:has(.gx-make) .gx-header > .gx-bar { display: none; }
+  .gx .gx-make { width: 100%; left: 0; top: var(--make-top, 64px); border-left: 0; border-top: 0; padding-top: 4px; box-shadow: none; }
+  .gx .gx-make-head { padding: 2px 6px 2px 16px; }
+  /* The body's end clears the floating tab bar; Make's row sticks to the end of its content box, above the bar. */
+  .gx .gx-make-body { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
+  .gx .gx-make .gx-gen-cta.gx-make-go { flex-wrap: nowrap; padding: 4px 16px; }
+  .gx .gx-make .gx-gen-go { flex: 0 0 auto; }
+  .gx-make-dest { flex: 1 1 0; }
+}

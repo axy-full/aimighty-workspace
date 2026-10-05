@@ -33,7 +33,7 @@ test("a long result caption stays inside its card in Gen", async ({ page }, info
   await mockProjects(page, store);
   const long = "A red fox crossing a frozen harbour at dusk, a lit hut window far behind, wide shot, cinematic still, snow driving left to right";
   await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_a", title: long, prompt: long, projectId: "prod-captions" }), generation({ id: "gen_b", title: long, prompt: long, projectId: "prod-captions" })] });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const cards = page.locator(".gx-gen-grid .gx-asset");
   await expect(cards).toHaveCount(2, { timeout: 30_000 });
   for (const card of await cards.all()) {

@@ -358,6 +358,8 @@ export const PENDING: readonly Pending[] = [
   ...P("S3", "Shots region, Review mode, Make › Recent", "?suite=particl&page=takes"),
   ...P("S3", "Cut region `frame=i`", "?suite=particl&page=edit"),
   ...P("S3", "Deliver card `frame=i`", "?suite=particl&page=deliver"),
+  /* D0 PR 5a ships Make's panel: these links land on it now (lib/shell/make.ts › fromGenLink, applied after redirectFor in
+     app/suites/page.tsx and lib/shell/state.tsx). The rows move to OLD_TO_NEW once this table learns Make's addresses. */
   ...P("D0-5", "Make panel `make=1 | image | audio`; the model sheet is Change on the engine line; edit and upscale are card actions",
     "?view=gen", "?view=gen&mode=video", "?view=gen&mode=images", "?view=gen&mode=audio", "?view=gen&task=edit", "?view=gen&task=upscale", "?view=gen&sheet=1"),
   ...P("S4", "Ads board `kind=ads&frame=2` (image ad group)", "?suite=moleculr&page=marketing&sp=dtc"),

@@ -22,11 +22,11 @@ function initialsOf(name: string) {
  * held, or finished unseen), which opens the jobs tray; the credits; the avatar, which opens Settings.
  *
  * Until the packages that build the new screens ship, each segment opens today's page for it: Home the Studio
- * overview (on a phone, Home's "Where to?"), the project its current Studio page, Make today's Gen (⌥M), Atomik its
- * suite. Business, Viral and Crew are reached from ⌘K and the phone's Home.
+ * overview (on a phone, Home's "Where to?"), the project its current Studio page, Make its panel over the page on
+ * screen (⌥M), Atomik its suite. Business, Viral and Crew are reached from ⌘K and the phone's Home.
  *
  * On a phone (components/graphite/phone.css) the context badge is a button: the segment and Search open under it,
- * one tap away. `bar` is the top bar's second row there — the project switcher beside the page strip or Gen's own buttons.
+ * one tap away. `bar` is the top bar's second row there — the project switcher beside the page strip.
  */
 export function Header({ account, project = null, bar = null }: { account: WorkspaceAccount | null; project?: string | null; bar?: ReactNode }) {
   const shell = useShell();
@@ -43,7 +43,8 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const lit: Record<HeaderSegmentId, boolean> = {
     home: onHome,
     project: (shell.view === "suite" && shell.suite.id !== "atomik" && !onHome) || shell.view === "crew",
-    make: shell.view === "gen",
+    /* Make is a panel over the page on screen (README § 3.2): lit while it is open, beside whatever else is. */
+    make: shell.make !== null,
     atomik: shell.view === "suite" && shell.suite.id === "atomik",
   };
   /* The suite pill names where you are: HOME, an old page's own mark, MAKE, CREW, SETTINGS; the phone's Library reads ASSETS. */

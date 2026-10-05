@@ -152,7 +152,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await shot(page, "image-ads-owner", project);
 
   /* Gen on Images: Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
-  await page.goto(`/suites?view=gen&project=${film.id}`);
+  await page.goto(`/suites?make=video&project=${film.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
   const output = page.getByRole("tablist", { name: "Output" });
   await output.getByRole("tab", { name: "Images" }).click();
@@ -164,7 +164,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
   await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   await noSideScroll(page);
   await shot(page, "gen-owner-sheet", project);
   await sheet.getByRole("button", { name: "Close" }).click();
