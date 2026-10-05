@@ -1,13 +1,16 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { SHOTS, desktop, node, seedBoard } from "./helpers/s03-board";
+import { SHOTS, desktop, grey, node, seedBoard } from "./helpers/s03-board";
 
 /*
  * Stream 3 · the board's drawers and what lands on it (README § 3.1 frames o and p, § 3.2 `made`): the Library
  * drawer's files and their drag onto a shot, History's rows and what a row does, a Make result landing in the "Made
  * in Make" band, and no live-room marks while the room is only saved. Nothing paid is sent.
  */
-const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const PNG = grey();
+/* On a fresh dev server the first upload makes it compile lazily loaded code, and its hot reload can reload the page
+   under the test (the page is then at its address again, with nothing uploaded). One retry runs it on the warm server. */
+test.describe.configure({ retries: 1 });
 const shot = (page: import("@playwright/test").Page, name: string) => {
   mkdirSync(SHOTS, { recursive: true });
   const size = page.viewportSize()!;
@@ -25,8 +28,8 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   await page.getByTestId("board-drawer-library").click();
   const library = page.getByTestId("board-library");
   const tile = library.locator(".bd-tile", { hasText: "market-stall" });
-  /* The first upload on a cold dev server compiles its routes: give it time. */
-  await expect(tile).toBeVisible({ timeout: 60_000 });
+  
+  await expect(tile).toBeVisible({ timeout: 20_000 });
   await shot(page, "board-library-file");
   /* Upload also puts a picture on the board as a free card, at the middle of the view. */
   await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(1);
