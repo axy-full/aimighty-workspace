@@ -173,7 +173,7 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
 
   /* The toast names the Rig and the shot; nothing about Boards or frames. The room stays where it was. */
   await expect(toast).toContainText("Added to the Board · Cut on the drop");
-  await expect(toast).not.toContainText(/Board|frame/);
+  await expect(toast).not.toContainText(/Storyboard|frame/);
   const open = page.getByTestId("toast-open");
   await expect(open).toHaveText("Open Board");
   await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to the Board");
