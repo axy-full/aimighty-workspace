@@ -387,7 +387,9 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   await page.getByTestId("running-jobs").click();
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
   await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  /* Make opens over the page that was open; the page stays put underneath. */
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push-in on a lighthouse at dusk");
   await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Gen.");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
@@ -582,7 +584,8 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await page.getByTestId("running-jobs").click();
   /* The failed one can still be made again from here. */
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
 });
 
 test("a failed first jobs read keeps recovery reachable without inventing an empty queue", async ({ page }, info) => {
