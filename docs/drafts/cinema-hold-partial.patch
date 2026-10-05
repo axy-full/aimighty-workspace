@@ -1,0 +1,128 @@
+diff --git a/lib/cinemaStudio.ts b/lib/cinemaStudio.ts
+index cfa2a28f..cd8e9afd 100644
+--- a/lib/cinemaStudio.ts
++++ b/lib/cinemaStudio.ts
+@@ -6,6 +6,7 @@ import { estimateCostUsd, listRate } from "./vendorPricing";
+ import { costUsd } from "./models";
+ import type { PricingWatch } from "./higgsfieldPricingWatch";
+ import { cinemaSoundPricing, cinemaSoundUsd } from "./cinemaSoundPricing";
++import { STATED_CHARGE_BAND } from "./runLimit";
+ /** The deploy-time switch, beside the engine it switches (defined with the rates in lib/vendorRates.ts). */
+ export { cinemaStudioEnabled } from "./vendorRates";
+ import {
+@@ -90,18 +91,43 @@ export function cinemaStudioDeliveredUsd(delivered: {
+   return usd + cinemaSoundUsd(cinemaSoundPricing(), { seconds: delivered.seconds, outputUsd });
+ }
+ 
++/**
++ * What a take holds and a person approves: the quote at its stated-charge band
++ * (STATED_CHARGE_BAND, lib/runLimit.ts), so "about N cr, at most 3N cr" is the
++ * whole of what Make asks for. Admission reserves exactly this, and settlement
++ * never charges past it (cinemaStudioSettlement, lib/meter.ts).
++ */
++export function cinemaStudioHoldUsd(quoteUsd: number): number {
++  return quoteUsd * STATED_CHARGE_BAND;
++}
++
++/** What a take settles at, and by how much the provider's figure passed what was approved (null when it did not). */
++export type CinemaStudioSettlement = { usd: number; overrunUsd: number | null };
++
+ /**
+  * The settled cost: the provider's own charge for the job when it states one,
+- * else the delivered-output figure. Either is used only within half to three
+- * times the quote; outside that band a unit or measurement mistake is assumed
+- * and the quote stands, so a take can never bill far past what was shown.
++ * else the delivered-output figure, else the quote. A figure under half the
++ * quote is taken for a unit or measurement mistake and the quote stands. A
++ * figure past the approved hold is never charged: the take settles at the hold,
++ * and `overrunUsd` says by how much the provider's figure passed it, for the
++ * platform to absorb and its admin to see (lib/genjutsuVideo.ts).
+  */
++export function cinemaStudioSettlement(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): CinemaStudioSettlement {
++  const measured = (value: number | null | undefined): value is number =>
++    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5;
++  const actual = measured(reportedUsd) ? reportedUsd : measured(deliveredUsd) ? deliveredUsd : quoteUsd;
++  const holdUsd = cinemaStudioHoldUsd(quoteUsd);
++  return actual > holdUsd ? { usd: holdUsd, overrunUsd: actual - holdUsd } : { usd: actual, overrunUsd: null };
++}
++
++/** The settled cost alone (cinemaStudioSettlement). */
+ export function cinemaStudioSettlementUsd(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): number {
+-  const sane = (value: number | null | undefined): value is number =>
+-    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5 && value <= quoteUsd * 3;
+-  if (sane(reportedUsd)) return reportedUsd;
+-  if (sane(deliveredUsd)) return deliveredUsd;
+-  return quoteUsd;
++  return cinemaStudioSettlement(quoteUsd, deliveredUsd, reportedUsd).usd;
++}
++
++/** What a take says when the provider's figure passed what was approved. */
++export function cinemaStudioStoppedMessage(approvedCredits: number): string {
++  return `Stopped: the engine would charge more than the ${approvedCredits.toLocaleString("en-US")} cr you approved. Nothing above that was charged.`;
+ }
+ 
+ /** The published pricing this engine is priced from, watched for change (lib/higgsfieldPricingWatch.ts). */
+diff --git a/lib/generationRequests.ts b/lib/generationRequests.ts
+index afdeb6ce..e5908072 100644
+--- a/lib/generationRequests.ts
++++ b/lib/generationRequests.ts
+@@ -345,6 +345,13 @@ type ReservationOptions = {
+    * on the reservation, so every paid action of the run carries its id.
+    */
+   run?: RunSpend;
++  /**
++   * The job's cost is its ceiling, not its estimate: the quote times this band (a Cinema Studio
++   * take holds what it may settle at, lib/cinemaStudio.ts cinemaStudioHoldUsd). Recorded on the
++   * meter event so settlement never charges past the hold and a settlement with no figure
++   * charges the quote (lib/meter.ts); a run counts the hold once, never again at its band.
++   */
++  holdBand?: number;
+ };
+ export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
+   // Local libsql clients share a connection; never interleave transactions on it.
+@@ -360,6 +367,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
+   const cost = Number(event.engineCostUsd);
+   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
+   const paid = paidByPlatformEngine(event.engine);
++  const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
+   await ready();
+   await reservationsReady();
+   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
+@@ -469,7 +477,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
+         limitTenths: toTenths(options.run.limitCredits),
+         tally: runTally(await runCharges(options.run.id, { except: event.id, workspaceId: ws.id, platform: tx })),
+         jobTenths: toTenths(job),
+-        band: options.run.band,
++        band: holdBand > 1 ? 1 : options.run.band,
+       });
+       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
+     }
+@@ -479,10 +487,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
+       const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
+       if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
+     }
+-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
+-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
+-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
++    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
++      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=excluded.hold_band`,
++      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, holdBand > 1 ? holdBand : null] });
+     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+-      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? Math.max(1, Math.round(options.run.band)) : null] });
++      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (holdBand > 1 ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
+   });
+ }
+diff --git a/lib/platform.ts b/lib/platform.ts
+index ae626863..140a5f59 100644
+--- a/lib/platform.ts
++++ b/lib/platform.ts
+@@ -411,6 +411,9 @@ export function platformReady(): Promise<void> {
+       await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
+       await addColumn("meter_events", "credit_usd REAL");
+       await addColumn("meter_events", "credit_margin REAL");
++      /* A job reserved at its ceiling (a Cinema Studio take holds its quote times this band, lib/cinemaStudio.ts):
++         settlement never charges past what it holds, and a settlement with no figure charges the quote (lib/meter.ts). */
++      await addColumn("meter_events", "hold_band INTEGER");
+       /* Reporting content is open to anybody — a victim must not need an
+          account — so the counting has to be by something an anonymous caller
+          still has. Salted and truncated, the same shape access_requests
