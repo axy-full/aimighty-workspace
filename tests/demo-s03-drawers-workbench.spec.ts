@@ -101,6 +101,7 @@ test("a Make result lands in the Made in Make band: the board glides to it, it i
   /* It glides there: the card is in view, and its shot keeps its own place in Shots. */
   await expect(made).toBeInViewport();
   await expect(page.locator('[data-card-id="node-shot0002"]')).toHaveCount(1);
+  await page.waitForTimeout(500);
   await shot(page, "board-made-lit");
   /* The light goes out by itself. */
   await expect(made).not.toHaveAttribute("data-lit", "true", { timeout: 6000 });
