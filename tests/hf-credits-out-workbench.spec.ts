@@ -9,6 +9,7 @@ import { openSuitesMenu } from "./helpers/suitesMenu";
 import { newProject } from "../lib/workbench/studio";
 import { billCredits, marginKeyOf } from "../lib/creditTerms";
 import { estimateCostUsd } from "../lib/vendorPricing";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * Idea 4 — a way out when credits run out. A take held at zero says what it
@@ -530,6 +531,7 @@ test("the credits pill turns amber when the balance is below the last price quot
 
   /* Two takes: the button's figure doubles from the quote already given — nothing is asked again — and the balance no longer covers it. */
   const asked = quotes.length;
+  await openAdvanced(page);
   await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
   await expect(generate).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`);
   await expect(pill).toHaveAttribute("data-low", "true");

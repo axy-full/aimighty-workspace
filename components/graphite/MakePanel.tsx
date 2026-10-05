@@ -751,6 +751,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
           )}
         </button>
       </div>
+      <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
       <p className="gx-gen-foot">{composer.wording}</p>
 
       <div className="gx-make-tools" data-testid="make-quick-tools">
@@ -859,7 +860,6 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
             <button type="button" aria-label="More" disabled={Boolean(settings.draft) || state.count >= TAKES_MAX} onClick={() => composer.dispatch({ type: "count", value: state.count + 1 })}>+</button>
           </div>
         </div>
-        <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
       </div> : null}
     </section>
   );

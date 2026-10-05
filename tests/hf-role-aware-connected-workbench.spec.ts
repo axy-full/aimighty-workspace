@@ -157,7 +157,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   const output = page.getByRole("tablist", { name: "Output" });
   await output.getByRole("tab", { name: "Images" }).click();
   await expect(output.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
+  await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
   await expect(page.getByTestId("gen-tab-analysis")).toHaveCount(0);
   await page.getByTestId("gen-model").click();
   const sheet = page.getByRole("dialog", { name: "Choose a model" });

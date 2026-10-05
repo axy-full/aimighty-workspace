@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { retiredFindings } from "./helpers/retiredSignIn";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * The public site (app/(marketing)/site, served by proxy.ts). A visitor sees
@@ -111,6 +112,7 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A lighthouse keeper walks the gallery in a storm.");
   await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
+  await openAdvanced(page);
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
   /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
