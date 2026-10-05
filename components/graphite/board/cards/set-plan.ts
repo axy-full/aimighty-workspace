@@ -3,7 +3,7 @@ import { DocCard, ShotList } from "./doc/DocCards";
 import { derivePlanCards, type DocData, type FrameData, type PlanData } from "./plan/derive";
 import { PlanCard } from "./plan/PlanCard";
 import { NextCard, NEXT_CARD_SIZE, type NextData } from "./plan/NextCard";
-import { PLAN_CARD_WIDTH, planCardHeight } from "./plan/model";
+import { PLAN_CARD_WIDTH, planCardHeight, shapeOfSample } from "./plan/model";
 import { LookCard } from "./looks/LookCard";
 import { LookInspector } from "./looks/LookInspector";
 import { PlanInspector } from "./plan/PlanInspector";
@@ -48,7 +48,7 @@ export const planCards: CardSet = {
     defineCard<NextData>({ kind: "next", size: () => NEXT_CARD_SIZE, Card: NextCard }),
     defineCard<PlanData>({
       kind: "plan",
-      size: (data) => ({ w: PLAN_CARD_WIDTH, h: planCardHeight(data.run, data.open) }),
+      size: (data) => ({ w: PLAN_CARD_WIDTH, h: planCardHeight(data.run ?? shapeOfSample(data.sample), data.open) }),
       Card: PlanCard,
       Inspector: PlanInspector,
     }),

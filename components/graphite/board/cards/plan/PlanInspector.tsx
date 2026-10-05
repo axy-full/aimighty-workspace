@@ -7,7 +7,8 @@ import { usePublishedPlanModel } from "./ui";
 
 /** The plan in the Inspector: every step with its price or the words that say why it has none, and how the renders ask. */
 export function PlanInspector({ data }: CardProps<PlanData>) {
-  const model = usePublishedPlanModel<PlanModel>(data.run.id);
+  const published = usePublishedPlanModel<PlanModel>(data.run?.id ?? "sample");
+  const model = data.sample ?? published;
   if (!model) return null;
   return (
     <div className="gx-insp-take" data-testid="insp-plan">

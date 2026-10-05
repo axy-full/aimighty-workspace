@@ -5,6 +5,7 @@ import { briefDoc, type BriefDoc } from "../doc/model";
 import { deriveLooks } from "../looks/derive";
 import { pickedLook } from "../looks/model";
 import { storyboard } from "../storyboard/model";
+import type { PlanModel } from "./model";
 import { planStepsOpen } from "./ui";
 import { nextChoices, NEXT_GROUP_TITLE, showWhereNext } from "./next";
 import { shotTakes, shotsTakeOver } from "../take/take-model";
@@ -24,7 +25,13 @@ export type DocData =
 export type FrameData = { shotId: string; index: number; name: string; line: string; genId: string | null; rendering: boolean };
 
 /** The plan card: Atomik's run on the board, while it has something to approve, or renders to ask for. */
-export type PlanData = { run: RigAgentRunView; open: boolean };
+export type PlanData = {
+  /** Atomik's run; null on the explore-only sample, which has none (./sample.ts). */
+  run: RigAgentRunView | null;
+  /** The sample's plan, built from its recorded prices. */
+  sample?: PlanModel;
+  open: boolean;
+};
 
 /** The run states whose plan the board shows: a proposal, and the build and renders that follow while they wait on someone. */
 const PLAN_STATES: readonly string[] = ["awaiting_approval", "running", "needs_you", "paused"];

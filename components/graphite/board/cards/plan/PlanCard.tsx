@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { Price, usePriceTitle } from "@/components/graphite/Price";
 import { useShell } from "@/lib/shell/state";
-import { readOnlyOf } from "../doc/DocCards";
+import { paidBlockOf } from "../doc/DocCards";
 import type { CardProps } from "../types";
 import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
@@ -17,12 +17,13 @@ import "./plan.css";
  * After approval it stays while the run works, showing each step and the one tap it waits for.
  */
 export function PlanCard({ data, ctx }: CardProps<PlanData>) {
-  const readOnly = readOnlyOf(ctx);
+  /* The sample has no run to act on: every control is disabled with the sample's own line. */
+  const readOnly = paidBlockOf(ctx) ?? data.sample?.primary?.blocked ?? null;
   const plan = usePlan(ctx, data.run, readOnly);
   const shell = useShell();
   const open = data.open;
-  const model = plan.model;
-  const runId = data.run.id;
+  const model = data.sample ?? plan.model;
+  const runId = data.run?.id ?? "sample";
   /* The Inspector shows the same steps from this model: the server is asked for each price once. */
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
@@ -58,7 +59,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
       {model.modeLine ? <div className="gx-plan-mode">{model.modeLine}</div> : null}
       {model.note && model.primary?.kind !== "render" ? <div className="gx-plan-why">{model.note}</div> : null}
       {model.steps.length ? (
-        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal} onClick={() => setPlanStepsOpen(data.run.id, !open)} data-testid="board-plan-toggle"
+        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal} onClick={() => setPlanStepsOpen(runId, !open)} data-testid="board-plan-toggle"
           hidden={!proposal}>{open ? "Hide the steps" : `Show the ${model.steps.length} ${model.steps.length === 1 ? "step" : "steps"}`}</button>
       ) : null}
       {(open || !proposal) && model.steps.length ? <Steps model={model} /> : null}

@@ -48,6 +48,7 @@ export type PlanState = {
 };
 
 export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: string | null): PlanState {
+  /* A null run (the sample) quotes nothing and acts on nothing. */
   const session = useSession();
   const rule = useApprovalRule(ctx.scope);
   const [held, setHeld] = useState(false);

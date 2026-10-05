@@ -12,8 +12,14 @@ import { ShotListDoc, type ShotState } from "./ShotListDoc";
 import { shotListState, type ShotListState, type ShotTakes } from "../take/take-model";
 
 /** Why the board can't be edited now, or null (offline: the board is read-only, README § 3.1). */
-export function readOnlyOf(ctx: Pick<BoardCtx, "offline">): string | null {
-  return ctx.offline ? "Needs a connection" : null;
+export function readOnlyOf(ctx: Pick<BoardCtx, "offline"> & { readOnly?: string | null }): string | null {
+  /* `readOnly` is the board's own word for a production nothing may be written to (the signed-out guest's sample), when the context carries it. */
+  return ctx.offline ? "Needs a connection" : ctx.readOnly ?? null;
+}
+
+/** Why nothing that spends can be pressed: everything `readOnlyOf` says, and the explore-only sample's line (nothing there spends). */
+export function paidBlockOf(ctx: Pick<BoardCtx, "offline"> & { readOnly?: string | null; exploreOnly?: string | null }): string | null {
+  return readOnlyOf(ctx) ?? ctx.exploreOnly ?? null;
 }
 
 /** The `doc` card: the project's brief, or a brief placed on the canvas, edited in place through the Rig seam. */

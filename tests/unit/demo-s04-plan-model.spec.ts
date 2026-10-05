@@ -171,3 +171,29 @@ test("no word on the card is the bare 'quoted' or 'about'", () => {
   for (const m of [planModel(base()), planModel(base({ estimates: { ...estimates, 1: { credits: 43, approximate: true } } }))])
     expect(texts(m)).not.toMatch(/\bquoted\b|\babout\b/);
 });
+
+test("the explore-only sample's plan: the guest sample's three shots at 43, 43 and 7 cr come to 93 cr, fixes at most 186 cr, and nothing can be pressed", async () => {
+  const { samplePlanModel, samplePlanCard } = await import("../../components/graphite/board/cards/plan/sample");
+  const line = "Sample production · nothing you do here spends credits";
+  const m = samplePlanModel([
+    { title: "Shot 1", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43 }, { title: "Shot 2", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43 },
+    { title: "Shot 3", meta: "Kling 3.0 Standard · 5 s", credits: 7 },
+  ], line);
+  expect(m.title).toBe("Make 3 shots");
+  expect(m.total).toEqual({ kind: "exact", credits: 93 });
+  expect(m.totalLine).toBe("93 cr for the 3 shots");
+  /* Information only: 2 × the takes, never added to the total. */
+  expect(m.fixAllowance).toBe(186);
+  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, at most 186 cr");
+  expect(m.balance).toBeNull();
+  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve", blocked: line });
+  /* Plain data, no style ids and no placeholder names in a row. */
+  expect(JSON.stringify(m)).not.toMatch(/SH\d|Mira|Northline|Dune/);
+  const card = samplePlanCard(m);
+  expect(card).toMatchObject({ id: "plan:sample", kind: "plan", region: "storyboard", group: "group:storyboard" });
+  expect(JSON.parse(JSON.stringify(card))).toEqual(card);
+  /* A keyframe still is priced but left out of the allowance (66 → 114). */
+  const stills = samplePlanModel([{ title: "Keyframes", meta: "", credits: 9, kind: "still" }, { title: "Hero", meta: "", credits: 43 }, { title: "Draft", meta: "", credits: 14 }], line);
+  expect([stills.total, stills.fixAllowance]).toEqual([{ kind: "exact", credits: 66 }, 114]);
+  expect(samplePlanModel([], line).total).toEqual({ kind: "free" });
+});

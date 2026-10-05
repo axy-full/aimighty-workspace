@@ -255,12 +255,17 @@ export function planModel(input: PlanInput): PlanModel | null {
 
   return {
     runId: run.id, phase, title: planTitle(steps.length, phase) || run.proposal?.title || "", steps, total, fixAllowance, balance,
-    totalLine: total && total.kind !== "free" && takesCounted.length ? `${priceWords(total)} for ${takesCounted.length === 1 ? "the shot" : `the ${takesCounted.length} shots`}` : null,
+    totalLine: totalLineOf(total, takesCounted.length),
     thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run) : null, ruleLine: ruleLine(input.rule),
     adminLine: input.rule?.rule === "cap" ? `Needs an admin · over ${creditsText(input.rule.cap)} on a shot` : "Needs an admin", primary,
     note: phase === "needs-you" || phase === "paused" || phase === "ended" ? run.reason : null,
     mine: run.mine,
   };
+}
+
+/** "93 cr for the 3 shots": what the renders come to, as information. Null without a price or a take. */
+export function totalLineOf(total: PriceValue | null, takes: number): string | null {
+  return total && total.kind !== "free" && takes ? `${priceWords(total)} for ${takes === 1 ? "the shot" : `the ${takes} shots`}` : null;
 }
 
 /** "Fixes if needed: up to 2 per shot, at most 186 cr" — the allowance as information; null without one. */
@@ -297,4 +302,15 @@ export function planCardHeight(run: Pick<RigAgentRunView, "state" | "paid" | "re
   if (proposal) height += 10 + 21 * 2 + 10 + 18;
   if (takes && (unfolded || !proposal)) height += takes * 64 + 36;
   return Math.ceil(height / 4) * 4;
+}
+
+/** The sample's plan as the box sizing reads a run: a proposal with a render per step. */
+export function shapeOfSample(sample: PlanModel | undefined): Pick<RigAgentRunView, "state" | "paid" | "reason"> {
+  return {
+    state: "awaiting_approval", reason: null,
+    paid: (sample?.steps ?? []).map((s) => ({
+      seq: s.seq, tool: "render" as const, title: s.title, state: "next" as const, quote: null, worst: null, pause: null, charged: null,
+      outcome: null, charge: null, reason: null, canRender: false, fingerprint: null,
+    })),
+  };
 }
