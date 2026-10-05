@@ -71,6 +71,14 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - `WORKSPACE_TABS` in `lib/shell/ia.ts` still carries each tab's old `href` (`/settings`, `/team`, `/usage`, …). Those go when the routes do.
 - Specs that assert the old shell ask for it through `tests/helpers/legacyShell.ts`; the helper and its call sites go with the old shell.
 
+## Screens inside `/suites` behind the new-interface switch
+
+These are not routes. A workspace with the new interface switched off still sees the left column. The PR that flips the switch for everyone deletes it, with the tests that drive it.
+
+| Today (switch off) | With the switch on | Deleted at the flip |
+|---|---|---|
+| Make's panel, `components/graphite/MakePanel.tsx › MakePanelToday`: Video · Images · Audio · Edit tabs, the controls under the composer, the Results grid. Its engine sheet, `components/graphite/ModelSheet.tsx`, is used by nothing else. | `components/graphite/make/*`: Make as `design/particl-graphite/` draws it (README § 3.2) | `MakePanelToday`, `ModelSheet.tsx`, the rules in `components/graphite/make.css` above its `.gx-mk` block, and the specs that drive today's panel |
+
 ## Before a route is retired
 
 - [ ] The replacement page exists in `/suites` and covers what the old page did — no "none yet" left in its row.
