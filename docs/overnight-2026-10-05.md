@@ -29,11 +29,9 @@ All are rebased on `main` after the tokens PR merged and carry its look; each PR
 | [#514](https://github.com/axy-full/aimighty-workspace/pull/514) | D0 5b: Motion transfer and Object swap as Make modes; Viral motion/swap links redirect (stacked on #512). Overnight CI fix: the old-link switchover test now expects those links to open Make in the matching mode. | Customer-visible; one decision below. | [preview](https://particlstudio-git-d0-pr5-719025-akshayzigzag-filmscoms-projects.vercel.app) |
 | [#515](https://github.com/axy-full/aimighty-workspace/pull/515) | D0 6: the reading floor (12 px, 55 %, 44 px) on the surfaces the handoff does not draw | Restyles sign-in and account pages (sign-in rule). | [preview](https://particlstudio-git-d0-pr6-4f90bf-akshayzigzag-filmscoms-projects.vercel.app) |
 
-CI at 02:04 UTC (7:34 IST), after the overnight rebase on `main`:
-- **#511, #513:** all 24 checks green.
-- **#515:** 23 of 24 green, the last still running (it was all green before the rebase, same content).
-- **#512:** the three Make failures are fixed; one new failure, unrelated to Make: `tests/workbench.spec.ts:220` at 844×390, where the old workbench's "Node version saved" toast sits over the Genie tab and the click times out. The same test passes on #511, #513 and #515 from the same base, so I re-ran the failed jobs rather than changing anything. If it fails again it is a toast-placement fix in the old workbench, not in this PR's code.
-- **#514:** test-only fix for the switchover spec pushed (`a1c41292`); 14 of 22 checks green and the rest still running when this was written.
+CI at 02:32 UTC (8:02 IST), after the overnight rebase on `main`: **all five open PRs are green, 24 of 24 checks each.**
+- **#512:** the three Make failures were fixed overnight. On the next run one unrelated test failed once — `tests/workbench.spec.ts:220` at 844×390, where the old workbench's "Node version saved" toast sat over the Genie tab — and passed on a re-run of the failed jobs, nothing changed. Worth a toast-placement fix in the old workbench later if it recurs.
+- **#514:** green with its test-only switchover fix (`a1c41292`).
 
 Check each PR's Checks tab before merging; none of these has been merged.
 
