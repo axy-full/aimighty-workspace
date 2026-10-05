@@ -162,7 +162,7 @@ test("header B: Home is the Studio overview, Atomik its suite, ⌥M opens Make; 
   await expect(page.getByTestId("suite-mark")).toHaveText("MAKE");
 
   /* Business, Viral and Crew left the header; ⌘K still reaches each of them. */
-  await goViaSearch(page, "ads", /^SUITE Ads/);
+  await goViaSearch(page, "ads", /Ads/);
   await expect(page.getByTestId("page-title")).toHaveText("Image ads");
   await expect(page.getByTestId("suite-mark")).toHaveText("ADS");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
