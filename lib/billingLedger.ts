@@ -1,6 +1,7 @@
 import type { Transaction } from "@libsql/client";
 import { platformDb, platformReady } from "./platform";
 import { creditUsd, type CreditState } from "./creditTerms";
+import { LEDGER_UNIT_SCHEMA, seedLedgerUnit } from "./ledgerUnit";
 import type { PlanId } from "./plans";
 
 /** Platform-only credit bookkeeping. Provider requests never run inside these transactions. */
@@ -34,6 +35,7 @@ export async function billingReady(): Promise<void> {
         PRIMARY KEY(workspace_id,event_id,lot_id))`,
         `CREATE TABLE IF NOT EXISTS billing_refunds(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         source_id TEXT NOT NULL, credits REAL NOT NULL, created_at INTEGER NOT NULL)`,
+        LEDGER_UNIT_SCHEMA,
       ],
       "write",
     );
@@ -43,6 +45,7 @@ export async function billingReady(): Promise<void> {
         "off_plan_lifetime_ms INTEGER",
       ],
       billing_debits: ["legacy INTEGER NOT NULL DEFAULT 0"],
+      billing_unit: ["paused_since INTEGER"],
     })) {
       const present = new Set(
         (await platformDb().execute(`PRAGMA table_info(${table})`)).rows.map(
@@ -55,6 +58,8 @@ export async function billingReady(): Promise<void> {
             `ALTER TABLE ${table} ADD COLUMN ${column}`,
           );
     }
+    /* The unit the record counts in (lib/ledgerUnit.ts): seeded once; a boot at another price is noted. */
+    await seedLedgerUnit(platformDb(), Date.now());
     await platformDb().execute(
       `UPDATE billing_lots SET clock_started_at=clock_updated_at,off_plan_lifetime_ms=off_plan_remaining_ms WHERE off_plan_remaining_ms IS NOT NULL AND clock_started_at IS NULL`,
     );
