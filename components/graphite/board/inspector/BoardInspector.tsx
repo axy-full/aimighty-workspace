@@ -5,6 +5,7 @@ import type { BoardCtx, CardDef } from "../cards/types";
 import type { TakeCardData } from "../cards/take/shots-derive";
 import { typingIn } from "../review/review-model";
 import { TakeBody } from "./TakeBody";
+import { EditSoundHost } from "./EditSoundHost";
 import "./inspector.css";
 
 /*
@@ -48,15 +49,17 @@ export function BoardInspector({ ctx, card, def, right, onClose }: BoardInspecto
     if (!card) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || typingIn(e.target)) return;
-      if (document.querySelector('[data-testid="review-mode"]')) return;
+      if (document.querySelector('[data-testid="review-mode"], [data-testid="edit-sound"]')) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [card, onClose]);
-  if (!card || card.kind === "group") return null;
+  /* Open Edit & Sound is mounted here, once, whichever card opened it (components/graphite/board/cards/cut/edit-sound.ts). */
+  if (!card || card.kind === "group") return <EditSoundHost ctx={ctx} />;
   const Body = def?.Inspector;
   return (
+    <>
     <aside className="gx-insp" style={{ "--gx-insp-right": `${right}px` } as CSSProperties} aria-label="Inspector" data-testid="board-inspector">
       <div className="gx-insp-head">
         <strong className="gx-insp-heading">Inspector</strong>
@@ -68,5 +71,7 @@ export function BoardInspector({ ctx, card, def, right, onClose }: BoardInspecto
           : <DefaultBody card={card} />}
       </div>
     </aside>
+    <EditSoundHost ctx={ctx} />
+    </>
   );
 }

@@ -5,7 +5,8 @@ import { Price } from "@/components/graphite/Price";
 import { SeedanceEditHost } from "@/components/graphite/tools/SeedanceEditHost";
 import { useVerifications } from "@/components/workspace/rig/use-verifications";
 import { SAY, referenceRole } from "@/lib/shell/assets";
-import { exact } from "@/lib/shell/price-words";
+import { exact, upTo } from "@/lib/shell/price-words";
+import { useStageQuotes } from "@/components/graphite/production/use-stage-quotes";
 import { sendReference } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { isVerifyCard } from "@/lib/workbench/verify";
@@ -15,7 +16,7 @@ import {
 } from "../cards/take/take-model";
 import { useJudge } from "../cards/take/use-judge";
 import { useTakeNotes } from "../cards/take/use-take-notes";
-import { advancedRows, downloadHref, paidCredits } from "./inspector-model";
+import { advancedRows, downloadHref, editQuoteBody, paidCredits } from "./inspector-model";
 
 /*
  * Frame k: the Inspector on a take. Preview, the engine line and what it was charged, the prompt with Copy, its
@@ -41,6 +42,10 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
   const { list } = useVerifications(ctx.scope, checked ? ctx.project.id : null);
   const notes = useTakeNotes(ctx.scope, row.versions.map((x) => x.genId));
   const history = useMemo(() => shotHistory(row.versions, { verifications: list, notes }), [row.versions, list, notes]);
+  /* Change with words on a clip: its price from the same free quote Seedance Edit's panel asks, read while the take is open. */
+  const editBody = v ? editQuoteBody(v, ctx.project.productionProjectId) : null;
+  const editQuote = useStageQuotes(ctx.scope, editBody && !ctx.offline && judgeable(v!) ? { edit: { body: editBody } } : {}).quotes.edit;
+  const editPrice = upTo(editQuote?.credits);
   if (!v) return <p className="gx-insp-quiet" data-testid="insp-no-take">No take yet.</p>;
 
   if (editing && v.media === "video") {
@@ -124,7 +129,7 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
             title={ctx.offline ? "Needs a connection" : undefined} data-testid="insp-reject">{v.status === "changes" ? "Rejected" : "Reject"}</button>
         )}
         {judgeable(v) && v.entry.asset.origin === "generation" ? (
-          <button type="button" className="gx-insp-act" disabled={ctx.offline} onClick={change} title={ctx.offline ? "Needs a connection" : undefined} data-testid="insp-change-words">Change with words</button>
+          <button type="button" className="gx-insp-act" disabled={ctx.offline} onClick={change} title={ctx.offline ? "Needs a connection" : undefined} data-testid="insp-change-words">Change with words{editPrice ? <> · <Price value={editPrice} testId="insp-change-price" /></> : null}</button>
         ) : null}
         {role && judgeable(v) ? <button type="button" className="gx-insp-act" onClick={useAsReference} data-testid="insp-use-ref">Use as reference</button> : null}
         {judgeable(v) ? <a className="gx-insp-act" href={downloadHref(v.genId)} download data-testid="insp-download">Download</a> : null}
