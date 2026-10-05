@@ -111,8 +111,8 @@ function SpendWithoutAsking({ rules, onEdit }: { rules: SpendingRules; onEdit: (
         </div>
         <span className="cr-strong">Each paid step waits for a person.</span>
       </div>
-      {rules.status === "ready" && rules.jobLine > 0 ? (
-        <p className="cr-text" data-testid="spend-auto-line">Auto is chosen per board run, for drafts at or under <Price value={exact(rules.jobLine)} />; full-quality renders always ask.</p>
+      {rules.loaded && rules.perJobLine !== null && rules.perJobLine > 0 ? (
+        <p className="cr-text" data-testid="spend-auto-line">Auto is chosen per board run, for drafts at or under <Price value={exact(rules.perJobLine)} />; full-quality renders always ask.</p>
       ) : null}
       <button type="button" className="cr-link" onClick={onEdit} data-testid="spend-edit">Edit in Settings › Spending rules ›</button>
     </div>
@@ -121,15 +121,15 @@ function SpendWithoutAsking({ rules, onEdit }: { rules: SpendingRules; onEdit: (
 
 /** Who may approve, by role as the workspace's rule sets it (lead decision 10), and the platform line. */
 function WhoMayApprove({ rules, onEdit }: { rules: SpendingRules; onEdit: () => void }) {
-  if (rules.status !== "ready") return null;
+  if (!rules.loaded) return null;
   return (
     <div className="cr-block" data-testid="who-may-approve">
       <span className="cr-eyebrow">Who may approve</span>
       <p className="cr-strong">
-        {rules.rule === "cap" ? <>Members up to <Price value={exact(rules.cap)} /> a shot; an admin above it.</>
+        {rules.rule === "cap" ? <>Members up to <Price value={exact(rules.shotCap ?? 0)} /> a shot; an admin above it.</>
           : rules.rule === "producer" ? "A producer signs off on every take."
           : "Members render freely."}
-        {" "}Any job over <Price value={exact(rules.platformLine)} /> needs a person&rsquo;s approval, even under Auto.
+        {rules.platformLine !== null ? <>{" "}Any job over <Price value={exact(rules.platformLine)} /> needs a person&rsquo;s approval, even under Auto.</> : null}
       </p>
       <button type="button" className="cr-link" onClick={onEdit} data-testid="rules-edit">Edit in Settings › Spending rules ›</button>
     </div>

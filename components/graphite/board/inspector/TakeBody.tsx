@@ -6,7 +6,7 @@ import { SeedanceEditHost } from "@/components/graphite/tools/SeedanceEditHost";
 import { useVerifications } from "@/components/workspace/rig/use-verifications";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { exact, upTo } from "@/lib/shell/price-words";
-import { useStageQuotes } from "@/components/graphite/production/use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { sendReference } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { isVerifyCard } from "@/lib/workbench/verify";
