@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 /* The cap on a screen, the 80% warning, the pre-checks and the reservation
    gate read one figure: every take ever made (a hidden take was paid for),
@@ -28,6 +29,8 @@ test("deleted takes, moved takes and metered text count toward a production's an
   const { platformReady, platformDb } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
+  await platformReady();
+  await alignLedgerUnit();
   const { meter } = await import("../../lib/meter");
   const { projectCap, projectCapSpent, checkCap, spentBy } = await import("../../lib/caps");
   const { shotCreditsSoFar } = await import("../../lib/shotCap");
