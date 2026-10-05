@@ -121,7 +121,7 @@ test("Recreate on a music take opens Gen on Audio with its prompt; a dialogue sa
   const menu = page.getByTestId("context-menu");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_talk']").click({ button: "right" });
   await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeDisabled();
-  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toHaveAttribute("title", "A dialogue is made in Edit & Sound, not Gen.");
+  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toHaveAttribute("title", "A dialogue is made in Edit & Sound, not Make.");
   await page.keyboard.press("Escape");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_score']").click({ button: "right" });
   await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeEnabled();

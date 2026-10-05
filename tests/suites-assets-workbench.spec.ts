@@ -76,7 +76,7 @@ test("right-click: every command works or says exactly why not; delete is soft a
   await wideTile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
   /* Recreate spends once Make is pressed: it shows Make's own price (the server's quote), and is enabled only once there is one. */
-  await expect(menu.getByRole("menuitem", { name: /^Recreate · (about )?[\d,]+ cr$/ })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: /^Recreate · (about )?[\d,]+ cr/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Recreate makes a new take from the same recipe.");
   await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();

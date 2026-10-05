@@ -82,13 +82,13 @@ const BUSINESS_MODELS: ReadonlySet<string> = new Set(["marketing_studio_video", 
  * blocked until Gen can make it.
  */
 export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | "task">): string | null {
-  if (!composerType(g.kind)) return "Gen makes images, video and sound, not 3D.";
+  if (!composerType(g.kind)) return "Make makes images, video and sound, not 3D.";
   const p = g.params ?? {};
-  if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Gen.";
+  if (p.task === "dialogue" || Array.isArray(p.lines)) return "A dialogue is made in Edit & Sound, not Make.";
   if (p.sourceGenId || p.sourceUploadId || SOURCE_TASKS.has(p.task)) return "This take was made from a source clip. Run that tool again from Takes.";
   /* A final has no recipe of its own: its words, references and settings are its draft's (lib/draftFinal.ts). */
   if (typeof p.finalOf === "string") return "A 1080p final is made from its draft. Recreate the draft instead.";
-  if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Gen. Run that tool again.";
+  if (p.task === "connected-generation" && p.workflow !== undefined && p.workflow !== "generation") return "This take came from a connected tool, not Make. Run that tool again.";
   if (BUSINESS_MODELS.has(g.model)) return "This ad was made in Business on a connected account that is no longer used.";
   /* Anything else Gen did not make itself. Every original the connected account delivered is receipted
      in these credits (lib/higgsfield-consumer/video-original.ts). */
@@ -98,7 +98,7 @@ export function recreateBlock(g: Pick<Generation, "kind" | "model" | "params" | 
     || typeof p.workflow === "string"
     || (onAccount && p.task !== "connected-generation")
     || Boolean(p.marketing) || Boolean(p.soulIdentityId) || record(p.identity);
-  return fromTool ? "Made with a tool Gen does not have. Run it again from that tool." : null;
+  return fromTool ? "Made with a tool Make does not have. Run it again from that tool." : null;
 }
 
 /** The take's recipe, as Gen reads it. */
@@ -289,7 +289,7 @@ export function recipeChips(input: {
   if (sameModel) chips.push({ key: "model", label: "Model", value: model.label, state: "kept" });
   else {
     /* Gen offers no signed-in account's catalogue (28 September 2026): an account take recreates on Studio engines, for everyone. */
-    const why = lostAccount ? "Gen runs on Studio engines only"
+    const why = lostAccount ? "Make runs on Studio engines only"
       : input.type !== preset.type || input.billing !== preset.billing || input.models.some((m) => m.id === preset.model) ? "Changed here"
       : "Not offered here now";
     const now = model.label === wanted ? (input.billing === "connected" ? "account" : "Studio engine") : model.label;
