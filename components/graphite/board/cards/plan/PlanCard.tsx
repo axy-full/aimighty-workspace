@@ -1,10 +1,11 @@
 "use client";
+import { useEffect } from "react";
 import { Price, usePriceTitle } from "@/components/graphite/Price";
 import { useShell } from "@/lib/shell/state";
 import { readOnlyOf } from "../doc/DocCards";
 import type { CardProps } from "../types";
 import type { PlanData } from "./derive";
-import { setPlanStepsOpen } from "./ui";
+import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
 import "./plan.css";
@@ -21,6 +22,9 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const shell = useShell();
   const open = data.open;
   const model = plan.model;
+  const runId = data.run.id;
+  /* The Inspector shows the same steps from this model: the server is asked for each price once. */
+  useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
   const proposal = model.phase === "proposal";
   const lines = [proposal ? model.totalLine : null, fixLine(model), proposal ? balanceLine(model) : null].filter(Boolean).join(" · ");

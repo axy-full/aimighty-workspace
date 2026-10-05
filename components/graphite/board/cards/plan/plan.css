@@ -35,11 +35,10 @@
   border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body);
 }
 .gx-plan-step--quiet { color: var(--gx-text-2); }
-.gx-plan-step-text { display: flex; flex-direction: column; min-width: 0; }
-.gx-plan-step-text > span:first-child { display: inline; }
+.gx-plan-step-text { display: block; min-width: 0; }
 .gx-plan-step-meta { color: var(--gx-quiet); }
-.gx-plan-step-status { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
-.gx-plan-step-flag { font-size: var(--gx-fs-meta); color: var(--gx-waiting-text); }
+.gx-plan-step-status { display: block; font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gx-plan-step-flag { display: block; font-size: var(--gx-fs-meta); color: var(--gx-waiting-text); }
 .gx-plan-step-price, .gx-plan-step-later { flex: none; font-family: var(--gx-mono); font-size: 13px; white-space: nowrap; }
 .gx-plan-step-later { color: var(--gx-quiet); font-family: var(--gx-font); }
 @media (max-width: 767px) { .gx-plan-btn, .gx-plan-primary { min-height: 44px; } }
