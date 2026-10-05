@@ -52,3 +52,20 @@
 .ag-rail-dot { position: absolute; top: 4px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--gx-waiting); }
 
 @media (pointer: coarse) { .ag-btn, .ag-collapse, .ag-seg button { min-height: 44px; } .ag-number { min-height: 44px; } }
+
+/* ── The Project record ── */
+.ag-record { gap: 22px; }
+.ag-sec { display: flex; flex-direction: column; gap: 8px; }
+.ag-eyebrow-quiet { color: var(--gx-eyebrow); }
+.ag-eyebrow-row { display: flex; justify-content: space-between; gap: 12px; }
+.ag-rec-brief { margin: 0; font-size: var(--gx-fs-body); line-height: 1.55; overflow-wrap: anywhere; }
+.ag-recs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ag-rec { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 8px 0; border-top: 1px solid var(--gx-hair-soft); align-items: start; }
+.ag-rec-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ag-rec-title { font-size: 13px; font-weight: 500; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ag-rec-price { display: inline-flex; gap: 4px; align-items: baseline; font-size: 12px; white-space: nowrap; text-align: right; }
+.ag-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ag-dec { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-top: 1px solid var(--gx-hair-soft); }
+.ag-bar { height: 4px; border-radius: 2px; background: var(--gx-seg-on); overflow: hidden; }
+.ag-bar > span { display: block; height: 100%; background: var(--gx-accent); }
+.ag-bar[data-over] > span { background: var(--gx-waiting); }

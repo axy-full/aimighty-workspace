@@ -8,6 +8,7 @@ import { showQuestions } from "../cards/questions/model";
 import { DrawStoryboard } from "../cards/storyboard/DrawStoryboard";
 import type { BoardCtx } from "../cards/types";
 import { usePriceTitle } from "../../Price";
+import { RecordTab } from "./RecordTab";
 import { AgentLines } from "./AgentLines";
 import { useAgentRun } from "./use-board-agent";
 import "./agent.css";
@@ -26,6 +27,7 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const [tab, setTab] = useState<"atomik" | "record">("atomik");
   const box = useRef<HTMLTextAreaElement>(null);
   /* ctx.askAtomik(words): the panel with these words in its box, never sent. */
   const fill = useCallback((text?: string) => { if (text) setWords(text); box.current?.focus(); }, []);
@@ -57,22 +59,26 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   return (
     <div className="ag" data-testid="board-agent-panel" data-needs={runNeedsYou(run) ? "" : undefined}>
       <div className="ag-head">
-        <span className="ag-seg" role="tablist" aria-label="Atomik panel"><button type="button" role="tab" aria-selected="true" className="ag-seg-on">Atomik</button></span>
+        <span className="ag-seg" role="tablist" aria-label="Atomik panel">
+          <button type="button" role="tab" aria-selected={tab === "atomik"} onClick={() => setTab("atomik")} data-testid="agent-tab-atomik">Atomik</button>
+          <button type="button" role="tab" aria-selected={tab === "record"} onClick={() => setTab("record")} data-testid="agent-tab-record">Record</button>
+        </span>
         <button type="button" className="ag-collapse" onClick={onCollapse} aria-label="Collapse Atomik" data-testid="agent-collapse">›</button>
       </div>
+      {tab === "record" ? <RecordTab ctx={ctx} onAtomik={() => setTab("atomik")} /> : (
       <div className="ag-body">
         <AgentLines agent={agent} approvals={approvals} sample={sample} />
         {answer?.enabled && showQuestions(ctx.project, run) ? <BoardQuestions readOnly={ctx.offline ? "Needs a connection" : null} /> : null}
         <DrawStoryboard readOnly={ctx.offline ? "Needs a connection" : null} />
-      </div>
-      <div className="ag-compose">
+      </div>)}
+      {tab === "atomik" ? <div className="ag-compose">
         <div className="ag-box">
           <textarea ref={box} aria-label="Ask Atomik" placeholder="Ask Atomik…" rows={2} value={words} maxLength={2000} onChange={(e) => { setWords(e.target.value); setSaid(null); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} data-testid="agent-input" />
           <button type="button" className="ag-btn ag-btn-primary ag-ask" disabled={ask.disabled} title={title ?? undefined} onClick={() => void send()} data-testid="agent-ask">{ask.label}</button>
         </div>
         {said ?? ask.reason ? <p className="ag-note" role="status" data-testid="agent-ask-note">{said ?? ask.reason}</p> : null}
-      </div>
+      </div> : null}
     </div>
   );
 }
