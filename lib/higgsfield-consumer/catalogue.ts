@@ -138,8 +138,8 @@ function text(value: unknown, max: number): string {
 /**
  * A catalogue model reads under its own name — GPT Image 2, Higgsfield Soul
  * 2.0, DTC Ads, Google Veo 3.1. The neutral renaming (Forge, Persona, Vista…)
- * was the never-name rule the owner retired with the Suites design on
- * 21 September 2026; it hid OpenAI's models behind aliases.
+ * was the never-name rule the owner retired on 21 September 2026; it hid
+ * OpenAI's models behind aliases.
  */
 export function displayName(value: string) {
   return value.replace(/\s{2,}/g, " ").trim();

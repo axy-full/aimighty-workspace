@@ -3,7 +3,7 @@ import { parseScreenplay } from "@/lib/workbench/screenplay";
 import type { PageId } from "./types";
 
 /**
- * The spec-card template's content (03-pages.md, "Spec-card template").
+ * The spec-card template's content.
  *
  * Copy is carried from the prototype's CARDS constant, with two kinds of
  * change: vendor names are neutral (brief decision 5), and every count the

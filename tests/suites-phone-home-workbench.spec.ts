@@ -5,7 +5,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets, smallText } from "./phoneFloors";
 
 /**
- * Particl Mobile.dc.html › STUDIO HOME: on the phone, the Studio tab opens
+ * Studio home: on the phone, the Studio tab opens
  * the home — the project's name, Up next, the eight stage cards, recent takes;
  * a card opens its page and ‹ Studio in the header comes back. The desktop
  * strip never shows the home.

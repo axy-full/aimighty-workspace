@@ -14,7 +14,7 @@ import { PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
 import type { ProductionRow, ProjectRow } from "@/lib/productions";
 import { clock } from "@/components/production/ProductionHeader";
-import "@/components/studio/legacy-graphite.css";
+import "@/components/studio/projects-library.css";
 
 /**
  * Productions (design/particl-graphite/README.md §6; board 7a), value for value.

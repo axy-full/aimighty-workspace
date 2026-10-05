@@ -40,10 +40,12 @@ export const SHARED_POOL = "higgsfield";
 export { POOL_MARK, POOL_QUEUED, POOL_REASON } from "./sharedKeyTerms";
 
 /**
- * The defaults, from the provider's documented limit as this repo records it
- * (docs/handoff/connected-capability-audit-2026-09-19.md: "Concurrency per
- * account, typically 4"), and the share the native workers already give one
- * workspace (lib/worker-slots.ts: 4 in all, 2 per workspace).
+ * The defaults: the provider's platform API documents concurrency per
+ * account, typically 4 requests in flight (rate-limits page, read 19 September
+ * 2026); one more is refused with HTTP 400 "Maximum number of concurrent
+ * requests" and no Retry-After header (docs/four-suite-apis.md). The share is
+ * what the native workers already give one workspace (lib/worker-slots.ts: 4
+ * in all, 2 per workspace).
  */
 export const POOL_DEFAULTS = { size: 4, share: 2 } as const;
 /** A slot held this long no longer counts: whatever the provider did with it, it is not still running. */
