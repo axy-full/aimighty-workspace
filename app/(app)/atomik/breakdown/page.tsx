@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Atomik · Breakdown — from the pipeline handoff.
+ * Atomik · Breakdown.
  *
  * The treatment's scenes, each broken into shots. A scene card on the left
  * stays put while its shots scroll on the right: the shot's description,

@@ -62,7 +62,7 @@ const checkBatch = z.object({ action: z.literal("check-batch"), draftId: id, ids
 const explainer = z.object({ action: z.literal("explainer-presets"), refresh: z.boolean().optional() }).strict();
 /** The account's trained characters (Soul IDs), for a Soul model's `soul_id`. */
 const characters = z.object({ action: z.literal("characters") }).strict();
-/** The plan gate before a Soul ID build (free read), and the build itself (Cast › Build identity; FINAL_SPEC §3 › Soul ID). */
+/** The plan gate before a Soul ID build (free read), and the build itself (Cast › Build identity). */
 const charactersPlan = z.object({ action: z.literal("characters-plan") }).strict();
 const charactersCreate = z.object({
   action: z.literal("characters-create"),

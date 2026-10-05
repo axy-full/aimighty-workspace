@@ -6,7 +6,6 @@
  * phone shell sets. The desktop shell cannot be reached by anything in this
  * file, and the file is imported only by app/workspace/page.tsx.
  *
- * Values are measured from design/Particl Mobile.dc.html and 05-mobile.md.
  * Two rules are absolute and are the reason for several of the numbers:
  * nothing below 12px, and no target under 44×44.
  */
@@ -645,8 +644,7 @@
 
 /* ══ Page templates (wave M-B) ══════════════════════════════════════════════
  *
- * The six templates of 05-mobile plus Edit & Sound's own layout. Values are
- * measured from design/Particl Mobile.dc.html. Two rules govern every number
+ * The six page templates plus Edit & Sound's own layout. Two rules govern every number
  * here: no text under 12px, and no target under 44×44 — which is why every row
  * carries a min-height of 44px or more and the smallest label is 12px.
  */

@@ -4,7 +4,7 @@ import { newProject, type CanvasNode, type Project } from "../lib/workbench/stud
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Assets on every page (FINAL_SPEC §1 step 1, README › Drag & drop) and the
+ * Assets on every page and the
  * owner's Rig notes (23 September): a Library render or upload dropped on a Rig
  * canvas node becomes that shot's input, and a brief joins its prompt — as on the
  * list's row — the node lights while the asset hovers, the job is re-filed,
