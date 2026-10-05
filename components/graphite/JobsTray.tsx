@@ -120,7 +120,7 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
           ) : (
             <div className="gx-empty gx-jobs-empty" data-testid="jobs-empty">
               <p>Nothing is rendering or waiting, and nothing finished in the last 6 hours.</p>
-              <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.goGen(); }} data-testid="jobs-generate">Generate</button>
+              <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.goGen(); }} data-testid="jobs-generate">Make</button>
             </div>
           )}
         </div>

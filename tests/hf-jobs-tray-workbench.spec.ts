@@ -475,7 +475,7 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
   await page.getByTestId("running-jobs").click();
   await expect(page.getByTestId("jobs-empty").locator("p")).toHaveText("Nothing is rendering or waiting, and nothing finished in the last 6 hours.");
   await expect(page.getByTestId("jobs-summary")).toHaveCount(0);
-  await expect(page.getByTestId("jobs-generate")).toHaveText("Generate");
+  await expect(page.getByTestId("jobs-generate")).toHaveText("Make");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs");
 
   /* A failed read says so, keeps asking on its own, and Try again asks at once. */
