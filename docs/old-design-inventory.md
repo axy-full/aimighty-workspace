@@ -6,7 +6,7 @@ Written 5 Oct 2026 on the clean slate (PR #528, `design/clean-slate`). It lists 
 
 ## How to read this
 
-- **Deleting PR or stream** names who removes the item. Streams are the demo push's: 1 switch and shell, 2 Home, 3 board canvas, 4 board cards 1 (brief, looks, storyboard, plan), 5 board cards 2 (shots, cast, cut, deliver, Inspector), 6 Make, 7 Atomik, 8 control room, 9 Settings, 10 phone, 11 Ads and Social, 12 sample production, 15 marketing site. **Flip PR** is the PR that turns the new interface on for everyone and deletes the old shells (the owner's yes; DECISIONS 8). **D1** is the retire-routes work after it. **Orphan sweep** is a small cleanup PR for files nothing imports; it needs an owner (§9).
+- **Deleting PR or stream** names who removes the item. Streams are the current push's: 1 switch and shell, 2 Home, 3 board canvas, 4 board cards 1 (brief, looks, storyboard, plan), 5 board cards 2 (shots, cast, cut, deliver, Inspector), 6 Make, 7 Atomik, 8 control room, 9 Settings, 10 phone, 11 Ads and Social, 12 sample production, 15 marketing site. **Flip PR** is the PR that turns the new interface on for everyone and deletes the old shells (the owner's yes). **D1** is the retire-routes work after it. **Orphan sweep** is a small cleanup PR for files nothing imports; it needs an owner (§9).
 - **Imported by** is read from the import graph of this branch (source files; tests are counted separately). "none" means no source file imports it.
 - **Target** is a date. The owner's target for all of it is Thu 8 Oct evening; the 5 Oct evening order is that each PR which ships a screen deletes the screen and sheets it replaces, so the target is that stream's PR date. Where customers still see the old screen with the switch off, the row says so and the flip PR is the fallback.
 - **Replacement** says which screen of `design/particl-graphite/` takes over (README § 1.2 and `docs/handoff-diff.md`).
@@ -21,7 +21,7 @@ Written 5 Oct 2026 on the clean slate (PR #528, `design/clean-slate`). It lists 
 | Second token names (alias layers over `app/graphite.css`, no values of their own) | 4: `app/globals.css` (83 names), `app/workbench/workbench.css` (80), `components/workspace/workspace.css` (71), and the `--graphite-*` block (22) inside `app/graphite.css` itself. Plus `components/suites/four-suites.css` (909 lines of the old four-suite look), loaded by `app/layout.tsx` on every page | flip PR / D1 |
 | Marketing and UI copy from the old structure | 56 files, 174 occurrences (the baseline; 30 in 8 marketing files are already fixed on `site/copy-names`) | Thu 8 Oct |
 | Old screens: routes (§4) and the `/suites` pages (§4b) | 44 route page files in the three old shells; 42 pages in `/suites` (10 Studio stages and 2 phone pages, 8 Business, 3 Viral, 8 Atomik, 7 Workspace tabs, 3 Crew, Gen) | streams 2-11, flip PR |
-| Source files of old screens (§6) | 338 to delete, of which 26 are orphans nothing imports; 10 shell files stream 1 rebuilds in place; 84 kept with a reason | streams 2-11, flip PR |
+| Source files of old screens (§6) | 337 to delete, of which 26 are orphans nothing imports; 10 shell files stream 1 rebuilds in place; 85 kept with a reason | streams 2-11, flip PR |
 | Exports and pictures of old screens | 5 screenshots on the marketing pages (§8) | stream 15 |
 
 Items with no owner yet are listed in §9. The headline ones: the 3D blocking tool (Astra Blender, 9 files and 3 sheets plus the Astra stage pages), the editor and tool panels the handoff opens as they are, the primitive sets (`components/ui`, `components/workspace/ui`), the old app pages no frame draws, the orphan sweep, and the stale docs.
@@ -848,7 +848,7 @@ Replacement: Control room > Activity (stream 8). Deleting: stream 8 (Activity). 
 | `components/pipeline/PipelineRun.tsx` | component | `components/pipeline/PipelineWorkspace.tsx`, `components/suites/AtomikSuite.tsx` | stream 8 (Activity) | Thu 8 Oct |
 | `components/pipeline/PipelineWorkspace.tsx` | component | `app/(app)/pipelines/page.tsx` | stream 8 (Activity) | Thu 8 Oct |
 
-#### A_SETTINGS: /settings /team /usage /connect (11)
+#### A_SETTINGS: /settings /team /usage /connect (12)
 
 Replacement: Settings sections; Activity. Deleting: stream 9 (Settings) + stream 8 (Activity). Target: Thu 8 Oct.
 
@@ -859,6 +859,7 @@ Replacement: Settings sections; Activity. Deleting: stream 9 (Settings) + stream
 | `app/(app)/settings/page.tsx` | route file | Next.js router | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
 | `app/(app)/team/page.tsx` | route file | Next.js router | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
 | `app/(app)/usage/page.tsx` | route file | Next.js router | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
+| `components/Tokens.tsx` | component | `app/(app)/connect/page.tsx` | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
 | `components/management/ConsumerCreditActivity.tsx` | component | `app/(app)/usage/page.tsx` | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
 | `components/management/HiggsfieldConnection.tsx` | component | `app/(app)/settings/page.tsx` | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
 | `components/management/ManagementPage.tsx` | component | `app/(app)/settings/page.tsx`, `app/(app)/team/page.tsx`, `app/(app)/usage/page.tsx` +8 | stream 9 (Settings) + stream 8 (Activity) | Thu 8 Oct |
@@ -890,21 +891,18 @@ Replacement: Social board; Make > Motion transfer, Object swap. Deleting: stream
 | `components/suites/subatomik-directions.ts` | module | `components/suites/SubatomikWorkspace.tsx` | stream 11 (Social) + stream 6 (Make quick tools) | Thu 8 Oct |
 | `components/suites/subatomik-recreate.ts` | module | `components/suites/SubatomikWorkspace.tsx`, `tests/unit/subatomikRecreate.spec.ts` | stream 11 (Social) + stream 6 (Make quick tools) | Thu 8 Oct |
 
-#### A_ATOMIK_UI: old Atomik rail/sheet (7)
+#### A_ATOMIK_UI: old Atomik rail/sheet (4)
 
 Replacement: Atomik panel (stream 7). Deleting: stream 7 (Atomik). Target: Thu 8 Oct.
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `components/atomik/AtomikRail.tsx` | component | `components/shell/Shell.tsx` | stream 7 (Atomik) | Thu 8 Oct |
-| `components/atomik/AtomikSheet.tsx` | component | `components/shell/Shell.tsx` | stream 7 (Atomik) | Thu 8 Oct |
 | `components/atomik/threads/ThreadSwitcher.tsx` | component | `components/atomik/AtomikRail.tsx`, `components/atomik/AtomikSheet.tsx`, `components/atomik/threads/ThreadsPanel.tsx` | stream 7 (Atomik) | Thu 8 Oct |
 | `components/atomik/threads/ThreadsPanel.tsx` | component | `components/workspace/spec/tools/AtomikTool.tsx` | stream 7 (Atomik) | Thu 8 Oct |
-| `components/atomik/threads/useThreadSends.ts` | hook | `components/atomik/AtomikProvider.tsx` | stream 7 (Atomik) | Thu 8 Oct |
 | `components/suites/SuiteAgentPanel.tsx` | component | `components/suites/AtomikSuite.tsx`, `components/suites/SubatomikWorkspace.tsx`, `components/workbench/Studio.tsx` +1 | stream 7 (Atomik) | Thu 8 Oct |
 | `components/suites/SuiteProjectContext.tsx` | component | `components/shell/Shell.tsx`, `components/suites/SubatomikWorkspace.tsx`, `components/suites/SuiteHome.tsx` +1 | stream 7 (Atomik) | Thu 8 Oct |
 
-#### A_NOFRAME: old app route with no replacement (28)
+#### A_NOFRAME: old app route with no replacement (27)
 
 Replacement: none drawn. Deleting: UNOWNED: no frame draws this route. Target: Thu 8 Oct.
 
@@ -937,9 +935,8 @@ Replacement: none drawn. Deleting: UNOWNED: no frame draws this route. Target: T
 | `components/ProvenanceCard.tsx` | component | `app/(app)/takes/[id]/page.tsx` | UNOWNED: no frame draws this route | Thu 8 Oct |
 | `components/QueueStrip.tsx` | component | `components/Feed.tsx` | UNOWNED: no frame draws this route | Thu 8 Oct |
 | `components/ShotBindings.tsx` | component | `app/(app)/shots/[id]/page.tsx` | UNOWNED: no frame draws this route | Thu 8 Oct |
-| `components/Tokens.tsx` | component | `app/(app)/connect/page.tsx` | UNOWNED: no frame draws this route | Thu 8 Oct |
 
-#### A_SHELL: old app shell (11)
+#### A_SHELL: old app shell (13)
 
 Replacement: /suites. Deleting: flip PR, then D1 retire app shell (lead). Target: Thu 8 Oct (needs the owner's yes).
 
@@ -947,6 +944,8 @@ Replacement: /suites. Deleting: flip PR, then D1 retire app shell (lead). Target
 |---|---|---|---|---|
 | `app/(app)/error.tsx` | route file | Next.js router | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
 | `app/(app)/layout.tsx` | route file | Next.js router | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/atomik/AtomikRail.tsx` | component | `components/shell/Shell.tsx` | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
+| `components/atomik/AtomikSheet.tsx` | component | `components/shell/Shell.tsx` | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/shell/Dock.tsx` | component | `components/shell/Shell.tsx` | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/shell/Header.tsx` | component | `components/shell/Shell.tsx` | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
 | `components/shell/Shell.tsx` | component | `app/(app)/layout.tsx` | flip PR, then D1 retire app shell (lead) | Thu 8 Oct (needs the owner's yes) |
@@ -999,7 +998,7 @@ These are the 3 October shell. They are not deleted; the D0 PRs and stream 1 rew
 
 ### 6c. Data layer and shared logic (not designs, not listed for deletion)
 
-`app/error.tsx`, `app/global-error.tsx`, `app/layout.tsx`, `app/not-found.tsx`, `app/robots.ts`, `app/sitemap.ts`, `components/AtomikMark.tsx`, `components/Boundary.tsx`, `components/DragLayer.tsx`, `components/GenCard.tsx`, `components/Icons.tsx`, `components/LazyMedia.tsx`, `components/ParticlMark.tsx`, `components/PolicyPage.tsx`, `components/PreviewLayer.tsx`, `components/PromptAttach.tsx`, `components/RequestAccess.tsx`, `components/SharedKeyCard.tsx`, `components/UploadRecovery.tsx`, `components/ViewportGuard.tsx`, `components/atomik/AtomikLoading.tsx`, `components/atomik/AtomikProvider.tsx`, `components/atomik/ChatComposer.tsx`, `components/atomik/Loader.tsx`, `components/atomik/MentionText.tsx`, `components/atomik/ModelMenu.tsx`, `components/atomik/ModelPicker.tsx`, `components/atomik/PickProduction.tsx`, `components/atomik/QuotedAtomikAction.tsx`, `components/atomik/Ring.tsx`, `components/atomik/skills/ComposerSkills.tsx`, `components/atomik/skills/SkillForms.tsx`, `components/atomik/skills/useSkillRunOpens.ts`, `components/dialog.tsx`, `components/workspace/rig/RigImport.tsx`, `components/workspace/rig/RigProvider.tsx`, `components/workspace/rig/RigVerify.tsx`, `components/workspace/rig/VerifyBadge.tsx`, `components/workspace/rig/use-cutouts.ts`, `components/workspace/rig/use-team-canvas.ts`, `components/workspace/rig/use-verifications.ts`.
+`app/error.tsx`, `app/global-error.tsx`, `app/layout.tsx`, `app/not-found.tsx`, `app/robots.ts`, `app/sitemap.ts`, `components/AtomikMark.tsx`, `components/Boundary.tsx`, `components/DragLayer.tsx`, `components/GenCard.tsx`, `components/Icons.tsx`, `components/LazyMedia.tsx`, `components/ParticlMark.tsx`, `components/PreviewLayer.tsx`, `components/PromptAttach.tsx`, `components/RequestAccess.tsx`, `components/SharedKeyCard.tsx`, `components/UploadRecovery.tsx`, `components/ViewportGuard.tsx`, `components/atomik/AtomikLoading.tsx`, `components/atomik/AtomikProvider.tsx`, `components/atomik/ChatComposer.tsx`, `components/atomik/Loader.tsx`, `components/atomik/MentionText.tsx`, `components/atomik/ModelMenu.tsx`, `components/atomik/ModelPicker.tsx`, `components/atomik/PickProduction.tsx`, `components/atomik/QuotedAtomikAction.tsx`, `components/atomik/Ring.tsx`, `components/atomik/skills/ComposerSkills.tsx`, `components/atomik/skills/SkillForms.tsx`, `components/atomik/skills/useSkillRunOpens.ts`, `components/atomik/threads/useThreadSends.ts`, `components/dialog.tsx`, `components/workspace/rig/RigImport.tsx`, `components/workspace/rig/RigProvider.tsx`, `components/workspace/rig/RigVerify.tsx`, `components/workspace/rig/VerifyBadge.tsx`, `components/workspace/rig/use-cutouts.ts`, `components/workspace/rig/use-team-canvas.ts`, `components/workspace/rig/use-verifications.ts`.
 
 ## 7. Kept, with a reason and a date
 
@@ -1023,6 +1022,7 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 | `app/(app)/terms/page.tsx` | source | Next.js router | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
 | `app/review/[token]/layout.tsx` | source | Next.js router | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
 | `app/review/[token]/page.tsx` | source | Next.js router | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
+| `components/PolicyPage.tsx` | source | `app/(app)/policy/page.tsx`, `app/(app)/privacy/page.tsx`, `app/(app)/terms/page.tsx` | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
 | `components/graphite/FaultPage.tsx` | source | `app/suites/error.tsx`, `components/graphite/NotFoundView.tsx` | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
 | `components/graphite/NotFoundView.tsx` | source | `app/not-found.tsx` | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
 | `components/graphite/PanelFault.tsx` | source | `components/graphite/FaultPage.tsx`, `components/graphite/GenView.tsx`, `components/graphite/SuitesShell.tsx` | page the handoff does not draw: kept: no frame in the design (reading floor, #515) | Thu 8 Oct |
