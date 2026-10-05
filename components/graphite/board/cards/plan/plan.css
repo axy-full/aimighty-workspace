@@ -1,0 +1,45 @@
+/*
+ * The plan card (design/particl-graphite/README.md § 3.1 e; the master's approval card): padding 14 16, the title
+ * 15/600, the lines 14 at .6, Hold and Change outlined 28 px, Approve filled 30 px, "Show the N steps" in accent
+ * text, each step a row with a hairline above and its price in mono 13, never cut. app/graphite.css tokens only.
+ */
+.gx-plan {
+  display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 14px 16px;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card);
+}
+.gx-plan-head { display: flex; flex-direction: column; gap: 2px; }
+.gx-plan-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.gx-plan-line, .gx-plan-mode, .gx-plan-why { font-size: var(--gx-fs-body); line-height: 1.45; color: var(--gx-text-2); }
+.gx-plan-problem { color: var(--gx-failed-text); }
+.gx-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.gx-plan-btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent;
+  color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.gx-plan-btn[aria-pressed="true"] { border-color: var(--gx-tint-border-50); background: var(--gx-tint); color: var(--gx-accent-text); }
+.gx-plan-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-plan-primary {
+  height: 30px; padding: 0 14px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.gx-plan-primary:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-plan-primary:disabled { opacity: .45; cursor: default; }
+.gx-plan-short {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--gx-fs-body); color: var(--gx-waiting-text);
+}
+.gx-plan-toggle { align-self: flex-start; padding: 0; border: 0; background: transparent; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); cursor: pointer; }
+.gx-plan-toggle[hidden] { display: none; }
+.gx-plan-steps { display: flex; flex-direction: column; }
+.gx-plan-step {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 8px 0;
+  border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body);
+}
+.gx-plan-step--quiet { color: var(--gx-text-2); }
+.gx-plan-step-text { display: flex; flex-direction: column; min-width: 0; }
+.gx-plan-step-text > span:first-child { display: inline; }
+.gx-plan-step-meta { color: var(--gx-quiet); }
+.gx-plan-step-status { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gx-plan-step-flag { font-size: var(--gx-fs-meta); color: var(--gx-waiting-text); }
+.gx-plan-step-price, .gx-plan-step-later { flex: none; font-family: var(--gx-mono); font-size: 13px; white-space: nowrap; }
+.gx-plan-step-later { color: var(--gx-quiet); font-family: var(--gx-font); }
+@media (max-width: 767px) { .gx-plan-btn, .gx-plan-primary { min-height: 44px; } }

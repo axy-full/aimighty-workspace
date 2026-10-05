@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useStageQuotes } from "./use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { readPendingGeneration, type PendingGeneration } from "@/lib/workbench/pending-generation";
 import {
   sendingElsewhere,

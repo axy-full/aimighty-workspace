@@ -31,7 +31,7 @@ import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
-import { useStageQuotes } from "./use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);

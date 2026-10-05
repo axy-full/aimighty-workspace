@@ -81,3 +81,15 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
+
+## The new interface (switch on)
+
+With a workspace's "new interface" switch on, these `/suites` pages are replaced by the board (`design/particl-graphite/README.md` § 1.2). Customers with the switch off still use them, so they stay until the switch-flip PR, which deletes the components and tests in each row.
+
+| Old page (switch off) | Rendered by today | Replaced by (switch on) | Tests that go at the flip |
+|---|---|---|---|
+| `?suite=studio&page=brief` (Brief & Script) | `components/graphite/production/BriefStage.tsx` (with its `ScriptPanel` and `DevelopmentPanel` mounts) | Studio board › Brief: the brief document card (frame d) | `suites-brief-writer-workbench`; the Brief parts of `hf-first-run-workbench` and `suites-draft-merge-workbench` |
+| `?suite=studio&page=beats` (Beats & Shots), `&beats=graph` | `components/graphite/production/BeatsStage.tsx`, `BeatGraph.tsx`, `lib/production/beat-graph.ts` | The board's List view: the shot list, edited in place (frame d, Board/List); the graph becomes the board itself | `suites-beats-workbench`, `suites-beats-import-graph-workbench` |
+| `?suite=studio&page=boards` (Storyboards) | `components/graphite/production/StoryboardStage.tsx` | Studio board › Storyboard: one frame per shot (frame d) | `suites-storyboards-workbench`, `suites-storyboards-batch-workbench`; the Storyboards parts of `suites-vendor-images-workbench` |
+
+Shared with the pages above, and deleted with the last of them: `components/graphite/production/AgentAction.tsx`, `AgentBar.tsx`, `use-agent-runs.ts`, `use-agent-attachments.tsx`, `use-stage-facts.ts`, `agent-price.ts`. Kept, because the board uses them: `lib/production/use-stage-quotes.ts` and `frameRequest` in `lib/production/boards.ts`.

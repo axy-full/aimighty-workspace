@@ -44,7 +44,7 @@ export function useConfirm() {
 
 /** Where the person is, and whether the Library's assets are already on screen there. */
 function hereOf(shell: Shell): Here {
-  return { view: shell.view, suite: shell.suite.id, page: shell.page.id, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
+  return { view: shell.view === "board" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
 }
 
 /**

@@ -1,5 +1,8 @@
 import type { BeatSheet, BeatShot } from "./beats";
 import type { Project } from "../workbench/studio";
+import type { GenerationBodyInput } from "../workbench/generation-request";
+import type { Look } from "./looks";
+import { getModel } from "../models";
 import { moleculrAssetDependencies } from "../workbench/moleculr-bindings";
 
 /**
@@ -51,8 +54,11 @@ export type BoardFrame = {
   selected?: string;
   pending?: FramePending[];
 };
-/** `promptsJobId`: the agent's prompt run the frames last took their prompts from. */
-export type Boards = { style: BoardStyle; model: BoardModel; frames: Record<string, BoardFrame>; promptsJobId?: string };
+/**
+ * `promptsJobId`: the agent's prompt run the frames last took their prompts from. `looks` and `look`: the looks
+ * made before the storyboard and the one picked (lib/production/looks.ts); absent on drafts from before them.
+ */
+export type Boards = { style: BoardStyle; model: BoardModel; frames: Record<string, BoardFrame>; promptsJobId?: string; looks?: Record<string, Look>; look?: string };
 
 export const FRAME_PROMPT_LIMIT = 8000;
 export const DEFAULT_BOARDS: Boards = { style: "live", model: "gemini-3.1-flash-image", frames: {} };
@@ -77,6 +83,17 @@ export function renderPrompt(prompt: string, style: BoardStyle, sketch: boolean)
   const look = BOARD_STYLES.find((s) => s.id === style)!.suffix;
   const keep = sketch ? " The reference image is the director's rough storyboard drawing: keep its composition, camera angle and the position, pose and direction of every figure exactly; redraw it as a finished frame." : "";
   return `${prompt.trim()}\n\n${look}${keep}`.slice(0, 10_000);
+}
+
+/** The request one frame sends: its prompt in the chosen look, the project's ratio, and its drawing as the reference. */
+export function frameRequest(project: Project, boards: Boards, frame: BoardFrame): GenerationBodyInput | null {
+  if (!project.productionProjectId || !frame.prompt.trim()) return null;
+  const sketch = frame.sketch ? project.assets.find((a) => a.id === frame.sketch!.assetId) : undefined;
+  return {
+    prompt: renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
+    mapping: { shotId: "", productionProjectId: project.productionProjectId }, ...stillShape(getModel(boards.model), project.aspect), duration: 5,
+    references: sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" }] : [], firstFrameAssetId: "",
+  };
 }
 
 /**

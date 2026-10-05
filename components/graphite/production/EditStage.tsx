@@ -38,7 +38,7 @@ import { TakeVerifyBadge, takeVerdictWords, useTakeVerdicts } from "@/components
 import { KIND_DOT } from "../icons";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
-import { useStageQuotes } from "./use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 
 const EDIT_LIMIT = 4000;
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };

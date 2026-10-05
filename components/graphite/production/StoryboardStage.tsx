@@ -10,11 +10,10 @@ import LazyMedia from "@/components/LazyMedia";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import { agentFamilyOf, agentLabel } from "@/lib/production/agent";
-import { BOARD_MODELS, BOARD_STYLES, deleteDrawing, stillShape, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, renderPrompt, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
-import { getModel } from "@/lib/models";
-import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
+import { BOARD_MODELS, BOARD_STYLES, deleteDrawing, DEFAULT_BOARDS, FRAME_PROMPT_LIMIT, boardShots, emptyFrame, frameRequest, shotPrompt, type BoardFrame, type Boards, type NumberedShot } from "@/lib/production/boards";
+import { generationRequestBody } from "@/lib/workbench/generation-request";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
-import type { Asset, Project } from "@/lib/workbench/studio";
+import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { dispatchGeneration } from "@/lib/workspace/generate-submit";
 import { useDraftEditor } from "@/lib/workspace/use-draft-editor";
@@ -25,21 +24,10 @@ import { AgentAction } from "./AgentAction";
 import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
-import { useStageQuotes } from "./use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
-
-/** The request one frame sends: its prompt in the chosen look, the project's ratio, and its drawing as the reference. */
-export function frameRequest(project: Project, boards: Boards, frame: BoardFrame): GenerationBodyInput | null {
-  if (!project.productionProjectId || !frame.prompt.trim()) return null;
-  const sketch = frame.sketch ? project.assets.find((a) => a.id === frame.sketch!.assetId) : undefined;
-  return {
-    prompt: renderPrompt(frame.prompt, frame.style ?? boards.style, Boolean(sketch)), kind: "image", model: { id: boards.model },
-    mapping: { shotId: "", productionProjectId: project.productionProjectId }, ...stillShape(getModel(boards.model), project.aspect), duration: 5,
-    references: sketch?.uploadId ? [{ uploadId: sketch.uploadId, role: "reference_image" }] : [], firstFrameAssetId: "",
-  };
-}
 
 /**
  * Production › Storyboards (owner's brief, 23 September): every beat-sheet shot

@@ -1,0 +1,91 @@
+/*
+ * The board's documents (design/particl-graphite/README.md § 3.1 d, § 1.2): the brief card and the shot list.
+ * The master's measures: card padding 18 20, eyebrows 12/600/+.08em at .55, title 22/600, document text 15/1.6,
+ * the footer in mono 13 at .6. The list's columns and 14 px rows are the master's List view. Text edited in
+ * place is a borderless field; the shell's accent ring shows on focus. app/graphite.css tokens only.
+ */
+.gx-doc {
+  display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; overflow-y: auto;
+  padding: 18px 20px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card);
+}
+.gx-doc-eyebrow { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-doc-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.gx-doc-section { display: flex; flex-direction: column; gap: 4px; }
+.gx-doc-text {
+  display: block; width: 100%; min-height: 24px; margin: 0; padding: 0; resize: none; overflow: hidden;
+  border: 0; border-radius: 4px; background: transparent; color: var(--gx-text);
+  font: inherit; font-size: var(--gx-fs-doc); line-height: 1.6;
+}
+.gx-doc-text::placeholder { color: var(--gx-placeholder); }
+.gx-doc-text:focus-visible { outline-offset: 3px; }
+.gx-doc-text[readonly] { cursor: default; }
+.gx-doc-foot { font-family: var(--gx-mono); font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+
+/* ── The shot list (the board's List view) ── */
+.gx-shotlist { container-type: inline-size; width: 100%; max-width: 980px; margin: 0 auto; font-size: var(--gx-fs-body); }
+.gx-shotlist-head, .gx-shotlist-row {
+  display: grid; grid-template-columns: 40px 112px minmax(0, 1.8fr) minmax(96px, 120px) minmax(120px, 170px) 104px 28px; gap: 12px;
+}
+.gx-shotlist-head {
+  padding: 0 0 10px; border-bottom: 1px solid var(--gx-hair-strong);
+  font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow);
+}
+.gx-shotlist-end { text-align: right; justify-content: flex-end; }
+.gx-shotlist-row { position: relative; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gx-shotlist-n {
+  font-family: var(--gx-mono); color: var(--gx-quiet); text-align: left; padding: 0; border: 0; background: transparent; font-size: inherit;
+}
+button.gx-shotlist-n { cursor: pointer; border-radius: 4px; }
+button.gx-shotlist-n:hover { color: var(--gx-text); }
+.gx-shotlist-time { display: flex; align-items: center; gap: 6px; font-family: var(--gx-mono); white-space: nowrap; }
+.gx-shotlist-secs { display: inline-flex; align-items: center; gap: 3px; }
+.gx-shotlist-cell {
+  display: block; width: 100%; min-width: 0; margin: 0; padding: 4px 6px; resize: none; overflow: hidden;
+  border: 1px solid transparent; border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text);
+  font: inherit; line-height: 1.45;
+}
+.gx-shotlist-size, .gx-shotlist-camera { color: var(--gx-text-2); }
+.gx-shotlist-cell:hover:not([readonly]) { border-color: var(--gx-input-border); }
+.gx-shotlist-cell:focus-visible { border-color: var(--gx-tint-border-50); background: var(--gx-input); outline-offset: 0; }
+.gx-shotlist-cell::placeholder { color: var(--gx-placeholder); }
+.gx-shotlist-num { width: 4.5ch; text-align: right; font-family: var(--gx-mono); padding: 4px 3px; }
+.gx-shotlist-state { display: inline-flex; align-items: center; gap: 6px; color: var(--gx-text-3); }
+.gx-shotlist-state[data-tone="accent"] { color: var(--gx-accent-text); }
+.gx-shotlist-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-shotlist-state[data-tone="waiting"] { color: var(--gx-waiting-text); }
+.gx-shotlist-state[data-tone="failed"] { color: var(--gx-failed-text); }
+.gx-shotlist-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.gx-shotlist-remove {
+  width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--gx-r-ctl);
+  background: transparent; color: var(--gx-text-2); font-size: 18px; line-height: 1; opacity: 0; cursor: pointer;
+}
+.gx-shotlist-row:hover .gx-shotlist-remove, .gx-shotlist-row:focus-within .gx-shotlist-remove { opacity: 1; }
+.gx-shotlist-remove:hover { color: var(--gx-text); background: var(--gx-input-hover); }
+@media (hover: none) { .gx-shotlist-remove { opacity: 1; } }
+.gx-shotlist-empty { margin: 16px 0 0; color: var(--gx-quiet); font-size: var(--gx-fs-meta); }
+.gx-shotlist-add {
+  margin-top: 14px; height: var(--gx-h-input); padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl);
+  background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.gx-shotlist-add:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-shotlist-add:disabled { color: var(--gx-disabled); cursor: default; }
+
+/* Narrow (a phone, a narrow pane): each shot stacks, its number and time on one line, nothing past the edge. */
+@container (max-width: 640px) {
+  .gx-shotlist-head { display: none; }
+  .gx-shotlist-row {
+    grid-template-columns: auto minmax(0, 1fr) 44px;
+    grid-template-areas: "n time remove" "action action action" "size size size" "camera camera camera" "state state state";
+    gap: 4px 10px; padding: 12px 0;
+  }
+  .gx-shotlist-row > .gx-shotlist-n { grid-area: n; min-height: 44px; }
+  .gx-shotlist-row > .gx-shotlist-time { grid-area: time; }
+  .gx-shotlist-row > .gx-shotlist-action { grid-area: action; }
+  .gx-shotlist-row > .gx-shotlist-size { grid-area: size; }
+  .gx-shotlist-row > .gx-shotlist-camera { grid-area: camera; }
+  .gx-shotlist-row > .gx-shotlist-state { grid-area: state; justify-content: flex-start; }
+  .gx-shotlist-row > .gx-shotlist-remove { grid-area: remove; width: 44px; height: 44px; opacity: 1; }
+  .gx-shotlist-cell { font-size: 16px; min-height: 44px; }
+  .gx-shotlist-num { min-height: 44px; }
+  .gx-shotlist-add { height: 44px; padding: 0 16px; }
+}
