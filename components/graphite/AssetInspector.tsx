@@ -146,7 +146,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
           <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
-          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Gen stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
+          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Make stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
           <button type="button" className="gx-hbtn" disabled={!words} onClick={() => void copyPrompt()} data-testid="inspector-copy-prompt">Copy prompt</button>
           {noRecreate ? <p className="gx-reason gx-insp-why" data-testid="inspector-recreate-why">{noRecreate}</p> : null}
         </div>

@@ -92,8 +92,8 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
     await expect(page.getByTestId("project-title")).toHaveText(primary.name);
     await assertNoClipping(page);
     /* Rig carries the widest header: the view segmented and Generate. */
-    await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Rig/ }).click();
-    await expect(page.getByTestId("page-title")).toHaveText("Rig");
+    await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Board/ }).click();
+    await expect(page.getByTestId("page-title")).toHaveText("Board");
     await assertNoClipping(page);
   }
 
@@ -101,7 +101,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=brief");
   const tabs = page.getByRole("navigation", { name: "Pages" });
   await expect(tabs.getByRole("button")).toHaveCount(9); // eight stages + ✦ Atomik
-  await tabs.getByRole("button", { name: /Rig/ }).click();
+  await tabs.getByRole("button", { name: /Board/ }).click();
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   await expect(page).toHaveURL(/[?&]project=ws-shell-a(&|$)/);
   /* No shots are loaded in this view yet: Generate is disabled and says why. */
@@ -115,11 +115,11 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await page.goBack();
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.goBack();
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   await page.goForward();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 
   /* Aliases resolve and the URL is rewritten to the current id. */
   await page.goto("/workspace?project=" + primary.id + "&page=storyboard");
@@ -128,7 +128,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
 
   /* Keyboard: 1–9 and I, never while typing. */
   await page.keyboard.press("5");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const inspector = page.getByTestId("inspector");
   await expect(inspector).toBeVisible();
   await page.keyboard.press("i");
@@ -145,7 +145,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await field.pressSequentially("i2");
   await expect(field).toHaveValue("i2");
   await expect(inspector).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 
   /* Every functional label is at least as light as #7C7C84. */
   const floor = luminance("rgb(124,124,132)");
@@ -169,7 +169,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(page).toHaveURL(/[?&]suite=atomik&page=generate(&|$)/);
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=rig");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.screenshot({ path: info.outputPath("workspace-rig.png") });
   expect(errors).toEqual([]);
 });

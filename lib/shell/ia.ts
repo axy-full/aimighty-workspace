@@ -76,7 +76,7 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
 
 /** Group starts: Studio after 03 and 07; Business after 01 and 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
-  /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
+  /* Brief, Boards, 3D blocking and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
   own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
     /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
@@ -86,8 +86,8 @@ export const SHELL_SUITES: ShellSuite[] = [
        view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
     ["environment", "Environment", "Environment", "Build the world", "boards"],
     ["cast", "Cast", "Cast & Elements", "Characters that stay themselves", "cast"],
-    ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
-    ["rig", "Rig", "Rig", "Bring it all together", "rig"],
+    ["astra", "3D blocking", "3D blocking", "Block before you render", "astra"],
+    ["rig", "Board", "Board", "Bring it all together", "rig"],
     /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.
        Idea 6: Takes is the review desk every "Filed in Takes for review" points at. */
     ["takes", "Takes", "Takes", "Review every take", "takes"],
@@ -98,20 +98,20 @@ export const SHELL_SUITES: ShellSuite[] = [
      Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
      Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),
      and an old `sp=ads` link lands on Image ads (SHELL_PAGE_ALIASES). */
-  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite", "moleculr", [1, 2], [
+  own(build("business", "Ads", "ADS", "Ads", "moleculr", [1, 2], [
     ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
     ["setup", "Setup", "Setup items", "Saved products, brand kit and reference ad", "marketing"],
     ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
     ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
-    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Gen", "marketing"],
+    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Make", "marketing"],
     ["hooks", "Hooks", "Hooks", "Up to twelve opening lines, written against the brief", "marketing"],
     ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
     ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
-  /* Viral pages are the shell's own views (step 3), run on Particl's API key through /api/generate (Genjutsu on the key). */
-  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [2], [
-    ["motion", "Motion Transfer", "Motion Transfer", "Recast the motion you own", "motion"],
-    ["swap", "Object Swap", "Object Swap", "One element replaced", "swap"],
+  /* Viral pages are the shell's own views (step 3), run on Particl's API key through /api/generate (Motion transfer and Object swap on the key). */
+  own(build("viral", "Social", "SOCIAL", "Social", "subatomik", [2], [
+    ["motion", "Motion transfer", "Motion transfer", "Recast the motion you own", "motion"],
+    ["swap", "Object swap", "Object swap", "One element replaced", "swap"],
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
@@ -124,7 +124,7 @@ export const SHELL_SUITES: ShellSuite[] = [
   /* Owner, 28 September 2026: "Just Atomik agent". */
   own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
-    ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
+    ["runs", "Activity", "Activity", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
@@ -149,6 +149,34 @@ export const HEADER_SEGMENT: { id: HeaderSegmentId; label: string; title: string
   { id: "project", label: "Project", title: "The current project" },
   { id: "make", label: "Make", title: "Make" },
   { id: "atomik", label: "Atomik", title: "Atomik" },
+];
+
+/**
+ * The board's regions (design/particl-graphite/README.md § 1.1: Brief · Looks · Storyboard · Shots · Cast · Cut · Deliver), each
+ * with today's nearest page. They open that page until the board lands (README § 1.2 says where each old page goes). ⌘K lists them.
+ */
+export type BoardRegionId = "brief" | "looks" | "storyboard" | "shots" | "cast" | "cut" | "deliver";
+export const BOARD_REGIONS: { id: BoardRegionId; label: string; opens: { suite: ShellSuiteId; page: string } }[] = [
+  { id: "brief", label: "Brief", opens: { suite: "studio", page: "brief" } },
+  { id: "looks", label: "Looks", opens: { suite: "studio", page: "boards" } },
+  { id: "storyboard", label: "Storyboard", opens: { suite: "studio", page: "boards" } },
+  { id: "shots", label: "Shots", opens: { suite: "studio", page: "takes" } },
+  { id: "cast", label: "Cast", opens: { suite: "studio", page: "cast" } },
+  { id: "cut", label: "Cut", opens: { suite: "studio", page: "edit" } },
+  { id: "deliver", label: "Deliver", opens: { suite: "studio", page: "deliver" } },
+];
+
+/**
+ * Settings in the five sections the design draws (README § 3.5), each with the page that holds it today (Settings itself is D1).
+ * The avatar menu and ⌘K list the same five.
+ */
+export type SettingsSectionId = "team" | "credits" | "rules" | "connections" | "advanced";
+export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string; opens: { workspace: WorkspaceTabId } | { suite: ShellSuiteId; page: string } }[] = [
+  { id: "team", label: "Team", opens: { workspace: "people" } },
+  { id: "credits", label: "Plan & credits", opens: { workspace: "credits" } },
+  { id: "rules", label: "Spending rules", opens: { suite: "atomik", page: "budget" } },
+  { id: "connections", label: "Connections", opens: { suite: "atomik", page: "skills" } },
+  { id: "advanced", label: "Advanced", opens: { workspace: "engines" } },
 ];
 
 export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [
@@ -210,7 +238,7 @@ export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_S
 /** Crew's own strip: 01 Room · 02 Members · 03 Sessions, with the prototype's titles and hints. */
 export type CrewPageId = "room" | "members" | "sessions";
 export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: string; hint: string }[] = [
-  { id: "room", n: "01", label: "Room", title: "Crew", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
+  { id: "room", n: "01", label: "Room", title: "Crew review", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
   { id: "members", n: "02", label: "Members", title: "Members", hint: "Role cards the room can seat. Each is one agent with its own stance and effort." },
   { id: "sessions", n: "03", label: "Sessions", title: "Sessions", hint: "Every room this project has run, with its solutions and settled cost." },
 ];
