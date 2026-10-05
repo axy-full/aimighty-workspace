@@ -216,6 +216,11 @@ test("the sample production from the Particl sample workspace: plan, shots, cast
     const text = await guest.getByTestId("guest-sample").innerText();
     expect(text).not.toMatch(/Dune|Mira\b|Mara\b|Sethi|Northline|\bSH\d|consent|cr left|\bof \d+ cr\b/i);
     expect(await guest.getByTestId("guest-sample").locator("img, video").count(), "no media until stream 12's media route").toBe(0);
+    const at = (name: string) => SHOTS && /1440x900|390x844/.test(info.project.name) ? guest.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace("workbench-", "")}.png` }) : null;
+    await guest.getByTestId("guest-sample").evaluate((el) => { el.scrollTop = 0; });
+    await at("G2-sample-board");
+    await guest.getByTestId("guest-shots-heading").scrollIntoViewIfNeeded();
+    await at("G2-sample-board-shots");
     /* Read-only: every action opens the sheet. */
     for (const id of ["guest-sample-make", "guest-review-gated"]) {
       await guest.getByTestId(id).click();
@@ -224,8 +229,6 @@ test("the sample production from the Particl sample workspace: plan, shots, cast
       await expect(guest.getByTestId("signup-sheet")).toHaveCount(0);
     }
     await floors(guest, info, "the sample board");
-    const out = SHOTS && /1440x900|390x844/.test(info.project.name) ? `${SHOTS}/G2-sample-board-${info.project.name.replace("workbench-", "")}.png` : null;
-    if (out) await guest.screenshot({ path: out, fullPage: false });
     expect(notAllowed(seen), "a guest's page called these routes").toEqual([]);
   } finally {
     await context.close();
