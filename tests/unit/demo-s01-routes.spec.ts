@@ -32,8 +32,8 @@ test("module ids are unique, every module is in the registry, and each declares 
     for (const key of s.params) expect(typeof key, s.id).toBe("string");
     for (const row of [...s.rows, ...s.fallback]) { expect(row.from.startsWith("?"), `${s.id} ${row.from}`).toBe(true); expect(row.to.startsWith("?"), `${s.id} ${row.to}`).toBe(true); }
   }
-  /* Nothing has landed yet but Make: until a stream's PR flips its flag, nobody is shown a screen that is not there. */
-  expect(SCREENS.filter((s) => s.landed).map((s) => s.id)).toEqual(["make"]);
+  /* Only what has landed (Make; the control room, stream 8): until a stream's PR flips its flag, nobody is shown a screen that is not there. */
+  expect(SCREENS.filter((s) => s.landed).map((s) => s.id)).toEqual(["make", "control-room"]);
 });
 
 test("with the switch off every address the shell serves today is left exactly as it is", () => {

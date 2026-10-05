@@ -18,8 +18,9 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-control-room-activity-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Fixture credit rows (grants, meter) are stamped 0, as tests/helpers/fundFixtureWorkspace.ts does: a row stamped now would
+   make the shared platform database's ledger seed read as the old price and pause paid work for later specs (lib/ledgerUnit.ts). */
 process.env.RIG_AGENT_ENABLED = "1";
 
 const now = Date.now();
@@ -72,8 +73,8 @@ async function seed(ws: TenantWorkspace, rich: boolean) {
   });
   if (ws.id === A.id) {
     const row = (id: string, workspaceId: string, project: string, status: string, credits: number) => ({
-      sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'video','byteplus',?,?,1,?,1,'u_x',?,?)",
-      args: [id, workspaceId, project, MODEL, status, credits, now, now],
+      sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'video','byteplus',?,?,1,?,1,'u_x',0,0)",
+      args: [id, workspaceId, project, MODEL, status, credits],
     });
     await platformDb().batch([
       row(ids.turn, A.id, "prod_a", "succeeded", 2),

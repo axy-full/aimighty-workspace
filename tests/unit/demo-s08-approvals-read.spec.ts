@@ -15,8 +15,9 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-control-room-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Fixture credit rows (grants, meter) are stamped 0, as tests/helpers/fundFixtureWorkspace.ts does: a row stamped now would
+   make the shared platform database's ledger seed read as the old price and pause paid work for later specs (lib/ledgerUnit.ts). */
 process.env.RIG_AGENT_ENABLED = "1";
 
 function workspace(id: string): TenantWorkspace {
@@ -45,7 +46,7 @@ async function seed(ws: TenantWorkspace, opts: { credits?: number; rich?: boolea
   const { setSetting } = await import("../../lib/settings");
   const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
   await platformReady();
-  if (opts.credits) await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,'test',?)", args: [`grant_${ws.id}_${T}`, ws.id, opts.credits, now] });
+  if (opts.credits) await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,'test',?)", args: [`grant_${ws.id}_${T}`, ws.id, opts.credits, 0] });
   await runInTenant(ws, async () => {
     await ready();
     const held = (id: string, why: "credits" | "slots", extra: Record<string, unknown> = {}, by = "u_member") => ({
@@ -103,8 +104,8 @@ async function seed(ws: TenantWorkspace, opts: { credits?: number; rich?: boolea
   /* Meter ids are the platform's own keys: seeded once, for the workspace the decisions are read in. */
   if (opts.rich && ws.id === A.id) {
     await platformDb().batch([
-      { sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'prod_a','video','byteplus',?,'succeeded',1,9,1,'u_admin',?,?)", args: [DONE, ws.id, MODEL, now, now] },
-      { sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,'ws_elsewhere','prod_x','video','byteplus',?,'succeeded',1,77,1,'u_x',?,?)", args: [CROSS, MODEL, now, now] },
+      { sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'prod_a','video','byteplus',?,'succeeded',1,9,1,'u_admin',0,0)", args: [DONE, ws.id, MODEL] },
+      { sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,'ws_elsewhere','prod_x','video','byteplus',?,'succeeded',1,77,1,'u_x',0,0)", args: [CROSS, MODEL] },
     ], "write");
   }
 }

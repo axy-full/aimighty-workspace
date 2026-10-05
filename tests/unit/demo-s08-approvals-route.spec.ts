@@ -17,8 +17,9 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-control-room-route-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Fixture credit rows (grants, meter) are stamped 0, as tests/helpers/fundFixtureWorkspace.ts does: a row stamped now would
+   make the shared platform database's ledger seed read as the old price and pause paid work for later specs (lib/ledgerUnit.ts). */
 
 function workspace(id: string): TenantWorkspace {
   return {
@@ -49,7 +50,7 @@ async function seed(ws: TenantWorkspace, heldId: string) {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   await platformReady();
-  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,1000,'test',?)", args: [`grant_${ws.id}_${Date.now().toString(36)}`, ws.id, Date.now()] });
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,1000,'test',?)", args: [`grant_${ws.id}_${Date.now().toString(36)}`, ws.id, 0] });
   await runInTenant(ws, async () => {
     await ready();
     await db().batch([
