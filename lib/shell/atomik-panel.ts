@@ -5,8 +5,8 @@ import { priceWords, upTo, FREE, type PriceValue } from "./price-words";
 /**
  * Atomik in the new interface (design/particl-graphite/README.md § 1, § 3.4):
  * what a line typed to Atomik is, in ⌘K, in Atomik's panel and in the phone's
- * Atomik sheet, and what its button says. Pure, apart from the panel's address
- * and its letterbox at the end, which only touch `window` when called.
+ * Atomik sheet, and what its button says. Pure, apart from the panel's letterbox
+ * and ⌘K's first query, which only touch `window` when called.
  *
  * A line is one of:
  *  - a command: "go to cast", "make shot 2 warmer", "approve everything under
@@ -79,27 +79,10 @@ export function thinkingLine(intent: AtomikIntent, credits: number | null): stri
     : "Atomik plans and prices first; nothing is spent without your approval";
 }
 
-/* ── The panel's address and letterbox (README § 1.1: `&atomik=1`, `&atomik=how`) ─────────────── */
+/* ── The panel's letterbox (the address, `&atomik=1` and `&atomik=how`, is the shell's: shell.openAtomik) ───────── */
 
-export const ATOMIK_PARAM = "atomik";
-export type AtomikMode = "1" | "how";
-/** Said on the window when the panel opens or closes, or is handed words. */
+/** Said on the window when words are handed to the panel, for one that is already open. */
 export const ATOMIK_PANEL_EVENT = "particl:atomik-panel";
-export type AtomikPanelDetail = { mode: AtomikMode | null };
-
-/** `atomik=` as the address carries it. */
-export function readAtomik(search: string | URLSearchParams): AtomikMode | null {
-  const value = new URLSearchParams(search).get(ATOMIK_PARAM);
-  return value === "1" || value === "how" ? value : null;
-}
-
-/** The same search with `atomik=` set to `mode`, or without it. */
-export function withAtomik(search: string, mode: AtomikMode | null): string {
-  const q = new URLSearchParams(search);
-  if (mode) q.set(ATOMIK_PARAM, mode); else q.delete(ATOMIK_PARAM);
-  const text = q.toString();
-  return text ? `?${text}` : "";
-}
 
 /** Words handed to the panel before it is on screen: they land in its box as soon as it mounts. `send`: ask them at once. */
 type Handed = { text: string; send: boolean; approved: number | null };
@@ -111,34 +94,15 @@ export function takeHanded(): Handed | null {
   return words;
 }
 
-function announce(mode: AtomikMode | null) {
-  window.dispatchEvent(new CustomEvent<AtomikPanelDetail>(ATOMIK_PANEL_EVENT, { detail: { mode } }));
-}
-
-/** Opens Atomik's panel over the page on screen (a history entry, so Back closes it). */
-export function openAtomikPanel(mode: AtomikMode = "1") {
-  if (typeof window === "undefined") return;
-  if (readAtomik(window.location.search) !== mode)
-    window.history.pushState(window.history.state, "", window.location.pathname + withAtomik(window.location.search, mode) + window.location.hash);
-  announce(mode);
-}
-
-/** Closes it; the address forgets it, so a reload does not reopen it. */
-export function closeAtomikPanel() {
-  if (typeof window === "undefined") return;
-  if (readAtomik(window.location.search) !== null)
-    window.history.replaceState(window.history.state, "", window.location.pathname + withAtomik(window.location.search, null) + window.location.hash);
-  announce(null);
-}
-
 /**
- * Hands words to Atomik's panel and opens it: from ⌘K, Settings, a card. With `send`, a free line is answered at once.
- * A request is sent at once only with `approved`, the figure on the button the person pressed (⌘K's "Ask · up to N
- * cr"), and only if the panel's own quote is no higher; otherwise it waits in the box at its new price.
+ * Hands words to Atomik's panel: from ⌘K, Settings, a card. The caller then opens the panel (shell.openAtomik), or
+ * one already open takes them at once. With `send`, a free line is answered at once. A request is sent at once only
+ * with `approved`, the figure on the button the person pressed (⌘K's "Ask · up to N cr"), and only if the panel's own
+ * quote is no higher; otherwise it waits in the box at its new price.
  */
-export function askAtomik(text: string, opts: { send?: boolean; approved?: number | null } = {}) {
+export function handAtomik(text: string, opts: { send?: boolean; approved?: number | null } = {}) {
   handed = { text, send: Boolean(opts.send), approved: opts.approved ?? null };
-  openAtomikPanel("1");
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(ATOMIK_PANEL_EVENT));
 }
 
 /* ── ⌘K's first query (`&palette=1&q=…`, or handed by an offer) ───────────────────────────── */
@@ -168,11 +132,7 @@ export function takePaletteQuery(): string {
   return words.slice(0, 500);
 }
 
-/* ── Board places ("go to cast") ────────────────────────────────────────────────────────────── */
-
-/** Said on the window to glide an open board to a region; the board's Atomik dock carries it out. */
-export const BOARD_GO_EVENT = "particl:board-go";
-export type BoardGoDetail = { region: string };
+/* ── Board places ("go to cast") ─────────────────────────────────────────────────────────────── */
 
 /** The place a "go to" names, among a board's rail entries (by id or label, case-insensitive), or null. */
 export function matchPlace<E extends { id: string; label: string }>(place: string, rail: readonly E[]): E | null {

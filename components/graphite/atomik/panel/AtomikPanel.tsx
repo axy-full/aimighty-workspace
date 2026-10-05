@@ -3,10 +3,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ProjectProvider, useProject } from "@/lib/projectContext";
 import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
 import { useShell } from "@/lib/shell/state";
-import { useNewInterface } from "@/lib/shell/new-interface";
 import { STUDIO_RAIL } from "@/lib/board/regions";
 import {
-  ATOMIK_PANEL_EVENT, askButton, atomikIntent, closeAtomikPanel, matchPlace, takeHanded, type AtomikMode,
+  ATOMIK_PANEL_EVENT, askButton, atomikIntent, handAtomik, matchPlace, takeHanded,
 } from "@/lib/shell/atomik-panel";
 import { HOW_HINTS, howAnswer } from "@/lib/shell/atomik-how";
 import { CONTROL_PLACES } from "@/lib/shell/palette";
@@ -16,7 +15,7 @@ import type { Step } from "@/lib/atomik";
 import { Glyph } from "../../icons";
 import { Price, usePriceTitle } from "../../Price";
 import { MemoryLine } from "./MemoryLine";
-import { useAtomikPanelMode, useHowFacts, useWideEnough } from "./use-atomik-panel";
+import { useHowFacts, useWideEnough } from "./use-atomik-panel";
 import { usePlaces } from "./use-places";
 import "./panel.css";
 
@@ -35,33 +34,34 @@ import "./panel.css";
  *
  * From 768 px up; below, the phone's Atomik sheet (stream 10) answers the same address.
  */
-export function AtomikPanelHost({ project }: { project: Project | null }) {
-  const fresh = useNewInterface();
-  const mode = useAtomikPanelMode();
-  const wide = useWideEnough();
-  const shown = fresh && mode !== null && wide;
-  /* The width the panel takes from the right edge, for the page under it to make room (0 while it is closed). */
-  useEffect(() => {
-    document.documentElement.style.setProperty("--gx-atomik-width", shown ? "340px" : "0px");
-    return () => { document.documentElement.style.setProperty("--gx-atomik-width", "0px"); };
-  }, [shown]);
-  if (!shown) return null;
+export type AtomikPanelProps = {
+  mode: "panel" | "how";
+  /** The words handed to the panel (`&q=`), or null. */
+  query: string | null;
+  onClose: () => void;
+  scope: string;
+  project: Project | null;
+};
+
+/** The shell mounts this while `&atomik=` is set (components/graphite/screens.tsx › AtomikMount). */
+export function AtomikPanel({ mode, query, onClose, project }: AtomikPanelProps) {
   return (
     <ProjectProvider>
       <AtomikProvider>
-        <AtomikPanel mode={mode} productionId={project?.productionProjectId ?? null} />
+        <Panel mode={mode} query={query} onClose={onClose} productionId={project?.productionProjectId ?? null} />
       </AtomikProvider>
     </ProjectProvider>
   );
 }
 
-type Line = { id: number; who: "You" | "Atomik"; text: string; offer?: { label: string; run: () => void } | null };
+type Line = { id: number; who: "You" | "Atomik"; text: string; offer?: { label: string; run: () => void } | null; /** A how-to answer, read from the table as it shows, so a figure from the rate card lands when the card is read. */ how?: string };
 /* Lines are keyed in the order they were said, across the page's life. */
 let lineIds = 0;
 type Memory = { verb: "remember" | "forget"; subject: string } | null;
 
-function AtomikPanel({ mode, productionId }: { mode: AtomikMode; productionId: string | null }) {
+function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; query: string | null; onClose: () => void; productionId: string | null }) {
   const shell = useShell();
+  const wide = useWideEnough();
   const places = usePlaces();
   const facts = useHowFacts(true);
   const { selection, setSelection, current } = useProject();
@@ -73,12 +73,15 @@ function AtomikPanel({ mode, productionId }: { mode: AtomikMode; productionId: s
   const [text, setText] = useState("");
   const intent = useMemo(() => atomikIntent(text), [text]);
   const line = useCallback((who: Line["who"], words: string, offer?: Line["offer"]): Line => ({ id: ++lineIds, who, text: words, offer: offer ?? null }), []);
-  const answerHow = useCallback((question: string): Line[] => {
-    const answer = howAnswer(question, facts);
-    return [line("You", question), line("Atomik", answer.text, answer.offer ? { label: answer.offer.label, run: () => places.run(answer.offer!.action) } : null)];
-  }, [facts, line, places]);
+  const answerHow = useCallback((question: string): Line[] => [line("You", question), { ...line("Atomik", ""), how: question }], [line]);
   /* `&atomik=how` opens on the design's own question, answered from the table like any other. */
   const [local, setLocal] = useState<Line[]>(() => (mode === "how" ? answerHow(HOW_HINTS[0]) : []));
+  const askedHow = useRef(mode === "how");
+  useEffect(() => {
+    if (mode !== "how" || askedHow.current) return;
+    askedHow.current = true;
+    setLocal((all) => [...all, ...answerHow(HOW_HINTS[0])]);
+  }, [mode, answerHow]);
   const [memory, setMemory] = useState<Memory>(null);
   const [note, setNote] = useState<string | null>(null);
   /* A request handed over with the figure the person pressed (⌘K's "Ask · up to N cr"): sent once this turn's own quote is in, if it is no higher. */
@@ -146,12 +149,13 @@ function AtomikPanel({ mode, productionId }: { mode: AtomikMode; productionId: s
     else setNote(`This turn now costs ${priceWords(upTo(now)) ?? "more"}, not ${priceWords(upTo(autoSend))}. Press Ask to send it at the new price.`);
   }, [a, asking, autoSend, text]);
 
-  /* Esc closes the panel, after ⌘K and the right-click menu (the shell's own Esc closes those first). */
+  /* Words in the address (`&q=`): into the box once, then out of the address so a reload does not type them again. */
+  const { setScreenParams } = shell;
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !shell.palette && !shell.ctx) closeAtomikPanel(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shell.palette, shell.ctx]);
+    if (!query) return;
+    handAtomik(query);
+    setScreenParams({ q: null }, "replace");
+  }, [query, setScreenParams]);
 
   const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, loading: a.quoting, error: a.quoteError });
   const blocked = intent.kind === "ask" && !ready ? "Opening this project’s Atomik…" : null;
@@ -174,10 +178,10 @@ function AtomikPanel({ mode, productionId }: { mode: AtomikMode; productionId: s
   useEffect(() => { box.current?.scrollTo?.({ top: box.current.scrollHeight }); }, [local.length, a.messages.length, memory]);
 
   return (
-    <aside ref={aside} className="ak-panel" aria-label="Atomik" data-testid="atomik-panel-global" data-mode={mode}>
+    <aside ref={aside} className="ak-panel" aria-label="Atomik" data-testid="atomik-panel-global" data-mode={mode} data-wide={wide ? "" : undefined}>
       <div className="ak-head">
         <span className="ak-title"><span className="ak-spark" aria-hidden="true"><Glyph name="spark" size={16} /></span>Atomik</span>
-        <button type="button" className="ak-close" onClick={closeAtomikPanel} aria-label="Close Atomik" data-testid="atomik-panel-close">×</button>
+        <button type="button" className="ak-close" onClick={onClose} aria-label="Close Atomik" data-testid="atomik-panel-close">×</button>
       </div>
       <nav className="ak-links" aria-label="Control room">
         {CONTROL_PLACES.map((p) => {
@@ -193,13 +197,17 @@ function AtomikPanel({ mode, productionId }: { mode: AtomikMode; productionId: s
           </div>
         ) : null}
         {thread ? <ThreadLines onPick={setText} /> : null}
-        {local.map((l) => (
-          <div key={l.id} className="ak-msg" data-who={l.who} data-testid="atomik-line">
-            <span className="ak-eyebrow" data-who={l.who}>{l.who}</span>
-            <p className="ak-msg-text">{l.text}</p>
-            {l.offer ? <div className="ak-actions"><button type="button" className="ak-btn ak-btn-offer" onClick={l.offer.run} data-testid="atomik-offer">{l.offer.label}</button></div> : null}
-          </div>
-        ))}
+        {local.map((l) => {
+          const answer = l.how ? howAnswer(l.how, facts) : null;
+          const offer = answer ? (answer.offer ? { label: answer.offer.label, run: () => places.run(answer.offer!.action) } : null) : l.offer;
+          return (
+            <div key={l.id} className="ak-msg" data-who={l.who} data-testid="atomik-line">
+              <span className="ak-eyebrow" data-who={l.who}>{l.who}</span>
+              <p className="ak-msg-text">{answer ? answer.text : l.text}</p>
+              {offer ? <div className="ak-actions"><button type="button" className="ak-btn ak-btn-offer" onClick={offer.run} data-testid="atomik-offer">{offer.label}</button></div> : null}
+            </div>
+          );
+        })}
         {memory ? (
           <MemoryLine verb={memory.verb} subject={memory.subject} productionId={productionId}
             onCancel={() => setMemory(null)}

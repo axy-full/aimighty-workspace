@@ -1,25 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ATOMIK_PANEL_EVENT, readAtomik, type AtomikMode, type AtomikPanelDetail } from "@/lib/shell/atomik-panel";
 import { howFacts, type HowFacts } from "@/lib/shell/atomik-how";
 
-/**
- * Whether Atomik's panel is open, and how (`&atomik=1`, `&atomik=how`): read from the address on arrival, then from
- * the panel's own events (lib/shell/atomik-panel.ts › openAtomikPanel, closeAtomikPanel, askAtomik) and Back/Forward.
- */
-export function useAtomikPanelMode(): AtomikMode | null {
-  const [mode, setMode] = useState<AtomikMode | null>(() => (typeof window === "undefined" ? null : readAtomik(window.location.search)));
-  useEffect(() => {
-    const told = (event: Event) => setMode((event as CustomEvent<AtomikPanelDetail>).detail?.mode ?? null);
-    const moved = () => setMode(readAtomik(window.location.search));
-    window.addEventListener(ATOMIK_PANEL_EVENT, told);
-    window.addEventListener("popstate", moved);
-    return () => { window.removeEventListener(ATOMIK_PANEL_EVENT, told); window.removeEventListener("popstate", moved); };
-  }, []);
-  return mode;
-}
-
-/** At this width and up the panel is a 340 px column; below it the phone's Atomik sheet (stream 10) answers. */
+/** At this width and up the panel is a 340 px column; below it the phone's own Atomik sheet (stream 10) answers. */
 export const PANEL_FROM = 768;
 
 export function useWideEnough(): boolean {

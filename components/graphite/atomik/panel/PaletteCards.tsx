@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, type MutableRefObject } from "react";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
-import { askAtomik, askButton, thinkingLine, type AtomikIntent } from "@/lib/shell/atomik-panel";
+import { askButton, thinkingLine, type AtomikIntent } from "@/lib/shell/atomik-panel";
 import { usePriceTitle } from "../../Price";
+import { usePlaces } from "./use-places";
 import type { Project } from "@/lib/workbench/studio";
 
 /**
@@ -17,14 +18,15 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
   intent: Extract<AtomikIntent, { kind: "how" | "ask" | "memory" }>; project: Project | null; onClose: () => void; enterRef: Enter;
 }) {
   const production = project?.productionProjectId ?? null;
+  const places = usePlaces();
   /* The free quote of a new turn in this project's thread (the same route and body the panel's composer quotes). */
   const { quote, loading, error } = useAtomikQuote("/api/atomik", intent.kind === "ask" ? { text: intent.text, model: "auto", effort: "auto", projectId: production } : null);
   const credits = quote?.estimateCredits ?? null;
   const button = askButton(intent, { credits, loading, error });
   const title = usePriceTitle(button.price);
-  const press = () => { onClose(); askAtomik(intent.text, { send: true, approved: intent.kind === "ask" ? credits : null }); };
+  const press = () => { onClose(); places.ask(intent.text, { send: true, approved: intent.kind === "ask" ? credits : null }); };
   /* Enter answers a free line; a priced one goes to the panel unsent, where its button is pressed. */
-  useEffect(() => { enterRef.current = intent.kind === "ask" ? () => { onClose(); askAtomik(intent.text); } : press; });
+  useEffect(() => { enterRef.current = intent.kind === "ask" ? () => { onClose(); places.ask(intent.text); } : press; });
   return (
     <div className="ak-pcard" data-testid="palette-atomik-card" data-intent={intent.kind}>
       <span className="ak-eyebrow ak-accent">Atomik</span>

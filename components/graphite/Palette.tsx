@@ -7,7 +7,7 @@ import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useNewInterface } from "@/lib/shell/new-interface";
 import { STUDIO_RAIL } from "@/lib/board/regions";
-import { atomikIntent, matchPlace, openAtomikPanel, takePaletteQuery } from "@/lib/shell/atomik-panel";
+import { atomikIntent, matchPlace, takePaletteQuery } from "@/lib/shell/atomik-panel";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import { usePlaces } from "./atomik/panel/use-places";
@@ -117,7 +117,7 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
     switch (r.type) {
       case "home": places.home(); return;
       case "region": places.region(r.region); return;
-      case "atomik": openAtomikPanel("1"); return;
+      case "atomik": shell.openAtomik("panel"); return;
       case "control": places.control(r.page); return;
       case "settings": places.settings(r.section); return;
       case "gen": shell.openMake(r.tool); return;

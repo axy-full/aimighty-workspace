@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { PALETTE_ROWS, newPaletteIndex, paletteIndex, searchNewPalette, searchPalette } from "../../lib/shell/palette";
-import { askButton, atomikIntent, isHowQuestion, matchPlace, readAtomik, thinkingLine, withAtomik } from "../../lib/shell/atomik-panel";
+import { askButton, atomikIntent, isHowQuestion, matchPlace, thinkingLine } from "../../lib/shell/atomik-panel";
 import { selectBatch, type QueueItem } from "../../lib/control-room/queue";
 
 /*
@@ -87,15 +87,6 @@ test("the thinking line says what thinking may cost, or that a question is free"
   expect(thinkingLine(atomikIntent("how do I invite someone?"), null)).toBe("A question about Particl · answered free");
   expect(thinkingLine(atomikIntent("plan the film"), 24)).toBe("Atomik’s thinking may cost up to 24 cr · it plans and prices first; nothing is spent without your approval");
   expect(thinkingLine(atomikIntent("plan the film"), null)).not.toMatch(/\d/);
-});
-
-test("the panel's address: atomik=1 and atomik=how, set and cleared without touching the rest", () => {
-  expect(readAtomik("?view=board&atomik=1")).toBe("1");
-  expect(readAtomik("?atomik=how")).toBe("how");
-  expect(readAtomik("?atomik=yes")).toBeNull();
-  expect(withAtomik("?view=board&frame=g", "1")).toBe("?view=board&frame=g&atomik=1");
-  expect(withAtomik("?view=board&atomik=how", null)).toBe("?view=board");
-  expect(withAtomik("?atomik=1", null)).toBe("");
 });
 
 /* ⌘K's approve card reads the one queue (stream 8): what it covers is selectBatch's, never a list of its own. */
