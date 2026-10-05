@@ -170,6 +170,14 @@ test("Where to next? appears once every shot is approved: three cards that open 
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOTS}/where-to-next-${info.project.name.replace("workbench-", "")}.png` });
 
+  /* Crew review opens the existing Crew room; back on the board, the stills card opens Make's image panel. */
+  await cards.nth(2).getByTestId("board-next-crew").click();
+  await expect(page).toHaveURL(/view=crew/);
+  await page.goBack();
+  await expect(page.locator('[data-card-kind="next"]')).toHaveCount(3);
+  await page.mouse.move(700, 400);
+  await page.mouse.wheel(0, 260);
+  await page.waitForTimeout(400);
   await cards.nth(1).getByTestId("board-next-stills").click();
   await expect(page).toHaveURL(/make=image/);
   expect(withTakes.paid).toEqual([]);
