@@ -352,10 +352,10 @@ The owner's estimate for two people: the full scope by 26 February 2027.
 
 ## 10. Open decisions for the owner
 
-1. Header option A or B (design round, step 2).
-2. Cinema Studio 4.0 stays in Make, without the Higgsfield name (the owner's answer in D0 PR 2); it runs on the API key. Still open: how its price reads. Its quote is approximate and the take settles at 0.5 to 3 times it (`lib/cinemaStudio.ts`), so an honest "up to" is three times the quote. Either show "about N cr, at most 3N cr" and approve the 3N figure, or remove it.
+1. Header option A or B (design round, step 2). **Decided:** B (`docs/handoff-diff.md`, g).
+2. Cinema Studio 4.0 stays in Make, without the Higgsfield name (the owner's answer in D0 PR 2); it runs on the API key. Still open: how its price reads. Its quote is approximate and the take settles at 0.5 to 3 times it (`lib/cinemaStudio.ts`), so an honest "up to" is three times the quote. Either show "about N cr, at most 3N cr" and approve the 3N figure, or remove it. **Decided 5 October:** "about N cr, at most 3N cr".
 3. The final UI names (§3), confirmed in the design round.
-4. The spend-without-asking default. Today every paid step asks (Ask), and in Auto a draft at or under the per-job line runs without a tap; that line is guardrail 4, 200 cr (the owner's decision of 29 September). Suggested: Ask stays the default; admins can switch a workspace to Auto, with a lower line if they choose.
+4. The spend-without-asking default. Today every paid step asks (Ask), and in Auto a draft at or under the per-job line runs without a tap; that line is guardrail 4, 200 cr (the owner's decision of 29 September). Suggested: Ask stays the default; admins can switch a workspace to Auto, with a lower line if they choose. **Decided 5 October:** Ask stays the default; the per-job line stays `RIG_AGENT_JOB_CEILING_CREDITS` until U1, and becomes a workspace setting only if the owner asks.
 5. The sample production's content: invented and neutral, approved by the owner before it ships.
 6. Whether to make the repository private before P4.
-7. Whether Atomik's thinking costs credits. Today the planning turn is billed within a limit the person approves when asking (rule 14). Keep that, shown as one line under "What are we making?" ("Atomik's thinking: up to N cr"), or make thinking free up to a daily cap per workspace, with the cost carried by the margin.
+7. Whether Atomik's thinking costs credits. Today the planning turn is billed within a limit the person approves when asking (rule 14). Keep that, shown as one line under "What are we making?" ("Atomik's thinking: up to N cr"), or make thinking free up to a daily cap per workspace, with the cost carried by the margin. **Decided 5 October:** keep it billed, shown as "Start · up to N cr"; any member may press it as a person, and the price on the button is the approval. Agents and MCP never.
