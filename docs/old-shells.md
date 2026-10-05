@@ -76,12 +76,29 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 |---|---|---|---|---|---|
 | Studio overview, and the phone's Home (`?suite=particl&page=brief&sp=stages`, `sp=home`) | `components/graphite/mobile/StudioHome.tsx`, `components/graphite/mobile/SuiteHome.tsx` | Home, `?view=home` | `components/graphite/home/HomeView.tsx` | `components/graphite/home/routes.ts` | the switch-flip PR |
 | Studio stages and the Rig (`?suite=particl&page=brief\|boards\|cast\|astra\|rig\|takes\|edit\|deliver`) | `components/graphite/production/*`, `components/workspace/rig/*`, the Library and Inspector columns | The board, `?view=board` and its regions | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| Studio › Rig's graph, list and team presence (`?suite=particl&page=rig`, `&rig=list`) | `components/workspace/rig/RigPage.tsx`, `RigGraph.tsx`, `RigBoard.tsx`, `RigList.tsx`, `TeamPresence.tsx`, `RigAgentCard.tsx`, the Rig Inspectors; the graph and list parts of `rig.css` | The board and its List view (`&list=1`) | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| Studio › Rig's own library | `components/graphite/production/RigExtras.tsx` (`RigLibrary`) | The board's Library drawer | `components/graphite/board/drawers/Drawers.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` (still imported by `components/workbench/Studio.tsx`) | The board | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | with `/workbench`, in D1 |
 | Business pages (`?suite=moleculr&page=marketing&sp=…`) and Viral History | `components/graphite/business/*`, `components/graphite/viral/*` | The Ads and Social boards, `?view=board&kind=ads\|social` | `components/graphite/board/BoardView.tsx` (by kind) | `lib/shell/ads-social.ts` | the switch-flip PR |
 | Atomik's Agent page (`?suite=atomik&page=agent`) | `components/workspace/pages/*` (Agent) | Atomik's panel, `&atomik=1`, over any screen | `components/graphite/atomik/panel/AtomikPanel.tsx` | `components/graphite/atomik/panel/routes.ts` | the switch-flip PR |
 | Atomik's Runs, Approvals, Memory and Skills pages | `components/workspace/pages/*`, `components/graphite/atomik/*` | The control room, at the same addresses | `components/graphite/control-room/ControlRoom.tsx` | `lib/control-room/routes.ts` | the switch-flip PR |
 | Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx`, `components/management/*` | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
 | The phone's header, page strip and tab bar | `components/graphite/TabBar.tsx`, `phone.css`, the compact rows of `Header.tsx` and `StageStrip.tsx` | The phone's own screens, at compact widths or with `device=phone` | `components/graphite/phone/PhoneApp.tsx` | `components/graphite/phone/routes.ts` | the switch-flip PR |
 | Make's panel as it is today: `MakePanelToday` (Video · Images · Audio · Edit tabs, the controls under the composer, the Results grid), its engine sheet `components/graphite/ModelSheet.tsx` (used by nothing else), and the rules in `make.css` above its `.gx-mk` block | `components/graphite/MakePanel.tsx`, `ModelSheet.tsx`, `make.css` | Make as `design/particl-graphite/` draws it (README § 3.2), `components/graphite/make/*` | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR, with the specs that drive today's panel |
+
+The Rig's data layer stays when these go: `components/workspace/rig/RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are what the board reads. `RigImport.tsx` stays until the board shows an import.
+
+## `/suites` pieces the new interface replaces
+
+With the new interface switched on, these `/suites` pieces are not shown; with it off, customers still use them. They are deleted in the switch-flip PR.
+
+### Atomik: ⌘K, the panel and "Ask Atomik how"
+
+| Piece (switch off) | Rendered by | Replacement (switch on) | Tests that go with it |
+|---|---|---|---|
+| ⌘K's suite index (Generate, suites, stage pages, Crew pages, Workspace tabs) and its "Ask Atomik: …" row, which hands the words to the Agent page | `components/graphite/Palette.tsx` › `PaletteDialog`, `lib/shell/palette.ts` › `paletteIndex`, `searchPalette` | ⌘K as search and Atomik in one box: `AtomikPalette` in the same file, `newPaletteIndex`, `searchNewPalette`, the cards in `components/graphite/atomik/panel/` | `tests/unit/suitesShell.spec.ts` (palette cases), `tests/suites-shell-workbench.spec.ts` (palette cases) |
+| Atomik › Agent `?suite=atomik&page=agent` | `components/workspace/spec/tools/AtomikTool.tsx` (agent branch) → `components/suites/SuiteAgentPanel.tsx`, `components/atomik/threads/ThreadsPanel.tsx`, `ThreadSwitcher.tsx`, `threads.module.css` | Atomik's panel `&atomik=1` (`components/graphite/atomik/panel/AtomikPanel.tsx`) on the same thread engine (`components/atomik/AtomikProvider.tsx`); the plan card on the board. `SuiteAgentPanel` stays while `AtomikSuite`, `SubatomikWorkspace` and `Studio` import it | `tests/atomik-threads-workbench.spec.ts` (Agent page cases), `tests/suite-agent-workbench.spec.ts` |
+| The page's Atomik plan sheet and its gate row under the stage strip | `components/graphite/AtomikSheet.tsx`, `AtomikGate.tsx`, `lib/shell/atomik-sheet.ts` | Waiting runs reach people through the control room's Approvals and Atomik's panel; the stage pages they sit on retire with the board | `tests/suites-atomik-gate-workbench.spec.ts`, parts of `tests/unit/atomikNoAccount.spec.ts` and `tests/unit/suitesShellAudit.spec.ts` |
 
 ## Notes that change what D1 can delete
 

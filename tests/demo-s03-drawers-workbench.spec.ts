@@ -1,13 +1,16 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { SHOTS, desktop, node, seedBoard } from "./helpers/s03-board";
+import { SHOTS, desktop, grey, node, seedBoard } from "./helpers/s03-board";
 
 /*
  * Stream 3 · the board's drawers and what lands on it (README § 3.1 frames o and p, § 3.2 `made`): the Library
  * drawer's files and their drag onto a shot, History's rows and what a row does, a Make result landing in the "Made
  * in Make" band, and no live-room marks while the room is only saved. Nothing paid is sent.
  */
-const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const PNG = grey();
+/* On a fresh dev server the first upload makes it compile lazily loaded code, and its hot reload can reload the page
+   under the test (the page is then at its address again, with nothing uploaded). One retry runs it on the warm server. */
+test.describe.configure({ retries: 1 });
 const shot = (page: import("@playwright/test").Page, name: string) => {
   mkdirSync(SHOTS, { recursive: true });
   const size = page.viewportSize()!;
@@ -25,8 +28,11 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   await page.getByTestId("board-drawer-library").click();
   const library = page.getByTestId("board-library");
   const tile = library.locator(".bd-tile", { hasText: "market-stall" });
-  await expect(tile).toBeVisible();
+  
+  await expect(tile).toBeVisible({ timeout: 20_000 });
   await shot(page, "board-library-file");
+  /* Upload also puts a picture on the board as a free card, at the middle of the view. */
+  await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(1);
 
   /* The Images chip keeps it, Video drops it, Audio drops it. */
   await library.getByRole("button", { name: "Video", exact: true }).click();
@@ -39,6 +45,11 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   await rail(page);
   await tile.dragTo(page.locator('[data-card-id="node-shot0001"]'));
   await expect(page.getByText(/market-stall.* is a reference for Opening wide/)).toBeVisible();
+  /* A file let go on empty canvas is a free media card too. */
+  const empty = page.locator(".react-flow__pane");
+  const pane = (await empty.boundingBox())!;
+  await tile.dragTo(empty, { targetPosition: { x: pane.width - 260, y: pane.height - 330 } });
+  await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(2);
   expect(paid).toEqual([]);
 });
 
@@ -93,6 +104,7 @@ test("a Make result lands in the Made in Make band: the board glides to it, it i
   /* It glides there: the card is in view, and its shot keeps its own place in Shots. */
   await expect(made).toBeInViewport();
   await expect(page.locator('[data-card-id="node-shot0002"]')).toHaveCount(1);
+  await page.waitForTimeout(500);
   await shot(page, "board-made-lit");
   /* The light goes out by itself. */
   await expect(made).not.toHaveAttribute("data-lit", "true", { timeout: 6000 });
