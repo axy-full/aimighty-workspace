@@ -1,21 +1,8 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { forbidPaidWork } from "./helpers/workspaceFixtures";
-import { smallTargets } from "./phoneFloors";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 import { kindSectionId } from "../lib/workspace/rig-board";
 
-/**
- * Server-made changes appear live for everyone (plan §5, PR 5). The server
- * changes a production's team canvas through applyCanvasOps; its first user
- * is Tidy, which lays the board out for the whole team and is free. With no
- * live room (a local server has no Liveblocks key), every open Rig checks
- * every few seconds whether the server changed the canvas and folds it in,
- * naming Atomik as the one who did it. Real server throughout: two tabs of
- * one person, each its own Rig window, in the Suites (the site on every device).
- */
-const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const shot = (id: string, title: string, x: number, y: number, linked: string[] = []): CanvasNode => ({
   id, title, type: "scene", x, y, width: 238, linked, role: "Director", status: "draft", mode: "Video",
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
@@ -24,11 +11,7 @@ const shot = (id: string, title: string, x: number, y: number, linked: string[] 
 const board = () => [shot("a", "Harbour wide", 900, 700), shot("b", "The encounter", 100, 1200, ["a"]), shot("c", "Departure", 1500, 100)];
 /* Tidied by sections (lib/workspace/rig-board.ts): the Shots title made at (60,60), a (60,140), b (60,400), c (60,660), shots down
    their column in canvas order; on the graph, shifted to the top-left card (the title). */
-const SHOTS = kindSectionId("shots");
-const TIDIED = { a: { left: 20, top: 100 }, b: { left: 20, top: 360 }, c: { left: 20, top: 620 }, [SHOTS]: { left: 20, top: 20 } };
-const TIDIED_AT = { a: [60, 140], b: [60, 400], c: [60, 660], [SHOTS]: [60, 60] };
-const DRAFTED = { a: { left: 820, top: 620 }, b: { left: 20, top: 1120 }, c: { left: 1420, top: 20 } };
-
+const SHOTS = kindSectionId("shots");const TIDIED_AT = { a: [60, 140], b: [60, 400], c: [60, 660], [SHOTS]: [60, 60] };
 async function setUp(page: Page, name: string) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
@@ -40,56 +23,12 @@ async function setUp(page: Page, name: string) {
   return { draft, headers, productionId: productionProjectId };
 }
 
-/**
- * The Rig window's canvas, shown. A development server still compiling routes on their first use can reload an open
- * tab, and the Rig then opens on its list, which says "Team canvas" too: every step is retried together, so the canvas
- * is shown again rather than waited on.
- */
-async function showCanvas(tab: Page) {
-  const board = tab.getByTestId("rig-graph-surface");
-  await expect(async () => {
-    if (!(await board.isVisible())) await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
-    await expect(board).toBeVisible({ timeout: 5_000 });
-    await expect(tab.getByTestId("rig-team")).toContainText("Team canvas", { timeout: 5_000 });
-  }).toPass({ timeout: 60_000 });
-}
 
-/** One Rig window on the project's graph, joined to its team canvas. */
-async function openRig(tab: Page, draftId: string, errors: string[]) {
-  await forbidPaidWork(tab);
-  tab.on("pageerror", (error) => errors.push(error.message));
-  await tab.goto(`/suites?suite=studio&page=rig&project=${draftId}`);
-  await showCanvas(tab);
-}
 
-const places = (tab: Page) => tab.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node[data-node-id]"))
-  .map((el) => [el.dataset.nodeId!, { left: Number.parseFloat(el.style.left), top: Number.parseFloat(el.style.top) }])));
-/** The cards' places, read on the canvas: shown again first when a reload left the Rig on its list. */
-const shownPlaces = async (tab: Page) => { await showCanvas(tab); return places(tab); };
 const canvasOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, CanvasNode> } | null; server: { what: string } | null };
 
-const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
 
-/** Scrolls the board's pane until a control of its zoom cluster sits above a phone's fixed tab bar (the canvas shown again first, as showCanvas does). */
-async function reach(tab: Page, testId: string) {
-  const control = tab.getByTestId(testId);
-  await expect(async () => {
-    if (!(await tab.getByTestId("rig-graph-surface").isVisible())) await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click({ timeout: 5_000 });
-    await control.scrollIntoViewIfNeeded({ timeout: 5_000 });
-    await tab.evaluate((id) => {
-      const el = document.querySelector(`[data-testid="${id}"]`)!;
-      const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-      const floor = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : innerHeight;
-      const box = el.getBoundingClientRect();
-      if (box.bottom <= floor - 8) return;
-      let pane = el.parentElement;
-      while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
-      (pane ?? document.scrollingElement!).scrollTop += box.bottom - (floor - 8);
-    }, testId);
-  }).toPass({ timeout: 60_000 });
-  return control;
-}
 
 
 

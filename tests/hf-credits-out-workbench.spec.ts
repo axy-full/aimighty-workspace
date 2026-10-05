@@ -5,10 +5,7 @@ import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
-import { openSuitesMenu } from "./helpers/suitesMenu";
 import { newProject } from "../lib/workbench/studio";
-import { billCredits, marginKeyOf } from "../lib/creditTerms";
-import { estimateCostUsd } from "../lib/vendorPricing";
 
 /**
  * Idea 4 — a way out when credits run out. A take held at zero says what it
@@ -26,25 +23,14 @@ import { estimateCostUsd } from "../lib/vendorPricing";
  * this login's own tenant database. No mail key is set, so nothing is sent.
  * Screenshots are opt-in: CREDITS_OUT_SHOTS=<dir>.
  */
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.CREDITS_OUT_SHOTS;
-const SEEDANCE = "dreamina-seedance-2-0-260128";
-
 type Seeded = { workspaceId: string; userId: string; scope: string; production: string };
 
 async function platform<T>(fn: (db: ReturnType<typeof createClient>) => Promise<T>): Promise<T> {
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { return await fn(db); } finally { db.close(); }
-}
-async function tenant<T>(workspaceId: string, fn: (db: ReturnType<typeof createClient>) => Promise<T>): Promise<T> {
-  const url = await platform(async (db) => String((await db.execute({ sql: "SELECT db_url FROM workspaces WHERE id = ?", args: [workspaceId] })).rows[0].db_url));
-  expect(url).toMatch(/^file:/);
-  const db = createClient({ url, timeout: 10_000 });
-  try { return await fn(db); } finally { db.close(); }
-}
-const setRole = (workspaceId: string, role: "owner" | "admin" | "member") =>
+}const setRole = (workspaceId: string, role: "owner" | "admin" | "member") =>
   platform((db) => db.execute({ sql: "UPDATE memberships SET role=? WHERE workspace_id=?", args: [role, workspaceId] }));
 const grant = (workspaceId: string, credits: number) =>
   platform((db) => db.execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)", args: [randomUUID(), workspaceId, credits, "Credits out fixture", "manual", "test", Date.now()] }));
@@ -65,42 +51,7 @@ async function seed(page: Page): Promise<Seeded> {
 }
 const balanceOf = async (page: Page) => Number((await (await page.request.get("/api/me")).json()).credits.balance);
 
-/** Every held take here is this take: what the mock engine renders, and bills, once one is released. */
-const SHAPE = { ratio: "16:9", resolution: "720p", duration: 5 } as const;
 
-/** The engine dollars that bill exactly `needs` credits for a Seedance take (lib/creditTerms.ts billCredits). */
-function dollarsFor(needs: number): number {
-  const est = (needs - 0.5) / 15;
-  expect(billCredits(est, marginKeyOf("video", SEEDANCE))).toBe(needs);
-  return est;
-}
-
-/**
- * What SHAPE costs as the Generate route prices a take it holds (lib/generationAdmission.ts estimateCostUsd): its
- * engine dollars, and the credits they bill. The mock engine bills a released take by the same measure when its
- * render ends (lib/ark.ts mockTokensFor), so a take held at this price settles at what its release charged. A take
- * held at any other figure settles at this one instead, and the first jobs read that reconciles what is in flight
- * after the render ends (a reload's: app/api/jobs/route.ts) moves the balance in the middle of the test.
- */
-const RUN_USD = estimateCostUsd(SEEDANCE, SHAPE.resolution, SHAPE.ratio, SHAPE.duration)?.net ?? 0;
-const RUN = billCredits(RUN_USD, marginKeyOf("video", SEEDANCE));
-
-/** A take held at zero for credits, in this project, written as lib/held.ts parks one; priced to bill `needs` unless `estUsd` says otherwise. */
-async function heldTake(s: Seeded, title: string, needs: number, by: string, estUsd = dollarsFor(needs)) {
-  const id = `gen_held_${randomUUID().replaceAll("-", "")}`;
-  await tenant(s.workspaceId, (db) => db.execute({
-    sql: `INSERT INTO generations(id,model,prompt,title,params,status,kind,provider,billed_to,created_by,project_id,task,created_at,updated_at)
-          VALUES(?,?,?,?,?,'held','video','byteplus','byteplus',?,?,'generate',?,?)`,
-    args: [id, SEEDANCE, `${title}, a slow push in`, title, JSON.stringify({ ...SHAPE, watermark: false, held: { estUsd, needs, at: Date.now(), why: "credits" } }),
-      by, s.production, Date.now() - 60_000, Date.now() - 60_000],
-  }));
-  return id;
-}
-const takeRow = (s: Seeded, id: string) => tenant(s.workspaceId, async (db) =>
-  (await db.execute({ sql: "SELECT status, json_extract(params,'$.releasedAt') AS released FROM generations WHERE id=?", args: [id] })).rows[0]);
-const meterRows = (id: string) => platform(async (db) => (await db.execute({ sql: "SELECT billed_credits FROM meter_events WHERE id=?", args: [id] })).rows.map((r) => Number(r.billed_credits)));
-
-const tile = (scope: Locator, name: string) => scope.getByTestId("take-tile").filter({ hasText: name });
 
 async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no sideways scroll").toBeLessThanOrEqual(1);
@@ -189,8 +140,6 @@ async function whole(page: Page, selector: string) {
     .map((el) => `${(el.textContent ?? "").trim()} (${el.scrollWidth} > ${el.clientWidth})`), selector);
   expect(cut, `${selector}: every price whole`).toEqual([]);
 }
-const PRICES = '[data-testid="take-chip"], [data-testid="take-need"], [data-testid="take-release"], [data-testid="workspace-credits"]';
-
 async function shot(page: Page, info: TestInfo, name: string) {
   if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });

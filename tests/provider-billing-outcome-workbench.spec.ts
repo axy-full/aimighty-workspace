@@ -14,9 +14,7 @@ import type { TakeFailure } from "../lib/providerOutcome";
  * last one clears the phone's tab bar. Every reply is route-mocked; nothing
  * is paid.
  */
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const BASE = 1_790_000_000_000;
 
 const moderated: TakeFailure = { provider: "xai", stage: "run", code: "content_moderated", kind: "content_filter", message: null, billing: null, payer: "platform" };

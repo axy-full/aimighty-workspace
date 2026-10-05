@@ -100,7 +100,7 @@ export function Library({ project = null, items, library, projects = "ready", ov
         <span className="gx-panel-count">{shell.libTab === "tools" ? `${tools.toLocaleString("en-US")} ${tools === 1 ? "tool" : "tools"}` : `${assetCount} ${counted && items.length === 1 && !more ? "asset" : "assets"}`}</span>
         {overlay ? <button type="button" className="gx-hbtn gx-panel-close" onClick={shell.closePanels} data-testid="close-library">Close</button> : null}
       </div>
-{!libraryHasTools(shell.view, shell.suite.id, shell.page.id) ? null : (
+{!libraryHasTools(shell.view, shell.suite.id) ? null : (
             <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Library view">
         {(["tools", "assets"] as const).map((tab) => (
           <button key={tab} type="button" role="tab" className="gx-seg-btn" aria-selected={shell.libTab === tab} onClick={() => shell.setLibTab(tab)}>

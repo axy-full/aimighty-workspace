@@ -1,19 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { forbidPaidWork } from "./helpers/workspaceFixtures";
-import { dimLabels, smallTargets } from "./phoneFloors";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 
-/**
- * Atomik builds the board (plan PR 9). On the Suites Rig a person asks Atomik
- * for a board; Atomik proposes the cards and wires (a proposal card: free,
- * with any render shown as the priced next step, never run); the person
- * approves; the cards arrive live in every open Rig window; and Undo takes the
- * build off again, softly. Real local ENGINE_MOCK=1 server throughout: the
- * planner is the scripted mock through the real tools, nothing paid is sent,
- * and with no live room locally each window's 5-second check carries the cards.
- */
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const shot = (id: string, title: string, x: number, y: number): CanvasNode => ({
   id, title, type: "scene", x, y, width: 238, linked: [], role: "Director", status: "draft", mode: "Video",
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
@@ -30,82 +18,11 @@ async function setUp(page: Page, name: string) {
   return { draft, headers, productionId: productionProjectId };
 }
 
-/** One Rig window on the project's graph, joined to its team canvas; any paid request fails the test. */
-async function openRig(tab: Page, draftId: string, errors: string[], paid: string[]) {
-  await forbidPaidWork(tab);
-  tab.on("pageerror", (error) => errors.push(error.message));
-  tab.on("request", (request) => {
-    const url = new URL(request.url());
-    if (request.method() !== "GET" && /^\/api\/(generate|jobs|workbench\/atomik|atomik|workbench\/development)(\/|$)/.test(url.pathname)) paid.push(`${request.method()} ${url.pathname}`);
-  });
-  await tab.goto(`/suites?suite=studio&page=rig&project=${draftId}`);
-  await expect(tab.getByTestId("rig-team")).toContainText("Team canvas");
-  await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  await expect(tab.getByTestId("rig-graph-surface")).toBeVisible();
-}
 
-/**
- * The graph view, even after a cold dev server hot-reloaded the tab (compiling for the other tab can reload this one,
- * which puts it back on the list). A reload keeps the project: the canvas and the run are the server's.
- */
-async function onCanvas(tab: Page) {
-  const surface = tab.getByTestId("rig-graph-surface");
-  if (await surface.isVisible()) return;
-  await expect(tab.getByTestId("rig-team")).toContainText("Team canvas");
-  await tab.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  await expect(surface).toBeVisible();
-}
-const cardIds = async (tab: Page) => {
-  await onCanvas(tab);
-  return tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node[data-node-id]")).map((el) => el.dataset.nodeId!).sort());
-};
-const kindsOn = async (tab: Page) => {
-  await onCanvas(tab);
-  return tab.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".pxw-graph-node .pxw-graph-kind")).map((el) => el.textContent!.trim()).sort());
-};
 const canvasOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, CanvasNode>; removedIds: string[]; serverMade: Record<string, string> } | null };
 const agentOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1`, { headers }).then((r) => r.json())) as { agent: { enabled: boolean; run: { id: string; state: string; proposal: { fingerprint: string } | null; built: { cards: number; wires: number }; undo: { removed: number; kept: number } | null; credits: number } | null; ask?: unknown } };
-const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
-/** Every text in the run card at 12px or more. */
-const smallInCard = (tab: Page) => tab.evaluate(() => {
-  const out: string[] = [];
-  const root = document.querySelector('[data-testid="rig-agent"]');
-  if (!root) return ["no card"];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const el = node.parentElement;
-    if (!(node.textContent ?? "").trim() || !el || !el.getClientRects().length) continue;
-    const size = Number.parseFloat(getComputedStyle(el).fontSize);
-    if (size < 12) out.push(`${size}px: ${(node.textContent ?? "").trim().slice(0, 30)}`);
-  }
-  return out;
-});
-
-/** Scrolls the stage until a control sits above a phone's fixed tab bar, then answers it. */
-async function reach(tab: Page, testId: string) {
-  const control = tab.getByTestId(testId);
-  await control.scrollIntoViewIfNeeded();
-  await tab.evaluate((id) => {
-    const el = document.querySelector(`[data-testid="${id}"]`)!;
-    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-    const floor = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : innerHeight;
-    const box = el.getBoundingClientRect();
-    if (box.bottom <= floor - 8) return;
-    let pane = el.parentElement;
-    while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
-    (pane ?? document.scrollingElement!).scrollTop += box.bottom - (floor - 8);
-  }, testId);
-  return control;
-}
-
-async function floors(tab: Page, where: string, phone: boolean) {
-  expect(await noSideways(tab), `${where}: no sideways scroll`).toBe(true);
-  expect(await smallInCard(tab), `${where}: text under 12px`).toEqual([]);
-  expect(await dimLabels(tab, '[data-testid="rig-agent"]'), `${where}: labels under #7C7C84`).toEqual([]);
-  if (phone) expect(await smallTargets(tab, '[data-testid="rig-agent"]'), `${where}: targets under 44×44`).toEqual([]);
-}
 
 
 test("the Atomik build API: free, checked, scoped to this workspace and production; approve only as shown; undo once", async ({ page }, info) => {

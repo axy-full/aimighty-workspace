@@ -1,25 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { forbidPaidWork } from "./helpers/workspaceFixtures";
-import { dimLabels, smallTargets } from "./phoneFloors";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 
-/**
- * Atomik renders drafts inside a limit a person approved (plan PR 10). On the
- * Suites Rig a person asks Atomik for a board with a limit for the run ("up to
- * about N cr") and a mode; Atomik plans inside that limit (the planning turn is
- * metered into it), builds the board once approved, and then renders each shot
- * the plan names as a draft: in Ask mode after one tap each, in Auto on its own
- * while a render is at or under the per-job line. A render that would pass the
- * limit waits for a person ("needs you"); Stop lets go of everything not sent.
- *
- * Real local ENGINE_MOCK=1 server throughout: the planner is the scripted mock,
- * renders are the mock engine, the browser never sends a paid request itself
- * (every render is admitted by Atomik's worker, server-side), and the balance
- * read back from the server moves by exactly what the card says settled.
- */
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const DESKS = ["workbench-1440x900", "workbench-1920x1080"];
 const shot = (id: string, title: string, x: number, y: number): CanvasNode => ({
   id, title, type: "scene", x, y, width: 238, linked: [], role: "Director", status: "draft", mode: "Video",
   engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
@@ -44,92 +26,10 @@ async function setUp(page: Page, name: string) {
   return { draft, headers, productionId: productionProjectId };
 }
 
-/** One Rig window on the project, joined to its team canvas; any paid request from the browser fails the test. */
-async function openRig(tab: Page, draftId: string, errors: string[], paid: string[]) {
-  await forbidPaidWork(tab);
-  tab.on("pageerror", (error) => errors.push(error.message));
-  tab.on("request", (request) => {
-    const url = new URL(request.url());
-    if (request.method() !== "GET" && /^\/api\/(generate|jobs|workbench\/atomik|atomik|workbench\/development)(\/|$)/.test(url.pathname)) paid.push(`${request.method()} ${url.pathname}`);
-  });
-  await tab.goto(`/suites?suite=studio&page=rig&project=${draftId}`);
-  await expect(tab.getByTestId("rig-team")).toContainText("Team canvas");
-}
 
 const agentOf = async (api: APIRequestContext, headers: Record<string, string>, productionId: string, projectId?: string) =>
   (await api.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1${projectId ? `&projectId=${projectId}` : ""}`, { headers }).then((r) => r.json())) as Agent;
-const balanceOf = async (api: APIRequestContext) => Number((await (await api.get("/api/me")).json()).credits.balance);
-const cr = (n: number) => `${Math.round(n * 10) % 10 ? (Math.round(n * 10) / 10).toLocaleString("en-US", { minimumFractionDigits: 1 }) : Math.round(n).toLocaleString("en-US")} cr`;
-const noSideways = (tab: Page) => tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5);
-/** Every text in the run card at 12px or more. */
-const smallInCard = (tab: Page) => tab.evaluate(() => {
-  const out: string[] = [];
-  const root = document.querySelector('[data-testid="rig-agent"]');
-  if (!root) return ["no card"];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const el = node.parentElement;
-    if (!(node.textContent ?? "").trim() || !el || !el.getClientRects().length) continue;
-    const size = Number.parseFloat(getComputedStyle(el).fontSize);
-    if (size < 12) out.push(`${size}px: ${(node.textContent ?? "").trim().slice(0, 30)}`);
-  }
-  return out;
-});
-/** No price in the card is cut short: nothing that shows credits is ellipsized or clipped. */
-const clippedPrices = (tab: Page) => tab.evaluate(() => {
-  const out: string[] = [];
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-testid="rig-agent"] *'))) {
-    if (!/\d\s?cr\b/.test(el.textContent ?? "") || el.children.length) continue;
-    const style = getComputedStyle(el);
-    if (style.textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 0.5) out.push(`ellipsized: ${el.textContent}`);
-    if (el.scrollWidth > el.clientWidth + 0.5 && ["hidden", "clip"].includes(style.overflowX)) out.push(`clipped: ${el.textContent}`);
-  }
-  return out;
-});
 
-/** Scrolls the stage until a control sits above a phone's fixed tab bar, then answers it. */
-async function reach(tab: Page, testId: string, within?: string) {
-  const control = within ? tab.getByTestId(within).getByTestId(testId) : tab.getByTestId(testId);
-  await control.scrollIntoViewIfNeeded();
-  await tab.evaluate(({ id, within }) => {
-    const scope = within ? document.querySelector(`[data-testid="${within}"]`) : document;
-    const el = scope?.querySelector(`[data-testid="${id}"]`);
-    if (!el) return;
-    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-    const floor = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : innerHeight;
-    const box = el.getBoundingClientRect();
-    if (box.bottom <= floor - 8) return;
-    let pane = el.parentElement;
-    while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
-    (pane ?? document.scrollingElement!).scrollTop += box.bottom - (floor - 8);
-  }, { id: testId, within });
-  return control;
-}
-
-async function floors(tab: Page, where: string, phone: boolean) {
-  expect(await noSideways(tab), `${where}: no sideways scroll`).toBe(true);
-  expect(await smallInCard(tab), `${where}: text under 12px`).toEqual([]);
-  expect(await dimLabels(tab, '[data-testid="rig-agent"]'), `${where}: labels under #7C7C84`).toEqual([]);
-  expect(await clippedPrices(tab), `${where}: prices cut short`).toEqual([]);
-  if (phone) expect(await smallTargets(tab, '[data-testid="rig-agent"]'), `${where}: targets under 44×44`).toEqual([]);
-}
-
-/** Ask for a board in the card with this limit and mode; approve the proposal. Answers the run's id. */
-async function askAndBuild(page: Page, input: { goal: string; limit?: number; mode?: "ask" | "auto"; phone: boolean; name: string }) {
-  const card = page.getByTestId("rig-agent");
-  await expect(card).toBeVisible();
-  await expect(card.getByTestId("rig-agent-terms")).toContainText("Planning is priced and counts toward this limit (up to about ");
-  await (await reach(page, "rig-agent-goal")).fill(input.goal);
-  const field = await reach(page, "rig-agent-limit");
-  if (input.limit != null) await field.fill(String(input.limit));
-  if (input.mode === "auto") await (await reach(page, "rig-agent-mode-auto")).click();
-  await floors(page, `${input.name}: ask`, input.phone);
-  await (await reach(page, "rig-agent-propose")).click();
-  await expect(card.getByTestId("rig-agent-proposal")).toBeVisible({ timeout: 30_000 });
-  await expect(card.getByTestId("rig-agent-approve")).toHaveText("Build · free");
-  await floors(page, `${input.name}: proposal`, input.phone);
-  await (await reach(page, "rig-agent-approve")).click();
-}
 
 
 

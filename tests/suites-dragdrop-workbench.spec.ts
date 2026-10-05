@@ -41,17 +41,6 @@ async function dropFiles(target: Locator, files: { name: string; type: string; b
     for (const type of ["dragenter", "dragover", "drop"]) el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
   }, files);
 }
-/** A tile dragged onto a target: the drag layer writes the payload on dragstart, the target reads it on drop. */
-async function dragOnto(source: Locator, target: Locator) {
-  const handle = await source.page().evaluateHandle(() => new DataTransfer());
-  await source.dispatchEvent("dragstart", { dataTransfer: handle });
-  await target.dispatchEvent("dragenter", { dataTransfer: handle });
-  await target.dispatchEvent("dragover", { dataTransfer: handle });
-  await target.dispatchEvent("drop", { dataTransfer: handle });
-  await source.dispatchEvent("dragend", { dataTransfer: handle });
-  return handle;
-}
-
 
 test("Gen's well takes a picture straight from the desktop as a reference", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop: HTML drag and drop");

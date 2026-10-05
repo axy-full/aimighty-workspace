@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
+import { test, expect, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -39,26 +39,10 @@ async function shot(page: Page, name: string, project: string) {
   mkdirSync(SHOTS, { recursive: true });
   await settle(page);
   await page.screenshot({ path: join(SHOTS, `role-${name}-${size}.png`) });
-}
-/** React has attached to the element: a click before that is lost on a cold server. */
-async function hydrated(target: Locator) {
-  await expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
-}
-async function noSideScroll(page: Page) {
+}async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
   for (const card of await page.locator(".gx-owner-run").all()) expect(await card.evaluate((el) => el.scrollWidth - el.clientWidth), "owner card keeps its content inside").toBeLessThanOrEqual(1);
-}
-/** On a phone every button in `scope` is a whole 44px target. */
-async function fingerSized(scope: Locator, project: string) {
-  if (!PHONES.includes(project)) return;
-  for (const button of await scope.getByRole("button").all()) {
-    const box = await button.boundingBox();
-    expect(box, await button.innerText()).not.toBeNull();
-    expect(Math.round(box!.height), await button.innerText()).toBeGreaterThanOrEqual(44);
-    expect(Math.round(box!.width), await button.innerText()).toBeGreaterThanOrEqual(44);
-  }
-}
-function watch(page: Page) {
+}function watch(page: Page) {
   const consumer: string[] = [];
   const errors: string[] = [];
   page.on("request", (request) => { if (CONSUMER.test(request.url())) consumer.push(`${request.method()} ${new URL(request.url()).pathname}`); });

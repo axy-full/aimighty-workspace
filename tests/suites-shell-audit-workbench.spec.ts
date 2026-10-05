@@ -1,9 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
+import { openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands

@@ -53,8 +53,6 @@ const assets = async (page: Page, info: TestInfo) => {
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
 };
 const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);
-const deskTile = (page: Page, name: string) => page.getByTestId("takes-grid").getByTestId("take-tile").filter({ has: page.getByText(name, { exact: true }) });
-
 /**
  * The functional labels in `scope` that read dimmer than #7C7C84 as they land on the screen, not as they are written. A port
  * of the alpha-aware dimLabels in the phone chrome change, kept in this spec so the two don't collide: tests/phoneFloors.ts's

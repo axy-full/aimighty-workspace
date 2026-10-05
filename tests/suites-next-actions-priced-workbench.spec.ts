@@ -136,9 +136,7 @@ const assets = async (page: Page, info: TestInfo) => {
   if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
 };
-const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);
-const deskTile = (page: Page, name: string) => page.getByTestId("takes-grid").getByTestId("take-tile").filter({ has: page.getByText(name, { exact: true }) });
-async function inspect(page: Page, info: TestInfo, id: string) {
+const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);async function inspect(page: Page, info: TestInfo, id: string) {
   await assets(page, info);
   await tile(page, id).click();
   return page.getByTestId("inspector");

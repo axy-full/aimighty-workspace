@@ -9,7 +9,7 @@ export const SECTION_EVENT = "particl:production-section";
  * the old bodies, so a row there would lead nowhere); Studio has only Home (the overview and the
  * phone's picker), and the board carries its own Library drawer. There the Library is its Assets.
  */
-export function libraryHasTools(view: string, suite: string, _page?: string): boolean {
+export function libraryHasTools(view: string, suite: string): boolean {
   if (view === "make" || view === "gen") return false;
   if (suite === "business" || suite === "viral") return false;
   return suite !== "studio";

@@ -25,8 +25,6 @@ const SHOTS = process.env.PHONE_CHROME_SHOTS;
 const REPORT = process.env.PHONE_CHROME_REPORT;
 const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
 const PHONES = [...PORTRAIT, "workbench-844x390"];
-const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
-
 /* CI and Android fallback faces can be wider than the local macOS font: PHONE_CHROME_WIDE_FONT sets a wide sans on
    everything. An init script can run before the document has its root element, so the face goes in as soon as there
    is one. */
@@ -503,41 +501,4 @@ test("phone: rotation keeps the current page visible without moving the page sid
   }
 });
 
-/** Where the desktop chrome sits: the parts that do not depend on a font's widths. */
-function desktopChrome(page: Page) {
-  return page.evaluate(() => {
-    const out: Record<string, number[] | null> = {};
-    const r1 = (n: number) => Math.round(n * 10) / 10;
-    for (const [name, selector, whole] of [
-      ["header", ".gx-header", true], ["strip", ".gx-strip", true], ["project", ".gx-project", true], ["pagehead", ".gx-main > .gx-pagehead", true],
-      ["content", "[data-testid='content']", true], ["library", "[data-testid='library']", true], ["avatar", "[data-testid='workspace-avatar']", true],
-      ["brand", ".gx-brand", false], ["badge", "[data-testid='suite-mark']", false], ["suites", ".gx-header .gx-seg", false], ["search", "[data-testid='header-search']", false],
-      ["credits", "[data-testid='workspace-credits']", false], ["title", "[data-testid='page-title']", false], ["views", ".gx-pagehead .gx-seg", false],
-      ["inspector", "[data-testid='toggle-inspector']", false], ["primary", "[data-testid='primary-action']", false],
-      ["make", "[data-testid='make-panel']", true],
-    ] as const) {
-      const el = document.querySelector<HTMLElement>(selector);
-      const r = el && el.getClientRects().length ? el.getBoundingClientRect() : null;
-      /* A box whose width is its words' is pinned by its top and height only. */
-      out[name] = r ? (whole ? [r1(r.left), r1(r.top), r1(r.width), r1(r.height)] : [r1(r.top), r1(r.height)]) : null;
-    }
-    return out;
-  });
-}
 
-/* The desktop chrome on Graphite's hairline grid, for the two desktops: a 56px header and a 46px strip edge to edge,
-   then Library 280 | stage | Inspector 320 with 1px gaps. W and H are the viewport. */
-const desktopGrid = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
-  const suite = {
-    header: [0, 0, W, 56], strip: [0, 56, W, 46], project: [281, 102, W - 602, 75], pagehead: [281, 177, W - 602, 66.7],
-    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 46, 11.5, 32, 32],
-    brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
-  };
-  return {
-    rig: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34], make: null },
-    /* Studio › Takes filters on its own desk, so its page head has no view segment. */
-    takes: { ...suite, views: null, inspector: [193.8, 32], primary: null, make: null },
-    /* Make is a 440px panel over the page (here Rig), from under the header to the foot; the page's chrome stays as it is. */
-    gen: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34], make: [W - 440, 56, 440, H - 56] },
-  };
-};

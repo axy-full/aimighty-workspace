@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project, type Asset } from "../lib/workbench/studio";
 import { ASTRA_BLENDER_MODEL, createAstraScene } from "../lib/astra-blender/scene";
 import type { AstraRenderJob, AstraRenderRuntime } from "../lib/astra-blender/render-contract";
-import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { legacyShell } from "./helpers/legacyShell";
 
 /**
@@ -60,22 +60,9 @@ async function mockAstra(page: Page, current: Project) {
   await page.route("**/api/workbench/astra-blender/render**", (route) => (route.request().method() === "GET" ? route.fulfill({ json: { runtime: READY, jobs: history } }) : route.fulfill({ status: 409, json: { error: "No render is started from the floors fixture." } })));
 }
 
-type Host = { root: string; pane: string | null };
-const SUITES: Host = { root: "[data-tool-body='astra']", pane: "[data-testid='content']" };
-/* AstraStudio's own root in the old shell: its toolbar and the workspace. */
+type Host = { root: string; pane: string | null };/* AstraStudio's own root in the old shell: its toolbar and the workspace. */
 const LEGACY: Host = { root: ".stage-scroll:has(> section[aria-label='Astra'])", pane: null };
 
-async function openSuites(page: Page) {
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  const current = project();
-  await mockProjects(page, { current });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  await mockAstra(page, current);
-  await page.goto(`/suites?suite=studio&page=astra&project=${current.id}`);
-  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");
-}
 
 async function openLegacy(page: Page) {
   await signInLocally(page.request);

@@ -1,6 +1,6 @@
 import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { moreTakes } from "./helpers/genTakes";
@@ -16,7 +16,6 @@ import { newProject, type Asset, type Project } from "../lib/workbench/studio";
  * ENGINE_MOCK server; nothing here is billed.
  */
 
-const DESKTOP = "workbench-1440x900";
 type Node = Project["nodes"][number];
 type Read = { project: Project; revision: number };
 
@@ -106,71 +105,9 @@ async function controls(page: Page) {
   if (await tabs.getByRole("button", { name: /Controls/ }).count()) await tabs.getByRole("button", { name: /Controls/ }).click();
 }
 const directionNote = (page: Page) => page.getByRole("textbox", { name: "Direction note" });
-const rigSaved = (page: Page) => expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved", { timeout: 60_000 });
-const UNDO = process.platform === "darwin" ? "Meta+z" : "Control+z";
-const castEntry = (p: Project) => { p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] }; };
+const rigSaved = (page: Page) => expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved", { timeout: 60_000 });const castEntry = (p: Project) => { p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] }; };
 
-/** Every toast the page shows, in order. */
-async function watchToasts(page: Page) {
-  const seen: string[] = [];
-  await page.exposeFunction("__mergeToast", (text: string) => { seen.push(text); });
-  await page.addInitScript(() => {
-    const shown = new Set<string>();
-    const look = () => { const text = document.querySelector('[data-testid="toast"]')?.textContent ?? ""; if (text && !shown.has(text)) { shown.add(text); (window as unknown as { __mergeToast: (t: string) => void }).__mergeToast(text); } };
-    const start = () => new MutationObserver(look).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-    if (document.documentElement) start(); else document.addEventListener("DOMContentLoaded", start);
-  });
-  return seen;
-}
 
-/**
- * Arms the page's next PUT: it reaches the server and lands; another window
- * then reads what landed and saves `edit` on top of it; then the page's reply
- * is lost. `other` holds what that window saved.
- */
-async function loseNextReply(page: Page, read: () => Promise<Read>, put: (p: Project, revision: number) => Promise<{ ok(): boolean; text(): Promise<string> }>, edit: (landed: Project) => Project) {
-  const state = { armed: false, landed: null as Project | null, other: null as Project | null };
-  await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-    if (route.request().method() !== "PUT" || !state.armed) return route.continue();
-    state.armed = false;
-    await route.fetch();
-    const now = await read();
-    state.landed = structuredClone(now.project);
-    state.other = edit(structuredClone(now.project));
-    const answer = await put(state.other, now.revision);
-    expect(answer.ok(), await answer.text()).toBe(true);
-    return route.abort("internetdisconnected");
-  });
-  return state;
-}
-
-/** Another project in the same workspace (the plan allows several), and reads of any project. */
-async function more(page: Page, headers: Record<string, string>) {
-  const account = await page.request.get("/api/me").then((r) => r.json()) as { workspace?: { id?: string } };
-  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
-  try { if (account.workspace?.id) await platform.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [account.workspace.id] }); } finally { platform.close(); }
-  const create = async (name: string, shape: (p: Project) => void) => {
-    const p = newProject(name);
-    shape(p);
-    const saved = await page.request.put("/api/workbench/projects", { headers, data: { project: p, revision: 0 } });
-    expect(saved.ok(), await saved.text()).toBe(true);
-    return p;
-  };
-  const readOf = async (id: string): Promise<Read> => page.request.get(`/api/workbench/projects?id=${id}`, { headers }).then((r) => r.json());
-  const elsewhereOn = async (id: string, edit: (p: Project) => void) => {
-    const now = await readOf(id);
-    const next = structuredClone(now.project);
-    edit(next);
-    const answer = await page.request.put("/api/workbench/projects", { headers, data: { project: next, revision: now.revision } });
-    expect(answer.ok(), await answer.text()).toBe(true);
-  };
-  const canvasOf = async (productionId: string) => (await page.request.get(`/api/workbench/team-canvas?productionId=${encodeURIComponent(productionId)}`, { headers }).then((r) => r.json())) as { canvas: { nodes: Record<string, Node> } | null };
-  return { create, readOf, elsewhereOn, canvasOf };
-}
-async function pick(page: Page, name: string) {
-  await page.getByTestId("project-switcher").click();
-  await page.getByRole("listbox", { name: "Projects" }).getByRole("option", { name: new RegExp(name) }).click();
-}
 
 
 /* ── The Rig and a Studio stage, whichever save lands first ─────────────── */
@@ -672,30 +609,6 @@ test("Gen: a batch's shot saved while other saves land before and on top of it �
 
 /* ── Break hunt, 26 September, round 2 ─────────────────────────────────── */
 
-const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n";
-/** Storyboards opens on a beat sheet. */
-function withBeats(p: Project) {
-  p.script = SCRIPT;
-  const sha256 = createHash("sha256").update(SCRIPT).digest("hex");
-  p.production = {
-    ...p.production,
-    scriptApproval: { at: new Date().toISOString(), source: "hand", sha256 },
-    beats: { scriptSha256: sha256, updatedAt: new Date().toISOString(), scenes: [
-      { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [{ id: "shot-a1", description: "The fox on the ice", framing: "Wide", movement: "Static", lighting: "Dusk", sound: "Wind" }], characters: [], locations: [], props: [] },
-    ] },
-  } as Project["production"];
-}
-const lineDrawing = (): Asset => ({ id: `drawing_${randomUUID().slice(0, 8)}`, name: "window.png", kind: "image", category: "Line drawing", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] } as Asset);
-async function openDrawings(page: Page, project: Project) {
-  await page.goto(`/suites?suite=studio&page=boards&project=${project.id}`);
-  await expect(page.getByTestId("boards-stage")).toBeVisible({ timeout: 60_000 });
-  const item = page.getByTestId("line-drawing").first();
-  await expect(item).toBeVisible({ timeout: 60_000 });
-  await hydrated(item.getByTestId("drawing-delete"));
-  await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 30_000 });
-  return item;
-}
-
 
 test("Marketing: preparing the same hook variants in two windows prepares each once", async ({ page, context }) => {
   const hero: Asset = { id: `product_${randomUUID().slice(0, 8)}`, name: "bottle.png", kind: "image", category: "Product", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] } as Asset;
@@ -803,22 +716,6 @@ for (const c of [
 
 
 
-/** The page's next save: three PUTs fail (503) before reaching the draft; the fourth lands, another window edits on top, and its reply is lost. */
-async function flakyThenLost(page: Page, read: () => Promise<Read>, put: (p: Project, revision: number) => Promise<{ ok(): boolean; text(): Promise<string> }>, edit: (landed: Project) => Project) {
-  const state = { armed: false, puts: 0, other: null as Project | null };
-  await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-    if (route.request().method() !== "PUT" || !state.armed) return route.continue();
-    state.puts++;
-    if (state.puts <= 3) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Service unavailable" }) });
-    state.armed = false;
-    await route.fetch();
-    const now = await read();
-    state.other = edit(structuredClone(now.project));
-    expect((await put(state.other, now.revision)).ok()).toBe(true);
-    return route.abort("internetdisconnected");
-  });
-  return state;
-}
 
 
 

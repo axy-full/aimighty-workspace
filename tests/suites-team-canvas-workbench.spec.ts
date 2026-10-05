@@ -1,8 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
-import { applyTeamPatch, emptyTeamCanvas, orderedIds, type TeamCanvas } from "../lib/workbench/team-canvas-model";
-import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
  * One shared Rig canvas per production (owner, 2026-09-24). The team canvas
@@ -44,20 +43,6 @@ test("the team canvas API: a saved production's canvas is merged per node and ke
   expect((await request.post("/api/collab/auth", { headers, data: { room: `particl:${me.workspace.id}:${productionProjectId}` } })).status()).toBe(503);
 });
 
-/** The team canvas route, in memory, with the server's own merge. */
-async function mockTeamCanvas(page: Page, canvas: TeamCanvas) {
-  const store = { canvas, patches: [] as { upsertNodes: CanvasNode[]; removeNodes: string[]; order: string[] | null }[] };
-  await page.route("**/api/workbench/team-canvas**", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET")
-      return route.fulfill({ json: { canvas: { nodes: store.canvas.nodes, assets: store.canvas.assets, order: orderedIds(store.canvas), removedIds: Object.keys(store.canvas.removed) }, revision: store.patches.length + 1, room: null } });
-    const body = request.postDataJSON();
-    store.patches.push(body);
-    store.canvas = applyTeamPatch(store.canvas, { ...body, at: Date.now() });
-    return route.fulfill({ json: { revision: store.patches.length + 1 } });
-  });
-  return store;
-}
 
 
 test("an edit made just before the page reloads still reaches the team canvas, so the next open does not undo it", async ({ page }, info) => {

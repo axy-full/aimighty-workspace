@@ -516,7 +516,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const value = useMemo<Shell>(() => ({
     /* Where a page has no tools of its own (Make open over it, the Business and Viral composers, the phone's
        Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
     goProject,
