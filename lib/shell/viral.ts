@@ -42,7 +42,7 @@ export const VIRAL_COPY = {
     title: "Motion Transfer",
     intro: "Take the motion from a source video and recast it with your own cast, location and product. Anything you do not describe stays exactly as filmed.",
     promptLabel: "Creative direction · optional",
-    promptPlaceholder: "Recast with @Mira on the mirrored dunes at golden hour…",
+    promptPlaceholder: "Recast with @your cast in a new location at golden hour…",
     verb: "Transfer motion",
   },
   swap: {

@@ -106,7 +106,7 @@ async function noBadges(page: Page) {
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  for (const suite of ["business", "viral"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  for (const tab of await page.locator("[data-suite-tab]").all()) expect(await tab.getAttribute("aria-describedby")).toBeNull();
   await closeSuitesMenu(page);
 }
 
@@ -152,7 +152,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await shot(page, "image-ads-owner", project);
 
   /* Gen on Images: Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
-  await page.goto(`/suites?view=gen&project=${film.id}`);
+  await page.goto(`/suites?make=video&project=${film.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
   const output = page.getByRole("tablist", { name: "Output" });
   await output.getByRole("tab", { name: "Images" }).click();
@@ -164,7 +164,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
   await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   await noSideScroll(page);
   await shot(page, "gen-owner-sheet", project);
   await sheet.getByRole("button", { name: "Close" }).click();
@@ -175,17 +175,14 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   expect(new Set(tops.map((y) => Math.round(y))).size, "one row of tabs").toBe(1);
   if (PHONES.includes(project)) for (const tab of tabs) expect((await tab.boundingBox())!.width).toBeGreaterThanOrEqual(44);
 
-  /* Viral runs on Particl's API key: the page is the composer, with its stage's plan to run too. */
+  /* Viral runs on Particl's API key: Motion transfer is Make's quick tool (the old page's link lands on it), the composer
+     with its button; nothing says the account runs it. */
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
-  await expect(page.getByTestId("primary-action")).toBeVisible();
-  if (WIDE.includes(project)) {
-    /* The stage's Atomik plan is on the key (#470): the Inspector offers it, and nothing says the account runs it. */
-    await expect(page.getByTestId("spec-plan")).toBeVisible();
-    await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
-  }
+  await expect(page.getByTestId("viral-generate")).toBeVisible();
+  await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
   await noSideScroll(page);
   await shot(page, "viral-owner", project);
 
@@ -260,7 +257,7 @@ test("an old sp=ads link shows image-ads-view for a member too, Setup names no o
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
-  await expect(page.getByTestId("primary-action")).toBeVisible();
+  await expect(page.getByTestId("viral-generate")).toBeVisible();
   await noBadges(page);
   await noSideScroll(page);
   await shot(page, "viral-member", info.project.name);

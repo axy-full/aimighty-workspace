@@ -10,8 +10,8 @@ import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palet
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
-test("the header segment reads Studio | Gen | Business | Viral | Atomik | Crew", () => {
-  expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
+test("the header segment is option B: Home · the project · Make · Atomik", () => {
+  expect(HEADER_SEGMENT.map((s) => [s.id, s.label])).toEqual([["home", "Home"], ["project", "Project"], ["make", "Make"], ["atomik", "Atomik"]]);
 });
 
 test("every suite has the README's pages, numbered in order, with its group gaps; the phone's Studio home sits outside the strip", () => {
@@ -21,7 +21,8 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   expect(shape).toEqual({
     studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
     business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
-    viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
+    /* Motion Transfer and Object Swap are Make's quick tools (lib/shell/make.ts); History stays a page. */
+    viral: ["01 History"],
     atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
   });
 });
@@ -52,7 +53,8 @@ test("every shell page is backed by a page the state layer really has", () => {
 test("a suite restores its remembered page and falls back to its first", () => {
   expect(restorePage("studio", "rig").id).toBe("rig");
   expect(restorePage("studio", "gone").id).toBe(firstShellPage("studio").id);
-  expect(restorePage("viral", null).id).toBe("motion");
+  expect(restorePage("viral", null).id).toBe("history");
+  expect(restorePage("viral", "motion").id).toBe("history");
   expect(shellPage("atomik", "budget")?.title).toBe("Budget");
   expect(isShellSuite("studio")).toBe(true);
   expect(isShellSuite("gen")).toBe(false);
@@ -88,7 +90,8 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
     ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
     ["AGENT", "Atomik Agent"],
   ]);
-  for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
+  /* The suites left the header: each is still a ⌘K row, under its own name, until its board ships. */
+  for (const s of SHELL_SUITES) expect(paletteIndex({ models: [], assets: [] }).find((r) => r.run.type === "suite" && r.run.suite === s.id)).toMatchObject({ label: s.label, hint: s.name });
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */
@@ -251,6 +254,9 @@ const rows = paletteIndex({
 
 test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
   expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
+  /* Make's quick tools are found by name and open Make on them. */
+  expect(searchPalette(rows, "motion transfer")[0].run).toEqual({ type: "gen", tool: "motion" });
+  expect(searchPalette(rows, "object swap")[0].run).toEqual({ type: "gen", tool: "swap" });
   expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
   /* The phone's own screens (Where to?, the Studio grid) are not desktop pages: no " Where to?" rows. */
   expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);

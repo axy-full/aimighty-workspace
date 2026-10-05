@@ -65,7 +65,7 @@ export function ToolsView() {
 function Reach({ onTab }: { onTab: (tab: ToolsTab) => void }) {
   const shell = useShell();
   const rows = reachRows();
-  const open = (target: ReachOpen) => ("gen" in target ? shell.goGen() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
+  const open = (target: ReachOpen) => ("gen" in target ? shell.openMake() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
   return (
     <>
       <p className="tc-intro">What Atomik reaches today, and where each one runs. Open goes straight there.</p>

@@ -45,8 +45,8 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
   const Line = ({ l, shot }: { l: StatementLine; shot: string }) => (
     <tr>
       <td className="st-td st-mono">{day(l.at)}</td>
-      <td className="st-td">{shot ? <><span className="st-mono">{shot}</span> {l.take}</> : <>{l.take}<span className="text-mute"> · {l.note}</span></>}</td>
-      <td className="st-td text-dim">{l.what}{l.status !== "succeeded" ? <span className="text-mute"> · {l.status}</span> : null}</td>
+      <td className="st-td">{shot ? <><span className="st-mono">{shot}</span> {l.take}</> : <>{l.take}<span className="text-lead"> · {l.note}</span></>}</td>
+      <td className="st-td text-lead">{l.what}{l.status !== "succeeded" ? <span className="text-lead"> · {l.status}</span> : null}</td>
       <td className="st-td st-mono text-right">{amount(data.unit === "cr" ? l.credits : l.usd)}</td>
     </tr>
   );
@@ -66,11 +66,11 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
         </span>
       </div>
       <header className="statement-head">
-        <p className="mono !tracking-[.14em] !text-[10px]">STATEMENT</p>
+        <p className="mono !tracking-[.14em] !text-[12px] !text-lead">STATEMENT</p>
         <h1 className="h1">{data.workspace.name}</h1>
-        <p className="text-[15px] text-dim">{monthLabel(month)}{data.projectFilter ? ` · ${data.projects[0]?.name ?? "one project"}` : ""} · {data.totals.takes} take{data.totals.takes === 1 ? "" : "s"}</p>
+        <p className="text-[15px] text-lead">{monthLabel(month)}{data.projectFilter ? ` · ${data.projects[0]?.name ?? "one project"}` : ""} · {data.totals.takes} take{data.totals.takes === 1 ? "" : "s"}</p>
       </header>
-      {data.projects.length === 0 && <p className="rail-help">Nothing billed this month.</p>}
+      {data.projects.length === 0 && <p className="rail-help !text-[12px] !text-lead">Nothing billed this month.</p>}
       {data.projects.map((p) => (
         <section key={p.id ?? "unfiled"} className="statement-project">
           <div className="flex items-baseline gap-3">
@@ -91,7 +91,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
       <footer className="statement-foot">
         <div className="flex items-baseline gap-3"><span className="font-medium">Total</span><span className="ml-auto st-mono text-[17px] font-semibold">{amount(data.unit === "cr" ? data.totals.credits : data.totals.usd)}</span></div>
         {data.unit === "cr" && (
-          <div className="mt-1.5 flex items-baseline gap-3 text-[14px] text-dim">
+          <div className="mt-1.5 flex items-baseline gap-3 text-[14px] text-lead">
             <span>Packs this month{data.packs.count ? ` · ${data.packs.count}` : ""}</span>
             {/* What ARRIVED, with the split beside it: §7A's bonus credits are
                 free, so the dollar figure covers only the bought half. A total
@@ -102,8 +102,8 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
               : "none"}</span>
           </div>
         )}
-        {data.unitNote && <p className="mt-4 text-[12px] text-dim" data-testid="statement-unit-note">{data.unitNote}</p>}
-        <p className="mt-4 text-[12px] text-mute">Months are counted in UTC. {data.unit === "cr" ? "Credits are what this workspace was billed; a pack's price is the only dollar figure." : "Costs are what the vendors charged."}</p>
+        {data.unitNote && <p className="mt-4 text-[12px] text-lead" data-testid="statement-unit-note">{data.unitNote}</p>}
+        <p className="mt-4 text-[12px] text-lead">Months are counted in UTC. {data.unit === "cr" ? "Credits are what this workspace was billed; a pack's price is the only dollar figure." : "Costs are what the vendors charged."}</p>
       </footer>
     </div>
   );

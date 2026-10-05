@@ -73,7 +73,7 @@ test("the Rig list mounts a window of a 1,500-shot project and scrolls to the la
 
 test("the Library and the Gen results mount a window of 1,500 renders", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "one desktop");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=recent");
   const grid = page.locator(".gx-gen-grid");
   await expect(grid).toHaveAttribute("data-virtual", "on");
   await expect(grid.locator(".gx-asset").first()).toContainText("Take 0001");

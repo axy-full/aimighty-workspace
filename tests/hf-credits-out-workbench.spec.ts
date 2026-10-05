@@ -229,7 +229,8 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await normal();
   /* Gen's results wear the same card: the whole label on the chip where the tile is wide enough. */
   await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="gen"]').click();
+  await page.locator('[data-suite-tab="make"]').click();
+  await page.getByTestId("make-tab-recent").click();
   const results = page.getByRole("region", { name: "Results" });
   await expect(tile(results, "Night ferry").getByTestId("take-chip")).toHaveText("Held · needs 12,345 cr");
   await expect(tile(results, "Night ferry").getByTestId("take-release")).toBeVisible();
@@ -237,8 +238,10 @@ test("owner: a held take says what it needs and releases at that price, once; st
   normal = await widerSans(page);
   await whole(page, PRICES);
   await normal();
+  /* Make closes over Takes. */
+  await page.getByTestId("make-close").click();
   await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="studio"]').click();
+  await page.locator('[data-suite-tab="project"]').click();
   if (!(await takes.isVisible())) await page.goto("/suites?suite=studio&page=takes");
   await expect(tile(takes, "Harbour dawn").getByTestId("take-release")).toBeVisible();
 
@@ -515,20 +518,20 @@ test("the credits pill turns amber when the balance is below the last price quot
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   const pill = page.getByTestId("workspace-credits");
   await expect(pill).toContainText(balance.toLocaleString("en-US"), { timeout: 60_000 });
   await expect(pill).not.toHaveAttribute("data-low");
   const generate = page.getByTestId("gen-generate");
   await page.getByRole("textbox", { name: "Direction", exact: true }).fill("A lighthouse beam sweeping fog at dusk");
-  await expect(generate).toHaveText(`Generate · ${price.toLocaleString("en-US")} cr`);
+  await expect(generate).toHaveText(`Make · ${price.toLocaleString("en-US")} cr`);
   /* A price the balance covers: not amber. */
   await expect(pill).not.toHaveAttribute("data-low");
 
   /* Two takes: the button's figure doubles from the quote already given — nothing is asked again — and the balance no longer covers it. */
   const asked = quotes.length;
   await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
-  await expect(generate).toHaveText(`Generate 2 takes · ${(2 * price).toLocaleString("en-US")} cr`);
+  await expect(generate).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`);
   await expect(pill).toHaveAttribute("data-low", "true");
   await expect(pill).toHaveAttribute("aria-label", `Credits: ${balance.toLocaleString("en-US")} cr, below the last price quoted, ${(2 * price).toLocaleString("en-US")} cr. Open Plans & credits`);
   expect(quotes.length).toBe(asked);
