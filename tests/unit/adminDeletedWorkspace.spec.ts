@@ -33,6 +33,7 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?
     "@/lib/tenant": { runInTenant: async () => ({ released: [] }) },
     "@/lib/held": { releaseHeldJobs: async () => ({ released: [] }) },
     "@/lib/purge": { restoreDeletedWorkspace: record("restore") },
+    "@/lib/shell/new-interface.server": { setWorkspaceNewInterface: async () => ({ everyone: false, workspaces: [] }) },
     /* The real rule: which workspace is the house is the behaviour under test. */
     "@/lib/houseWorkspace": houseWorkspace,
   };
