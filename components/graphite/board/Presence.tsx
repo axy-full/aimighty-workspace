@@ -1,6 +1,6 @@
 "use client";
 import { ViewportPortal, useStore } from "@xyflow/react";
-import { initialsOf } from "@/lib/board/history";
+import { whoIsHere } from "@/lib/board/presence";
 import type { RoomPeer } from "@/lib/workbench/team-canvas-model";
 
 /*
@@ -27,13 +27,14 @@ export function PeerCursors({ peers }: { peers: readonly RoomPeer[] }) {
 }
 
 export function WhoIsHere({ peers }: { peers: readonly RoomPeer[] }) {
-  if (!peers.length) return null;
-  const people = peers.filter((p) => !p.agent), agent = peers.find((p) => p.agent);
+  const here = whoIsHere(peers);
+  if (!here) return null;
   return (
-    <div className="bd-here" role="status" aria-label={`On this board: ${[...people.map((p) => p.name), ...(agent ? ["Atomik"] : [])].join(", ")}`} data-testid="board-here">
-      {agent ? <span className="bd-here-face" data-agent="" title={`Atomik · ${agent.doing ?? "working on the board"}`}>AT</span> : null}
-      {people.slice(0, 5).map((p) => <span key={p.id} className="bd-here-face" title={p.name} style={{ borderColor: p.color }}>{initialsOf(p.name)}</span>)}
-      {people.length > 5 ? <span className="bd-here-face" title={`${people.length - 5} more`}>+{people.length - 5}</span> : null}
+    <div className="bd-here" role="status" aria-label={here.label} data-testid="board-here">
+      {here.faces.map((face) => (
+        <span key={face.key} className="bd-here-face" data-agent={face.agent ? "" : undefined} title={face.title} style={face.colour ? { borderColor: face.colour } : undefined}>{face.initials}</span>
+      ))}
+      {here.more ? <span className="bd-here-face" title={here.more.title}>+{here.more.count}</span> : null}
     </div>
   );
 }

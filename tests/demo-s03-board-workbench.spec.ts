@@ -1,7 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject, type CanvasNode } from "../lib/workbench/studio";
+import { newProject } from "../lib/workbench/studio";
 import { SHOTS, desktop, node, seedBoard } from "./helpers/s03-board";
 
 /*

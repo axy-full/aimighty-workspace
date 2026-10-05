@@ -27,6 +27,8 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   const tile = library.locator(".bd-tile", { hasText: "market-stall" });
   await expect(tile).toBeVisible();
   await shot(page, "board-library-file");
+  /* Upload also puts a picture on the board as a free card, at the middle of the view. */
+  await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(1);
 
   /* The Images chip keeps it, Video drops it, Audio drops it. */
   await library.getByRole("button", { name: "Video", exact: true }).click();
@@ -39,6 +41,11 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   await rail(page);
   await tile.dragTo(page.locator('[data-card-id="node-shot0001"]'));
   await expect(page.getByText(/market-stall.* is a reference for Opening wide/)).toBeVisible();
+  /* A file let go on empty canvas is a free media card too. */
+  const empty = page.locator(".react-flow__pane");
+  const pane = (await empty.boundingBox())!;
+  await tile.dragTo(empty, { targetPosition: { x: pane.width - 260, y: pane.height - 330 } });
+  await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(2);
   expect(paid).toEqual([]);
 });
 
