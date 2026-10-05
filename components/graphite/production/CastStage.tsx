@@ -35,6 +35,8 @@ import { CastIdentities } from "./CastIdentities";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 const EMPTY: Cast = { entries: [] };
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null; params?: unknown };
@@ -112,7 +114,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
     sending.current.add(entry.id);
     setWorking((w) => ({ ...w, [entry.id]: "Sending…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
     try {
-      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering.");
+      if (!(await editor.ensureSaved())) throw new SaveFailedError();
       /* A request whose reply was lost is asked about first by its own key: followed if it landed, never sent twice. */
       const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `cast-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
       if (outcome.state === "repriced") { pricing.reprice(entry.id, outcome.credits); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
@@ -277,7 +279,7 @@ function CastBody({ editor, scope, items, onBeats }: { editor: ReturnType<typeof
           const batch = entry.soulBatch ?? 1;
           const strength = (SOUL_RENDER_STRENGTHS as readonly number[]).includes(entry.soulStrength ?? 1) ? entry.soulStrength ?? 1 : 1;
           const why = !character ? null
-            : !p.productionProjectId ? "Save the project first."
+            : !p.productionProjectId ? SAVING_NOW
             : !identity ? (identities == null ? "Reading this workspace’s identities…" : renderable.length ? "Choose its identity to render it." : "Build an identity below to render it.")
             : !entry.prompt.trim() ? "Write its prompt first." : null;
           return (

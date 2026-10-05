@@ -9,6 +9,7 @@ import { resolutionOfHeight } from "@/lib/sourceClip";
 import { clipDoubt } from "@/lib/clipTrust";
 import { cleanReason } from "@/lib/approval";
 import { isDraft } from "@/lib/draftFinal";
+import { SAVING_NOW } from "../workbench/save-then-continue";
 
 /**
  * Idea 12, first slice: what a take can go on to next, as a way INTO the
@@ -35,7 +36,7 @@ function gate(entry: Entry, saved: boolean): Pick<NextAction, "enabled" | "why">
   if (face === "failed" || face === "stopped") return { enabled: false, why: "It did not render, so there is nothing to edit." };
   if (face === "unavailable") return { enabled: false, why: "Its stored copy is not here yet." };
   if (!entry.url) return { enabled: false, why: "This file type cannot be edited here." };
-  if (!saved) return { enabled: false, why: "Save the project first." };
+  if (!saved) return { enabled: false, why: SAVING_NOW };
   return { enabled: true, why: null };
 }
 

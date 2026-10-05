@@ -15,6 +15,7 @@ import {
 } from "@/lib/higgsfield-consumer/marketing-templates";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./marketing-templates.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 export const TEMPLATE_ASSET_CATEGORY = "Campaign template";
 const endpoint = "/api/higgsfield/consumer/marketing-templates";
@@ -288,7 +289,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
-      if (action === "quote" && onSave && !(await onSave())) throw new Error("Save this project before requesting a template quote.");
+      if (action === "quote" && onSave && !(await onSave())) throw new SaveFailedError();
       if (!live.current || lifecycle.current !== token) return;
       if (action === "submit") {
         const next = [...new Set([...attemptIds.current, job!.id])].slice(-100);

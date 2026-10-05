@@ -32,6 +32,7 @@ import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
@@ -237,7 +238,7 @@ function EnvironmentBody({ editor, scope, items, onBeats }: { editor: ReturnType
     /* A new send replaces what the last attempt said. */
     setWorking((w) => ({ ...w, [entry.id]: "Sending…" })); setErrors((x) => ({ ...x, [entry.id]: "" }));
     try {
-      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering a plate.");
+      if (!(await editor.ensureSaved())) throw new SaveFailedError();
       const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `env-${entry.id}`), shown, request: { endpoint: "/api/generate", input } });
       if (outcome.state === "repriced") { pricing.reprice(entry.id, outcome.credits); setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }
       if (outcome.state === "refused") { setErrors((x) => ({ ...x, [entry.id]: outcome.reason })); return; }

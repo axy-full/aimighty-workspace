@@ -13,6 +13,9 @@
 /** The one line shown when the project could not be saved. */
 export const SAVE_FAILED = "Couldn't save · Try again";
 
+/** What a control says while its project is on its way to the server: nothing for the person to do, it opens when the save lands. */
+export const SAVING_NOW = "Saving this project…";
+
 export class SaveFailedError extends Error {
   constructor() {
     super(SAVE_FAILED);
