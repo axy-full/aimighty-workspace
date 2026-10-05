@@ -1,5 +1,7 @@
 "use client";
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useWorkspace } from "@/lib/workspace/state";
+import type { SettingsFold } from "@/lib/shell/settings";
 
 /**
  * The master's Settings grammar (Particl Suites.dc.html › settingsVals): a section is an eyebrow with
@@ -86,4 +88,35 @@ export function Problem({ text, onRetry, testId }: { text: string; onRetry?: () 
 
 export function Note({ ok, text, testId }: { ok: boolean; text: string; testId?: string }) {
   return <p className={ok ? "gs-note" : "gs-problem"} role={ok ? "status" : "alert"} data-testid={testId}>{text}</p>;
+}
+
+/** A fold whose open state starts from the address (`open=`), then follows the person. */
+export function Folded({ name, open, label, meta, children }: { name: SettingsFold; open: SettingsFold | null; label: string; meta?: ReactNode; children: ReactNode }) {
+  const [shown, setShown] = useState(open === name);
+  return <Fold label={label} meta={meta} open={shown} onToggle={() => setShown((v) => !v)} testId={`settings-fold-${name}`}>{children}</Fold>;
+}
+
+/** A line of text or code to copy: the setup steps and the server address. */
+export function CopyBlock({ label, text, testId }: { label: string; text: string; testId: string }) {
+  const { toast } = useWorkspace();
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1600);
+    } catch { setCopied(false); toast("Copy didn’t work here. Select the text and copy it."); }
+  };
+  return (
+    <div className="gs-copy" data-testid={testId}>
+      <span className="gs-row-line">{label}</span>
+      <div className="gs-copy-body">
+        <pre className="gs-pre">{text}</pre>
+        <button type="button" className="gs-btn" onClick={() => void copy()} aria-label={`Copy: ${label.replace(/^\d+\.\s*/, "")}`}>{copied ? "Copied" : "Copy"}</button>
+      </div>
+    </div>
+  );
 }

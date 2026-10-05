@@ -57,6 +57,18 @@
 .gs-edit { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
 .gs-capform { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 8px 0 0; }
 .gs-capform .gs-field { width: 140px; }
+.gs-mono { font-family: var(--gx-mono); font-size: 13px; }
+.gs-copy { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.gs-copy-body { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.gs-pre { margin: 0; flex: 1 1 auto; min-width: 0; padding: 8px 10px; border-radius: var(--gx-r-ctl); background: var(--gx-input); border: 1px solid var(--gx-input-border); font-family: var(--gx-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--gx-text); }
+.gs-pre:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gs-sel { height: 28px; max-width: 100%; padding: 0 8px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-input-border); background: var(--gx-input); color: var(--gx-text); font-size: 13px; }
+.gs-sel:disabled { color: var(--gx-disabled); }
+.gs-rule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-rule[data-on="true"] { opacity: 1; }
+.gs-rule:not([data-on]) { opacity: .7; }
+.gs-rule-text { flex: 1 1 220px; width: auto; }
+.gs-rule-words { flex: 1 1 220px; min-width: 0; font-size: var(--gx-fs-body); overflow-wrap: anywhere; }
 .gs-fresh { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
 .gs-code { font-family: var(--gx-mono); font-size: 13px; overflow-wrap: anywhere; min-width: 0; flex: 1 1 260px; }
 
@@ -79,6 +91,8 @@
   .gs-sec-act .gs-primary { width: 100%; }
   .gs-fold { min-height: 44px; min-width: 44px; text-align: left; }
   .gs-form { grid-template-columns: minmax(0, 1fr); }
+  .gs-sel { height: 44px; border-radius: var(--gx-r-ctl-phone); font-size: 16px; }
+  .gs-copy-body { flex-direction: column; }
   .gs-field { height: 44px; border-radius: var(--gx-r-ctl-phone); font-size: 16px; }
   /* What Settings embeds as it is (the usage ledger, the rate card) keeps the same 44 px floor here. */
   .gs-embed :is(button, a[href], select, input) { min-height: 44px; min-width: 44px; }

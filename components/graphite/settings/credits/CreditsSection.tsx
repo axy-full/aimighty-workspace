@@ -12,7 +12,7 @@ import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach"
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { UsageLedger } from "@/components/graphite/UsageLedger";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { Btn, Fold, LinkBtn, Note, Problem, Row, Section } from "../parts";
+import { Btn, Fold, Folded, LinkBtn, Note, Problem, Row, Section } from "../parts";
 import { creditPriceLine, creditsWithUsd, monthKey, monthLine, monthTotalsOf, planView, topUpLabel, topUpPack, type PlanDefLike } from "../model";
 import { lostConnection, useRead, useWrite } from "../use-settings";
 
@@ -164,12 +164,6 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
       ) : null}
     </>
   );
-}
-
-/** A fold whose open state starts from the address (`open=`), then follows the person. */
-function Folded({ name, open, label, meta, children }: { name: SettingsFold; open: SettingsFold | null; label: string; meta?: string; children: React.ReactNode }) {
-  const [shown, setShown] = useState(open === name);
-  return <Fold label={label} meta={meta} open={shown} onToggle={() => setShown((v) => !v)} testId={`settings-fold-${name}`}>{children}</Fold>;
 }
 
 function Usage({ open }: { open: SettingsFold | null }) {

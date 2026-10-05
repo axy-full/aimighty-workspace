@@ -13,6 +13,8 @@ import { capInput, productionLine, ruleValue, spendingLines, type SpendingRules 
 import { RIG_AGENT_JOB_CEILING_CREDITS } from "../../lib/workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "../../lib/approvalRule";
 import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "../../lib/settingValues";
+import { PUBLISHING_ACCOUNTS, REACH_PLACES, reachRows, tokenLine, tokenValue } from "../../components/graphite/settings/model";
+import { MCP_TOOL_LINES, PARTICL_REACH, mcpTools } from "../../lib/shell/tools-connections";
 import { creditsText } from "../../lib/shell/price-words";
 import { DEFAULT_PLANS } from "../../lib/plans";
 import { packs } from "../../lib/packs";
@@ -34,7 +36,7 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
       if (isBuiltSection(id)) expect(target).toEqual({ kind: "section", section: id });
       else expect(target).toEqual(SETTINGS_INTERIM[id]);
     }
-    expect(SETTINGS_BUILT).toEqual(["team", "credits", "rules"]);
+    expect(SETTINGS_BUILT).toEqual(["team", "credits", "rules", "connections", "advanced"]);
     expect(sectionTarget("team", "security")).toEqual({ kind: "section", section: "team", open: "security" });
   });
 
@@ -59,9 +61,14 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
     expect(on("?view=workspace&tab=team")).toBeNull();
     expect(on("?view=workspace&tab=rules")).toBeNull();
     expect(on("?suite=atomik&page=budget")).toBe("?view=workspace&tab=rules");
-    expect(on("?view=workspace&tab=connections")).toBe("?suite=atomik&page=skills");
-    expect(on("?view=workspace&tab=advanced")).toBe("?view=workspace&tab=engines");
-    expect(on("?view=workspace&tab=advanced&open=models")).toBe("?suite=atomik&page=models");
+    expect(on("?view=workspace&tab=connections")).toBeNull();
+    expect(on("?view=workspace&tab=advanced")).toBeNull();
+    expect(on("?view=workspace&tab=engines")).toBe("?view=workspace&tab=advanced&open=models");
+    expect(on("?view=workspace&tab=general")).toBe("?view=workspace&tab=advanced&open=workspace");
+    expect(on("?suite=atomik&page=models")).toBe("?view=workspace&tab=advanced&open=models");
+    expect(on("?suite=atomik&page=skills")).toBe("?view=workspace&tab=connections");
+    /* Dashboard becomes Activity (stream 8): until it lands, Workspace's own Dashboard still answers. */
+    expect(on("?view=workspace&tab=dashboard")).toBeNull();
     for (const rows of [SETTINGS_SCREEN.rows, SETTINGS_SCREEN.fallback]) {
       for (const row of rows) expect(applyRows(applyRows(row.from, rows)!, rows), `${row.from} lands in one hop`).toBeNull();
     }
@@ -176,9 +183,37 @@ test.describe("changing the rules (9.2)", () => {
   });
 });
 
+test.describe("Connections and Advanced (9.3)", () => {
+  const token = { id: "t1", name: "Claude on my laptop", scope: "render" as const, lastUsed: Date.now() - 2 * 3_600_000, createdAt: 1, spendThisMonth: 120, capCredits: 500 };
+  test("a token reads as the code has it: it can generate inside a ceiling, or it is read-only", () => {
+    expect(tokenLine(token, "credits")).toBe("Can generate · 120 cr of 500 cr this month · used 2h ago");
+    expect(tokenLine({ ...token, scope: "read", lastUsed: null }, "credits")).toBe("Read-only · never used");
+    expect(tokenValue(token)).toBe("generate");
+    expect(tokenValue({ scope: "read" })).toBe("read");
+    /* Never "a person approves each": a token spends directly today (DECISIONS 2). */
+    expect(tokenLine(token, "credits")).not.toMatch(/prepare|approves/i);
+  });
+  test("a workspace on its own engines shows no vendor dollars on a token", () => {
+    const line = tokenLine({ ...token, spendThisMonth: 7.5, capUsd: 20, capCredits: null }, "usd");
+    expect(line).toBe("Can generate · used 2h ago");
+    expect(line).not.toMatch(/\$|\d+\.\d/);
+  });
+  test("publishing accounts are listed, never connected", () => {
+    expect(PUBLISHING_ACCOUNTS).toEqual(["Instagram", "TikTok", "YouTube"]);
+  });
+  test("every thing Atomik reaches has a place to open, in the design's names", () => {
+    for (const row of PARTICL_REACH) expect(REACH_PLACES[row.id], `${row.id} needs a place`).toBeTruthy();
+    expect(reachRows().map((r) => r.label)).toContain("3D blocking");
+    for (const r of reachRows()) expect(`${r.label} ${r.line}`, r.id).not.toMatch(/Astra/);
+  });
+  test("every MCP tool is described on Settings", () => {
+    for (const tool of mcpTools()) expect(MCP_TOOL_LINES[tool.name], tool.name).toBeTruthy();
+  });
+});
+
 test.describe("public-repo and floor checks on Settings' own files", () => {
   const dir = join(__dirname, "../../components/graphite/settings");
-  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "index.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts", "rules/RulesSection.tsx"];
+  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "index.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts", "rules/RulesSection.tsx", "connections/ConnectionsSection.tsx", "advanced/AdvancedSection.tsx", "advanced/PromptRules.tsx"];
   const read = (f: string) => readFileSync(join(dir, f), "utf8");
   test("no handoff placeholder names, no vendor cost words, no hard-coded credit rate", () => {
     for (const f of files) {

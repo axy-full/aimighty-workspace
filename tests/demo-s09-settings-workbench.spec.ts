@@ -92,6 +92,39 @@ async function open(page: Page, path: string, opts: { on?: boolean; member?: API
       { id: "pb", name: "Studio reel", credits: 31, capCredits: caps.pb, capUnlocked: false },
     ] } });
   });
+  /* GET, POST and DELETE /api/tokens (a workspace billed in credits); the secret comes back once, on POST. */
+  const tokens = [{ id: "tk1", name: "Claude on my laptop", scope: "render", lastUsed: Date.now() - 7_200_000, createdAt: 1, spendThisMonth: 120, capCredits: 500 }, { id: "tk2", name: "Reader", scope: "read", lastUsed: null, createdAt: 2, spendThisMonth: 0 }];
+  await page.route(/\/api\/tokens(\/[a-z0-9]+)?$/, async (route) => {
+    const at = new URL(route.request().url()).pathname.split("/")[3];
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { name: string; scope: string; capCredits?: number };
+      writes.push({ url: "/api/tokens", method: "POST", body });
+      tokens.push({ id: "tk3", name: body.name, scope: body.scope, lastUsed: null as unknown as number, createdAt: 3, spendThisMonth: 0, ...(body.capCredits ? { capCredits: body.capCredits } : {}) } as (typeof tokens)[number]);
+      return route.fulfill({ status: 201, json: { id: "tk3", name: body.name, token: "pk_secret_once_123" } });
+    }
+    if (route.request().method() === "DELETE" && at) {
+      writes.push({ url: `/api/tokens/${at}`, method: "DELETE", body: null });
+      tokens.splice(tokens.findIndex((t) => t.id === at), 1);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { unit: "cr", tokens } });
+  });
+  await page.route("**/api/workspaces/keys", (route) => route.fulfill({ json: { usesPlatformKeys: true, mode: "platform", managed: true, canPlatform: true, credits: null, keys: [
+    { name: "byteplus", label: "BytePlus", does: "Seedance video", set: true, masked: null }, { name: "google", label: "Google", does: "Nano Banana stills", set: true, masked: null }, { name: "xai", label: "xAI", does: "Grok", set: true, masked: null }, { name: "elevenlabs", label: "ElevenLabs", does: "Voice", set: false, masked: null },
+  ] } }));
+  await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok" } }));
+  await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: false, requiresReconnect: false, capacity: null } }));
+  const rules = [{ id: "r1", text: "Keep shots under ten seconds", scope: "all", apply: "prompt", on: true, source: "workspace" }, { id: "p1", text: "No logos in frame", scope: "all", apply: "prompt", on: true, source: "platform" }];
+  await page.route(/\/api\/rules(\/[a-z0-9]+)?$/, async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { rules } });
+    writes.push({ url: new URL(route.request().url()).pathname, method: route.request().method(), body: route.request().postDataJSON() });
+    if (route.request().method() === "POST") rules.push({ id: "r2", text: (route.request().postDataJSON() as { text: string }).text, scope: "all", apply: "prompt", on: true, source: "workspace" });
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route("**/api/workspaces", async (route) => {
+    if (route.request().method() === "PATCH") { writes.push({ url: "/api/workspaces", method: "PATCH", body: route.request().postDataJSON() }); return route.fulfill({ json: { ok: true } }); }
+    return route.fallback();
+  });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
@@ -103,6 +136,7 @@ async function shot(page: Page, name: string) {
   const dir = process.env.S09_SHOTS;
   if (!dir) return;
   const size = page.viewportSize();
+  await page.waitForTimeout(600); /* the page eases in */
   await page.screenshot({ path: `${dir}/${name}-${size?.width}x${size?.height}.png`, fullPage: false });
 }
 
@@ -196,7 +230,7 @@ test("Plan & credits: the balance with its dollars, this month settled and held,
   expect(errors).toEqual([]);
 });
 
-test("old links land on their section; the design's ws= spelling and open= work; undrawn sections open today's page", async ({ page }, info) => {
+test("old links land on their section; the design's ws= spelling and open= work; Atomik's Budget, Models and Tools pages are sections", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?view=workspace&tab=people");
   await expect(page.getByTestId("settings-title")).toHaveText("Team");
@@ -213,9 +247,18 @@ test("old links land on their section; the design's ws= spelling and open= work;
   await page.goto("/suites?suite=atomik&page=budget");
   await expect(page.getByTestId("settings-title")).toHaveText("Spending rules");
   expect(param(page, "tab")).toBe("rules");
-  /* Connections is not drawn in this build: the section opens Atomik's Tools & connections, as the avatar menu did. */
-  await page.getByTestId("settings-section-connections").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
+  /* Atomik's Tools & connections is Connections; Models and General's rest are Advanced. */
+  await page.goto("/suites?suite=atomik&page=skills");
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  await page.goto("/suites?suite=atomik&page=models");
+  await expect(page.getByTestId("settings-title")).toHaveText("Advanced");
+  await expect(page.getByTestId("settings-fold-models")).toHaveAttribute("data-open", "true");
+  await page.goto("/suites?view=workspace&tab=engines");
+  await expect(page.getByTestId("settings-fold-models")).toHaveAttribute("data-open", "true");
+  await page.goto("/suites?view=workspace&tab=general");
+  await expect(page.getByTestId("settings-fold-workspace")).toHaveAttribute("data-open", "true");
+  await page.goto("/suites?view=workspace&ws=advanced&open=models");
+  expect([param(page, "tab"), param(page, "open")]).toEqual(["advanced", "models"]);
   expect(errors).toEqual([]);
 });
 
@@ -273,6 +316,106 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await floors(page, "Spending rules, productions");
   await page.getByTestId("settings-fold-productions").scrollIntoViewIfNeeded();
   await shot(page, "rules-productions");
+  expect(errors).toEqual([]);
+});
+
+test("Connections: tokens as the code has them, made and shown once, revoked in place; publishing accounts never connected", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, writes } = await open(page, "/suites?view=workspace&tab=connections");
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  await expect(page.getByTestId("settings-tokens")).toContainText("Particl is an MCP server · tokens you control");
+  const rows = page.getByTestId("settings-token");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("Can generate · 120 cr of 500 cr this month · used 2h ago");
+  await expect(rows.nth(1)).toContainText("Read-only · never used");
+  await expect(page.getByTestId("settings-tokens")).not.toContainText(/prepare jobs|approves each/i);
+  await expect(page.getByTestId("settings-publishing-row")).toHaveCount(3);
+  await expect(page.getByTestId("settings-publishing")).toContainText("Not connected");
+  await expect(page.getByTestId("settings-publishing").getByRole("button")).toHaveCount(0);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/maisonaurel|@maison/i);
+  await floors(page, "Connections");
+  await shot(page, "connections");
+
+  await page.getByTestId("settings-token-make").click();
+  await page.getByTestId("settings-token-name").fill("Studio assistant");
+  await expect(page.getByTestId("settings-token-ceiling")).toHaveValue("500");
+  await page.getByTestId("settings-token-ceiling").fill("120");
+  await page.getByTestId("settings-token-create").click();
+  await expect(page.getByTestId("settings-token-secret")).toHaveText("pk_secret_once_123");
+  expect(writes.find((w) => w.url === "/api/tokens")?.body).toEqual({ name: "Studio assistant", scope: "render", capCredits: 120 });
+  await expect(page.getByTestId("settings-token")).toHaveCount(3);
+  await floors(page, "Connections, fresh token");
+  await shot(page, "connections-token");
+  /* The secret fills the setup, which is one fold away. */
+  await page.getByTestId("settings-fold-assistant-toggle").click();
+  await expect(page.getByTestId("settings-setup-step").nth(1)).toContainText("PARTICL_TOKEN=pk_secret_once_123");
+  await page.getByTestId("settings-client-mcp").click();
+  await expect(page.getByTestId("settings-setup-step").nth(1)).toContainText("Bearer pk_secret_once_123");
+  await page.getByTestId("settings-fold-mcp-toggle").click();
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(7);
+  await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "render_shot" })).toContainText("Can generate");
+  await floors(page, "Connections, folds open");
+  await page.getByTestId("settings-fold-mcp").scrollIntoViewIfNeeded();
+  await shot(page, "connections-folds");
+
+  /* Revoke asks in place; nothing is erased. */
+  await page.getByTestId("settings-token").first().getByTestId("settings-token-revoke").click();
+  await page.getByTestId("settings-token-keep").click();
+  expect(writes.some((w) => w.method === "DELETE")).toBe(false);
+  await page.getByTestId("settings-token").first().getByTestId("settings-token-revoke").click();
+  await page.getByTestId("settings-token-revoke-confirm").click();
+  await expect.poll(() => writes.find((w) => w.method === "DELETE")?.url).toBe("/api/tokens/tk1");
+  await expect(page.getByTestId("settings-token")).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test("Advanced: Models, Tools and Workspace in folds, from the routes that serve them", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, writes } = await open(page, "/suites?view=workspace&tab=advanced&open=models");
+  await expect(page.getByTestId("settings-title")).toHaveText("Advanced");
+  await expect(page.getByTestId("settings-fold-models")).toHaveAttribute("data-open", "true");
+  await expect(page.getByTestId("settings-thinking")).toContainText("Claude, OpenAI and Grok · Auto starts here");
+  await expect(page.getByTestId("settings-effort").locator(".gs-row-v")).toHaveText("Auto");
+  await expect(page.getByTestId("settings-view")).not.toContainText(/\bDepth\b/);
+  await expect(page.getByTestId("settings-engines").locator(".gs-row-v")).toHaveText("2 available");
+  await expect(page.getByTestId("settings-fold-tools")).not.toHaveAttribute("data-open", "true");
+  await floors(page, "Advanced");
+  await shot(page, "advanced-models");
+  await page.getByTestId("settings-enhancer-claude").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/settings")?.body).toEqual({ promptEnhancer: "claude" });
+  await page.getByTestId("settings-engines-show").click();
+  await expect(page.getByTestId("settings-engine")).toHaveCount(3);
+  await expect(page.getByTestId("engine-xai")).toBeVisible();
+  await page.getByTestId("settings-thinking-change").click();
+  /* Atomik's panel (stream 7) once it lands; until then its address opens the Agent page. */
+  await expect.poll(() => param(page, "atomik") === "1" || param(page, "page") === "agent").toBe(true);
+  await page.goto("/suites?view=workspace&tab=advanced");
+  await expect(page.getByTestId("settings-fold-models")).not.toHaveAttribute("data-open", "true");
+  await page.getByTestId("settings-fold-tools-toggle").click();
+  await expect(page.getByTestId("settings-reach")).toHaveCount(6);
+  await expect(page.getByTestId("settings-fold-tools")).toContainText("3D blocking");
+  await expect(page.getByTestId("settings-fold-tools")).not.toContainText("Astra");
+  await page.getByTestId("settings-reach-mcp-open").click();
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  expect([param(page, "tab"), param(page, "open")]).toEqual(["connections", "mcp"]);
+  await expect(page.getByTestId("settings-fold-mcp")).toHaveAttribute("data-open", "true");
+  await page.goto("/suites?view=workspace&tab=general");
+  await expect(page.getByTestId("settings-ws-name-field")).toBeVisible();
+  await page.getByTestId("settings-ws-name-field").fill("Renamed studio");
+  await page.getByTestId("settings-ws-name-save").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/workspaces")?.body).toEqual({ name: "Renamed studio" });
+  await page.getByTestId("settings-format-mov").click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ editOutputFormat: "mov" });
+  await expect(page.getByTestId("settings-rule-row")).toHaveCount(1);
+  await page.getByTestId("settings-rule-text").fill("Always end on a held frame");
+  await page.getByTestId("settings-rule-add").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/rules")?.body).toEqual({ text: "Always end on a held frame", scope: "all", apply: "prompt" });
+  await page.getByTestId("settings-rule-remove").first().click();
+  await expect(page.getByTestId("settings-rule-remove").first()).toHaveText("Remove it");
+  await expect(page.getByTestId("settings-export")).toBeVisible();
+  await floors(page, "Advanced, Workspace");
+  await page.getByTestId("settings-fold-workspace").scrollIntoViewIfNeeded();
+  await shot(page, "advanced-workspace");
   expect(errors).toEqual([]);
 });
 

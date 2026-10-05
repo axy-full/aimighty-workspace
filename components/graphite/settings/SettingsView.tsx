@@ -6,6 +6,8 @@ import { WorkspaceView } from "../WorkspaceView";
 import { TeamSection } from "./team/TeamSection";
 import { CreditsSection } from "./credits/CreditsSection";
 import { RulesSection } from "./rules/RulesSection";
+import { ConnectionsSection } from "./connections/ConnectionsSection";
+import { AdvancedSection } from "./advanced/AdvancedSection";
 import { useGoSettings } from "./navigate";
 import "./settings.css";
 
@@ -58,6 +60,8 @@ export function SettingsView({ account, section, open }: { account: WorkspaceAcc
         {section === "team" ? <TeamSection key="team" open={fold} /> : null}
         {section === "credits" ? <CreditsSection key="credits" account={account} open={fold} /> : null}
         {section === "rules" ? <RulesSection key="rules" /> : null}
+        {section === "connections" ? <ConnectionsSection key="connections" open={fold} /> : null}
+        {section === "advanced" ? <AdvancedSection key="advanced" open={fold} /> : null}
         {FOOT[section] ? <p className="gs-foot">{FOOT[section]}</p> : null}
       </div>
     </div>

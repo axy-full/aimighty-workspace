@@ -6,6 +6,7 @@
 import type { BillingPlan, BillingSubscription, TopupPack } from "@/lib/shell/workspace-view";
 import { creditsText, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
+import { tokenFacts, PARTICL_REACH, type ApiToken, type TokenUnit } from "@/lib/shell/tools-connections";
 
 /* ── Team ───────────────────────────────────────────────────────────── */
 
@@ -89,4 +90,54 @@ export function topUpLabel(pack: Pick<TopupPack, "total" | "usd">): string {
 /** The pack Top up asks for: the smallest the platform sells (lib/packs.ts lists them in order). */
 export function topUpPack<P extends Pick<TopupPack, "usd">>(packs: readonly P[]): P | null {
   return packs.length ? [...packs].sort((a, b) => a.usd - b.usd)[0] : null;
+}
+
+/* ── Connections ────────────────────────────────────────────────────── */
+
+
+/** Where a post could go once Particl posts for a workspace. Listed as not connected, with no Connect (DECISIONS 3). */
+export const PUBLISHING_ACCOUNTS: readonly string[] = Object.freeze(["Instagram", "TikTok", "YouTube"]);
+
+/** The value a token row shows: what it may do. */
+export const tokenValue = (t: Pick<ApiToken, "scope">): string => (t.scope === "read" ? "read" : "generate");
+
+const agoWords = (at: number, now: number): string => {
+  const m = Math.floor(Math.max(0, now - at) / 60_000);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.floor(m / 60)}h ago` : `${Math.floor(m / 1440)}d ago`;
+};
+/**
+ * The facts under a token's name. A workspace billed in credits reads "Can generate · 120 of 500 cr this month · used 2h ago".
+ * A workspace on its own engines is billed in its vendors' dollars, which Settings never shows (DECISIONS 6): it reads what the
+ * token may do and when it was last used.
+ */
+export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): string {
+  if (unit === "credits") return tokenFacts(t, unit, now);
+  return [t.scope === "read" ? "Read-only" : "Can generate", t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].join(" · ");
+}
+
+/* ── Advanced › Tools ───────────────────────────────────────────────── */
+
+/**
+ * What Atomik reaches, in the design's words, each with where it opens (README § 3.5, § 7). Every id of
+ * `PARTICL_REACH` has a place here; a unit test fails when it gains one this map does not know. "Astra" is Topaz's
+ * model name only: the 3D tool reads "3D blocking".
+ */
+export type ReachPlace =
+  | { to: "atomik" }
+  | { to: "settings"; section: "advanced" | "connections"; open?: "models" | "mcp" }
+  | { to: "make" }
+  | { to: "suite"; suite: "studio"; page: "edit" | "astra" };
+export const REACH_PLACES: Readonly<Record<string, { label: string; line?: string; action: string; place: ReachPlace }>> = Object.freeze({
+  plan: { label: "Plan & price", action: "Open", place: { to: "atomik" } },
+  thinking: { label: "Thinking models", action: "Open", place: { to: "settings", section: "advanced", open: "models" } },
+  engines: { label: "Particl engines", action: "Open", place: { to: "make" } },
+  sound: { label: "Voice, sound & music", action: "Open", place: { to: "suite", suite: "studio", page: "edit" } },
+  astra: { label: "3D blocking", line: "Block a scene in 3D before anything renders", action: "Open", place: { to: "suite", suite: "studio", page: "astra" } },
+  assistant: { label: "Your own assistant", action: "Open", place: { to: "settings", section: "connections" } },
+});
+export function reachRows(): { id: string; label: string; line: string; action: string; place: ReachPlace }[] {
+  return PARTICL_REACH.flatMap((row) => {
+    const at = REACH_PLACES[row.id];
+    return at ? [{ id: row.id, label: at.label, line: at.line ?? row.line, action: at.action, place: at.place }] : [];
+  });
 }
