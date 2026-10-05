@@ -22,6 +22,9 @@
 .gx-doc-foot { font-family: var(--gx-mono); font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
 
 /* ── The shot list (the board's List view) ── */
+/* The List view's own scroll area: room above, and below the last row for the tool pill (a phone: the tab bar and the safe area). */
+.gx-shotlist-scroll { position: absolute; inset: 0; overflow: auto; padding: 28px 32px 120px; }
+.bd--compact .gx-shotlist-scroll { position: static; overflow: visible; padding: 16px 16px var(--ph-clear, 96px); }
 .gx-shotlist { container-type: inline-size; width: 100%; max-width: 980px; margin: 0 auto; font-size: var(--gx-fs-body); }
 .gx-shotlist-head, .gx-shotlist-row {
   display: grid; grid-template-columns: 40px 112px minmax(0, 1.8fr) minmax(96px, 120px) minmax(120px, 170px) 104px 28px; gap: 12px;
@@ -78,14 +81,19 @@ button.gx-shotlist-n:hover { color: var(--gx-text); }
     grid-template-areas: "n time remove" "action action action" "size size size" "camera camera camera" "state state state";
     gap: 4px 10px; padding: 12px 0;
   }
-  .gx-shotlist-row > .gx-shotlist-n { grid-area: n; min-height: 44px; }
+  .gx-shotlist-row > .gx-shotlist-n { grid-area: n; }
   .gx-shotlist-row > .gx-shotlist-time { grid-area: time; }
   .gx-shotlist-row > .gx-shotlist-action { grid-area: action; }
   .gx-shotlist-row > .gx-shotlist-size { grid-area: size; }
   .gx-shotlist-row > .gx-shotlist-camera { grid-area: camera; }
   .gx-shotlist-row > .gx-shotlist-state { grid-area: state; justify-content: flex-start; }
-  .gx-shotlist-row > .gx-shotlist-remove { grid-area: remove; width: 44px; height: 44px; opacity: 1; }
+  .gx-shotlist-row > .gx-shotlist-remove { grid-area: remove; }
+}
+/* A touch screen at any width (a phone turned sideways keeps its columns): every target is 44 px. */
+@media (pointer: coarse), (max-width: 767px) {
+  .gx-shotlist-n { min-width: 44px; min-height: 44px; }
   .gx-shotlist-cell { font-size: 16px; min-height: 44px; }
-  .gx-shotlist-num { min-height: 44px; }
+  .gx-shotlist-num { min-width: 44px; width: 5.5ch; }
+  .gx-shotlist-remove { width: 44px; height: 44px; opacity: 1; }
   .gx-shotlist-add { height: 44px; padding: 0 16px; }
 }

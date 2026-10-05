@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
 import type { BeatSheet } from "../lib/production/beats";
 
@@ -116,13 +117,31 @@ test("the List view is the shot list: its rows are edited in place, a shot is ad
   const { project, scope, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board&list=1`);
   const list = page.getByTestId("board-shotlist");
+  await expect(list).toBeVisible();
   if (!desktop(page)) {
-    /* Phone widths: the Record is the phone's (stream 10); here only the floors that hold at every width. */
+    /* Phone widths: each shot stacks; every target is 44 px, nothing is under 12 px, and nothing runs past the edge. */
+    await expect(list.getByTestId("board-shotlist-row")).toHaveCount(3);
+    expect(await smallTargets(page, '[data-testid="board-shotlist"]')).toEqual([]);
+    expect(await smallText(page, ".bd-rail, .gx-header")).toEqual([]);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
+    /* At the end of the list, the last control sits above the tab bar and the safe area. */
+    const clear = await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>(".bd--compact");
+      const add = document.querySelector<HTMLElement>('[data-testid="board-shotlist-add"]');
+      const bar = document.querySelector<HTMLElement>('[data-testid="tabbar"]');
+      if (!scroller || !add) return { ok: false, why: "no scroller or add button" };
+      scroller.scrollTop = scroller.scrollHeight;
+      const r = add.getBoundingClientRect();
+      const t = bar ? bar.getBoundingClientRect() : null;
+      /* The bar is at the bottom of a portrait phone and at the side of a landscape one: no overlap either way. */
+      const overlaps = !!t && r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top;
+      return { ok: !overlaps && r.bottom <= window.innerHeight, why: `add at ${Math.round(r.left)},${Math.round(r.top)}–${Math.round(r.right)},${Math.round(r.bottom)}; bar ${t ? `${Math.round(t.left)},${Math.round(t.top)}–${Math.round(t.right)},${Math.round(t.bottom)}` : "none"}` };
+    });
+    expect(clear.ok, clear.why).toBe(true);
     expect(paid).toEqual([]);
+    await page.screenshot({ path: `${SHOTS}/shot-list-${info.project.name.replace("workbench-", "")}.png` });
     return;
   }
-  await expect(list).toBeVisible();
   const rows = list.getByTestId("board-shotlist-row");
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(0)).toContainText("0:00");

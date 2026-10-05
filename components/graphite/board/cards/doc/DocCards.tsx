@@ -55,6 +55,7 @@ export function ShotList({ ctx, cards, stateOf }: { ctx: BoardCtx; cards: readon
   }, [cards, project.nodes]);
   const onCard = (shotId: string) => cards.some((c) => c.id === `frame:${shotId}`);
   return (
+    <div className="gx-shotlist-scroll">
     <ShotListDoc
       rows={rows}
       stateOf={stateOf ?? ((shotId) => fromShots.get(shotId) ?? frameState(project, shotId))}
@@ -80,6 +81,7 @@ export function ShotList({ ctx, cards, stateOf }: { ctx: BoardCtx; cards: readon
       }}
       onSelect={(shotId) => { if (onCard(shotId)) { ctx.select(`frame:${shotId}`); ctx.glide({ card: `frame:${shotId}` }); } }}
     />
+    </div>
   );
 }
 
