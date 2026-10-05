@@ -25,6 +25,7 @@ import { BoardAgentDock, DOCK_PANEL } from "./agent";
 import { BoardCanvas } from "./BoardCanvas";
 import { BoardInternalsProvider, BoardSeams, type BoardInternals } from "./BoardContext";
 import { buildRegistry } from "./cards";
+import { madeCards, type MadeEntry } from "./cards/set-board";
 import { ShotList } from "./cards/board/ShotList";
 import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
@@ -108,22 +109,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const src = useMemo<BoardSource | null>(() => (project ? {
     kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent: null, now,
   } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, now]);
-  const cards = useMemo(() => (src ? registry.derive(src) : []), [registry, src]);
+  /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
+  const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
+  const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
+  const cards = useMemo(() => (src ? [...registry.derive(src), ...madeCards(src, madeHere)] : []), [madeHere, registry, src]);
   const placed = useMemo(() => placeBoard(cards, registry.defs, board.bands, project?.aspect ?? "16:9"), [cards, registry.defs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   const empty = !!project && placed.cards.length === 0;
-
-  /* ── Selection: the board's own; a card that draws a canvas node is the workspace's selection too ── */
-  const [selection, setSelection] = useState<BoardSelection>(NO_SELECTION);
-  const pick = useCallback((ids: ReadonlySet<string>, primary: string | null) => {
-    setSelection(ids.size ? { primary, ids } : NO_SELECTION);
-    const card = primary ? placed.byId.get(primary) : undefined;
-    if (card?.nodeId) rig.select(card.nodeId);
-  }, [placed.byId, rig]);
-  const select = useCallback((id: string | null, opts?: { add?: boolean }) => {
-    if (!id) { pick(new Set(), null); return; }
-    pick(opts?.add ? new Set([...selection.ids, id]) : new Set([id]), id);
-  }, [pick, selection.ids]);
 
   /* ── Glides: a region's top-left to the canvas's top-left at this zoom, or a card to its middle ── */
   const viewportFor = useCallback((box: BoardBox, zoom: number, centre = false): Viewport => {
@@ -154,6 +146,22 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const next = viewportFor(box, zoom, typeof to !== "string");
     void flow.setViewport(next, { duration: GLIDE_MS, ease: glideEase }).then(() => measureInView(next));
   }, [flow, list, measureInView, placed.boxes, placed.regions, placed.slots, viewportFor]);
+
+  /* ── Selection: the board's own; a card that draws a canvas node is the workspace's selection too ── */
+  const [selection, setSelection] = useState<BoardSelection>(NO_SELECTION);
+  const pick = useCallback((ids: ReadonlySet<string>, primary: string | null) => {
+    /* A card in the Made in Make band stands for its shot: pressing it goes to the shot, which is the card that opens. */
+    const made = primary ? placed.byId.get(primary) : undefined;
+    const shot = made?.kind === "made" && made.nodeId && placed.byId.has(made.nodeId) ? made.nodeId : null;
+    if (shot) { glide({ card: shot }); ids = new Set([shot]); primary = shot; }
+    setSelection(ids.size ? { primary, ids } : NO_SELECTION);
+    const card = primary ? placed.byId.get(primary) : undefined;
+    if (card?.nodeId) rig.select(card.nodeId);
+  }, [glide, placed.byId, rig]);
+  const select = useCallback((id: string | null, opts?: { add?: boolean }) => {
+    if (!id) { pick(new Set(), null); return; }
+    pick(opts?.add ? new Set([...selection.ids, id]) : new Set([id]), id);
+  }, [pick, selection.ids]);
 
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */
   const projectId = project?.id ?? null;
@@ -275,7 +283,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const [lit, setLit] = useState<string | null>(null);
   const litTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [landing, setLanding] = useState<string | null>(null);
-  useMadeOnBoard(projectId, (made) => { setLanding(made.nodeId); setDrawer("library"); });
+  useMadeOnBoard(projectId, (made) => {
+    setMadeNow((was) => (was.some((m) => m.projectId === made.projectId && m.nodeId === made.nodeId) ? was : [...was, { projectId: made.projectId, nodeId: made.nodeId }]));
+    setLanding(`made:${made.nodeId}`);
+    setDrawer("library");
+  });
   useEffect(() => {
     if (!landing || !placed.boxes.has(landing)) return;
     const id = landing;

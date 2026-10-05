@@ -28,8 +28,10 @@ const BODY = 104;
 const SIZE = {
   take: { w: 340, h: 191 + BODY }, cast: { w: 308, h: 173 + BODY }, looks: { w: 462, h: 260 + BODY }, doc: { w: 220, h: 320 },
   tool: { w: 254, h: 132 }, media: { w: 220, h: 124 + BODY }, unknown: { w: 254, h: 132 }, note: { w: 254, h: 168 }, label: { h: 52 },
+  /* The master's Made in Make card: a 308 px card, a 16:9 well, a title and one line. */
+  made: { w: 308, h: 173 + 84 },
 } as const;
-const WELL = { take: 191, cast: 173, looks: 260, media: 124 } as const;
+const WELL = { take: 191, cast: 173, looks: 260, media: 124, made: 173 } as const;
 
 function preview(asset: Asset | undefined): Preview | null {
   if (!asset) return null;
@@ -43,6 +45,7 @@ function preview(asset: Asset | undefined): Preview | null {
   return url ? { url, video: false } : null;
 }
 
+const MADE_GROUP = "group:made";
 const SHOT_STATE: Record<string, CardState> = { approved: "done", queued: "working", failed: "needs" };
 
 function nodeCard(node: CanvasNode, kind: string, region: RegionId | null, order: number, src: BoardSource, shot: RigShot | undefined): BoardCard {
@@ -58,7 +61,7 @@ function nodeCard(node: CanvasNode, kind: string, region: RegionId | null, order
   const kicker = kind === "take" ? `Shot ${shot?.index ?? order + 1}`
     : kind === "cast" ? `${ref ? REF_KIND_LABELS[ref] : "Cast"}${master ? " · master" : ""}`
     : kind === "looks" ? "Look" : kind === "doc" ? "Brief" : kind === "media" ? "Reference" : kind === "unknown" ? "Card" : nodeDef(node.type).label;
-  const well = kind === "take" || kind === "cast" || kind === "looks" || kind === "media" ? WELL[kind] : 0;
+  const well = kind === "take" || kind === "cast" || kind === "looks" || kind === "media" || kind === "made" ? WELL[kind] : 0;
   const text = kind === "doc" || kind === "tool" || kind === "unknown" ? (node.text ?? "").trim() || (kind === "unknown" ? nodeDef(node.type).description : "") : "";
   const state: CardState = kind === "take" ? SHOT_STATE[shot?.status ?? ""] ?? "empty"
     : kind === "cast" || kind === "looks" ? (asset ? "done" : "empty")
@@ -98,7 +101,31 @@ function derive(src: BoardSource): BoardCard[] {
   return cards;
 }
 
-const PLAIN = (kind: "take" | "cast" | "looks" | "doc" | "tool" | "media" | "unknown") =>
+/** What Make filed while this board was open: the shot's node (Make files every take on a new shot node). */
+export type MadeEntry = { nodeId: string };
+
+/**
+ * The "Made in Make" band (README § 3.2 `made`; the master's group of that name): a card for each result Make filed
+ * while this board was open, in the order they came, each pointing at its shot. Session only, so it is never saved;
+ * the shot itself stays in Shots, in its place. A result whose shot is not on the board yet waits for it.
+ */
+export function madeCards(src: BoardSource, made: readonly MadeEntry[]): BoardCard[] {
+  const shots = new Map(src.shots.map((s) => [s.id, s]));
+  const cards: BoardCard[] = [];
+  made.forEach((entry, order) => {
+    const node = src.project.nodes.find((n) => n.id === entry.nodeId);
+    if (!node) return;
+    const card = nodeCard(node, "take", "made", order, src, shots.get(node.id));
+    const data = card.data as NodeCardData;
+    cards.push({ ...card, id: `made:${node.id}`, kind: "made", group: MADE_GROUP, data: { ...data, kicker: "", well: WELL.made } satisfies NodeCardData });
+  });
+  if (!cards.length) return cards;
+  const meta = `${cards.length.toLocaleString("en-US")} ${cards.length === 1 ? "card" : "cards"}`;
+  const data: GroupData = { title: "Made in Make", meta, columns: 3, fallback: true };
+  return [{ id: MADE_GROUP, kind: "group", region: "made", order: -1, state: "done", summary: meta, data }, ...cards];
+}
+
+const PLAIN = (kind: "take" | "made" | "cast" | "looks" | "doc" | "tool" | "media" | "unknown") =>
   defineCard<NodeCardData>({
     kind, size: () => SIZE[kind], Card: NodeCard,
     /* A still or a video dropped on a shot becomes its reference (rig-build's addInput, as the Rig's own library does). */
@@ -108,7 +135,7 @@ const PLAIN = (kind: "take" | "cast" | "looks" | "doc" | "tool" | "media" | "unk
 export const boardCards: CardSet = {
   id: "board",
   defs: [
-    PLAIN("take"), PLAIN("cast"), PLAIN("looks"), PLAIN("doc"), PLAIN("tool"), PLAIN("media"), PLAIN("unknown"),
+    PLAIN("take"), PLAIN("made"), PLAIN("cast"), PLAIN("looks"), PLAIN("doc"), PLAIN("tool"), PLAIN("media"), PLAIN("unknown"),
     defineCard<NoteData>({ kind: "note", size: () => SIZE.note, Card: NoteCard }),
     defineCard<LabelData>({ kind: "label", size: (data) => ({ w: cardWidth({ type: "note", mode: "section", width: Math.max(220, data.title.length * 9 + 48) }), h: SIZE.label.h }), Card: LabelCard }),
     defineCard<GroupData>({ kind: "group", size: () => ({ w: 240, h: 120 }), container: (data) => ({ columns: Number(data.columns) || 2, fill: true }), Card: GroupFrame }),

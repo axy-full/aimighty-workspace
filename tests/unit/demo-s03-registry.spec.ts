@@ -46,3 +46,21 @@ test("a card whose kind no set defines is left out", () => {
   const odd: CardSet = { id: "odd", defs: [], derive: () => [{ id: "x", kind: "nobody", region: "brief", order: 0, state: "empty", data: {} }] };
   expect(buildRegistry([odd]).derive(source([])).map((c) => c.id)).toEqual([]);
 });
+
+test("the Made in Make band holds a card for each result Make filed, in its own group, and waits for a shot not on the board yet", async () => {
+  const { madeCards } = await import("../../components/graphite/board/cards/set-board");
+  const src = source([node("s1", "scene"), node("s2", "scene")]);
+  expect(madeCards(src, [])).toEqual([]);
+  expect(madeCards(src, [{ nodeId: "not-yet" }])).toEqual([]);
+  const cards = madeCards(src, [{ nodeId: "s2" }, { nodeId: "s1" }]);
+  expect(cards.map((c) => [c.id, c.kind, c.region, c.group ?? null, c.nodeId ?? null])).toEqual([
+    ["group:made", "group", "made", null, null], ["made:s2", "made", "made", "group:made", "s2"], ["made:s1", "made", "made", "group:made", "s1"],
+  ]);
+  expect((cards[0].data as { meta: string }).meta).toBe("2 cards");
+  /* The band sits under everything else, and the shots keep their own cards. */
+  const reg = buildRegistry([]);
+  const placed = placeBoard([...reg.derive(src), ...cards], reg.defs, STUDIO_BANDS, "16:9");
+  expect(placed.byId.has("s1") && placed.byId.has("made:s1")).toBe(true);
+  expect(placed.boxes.get("made:s1")!.y).toBeGreaterThan(placed.boxes.get("s1")!.y);
+  expect(placed.regions.has("made")).toBe(true);
+});

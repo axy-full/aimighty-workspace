@@ -38,7 +38,7 @@ export function NodeCard({ data }: CardProps<NodeCardData>) {
         </span>
       ) : null}
       <span className="bd-card-body">
-        <span className="bd-eyebrow">{data.kicker}</span>
+        {data.kicker ? <span className="bd-eyebrow">{data.kicker}</span> : null}
         <span className="bd-card-title">{data.title}</span>
         {data.text ? <span className="bd-card-text">{data.text}</span> : null}
         {data.line ? <span className="bd-card-line"><i aria-hidden="true" />{data.line}</span> : null}
