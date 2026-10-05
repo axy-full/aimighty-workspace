@@ -66,13 +66,22 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 
 ## Suites screens behind the new-interface switch
 
-Old `/suites` screens that customers still see while the switch is off. Each is deleted in the switch-flip PR, not before.
+Besides the routes above, `/suites` itself still draws today's screens for every workspace that does not have the new interface on. The switch is per workspace (`lib/shell/new-interface.ts`; the platform owner turns it on from `/admin`, and "Everyone" last). Each new screen is one entry module, listed in the registry (`lib/shell/screens.ts`), with its address rows in its own routing module. Until a screen's `landed` flag is true, its new address opens today's page for it.
 
-| Old screen | Files | Replacement (switch on) | Deleted |
-|---|---|---|---|
-| Workspace › People, Security (`?view=workspace&tab=people`, `tab=security`) | `components/graphite/WorkspaceView.tsx` (`People`, `Security`) | Settings › Team `?view=workspace&tab=team` (`&open=security`), `components/graphite/settings/team/` | switch-flip PR |
-| Workspace › Plans & credits, Usage (`tab=credits`, `tab=usage`) | `components/graphite/WorkspaceView.tsx` (`Plans`, `Usage`) | Settings › Plan & credits `?view=workspace&tab=credits` (`&open=usage`), `components/graphite/settings/credits/` | switch-flip PR |
-| Workspace › General, Engines, Dashboard (`tab=general`, `tab=engines`, `tab=dashboard`) | `components/graphite/WorkspaceView.tsx`, `ManagementDashboard.tsx`, `ConnectRow.tsx` | Settings › Spending rules and Advanced (later PRs); Dashboard → Activity `?suite=atomik&page=runs`. Until then Settings shows Workspace's own tab for these ids | switch-flip PR |
+**One rule for every PR that lands a screen:** while any workspace still sees the old screen, the old screen stays and gets a row here, with the screen that replaces it. The PR that turns the switch on for everyone deletes every old screen listed here (components, stylesheets, assets, tests) and the switch-off rows in the routing modules. A screen with no customer path left is deleted in the PR that lands its replacement.
+
+Rows are appended by the PR that lands the replacement, in the same table, one per old screen.
+
+| Old screen (switch off) | Where it lives today | Replaced by (switch on) | Entry module | Routing module | Deleted in |
+|---|---|---|---|---|---|
+| Studio overview, and the phone's Home (`?suite=particl&page=brief&sp=stages`, `sp=home`) | `components/graphite/mobile/StudioHome.tsx`, `components/graphite/mobile/SuiteHome.tsx` | Home, `?view=home` | `components/graphite/home/HomeView.tsx` | `components/graphite/home/routes.ts` | the switch-flip PR |
+| Studio stages and the Rig (`?suite=particl&page=brief\|boards\|cast\|astra\|rig\|takes\|edit\|deliver`) | `components/graphite/production/*`, `components/workspace/rig/*`, the Library and Inspector columns | The board, `?view=board` and its regions | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| Business pages (`?suite=moleculr&page=marketing&sp=…`) and Viral History | `components/graphite/business/*`, `components/graphite/viral/*` | The Ads and Social boards, `?view=board&kind=ads\|social` | `components/graphite/board/BoardView.tsx` (by kind) | `lib/shell/ads-social.ts` | the switch-flip PR |
+| Atomik's Agent page (`?suite=atomik&page=agent`) | `components/workspace/pages/*` (Agent) | Atomik's panel, `&atomik=1`, over any screen | `components/graphite/atomik/panel/AtomikPanel.tsx` | `components/graphite/atomik/panel/routes.ts` | the switch-flip PR |
+| Atomik's Runs, Approvals, Memory and Skills pages | `components/workspace/pages/*`, `components/graphite/atomik/*` | The control room, at the same addresses | `components/graphite/control-room/ControlRoom.tsx` | `lib/control-room/routes.ts` | the switch-flip PR |
+| Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx`, `components/management/*` | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
+| The phone's header, page strip and tab bar | `components/graphite/TabBar.tsx`, `phone.css`, the compact rows of `Header.tsx` and `StageStrip.tsx` | The phone's own screens, at compact widths or with `device=phone` | `components/graphite/phone/PhoneApp.tsx` | `components/graphite/phone/routes.ts` | the switch-flip PR |
+| Make's panel as it is today | `components/graphite/MakePanel.tsx` | Make re-laid out behind the switch (the switch-off panel stays as it is) | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR |
 
 ## Notes that change what D1 can delete
 
