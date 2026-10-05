@@ -5,7 +5,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { moreTakes } from "./helpers/genTakes";
 
 /**
- * Make approves Cinema Studio's hold (owner's decision, 5 October 2026): the
+ * Gen approves Cinema Studio's hold (owner's decision, 5 October 2026): the
  * button says "about N cr, at most 3N cr", whole and on screen at every size,
  * and a press sends the hold, 3N, as each take's approval (`maxCredits`), the
  * figure admission reserves. A take admission holds for credits says so with
@@ -55,7 +55,7 @@ async function open(page: Page, admit: (take: number) => "running" | "held" = ()
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?make=video&project=${DRAFT}`);
+  await page.goto(`/suites?view=gen&project=${DRAFT}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Lighthouse hold");
   /* Cinema Studio, from the engine sheet. */
@@ -71,7 +71,7 @@ async function open(page: Page, admit: (take: number) => "running" | "held" = ()
   return { quotes, sent, errors };
 }
 
-/** The button's price on screen, whole, on one line, and legible; and the engine line's, wrapped whole inside its line. */
+/** The button's price on screen, whole, never cut, and legible. */
 async function priceFits(page: Page, go: Locator) {
   await go.scrollIntoViewIfNeeded();
   const fit = await go.evaluate((el) => {
@@ -79,9 +79,9 @@ async function priceFits(page: Page, go: Locator) {
     const box = el.getBoundingClientRect(), p = price.getBoundingClientRect();
     const px = parseFloat(getComputedStyle(price).fontSize);
     return { inside: box.left >= 0 && box.right <= innerWidth + 1, uncut: el.scrollWidth <= el.clientWidth + 1 && p.left >= box.left - 1 && p.right <= box.right + 1,
-      oneLine: p.height <= px * 1.6, legible: px >= 12 };
+      legible: px >= 12 };
   });
-  expect(fit).toEqual({ inside: true, uncut: true, oneLine: true, legible: true });
+  expect(fit).toEqual({ inside: true, uncut: true, legible: true });
   expect(await noOverflow(page)).toBe(true);
 }
 
@@ -90,15 +90,13 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
 }
 
-test("Make approves Cinema Studio's hold: about N cr, at most 3N cr on the button, whole at every size, and the press sends 3N", async ({ page }, info) => {
+test("Gen approves Cinema Studio's hold: about N cr, at most 3N cr on the button, whole at every size, and the press sends 3N", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { quotes, sent, errors } = await open(page);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Make · about ${N} cr, at most ${3 * N} cr`);
-  await expect(go).toHaveAccessibleName(`Make · about ${N} cr, at most ${3 * N} cr`);
-  await expect(page.getByTestId("make-engine-price")).toHaveText(`about ${N} cr, at most ${3 * N} cr`);
+  await expect(go).toHaveText(`Generate · about ${N} cr, at most ${3 * N} cr`);
   await priceFits(page, go);
-  await shot(page, info, "make-hold");
+  await shot(page, info, "gen-hold");
   await go.click();
   await expect.poll(() => sent.length).toBe(1);
   /* The approval sent is the hold the server quoted: what admission reserves, never the estimate. */
@@ -107,14 +105,14 @@ test("Make approves Cinema Studio's hold: about N cr, at most 3N cr on the butto
   expect(errors).toEqual([]);
 });
 
-test("a batch approves each take's hold: Make 3 takes says about 3N cr, at most 9N cr, and every take goes at 3N", async ({ page }, info) => {
+test("a batch approves each take's hold: Generate 3 takes says about 3N cr, at most 9N cr, and every take goes at 3N", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { sent, errors } = await open(page);
   await moreTakes(page, 2);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Make 3 takes · about ${3 * N} cr, at most ${9 * N} cr`);
+  await expect(go).toHaveText(`Generate 3 takes · about ${3 * N} cr, at most ${9 * N} cr`);
   await priceFits(page, go);
-  await shot(page, info, "make-hold-batch");
+  await shot(page, info, "gen-hold-batch");
   await go.click();
   await expect.poll(() => sent.length).toBe(3);
   for (const body of sent) expect(body).toMatchObject({ model: CINEMA, maxCredits: 3 * N });

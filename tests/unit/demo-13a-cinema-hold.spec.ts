@@ -117,8 +117,8 @@ test("one wording and one band: about N cr, at most 3N cr, for Cinema Studio alo
   /* The composers' button says the same, for a take and a batch. */
   const { composerButtonLabel } = await import("../../lib/workspace/composer");
   const quote = { key: "k", credits: 31, state: "ready" as const, reason: null, approximate: true };
-  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, verb: "Make" })).toBe("Make · about 31 cr, at most 93 cr");
-  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, verb: "Make", count: 3 })).toBe("Make 3 takes · about 93 cr, at most 279 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false })).toBe("Generate · about 31 cr, at most 93 cr");
+  expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · about 93 cr, at most 279 cr");
 });
 
 test("the settlement rule: actual cost up to the hold, the hold past it, the quote with no figure, and a hold never moved while it runs", async () => {
