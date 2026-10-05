@@ -108,7 +108,7 @@ test("the opt-in is read: data-spend, spendAttrs, SpendButton; and a spend verb 
 
 test("the spend verbs: the labels of paid buttons, and not the words that are free elsewhere", () => {
   for (const label of ["Make", "Make · 43 cr", "Generate", "Render", "Recreate", "Again", "Again · 1 cr", "Upscale video", "Transfer motion", "Swap object", "Release", "Train identity", "Approve & run"]) expect(SPEND_LABEL.test(label), label).toBe(true);
-  for (const label of ["Cancel", "Retry", "Run", "Send", "Maker", "Try again", "Save", "Delete"]) expect(SPEND_LABEL.test(label), label).toBe(false);
+  for (const label of ["Cancel", "Retry", "Run", "Send", "Maker", "Make member", "Make admin", "Try again", "Save", "Delete"]) expect(SPEND_LABEL.test(label), label).toBe(false);
 });
 
 /* ---------------------------------------------------------------------------------------------- */

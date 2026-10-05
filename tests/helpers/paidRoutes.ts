@@ -57,7 +57,7 @@ export const SPEND_MARKERS =
  * What the label of a button that spends starts with. A button with one of these as its text is a paid control
  * and must say what it costs. Deliberately short: a verb that is also free elsewhere ("Run", "Retry", "Send") is not here.
  */
-export const SPEND_LABEL = /^\s*(Make|Generate|Render|Release|Recreate|Again|Upscale|Transfer motion|Swap object|Train|Dub|Transcribe|Approve (?:and|&) run|Run again|Re-?run)\b/;
+export const SPEND_LABEL = /^\s*(Make(?!\s+(?:member|admin|owner|editor|viewer)\b)|Generate|Render|Release|Recreate|Again|Upscale|Transfer motion|Swap object|Train|Dub|Transcribe|Approve (?:and|&) run|Run again|Re-?run)\b/;
 
 /** `dir` as a regex over a client string whose template holes are written `{}`. */
 export function routePattern(dir: string): RegExp {
