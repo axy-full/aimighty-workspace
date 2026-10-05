@@ -480,6 +480,11 @@ try {
       )
     ).rows[0].id,
   );
+  // Receipts carry the price of a credit they were billed at (meter_events.credit_usd): a row without
+  // one is a legacy US$0.10 receipt, which Usage restates by value in today's credits. These stand for
+  // bills made now, so they are recorded at the price this server charges.
+  const creditUnit = Number((await json(await api.get("/api/me"), 200)).rates?.creditUsd);
+  assert.ok(creditUnit > 0, "the server states its price of a credit");
   for (const [id, workspaceId, kind, model, credits, rawCost] of [
     ["http-text-meter", first.id, "text", "mock-visible-text", 7, 123456],
     [
@@ -500,7 +505,7 @@ try {
     ],
   ])
     await p.execute({
-      sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'succeeded',?,?,1,?,?,?)",
+      sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd) VALUES(?,?,?,?,?,?,'succeeded',?,?,1,?,?,?,?)",
       args: [
         id,
         workspaceId,
@@ -513,6 +518,7 @@ try {
         actorId,
         Date.now(),
         Date.now(),
+        creditUnit,
       ],
     });
   const privacyDb = createClient({
@@ -530,14 +536,18 @@ try {
     args: [started.id],
   });
   privacyDb.close();
-  const expectedCredits = Number(
-    (
-      await p.execute({
-        sql: "SELECT SUM(billed_credits) AS n FROM meter_events WHERE workspace_id=? AND paid_by_platform=1",
-        args: [first.id],
-      })
-    ).rows[0].n,
-  );
+  // Every receipt here is at today's price, so the bill is their sum, in whole tenths as the ledger counts.
+  const expectedCredits =
+    Math.round(
+      Number(
+        (
+          await p.execute({
+            sql: "SELECT SUM(billed_credits) AS n FROM meter_events WHERE workspace_id=? AND paid_by_platform=1",
+            args: [first.id],
+          })
+        ).rows[0].n,
+      ) * 10,
+    ) / 10;
   const usage = await json(await api.get("/api/usage"), 200);
   const summary = await json(await api.get("/api/usage/summary"), 200);
   for (const view of [usage, summary]) {
