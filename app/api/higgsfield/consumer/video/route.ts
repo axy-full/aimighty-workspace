@@ -27,7 +27,7 @@ const quote = z.object({ action: z.literal("quote"), draftId: id, input: consume
 const rehearse = z.object({ action: z.literal("quote-rehearsal"), idempotencyKey: z.uuid() }).strict();
 const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) }).strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
-/** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
+/** The account's setup items, by type; read-only, never billed. */
 const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
 /** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing, rehearsing and starting a marketing video, and reading the account's setup lists. `status` and the saved jobs (GET) stay. */
