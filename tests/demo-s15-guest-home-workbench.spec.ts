@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { SITE_ROW } from "../lib/site/settings";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { smallTargets, smallText } from "./phoneFloors";
+import { seedMarkedSample } from "./helpers/guestSample";
 
 /**
  * Guest Home (lead decisions 35, 36 and 39; design README § 3.7) at the five sizes, against a local ENGINE_MOCK
@@ -116,7 +117,13 @@ test("Guest Home on: Home signed out, and every action that thinks or spends ope
   const vp = page.viewportSize()!;
   expect(box!.y).toBeGreaterThanOrEqual(0);
   expect(box!.y + box!.height).toBeLessThanOrEqual(vp.height + 1);
-  if (!phone(info)) expect(Math.abs(box!.x + box!.width / 2 - vp.width / 2)).toBeLessThan(2);
+  if (!phone(info)) {
+    expect(Math.abs(box!.x + box!.width / 2 - vp.width / 2)).toBeLessThan(2);
+    /* Centred on the other axis too, and Request access is inside the window (decision 39 a). */
+    expect(Math.abs(box!.y + box!.height / 2 - vp.height / 2)).toBeLessThan(2);
+    const request = await page.getByTestId("signup-request").boundingBox();
+    expect(request!.y + request!.height).toBeLessThanOrEqual(vp.height + 1);
+  }
   await shot(page, info, "G3b-request-access");
   await page.getByTestId("signup-close").click();
   await expect(page.getByTestId("signup-sheet")).toHaveCount(0);
@@ -160,6 +167,67 @@ test("the sample production is read-only: the frame's layout, the title, no medi
   await page.getByTestId("guest-sample-signup").click();
   await expect(page.getByTestId("signup-sheet")).toBeVisible();
   expect(notAllowed(seen)).toEqual([]);
+});
+
+test("the sheet's kept brief clamps cleanly to three lines with an ellipsis", async ({ page }) => {
+  await setSite({ guestHome: true });
+  await page.goto("/");
+  await page.getByTestId("home-brief").fill(`${BRIEF} `.repeat(6));
+  await page.getByTestId("home-start").click();
+  await expect(page.getByTestId("signup-sheet")).toBeVisible();
+  const brief = page.getByTestId("signup-brief").locator("span");
+  const m = await brief.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return { lines: Math.round(el.clientHeight / parseFloat(css.lineHeight)), clamped: el.scrollHeight > el.clientHeight + 1, clamp: css.webkitLineClamp };
+  });
+  expect(m.clamp).toBe("3");
+  expect(m.lines).toBeLessThanOrEqual(3);
+  expect(m.clamped, "a long brief is cut, not spilled").toBe(true);
+});
+
+test("the sample production from the Particl sample workspace: plan, shots, cast and cut, read-only", async ({ browser, page }, info) => {
+  const { workspaceId } = await seedMarkedSample(page);
+  await setSite({ guestHome: true, guestWorkspace: workspaceId });
+  /* A guest is a visitor with no cookie at all: a context of its own. */
+  const context = await browser.newContext({ viewport: page.viewportSize() ?? undefined, isMobile: phone(info), hasTouch: phone(info) });
+  const guest = await context.newPage();
+  const seen = apiLog(guest);
+  try {
+    await guest.goto("/?sample=1");
+    await expect(guest.getByTestId("guest-sample")).toHaveAttribute("data-board", "sample");
+    await expect(guest.getByTestId("guest-sample-title")).toHaveText("A 15-second film");
+    await expect(guest.getByTestId("guest-sample-brief")).toContainText("A short film about a walk to a sculpture.");
+    /* The plan: exactly the three shot lines, the total, and twice the total as the most the fixes cost (correction b). */
+    await expect(guest.getByTestId("guest-plan-heading")).toHaveText("Make 3 shots · 93 cr");
+    await expect(guest.getByTestId("guest-plan-step")).toHaveCount(3);
+    await expect(guest.getByTestId("guest-plan-step").nth(0)).toContainText("Shot 1 · Seedance 2.5 · 5 s · 1080p");
+    await expect(guest.getByTestId("guest-plan-step").nth(0)).toContainText("43 cr");
+    await expect(guest.getByTestId("guest-plan-step").nth(2)).toContainText("7 cr");
+    await expect(guest.getByTestId("guest-plan-fixes")).toHaveText("Fixes if needed: up to 2 per shot, at most 186 cr");
+    /* Shot 3's own state, not another shot's (correction d); the cut and delivery (correction e). */
+    await expect(guest.getByTestId("guest-shots-heading")).toHaveText("Shots · 2 of 3 approved");
+    await expect(guest.getByTestId("guest-review")).toContainText("Shot 3 · review");
+    await expect(guest.getByTestId("guest-review")).toContainText("needs review");
+    await expect(guest.getByTestId("guest-cut-line")).toHaveText("2 approved takes · 0:10 · Shot 3 waits for review");
+    await expect(guest.getByTestId("guest-deliver")).toContainText("pending");
+    await expect(guest.getByTestId("guest-cast")).toHaveText("Lead · ivory suit, short dark bob");
+    const text = await guest.getByTestId("guest-sample").innerText();
+    expect(text).not.toMatch(/Dune|Mira\b|Mara\b|Sethi|Northline|\bSH\d|consent|cr left|\bof \d+ cr\b/i);
+    expect(await guest.getByTestId("guest-sample").locator("img, video").count(), "no media until stream 12's media route").toBe(0);
+    /* Read-only: every action opens the sheet. */
+    for (const id of ["guest-sample-make", "guest-review-gated"]) {
+      await guest.getByTestId(id).click();
+      await expect(guest.getByTestId("signup-sheet"), id).toBeVisible();
+      await guest.keyboard.press("Escape");
+      await expect(guest.getByTestId("signup-sheet")).toHaveCount(0);
+    }
+    await floors(guest, info, "the sample board");
+    const out = SHOTS && /1440x900|390x844/.test(info.project.name) ? `${SHOTS}/G2-sample-board-${info.project.name.replace("workbench-", "")}.png` : null;
+    if (out) await guest.screenshot({ path: out, fullPage: false });
+    expect(notAllowed(seen), "a guest's page called these routes").toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
 
 test("Request access is stored for the owner with what they make and the brief", async ({ page }, info) => {
