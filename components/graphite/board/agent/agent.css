@@ -1,0 +1,54 @@
+/*
+ * The board's docked Atomik panel (design/particl-graphite/README.md § 3.1, Studio board frames a–p).
+ * Graphite tokens only (app/graphite.css). Nothing read is under 12 px or under 55 % white.
+ */
+.ag { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); }
+.ag-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 8px 16px; }
+.ag-seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--gx-input); border-radius: var(--gx-r-ctl); }
+.ag-seg button { border: 0; background: transparent; color: var(--gx-text-2); height: 28px; padding: 0 12px; border-radius: var(--gx-r-ctl); font-size: var(--gx-fs-control); font-weight: 500; }
+.ag-seg button[aria-selected="true"] { background: var(--gx-seg-on); color: var(--gx-text); }
+.ag-collapse { border: 0; background: transparent; color: var(--gx-quiet); font-size: 18px; line-height: 1; min-width: 32px; min-height: 32px; border-radius: var(--gx-r-ctl); }
+.ag-collapse:hover { color: var(--gx-text); }
+
+.ag-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 16px 14px; display: flex; flex-direction: column; gap: 16px; }
+.ag-eyebrow { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-accent-text); }
+.ag-msg { display: flex; flex-direction: column; gap: 8px; }
+.ag-text { display: flex; flex-direction: column; gap: 4px; font-size: var(--gx-fs-body); line-height: 1.55; overflow-wrap: anywhere; }
+.ag-msg[data-tone="needs"] .ag-eyebrow { color: var(--gx-waiting-text); }
+.ag-msg[data-tone="problem"] .ag-text { color: var(--gx-failed-text); }
+.ag-title { font-weight: 600; }
+.ag-sub { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
+.ag-mono { font-family: var(--gx-mono); }
+.ag-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ag-row .ag-title { min-width: 0; overflow-wrap: anywhere; }
+.ag-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font: inherit; font-weight: 600; }
+
+.ag-btn {
+  height: 28px; padding: 0 10px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border); background: transparent;
+  color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.ag-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.ag-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.ag-btn-primary { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.ag-btn-primary:hover:not(:disabled) { background: var(--gx-accent-hover); border-color: var(--gx-accent-hover); }
+.ag-btn-primary:disabled { background: var(--gx-seg-on); border-color: var(--gx-seg-on); color: var(--gx-disabled); }
+.ag-btn-quiet { border-color: transparent; color: var(--gx-text-2); }
+.ag button:focus-visible, .bd-dock-rail:focus-visible, .ag-number:focus-visible, .ag textarea:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+.ag-field { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); }
+.ag-number { width: 88px; height: 28px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-input-border); background: var(--gx-input); color: var(--gx-text); font-family: var(--gx-mono); font-size: 13px; padding: 0 8px; }
+
+.ag-compose { flex: none; padding: 10px 12px 14px; border-top: 1px solid var(--gx-hair); }
+.ag-box { display: flex; gap: 6px; background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-card); padding: 6px 6px 6px 12px; }
+.ag-box:focus-within { border-color: var(--gx-tint-border-50); }
+.ag-box textarea { flex: 1; min-width: 0; resize: none; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-body); line-height: 1.45; padding: 3px 0; outline: none; }
+.ag-box textarea::placeholder { color: var(--gx-placeholder); }
+.ag-ask { align-self: flex-end; height: 32px; font-size: var(--gx-fs-control); }
+.ag-note { margin: 6px 2px 0; font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+
+/* The rail's "needs you" dot (README § 3.1 a: the rail stays quiet unless something waits for this person). */
+.bd .bd-dock-rail { position: relative; }
+.ag-rail-dot { position: absolute; top: 4px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--gx-waiting); }
+
+@media (pointer: coarse) { .ag-btn, .ag-collapse, .ag-seg button { min-height: 44px; } .ag-number { min-height: 44px; } }

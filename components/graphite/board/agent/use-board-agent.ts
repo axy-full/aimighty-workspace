@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { ACTIVE_STATES } from "@/lib/workbench/rig-agent-plan";
+import { approvalsChanged } from "@/lib/control-room/approve";
 import { BUSY_MS, IDLE_MS, READ_FAILED, callAgent, goalOf, readAgent, type AgentAnswer, type AskTerms } from "./agent-api";
 
 /**
@@ -68,6 +69,8 @@ export type BoardAgent = {
   /** Ask Atomik to plan this board, at the limit the person pressed (the planning figure on the button). */
   plan: (words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }) => Promise<string | null>;
   ready: boolean;
+  /** The planning figure as the last read holds it, for a press that must not outrun a price that moved. */
+  latestPlanning: () => number | null;
 };
 
 export function useAgentRun(): BoardAgent {
@@ -108,6 +111,8 @@ export function useAgentRun(): BoardAgent {
     const result = await callAgent(scope, production, body);
     if (!result.ok) return result.error;
     put(key, { answer: result.agent, error: null });
+    window.dispatchEvent(new Event("particl:board-agent-changed"));
+    approvalsChanged();
     return null;
   }, [production, key, scope]);
   const plan = useCallback((words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }) => {
@@ -121,5 +126,6 @@ export function useAgentRun(): BoardAgent {
     readError: snapshot?.error ?? null,
     refresh, call, plan,
     ready: !!snapshot?.answer,
-  }), [snapshot, refresh, call, plan]);
+    latestPlanning: () => (key ? entries.get(key)?.terms?.planning ?? null : null),
+  }), [snapshot, refresh, call, plan, key]);
 }
