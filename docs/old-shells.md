@@ -117,3 +117,17 @@ With the new interface switched on, these `/suites` pieces are not shown; with i
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
+
+## Suites screens behind the new-interface switch
+
+Old screens that customers still use while the switch is off. Each is deleted in the switch-flip PR, with its sheets and tests, once nothing else imports it.
+
+| Old screen | Files | Replaced by (switch on) | Notes |
+|---|---|---|---|
+| Studio › Rig (`?suite=particl&page=rig`, `&rig=list`) | `components/workspace/rig/RigPage.tsx`, `RigGraph.tsx`, `RigBoard.tsx`, `RigList.tsx`, `TeamPresence.tsx`; the graph and list parts of `rig.css` | The board, `?view=board` (`components/graphite/board/BoardView.tsx`) and its List view (`&list=1`) | `RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are the board's data layer and stay. `RigImport.tsx` stays until the board shows an import. `RigAgentCard.tsx` and the Rig Inspectors go with their replacements (the docked Atomik panel; the board's Inspector). |
+| Studio › Rig's own library | `components/graphite/production/RigExtras.tsx` (`RigLibrary`) | The board's Library drawer (`components/graphite/board/drawers/Drawers.tsx`) | A file dropped on a shot becomes its reference on both. |
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` | The board | Still imported by `components/workbench/Studio.tsx` (the `/workbench` row above). |
+| Studio › Brief & Script (`?suite=particl&page=brief`) | `components/graphite/production/BriefStage.tsx` (with the `ScriptPanel` and `DevelopmentPanel` mounts) | The brief card on the board (`components/graphite/board/cards/doc/`), and Atomik's questions before the looks (`cards/questions/`) | Not drawn in the new design, so unreachable with the switch on until they are: the script writer and its redraft, the Final Draft and PDF import, the script editor. |
+| Studio › Beats & Shots (`&page=brief&sp=beats`, `&beats=graph`) | `components/graphite/production/BeatsStage.tsx`, `BeatGraph.tsx` | The board's List view, an editable shot list (`&list=1`; `cards/doc/ShotListDoc.tsx`) | The breakdown that writes the beat sheet from a script is not drawn; the list keeps what the sheet already holds. `lib/production/beats*.ts` stay: the board edits the same sheet. |
+| Studio › Storyboards (`&page=boards`) | `components/graphite/production/StoryboardStage.tsx` | The Storyboard and Looks groups on the board (`cards/storyboard/`, `cards/looks/`) | `lib/production/boards.ts` (`frameRequest`) and `lib/production/use-stage-quotes.ts` moved out of the old folder so the board does not import a screen that goes. Line drawings, frame prompts and revisions are not drawn. |
+| Atomik's run card on the Rig, plan part | `components/workspace/rig/RigAgentCard.tsx` | The plan card on the board (`cards/plan/`); the ask moves to the docked Atomik panel | Shared helpers that become unused with the stages above: `AgentAction.tsx`, `AgentBar.tsx`, `use-agent-runs.ts`, `use-agent-attachments.tsx`, `use-stage-facts.ts`, `agent-price.ts` (Cast and Environment still use some, so they go with those rows). |

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 
 type Request = { body: Record<string, unknown>; transcription?: boolean };
-type Quote = { key: string; credits?: number; error?: string };
+/** `approximate`: the server quoted it from published rates; the charge may settle above it (lib/runLimit.ts jobBand). */
+type Quote = { key: string; credits?: number; approximate?: true; error?: string };
 
 /** Only side-effect-free quotes run here. Paid requests stay in the stage's explicit action. */
 export function useStageQuotes(scope: string, requests: Record<string, Request>) {
@@ -22,14 +23,14 @@ export function useStageQuotes(scope: string, requests: Record<string, Request>)
           const key = keyFor(request);
           if (quotes[id]?.key === key) continue;
           try {
-            const reply = await studioRequest<{ estimatedCredits: number }>(request.transcription ? "/api/audio/transcribe" : "/api/generate/quote", {
+            const reply = await studioRequest<{ estimatedCredits: number; approximate?: boolean }>(request.transcription ? "/api/audio/transcribe" : "/api/generate/quote", {
               method: "POST", signal: controller.signal,
               headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
               body: JSON.stringify(request.transcription ? { ...request.body, quoteOnly: true } : request.body),
             });
             if (controller.signal.aborted) return;
             if (!Number.isFinite(reply.estimatedCredits) || reply.estimatedCredits < 0) throw new Error("The price could not be read. Try again.");
-            setQuotes((all) => ({ ...all, [id]: { key, credits: reply.estimatedCredits } }));
+            setQuotes((all) => ({ ...all, [id]: { key, credits: reply.estimatedCredits, ...(reply.approximate ? { approximate: true as const } : {}) } }));
           } catch (cause) {
             if (controller.signal.aborted) return;
             setQuotes((all) => ({ ...all, [id]: { key, error: cause instanceof Error ? cause.message : "The price could not be read. Try again." } }));
