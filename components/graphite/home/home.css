@@ -120,7 +120,7 @@
   position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; flex: none;
   background: var(--gx-root);
 }
-.gx-hm-cover[data-cover="swatch"] { background: linear-gradient(135deg, var(--hm-from), var(--hm-to)); display: grid; place-items: center; }
+.gx-hm-cover[data-cover="swatch"] { background: linear-gradient(135deg, var(--hm-from, var(--gx-card)), var(--hm-to, var(--gx-card))); display: grid; place-items: center; }
 .gx-hm-initials { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--gx-text); }
 .gx-hm-badge {
   position: absolute; left: 10px; top: 10px; padding: 2px 7px; border-radius: var(--gx-r-pill);

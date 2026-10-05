@@ -126,7 +126,7 @@
   .gx .gx-make { width: 100%; left: 0; top: var(--make-top, 64px); border-left: 0; border-top: 0; padding-top: 4px; box-shadow: none; }
   .gx .gx-make-head { padding: 2px 6px 2px 16px; }
   /* The body's end clears the floating tab bar; Make's row sticks to the end of its content box, above the bar. */
-  .gx .gx-make-body { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
+  .gx .gx-make-body { padding-bottom: var(--ph-clear, 16px); scroll-padding-bottom: var(--ph-clear, 16px); }
   .gx .gx-make .gx-gen-cta.gx-make-go { flex-wrap: nowrap; padding: 4px 16px; }
   .gx .gx-make .gx-gen-go { flex: 0 0 auto; }
   .gx-make-dest { flex: 1 1 0; }
@@ -260,5 +260,5 @@
 @media (max-width: 767px) {
   .gx .gx-mk-head { padding: 2px 6px 2px 16px; }
   /* The body's end clears the floating tab bar; Make's row sticks above it. */
-  .gx .gx-mk-body { padding-bottom: var(--ph-clear); scroll-padding-bottom: var(--ph-clear); }
+  .gx .gx-mk-body { padding-bottom: var(--ph-clear, 16px); scroll-padding-bottom: var(--ph-clear, 16px); }
 }

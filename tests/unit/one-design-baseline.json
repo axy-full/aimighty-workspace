@@ -138,7 +138,7 @@
     "components/workspace/spec/tools/AstraTool.tsx": 1,
     "lib/shell/confirmations.ts": 3,
     "lib/shell/enhancer.ts": 1,
-    "lib/shell/ia.ts": 16,
+    "lib/shell/ia.ts": 10,
     "lib/shell/production-tools.ts": 1,
     "lib/shell/studio-home.ts": 1,
     "lib/shell/tools-connections.ts": 2

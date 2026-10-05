@@ -56,7 +56,7 @@
 .bd-node[data-container] { border-radius: var(--gx-r-group); }
 .bd-node[data-selected]:not([data-container]) > .bd-card { box-shadow: var(--gx-ring-selected); }
 .bd-node[data-selected][data-container] > .bd-group { border-color: var(--gx-accent); }
-.bd-node[data-watched]:not([data-selected]) { outline: 2px solid var(--bd-ring); outline-offset: 3px; }
+.bd-node[data-watched]:not([data-selected]) { outline: 2px solid var(--bd-ring, currentColor); outline-offset: 3px; }
 .bd-node[data-dragging] { opacity: .92; }
 .bd-tag {
   position: absolute; left: 0; top: -24px; max-width: 100%; padding: 2px 8px; border-radius: 999px; z-index: 2;
