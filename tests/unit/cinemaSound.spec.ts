@@ -460,7 +460,7 @@ test("unset, a take asked for with sound is refused before anything is reserved 
   const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
   /* Approved or not, true or merely truthy: the same refusal, and nothing reserved, kept or dispatched. */
   for (const [value, key] of [[true, "true"], ["yes", "truthy"], [1, "one"]] as const) {
-    const reply = await f.post({ ...f.body({ generateAudio: value }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, `cinema-sound-refused-${key}`);
+    const reply = await f.post({ ...f.body({ generateAudio: value }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, `cinema-sound-refused-${key}`);
     expect(reply.status, key).toBe(400);
     expect(await reply.json(), key).toEqual({ error: UNAVAILABLE });
   }
@@ -469,7 +469,7 @@ test("unset, a take asked for with sound is refused before anything is reserved 
   expect(f.dispatches).toEqual([]);
   /* Off (or said false), the take is the silent one it always was. */
   expect(prepared(await f.admission.prepareGeneration(f.body({ generateAudio: false }), actor)).quote.fingerprint).toBe(silent.quote.fingerprint);
-  const accepted = await f.post({ ...f.body(), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-silent");
+  const accepted = await f.post({ ...f.body(), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-silent");
   expect(accepted.status, await accepted.clone().text()).toBe(202);
   expect(f.dispatches).toHaveLength(1);
 }));
@@ -479,7 +479,7 @@ test("unset, a workspace that only carries the legacy flag is not the house: sou
   expect(refused).toMatchObject({ ok: false, status: 400 });
   expect(JSON.stringify(refused)).toContain(UNAVAILABLE);
   const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
-  const reply = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-flagged");
+  const reply = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-flagged");
   expect(reply.status).toBe(400);
   expect(await reply.json()).toEqual({ error: UNAVAILABLE });
   expect(await f.rows()).toEqual([]);
@@ -493,7 +493,7 @@ test("unset, the house workspace (by its id) may still ask for sound, at the fig
   expect(params(loud).generateAudio).toBe(true);
   expect(params(loud).higgsfieldVendorCostUsd).toBe(params(silent).higgsfieldVendorCostUsd);
   expect(loud.quote.fingerprint).not.toBe(silent.quote.fingerprint);
-  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.estimatedCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-house");
+  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.ceilingCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-house");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
   expect(f.dispatches).toEqual([result.id]);
@@ -520,11 +520,11 @@ test("set, a take with sound is quoted with what sound adds, its approval is bou
   expect(referenced.quote.estimatedCredits).toBe(silent.quote.estimatedCredits);
 
   /* An approval given with the switch off is not one for sound: refused, nothing kept, nothing dispatched. */
-  const swapped = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-swapped");
+  const swapped = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-swapped");
   expect(swapped.status, await swapped.text()).toBe(409);
   expect(await f.rows()).toEqual([]);
   /* Approved with sound: accepted once, with the switch on the row and the figure it was approved at. */
-  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.estimatedCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-once");
+  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.ceilingCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-once");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
   expect(f.dispatches).toEqual([result.id]);

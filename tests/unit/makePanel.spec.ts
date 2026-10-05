@@ -64,7 +64,7 @@ test("Make's button says Make at the same live price; only the verb changes", ()
   expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, verb: "Make" })).toBe("Make · 43 cr");
   expect(composerButtonParts({ quote, quoteKey: "k", submitting: false, count: 3, verb: "Make" })).toEqual({ action: "Make 3 takes", price: "129 cr" });
   expect(composerButtonParts({ quote, quoteKey: "k", submitting: false, draft: true, verb: "Make" }).action).toBe("Make draft");
-  expect(composerButtonLabel({ quote: { ...quote, approximate: true }, quoteKey: "k", submitting: false, verb: "Make" })).toBe("Make · about 43 cr");
+  expect(composerButtonLabel({ quote: { ...quote, approximate: true }, quoteKey: "k", submitting: false, verb: "Make" })).toBe("Make · about 43 cr, at most 129 cr");
   /* Every other composer still says Generate. */
   expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false })).toBe("Generate · 43 cr");
   /* The empty prompt's reason is one constant, so Make can say it in its own words. */
