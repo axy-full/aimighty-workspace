@@ -14,7 +14,7 @@ import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type Ge
 import { sendReference, useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
-import { buttonFigure, figureWords, makeFigure, type MakeFigure } from "@/lib/shell/make-price";
+import { buttonFigure, figureWords, hiddenInMake, makeFigure, type MakeFigure } from "@/lib/shell/make-price";
 import { RECENT_CHIPS, askAgain, againAsk, canAgain, recentEmpty, recentEntries, recentMeta, type AgainPrice, type RecentChip } from "@/lib/shell/make-recent";
 import { MakeFigureView, useFigureTitle } from "./MakeFigure";
 import { useShell } from "@/lib/shell/state";
@@ -24,7 +24,7 @@ import { AUDIO_SECONDS, COMPOSER_TYPES, EMPTY_PROMPT, READING_MODELS, TAKES_MAX,
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
-import { entryBatch, entryDraft, entryKind, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
+import { entryBatch, entryDraft, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { groupTakes, stripLabel, takeLabel, isVariation, type TakeCell } from "@/lib/variations";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
 import { TakeStrip } from "./TakeStrip";
@@ -136,7 +136,7 @@ function RecentFoot({ entry, models, aspect, fetcher, prices, onAgain, onReferen
           {rerun ? (
             <button type="button" className="gx-hbtn" onClick={() => onAgain(entry)} title={againTitle} data-testid="make-again" data-priced={again ? "" : undefined}
               aria-label={again ? `${word} · ${figureWords(again)}` : word}>
-              {word}{again ? <> · <MakeFigureView figure={again} /></> : null}
+              <span>{word}{again ? <> · <MakeFigureView figure={again} /></> : null}</span>
             </button>
           ) : null}
           {referable ? <button type="button" className="gx-hbtn" onClick={() => onReference(entry)} data-testid="make-use-reference">Use as reference</button> : null}
@@ -173,7 +173,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const ws = useWorkspace();
   const opened = shell.make && shell.make !== "recent" ? shell.make : shell.lastMake;
   const [initialType] = useState(opened);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", hide: hiddenInMake });
   const { state, model, offered, settings, blocked: waiting, buttonParts, submitting } = composer;
   /* Make's own words for an empty prompt; every other reason is the composer's. */
   const blocked = waiting === EMPTY_PROMPT ? "Say what to make." : waiting;
@@ -840,7 +840,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
       {/* The composer keeps its prompt when the results throw; one bad take costs only its own tile. */}
       <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
       <VirtualItems
-        className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ columns: 1 }} gap={12} estimateRowHeight={330} scroll="ancestor"
+        className="gx-gen-grid gx-make-cards" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ columns: 1 }} gap={12} estimateRowHeight={330} scroll="ancestor"
         before={<>
         {running ? (
           <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>

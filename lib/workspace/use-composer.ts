@@ -255,6 +255,8 @@ export function useComposer(options: {
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
   /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
   verb?: string;
+  /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
+  hide?: (modelId: string) => boolean;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -305,7 +307,8 @@ export function useComposer(options: {
   const quote = quoteAnswer?.scope === scope ? quoteAnswer.quote : null;
   const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, quote: value }), [scope]);
 
-  const models = useMemo(() => workspaceModels(engines.rows, audio), [engines.rows, audio]);
+  const hide = options.hide;
+  const models = useMemo(() => workspaceModels(engines.rows, audio).filter((m) => !hide?.(m.id)), [engines.rows, audio, hide]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);

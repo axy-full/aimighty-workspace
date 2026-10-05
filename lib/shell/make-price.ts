@@ -1,3 +1,4 @@
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
 import type { ComposerQuote } from "../workspace/composer";
 import { shownTotal } from "../workspace/composer";
 import { exact, priceWords, type PriceValue } from "./price-words";
@@ -13,6 +14,18 @@ import { exact, priceWords, type PriceValue } from "./price-words";
  * ("about N cr"). When #523 is merged, `cinemaParts` returns `cinemaPriceParts(credits)` and every
  * screen below (button, engine line, sheet row, Again) follows; nothing else changes.
  */
+
+/**
+ * THE FLAG: whether Make offers Cinema Studio 4.0 at all. Off until #523 (Cinema Studio holds 3N) is merged and money-reviewed:
+ * Make may say "about N cr, at most 3N cr" only when that bound is real, and it is real only once the hold is. While it is
+ * off, Make's engine list, sheet, default, recipes and Again do not include the engine (a take recreated from a Cinema take
+ * lands on Make's own default engine, and says so). To turn it on: set this to true AND swap `cinemaParts` below to
+ * `cinemaPriceParts(credits)` in the same change.
+ */
+export const MAKE_SHOWS_CINEMA = false;
+
+/** The engines Make does not offer (passed to the composer as `hide`). */
+export const hiddenInMake = (modelId: string): boolean => !MAKE_SHOWS_CINEMA && isCinemaStudioModel(modelId);
 
 /** Cinema Studio's price as its runs of words; a screen that wraps it breaks only between runs, never inside a figure. */
 export function cinemaParts(credits: number): string[] {
