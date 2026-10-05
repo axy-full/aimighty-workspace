@@ -58,6 +58,41 @@
 /* Recent: Gen's results, two to a row. */
 .gx .gx-make-recent { padding: 0 16px 16px; }
 
+/* Quick tools (the master's row under Make): Motion transfer and Object swap, each a mode of this panel. */
+.gx-make-tools { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
+.gx-make-tools-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx .gx-make-tools-row > .gx-hbtn { background: transparent; border-color: var(--gx-dialog-border); font-weight: 500; }
+.gx-make-tools-row .gx-glyph { color: var(--gx-text-2); }
+
+/* A quick tool (components/graphite/viral/ViralView.tsx › ViralTool): the source video card, the words with their
+   resolution, the references four across, the line with the live estimate. */
+.gx .vr-src { border-radius: 10px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx .vr-src[data-over="true"], .gx .vr-refs[data-over="true"] .vr-ref-add { border-color: var(--gx-accent); background: var(--gx-tint); }
+.vr-src-media { position: relative; aspect-ratio: 16 / 9; background: var(--gx-root); }
+.vr-src-media .gx-lazy, .vr-src-media video, .vr-src-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx .vr-src-badge { left: 10px; top: 10px; font-size: 12px; letter-spacing: 0; padding: 2px 7px; }
+.gx .vr-src-x { position: absolute; right: 6px; top: 6px; background: var(--gx-on-media); }
+.vr-src-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; }
+.vr-src-text { display: flex; flex-direction: column; min-width: 0; }
+.vr-src-name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.vr-src-line { font-size: 13px; color: var(--gx-text-2); }
+.vr-words { display: flex; flex-direction: column; gap: 8px; }
+.gx .vr-res { align-self: flex-start; }
+.gx .vr-res .gx-seg-btn[aria-checked="true"]::before { opacity: 1; }
+.gx .vr-res .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+.vr-refs { display: flex; flex-direction: column; gap: 8px; }
+.vr-ref-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.vr-ref-tile { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--gx-root); border: 1px solid var(--gx-card-border); }
+.vr-ref-tile .gx-lazy, .vr-ref-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vr-ref-name { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.gx .vr-ref-x { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); font-size: 13px; line-height: 1; }
+.gx .vr-ref-add { aspect-ratio: 1; border-radius: 8px; border: 1px dashed var(--gx-dashed); background: transparent; color: var(--gx-text-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
+.gx .vr-ref-add > span { font-size: 16px; line-height: 1; }
+.gx .vr-engine, .gx .vr-engine:hover { background: transparent; cursor: default; }
+.gx .vr-order { gap: 6px; }
+/* The 12 px floor inside the panel: its eyebrows, Recent's rows and a reference's place in the order. */
+.gx .gx-make .gx-eyebrow, .gx-make .vr-status, .gx-make .vr-job-note, .gx-make .bz-role { font-size: 12px; }
+
 /* The engine sheet (Change): over Make's own column from 768 px, the rest of the screen dimmed; a bottom sheet on a
    phone, as every sheet is. No two-letter tiles; the engine in use is tinted. */
 @media (min-width: 768px) {
@@ -80,6 +115,8 @@
   .gx-make-head { gap: 8px; padding: 8px 8px 8px 16px; }
   .gx .gx-make .gx-seg-btn { min-height: 44px; }
   .gx .gx-make .gx-make-engine { min-height: 48px; }
+  .gx .gx-make-tools-row > .gx-hbtn, .gx .vr-src-foot > .gx-hbtn { min-height: 44px; }
+  .gx .vr-ref-x, .gx .vr-src-x { width: 44px; height: 44px; right: 0; top: 0; border-radius: 0 0 0 8px; }
 }
 
 @media (max-width: 767px) {

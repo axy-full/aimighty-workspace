@@ -131,12 +131,17 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   await expect(page.getByTestId("page-title")).toHaveText("Rig");
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
-  /* A pasted link opens the same place; a Viral page is the project's, so the project is lit. */
-  await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  /* A pasted link opens the same place: History is still Viral's page, the project's, so the project is lit; an old
+     Object Swap link is Make's quick tool over Studio. */
+  await page.goto("/suites?suite=subatomik&page=history&sp=history");
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   await expect(page.getByTestId("suite-mark")).toHaveText("VIRAL");
   await openSuitesMenu(page);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
+  await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
+  expect([param(page, "suite"), param(page, "make")]).toEqual(["particl", "swap"]);
   expect(errors).toEqual([]);
 });
 
@@ -230,6 +235,12 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   for (const gone of ["palette", "lib", "find"]) expect(param(page, gone), gone).toBeNull();
   /* The app's own links are served where they are. */
   expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(200);
+  /* An old Gen or Viral tool link in the design file's spelling reaches Make in the same one 307: never a chain. */
+  for (const [from, to] of [["/suites?view=make&mode=images&project=ws-suites", "?project=ws-suites&make=image"], ["/suites?suite=viral&page=motion&project=ws-suites", "?project=ws-suites&make=motion"]]) {
+    const once = await page.request.get(from, { maxRedirects: 0 });
+    expect(once.status(), from).toBe(307);
+    expect(new URL(once.headers()["location"], "http://x").search, from).toBe(to);
+  }
   expect(errors).toEqual([]);
 });
 

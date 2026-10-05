@@ -1,3 +1,4 @@
+import type { MakeTool } from "./make";
 import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
@@ -6,7 +7,8 @@ import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPag
  * component supplies models and assets from live data.
  */
 export type PaletteRun =
-  | { type: "gen" }
+  /** Make, or one of its quick tools (Motion transfer, Object swap). */
+  | { type: "gen"; tool?: MakeTool }
   | { type: "suite"; suite: ShellSuiteId }
   | { type: "page"; suite: ShellSuiteId; page: string }
   | { type: "workspace"; tab: WorkspaceTabId }
@@ -23,6 +25,8 @@ export const PALETTE_ROWS = 12;
 export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
   return [
     { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
+    { group: "CREATE", label: "Motion transfer", hint: "Make · one source video and references", run: { type: "gen", tool: "motion" } },
+    { group: "CREATE", label: "Object swap", hint: "Make · one element replaced", run: { type: "gen", tool: "swap" } },
     /* The suites left the header (header option B); until their boards ship (S3, S4) and the control room (D1), ⌘K is how they are reached. */
     ...SHELL_SUITES.map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.name, run: { type: "suite", suite: s.id } })),
     /* The phone's own Home and Studio grid have no desktop page to open. */

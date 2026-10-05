@@ -29,7 +29,7 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
   const run = (r: PaletteRun) => {
     shell.setPalette(false);
     switch (r.type) {
-      case "gen": shell.openMake(); return;
+      case "gen": shell.openMake(r.tool); return;
       case "model": {
         /* Make opens on the model picked, on the studio's engines (the index lists MODELS). */
         const model = MODELS.find((m) => m.id === r.id && isOffered(m));

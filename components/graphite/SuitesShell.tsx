@@ -411,7 +411,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "business" ? (
                       <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
-                      <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
+                      <ViralView key={shell.page.id} scope={scope} project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>

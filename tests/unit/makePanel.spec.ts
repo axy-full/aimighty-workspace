@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fromGenLink, readMake } from "../../lib/shell/make";
+import { fromGenLink, fromMakeLink, fromViralLink, isMakeTool, makeType, readMake, viralTool } from "../../lib/shell/make";
 import { EMPTY_PROMPT, composerBlock, composerButtonLabel, composerButtonParts, INITIAL_COMPOSER } from "../../lib/workspace/composer";
 
 /* Make (design/particl-graphite/README.md § 1.1, § 1.2, § 3.2): its address, and every old Gen address landing on it. */
@@ -10,6 +10,11 @@ test("make= names a type, Recent, or the last type; anything else is closed", ()
   expect(readMake("?make=audio")).toBe("audio");
   expect(readMake("?make=recent")).toBe("recent");
   expect(readMake("?make=1")).toBe("last");
+  /* The quick tools (README § 3.2): Motion transfer and Object swap. */
+  expect(readMake("?make=motion")).toBe("motion");
+  expect(readMake("?make=swap")).toBe("swap");
+  expect(isMakeTool("motion") && isMakeTool("swap") && !isMakeTool("video") && !isMakeTool("history")).toBe(true);
+  expect([makeType("video"), makeType("recent"), makeType("motion"), makeType(null)]).toEqual(["video", null, null, null]);
   /* States of the panel, never addresses. */
   for (const state of ["change", "fill", "made", "images", ""]) expect(readMake(`?make=${state}`), state).toBeNull();
   expect(readMake("?view=board")).toBeNull();
@@ -30,6 +35,28 @@ test("the old Gen page lands on the same address with Make open on its type, and
   expect(fromGenLink("?view=crew&cp=room")).toBeNull();
   expect(fromGenLink("?make=video")).toBeNull();
   expect(fromGenLink("")).toBeNull();
+});
+
+test("Viral's Motion Transfer and Object Swap land on Make's quick tools over Studio; History stays a page", () => {
+  /* The shell's own links, and the design's form. */
+  expect(fromViralLink("?suite=subatomik&page=motion&sp=motion")).toBe("make=motion");
+  expect(fromViralLink("?suite=subatomik&page=swap&sp=swap&project=p1")).toBe("project=p1&make=swap");
+  expect(fromViralLink("?suite=viral&page=motion")).toBe("make=motion");
+  expect(fromViralLink("?suite=viral&page=swap")).toBe("make=swap");
+  expect(fromViralLink("?suite=subatomik&sp=swap")).toBe("make=swap");
+  /* The old page ids, and the bare suite, which opened on Motion Transfer. */
+  expect(fromViralLink("?project=p1&page=motion-transfer")).toBe("project=p1&make=motion");
+  expect(fromViralLink("?page=object-swap&sel=take:x")).toBe("make=swap");
+  expect(fromViralLink("?suite=subatomik")).toBe("make=motion");
+  expect(fromViralLink("?suite=viral&account=particl")).toBe("account=particl&make=motion");
+  /* A page wins over sp, as it does in the shell. */
+  expect(viralTool("?suite=subatomik&page=motion&sp=history")).toBe("motion");
+  /* History is still a page; nothing else is Viral. */
+  for (const q of ["?suite=subatomik&page=history&sp=history", "?suite=viral&page=history", "?suite=subatomik&sp=history", "?suite=particl&page=takes&sp=takes", "?suite=moleculr", "?make=motion", ""]) expect(fromViralLink(q), q).toBeNull();
+  /* Either old address is Make's. */
+  expect(fromMakeLink("?view=gen&mode=audio")).toBe("make=audio");
+  expect(fromMakeLink("?suite=viral&page=swap")).toBe("make=swap");
+  expect(fromMakeLink("?suite=particl&page=rig")).toBeNull();
 });
 
 test("Make's button says Make at the same live price; only the verb changes", () => {
