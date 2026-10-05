@@ -1,4 +1,5 @@
-import type { Row, ScreenModule } from "./screens";
+import type { ScreenModule } from "./screens";
+import type { Row } from "./screen-rows";
 
 /**
  * Settings behind the avatar (design/particl-graphite/README.md § 1, § 3.5): five sections at
@@ -89,6 +90,9 @@ const ON_ROWS: Row[] = [
   }),
   ...SETTINGS_SECTIONS.flatMap(({ id }): Row[] => (isBuiltSection(id) ? [] : [{ from: ws(id), to: interimHref(SETTINGS_INTERIM[id]!) }])),
   ...(isBuiltSection("advanced") ? [] : [{ from: ws("advanced", "models"), to: "?suite=atomik&page=models" }]),
+  /* Atomik's Budget, Models and Tools pages are Settings sections once those sections are drawn (README § 1.2). */
+  ...([["budget", "rules"], ["models", "advanced", "models"], ["skills", "connections"]] as const).flatMap(([page, section, open]): Row[] =>
+    isBuiltSection(section) ? [{ from: `?suite=atomik&page=${page}`, to: ws(section, open) }] : []),
 ];
 const OFF_ROWS: Row[] = [
   { from: ws("team"), to: ws("people") },
@@ -106,20 +110,5 @@ export const SETTINGS_SCREEN: ScreenModule = Object.freeze({
   fallback: OFF_ROWS,
 });
 
-/**
- * Applies the most specific matching row to a search (the shell's rule, lib/shell/screens.ts), or
- * returns null when none matches. Here so the rows can be held to "no chains" in the unit specs.
- */
-export function applyRows(search: string, rows: readonly Row[]): string | null {
-  const q = new URLSearchParams(search);
-  const matches = rows
-    .map((row) => ({ row, from: new URLSearchParams(row.from) }))
-    .filter(({ from }) => [...from.entries()].every(([k, v]) => q.get(k) === v))
-    .sort((a, b) => [...b.from.keys()].length - [...a.from.keys()].length);
-  if (!matches.length) return null;
-  const { row, from } = matches[0];
-  for (const key of from.keys()) q.delete(key);
-  for (const [k, v] of new URLSearchParams(row.to)) q.set(k, v);
-  const text = q.toString();
-  return text ? `?${text}` : "";
-}
+/** The shell's row rule (lib/shell/screen-rows.ts), kept under this name for the Settings specs. */
+export { applyRows } from "./screen-rows";
