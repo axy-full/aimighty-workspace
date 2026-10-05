@@ -133,7 +133,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <SiteSettingsCard workspaces={data.workspaces.filter((w) => !w.deletedAt).map((w) => ({ id: w.id, name: w.name }))} />
+            <SiteSettingsCard workspaces={data.workspaces.filter((w) => !w.deletedAt && !w.legacy).map((w) => ({ id: w.id, name: w.name }))} />
 
             <section className="scard">
               <div className="scard-h"><span>Asked to be let in</span><span>People who asked for an invite. Invite them, or mark the request handled.</span></div>

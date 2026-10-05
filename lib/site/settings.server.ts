@@ -30,8 +30,10 @@ export class SiteSettingsError extends Error {
 export async function writeSite(patch: Partial<SiteSettings>, by: string | null): Promise<SiteSettings> {
   await platformReady();
   if (patch.guestWorkspace) {
-    const rs = await platformDb().execute({ sql: `SELECT id FROM workspaces WHERE id = ? AND deleted_at IS NULL LIMIT 1`, args: [patch.guestWorkspace] });
+    const rs = await platformDb().execute({ sql: `SELECT id, legacy FROM workspaces WHERE id = ? AND deleted_at IS NULL LIMIT 1`, args: [patch.guestWorkspace] });
     if (!rs.rows.length) throw new SiteSettingsError("That workspace is not on this deployment.");
+    /* Guests read a separate public-sample workspace ("Particl sample", lead decision 41), never the house workspace. */
+    if (Number((rs.rows[0] as { legacy?: unknown }).legacy) === 1) throw new SiteSettingsError("Guests can't read the house workspace. Name the public sample workspace.");
   }
   const next = cleanSite({ ...(await readSite()), ...patch });
   await platformDb().execute({

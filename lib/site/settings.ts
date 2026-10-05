@@ -60,3 +60,11 @@ export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { e
 
 /** The refusal a self-serve sign-up meets while sign-up is by invitation only. */
 export const INVITE_ONLY = "Sign-up needs an invitation link.";
+
+/**
+ * That refusal as the routes answer it: 403 with `inviteOnly`, so a page shows the Request access form instead of
+ * an error (lead decision 41: a self-serve sign-up verified after open sign-up closed is refused that way).
+ */
+export function inviteOnlyRefusal(): Response {
+  return Response.json({ error: INVITE_ONLY, inviteOnly: true }, { status: 403, headers: { "Cache-Control": "no-store" } });
+}

@@ -8,10 +8,9 @@ import { resumeWorkspace } from "@/lib/workspaceProvisioning";
 import {
   accountFailure,
   accountJson,
-  AccountError,
   sameOriginProblem,
 } from "@/lib/accountDb";
-import { INVITE_ONLY } from "@/lib/site/settings";
+import { inviteOnlyRefusal } from "@/lib/site/settings";
 import { readSite } from "@/lib/site/settings.server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,7 +20,7 @@ export const POST = recoveryRoute(async function POST(req: Request) {
   try {
     /* Only self-serve registrations are verified here (an invitation creates its account directly). While sign-up
        is by invitation the registration is kept, untouched, and finishes if the owner opens sign-up again. */
-    if (!(await readSite()).openSignup) throw new AccountError(INVITE_ONLY, 403);
+    if (!(await readSite()).openSignup) return inviteOnlyRefusal();
     const body = await accountJson(req),
       ctx = await currentContext(),
       jar = await cookies(),

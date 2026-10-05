@@ -45,7 +45,7 @@ export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; nam
           </button>
         </div>
         <label className="flex flex-wrap items-center justify-between gap-3">
-          <span className="flex flex-col gap-0.5"><span className="font-medium">The sample’s workspace</span><span className="text-[12px] text-lead">The one workspace whose sample production guests may read. Nothing else is read for a guest.</span></span>
+          <span className="flex flex-col gap-0.5"><span className="font-medium">The sample’s workspace</span><span className="text-[12px] text-lead">The separate public workspace that holds the sample production (“Particl sample”). Guests read only its sample; never the house workspace or a demo workspace.</span></span>
           <select className="ctl !h-9 w-[260px]" value={data.guestWorkspace ?? ""} disabled={busy} data-testid="site-guest-workspace"
             onChange={(e) => void save({ guestWorkspace: e.target.value || null })}>
             <option value="">None</option>

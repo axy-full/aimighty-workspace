@@ -11,7 +11,7 @@ import {
   sameOriginProblem,
   AccountError,
 } from "@/lib/accountDb";
-import { INVITE_ONLY } from "@/lib/site/settings";
+import { inviteOnlyRefusal } from "@/lib/site/settings";
 import { readSite } from "@/lib/site/settings.server";
 export const dynamic = "force-dynamic";
 export const POST = recoveryRoute(async function POST(req: Request) {
@@ -19,7 +19,7 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
     /* A self-serve verification email is a self-serve sign-up: refused while sign-up is by invitation (decision 36). */
-    if (!(await readSite()).openSignup) throw new AccountError(INVITE_ONLY, 403);
+    if (!(await readSite()).openSignup) return inviteOnlyRefusal();
     const readiness = signupReadiness();
     if (!readiness.open) throw new AccountError(readiness.reason!, 503);
     const body = await accountJson(req);

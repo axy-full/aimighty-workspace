@@ -16,7 +16,7 @@ import {
   sameOriginProblem,
   takeAccountLimit,
 } from "@/lib/accountDb";
-import { INVITE_ONLY } from "@/lib/site/settings";
+import { INVITE_ONLY, inviteOnlyRefusal } from "@/lib/site/settings";
 import { readSite } from "@/lib/site/settings.server";
 import {
   beginSignup,
@@ -42,7 +42,7 @@ export const POST = recoveryRoute(async function POST(req: Request) {
        source so the route can't be leaned on. */
     if (!code && !(await readSite()).openSignup) {
       await takeAccountLimit("signup-closed:" + sourceKey(req), 30, 3600_000);
-      throw new AccountError(INVITE_ONLY, 403);
+      return inviteOnlyRefusal();
     }
     if (!policyAccepted(body))
       throw new AccountError(
