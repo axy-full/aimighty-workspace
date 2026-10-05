@@ -306,10 +306,14 @@ function Signup() {
         </label>
         <label className="gx-su-check">
           <input type="checkbox" required checked={accept} onChange={(e) => setAccept(e.target.checked)} data-testid="signup-terms" />
-          <span>
-            I agree to the <Link className="gx-su-link" href="/terms" target="_blank">terms</Link> and <Link className="gx-su-link" href="/policy" target="_blank">content policy</Link>. Read the <Link className="gx-su-link" href="/privacy" target="_blank">privacy notice</Link>.
-          </span>
+          <span>I agree to the terms and the content policy, and I have read the privacy notice.</span>
         </label>
+        {/* The three documents as their own targets, not words inside the box's label. */}
+        <div className="gx-su-docs">
+          <Link className="gx-su-link" href="/terms" target="_blank">Terms</Link>
+          <Link className="gx-su-link" href="/policy" target="_blank">Content policy</Link>
+          <Link className="gx-su-link" href="/privacy" target="_blank">Privacy notice</Link>
+        </div>
         <button type="submit" className="gx-primary gx-su-go" disabled={!available?.open || busy} aria-busy={busy || undefined} data-testid="signup-submit">
           {busy ? "Creating…" : code ? "Create account" : "Create account and verify email"}
         </button>

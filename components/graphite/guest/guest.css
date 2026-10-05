@@ -85,7 +85,7 @@
 .gx .gx-su-brand { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--gx-text); text-decoration: none; min-height: 32px; }
 .gx-su-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--gx-text-2); cursor: pointer; }
 .gx-su-check > input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--gx-accent); }
-.gx .gx-su-check .gx-su-link { min-height: 0; display: inline; }
+.gx-su-docs { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: -4px; }
 .gx .gx-su-second { height: 44px; justify-content: center; font-size: 14px; }
 .gx-su-note strong { color: var(--gx-text); font-weight: 600; }
 
@@ -125,5 +125,6 @@
 @media (max-width: 767px), (pointer: coarse) {
   .gx .gx-gh-start, .gx .gx-gh-refs { height: 44px; }
   .gx .gx-gh-signin, .gx .gx-gh-signup { height: 44px; }
-  .gx .gx-gs-gated, .gx .gx-gs-link, .gx .gx-su-link, .gx .gx-su-x { min-height: 44px; min-width: 44px; }
+  .gx .gx-gs-gated, .gx .gx-gs-link, .gx .gx-su-link, .gx .gx-su-x, .gx .gx-su-brand { min-height: 44px; min-width: 44px; }
+  .gx-su-check { min-height: 44px; align-items: center; }
 }
