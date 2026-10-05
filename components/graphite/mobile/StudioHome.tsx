@@ -12,7 +12,7 @@ import { FirstRun, RecentProjects, type ProjectActions } from "../FirstRun";
 import { Glyph } from "../icons";
 
 /**
- * Studio home (Particl Mobile.dc.html › STUDIO HOME): the project's name in
+ * Studio home: the project's name in
  * the gradient, *Up next* (the first shot without a render, one tap into Rig),
  * the eight stages as cards with a live line and a status dot, and the recent
  * takes. Every card routes to its page; every figure is the project's own.

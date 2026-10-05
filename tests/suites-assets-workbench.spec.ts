@@ -4,7 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 
 /**
- * Assets on every page (FINAL_SPEC §1 step 1): `+` and a drop land a
+ * Assets on every page: `+` and a drop land a
  * reference in Gen with its role named; right-click commands work or say
  * exactly why not; delete is undone with ⌘Z; cut/paste moves between
  * projects; the Inspector shows provenance and hides three ways.

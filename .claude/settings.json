@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git checkout -- *)",
+      "Bash(git checkout * -- *)",
+      "Bash(git checkout .)",
+      "Bash(git checkout -f *)",
+      "Bash(git checkout --force *)",
+      "Bash(git restore *)",
+      "Bash(git reset --hard)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git -C * checkout -- *)",
+      "Bash(git -C * checkout * -- *)",
+      "Bash(git -C * restore *)",
+      "Bash(git -C * reset --hard)",
+      "Bash(git -C * reset --hard *)",
+      "Bash(git -C * clean)",
+      "Bash(git -C * clean *)",
+      "Bash(git clean)"
+    ]
+  }
+}

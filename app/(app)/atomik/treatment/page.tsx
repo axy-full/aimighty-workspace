@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Atomik · Treatment — from the pipeline handoff.
+ * Atomik · Treatment.
  *
  * One document per production: the logline, the setup defaults that will
  * be carried into every Particl shot, and the scenes — each with a length,
