@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { bannedNamesIn } from "../helpers/uiStrings";
 import { SURFACES, format, manifestStrings, scanAll, surfaceOf, type Hit, type Scan } from "../helpers/uiSurfaces";
 import { compare, expired, growth, lowered, onMain, past, readJson, shapeProblems, type Section } from "../helpers/ratchet";
