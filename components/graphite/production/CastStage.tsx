@@ -34,7 +34,7 @@ import { AgentBar, useAgentChoice } from "./AgentBar";
 import { CastIdentities } from "./CastIdentities";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
-import { useStageQuotes } from "./use-stage-quotes";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 
 const EMPTY: Cast = { entries: [] };
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null; params?: unknown };

@@ -1,8 +1,16 @@
 import type { CardSet } from "./types";
+import { groupDef } from "./group/GroupCard";
+import { reviewTakeDef, takeDef } from "./take/TakeCard";
+import { versionsDef } from "./take/VersionsCard";
+import { deriveShots } from "./take/shots-derive";
 
 /*
- * Stream 5's cards (Board cards 2): group, take, cast, cut, deliver.
- * A stub seeded by stream 3 (lead decision 26): it puts no card on the board.
- * Owned by stream 5 from its first PR, which replaces this file.
+ * Stream 5's cards for the board's registry (components/graphite/board/cards/index.ts): the shared group frame,
+ * the Shots region's take cards (README § 3.1 f), and frame g's take that waits for you with its versions.
+ * The Cast, Cut and Deliver cards join this set in their own PRs.
  */
-export const shotCards: CardSet = { id: "shots", defs: [], derive: () => [] };
+export const shotCards: CardSet = {
+  id: "shots",
+  defs: [groupDef, takeDef, reviewTakeDef, versionsDef],
+  derive: deriveShots,
+};

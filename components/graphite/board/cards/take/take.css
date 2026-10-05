@@ -1,0 +1,70 @@
+/* A shot's take on the board (README § 3.1 f, g; § 2 tokens). Tokens only: app/graphite.css. */
+.gx-take { position: relative; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-take-media { transition: opacity var(--gx-t) var(--gx-ease); }
+/* A rejected take dims its picture only: its words stay at the reading floor (README § 0 rule 8). */
+.gx-take[data-dim] .gx-take-media { opacity: 0.5; }
+.gx-take[data-status="review"].gx-take--review, .gx-take[data-status="picked"].gx-take--review { border-color: color-mix(in srgb, var(--gx-waiting) 50%, transparent); }
+.gx-take[data-status="approved"].gx-take--review { border-color: color-mix(in srgb, var(--gx-done) 50%, transparent); }
+
+.gx-take-media { position: relative; flex: none; height: var(--gx-take-well, auto); min-height: 0; overflow: hidden; background: var(--gx-root); }
+.gx-take-media > span:first-child { display: block; width: 100%; height: 100%; }
+.gx-take-media img, .gx-take-media video { object-fit: cover; }
+.gx-take-face { display: block; width: 100%; height: 100%; background: var(--gx-card); }
+.gx-take-glyph { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--gx-on-media); color: var(--gx-failed-text); font: 600 15px/1 var(--gx-font); }
+.gx-take-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; padding-left: 2px; background: var(--gx-scrim); font-size: 12px; pointer-events: none; }
+.gx-take-play--lg { width: 44px; height: 44px; font-size: 14px; padding-left: 3px; }
+
+/* While it renders: a 3 px bar along the bottom; indeterminate unless the workspace's own past renders say how long. */
+.gx-take-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--gx-accent); transition: width var(--gx-t-progress) linear; }
+.gx-take-bar[data-indeterminate] { width: 30%; animation: gx-take-slide 1.6s var(--gx-ease) infinite; }
+@keyframes gx-take-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-take-bar[data-indeterminate] { animation: none; width: 100%; opacity: 0.5; } }
+.gx-take-badge { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: var(--gx-r-xs); background: var(--gx-on-media); font: 12px/1.45 var(--gx-mono); color: var(--gx-text); white-space: nowrap; }
+.gx-take-tag { position: absolute; left: 8px; top: 8px; padding: 2px 7px; border-radius: var(--gx-r-pill); background: var(--gx-on-media); font: 12px/1.45 var(--gx-mono); letter-spacing: 0.06em; color: var(--gx-on-accent); white-space: nowrap; }
+.gx-take-tag[data-anchor] { background: var(--gx-accent); }
+
+.gx-take-foot { flex: none; display: flex; flex-direction: column; padding: 8px 10px 10px; }
+.gx-take-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-take-line { min-height: 35px; font: 12px/1.45 var(--gx-mono); color: var(--gx-text-2); }
+.gx-take-status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 32px; font-size: 13px; color: var(--gx-text-2); }
+.gx-take-status[data-tone="failed"] .gx-take-why { color: var(--gx-failed-text); }
+.gx-take-status[data-tone="waiting"] .gx-take-why { color: var(--gx-waiting-text); }
+.gx-take-charge { color: var(--gx-text); white-space: nowrap; }
+.gx-take-status .gx-release { display: inline-flex; }
+
+.gx-take-btn { flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-take-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-take-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-take-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-take-btn--approve { border-color: color-mix(in srgb, var(--gx-done) 50%, transparent); color: var(--gx-done-text); font-weight: 600; }
+.gx-take-btn--approve:disabled { color: var(--gx-done-text); opacity: 0.7; }
+.gx-take-btn--danger { border-color: color-mix(in srgb, var(--gx-failed) 50%, transparent); }
+
+/* Frame g: the take that waits for you. */
+.gx-take-chips { position: absolute; left: 10px; top: 10px; display: flex; gap: 4px; }
+.gx-take-chip { height: 26px; padding: 0 10px; border-radius: var(--gx-r-pill); border-color: var(--gx-hover-border); background: var(--gx-scrim); color: var(--gx-text); font: 600 12px/1 var(--gx-mono); }
+.gx-take-chip[aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); }
+.gx-take-foot--review { gap: 10px; padding: 12px 14px 14px; }
+.gx-take-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.gx-take-heading { min-width: 0; }
+.gx-take-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-take-engine { font-size: var(--gx-fs-body); color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-take-acts { display: flex; gap: 8px; flex: none; }
+.gx-take-note { display: flex; gap: 8px; align-items: flex-start; min-height: 21px; font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text); }
+.gx-take-note > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx-take-spark { flex: none; color: var(--gx-accent-text); }
+.gx-take-reason { display: flex; gap: 8px; align-items: center; min-height: 21px; }
+.gx-take-input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-ctl); background: var(--gx-input); color: var(--gx-text); font: 13px/1 var(--gx-font); }
+.gx-take-input::placeholder { color: var(--gx-placeholder); }
+.gx-take-input:focus-visible { outline: none; border-color: var(--gx-accent); }
+
+/* Frame g's Versions card. */
+.gx-take-versions { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 16px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-take-versions-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); padding-bottom: 8px; }
+.gx-take-versions-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
+.gx-take-versions-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); }
+.gx-take-versions-text { min-width: 0; overflow-wrap: anywhere; }
+.gx-take-versions-time { flex: none; font: 12px/1.45 var(--gx-mono); color: var(--gx-text-2); }
+.gx-take-input[data-hint]::placeholder { color: var(--gx-waiting-text); }
+.gx-take-input[data-hint] { border-color: color-mix(in srgb, var(--gx-waiting) 50%, transparent); }
+.gx-take-hint { flex: none; font-size: 13px; color: var(--gx-waiting-text); white-space: nowrap; }
