@@ -16,7 +16,9 @@ test("make= names a type, Recent, or the last type; anything else is closed", ()
   expect(isMakeTool("motion") && isMakeTool("swap") && !isMakeTool("video") && !isMakeTool("history")).toBe(true);
   expect([makeType("video"), makeType("recent"), makeType("motion"), makeType(null)]).toEqual(["video", null, null, null]);
   /* States of the panel, never addresses. */
-  for (const state of ["change", "fill", "made", "images", ""]) expect(readMake(`?make=${state}`), state).toBeNull();
+  for (const state of ["fill", "made", "images", ""]) expect(readMake(`?make=${state}`), state).toBeNull();
+  /* `make=change` opens Make on the last type (the new interface opens its engine list there). */
+  expect(readMake("?make=change")).toBe("last");
   expect(readMake("?view=board")).toBeNull();
 });
 
