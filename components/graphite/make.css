@@ -131,3 +131,17 @@
   .gx .gx-make .gx-gen-go { flex: 0 0 auto; }
   .gx-make-dest { flex: 1 1 0; }
 }
+
+/* Recent: one card a row, each the take's own card with its engine and price, then Again · N cr and Use as reference. */
+.gx .gx-make-recent .gx-asset > .gx-asset-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; white-space: normal; overflow: visible; text-overflow: clip; font-size: 13px; }
+.gx-make-card-line { min-width: 0; overflow-wrap: anywhere; }
+.gx-make-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx .gx-make-card-actions .gx-hbtn { height: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; white-space: normal; text-align: left; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-make-card-actions .gx-hbtn { min-height: 44px; }
+}
+.gx-make-engine-line { white-space: normal; overflow: visible; text-overflow: clip; }
+.gx-make-engine-part { white-space: nowrap; }
+.gx-sheet-basis { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--gx-hair); font-size: 13px; color: var(--gx-text-2); }
+/* Recent is one card a row (the strips and drafts in it keep their own columns inside the row). */
+.gx-gen-grid.gx-make-cards { grid-template-columns: minmax(0, 1fr); }
