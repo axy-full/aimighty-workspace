@@ -4,7 +4,7 @@ import { platformDb, platformReady, getWorkspace } from "./platform";
 import { creditRateUsd, creditUsd } from "./creditTerms";
 import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
 import { ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
-import { convertTenantFigures, type CapChoice, type TenantFigure } from "./creditConversionTenant";
+import { convertTenantFigures, tenantChangesSince, type CapChoice, type TenantFigure } from "./creditConversionTenant";
 
 /**
  * Restating the credit record in a new price of a credit.
@@ -544,6 +544,21 @@ export async function convertWorkspaceCredits(
   return result;
 }
 
+/**
+ * What a person saved in the workspace's own database since its conversion (lib/creditConversionTenant.ts
+ * tenantChangesSince). Nothing to read where that half was skipped by the owner or the workspace's
+ * database is purged or gone; caps are compared only where the conversion's own half ran.
+ */
+async function tenantChangesOf(workspaceId: string, row: Record<string, unknown>): Promise<{ what: string; id: string; status: string; createdAt: number }[]> {
+  let recorded: TenantFigure[] | null = null;
+  try { recorded = row.tenant_applied_at == null ? null : (JSON.parse(String(row.tenant_json ?? "[]")) as TenantFigure[]); } catch { recorded = null; }
+  if (recorded?.some((f) => f.what === "skipped by the owner")) return [];
+  const ws = await getWorkspace(workspaceId);
+  const purged = (await platformDb().execute({ sql: `SELECT purged_at FROM workspaces WHERE id=?`, args: [workspaceId] })).rows[0]?.purged_at != null;
+  if (!ws || purged) return [];
+  return tenantChangesSince(ws, Number(row.created_at), recorded);
+}
+
 /** Undo a workspace's last conversion: its own row, the recorded factors inverted. */
 export async function reverseWorkspaceCredits(workspaceId: string, o: Options = {}): Promise<CreditConversion> {
   if (workspaceId === HOUSE_WORKSPACE_ID) return houseLine(workspaceId, "reverse", null, 0, 0);
@@ -557,6 +572,15 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
     if (o.dryRun) return { ...line, reason: "Reversed; its own database's half is not finished yet. A real run finishes it." };
     try { return { ...line, tenant: await finishTenant(workspaceId, pre, at), tenantDone: true, reason: "Reversed; its own database's half is finished now." }; }
     catch (error) { return { ...line, reason: `The workspace's own figures are not reversed yet: ${(error as Error).message}. Run it again.` }; }
+  }
+  /* Read before the platform's write, as every workspace database is: what was saved there since the conversion. */
+  let tenantActivity: { what: string; id: string; status: string; createdAt: number }[] = [];
+  if (pre && pre.action === "convert") {
+    try { tenantActivity = await tenantChangesOf(workspaceId, pre); }
+    catch (error) {
+      return { id: null, workspaceId, status: "refused", action: "reverse", mode: null, fromUsd: Number(pre.to_usd), toUsd: Number(pre.from_usd), before: null, after: null,
+        rows: {}, tenant: [], tenantDone: true, reason: `Not reversed: its own database could not be read, so what was saved there since the conversion cannot be checked (${(error as Error).message}).` };
+    }
   }
   let result: CreditConversion;
   try {
@@ -576,10 +600,13 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
         ...(await tx.execute({ sql: `SELECT 'grant' AS what,id,kind AS status,created_at FROM credit_grants WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
         ...(await tx.execute({ sql: `SELECT 'lot' AS what,id,kind AS status,created_at FROM billing_lots WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
       ].map((r) => ({ what: String(r.what), id: String(r.id), status: String(r.status), createdAt: Number(r.created_at) }));
+      /* Limits, caps, approvals and held takes saved in the workspace's own database since: in the new
+         unit too, and not among the rows the conversion recorded, so a reversal would leave them 8× too large. */
+      activity.push(...tenantActivity);
       if (activity.length)
         return { id: null, workspaceId, status: "refused" as const, action: "reverse" as const, mode: null, fromUsd, toUsd, before: null, after: null,
           rows: {}, tenant: [], tenantDone: true, activity,
-          reason: `Not reversed: ${activity.length} job(s) or grant(s) since the conversion, in the new price. A reversal is only safe before paid work resumes.` };
+          reason: `Not reversed: ${activity.length} job(s), grant(s) or saved figure(s) since the conversion, in the new price. A reversal is only safe before paid work resumes.` };
       const recorded = (await tx.execute({ sql: `SELECT tbl,row_key,factor FROM ${CONVERSION_ROWS_TABLE} WHERE conversion_id=?`, args: [String(last.id)] })).rows;
       const factors = recorded.map((r) => ({ tbl: String(r.tbl), key: String(r.row_key), factor: 1 / Number(r.factor) }));
       const before = await snapshotTx(tx, workspaceId, at, fromUsd);

@@ -690,4 +690,37 @@ test.describe("second review fixes", () => {
     expect([out.results[0].before!.balance, out.results[0].after!.balance]).toEqual([220, 220]);
     expect((await balance("ws_s5")).balance).toBe(220);
   });
+
+  test("M2: a reversal is refused when the workspace's own database has figures saved since the conversion", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db } = await import("../../lib/db");
+    process.env.CREDIT_USD = "0.80";
+    await setUnit(0.8);
+    await granted("ws_s6");
+    await saveShotCap("ws_s6", "25", AFTER);
+    process.env.CREDIT_USD = "0.10";
+    await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s6"], caps: { "ws_s6/settings:shotCapCredits": "x8" } }));
+    expect(await shotCap("ws_s6")).toBe("200");
+    // Paid work resumed: an Atomik run approved at 480 cr ($48) and the shot cap edited to 300 cr, in $0.10 credits. No job yet.
+    const t = NOW + 60_000;
+    await runInTenant(await tenantOf("ws_s6"), async () => {
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      await db().execute({ sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,model,state,approved_at,created_at,updated_at)
+        VALUES('s6_run','p','d','o','q','g','ask',480,200,'m','running',?,?,?)`, args: [t, t, t] });
+    });
+    await saveShotCap("ws_s6", "300", t);
+    const before = (await balance("ws_s6", t)).balance;
+    const out = await reverseAllCredits({ dryRun: false, at: NOW + 120_000, by: "owner", universe: ["ws_s6"] });
+    expect(out.results[0].status).toBe("refused");
+    expect(out.results[0].activity?.map((a) => [a.what, a.id]).sort()).toEqual([["Atomik run limit", "s6_run"], ["cap", "settings:shotCapCredits"]]);
+    expect(await ledgerUnitTx(await platform())).toBe(0.1);
+    expect((await balance("ws_s6", NOW + 130_000)).balance).toBe(before);
+    expect(await shotCap("ws_s6")).toBe("300");
+    await runInTenant(await tenantOf("ws_s6"), async () => {
+      expect(Number((await db().execute(`SELECT cap_credits FROM rig_agent_runs WHERE id='s6_run'`)).rows[0].cap_credits)).toBe(480);
+    });
+  });
 });

@@ -29,6 +29,8 @@ export const dynamic = "force-dynamic";
  *         `skipTenant` names workspaces whose own database half is to be marked skipped. A dry run
  *         also shows uniform ×factor figures beside it, for comparison only.
  *   POST  { action: "reverse", workspaceId?, dryRun? }
+ *         Refused while anything was written since the conversion, on the platform or in the
+ *         workspace's own database. One workspace reversed on its own pauses alone until converted again.
  */
 const price = (v: unknown): number | null => {
   const n = Number(v);
