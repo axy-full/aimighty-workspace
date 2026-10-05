@@ -368,6 +368,8 @@ From README §4. Basis: **card** = a rate-card row in `CLAUDE.md § Pricing`; **
 
 From README §5, with what is new.
 
+**Prices.** The handoff's sample prices are at US$0.10 a credit, the price `CLAUDE.md` § Pricing and the code use, and they stand (owner, 5 October 2026): Seedance 2.5 1080p 5 s 43 cr, Kling 3.0 Standard 5 s 7 cr, Nano Banana Pro 3 cr, Nano Banana 2 1 cr, identity training 54 cr, the 66 cr and 93 cr plans with fix allowances of 114 cr and 186 cr, the 200 cr line, Top up 500 cr · $50, hover 1 cr = $0.10.
+
 | Rule | New handoff | Previous handoff |
 |---|---|---|
 | Per-shot admin rule | Over **40 cr** on a shot needs an admin; marked on the step; left out of one-tap batch approvals | **New.** Not in `CLAUDE.md § Pricing`; README §5 attributes it to "this round" |
@@ -434,7 +436,7 @@ From README §9, with the owner's answers of 5 October 2026 where given:
 |---|---|---|
 | 1 | Auto per-job line | Stays `RIG_AGENT_JOB_CEILING_CREDITS` for now; a workspace setting comes in U1 only if asked for. |
 | 2 | "Start · up to N cr" | Any member (a person) may press it; the price on the button is the approval. Agents and MCP never. |
-| 3 | Fix allowance | 2 × the plan's shot prices. The design's 186 cr (93 cr plan, board frame e) and 114 cr (66 cr plan, phone) were both at $0.10; 114 on frame e is a design error. Build the formula, with the figures in "Prices at $0.05". |
+| 3 | Fix allowance | 2 × the plan's shot prices. 114 on board frame e is a design error. Build the formula, with the handoff's $0.10 figures: 186 cr for the 93 cr plan, 114 cr for the 66 cr plan. |
 | 4 | 80 % budget pause with Continue / Stop | Build it in U1. Money: waits for the owner's review before merge. |
 | 5 | Board dot grid | SVG pattern, as the repo draws it, same look. |
 | 6 | Make shortcut | ⌥M. |
@@ -444,7 +446,7 @@ From README §9, with the owner's answers of 5 October 2026 where given:
 | 10 | Toast dot | Green only for success with Undo / Open, as built. |
 | 11 | Settings menu interim targets until D1 | OK: Spending rules → Atomik › Budget, Connections → Tools & connections, Advanced → Engines. |
 | 12 | "STUDIO" under the wordmark | Leave the logo as drawn; logos are exempt from the text floor. |
-| 13 | Credit price | **1 credit = US$0.05** (final, replacing the $0.80 answer given earlier the same morning). Same dollars, new unit: whole credits, each job rounded up to the next credit; packs, plans and welcome credits keep `CLAUDE.md`'s dollar values. Lands with PR #500 and `docs/credit-switchover.md`. |
+| 13 | Credit price | **1 credit = US$0.10** (final; it replaces the $0.80 and $0.05 answers given earlier the same morning). `CLAUDE.md` § Pricing, the code default and this handoff are already at $0.10 and stay; only particl.si (`CREDIT_USD` 0.80) comes back, by the PR "pricing: back to US$0.10 on particl.si" and `docs/credit-switchover.md`. |
 | 14 | Cinema Studio 4.0 in Make | "about N cr, at most 3N cr". |
 | 15 | Missing frames | A Claude Design round 2 before U1 (`docs/design-round-2.md`). |
 | 16 | `account=` on old Viral links | Keep it on the final URL. |
@@ -471,7 +473,7 @@ The code and `CLAUDE.md` override the handoff where they disagree. These are the
 
 Found while checking a–g. Answered by the owner on 5 October where marked.
 
-1. **Fix allowance arithmetic.** README §5 and `CHANGES.txt` give "at most 114 cr" as 2 × (43 + 7 + 7), but the plan on the same card is 43 + 43 + 7 = 93, which gives 186 by the README's own formula. The Studio board frames file says 186. **Decided:** the formula is 2 × the plan's shot prices; 114 on frame e is a design error. New figures in "Prices at $0.05".
+1. **Fix allowance arithmetic.** README §5 and `CHANGES.txt` give "at most 114 cr" as 2 × (43 + 7 + 7), but the plan on the same card is 43 + 43 + 7 = 93, which gives 186 by the README's own formula. The Studio board frames file says 186. **Decided:** the formula is 2 × the plan's shot prices; 114 on frame e is a design error. The handoff's $0.10 figures stand: 186 cr for the 93 cr plan, 114 cr for the 66 cr plan.
 2. **The 80 % pause.** Desktop frame f2 reads 161 of 200 cr; README §5 and the phone say 160. In code, the 80 % mark is a one-time notice to admins (`lib/caps.ts`, `capWarnPct`), and the stop comes at the cap (`atCap`). A pause with Continue and Stop is new behaviour on caps, which ground rule 4 lists as "don't redesign". **Decided:** build the pause in U1; money, so the owner reviews before merge.
 3. **The 200 cr line.** README §5 treats the Auto limit (10 cr sample) and the platform line (200 cr) as two numbers; in code they are the same constant (see a). README §4 lists "200 cr" under Spending rules as an admin setting; it is a platform constant, not a workspace setting.
 4. **Top up.** README §4 implies a purchase by any person. In code a top-up is a request restricted to the owner or an admin, which the platform approves (`lib/topups.ts`).
