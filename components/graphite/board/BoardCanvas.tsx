@@ -47,6 +47,8 @@ export type BoardCanvasProps = {
    * `slot` says where a card let go at a point would land (null: where it is); `commit` saves that as the new order.
    */
   reorder?: { can: (id: string) => boolean; slot: (id: string, point: BoardPoint) => ReorderSlot | null; commit: (id: string, slot: ReorderSlot) => void };
+  /** A Library file dropped on empty canvas: its key (the Library take id) and where, in board units. */
+  onDropFile?: (key: string, at: BoardPoint) => void;
   /** Live presence: where the pointer is on the board, and a free card being dragged (by how much), for the team. */
   onPresence?: (patch: { cursor?: BoardPoint | null; drag?: { id: string; dx: number; dy: number } | null }) => void;
   /** Teammates dragging free cards, by card: by how much. */
@@ -54,7 +56,10 @@ export type BoardCanvasProps = {
   children?: React.ReactNode;
 };
 
-export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, onOpen, onReady, placing, onPlace, onPresence, peerDrags, reorder, children }: BoardCanvasProps) {
+/** Whether a drag is over a card (not a group's empty space, which lets presses through to the canvas). */
+const onCard = (target: EventTarget | null) => !!(target as HTMLElement | null)?.closest?.(".bd-node:not([data-container])");
+
+export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, onOpen, onReady, placing, onPlace, onPresence, peerDrags, reorder, onDropFile, children }: BoardCanvasProps) {
   const flow = useReactFlow();
   const [drag, setDrag] = useState<ReadonlyMap<string, BoardPoint>>(new Map());
   const [measured, setMeasured] = useState<ReadonlyMap<string, { width: number; height: number }>>(new Map());
@@ -162,6 +167,16 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       onInit={onReady}
       onPointerMove={onPresence ? (event) => onPresence({ cursor: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }) }) : undefined}
       onPointerLeave={onPresence ? () => onPresence({ cursor: null }) : undefined}
+      onDragOver={onDropFile ? (event) => { if (event.dataTransfer.types.includes("text/plain") && !onCard(event.target)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } } : undefined}
+      onDrop={onDropFile ? (event) => {
+        /* A card that takes the file (a shot) has had it already; a file let go over empty canvas becomes a free media card. */
+        if (onCard(event.target)) return;
+        let key = "";
+        try { key = event.dataTransfer.getData("text/plain"); } catch { /* unreadable */ }
+        if (!key) return;
+        event.preventDefault();
+        onDropFile(key, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+      } : undefined}
       onPaneClick={placing ? (event) => onPlace(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })) : undefined}
       nodesConnectable={false}
       edgesFocusable={false}

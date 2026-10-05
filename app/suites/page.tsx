@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SHELL_PATH, redirectFor } from "@/lib/shell/ia";
 import { fromMakeLink } from "@/lib/shell/make";
+import { route, sameSearch } from "@/lib/shell/screens";
 import { searchStringOf } from "@/lib/workspace/switchover";
 import { SessionProvider } from "@/lib/session";
 import "@/components/workspace/workspace.css";
@@ -40,6 +41,12 @@ export default async function Suites({ searchParams }: { searchParams: Promise<R
   const to = moved === null ? spelled : `${SHELL_PATH}${moved ? `?${moved}` : ""}`;
   if (to) redirect(to);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
+  /* The new interface (lib/shell/screens.ts): for a workspace with the switch on, an old address opens its new screen once that
+     screen has landed, and a bare landing opens Home; with it off, or before a screen has landed, a new address opens today's page
+     for it. One more 307, only when something moves, and only now: the switch is read with the session. Off, nothing here changes. */
+  const on = session.workspace?.newInterface === true;
+  const routed = route(asked, on);
+  if (!sameSearch(routed, asked)) redirect(`${SHELL_PATH}${routed}`);
   return (
     <SessionProvider key={scope} value={session}>
       <SuitesApp key={scope} scope={scope} initialAccount={initialAccount} />

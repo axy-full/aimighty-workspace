@@ -11,7 +11,7 @@ import { useOnline } from "@/lib/board/online";
 import { railStatus } from "@/lib/board/regions";
 import { useBoardCommands } from "@/lib/board/commands";
 import { canReorder, moved, reorderNodes, reorderSlot, siblingsOf, type ReorderSlot } from "@/lib/board/reorder";
-import { addFreeCard, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
+import { addFreeCard, addFreeMedia, FREE_MEDIA_WIDTH, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
 import { tidyFree } from "@/lib/board/tidy";
 import { isBoardKind, type BoardBox, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
 import { readBoardView, saveBoardView } from "@/lib/board/view";
@@ -21,7 +21,8 @@ import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { uid, type Project } from "@/lib/workbench/studio";
+import { uid, type Asset, type Project } from "@/lib/workbench/studio";
+import { assetFromUpload } from "@/lib/workspace/draft-editor";
 import type { RoomPeer } from "@/lib/workbench/team-canvas-model";
 import { withBoardText } from "@/lib/workspace/rig-board";
 import { BoardAgentDock, DOCK_PANEL } from "./agent";
@@ -299,17 +300,42 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     }
     pick(new Set(), null);
   }, [pick, placed.byId, rig, selection.ids, undoable, ws]);
+  /* Free media cards: pictures and videos added with Upload or let go on the canvas; one edit, with Undo. Other files stay in the Library. */
+  const addMedia = useCallback((assets: Asset[], at: BoardPoint): number => {
+    const current = rig.project;
+    const wanted = assets.filter((a) => a.kind === "image" || a.kind === "video");
+    if (!current || !wanted.length) return 0;
+    const ids = wanted.map(() => uid("node"));
+    const refusal = rig.apply((p) => wanted.reduce((acc, asset, i) => addFreeMedia(acc, asset, { x: at.x + i * 24, y: at.y + i * 24 }, ids[i]), p));
+    if (refusal) { ws.toast(refusal); return 0; }
+    undoable("The cards are off the board", () => { rig.apply((p) => removeFreeCards(p, ids).project); });
+    pick(new Set([ids[ids.length - 1]]), ids[ids.length - 1]);
+    return wanted.length;
+  }, [pick, rig, undoable, ws]);
+  const dropFile = useCallback((key: string, at: BoardPoint) => {
+    const entry = items.find((e) => e.take.id === key);
+    if (!entry) return;
+    if (entry.media !== "image" && entry.media !== "video") { ws.toast("Only pictures and videos go on the board. Other files stay in the Library."); return; }
+    addMedia([entryAsset(entry)], { x: at.x - FREE_MEDIA_WIDTH / 2, y: at.y - 114 });
+  }, [addMedia, items, ws]);
   const upload = useCallback(async (list: FileList | null) => {
     if (!list?.length || !project) return;
+    const picked = [...list];
     try {
-      const { ids, notes } = await uploadFilesToProject(scope, project.id, [...list]);
-      ws.toast(notes.length ? notes.join(" ") : `${ids.length === 1 ? "1 file" : `${ids.length} files`} added to the Library`);
+      const { ids, uploads, notes } = await uploadFilesToProject(scope, project.id, picked);
+      /* Each picture or video lands on the board at the middle of what is in view. */
+      const { width, height, transform } = store.getState();
+      const [vx, vy, zoom] = transform;
+      const centre = { x: (width / 2 - vx) / zoom - FREE_MEDIA_WIDTH / 2, y: (height / 2 - vy) / zoom - 114 };
+      const assets = uploads.flatMap((stored) => { const file = picked.find((f) => f.name === stored.filename) ?? picked[0]; return file ? [assetFromUpload(file, stored, "Take")] : []; });
+      const placed = addMedia(assets, centre);
+      ws.toast(notes.length ? notes.join(" ") : `${ids.length === 1 ? "1 file" : `${ids.length} files`} added to the Library${placed ? ` · ${placed === 1 ? "1 card" : `${placed} cards`} on the board` : ""}`);
     } catch (error) {
       ws.toast(error instanceof Error ? error.message : "The files could not be uploaded.");
     } finally {
       if (files.current) files.current.value = "";
     }
-  }, [project, scope, ws]);
+  }, [addMedia, project, scope, store, ws]);
   const chooseTool = useCallback((next: BoardTool) => {
     if (next === "image" || next === "video" || next === "audio") { shell.openMake(next); setTool("select"); return; }
     if (next === "upload") { files.current?.click(); setTool("select"); return; }
@@ -474,7 +500,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 if ((card.kind === "note" || card.kind === "label") && !offline) { setEditing(id); return; }
                 registry.defs.get(card.kind)?.onOpen?.(card, ctx);
               }}
-              onReady={() => setReady(true)} onPresence={live ? onPresence : undefined} peerDrags={peerDrags} reorder={reorder}>
+              onReady={() => setReady(true)} onPresence={live ? onPresence : undefined} peerDrags={peerDrags} reorder={reorder} onDropFile={offline ? undefined : dropFile}>
               <PeerCursors peers={peers} />
             </BoardCanvas>
           )}

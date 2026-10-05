@@ -118,7 +118,7 @@ test("the Cast region draws a character, a place and an element: their words, st
   expect(paid).toEqual([]);
 });
 
-test("a character's Inspector holds the consent and, until an identity is ready, the Build identity form with its consent box", async ({ page }) => {
+test("a character's Inspector holds the consent and, until an identity is ready, the Build identity form with its consent box", async ({ page }, info) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
@@ -135,6 +135,8 @@ test("a character's Inspector holds the consent and, until an identity is ready,
   await expect(insp.getByTestId("insp-build")).toBeVisible();
   await expect(insp.getByTestId("soul-card")).toBeVisible();
   await expect(insp.getByTestId("insp-cast-consent")).toContainText("None recorded yet");
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/cast-inspector-${info.project.name.replace("workbench-", "")}.png` });
   await page.keyboard.press("Escape");
   await expect(insp).toHaveCount(0);
   expect(paid).toEqual([]);

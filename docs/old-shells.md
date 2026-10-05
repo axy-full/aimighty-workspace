@@ -64,6 +64,34 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 | `/report` | `app/(app)/report/page.tsx` | none yet — public form; needs a home outside the old shell layout | No | `mobile` | — |
 | `/policy`, `/privacy`, `/terms` | `app/(app)/<route>/page.tsx` → `components/PolicyPage.tsx` | none yet — public pages; need a home outside the old shell layout | No | `desktop`, `mobile`; `/terms` also `entry-points-audit-workbench` | — |
 
+## Suites screens behind the new-interface switch
+
+Besides the routes above, `/suites` itself still draws today's screens for every workspace that does not have the new interface on. The switch is per workspace (`lib/shell/new-interface.ts`; the platform owner turns it on from `/admin`, and "Everyone" last). Each new screen is one entry module, listed in the registry (`lib/shell/screens.ts`), with its address rows in its own routing module. Until a screen's `landed` flag is true, its new address opens today's page for it.
+
+**One rule for every PR that lands a screen:** while any workspace still sees the old screen, the old screen stays and gets a row here, with the screen that replaces it. The PR that turns the switch on for everyone deletes every old screen listed here (components, stylesheets, assets, tests) and the switch-off rows in the routing modules. A screen with no customer path left is deleted in the PR that lands its replacement.
+
+Rows are appended by the PR that lands the replacement, in the same table, one per old screen.
+
+| Old screen (switch off) | Where it lives today | Replaced by (switch on) | Entry module | Routing module | Deleted in |
+|---|---|---|---|---|---|
+| Studio overview, and the phone's Home (`?suite=particl&page=brief&sp=stages`, `sp=home`) | `components/graphite/mobile/StudioHome.tsx`, `components/graphite/mobile/SuiteHome.tsx` | Home, `?view=home` | `components/graphite/home/HomeView.tsx` | `components/graphite/home/routes.ts` | the switch-flip PR |
+| Studio stages and the Rig (`?suite=particl&page=brief\|boards\|cast\|astra\|rig\|takes\|edit\|deliver`) | `components/graphite/production/*`, `components/workspace/rig/*`, the Library and Inspector columns | The board, `?view=board` and its regions | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| Studio › Rig's graph, list and team presence (`?suite=particl&page=rig`, `&rig=list`) | `components/workspace/rig/RigPage.tsx`, `RigGraph.tsx`, `RigBoard.tsx`, `RigList.tsx`, `TeamPresence.tsx`, `RigAgentCard.tsx`, the Rig Inspectors; the graph and list parts of `rig.css` | The board and its List view (`&list=1`) | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| Studio › Rig's own library | `components/graphite/production/RigExtras.tsx` (`RigLibrary`) | The board's Library drawer | `components/graphite/board/drawers/Drawers.tsx` | `lib/board/routes.ts` | the switch-flip PR |
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` (still imported by `components/workbench/Studio.tsx`) | The board | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | with `/workbench`, in D1 |
+| Business pages (`?suite=moleculr&page=marketing&sp=…`) and Viral History | `components/graphite/business/*`, `components/graphite/viral/*` | The Ads and Social boards, `?view=board&kind=ads\|social` | `components/graphite/board/BoardView.tsx` (by kind) | `lib/shell/ads-social.ts` | the switch-flip PR |
+| Atomik's Agent page (`?suite=atomik&page=agent`) | `components/workspace/pages/*` (Agent) | Atomik's panel, `&atomik=1`, over any screen | `components/graphite/atomik/panel/AtomikPanel.tsx` | `components/graphite/atomik/panel/routes.ts` | the switch-flip PR |
+| Atomik's Runs, Approvals, Memory and Skills pages | `components/workspace/pages/*`, `components/graphite/atomik/*` | The control room, at the same addresses | `components/graphite/control-room/ControlRoom.tsx` | `lib/control-room/routes.ts` | the switch-flip PR |
+| Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx`, `components/management/*` | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
+| The phone's header, page strip and tab bar | `components/graphite/TabBar.tsx`, `phone.css`, the compact rows of `Header.tsx` and `StageStrip.tsx` | The phone's own screens, at compact widths or with `device=phone` | `components/graphite/phone/PhoneApp.tsx` | `components/graphite/phone/routes.ts` | the switch-flip PR |
+| Make's panel as it is today | `components/graphite/MakePanel.tsx` | Make re-laid out behind the switch (the switch-off panel stays as it is) | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR |
+| Studio › Takes desk (`?suite=particl&page=takes`) | `components/graphite/production/EditStage.tsx` | The Shots region, review mode and the Inspector | `components/graphite/board/cards/take/`, `board/review/`, `board/inspector/` | `lib/board/routes.ts` | the switch-flip PR. `lib/workspace/takes-desk.ts`, `takes.ts` and `ReleaseTake` stay: the board uses them. |
+| Studio › Cast and Environment (`?suite=particl&page=cast`, `page=boards&sp=environment`) | `components/graphite/production/CastStage.tsx`, `EnvironmentStage.tsx` | The Cast region: character, place and element cards | `components/graphite/board/cards/cast/` | `lib/board/routes.ts` | the switch-flip PR. `CastIdentities.tsx` stays: the cast card's Inspector hosts Build identity. Plates are chosen and added in the old stage until the board draws it. |
+| Studio › Edit & Sound (`?suite=particl&page=edit`) | `components/graphite/production/TimelineCut.tsx` and the page wrapper | The Cut card | `components/graphite/board/cards/cut/` | `lib/board/routes.ts` | the switch-flip PR. `components/workspace/pages/EditPage.tsx` stays: Open Edit & Sound mounts it over the board (`board/inspector/EditSoundHost.tsx`). |
+| Studio › Deliver (`?suite=particl&page=deliver`) | `StageView`'s deliver spec, `components/workspace/spec/tools/DeliverTool.tsx` | The Deliver card and its Inspector | `components/graphite/board/cards/deliver/`, `board/inspector/DeliverBody.tsx` | `lib/board/routes.ts` | the switch-flip PR. `MovieExport.tsx` and the export functions stay: the Inspector hosts them. |
+
+The Rig's data layer stays when these go: `components/workspace/rig/RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are what the board reads. `RigImport.tsx` stays until the board shows an import.
+
 ## Notes that change what D1 can delete
 
 - `/suites` still imports old-shell code: `components/suites/AtomikSuite.tsx`, `SubatomikWorkspace.tsx`, `MoleculrWorkspace.tsx`, `components/workbench/MovieExport.tsx`, `ProjectLibraryPage.tsx` and `components/management/ManagementPage.tsx`. Retiring a route does not make these deletable.
@@ -81,18 +109,3 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
-
-## Suites screens behind the new-interface switch
-
-Old screens that customers still use while the switch is off. Each is deleted in the switch-flip PR, with its sheets and tests, once nothing else imports it.
-
-| Old screen | Files | Replaced by (switch on) | Notes |
-|---|---|---|---|
-| Studio › Rig (`?suite=particl&page=rig`, `&rig=list`) | `components/workspace/rig/RigPage.tsx`, `RigGraph.tsx`, `RigBoard.tsx`, `RigList.tsx`, `TeamPresence.tsx`; the graph and list parts of `rig.css` | The board, `?view=board` (`components/graphite/board/BoardView.tsx`) and its List view (`&list=1`) | `RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are the board's data layer and stay. `RigImport.tsx` stays until the board shows an import. `RigAgentCard.tsx` and the Rig Inspectors go with their replacements (the docked Atomik panel; the board's Inspector). |
-| Studio › Rig's own library | `components/graphite/production/RigExtras.tsx` (`RigLibrary`) | The board's Library drawer (`components/graphite/board/drawers/Drawers.tsx`) | A file dropped on a shot becomes its reference on both. |
-| The production graph on `/workbench` | `components/workbench/production-graph.tsx` | The board | Still imported by `components/workbench/Studio.tsx` (the `/workbench` row above). |
-| Studio › Takes desk (`?suite=particl&page=takes`) | `components/graphite/production/EditStage.tsx` | The board's Shots region (`components/graphite/board/cards/take/`), review mode (`board/review/`) and the Inspector (`board/inspector/`) | `lib/workspace/takes-desk.ts` and `lib/workspace/takes.ts` stay: the board reads them. `ReleaseTake` stays: the take card uses it. |
-| Studio › Cast (`?suite=particl&page=cast`) | `components/graphite/production/CastStage.tsx` | The board's Cast region (`board/cards/cast/`) | `CastIdentities.tsx` stays: the cast card's Inspector hosts the Build identity form until it is redrawn. `lib/production/cast*.ts` stay. |
-| Studio › Environment (`?suite=particl&page=boards&sp=environment`) | `components/graphite/production/EnvironmentStage.tsx` | The board's Cast region: the place cards (`board/cards/cast/`) | Plates are chosen and added in the old stage until the board draws plate upload and choice. `lib/production/environment.ts` stays. |
-| Studio › Edit & Sound (`?suite=particl&page=edit`) | `components/graphite/production/TimelineCut.tsx` and the page wrapper only | The board's Cut card (`board/cards/cut/`) | `components/workspace/pages/EditPage.tsx` stays: Open Edit & Sound mounts it over the board (`board/inspector/EditSoundHost.tsx`). |
-| Studio › Deliver (`?suite=particl&page=deliver`) | `StageView`'s deliver spec | The board's Deliver card (`board/cards/deliver/`) and its Inspector (`board/inspector/DeliverBody.tsx`) | `components/workbench/MovieExport.tsx` and the export functions stay: the Inspector hosts them. `components/workspace/spec/tools/DeliverTool.tsx` goes once the exports under Advanced are used. |

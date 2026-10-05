@@ -11,6 +11,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import Boundary from "@/components/Boundary";
 import { JobsFault, JobsPill } from "./JobsTray";
 import { SettingsMenu } from "./SettingsMenu";
+import { isLanded } from "@/lib/shell/screens";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -40,15 +41,18 @@ export function Header({ account, project = null, bar = null }: { account: Works
   /* Home is the Studio overview on a desktop and Home's "Where to?" on a phone, where the overview is the project's stage grid. */
   const onHome = studioPage === "home" || (studioPage === "stages" && shell.wide);
   /* What each segment is lit for (the master's rules): the project for every suite page but Atomik's, and for Crew. */
+  /* The new interface's screens (lib/shell/screens.ts) light their segment: Home, the board (the project), Atomik's panel or control room. */
+  const board = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
   const lit: Record<HeaderSegmentId, boolean> = {
-    home: onHome,
-    project: (shell.view === "suite" && shell.suite.id !== "atomik" && !onHome) || shell.view === "crew",
+    home: onHome || shell.screen === "home",
+    project: (shell.view === "suite" && shell.suite.id !== "atomik" && !onHome) || shell.view === "crew" || board,
     /* Make is a panel over the page on screen (README § 3.2): lit while it is open, beside whatever else is. */
     make: shell.make !== null,
-    atomik: shell.view === "suite" && shell.suite.id === "atomik",
+    atomik: (shell.view === "suite" && shell.suite.id === "atomik") || shell.atomik !== null,
   };
   /* The suite pill names where you are: HOME, an old page's own mark, MAKE, CREW, SETTINGS; the phone's Library reads ASSETS. */
-  const mark = shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark;
+  const screenMark = shell.screen === "home" ? "HOME" : shell.screen === "board" ? "BOARD" : shell.screen === "board-ads" ? "ADS" : shell.screen === "board-social" ? "SOCIAL" : shell.screen === "control-room" ? "ATOMIK" : null;
+  const mark = screenMark ?? (shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark);
   const who = account?.workspace?.name ?? name ?? "Workspace";
   /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
   const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
@@ -57,7 +61,10 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const [openAt, setOpenAt] = useState<string | null>(null);
   const menu = openAt === here;
   const setMenu = (open: boolean) => setOpenAt(open ? here : null);
-  const [settings, setSettings] = useState(false);
+  /* `&settings=1` (new interface) opens the menu once on landing; the shell has already dropped it from the address. */
+  const [settings, setSettings] = useState(shell.settingsRequested);
+  const { settingsRequested, consumeSettingsRequest } = shell;
+  useEffect(() => { if (settingsRequested) consumeSettingsRequest(); }, [settingsRequested, consumeSettingsRequest]);
   const avatar = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -70,9 +77,11 @@ export function Header({ account, project = null, bar = null }: { account: Works
   }, [menu]);
   const goTo = (id: HeaderSegmentId) => {
     setMenu(false);
-    if (id === "home") shell.goSuite("studio", shell.wide ? "stages" : "home");
+    if (id === "home") { if (shell.newInterface) shell.goHome(); else shell.goSuite("studio", shell.wide ? "stages" : "home"); }
     else if (id === "project") shell.goProject();
     else if (id === "make") shell.goGen();
+    /* New interface, once Atomik's panel has landed: the segment opens and closes the panel over whatever is on screen. */
+    else if (shell.newInterface && isLanded("atomik")) { if (shell.atomik) shell.closeAtomik(); else shell.openAtomik(); }
     else shell.goSuite("atomik");
   };
   const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;

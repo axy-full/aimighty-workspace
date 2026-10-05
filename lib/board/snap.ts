@@ -1,7 +1,7 @@
 import { RigBuildError } from "@/lib/production/rig-build";
 import { createNode } from "@/lib/workbench/node-graph";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
-import type { CanvasNode, Project } from "@/lib/workbench/studio";
+import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import { clampPosition, SECTION_MODE } from "@/lib/workspace/rig-board";
 import { snapToDots } from "./layout";
 import type { BoardPoint } from "./types";
@@ -53,6 +53,23 @@ export function addFreeCard(project: Project, kind: "note" | "label", at: BoardP
     ? { id, title: "Text", type: "note", mode: SECTION_MODE, x: place.x, y: place.y, width: FREE_CARD.label.width, linked: [] }
     : { ...createNode("note", project.nodes.length, place), id, title: "Note", text: "", width: FREE_CARD.note.width };
   return { ...project, nodes: [...project.nodes, card] };
+}
+
+/** A free media card's width (the Rig's own media node width, lib/production/rig-build.ts). */
+export const FREE_MEDIA_WIDTH = 220;
+
+/**
+ * The draft with a free media card (a picture or a video, no shot to feed) at `at`, on the dots. The asset is filed on
+ * the project when it is not already. A file dropped on the canvas, or added with Upload, is this.
+ */
+export function addFreeMedia(project: Project, asset: Asset, at: BoardPoint, id: string): Project {
+  if (project.nodes.some((n) => n.id === id)) return project;
+  if (asset.kind !== "image" && asset.kind !== "video") throw new RigBuildError("Only pictures and videos go on the board. Other files stay in the Library.");
+  if (project.nodes.length >= PROJECT_LIMITS.nodes) throw new RigBuildError(`A board holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} cards.`);
+  const known = project.assets.some((a) => a.id === asset.id);
+  if (!known && project.assets.length >= PROJECT_LIMITS.assets) throw new RigBuildError("The asset library is full.");
+  const card: CanvasNode = { ...createNode("media", project.nodes.length, dropPlace(at)), id, title: asset.name.slice(0, 300), assetId: asset.id, width: FREE_MEDIA_WIDTH, linked: [] };
+  return { ...project, assets: known ? project.assets : [...project.assets, asset], nodes: [...project.nodes, card] };
 }
 
 /**

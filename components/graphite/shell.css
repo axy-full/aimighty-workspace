@@ -1511,3 +1511,15 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .vr-job { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
 .vr-job-name { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 767px) { .vr-job { min-height: 44px; } }
+
+/*
+ * The new interface (lib/shell/screens.ts; docs/old-shells.md). Present only while a workspace has the switch on:
+ *  - `--gx-overlay-right` on `.gx`: how far the right panels reach (Make 440 + 1, Atomik's panel 340 + 1, else 0), for a
+ *    screen that pads its column clear of them (Home, the control room). Set by SuitesShell.
+ *  - `--board-dock` on `.gx`: the width of the board's right dock (340 open, 56 closed), reported by the board through
+ *    `shell.setDockRight`. Make sits beside it, so the dock is never covered.
+ */
+.gx-screen { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; background: var(--gx-panel); }
+@media (min-width: 768px) {
+  .gx[data-screen^="board"] .gx-make { right: var(--board-dock, 0px); }
+}
