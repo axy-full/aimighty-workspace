@@ -29,7 +29,13 @@ All are rebased on `main` after the tokens PR merged and carry its look; each PR
 | [#514](https://github.com/axy-full/aimighty-workspace/pull/514) | D0 5b: Motion transfer and Object swap as Make modes; Viral motion/swap links redirect (stacked on #512). Overnight CI fix: the old-link switchover test now expects those links to open Make in the matching mode. | Customer-visible; one decision below. | [preview](https://particlstudio-git-d0-pr5-719025-akshayzigzag-filmscoms-projects.vercel.app) |
 | [#515](https://github.com/axy-full/aimighty-workspace/pull/515) | D0 6: the reading floor (12 px, 55 %, 44 px) on the surfaces the handoff does not draw | Restyles sign-in and account pages (sign-in rule). | [preview](https://particlstudio-git-d0-pr6-4f90bf-akshayzigzag-filmscoms-projects.vercel.app) |
 
-CI after the overnight rebase on `main`: #511, #513 and #515 rerunning (green before the rebase, same content); #512 and #514 rerunning with their fixes. This line is updated when the runs finish.
+CI at 02:04 UTC (7:34 IST), after the overnight rebase on `main`:
+- **#511, #513:** all 24 checks green.
+- **#515:** 23 of 24 green, the last still running (it was all green before the rebase, same content).
+- **#512:** the three Make failures are fixed; one new failure, unrelated to Make: `tests/workbench.spec.ts:220` at 844×390, where the old workbench's "Node version saved" toast sits over the Genie tab and the click times out. The same test passes on #511, #513 and #515 from the same base, so I re-ran the failed jobs rather than changing anything. If it fails again it is a toast-placement fix in the old workbench, not in this PR's code.
+- **#514:** test-only fix for the switchover spec pushed (`a1c41292`); 14 of 22 checks green and the rest still running when this was written.
+
+Check each PR's Checks tab before merging; none of these has been merged.
 
 Merge order when you're happy: #511 → #513 → #512 → #514 → #515, each rebased on `main` first.
 
@@ -59,6 +65,7 @@ Each is a short question; the PR or file that holds it is in brackets.
 13. Credit price: `CLAUDE.md` § Pricing says US$0.10, rule 14 and particl.si say US$0.80 (the deployment's `CREDIT_USD`), and PR #500 is open. Merge #500 to make the docs and code agree?
 14. Cinema Studio 4.0's price in Make: "about N cr, at most 3N cr", or remove it? (SOW §10.2)
 15. Send the missing frames (below) to a Claude Design round before U1?
+16. Old Viral links to Motion transfer / Object swap now open Make over Studio's first page (Brief & Script), and the page drops their `account=` param on load (only the old shell reads it). Keep `account=` on the final URL, or let it go? (#514)
 
 **Frames the handoff does not draw** (kept as today in the PRs, never invented):
 - Make (#512): film chips/shot control, Enhance + Auto, aspect, Draft first, resolution, length, Sound, voice, music length/Instrumental, takes count, the footer lines, the Edit tab; desktop failed ("Nothing billed · Retry") and insufficient-credits states; Upscale and Seedance Edit as card actions.
