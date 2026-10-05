@@ -1,15 +1,16 @@
 import type { ScreenModule } from "@/lib/shell/screens";
+import { PHONE_PARAMS } from "./phone-model";
 
 /**
- * The phone (stream 10): its own screens at compact widths, or at any width with `device=phone` (a centred 390 px
- * frame). `screen`, `device`, `from`, `run` and `take` are its params. Seeded by the shell (stream 1); stream 10
- * owns this file from here and flips `landed` in the PR that completes the phone's set. The phone reads every
- * address itself, so it adds no rows.
+ * The phone's entry in stream 1's screen registry (lib/shell/screens.ts): the params the shell keeps for it,
+ * with the switch on only. The phone routes every address itself once it is mounted (phone-model.ts ›
+ * readPhone), so it adds no redirect rows. A screen the build has not drawn opens Home (phone-model.ts ›
+ * DRAWN_SCREENS), never an empty screen.
  */
 export const PHONE_SCREEN: ScreenModule = {
   id: "phone",
-  landed: false,
-  params: ["screen", "device", "from", "run", "take"],
+  landed: true,
+  params: PHONE_PARAMS,
   rows: [],
   fallback: [],
 };

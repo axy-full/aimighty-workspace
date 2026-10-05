@@ -1,15 +1,26 @@
 "use client";
-import type { ReactNode } from "react";
+import "./phone-screens.css";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { QueueItem } from "@/lib/control-room/queue";
+import { useApprovals } from "@/lib/control-room/use-approvals";
+import { moving } from "@/lib/jobsTray";
+import { isMakeTool } from "@/lib/shell/make";
+import { useShell } from "@/lib/shell/state";
+import { useJobsTray } from "@/lib/shell/use-jobs-tray";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
+import type { Project } from "@/lib/workbench/studio";
 import type { ProjectActions } from "../FirstRun";
+import { PhoneHeader, PhoneTabs, PhoneToast, type PhoneTab } from "./PhoneChrome";
+import { HomeScreen } from "./HomeScreen";
+import { ReviewScreen } from "./ReviewScreen";
+import { PlanScreen } from "./PlanScreen";
+import { RecordScreen } from "./RecordScreen";
+import { MakeScreen } from "./MakeScreen";
+import { AtomikSheet } from "./AtomikSheet";
+import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
+import { useOnline, useQueuedJudgements } from "./use-online";
 
-/**
- * The phone's entry (stream 10): its own header, screens and tab bar at compact widths, or in a centred 390 px frame for
- * `device=phone`. STUB seeded by the shell (stream 1); stream 10 replaces this file with PhoneApp and flips `landed` in
- * components/graphite/phone/routes.ts. Never mounted while `landed` is false: the phone keeps today's chrome.
- */
 export type PhoneAppProps = {
   scope: string;
   account: WorkspaceAccount | null;
@@ -19,11 +30,131 @@ export type PhoneAppProps = {
   items: LibraryEntry[];
   library: ProjectLibrary;
   projectActions: ProjectActions;
-  /** The shell's own page for an address the phone has no screen for (Settings, an old page), drawn under the phone's header. Null on the phone's own screens. */
+  /**
+   * The shell's own page for an address the phone has no screen for (Settings, an old page): drawn under the
+   * phone's header with a back to Home (DECISIONS 11). Null on the phone's own screens.
+   */
   page?: { title: string; body: ReactNode } | null;
 };
 
-export function PhoneApp(props: PhoneAppProps) {
-  void props;
-  return null;
+/** The phone's address, read now: the shell and the browser's back and forward both move it. */
+function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mode?: "push" | "replace") => void] {
+  const [route, setRoute] = useState<PhoneRoute>(() => readPhone(window.location.search));
+  useEffect(() => {
+    const again = () => setRoute(readPhone(window.location.search));
+    window.addEventListener("popstate", again);
+    return () => window.removeEventListener("popstate", again);
+  }, []);
+  const go = useCallback((patch: Parameters<typeof phoneSearch>[1], mode: "push" | "replace" = "push") => {
+    const search = phoneSearch(window.location.search, patch);
+    const url = window.location.pathname + search + window.location.hash;
+    if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
+    setRoute(readPhone(search));
+  }, []);
+  return [route, go];
+}
+
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make" };
+
+/**
+ * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
+ * Stream 1's shell mounts it in place of the header, strip, body and tab bar at phone widths (and for
+ * `device=phone` at any width, in a centred 390 px frame), inside the same providers, so the jobs tray, the
+ * Atomik host and the toasts are the shell's own.
+ *
+ * Flat Graphite: opaque fills, hairlines, no blur. Text 12 px and up; every target 44 px and up; the last row
+ * and every pinned action sit clear of the tab bar and the home indicator.
+ *
+ * This build draws Home and the full-screen review. Make and Atomik open today's Make panel and ⌘K until
+ * their phone screens land; the Record and plan approval follow in their own PRs (phone-model.ts ›
+ * DRAWN_SCREENS).
+ */
+export function PhoneApp({ scope, account, data, project, items, projectActions, page = null }: PhoneAppProps) {
+  const shell = useShell();
+  const [route, go] = useRoute();
+  const online = useOnline();
+  const judgements = useQueuedJudgements(scope);
+  const approvals = useApprovals();
+  const tray = useJobsTray();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
+
+  const renders = (tray?.jobs ?? []).filter((job) => moving(job) || job.stage === "queued").length;
+  const needs = approvals.items.length + renders + (reviewQueue(items).length ? 1 : 0);
+  const topUp = () => shell.goWorkspace("credits");
+  /* A plan opens its approval screen, on the project it belongs to. */
+  const openPlan = (item: QueueItem) => {
+    if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId);
+    go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null });
+  };
+  const home = () => { if (page) shell.goSuite("studio", "home"); go({ screen: "home" }); };
+  /* The screen under the Atomik sheet: the one the sheet was opened from (Home when it is the address itself). */
+  const [under, setUnder] = useState<PhoneScreen>("home");
+  if (!page && route.screen !== "atomik" && under !== route.screen) setUnder(route.screen);
+  /* Words handed to the sheet: Plan's Change, or an address's `q`. */
+  const [handed, setHanded] = useState<string | null>(null);
+  const openAtomik = (words: string | null = null) => { setHanded(words); go({ screen: "atomik" }); };
+  const onTab = (tab: PhoneTab) => {
+    if (page) shell.goSuite("studio", "home");
+    if (tab === "atomik") { openAtomik(); return; }
+    go({ screen: tab });
+  };
+  /* An address or a link that opens the shell's Make panel or Atomik panel (`make=video`, `atomik=1&q=…`) opens the phone's own
+     screens instead: the panel is the desktop's, and the phone has its own (DECISIONS 11). A quick tool and Recent stay the panel's. */
+  const { make: shellMake, atomik: shellAtomik, atomikQuery } = shell;
+  useEffect(() => {
+    if (shellMake && !isMakeTool(shellMake) && shellMake !== "recent") { shell.closeMake(); go({ screen: "make" }, "replace"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the shell's close and the router's go are stable enough; only the address matters
+  }, [shellMake]);
+  const [seenAtomik, setSeenAtomik] = useState<string | null>(null);
+  const addressed = shellAtomik ? `${shellAtomik}:${atomikQuery ?? ""}` : null;
+  if (addressed && seenAtomik !== addressed) { setSeenAtomik(addressed); setHanded(atomikQuery); }
+  useEffect(() => {
+    if (shellAtomik) { shell.closeAtomik(); go({ screen: "atomik" }, "replace"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- as above
+  }, [shellAtomik]);
+
+  const sheet = !page && route.screen === "atomik";
+  /* Under the Atomik sheet the screen it was opened from still shows. */
+  const screen = page ? null : sheet ? under : route.screen;
+  const tabs = screen !== "review" && screen !== "plan";
+  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" ? "home" : null;
+
+  return (
+    <div className="ph-app" data-framed={route.framed || undefined} data-screen={screen ?? "page"} data-online={online ? undefined : "off"} data-testid="phone-app">
+      {screen === "review" ? (
+        <ReviewScreen scope={scope} project={project} items={items} online={online} startTake={route.take}
+          onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
+      ) : (
+        <>
+          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
+          {screen === "make" && !page ? (
+            <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
+              projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
+          ) : screen === "plan" ? (
+            <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
+              onChange={() => openAtomik("Change the plan: ")} />
+          ) : (
+          <main className="ph-scroll" data-testid="mobile-scroll">
+            {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
+              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} />
+            ) : (
+              <HomeScreen scope={scope} approvals={approvals} projects={data.projects} project={project} items={items} online={online} now={now}
+                onReview={() => go({ screen: "review" })}
+                onPlan={openPlan}
+                onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
+                onTopUp={topUp} />
+            )}
+          </main>
+          )}
+        </>
+      )}
+      {tabs ? <PhoneTabs active={active} needs={needs} onTab={onTab} /> : null}
+      {sheet ? (
+        <AtomikSheet project={project} query={handed} online={online} onClose={() => go({ screen: under })}
+          places={{ home, record: () => go({ screen: "record" }), make: () => go({ screen: "make" }) }} />
+      ) : null}
+      <PhoneToast />
+    </div>
+  );
 }
