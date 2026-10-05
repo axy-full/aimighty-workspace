@@ -3,8 +3,7 @@ import { useCallback } from "react";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
 import { openAtomikChat } from "@/lib/shell/use-skills";
-import type { WorkspaceTabId } from "@/lib/shell/ia";
-import type { SettingsSection } from "@/lib/shell/settings";
+import type { SettingsSectionId } from "@/lib/shell/settings";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { countLine, UNBILLED, type DecidedItem, type QueueItem } from "@/lib/control-room/queue";
 import { useSpendingRules, type SpendingRules } from "../settings/rules/spending";
@@ -29,8 +28,8 @@ export function ApprovalsView() {
   const queue = useApprovals();
   const rules = useSpendingRules();
 
-  /* Settings ids are stream 9's (lib/shell/settings.ts); the shell's tab type follows them when the new sections land. */
-  const goSettings = useCallback((section: SettingsSection) => shell.goWorkspace(section as WorkspaceTabId), [shell]);
+  /* Settings' sections (lib/shell/settings.ts): the shell opens the section, or today's page for it while it has not landed. */
+  const goSettings = useCallback((section: SettingsSectionId) => shell.goWorkspace(section), [shell]);
   const select = useCallback((draftId: string | null) => {
     if (draftId && draftId !== ws.state.projectId) ws.selectProject(draftId, { replace: true });
   }, [ws]);
