@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
-import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
@@ -19,7 +20,7 @@ const PHONE = "workbench-390x844";
 const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 
 async function account(page: Page) {
-  const signed = await signInLocally(page.request);
+  const signed = await signInWithNewInterface(page.request);
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try { await db.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [signed.workspace.id] }); } finally { db.close(); }
   const me = await page.request.get("/api/me").then((r) => r.json());

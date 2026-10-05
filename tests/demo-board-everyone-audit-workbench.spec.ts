@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
+import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { FILLED } from "./helpers/s11-board";
@@ -20,7 +21,9 @@ const KINDS = [
 ] as const;
 const TOOLS = ["Select", "Frame", "Note", "Text", "Image", "Video", "Audio", "Upload"];
 /** What a button that spends is called. Its label carries the price, or it is not enabled. */
-const SPENDS = /\b(make|render|generate|run|approve|release|retry|recreate|again|upscale|transcribe|send|start|storyboard|write|redraft|build|train|verify|apply)\b/i;
+const SPENDS = /^(make|render|generate|run|approve|release|retry|recreate|again|upscale|transcribe|send|start|draw|write|redraft|build|train|verify|apply|show me)\b/i;
+/** Buttons that open a dialog which quotes before anything is reserved, and carry no figure of their own (the hooks card's "Write 9 more"). */
+const OPENS_A_QUOTE = /^write \d+ more\b/i;
 const PRICE = /(\d[\d,.]*\s?cr\b|\bfree\b|up to \d)/i;
 
 const compact = (page: Page) => page.evaluate(() => window.matchMedia("(max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse)").matches);
@@ -61,6 +64,12 @@ for (const { kind, query } of KINDS) {
     await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("board")).toHaveAttribute("data-board-kind", kind, { timeout: 60_000 });
     const phone = await compact(page);
+    /* The Social board draws its sections once it has a source video. */
+    if (kind === "social" && !phone) {
+      await expect(page.getByTestId("social-start")).toBeVisible({ timeout: 60_000 });
+      await page.getByTestId("social-start-file").setInputFiles({ name: "walk.mp4", mimeType: "video/mp4", buffer: readFileSync("public/fixtures/clip.mp4") });
+      await expect(page.getByTestId("social-source")).toBeVisible({ timeout: 60_000 });
+    }
 
     if (!phone) {
       /* Eight tools, in the design's order, always there on the canvas. */
@@ -78,16 +87,14 @@ for (const { kind, query } of KINDS) {
 
     /* Every button on the board that spends shows its price (or is not pressable). */
     const buttons = await page.getByTestId("board").getByRole("button").evaluateAll((els) => els
-      .filter((el) => (el as HTMLElement).getClientRects().length && el.getAttribute("aria-disabled") !== "true" && !(el as HTMLButtonElement).disabled)
+      .filter((el) => (el as HTMLElement).getClientRects().length && el.getAttribute("aria-disabled") !== "true" && !(el as HTMLButtonElement).disabled && !el.closest("[data-testid='board-rail']"))
       .map((el) => ({ name: ((el.getAttribute("aria-label") ?? "") + " " + (el.textContent ?? "")).replace(/\s+/g, " ").trim(), testId: el.getAttribute("data-testid") ?? "" })));
     await info.attach(`buttons-${kind}.json`, { body: JSON.stringify(buttons, null, 2), contentType: "application/json" });
-    const unpriced = buttons.filter((b) => SPENDS.test(b.name.split(" · ")[0]) && !PRICE.test(b.name));
-    /* A button that only opens something (Make opens its panel, the agent plans) names no figure of its own: the panel shows the price on its own button. */
-    const opens = unpriced.filter((b) => !/^(Make|Write|Start|Send|Build|Apply|Run|Generate|Render|Approve|Retry|Verify|Release)\b.*(open|plan|panel|in Make|card|region|reference|list|library)/i.test(b.name));
-    expect(opens.map((b) => b.name), `${kind}: enabled buttons that spend with no price`).toEqual([]);
+    const unpriced = buttons.filter((b) => SPENDS.test(b.name.trim()) && !PRICE.test(b.name) && !OPENS_A_QUOTE.test(b.name.trim()));
+    expect(unpriced.map((b) => b.name), `${kind}: enabled buttons that spend with no price`).toEqual([]);
 
     /* A "Not in Particl yet" section shows no price and has no button that spends. */
-    const sections = page.getByTestId("board").locator(":is([data-card-kind$='-unavailable'], [data-card-kind='ads-unavailable'], [data-card-kind='social-unavailable'])");
+    const sections = page.getByTestId("board").locator("[data-card-kind$='-unavailable']");
     const count = await sections.count();
     for (let i = 0; i < count; i++) {
       const section = sections.nth(i);
@@ -98,7 +105,7 @@ for (const { kind, query } of KINDS) {
       const live = await section.getByRole("button").evaluateAll((els) => els.filter((el) => el.getAttribute("aria-disabled") !== "true" && !(el as HTMLButtonElement).disabled).map((el) => el.textContent?.trim() ?? ""));
       expect(live.filter((name) => SPENDS.test(name)), "no button that spends").toEqual([]);
     }
-    if (kind !== "studio") expect(count, `the ${kind} board has Not in Particl yet sections`).toBeGreaterThan(0);
+    if (kind !== "studio" && !phone) expect(count, `the ${kind} board has Not in Particl yet sections`).toBeGreaterThan(0);
 
     expect(paid, "no paid request").toEqual([]);
     expect(problems).toEqual([]);

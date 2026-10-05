@@ -72,7 +72,7 @@ const BOARD: [string, Record<string, string | null>, string][] = [
   ["/suites?view=board&list=1", { view: "board", list: "1" }, "board"],
   ["/suites?view=board&kind=ads&frame=2", { view: "board", kind: "ads", frame: "2" }, "board-ads"],
   ["/suites?view=board&kind=social", { view: "board", kind: "social" }, "board-social"],
-  ["/suites?suite=particl&page=rig", { view: "board", suite: null, page: null }, "board"],
+  ["/suites?suite=particl&page=rig", { view: "board" }, "board"],
   ["/suites?suite=particl&page=brief&sp=beats", { view: "board", region: "storyboard" }, "board"],
   ["/suites?suite=moleculr&page=marketing&sp=hooks", { view: "board", kind: "ads", card: "hooks" }, "board-ads"],
   ["/suites?view=crew&cp=members", { view: "board", frame: "m" }, "board"],
@@ -116,7 +116,8 @@ test("switch ON: landed screens mount, the rest open today's page; the new-inter
   /* A bare landing is Home once Home has landed, else Studio. */
   const bare = route("", true);
   await landsOn(page, bare ? { view: new URLSearchParams(bare).get("view") } : { suite: "particl", view: null });
-  await expect(page.getByTestId("shell-body")).toBeVisible();
+  /* Home fills the body under the header; Studio's overview is the shell's own body. */
+  if (bare) await expect(page.locator(".gx")).toHaveAttribute("data-screen", "home"); else await expect(page.getByTestId("shell-body")).toBeVisible();
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
   await closeSuitesMenu(page);

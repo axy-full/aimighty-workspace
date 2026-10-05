@@ -1,7 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { readFileSync } from "node:fs";
-import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork, generation, mockMedia } from "./helpers/workspaceFixtures";
 import { screenplayPdf } from "./helpers/screenplayPdf";
 import { smallTargets, smallText } from "./phoneFloors";
@@ -22,7 +23,7 @@ const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 
 /** A fresh local workspace. On Studio unless asked: the Invite plan holds one project (lib/plans.ts), and most tests need several. */
 async function account(page: Page, plan: "studio" | "invite" = "studio") {
-  const signed = await signInLocally(page.request);
+  const signed = await signInWithNewInterface(page.request);
   if (plan === "studio") {
     const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
     try { await db.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [signed.workspace.id] }); } finally { db.close(); }

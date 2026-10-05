@@ -65,8 +65,11 @@ async function boardIsUp(page: Page) {
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
   if (!(await compact(page))) {
     await expect(page.getByTestId("board-rail")).toBeVisible();
-    await expect(page.getByTestId("board-tools")).toBeVisible();
-    await expect(page.getByTestId("board-tools").getByRole("button")).toHaveCount(8);
+    /* The canvas draws the tool row; the List view (`list=1`) replaces the canvas, and the tool row with it. */
+    if (new URL(page.url()).searchParams.get("list") !== "1") {
+      await expect(page.getByTestId("board-tools")).toBeVisible();
+      await expect(page.getByTestId("board-tools").getByRole("button")).toHaveCount(8);
+    }
   }
 }
 
