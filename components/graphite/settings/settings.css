@@ -42,7 +42,7 @@
 .gs-btn:hover { background: var(--gx-input-hover, rgba(255, 255, 255, 0.05)); }
 .gs-btn[data-hot] { border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
 .gs-btn[data-danger] { color: var(--gx-failed-text); }
-.gs-btn[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gs-btn[aria-pressed="true"], .gs-btn[aria-checked="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
 .gs-btn:disabled { color: var(--gx-disabled); cursor: default; }
 .gs-primary { height: 32px; padding: 0 13px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--gx-t); }
 .gs-primary:hover { background: var(--gx-accent-hover); }

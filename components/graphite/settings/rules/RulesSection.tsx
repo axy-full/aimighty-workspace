@@ -82,7 +82,7 @@ export function RulesSection() {
           <div className="gs-edit" data-testid="settings-rule-edit">
             <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Who may approve">
               {APPROVAL_OPTIONS.map(([id, label]) => (
-                <button key={id} type="button" role="radio" aria-checked={rules.rule === id} className="gs-btn" aria-pressed={rules.rule === id} disabled={busy}
+                <button key={id} type="button" role="radio" aria-checked={rules.rule === id} className="gs-btn" disabled={busy}
                   onClick={() => chooseRule(id)} data-testid={`settings-rule-${id}`}>{label}</button>
               ))}
             </div>
@@ -107,14 +107,14 @@ export function RulesSection() {
             <span className="gs-eyebrow">Warn at</span>
             <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Warn at">
               {[...CAP_WARN_OPTIONS, ...(rules.capWarnPct != null && !CAP_WARN_OPTIONS.some(([v]) => v === String(rules.capWarnPct)) ? [[String(rules.capWarnPct), `${rules.capWarnPct}% of the cap`] as const] : [])].map(([id, label]) => (
-                <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" aria-pressed={String(rules.capWarnPct) === id} disabled={busy}
+                <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" disabled={busy}
                   onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Warning at ${id}% of a production’s cap.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
               ))}
             </div>
             <span className="gs-eyebrow">At a production’s cap</span>
             <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="At a production’s cap">
               {AT_CAP_OPTIONS.map(([id, label]) => (
-                <button key={id} type="button" role="radio" aria-checked={rules.atCap === id} className="gs-btn" aria-pressed={rules.atCap === id} disabled={busy}
+                <button key={id} type="button" role="radio" aria-checked={rules.atCap === id} className="gs-btn" disabled={busy}
                   onClick={() => { if (rules.atCap !== id) void save({ atCap: id }, budgetBefore(), `At a production’s cap: ${label.toLowerCase()}.`); }} data-testid={`settings-atcap-${id}`}>{label}</button>
               ))}
             </div>
