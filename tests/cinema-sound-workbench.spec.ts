@@ -329,7 +329,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
   const silentResponse = await silentRead;
   const silent = await silentResponse.json() as { credits: number };
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Generate · about ${silent.credits} cr`);
+  await expect(go).toHaveText(`Generate · about ${silent.credits} cr, at most ${silent.credits * 3} cr`);
   if (!offered) {
     await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
     /* Asked for by hand, sound is refused by the price read and by admission alike, before anything is reserved or sent. */
@@ -353,7 +353,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
     await sound.click();
     const loud = await (await loudRead).json() as { credits: number };
     expect(loud.credits).toBeGreaterThanOrEqual(silent.credits);
-    await expect(go).toHaveText(`Generate · about ${loud.credits} cr`);
+    await expect(go).toHaveText(`Generate · about ${loud.credits} cr, at most ${loud.credits * 3} cr`);
     await go.click();
     await expect.poll(() => priced.length).toBe(1);
     expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS, generateAudio: true });
