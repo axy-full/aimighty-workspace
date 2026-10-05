@@ -447,7 +447,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
   const sound = dialog.getByRole("switch", { name: "With sound" });
   await expect(sound).toHaveAttribute("aria-checked", "false");
-  await expect(dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true })).toBeEnabled();
   expect(f.reads.every((q) => !q.has("audio")), "a read asked for sound").toBe(true);
 
   /* The floors, on the switch. */
@@ -475,7 +475,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
   await expect(dialog.getByRole("button", { name: "Loading estimate…", exact: true })).toBeDisabled();
   held.open();
   f.holdSound(null);
-  const generate = dialog.getByRole("button", { name: "Generate · about 40 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 40 cr, at most 120 cr", exact: true });
   await expect(generate).toBeEnabled();
   expect(f.reads.at(-1)?.getAll("uploadId")).toEqual(["room-upload"]);
   await sound.scrollIntoViewIfNeeded();
@@ -483,7 +483,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
 
   await generate.click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 40, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 120, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   await expect(dialog).toHaveCount(0);
   /* The node's first input is the WAV, so the inspector's monitor holds that sound, at full volume. The node's own mode
      ("Video") is not a volume; read as one, it threw and stopped the page. */
@@ -514,7 +514,7 @@ test("the canvas dialog, where sound is offered: off, the take goes silent with 
   /* The words are the dialog's direction, which starts from the node's brief: sent exactly as shown, never rewritten. */
   const direction = await dialog.getByRole("textbox", { name: "Generation direction" }).inputValue();
   expect(direction).toContain(WORDS);
-  await dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true }).click();
+  await dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true }).click();
   await expect.poll(() => f.submissions.length).toBe(1);
   expect(f.submissions[0]).toMatchObject({ model: CINEMA, prompt: direction, refine: false, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
@@ -531,14 +531,14 @@ test("the canvas dialog, where sound is not offered: no Sound switch with the no
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
   await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveCount(0);
   await expect(dialog.getByTestId("dialog-cinema-sound")).toHaveCount(0);
-  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true });
   await expect(generate).toBeEnabled();
   expect(f.reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "dialog-sound-not-offered");
   await generate.click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, maxCredits: 35, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, maxCredits: 105, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
   expect(f.errors).toEqual([]);
 });

@@ -422,8 +422,18 @@ test("the canvas dialog offers Cinema Studio's nine controls, each Auto; picks g
   await expect(dialog.getByRole("combobox", { name: "Cinema Studio movement" }).locator("option")).toHaveCount(34);
   /* The node's sound is a reference here, by name. */
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
-  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true });
   await expect(generate).toBeEnabled();
+  /* The hold is the whole of what Generate approves (lib/cinemaHold.ts): its price is never cut, at every size —
+     inside the dialog and the screen, wrapping whole rather than clipped, and at least 12 px. */
+  await generate.scrollIntoViewIfNeeded();
+  const fit = await generate.evaluate((el) => {
+    const box = el.getBoundingClientRect(), dialogBox = el.closest("[role=dialog]")!.getBoundingClientRect();
+    return { uncut: el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1,
+      inside: box.left >= dialogBox.left - 0.5 && box.right <= dialogBox.right + 0.5 && box.left >= 0 && box.right <= innerWidth + 1,
+      legible: parseFloat(getComputedStyle(el).fontSize) >= 12 };
+  });
+  expect(fit).toEqual({ uncut: true, inside: true, legible: true });
   expect(f.reads.at(-1)?.getAll("uploadId")).toEqual(["portrait-upload", "room-upload"]);
   const readsBefore = f.reads.length;
 
@@ -458,9 +468,9 @@ test("the canvas dialog offers Cinema Studio's nine controls, each Auto; picks g
   await dialog.getByRole("combobox", { name: "Generation engine" }).selectOption(CINEMA);
   await expect(dialog.getByRole("combobox", { name: "Cinema Studio movement" })).toHaveValue("dolly-in");
 
-  await dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true }).click();
+  await dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true }).click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0].body).toMatchObject({ model: CINEMA, projectId: "production-cinema", shotId: "shot-cinema", maxCredits: 35 });
+  expect(f.submissions[0].body).toMatchObject({ model: CINEMA, projectId: "production-cinema", shotId: "shot-cinema", maxCredits: 105 });
   expect(f.submissions[0].body.cinema).toEqual({ camera_model: "35mm-film", camera_movement: "dolly-in", color_palette: "after-dark" });
   expect(f.submissions[0].body.references).toEqual([{ uploadId: "portrait-upload", role: "reference_image" }, { uploadId: "room-upload", role: "reference_audio" }]);
   await expect(dialog).toHaveCount(0);
