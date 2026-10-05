@@ -5,8 +5,8 @@ import { RUN_FILTERS, type RunFilter } from "@/lib/control-room/activity";
 import { ApprovalsView } from "./ApprovalsView";
 import { ActivityView } from "./ActivityView";
 import { useSession } from "@/lib/session";
-/* Until Skills (PR 8.3) and Memory (PR 8.4) land, those pages show today's views here. */
-import { SkillsView } from "../atomik/SkillsView";
+import { SkillsRoom } from "./SkillsRoom";
+/* Until Memory (PR 8.4) lands, its page shows today's view here. */
 import { MemoryView } from "../atomik/MemoryView";
 import { controlRoomPage, type ControlRoomPageId } from "./pages";
 import "./control-room.css";
@@ -18,8 +18,8 @@ import "./control-room.css";
  * row (title, hint, and Activity's filter, as the frames have them); the shell
  * keeps the header, the page strip and the project.
  *
- * Approvals (PR 8.1) and Activity (PR 8.2) are here. Skills and Memory show
- * today's views until their own pages land (PRs 8.3 and 8.4).
+ * Approvals (PR 8.1) and Activity (PR 8.2) are here. Skills (PR 8.3) too; Memory
+ * shows today's view until its own page lands (PR 8.4).
  */
 export function ControlRoom({ page, project = null }: { page: ControlRoomPageId; project?: Project | null }) {
   const def = controlRoomPage(page);
@@ -40,7 +40,7 @@ export function ControlRoom({ page, project = null }: { page: ControlRoomPageId;
       </header>
       {page === "approvals" ? <ApprovalsView /> : null}
       {page === "runs" ? <ActivityView project={project} filter={filter} /> : null}
-      {page === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : null}
+      {page === "saved-skills" ? <SkillsRoom key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : null}
       {page === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : null}
     </div>
   );

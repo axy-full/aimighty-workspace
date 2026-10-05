@@ -80,7 +80,7 @@ export function ActivityView({ project, filter }: { project: Project | null; fil
       </div>
 
       <div className={open ? "cr-runs cr-runs--open" : "cr-runs"}>
-        <div className="cr-block" style={{ minWidth: 0 }}>
+        <div className="cr-block cr-min">
           <div className="cr-run cr-run--head" aria-hidden="true"><span>Run</span><span>Request</span><span>State</span><span className="cr-right">Settled</span><span /></div>
           {activity.status === "loading" && !reply ? <p className="cr-empty" role="status" aria-busy="true">Reading runs…</p>
             : shown.length ? (
@@ -171,7 +171,7 @@ function RunInspector({ run, inCredits, onClose, onOpen, onRunAgain, onSaveAsSki
       <ol className="cr-list" data-testid="run-steps">
         {run.steps.map((step) => (
           <li key={step.id} className="cr-step" data-testid="run-step" data-kind={step.kind}>
-            <span style={{ minWidth: 0 }}>
+            <span className="cr-min">
               <span className="cr-decided-title">{step.title}</span>
               <span className="cr-decided-line">{stepLine(step)}</span>
             </span>

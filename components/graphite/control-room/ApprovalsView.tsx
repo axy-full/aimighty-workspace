@@ -83,7 +83,7 @@ function DecidedRow({ item }: { item: DecidedItem }) {
   return (
     <div className="cr-decided" data-testid="decided-row">
       <span className="cr-dot" data-tone={tone} aria-hidden="true" />
-      <span style={{ minWidth: 0 }}>
+      <span className="cr-min">
         <span className="cr-decided-title">{item.title}</span>
         <span className="cr-decided-line">{decidedLine(item)}</span>
       </span>
