@@ -198,3 +198,43 @@ test("at phone widths the board is not drawn: no shot cards, no review mode, not
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/phone-${info.project.name.replace("workbench-", "")}.png` });
 });
+
+test("the Inspector opens on a selected take: price paid, prompt, versions, the actions, history, Advanced; Esc closes", async ({ page }, info) => {
+  test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
+  const { project, reviews, notes, paid } = await seed(page);
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await expect(page.getByTestId("take-review")).toBeVisible();
+
+  await shot(page, "node-shot0001").getByTestId("take-card").click();
+  const insp = page.getByTestId("board-inspector");
+  await expect(insp).toBeVisible();
+  await expect(insp).toContainText("Shot 1 · Opening wide · v2");
+  await expect(insp.getByTestId("insp-engine")).toHaveText("Nano Banana Pro · 1K · 3 cr paid");
+  await expect(insp.getByTestId("insp-version")).toHaveText(["v1 · approved", "v2"]);
+  await expect(insp.getByTestId("insp-download")).toHaveAttribute("href", "/api/media/tk-s1-v2?download=1");
+  /* "Select & edit a region" is not offered: no engine edits a region of a clip. */
+  await expect(insp.getByText("Select & edit a region")).toHaveCount(0);
+  await insp.getByTestId("insp-advanced").click();
+  await expect(insp.locator(".gx-insp-rows")).toContainText("Resolution");
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/inspector-${info.project.name.replace("workbench-", "")}.png` });
+
+  /* Reject needs a reason: an empty line says so and writes nothing. */
+  await insp.getByTestId("insp-reject").click();
+  await insp.getByTestId("insp-reason").press("Enter");
+  await expect(insp.getByTestId("insp-reason-hint")).toHaveText("Say why you are rejecting it.");
+  expect(reviews).toEqual([]);
+  await insp.getByTestId("insp-reason").fill("Too dark on the left");
+  await insp.getByTestId("insp-reject-confirm").click();
+  await expect.poll(() => reviews).toEqual([{ id: "tk-s1-v2", state: "changes" }]);
+  await expect.poll(() => notes).toEqual([{ genId: "tk-s1-v2", text: "Too dark on the left" }]);
+  await expect(insp.getByTestId("insp-reject")).toHaveText("Rejected");
+
+  /* Use as reference hands the take to Make; nothing is made. */
+  await insp.getByTestId("insp-use-ref").click();
+  await expect(page.getByTestId("toast")).toContainText("added as Image");
+
+  await page.keyboard.press("Escape");
+  await expect(insp).toHaveCount(0);
+  expect(paid).toEqual([]);
+});

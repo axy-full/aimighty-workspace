@@ -1,0 +1,51 @@
+/* The Inspector (README § 3.1 k): 340 px over the board's right edge; black, a hairline left; tokens only. */
+.gx-insp { position: absolute; top: 0; bottom: 0; right: var(--gx-insp-right, 0px); z-index: 40; width: min(340px, 100%); display: flex; flex-direction: column; overflow: hidden; background: var(--gx-root); border-left: 1px solid var(--gx-hair-strong); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-insp-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
+.gx-insp-heading { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.gx-insp-x { min-width: 28px; height: 28px; border: 0; border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text-2); font-size: 16px; line-height: 1; cursor: pointer; }
+.gx-insp-x:hover { color: var(--gx-text); }
+.gx-insp-x:focus-visible, .gx-insp-link:focus-visible, .gx-insp-act:focus-visible, .gx-insp-version:focus-visible, .gx-insp-fold:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-insp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; }
+.gx-insp-take, .gx-insp-edit { display: flex; flex-direction: column; gap: 14px; }
+.gx-insp-quiet { font-size: var(--gx-fs-body); color: var(--gx-text-2); }
+
+.gx-insp-preview { aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--gx-root); border: 1px solid var(--gx-hair); }
+.gx-insp-preview > span:first-child { display: block; width: 100%; height: 100%; }
+.gx-insp-preview img, .gx-insp-preview video { object-fit: cover; }
+.gx-insp-face { display: block; width: 100%; height: 100%; background: var(--gx-card); }
+.gx-insp-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); overflow-wrap: anywhere; }
+.gx-insp-meta { font-size: var(--gx-fs-body); color: var(--gx-text-2); }
+.gx-insp-meta .gx-price { font-family: var(--gx-mono); color: var(--gx-text-2); }
+
+.gx-insp-eyebrow { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-insp-eyebrow-row { display: flex; justify-content: space-between; align-items: center; }
+.gx-insp-link { border: 0; background: transparent; padding: 0; font: 600 13px/1.4 var(--gx-font); color: var(--gx-accent-text); cursor: pointer; align-self: flex-start; }
+.gx-insp-link:hover { color: var(--gx-accent-text-hover); }
+.gx-insp-prompt { margin: 6px 0 0; font-size: var(--gx-fs-body); line-height: 1.55; color: var(--gx-text); overflow-wrap: anywhere; }
+
+.gx-insp-versions { margin-top: 8px; display: flex; gap: 6px; }
+.gx-insp-version { flex: 1; height: 32px; border: 1px solid var(--gx-hover-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); cursor: pointer; }
+.gx-insp-version[aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); }
+
+.gx-insp-actions { display: flex; flex-direction: column; gap: 6px; }
+.gx-insp-act { display: flex; align-items: center; height: 34px; padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); text-align: left; text-decoration: none; cursor: pointer; }
+.gx-insp-act:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-insp-act:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-insp-act--approve { border-color: color-mix(in srgb, var(--gx-done) 50%, transparent); color: var(--gx-done-text); font-weight: 600; }
+.gx-insp-act--approve:disabled { color: var(--gx-done-text); opacity: 0.7; }
+.gx-insp-act--danger { flex: none; border-color: color-mix(in srgb, var(--gx-failed) 50%, transparent); }
+.gx-insp-reason { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-insp-input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-ctl); background: var(--gx-input); color: var(--gx-text); font: 13px/1 var(--gx-font); }
+.gx-insp-input::placeholder { color: var(--gx-placeholder); }
+.gx-insp-input:focus-visible { outline: none; border-color: var(--gx-accent); }
+.gx-insp-hint { flex-basis: 100%; font-size: 13px; color: var(--gx-waiting-text); }
+
+.gx-insp-history { list-style: none; margin: 0; padding: 0; }
+.gx-insp-history li { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--gx-hair-soft); font-size: 13px; }
+.gx-insp-history span { min-width: 0; overflow-wrap: anywhere; }
+.gx-insp-history time { flex: none; font: 12px/1.45 var(--gx-mono); color: var(--gx-text-2); }
+.gx-insp-fold { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border: 0; background: transparent; color: var(--gx-text-2); font: 500 13px/1 var(--gx-font); cursor: pointer; }
+.gx-insp-rows { margin: 0; }
+.gx-insp-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--gx-hair-soft); font-size: 13px; }
+.gx-insp-rows dt { color: var(--gx-text-2); }
+.gx-insp-rows dd { margin: 0; font-family: var(--gx-mono); text-align: right; overflow-wrap: anywhere; }

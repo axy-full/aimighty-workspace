@@ -178,7 +178,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   }
   /* Filing against a shot, moving between shots, or unfiling. A video or a
      still takes the shot's next version number on the way in; an audio
-     track carries none. The render follows the shot into its production. */
+     track takes none and keeps the number it has. The render follows the
+     shot into its production. `version` is NOT NULL (lib/db.ts): unfiling
+     puts back the default an unfiled render carries, never NULL. */
   if (body.shotId !== undefined) {
     const shotId = body.shotId ? String(body.shotId) : null;
     if (shotId) {
@@ -188,12 +190,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       if (!gen) return NextResponse.json({ error: "No such render." }, { status: 404 });
       const version = gen.kind === "audio" ? null : await nextVersion(shotId);
       await db().execute({
-        sql: `UPDATE generations SET shot_id=?, version=?, project_id=COALESCE(?, project_id), updated_at=? WHERE id=?`,
+        sql: `UPDATE generations SET shot_id=?, version=COALESCE(?, version), project_id=COALESCE(?, project_id), updated_at=? WHERE id=?`,
         args: [shotId, version, shot.projectId, Date.now(), id],
       });
     } else {
       await db().execute({
-        sql: `UPDATE generations SET shot_id=NULL, version=NULL, updated_at=? WHERE id=?`,
+        sql: `UPDATE generations SET shot_id=NULL, version=1, updated_at=? WHERE id=?`,
         args: [Date.now(), id],
       });
     }
