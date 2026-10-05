@@ -133,5 +133,5 @@ test("Home's sheet uses only the token set's colours (app/graphite.css)", () => 
   expect(css.match(/\bhsla?\(/gi) ?? []).toEqual([]);
   /* The one gradient is the project swatch's, from posterOf's two stops (README § 2 allows gradients on swatches only). */
   expect(css.match(/gradient\(/g) ?? []).toHaveLength(1);
-  expect(css).toContain("linear-gradient(135deg, var(--hm-from), var(--hm-to))");
+  expect(css).toContain("linear-gradient(135deg, var(--hm-from, var(--gx-card)), var(--hm-to, var(--gx-card)))");
 });
