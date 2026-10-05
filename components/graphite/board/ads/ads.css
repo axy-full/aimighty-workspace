@@ -43,7 +43,7 @@
 .ab-rows { margin: 4px 0 0; display: flex; flex-direction: column; }
 .ab-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--gx-hair-soft); font-size: 14px; }
 .ab-row dt { margin: 0; color: var(--gx-text); flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ab-row dd { margin: 0; text-align: right; color: var(--gx-text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-row dd { margin: 0; text-align: right; color: var(--gx-text-2); min-width: 0; overflow-wrap: anywhere; }
 .ab-row dd[data-mono] { font-family: var(--gx-mono); font-size: 12px; }
 
 /* Brand kit. */
@@ -78,11 +78,11 @@
 
 /* The empty board. */
 .ab-start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; pointer-events: none; z-index: 5; }
-.ab-start-box { pointer-events: auto; width: min(560px, 100%); display: flex; flex-direction: column; gap: 12px; }
+.ab-start-box { pointer-events: auto; width: min(560px, 100%); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }
 .ab-start-box h2 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
 .ab-start-box p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--gx-text-2); }
-.ab-start-box .ab-input { height: 44px; font-size: 15px; padding: 0 14px; border-radius: 10px; }
-.ab-start-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ab-start-box .ab-input { height: 44px; text-align: left; font-size: 15px; padding: 0 14px; border-radius: 10px; }
+.ab-start-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ab-start-actions .ab-btn { height: 40px; }
 
 /* The Edit panel: 440 px over the board's right edge, beside the docked panel. */

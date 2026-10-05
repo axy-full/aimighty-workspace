@@ -33,7 +33,7 @@ export const SIZES = {
   formats: { w: WIDE_W, h: 400 },
   imageAd: { w: CARD_W, h: 452 },
   result: { w: CARD_W, h: 372 },
-  unavailable: { w: CARD_W, h: 128 },
+  unavailable: { w: CARD_W, h: 92 },
 } as const;
 
 /* ── Card data (plain, no functions) ───────────────────────────────────── */
@@ -224,7 +224,7 @@ export function adsCards(src: BoardSource): BoardCard[] {
   const hooks = hooksCard(src, extra), formats = formatsCard(src);
   const waiting = [brand.state, product.state, reference.state].includes("needs");
   const cards: BoardCard[] = [
-    group(ADS_GROUP.start, "brand", "Brand, product and reference", waiting ? "waiting for your review" : "approved", 3, 0),
+    group(ADS_GROUP.start, "brand", "Brand, product and reference", waiting ? "waiting for your review" : [brand.state, product.state].every((state) => state === "done") ? "approved" : "ready for your details", 3, 0),
     { id: "ads:brand", kind: "ads-brand", region: "brand", order: 1, group: ADS_GROUP.start, state: brand.state, summary: brand.summary, data: brand.data },
     { id: "ads:product", kind: "ads-product", region: "product", order: 2, group: ADS_GROUP.start, state: product.state, summary: product.summary, data: product.data },
     { id: "ads:reference", kind: "ads-reference", region: "product", order: 3, group: ADS_GROUP.start, state: reference.state, summary: reference.summary, data: reference.data },

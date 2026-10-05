@@ -27,7 +27,6 @@ const SIZE_WORDS: Record<string, string> = { "1k": "1K", "2k": "2K", "4k": "4K" 
 /** One branded still from the product image, on Particl's Higgsfield API key: the estimate on the button, then one send at that figure. */
 export function ImageAdCard({ data }: CardProps<ImageAdData>) {
   const { scope, project, rig } = useBoard();
-  const act = useAdsActions();
   const [aspect, setAspect] = useState("1:1");
   const [resolution, setResolution] = useState("2k");
   const [open, setOpen] = useState(false);

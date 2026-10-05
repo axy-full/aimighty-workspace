@@ -1,10 +1,23 @@
-import type { BoardKindModule } from "../cards/types";
+import type { BoardCard } from "@/lib/board/types";
+import { defineCard, type BoardKindModule, type CardSet } from "../cards/types";
+import { EffectsCard, SocialUnavailableCard, SourceCard } from "./cards";
+import { SocialHistoryDrawer } from "./HistoryDrawer";
+import { SIZES, socialCards, type EffectsData, type SourceData, type UnavailableData } from "./social-model";
+import { StartSource } from "./StartSource";
 
 /*
- * Stream 11's Social board (README § 1.1, § 3.3): rail Source · Clips · Hooks · Effects · Posts.
- * A stub seeded by stream 3 (lead decision 26): the rail over an empty canvas, no cards. Owned by stream 11 from its
- * first PR, which replaces this file (its rail, bands, card sets and empty board).
+ * Stream 11's Social board (README § 1.1, § 3.3): rail Source · Clips · Hooks · Effects · Posts. What exists today is drawn: the
+ * source video, Effects (Motion transfer and Object swap, which open in Make) and History. Clips, hook review, narrated video and
+ * posts read "Not in Particl yet" (gap G3), with no price and no sample result.
  */
+const defs = [
+  defineCard<SourceData>({ kind: "social-source", size: () => SIZES.source, Card: SourceCard }),
+  defineCard<EffectsData>({ kind: "social-effects", size: () => SIZES.effects, Card: EffectsCard }),
+  defineCard<UnavailableData>({ kind: "social-unavailable", size: () => SIZES.unavailable, Card: SocialUnavailableCard }),
+];
+
+export const socialCardSet: CardSet = { id: "social", defs, derive: (src): BoardCard[] => socialCards(src) };
+
 export const socialBoard: BoardKindModule = {
   kind: "social",
   rail: [
@@ -15,5 +28,7 @@ export const socialBoard: BoardKindModule = {
     { id: "posts", label: "Posts", icon: "M8 11V3M4 7l4-4 4 4M3 13h10" },
   ],
   bands: [["source"], ["clips"], ["hooks", "effects"], ["posts"], ["next"], ["made"]],
-  sets: [],
+  sets: [socialCardSet],
+  Empty: StartSource,
+  HistoryDrawer: SocialHistoryDrawer,
 };

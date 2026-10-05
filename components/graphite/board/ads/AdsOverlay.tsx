@@ -19,6 +19,7 @@ import { Designer } from "./Designer";
 import { openDesigner, openDialog, openPanel, patchSession, useAdsSession, type AgentSnap, type PanelId } from "./ads-session";
 import { freshHooks } from "./ads-model";
 import { useRiggedEditor } from "./use-ads-editor";
+import "../../business/business-own.css";
 import "./ads.css";
 
 /*
