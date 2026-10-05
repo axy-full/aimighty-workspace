@@ -1,7 +1,6 @@
 /*
- * Particl workspace (/workspace) — design tokens and base styles.
- * Values are measured from design_handoff_particl_workspace (README token
- * table and the prototype markup). Every rule is scoped under `.pxw`. It is the
+ * Particl workspace (/workspace) — its token names (aliases of the
+ * app/graphite.css tokens) and base styles. Every rule is scoped under `.pxw`. It is the
  * FIRST sheet of app/workspace/page.tsx and app/suites/page.tsx; the phone shell
  * is mobile/mobile.css and the page bodies are pages/assets.css.
  */

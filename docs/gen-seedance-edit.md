@@ -2,6 +2,8 @@
 
 Gen's video model picker exposes Seedance 2.5 Edit. Completed video takes also have an Edit clip action. The editor accepts an uploaded source or a completed workspace take, up to eight image references from uploaded/generated assets, edit direction, 480p/720p output and native audio. It submits the existing `dreamina-seedance-2-5-260628` provider model with `task: edit`; it never sends a synthetic model ID.
 
+Seedance 2.0 (`dreamina-seedance-2-0-260128`) offers `edit` too. It was verified with one live render on 23 September 2026: the edit quoted, was admitted and settled on the same path as 2.5, with the source's shape measured from the stored original because the render had no recorded ratio; the 4 s edit took about 15 minutes to finish. Its `extend` has not been run live.
+
 The free `/api/generate/quote` route uses the same server preparation as pipeline admission. It returns only the public quote, not compiled private/provider state. Source ownership, dimensions, duration, reference identities, account scope and current pricing are validated before quoting. Submission rechecks the quote fingerprint and credit ceiling before admission. Changing direction or settings in the browser requires a fresh quote.
 
 Locked Seedance estimates and saved parameters now use the source's known aspect and actual duration. The provider adapter still sends its required `adaptive` ratio and `-1` edit duration. Unknown source metadata fails closed; an adaptive generated take without known dimensions can be downloaded and uploaded for metadata extraction. Portrait uploads use their shorter dimension for the source resolution band. This corrects duration/shape underestimation without changing the accepted credit formula or rate card.

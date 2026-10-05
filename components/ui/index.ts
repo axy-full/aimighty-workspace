@@ -1,6 +1,6 @@
 /**
- * particl v2 primitives (design/particl-graphite/README.md §3). Built once, used
- * by every v2 route, each at the boards' own numbers. Nothing here fetches,
+ * The shared primitives (design/particl-graphite/README.md §3). Built once, used
+ * by every route that imports them, each at the boards' own numbers. Nothing here fetches,
  * prices or persists.
  */
 export { default as Mono } from "./Mono";

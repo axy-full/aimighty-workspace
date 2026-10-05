@@ -64,6 +64,15 @@ Use `PW_CHANNEL=chrome` on a machine with system Chrome or install Playwright Ch
 
 If using the database paths from `.env.example`, set `PW_PLATFORM_DATABASE_URL=file:.data/platform-dev.db` for the workbench suite so its local fixture targets the same platform database as the development server. This override accepts only `file:` databases.
 
+Notes for writing and running the suites:
+
+- Specs never write to a fixed machine path such as `/private/tmp`; CI runs on Linux. Write artefacts with `testInfo.outputPath(...)`, and take screenshots only into a folder an environment variable names or a git-ignored one.
+- The unit project runs with `workers: 1` and CI splits it into three shards, so every spec in a shard shares one Node process: a `process.env` write or a cached `lib/` module from an earlier spec is still there for later ones. A spec that needs a variable set or unset changes it inside the test and restores it in `finally` (`tests/unit/openaiModels.spec.ts`).
+- A browser spec that opens the dev server's live SQLite files gives its client a busy timeout (`createClient({ url, timeout: 10_000 })`, as in `tests/helpers/workbenchLocal.ts`); without one, a write at the same moment fails the spec with `SQLITE_BUSY`.
+- CI runs the browser specs against `npm run dev`, Turbopack starting cold. Turbopack refuses a `node_modules` symlinked from outside the project, so a checkout that borrows one by symlink has to run `next dev --webpack`, which can hide failures that only happen on Turbopack. To reproduce CI, give the checkout its own `node_modules` (on APFS, `cp -cR <checkout>/node_modules .` is a near-free clone), its own port and its own database files.
+- Keep the browser jobs on that Turbopack dev server: a webpack dev server failed specs that pass on Turbopack, and `next start` cannot serve them (production mode needs `KEYRING_SECRET` and provisioning credentials and switches dispatch to native, so local sign-up and sign-in fail). On macOS, measure the dev server's memory with `top -l 1 -pid <pid> -stats mem`; `ps` RSS leaves out compressed pages.
+- On a pull request, CI tests the branch merged with current `main`. Before calling a red spec a flake, check that `main` passes it and rebase on `origin/main` (two PRs that edit the same lines can fail together when neither fails alone), then re-run only the failed jobs (`gh run rerun <run-id> --failed`). Each failed browser job uploads `browser-failure-<suite>-<shard>` with the dev-server logs and the traces.
+
 The launch evidence must distinguish mocked-provider checks from real Stripe sandbox events and production configuration checks. A working public UI alone is not proof that studios can subscribe.
 
 ## Higgsfield benchmark
