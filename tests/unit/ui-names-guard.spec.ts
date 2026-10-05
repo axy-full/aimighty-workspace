@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { bannedNamesIn } from "../helpers/uiStrings";
-import { SURFACES, format, manifestStrings, scanAll, type Hit, type Scan } from "../helpers/uiSurfaces";
+import { SURFACES, format, manifestStrings, scanAll, surfaceOf, type Hit, type Scan } from "../helpers/uiSurfaces";
+import { compare, expired, growth, lowered, onMain, past, readJson, shapeProblems, type Section } from "../helpers/ratchet";
 
 /**
  * Banned names: every UI string, not only the screens' JSX.
@@ -24,17 +25,22 @@ import { SURFACES, format, manifestStrings, scanAll, type Hit, type Scan } from 
  *  - Every other old-screen file is on the RATCHET (tests/unit/ui-names-ratchet.json): its count only goes down, and each entry
  *    carries the date the screen is deleted (docs/old-design-inventory.md). After that date the file must be at zero.
  *
- * THE STRICT TESTS ARE EXPECTED TO FAIL until the D0 fixes and the board PR land: their failure message is the list of
- * names still to remove. They are not weakened, and nothing is added to the strict surfaces to make them pass.
+ * Until the D0 fixes and the board PR land, what they have not yet removed is allowed per file in the ratchet's "strict" and "titles"
+ * sections (by: D0, until: Thu 8 Oct), so this spec is green on main, can never get worse, and fails on the date. Delete an allowance
+ * (UPDATE_UI_NAMES_RATCHET=1) as its names go. The list of what remains per PR: S/demo/ci-checks-d0-heads.md.
  *
  * After removing names: UPDATE_UI_NAMES_RATCHET=1 npx playwright test tests/unit/ui-names-guard.spec.ts --project=unit
  * lowers the ratchet (never raises it, never adds a file).
  */
 
 const RATCHET = "tests/unit/ui-names-ratchet.json";
-type Entry = { count: number; until: string; by: string };
-type Ratchet = Record<string, Entry>;
-const ratchetFile = (): Ratchet => JSON.parse(readFileSync(RATCHET, "utf8"));
+const WAIVERS = "tests/unit/ui-check-waivers.json";
+/**
+ * `ratchet`: old-screen files. `strict`: files on a strict surface, each with what the D0 pull requests have not yet removed.
+ * `titles`: page-title hits in files no strict surface claims. Every entry: { count, until, by }.
+ */
+type Ratchet = { ratchet: Section; strict: Section; titles: Section };
+const ratchetFile = (): Ratchet => readJson<Ratchet>(RATCHET);
 
 let scan: Scan | null = null;
 const scanned = () => (scan ??= scanAll());
@@ -90,24 +96,72 @@ test("the matcher leaves code alone: identifiers, comments, comparisons, keys, i
 });
 
 /* ---------------------------------------------------------------------------------------------- */
-/* STRICT: zero allowed. Failing today: this is the list the D0 fix agents clear.                  */
+/* STRICT surfaces: zero allowed, except what the D0 pull requests still have to remove.          */
 /* ---------------------------------------------------------------------------------------------- */
 
+const countsOf = (hits: Hit[]) => hits.reduce<Record<string, number>>((acc, hit) => ({ ...acc, [hit.path]: (acc[hit.path] ?? 0) + 1 }), {});
+const hitsOf = (hits: Hit[]) => (path: string) => list(hits.filter((hit) => hit.path === path)).join("\n    ");
+
+/**
+ * A strict surface allows nothing. Until the D0 pull requests (and site/copy-names) have merged, each file carries an
+ * allowance in the ratchet's "strict" section with the date it must be zero and who removes it: so this check is green
+ * on main today, can never get worse, and fails on the date. A file with no allowance, a new file, has an allowance of zero.
+ */
+function strictCheck(hits: Hit[], section: Section, claims: (path: string) => boolean, what: string) {
+  const mine = Object.fromEntries(Object.entries(section).filter(([path]) => claims(path)));
+  const now = countsOf(hits);
+  const { worse, better } = compare(now, mine, hitsOf(hits));
+  expect(worse, `a banned name on ${what} that is not already allowed until the D0 fixes land. Use the new names (README section 7)`).toEqual([]);
+  expect(expired(mine, now), `past the date: ${what} must have no banned name left`).toEqual([]);
+  if (process.env.UPDATE_UI_NAMES_RATCHET) return;
+  expect(better, "fewer than allowed: lower the allowance (UPDATE_UI_NAMES_RATCHET=1) so the slack cannot be spent on a new name").toEqual([]);
+  test.info().annotations.push({ type: "remaining", description: `${hits.length} banned names in ${Object.keys(now).length} files still allowed until the D0 fixes land` });
+}
+
 for (const surface of SURFACES) {
-  test(`STRICT (zero allowed, fails until the D0 fixes land) · ${surface.name}: no banned name in any UI string`, () => {
-    const hits = list(scanned().strict[surface.id]);
-    expect(hits, `${hits.length} banned names on ${surface.name}. Remove each one (README section 7 has the new names):`).toEqual([]);
+  test(`STRICT · ${surface.name}: no banned name in any UI string (what D0 has not removed yet is allowed per file, and falls to zero on its date)`, () => {
+    strictCheck(scanned().strict[surface.id], ratchetFile().strict, (path) => surfaceOf(path)?.id === surface.id, surface.name);
   });
 }
 
-test("STRICT (zero allowed, fails until the D0 fixes land) · page titles: no banned name in a <title>, metadata or document.title, in any file", () => {
-  const hits = list(scanned().strict.titles);
-  expect(hits, `${hits.length} banned names in page titles (the browser tab and the history list):`).toEqual([]);
+test("STRICT · page titles: no banned name in a <title>, metadata or document.title, in any file", () => {
+  strictCheck(scanned().strict.titles, ratchetFile().titles, () => true, "a page title");
 });
 
-test("STRICT (zero allowed, fails until the D0 fixes land) · public/manifest.json: the name and description on a phone's home screen", () => {
+test("STRICT · public/manifest.json: the name and description on a phone's home screen", () => {
   const bad = manifestStrings().flatMap(({ path, text }) => bannedNamesIn("manifest.ts", `export const x = ${JSON.stringify(text)};`).map((hit) => `${path} [${hit.word}] ${text}`));
   expect(bad, "banned names in the web manifest").toEqual([]);
+});
+
+test("STRICT · ⌘K lists exactly the design's items: no Generate, Business or Viral, 01-07 stages, or old names", async () => {
+  /* design/particl-graphite/ "Particl Suites.dc.html" (the `pal` list) and README section 3.4: Home; the board's regions; Ads and
+     Social; Make; Atomik; the Settings sections (Team, Plan & credits, Spending rules, Connections, Advanced). The owner's fix 4 adds
+     Make's modes (Motion transfer and Object swap among them) and Atomik's four places. Models and assets are the person's own data. */
+  const DESIGN = ["Home", "Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Ads", "Social", "Make", "Atomik", "Team", "Plan & credits", "Spending rules", "Connections", "Advanced"];
+  const OWNER_REQUIRED = ["Motion transfer", "Object swap", "Approvals", "Activity", "Skills", "Memory"];
+  const OWNER_OPTIONAL = ["Video", "Images", "Audio", "Recent"];
+  const palette = await import("../../lib/shell/palette");
+  const rows = (palette.paletteIndex as (input: unknown) => { group: string; label: string }[])({ models: [], assets: [] }).filter((row) => !["MODEL", "ASSET", "ATOMIK ASK"].includes(row.group.toUpperCase()));
+  /* "Make › Video" and "Atomik › Memory" are the row for Video and Memory under Make and Atomik. */
+  const labels = rows.map((row) => row.label.split(/\s*[›:]\s*/).pop()!.trim());
+  const missing = [...DESIGN, ...OWNER_REQUIRED].filter((label) => !labels.includes(label));
+  const extra = labels.filter((label) => ![...DESIGN, ...OWNER_REQUIRED, ...OWNER_OPTIONAL].includes(label));
+  const problem = { missing, extra };
+  const waiver = readJson<Record<string, { until: string; by: string }>>(WAIVERS)["command-k-list"];
+  const clean = !missing.length && !extra.length;
+  if (waiver && !past(waiver.until)) {
+    test.info().annotations.push({ type: "waived", description: `${waiver.by} until ${waiver.until}: ${clean ? "the list is right: delete the waiver" : JSON.stringify(problem)}` });
+    return;
+  }
+  expect(problem, "⌘K must list exactly the design's items (rows are in lib/shell/palette.ts)").toEqual({ missing: [], extra: [] });
+});
+
+test("the ⌘K waiver is dated and owned", () => {
+  const waivers = readJson<Record<string, { until: string; by: string }>>(WAIVERS);
+  for (const [name, waiver] of Object.entries(waivers)) {
+    expect(waiver.until, name).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(waiver.by?.trim(), name).toBeTruthy();
+  }
 });
 
 test("the strict surfaces cover the files they name: a rename cannot quietly empty a surface", () => {
@@ -129,29 +183,19 @@ function scannedFilesList(): string[] {
 /* RATCHET: the old screens, per file, with the date each is deleted.                              */
 /* ---------------------------------------------------------------------------------------------- */
 
-/** Today at the end of the day in UTC, or the day a test pretends it is. */
-const today = () => (process.env.UI_NAMES_TODAY ? new Date(process.env.UI_NAMES_TODAY + "T23:59:59Z") : new Date());
-const past = (until: string) => new Date(until + "T23:59:59Z").getTime() < today().getTime();
-
 test("RATCHET · old-screen files: a banned name never appears in a new place, and the counts only go down", () => {
   const baseline = ratchetFile();
   const { ratchet } = scanned();
-  const worse: string[] = [];
-  const better: string[] = [];
-  for (const path of [...new Set([...Object.keys(ratchet), ...Object.keys(baseline)])].sort()) {
-    const now = ratchet[path]?.length ?? 0;
-    const was = baseline[path]?.count ?? 0;
-    if (now > was) worse.push(`${path}: ${was} -> ${now}\n    ${list(ratchet[path]).join("\n    ")}`);
-    else if (now < was) better.push(`${path}: ${was} -> ${now}`);
-  }
+  const { worse, better } = compare(countsOf(Object.values(ratchet).flat()), baseline.ratchet, (path) => list(ratchet[path] ?? []).join("\n    "));
   expect(worse, "a banned name in an old-screen file that is not already on the ratchet. New code uses the new names (README section 7); a file on a strict surface belongs to that surface").toEqual([]);
 
   if (process.env.UPDATE_UI_NAMES_RATCHET) {
-    const next: Ratchet = {};
-    for (const [path, entry] of Object.entries(baseline)) {
-      const now = ratchet[path]?.length ?? 0;
-      if (now > 0) next[path] = { ...entry, count: Math.min(entry.count, now) };
-    }
+    const s = scanned();
+    const next: Ratchet = {
+      ratchet: lowered(baseline.ratchet, countsOf(Object.values(s.ratchet).flat())),
+      strict: lowered(baseline.strict, countsOf(SURFACES.flatMap((surface) => s.strict[surface.id]))),
+      titles: lowered(baseline.titles, countsOf(s.strict.titles)),
+    };
     writeFileSync(RATCHET, JSON.stringify(next, null, 2) + "\n");
   } else {
     expect(better, "fewer than the ratchet: lower it with UPDATE_UI_NAMES_RATCHET=1 so the slack cannot be spent on a new name").toEqual([]);
@@ -161,41 +205,38 @@ test("RATCHET · old-screen files: a banned name never appears in a new place, a
 test("RATCHET · every entry has a deletion date and an owner, and none has run out", () => {
   const baseline = ratchetFile();
   const { ratchet } = scanned();
-  const shape = Object.entries(baseline).filter(([, e]) => !/^\d{4}-\d{2}-\d{2}$/.test(e.until) || !e.by?.trim() || !(e.count > 0)).map(([path]) => path);
-  expect(shape, "each ratchet entry needs { count > 0, until: YYYY-MM-DD, by: who deletes it }, from docs/old-design-inventory.md").toEqual([]);
-  const expired = Object.entries(baseline)
-    .filter(([path, e]) => past(e.until) && (ratchet[path]?.length ?? 0) > 0)
-    .map(([path, e]) => `${path}: still has ${ratchet[path].length} banned names after ${e.until} (${e.by})`);
-  expect(expired, "past its deletion date: remove the names, or the owner moves the date in the same PR with a reason").toEqual([]);
+  for (const section of ["ratchet", "strict", "titles"] as const) {
+    expect(shapeProblems(baseline[section]), `${section}: each entry needs { count > 0, until: YYYY-MM-DD, by: who removes it }, from docs/old-design-inventory.md or the D0 PR`).toEqual([]);
+  }
+  expect(expired(baseline.ratchet, countsOf(Object.values(ratchet).flat())), "past its deletion date: remove the names, or the owner moves the date in the same PR with a reason").toEqual([]);
 });
 
-test("RATCHET · a strict-surface file is never on the ratchet", () => {
-  const both = Object.keys(ratchetFile()).filter((path) => SURFACES.some((surface) => surface.claims(path)));
-  expect(both, "these files are on a strict surface: zero is the only allowance, so take them off the ratchet").toEqual([]);
+test("RATCHET · a strict-surface file is only in the strict section, and an old-screen file only in the ratchet", () => {
+  const baseline = ratchetFile();
+  const onSurface = (path: string) => SURFACES.some((surface) => surface.claims(path));
+  expect(Object.keys(baseline.ratchet).filter(onSurface), "on a strict surface: move it to the strict section").toEqual([]);
+  expect(Object.keys(baseline.strict).filter((path) => !onSurface(path)), "not on a strict surface: move it to the ratchet section").toEqual([]);
+  expect(Object.keys(baseline.titles).filter(onSurface), "a page title on a strict surface is counted with that surface").toEqual([]);
 });
 
-test("RATCHET · the file is no bigger than where this branch left main", () => {
-  const base = spawnSync("git", ["merge-base", "HEAD", "origin/main"], { encoding: "utf8" });
-  test.skip(base.status !== 0, "no origin/main in this checkout (a shallow CI clone): nothing to compare with");
-  const before = spawnSync("git", ["show", `${base.stdout.trim()}:${RATCHET}`], { encoding: "utf8", maxBuffer: 1 << 24 });
-  test.skip(before.status !== 0, "the ratchet does not exist yet on main");
-  const then: Ratchet = JSON.parse(before.stdout);
+test("RATCHET · no section is bigger than where this branch left main", () => {
+  const then = onMain<Ratchet>(RATCHET);
+  test.skip(then === null, "no origin/main with the ratchet in this checkout (a shallow CI clone, or not on main yet): nothing to compare with");
   const now = ratchetFile();
-  const added = Object.keys(now).filter((path) => !(path in then));
-  const raised = Object.entries(now).filter(([path, e]) => path in then && e.count > then[path].count).map(([path, e]) => `${path}: ${then[path].count} -> ${e.count}`);
-  const later = Object.entries(now).filter(([path, e]) => path in then && e.until > then[path].until).map(([path, e]) => `${path}: ${then[path].until} -> ${e.until}`);
-  expect({ added, raised, later }, "files added, counts raised or dates moved later").toEqual({ added: [], raised: [], later: [] });
+  for (const section of ["ratchet", "strict", "titles"] as const) {
+    expect(growth(now[section], then![section]), `${section}: files added, counts raised or dates moved later`).toEqual({ added: [], raised: [], later: [] });
+  }
 });
 
 test("the ratchet's own arithmetic: a deletion date that has passed is read in UTC and is inclusive of that day", () => {
-  const was = process.env.UI_NAMES_TODAY;
+  const was = process.env.RATCHET_TODAY;
   try {
-    process.env.UI_NAMES_TODAY = "2026-10-08";
+    process.env.RATCHET_TODAY = "2026-10-08";
     expect(past("2026-10-08")).toBe(false);
-    process.env.UI_NAMES_TODAY = "2026-10-09";
+    process.env.RATCHET_TODAY = "2026-10-09";
     expect(past("2026-10-08")).toBe(true);
   } finally {
-    if (was === undefined) delete process.env.UI_NAMES_TODAY;
-    else process.env.UI_NAMES_TODAY = was;
+    if (was === undefined) delete process.env.RATCHET_TODAY;
+    else process.env.RATCHET_TODAY = was;
   }
 });

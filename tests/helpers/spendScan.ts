@@ -162,7 +162,7 @@ export type SpendSite = {
   /** For each route: the chain of declarations from this file's own to the string that names the route. */
   chains: Record<string, string[]>;
   /** Elements with a press handler that reaches a paid declaration by name. A guide, not a verdict: verify each. */
-  candidates: { line: number; tag: string; attr: string; text: string }[];
+  candidates: { line: number; tag: string; attr: string; text: string; strong: boolean }[];
 };
 export type SpendReport = {
   /** Component files on the paid path, with the routes they reach. */
@@ -237,7 +237,19 @@ export function scanSpend(files = sourceFiles(), read: (path: string) => string 
       if (decl.direct.size) paid.add(decl.name);
     }
     const sf = ts.createSourceFile(mod.path, read(mod.path), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const uses = (node: ts.Node): boolean => { let found = false; const walk = (n: ts.Node) => { if (found) return; if (ts.isIdentifier(n) && paid.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { found = true; return; } ts.forEachChild(n, walk); }; walk(node); return found; };
+    /** `strong` is a direct use of a paid function (called or passed); weak is through an object (`composer.dispatch`), which may be anything on it. */
+    const uses = (node: ts.Node, strong = false): boolean => {
+      let found = false;
+      const walk = (n: ts.Node) => {
+        if (found) return;
+        if (ts.isIdentifier(n) && paid.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) {
+          if (!strong || !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n)) { found = true; return; }
+        }
+        ts.forEachChild(n, walk);
+      };
+      walk(node);
+      return found;
+    };
     /* A nested function or constant that uses a paid name is itself one. */
     for (let grew = true; grew;) {
       grew = false;
@@ -254,7 +266,7 @@ export function scanSpend(files = sourceFiles(), read: (path: string) => string 
     const SKIP = /^on(Change|Input|Focus|Blur|Key\w*|Mouse\w*|Pointer\w*|Drag\w*|Drop|Scroll|Close|Cancel|Dismiss|Select|OpenChange|Toggle|Resize|Load|Error)$/;
     const labelOf = (el: ts.JsxElement | ts.JsxSelfClosingElement) => {
       const attrs = (ts.isJsxElement(el) ? el.openingElement : el).attributes.properties;
-      const aria = attrs.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && /^(aria-label|label|title)$/.test(a.name.getText(sf)));
+      const aria = attrs.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && /^(aria-label|label|title|data-testid)$/.test(a.name.getText(sf)));
       const own = aria?.initializer && ts.isStringLiteral(aria.initializer) ? aria.initializer.text : "";
       const kids = ts.isJsxElement(el) ? el.children.map((c) => (ts.isJsxText(c) ? c.text : ts.isJsxExpression(c) && c.expression ? (literalText(c.expression) ?? "") : "")).join(" ") : "";
       return (own || kids).replace(/\s+/g, " ").trim().slice(0, 50);
@@ -264,7 +276,7 @@ export function scanSpend(files = sourceFiles(), read: (path: string) => string 
         const opening = ts.isJsxElement(n) ? n.openingElement : n;
         for (const a of opening.attributes.properties) {
           if (!ts.isJsxAttribute(a) || !/^on[A-Z]/.test(a.name.getText(sf)) || SKIP.test(a.name.getText(sf)) || !a.initializer || !uses(a.initializer)) continue;
-          out.push({ line: sf.getLineAndCharacterOfPosition(opening.getStart(sf)).line + 1, tag: opening.tagName.getText(sf), attr: a.name.getText(sf), text: labelOf(n) });
+          out.push({ line: sf.getLineAndCharacterOfPosition(opening.getStart(sf)).line + 1, tag: opening.tagName.getText(sf), attr: a.name.getText(sf), text: labelOf(n), strong: uses(a.initializer, true) });
         }
       }
       ts.forEachChild(n, visit);

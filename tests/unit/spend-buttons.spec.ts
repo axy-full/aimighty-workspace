@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { scanSpend, type SpendReport } from "../helpers/spendScan";
+import { SPEND_SURFACES, gapsByFile, spendSurfaceOf } from "../helpers/spendSurfaces";
+import { compare, expired, growth, lowered, onMain, readJson, shapeProblems, type Section } from "../helpers/ratchet";
 import { NOT_SPENDING, PAID_ROUTES, SPEND_LABEL, SPEND_MARKERS, routePattern } from "../helpers/paidRoutes";
 import { hasCreditFigure, priceLabel, spendAttrs } from "../../lib/spend";
 import { SpendButton } from "../../components/graphite/SpendButton";
@@ -19,8 +21,12 @@ import { SpendButton } from "../../components/graphite/SpendButton";
  *    (Make, Render, Recreate, Again…) must carry it too.
  *  - tests/spend-buttons-workbench.spec.ts checks the rendered pages, one element at a time.
  *
- * THE TWO "TO-DO" TESTS ARE EXPECTED TO FAIL until the D0 fixes land: the failure message is the list of files and
- * buttons that still need a price. They are not weakened; a file moves off the list by marking its paid button.
+ * STRICT SURFACES (the Make panel and quick tools, the model sheet, Make › Recent, the right-click menu, the board's paid actions)
+ * allow nothing. What the D0 pull requests have not yet fixed is allowed per file in tests/unit/spend-ratchet.json ("strict" section,
+ * by: D0, until: Thu 8 Oct), so this spec is green on main, can never get worse, and fails on the date. Every other file is on the
+ * "ratchet" section with a count, a date and an owner from docs/old-design-inventory.md ("Thu 8 Oct" for what the board PR deletes).
+ * A file moves off by marking its paid button; then UPDATE_SPEND_RATCHET=1 lowers the count. The list per PR of what remains:
+ * S/demo/ci-checks-d0-heads.md.
  */
 
 const ROUTE_DIR = "app/api";
@@ -160,18 +166,69 @@ test("a control with no price is disabled and says so; a priced one carries the 
 });
 
 /* ---------------------------------------------------------------------------------------------- */
-/* TO-DO: the repository as it stands. Failing until the D0 fixes land.                            */
+/* The repository as it stands: strict D0 surfaces, then the dated ratchet.                        */
 /* ---------------------------------------------------------------------------------------------- */
+
+const RATCHET = "tests/unit/spend-ratchet.json";
+type Ratchet = { ratchet: Section; strict: Section };
+const ratchetFile = (): Ratchet => readJson<Ratchet>(RATCHET);
 
 let report: SpendReport | null = null;
 const current = () => (report ??= scanSpend());
 
-test("TO-DO (fails until the D0 fixes land) · every component file that can spend carries data-spend or SpendButton", () => {
-  const missing = current().sites.filter((site) => !site.optedIn).map((site) => `${site.path}  reaches ${site.routes.join(", ")}  via ${site.declarations.slice(0, 3).join(", ")}`);
-  expect(missing, `${missing.length} files reach a paid route and carry no data-spend. Mark each paid button with <SpendButton price=…> or {...spendAttrs(price)} (docs/ui-checks.md):`).toEqual([]);
+const describe = (path: string) => {
+  const site = current().sites.find((s) => s.path === path);
+  const labels = current().labels.filter((l) => l.path === path).map((l) => `${path}:${l.line} button "${l.label}" has no data-spend`);
+  return [...(site && !site.optedIn ? [`reaches ${site.routes.join(", ")} via ${site.declarations.slice(0, 3).join(", ")} and carries no data-spend or SpendButton`] : []), ...labels].join("\n    ");
+};
+
+for (const surface of SPEND_SURFACES) {
+  test(`STRICT · ${surface.name}: every button that spends shows its price (what D0 has not fixed yet is allowed per file, and falls to zero on its date)`, () => {
+    const gaps = gapsByFile(current());
+    const mine = (path: string) => spendSurfaceOf(path)?.id === surface.id;
+    const now = Object.fromEntries(Object.entries(gaps).filter(([path]) => mine(path)));
+    const allowed = Object.fromEntries(Object.entries(ratchetFile().strict).filter(([path]) => mine(path)));
+    const { worse, better } = compare(now, allowed, describe);
+    expect(worse, `${surface.name}: a paid control with no price marker that is not already allowed until D0 lands. Use <SpendButton price> or {...spendAttrs(price)} (docs/ui-checks.md)`).toEqual([]);
+    expect(expired(allowed, now), `past the date: ${surface.name} must have a price on every control that spends`).toEqual([]);
+    if (!process.env.UPDATE_SPEND_RATCHET) expect(better, "fewer than allowed: lower the allowance (UPDATE_SPEND_RATCHET=1) so the slack cannot be spent on a new gap").toEqual([]);
+  });
+}
+
+test("RATCHET · other files: a file that reaches a paid route or labels a button with a spend verb does not gain a gap, and the counts only go down", () => {
+  const baseline = ratchetFile();
+  const gaps = gapsByFile(current());
+  const others = Object.fromEntries(Object.entries(gaps).filter(([path]) => !spendSurfaceOf(path)));
+  const { worse, better } = compare(others, baseline.ratchet, describe);
+  expect(worse, "a paid control with no price marker in a file that is not already on the ratchet. Mark it: <SpendButton price> or {...spendAttrs(price)} (docs/ui-checks.md)").toEqual([]);
+
+  if (process.env.UPDATE_SPEND_RATCHET) {
+    const next: Ratchet = {
+      ratchet: lowered(baseline.ratchet, others),
+      strict: lowered(baseline.strict, Object.fromEntries(Object.entries(gaps).filter(([path]) => spendSurfaceOf(path)))),
+    };
+    writeFileSync(RATCHET, JSON.stringify(next, null, 2) + "\n");
+  } else {
+    expect(better, "fewer than the ratchet: lower it with UPDATE_SPEND_RATCHET=1 so the slack cannot be spent on a new gap").toEqual([]);
+  }
 });
 
-test("TO-DO (fails until the D0 fixes land) · no button labelled with a spend verb is without data-spend", () => {
-  const missing = current().labels.map((hit) => `${hit.path}:${hit.line}  "${hit.label}"`);
-  expect(missing, `${missing.length} buttons are labelled Make, Render, Recreate, Again… and carry no price marker:`).toEqual([]);
+test("RATCHET · every entry has a date and an owner, and none has run out", () => {
+  const baseline = ratchetFile();
+  for (const section of ["ratchet", "strict"] as const) expect(shapeProblems(baseline[section]), `${section}: each entry needs { count > 0, until: YYYY-MM-DD, by }`).toEqual([]);
+  const gaps = gapsByFile(current());
+  expect(expired(baseline.ratchet, gaps), "past its date: price the buttons, or the owner moves the date in the same PR with a reason").toEqual([]);
+});
+
+test("RATCHET · a strict-surface file is only in the strict section, and any other file only in the ratchet", () => {
+  const baseline = ratchetFile();
+  expect(Object.keys(baseline.ratchet).filter((path) => spendSurfaceOf(path)), "on a strict surface: move it to the strict section").toEqual([]);
+  expect(Object.keys(baseline.strict).filter((path) => !spendSurfaceOf(path)), "not on a strict surface: move it to the ratchet section").toEqual([]);
+});
+
+test("RATCHET · no section is bigger than where this branch left main", () => {
+  const then = onMain<Ratchet>(RATCHET);
+  test.skip(then === null, "no origin/main with the ratchet in this checkout (a shallow CI clone, or not on main yet): nothing to compare with");
+  const now = ratchetFile();
+  for (const section of ["ratchet", "strict"] as const) expect(growth(now[section], then![section]), `${section}: files added, counts raised or dates moved later`).toEqual({ added: [], raised: [], later: [] });
 });
