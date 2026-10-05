@@ -409,11 +409,11 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await expect(suites).toBeHidden();
   await expect(page.getByTestId("header-search")).toBeHidden();
 
-  /* One tap: all six suites and Search, each a 44px target on screen; the one you are in is lit. */
+  /* One tap: Home, the project, Make, Atomik and Search, each a 44px target on screen; the project is lit on its stage. */
   await badge.click();
   await expect(badge).toHaveAttribute("aria-expanded", "true");
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab")).toHaveText(["Home", "Harbour at dusk", "Make", "Atomik"]);
+  await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("header-search")).toBeVisible();
   await settle(page);
   for (const target of [...await suites.getByRole("tab").all(), page.getByTestId("header-search")]) await expect(target).toBeInViewport();
@@ -424,8 +424,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-menu.png`), animations: "disabled" }); }
 
   /* A pick goes there and closes the menu. */
-  await suites.getByRole("tab", { name: "Business" }).click();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await suites.getByRole("tab", { name: "Atomik" }).click();
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   await expect(badge).toHaveAttribute("aria-expanded", "false");
   await expect(suites).toBeHidden();
 
@@ -446,7 +446,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await badge.click();
   await page.keyboard.press("Escape");
   await expect(suites).toBeHidden();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   /* Going anywhere from the header itself (the credits) leaves it closed where you land. */
   await badge.click();
   await page.getByTestId("workspace-credits").click();
@@ -529,7 +529,7 @@ function desktopChrome(page: Page) {
 const desktopGrid = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
   const suite = {
     header: [0, 0, W, 56], strip: [0, 56, W, 46], project: [281, 102, W - 602, 75], pagehead: [281, 177, W - 602, 66.7],
-    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 50, 12.5, 30, 30],
+    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 46, 11.5, 32, 32],
     brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
   };
   return {
@@ -564,7 +564,7 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
     /* The phone's parts stay out of a desktop: no badge button, the Suites inline, Search in the header, words on the toggles. */
     await expect(page.getByTestId("suites-menu")).toHaveCount(0);
     await expect(page.locator(".gx-brand [data-testid='suite-mark']")).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(6);
+    await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(4);
     await expect(page.getByTestId("header-search")).toContainText("Search");
     await expect(page.locator(".gx-bar")).toHaveCount(0);
     for (const toggle of await page.locator(".gx-hbtn--glyph").all()) {

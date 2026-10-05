@@ -38,6 +38,15 @@ export const SUITE_LOOK: Record<string, { color: string; glyph: GlyphName }> = {
   atomik: { color: "#30D158", glyph: "atom" },
   crew: { color: "#BF5AF2", glyph: "crew" },
 };
+/**
+ * The header segment (header option B): a glyph per destination, and the suite dot only where the segment is a
+ * suite's (Atomik). The project segment carries the project's swatch instead (posterOf).
+ */
+export const SEGMENT_LOOK: Record<"home" | "make" | "atomik", { glyph: GlyphName; color: string | null }> = {
+  home: { glyph: "home", color: null },
+  make: { glyph: "spark", color: null },
+  atomik: { glyph: SUITE_LOOK.atomik.glyph, color: SUITE_LOOK.atomik.color },
+};
 /** Library › Tools department colours cycle in this order. */
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
 /** Kind dots on the asset filter chips; All has none of its own. */

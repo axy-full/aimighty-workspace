@@ -50,6 +50,9 @@
     animation: gx-pop .2s var(--gx-ease) both;
   }
   .gx .gx-header:not([data-static])[data-menu] > .gx-seg > .gx-seg-btn { min-height: 56px; }
+  /* Four places (Home · the project · Make · Atomik), two to a row: the project's name has room to be read. */
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gx .gx-header:not([data-static])[data-menu] > .gx-seg > .gx-seg-btn[data-suite-tab="project"] > .gx-seg-label { max-width: 100%; }
   .gx .gx-header:not([data-static])[data-menu] > .gx-search { position: absolute; z-index: 6; top: calc(100% + 14px); left: 6px; right: 6px; width: auto; min-width: 0; height: 48px; padding: 0 16px; justify-content: flex-start; animation: gx-pop .2s var(--gx-ease) both; }
   .gx .gx-header:not([data-static])[data-menu] > .gx-search .gx-search-label { display: block; font-size: 15px; color: var(--gx-text-2); }
 

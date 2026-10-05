@@ -49,7 +49,7 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
     <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
       <div className="gx-palette" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
         <div className="gx-palette-input-row">
-          <input ref={input} className="gx-palette-input" aria-label="Search" placeholder="Suites, stages, tools, models, assets — or ask Atomik" value={query}
+          <input ref={input} className="gx-palette-input" aria-label="Search" placeholder="Search, or tell Atomik what to do" value={query}
             onChange={(e) => { setQuery(e.target.value); setAt(0); }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") { e.preventDefault(); setAt((i) => Math.min(rows.length - 1, i + 1)); }
