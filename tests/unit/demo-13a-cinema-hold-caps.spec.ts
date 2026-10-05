@@ -54,7 +54,7 @@ async function learnN(ws: Awaited<ReturnType<typeof workspace>>, id: string) {
 }
 
 test("the project cap reads a held take at 3N, at admission and in the reservation", async () => {
-  const ws = await workspace("ws_cap", 10_000);
+  const ws = await workspace("hold_ws_cap", 10_000);
   const n = await learnN(ws, "cap_learn");
   await inTenant(ws, async () => {
     const { db } = await import("../../lib/db");
@@ -74,7 +74,7 @@ test("the project cap reads a held take at 3N, at admission and in the reservati
 });
 
 test("the shot cap reads a member's held take at 3N, at admission and in the reservation", async () => {
-  const ws = await workspace("ws_shot", 10_000);
+  const ws = await workspace("hold_ws_shot", 10_000);
   const n = await learnN(ws, "shot_learn");
   await inTenant(ws, async () => {
     const { db } = await import("../../lib/db");
@@ -89,7 +89,7 @@ test("the shot cap reads a member's held take at 3N, at admission and in the res
 });
 
 test("the workspace's monthly allowance reads a held take at its hold's dollars, at admission and in the reservation", async () => {
-  const ws = await workspace("ws_allow", 10_000, USD * 2);
+  const ws = await workspace("hold_ws_allow", 10_000, USD * 2);
   await inTenant(ws, async () => {
     const { allowanceCheck } = await import("../../lib/allowance");
     expect((await allowanceCheck("higgsfield" as never, USD, CINEMA)).ok).toBe(true);
@@ -100,7 +100,7 @@ test("the workspace's monthly allowance reads a held take at its hold's dollars,
 });
 
 test("the token ceilings read a held take at 3N", async () => {
-  const ws = await workspace("ws_token", 10_000);
+  const ws = await workspace("hold_ws_token", 10_000);
   const n = await learnN(ws, "token_learn");
   await inTenant(ws, async () => {
     const token = (capCredits: number) => ({ id: `tok_${capCredits}`, capUsd: null, capCredits });
@@ -110,20 +110,20 @@ test("the token ceilings read a held take at 3N", async () => {
 });
 
 test("two takes at once against a balance that covers one hold: one is admitted, the other refused, and the balance never goes below zero", async () => {
-  const n = await learnN(await workspace("ws_learn", 10_000), "race_learn");
-  const ws = await workspace("ws_race", Math.round(4.5 * n));
+  const n = await learnN(await workspace("hold_ws_learn", 10_000), "race_learn");
+  const ws = await workspace("hold_ws_race", Math.round(4.5 * n));
   await inTenant(ws, async () => {
     const { reserveGenerationSpend } = await import("../../lib/generationRequests");
     const r = await Promise.allSettled([reserveGenerationSpend(take("race_1", USD), { holdBand: 3 }), reserveGenerationSpend(take("race_2", USD), { holdBand: 3 })]);
     expect(r.filter((x) => x.status === "fulfilled")).toHaveLength(1);
     expect(r.filter((x) => x.status === "rejected").map((x) => (x as PromiseRejectedResult).reason.status)).toEqual([402]);
     const { billingStateFor } = await import("../../lib/billingLedger");
-    expect((await billingStateFor("ws_race")).credits.balance).toBeGreaterThanOrEqual(0);
+    expect((await billingStateFor("hold_ws_race")).credits.balance).toBeGreaterThanOrEqual(0);
   });
 });
 
 test("a second reservation of a running held take keeps its hold and band", async () => {
-  const ws = await workspace("ws_rereserve", 10_000);
+  const ws = await workspace("hold_ws_rereserve", 10_000);
   await inTenant(ws, async () => {
     expect(await reserve(take("again", USD))).toBe("admitted");
     const first = (await row("again"))!;
@@ -144,10 +144,10 @@ test("a take held at one price of a credit settles in the next, once: paused bef
     const { setLedgerUnitTx } = await import("../../lib/ledgerUnit");
     await platformReady(); await billingReady();
     await billingTransaction((tx) => setLedgerUnitTx(tx, 0.8, "fixture", Date.now()));
-    await platformDb().execute({ sql: `INSERT INTO workspaces(id,slug,name,db_url,owner_id,uses_platform_keys,created_at,updated_at,concurrency,renders_per_hour) VALUES('ws_unit','ws_unit','ws_unit',?,'owner',1,0,0,20,200)`,
-      args: [`file:${path.join(dir, "ws_unit.db")}`] });
-    await grantCredits("ws_unit", 1_000, "fixture", "owner", "manual");
-    const ws = (await getWorkspace("ws_unit"))!;
+    await platformDb().execute({ sql: `INSERT INTO workspaces(id,slug,name,db_url,owner_id,uses_platform_keys,created_at,updated_at,concurrency,renders_per_hour) VALUES('hold_ws_unit','hold_ws_unit','hold_ws_unit',?,'owner',1,0,0,20,200)`,
+      args: [`file:${path.join(dir, "hold_ws_unit.db")}`] });
+    await grantCredits("hold_ws_unit", 1_000, "fixture", "owner", "manual");
+    const ws = (await getWorkspace("hold_ws_unit"))!;
     const { meter } = await import("../../lib/meter");
     await inTenant(ws, () => reserve(take("u_over", USD)));
     await inTenant(ws, () => reserve(take("u_nofig", USD)));
@@ -160,7 +160,7 @@ test("a take held at one price of a credit settles in the next, once: paused bef
     })).toBe(`503 ${MSG}`);
     expect(await row("u_paused")).toBeNull();
     const { convertAllCredits } = await import("../../lib/creditConversion");
-    const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: Date.UTC(2026, 9, 3, 14, 41, 44), endAt: Date.now(), dryRun: false, at: Date.now() + 1_000, by: "owner", universe: ["ws_unit"] });
+    const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: Date.UTC(2026, 9, 3, 14, 41, 44), endAt: Date.now(), dryRun: false, at: Date.now() + 1_000, by: "owner", universe: ["hold_ws_unit"] });
     expect(run.ledgerUnitAfter).toBe(0.1);
     expect((await row("u_over"))!.billed).toBe(held * 8);
     /* Ten times its quote: capped at the converted hold, the over recorded; no figure: N, converted once. */
@@ -173,7 +173,7 @@ test("a take held at one price of a credit settles in the next, once: paused bef
     /* The same figure again moves nothing. */
     await inTenant(ws, () => meter({ ...take("u_over", USD * 10), status: "succeeded" }));
     expect((await row("u_over"))!.billed).toBe(over.billed);
-    expect((await billingStateFor("ws_unit")).credits.balance).toBe(8 * 1_000 - over.billed - nofig.billed);
+    expect((await billingStateFor("hold_ws_unit")).credits.balance).toBe(8 * 1_000 - over.billed - nofig.billed);
   } finally {
     if (before == null) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = before;
   }
