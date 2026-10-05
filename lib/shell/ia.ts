@@ -1,4 +1,5 @@
 import type { PageId, Suite } from "@/lib/workspace/types";
+import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings";
 
 /**
  * The Suites shell's information architecture (design/particl-graphite/README.md
@@ -9,8 +10,11 @@ import type { PageId, Suite } from "@/lib/workspace/types";
  * give Business and Viral their own composers.
  */
 export type ShellSuiteId = "studio" | "business" | "viral" | "atomik";
-export type ShellView = "suite" | "gen" | "workspace" | "crew";
-export type WorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
+/** `home` and `board` are the new interface's own views (lib/shell/screens.ts); they are read only with the switch on. */
+export type ShellView = "suite" | "gen" | "workspace" | "crew" | "home" | "board";
+/** Workspace's seven old tabs, and Settings' five sections (lib/shell/settings.ts), which the new Settings screen reads as `tab`. */
+export type OldWorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
+export type WorkspaceTabId = OldWorkspaceTabId | SettingsSectionId;
 
 export type ShellPage = {
   id: string;
@@ -151,7 +155,7 @@ export const HEADER_SEGMENT: { id: HeaderSegmentId; label: string; title: string
   { id: "atomik", label: "Atomik", title: "Atomik" },
 ];
 
-export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [
+export const WORKSPACE_TABS: { id: OldWorkspaceTabId; label: string; href: string }[] = [
   { id: "general", label: "General", href: "/settings" },
   { id: "people", label: "People", href: "/team" },
   { id: "credits", label: "Plans & credits", href: "/billing" },
@@ -258,7 +262,10 @@ const DESIGN_PAGES: Readonly<Partial<Record<Suite, Readonly<Record<string, reado
 const VIEW_SPELLING: Readonly<Record<string, ShellView>> = { make: "gen" };
 /** Params the design file sets that no screen reads any more: the Library and Inspector columns are not toggled by URL. */
 const DROPPED_PARAMS = ["lib", "insp"] as const;
-const WORKSPACE_TAB_IDS: readonly string[] = ["general", "people", "credits", "usage", "dashboard", "engines", "security"] satisfies WorkspaceTabId[];
+const OLD_WORKSPACE_TAB_IDS: readonly string[] = ["general", "people", "credits", "usage", "dashboard", "engines", "security"] satisfies OldWorkspaceTabId[];
+/* The design file's `ws=<section>` also names Settings' five sections; the shell's spelling is `tab` in both modes, and the
+   screen registry then sends a section to its screen, or to today's page for it (lib/shell/screens.ts). */
+const WORKSPACE_TAB_IDS: readonly string[] = [...OLD_WORKSPACE_TAB_IDS, ...SETTINGS_SECTIONS.map((s) => s.id)];
 
 function rewrite(search: string): { q: URLSearchParams; changed: boolean } {
   const q = new URLSearchParams(search);
@@ -328,7 +335,7 @@ export const OLD_TO_NEW: readonly OldToNew[] = [
   ...["motion", "swap", "history"].map((p) => N(`?suite=viral&page=${p}`, `?suite=subatomik&page=${p}`)),
   ...["memory", "saved-skills"].map((p) => N(`?suite=atomik&page=${p}`, `?suite=atomik&page=agent&sp=${p}`)),
   ...["room", "members", "sessions"].map((p) => N(`?view=crew&crew=${p}`, `?view=crew&cp=${p}`)),
-  ...WORKSPACE_TAB_IDS.map((t) => N(`?view=workspace&ws=${t}`, `?view=workspace&tab=${t}`)),
+  ...OLD_WORKSPACE_TAB_IDS.map((t) => N(`?view=workspace&ws=${t}`, `?view=workspace&tab=${t}`)),
   /* The master's own aliases (docs/handoff-diff.md § 2): Ads and Social are Business and Viral, Make is Gen. */
   N("?suite=ads", "?suite=moleculr"),
   N("?suite=social", "?suite=subatomik"),
@@ -379,7 +386,7 @@ export const PENDING: readonly Pending[] = [
   ...P("D1", "Settings › Connections and Advanced › Tools", "?suite=atomik&page=skills"),
   ...P("D1", "Control room › Memory, Skills (same URLs)", "?suite=atomik&page=agent&sp=memory", "?suite=atomik&page=agent&sp=saved-skills"),
   ...P("D1", "Settings in five sections: Team, Plan & credits, Spending rules, Connections, Advanced; Dashboard → Activity",
-    ...WORKSPACE_TAB_IDS.map((t) => `?view=workspace&tab=${t}`)),
+    ...OLD_WORKSPACE_TAB_IDS.map((t) => `?view=workspace&tab=${t}`)),
   ...P("U1", "⌘K with Atomik's commands (go to, make, approve under N cr)", "?find=1"),
   /* docs/old-shells.md: the older shells' routes, retired in D1. */
   ...P("D1", "Its /suites page (docs/old-shells.md)",

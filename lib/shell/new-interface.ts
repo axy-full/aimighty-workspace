@@ -1,24 +1,12 @@
 "use client";
-import { useSyncExternalStore } from "react";
+import { useSession } from "@/lib/session";
 
-/*
- * LOCAL STUB — stream 6 only, never committed. Stream 1 owns this file and its real helpers
- * (`useNewInterface()` on the client, `newInterfaceEnabled(...)` on the server); this stand-in
- * only lets the Make panel be built and tested behind the switch until theirs lands.
- *
- * On while this browser's localStorage holds `particl:new-interface` = "1" (the demo-s06 browser
- * specs set it); off everywhere else, and on the server.
+/**
+ * Whether this workspace sees the new interface (the per-workspace switch, lib/shell/new-interface-model.ts). The
+ * server reads it once per page load (lib/shell/new-interface.server.ts › newInterfaceEnabled) and puts one boolean
+ * on the session, so this is a plain read: no request, no flicker, and the list of workspaces never reaches a browser.
+ * Off for a visitor and on every page that is not the Suites shell.
  */
-const KEY = "particl:new-interface";
-
-function read(): boolean {
-  try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
-}
-function subscribe(changed: () => void): () => void {
-  window.addEventListener("storage", changed);
-  return () => window.removeEventListener("storage", changed);
-}
-
 export function useNewInterface(): boolean {
-  return useSyncExternalStore(subscribe, read, () => false);
+  return useSession().workspace?.newInterface === true;
 }
