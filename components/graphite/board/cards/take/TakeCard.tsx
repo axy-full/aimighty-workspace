@@ -25,7 +25,7 @@ import "./take.css";
  *   renders of the same engine and settings, "about N min left" (DECISIONS 20). Otherwise the bar is
  *   indeterminate and nothing is claimed.
  * - The large card (frame g) is the take that waits for you: its versions as chips, Reject and Approve, and
- *   Atomik's one-line note from its Verify check. Reject asks for a reason in one line (optional) and saves it
+ *   Atomik's one-line note from its Verify check. Reject needs a reason, one line of 3 to 500 characters, and saves it
  *   as a note on the take.
  * - States the frames don't draw on a desktop card follow the phone's states frame: a failed take says why,
  *   "Nothing billed" only when that is confirmed (else what the ledger or provider said), and Retry, which hands

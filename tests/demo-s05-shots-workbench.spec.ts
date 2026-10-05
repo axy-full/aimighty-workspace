@@ -59,7 +59,7 @@ async function seed(page: Page) {
   const paid: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && (path === "/api/generate" || path.startsWith("/api/generate/") || /\/release$/.test(path))) paid.push(path);
+    if (request.method() === "POST" && (path === "/api/generate" || (path.startsWith("/api/generate/") && path !== "/api/generate/quote") || /\/release$/.test(path))) paid.push(path);
   });
   const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.route("**/api/workbench/library?**", (route) => {
@@ -85,7 +85,7 @@ async function seed(page: Page) {
     const genId = new URL(route.request().url()).searchParams.get("genId");
     return json(route, { notes: notes.filter((n) => n.genId === genId).map((n, i) => ({ id: `n${i}`, text: n.text, author: "Tester", userId: me.id, createdAt: Date.now(), guest: false, mentions: [] })) });
   });
-  return { project, reviews, notes, paid };
+  return { project, reviews, notes, paid, generations, shotIds };
 }
 
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
@@ -236,5 +236,26 @@ test("the Inspector opens on a selected take: price paid, prompt, versions, the 
 
   await page.keyboard.press("Escape");
   await expect(insp).toHaveCount(0);
+  expect(paid).toEqual([]);
+});
+
+test("Change with words on a clip carries the free quote's price, and opening it sends nothing paid", async ({ page }) => {
+  test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
+  const { project, paid, generations, shotIds } = await seed(page);
+  /* Shot 2 gets a finished clip (v2) that waits for review. */
+  generations.push(take("tk-s2-v2", shotIds[1], 2, { kind: "video", model: "dreamina-seedance-2-5-260628", params: { duration: 5, resolution: "1080p" }, storedUrl: "/api/media/tk-s2-v2" }));
+  const asked: Record<string, unknown>[] = [];
+  await page.route("**/api/generate/quote", (route) => {
+    asked.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ estimatedCredits: 12, price: 12, unit: "cr", fingerprint: "a".repeat(64) }) });
+  });
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await shot(page, "node-shot0002").getByTestId("take-card").click();
+  const insp = page.getByTestId("board-inspector");
+  await expect(insp).toContainText("Shot 2");
+  await expect(insp.getByTestId("insp-change-price")).toHaveText("up to 12 cr");
+  expect(asked[0]).toMatchObject({ task: "edit", sourceGenId: "tk-s2-v2", model: "dreamina-seedance-2-5-260628" });
+  await insp.getByTestId("insp-change-words").click();
+  await expect(insp.getByTestId("insp-change")).toBeVisible();
   expect(paid).toEqual([]);
 });

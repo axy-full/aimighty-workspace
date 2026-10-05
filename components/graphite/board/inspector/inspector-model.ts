@@ -31,3 +31,24 @@ export function advancedRows(v: Pick<ShotVersion, "entry">): { k: string; v: str
 
 /** The original's download link (the media route's own `download=1`). */
 export const downloadHref = (genId: string) => `/api/media/${encodeURIComponent(genId)}?download=1`;
+
+/**
+ * The question Seedance Edit's own panel asks the quote route when it opens on this take with its defaults (720p,
+ * the clip's own sound kept), so the price on "Change with words" is the one the panel then shows. Asking is free;
+ * the words are the panel's to collect, so the quote carries a stand-in.
+ */
+export function editQuoteBody(v: Pick<ShotVersion, "genId" | "media" | "entry">, productionProjectId: string | null | undefined): Record<string, unknown> | null {
+  if (v.media !== "video" || v.entry.asset.origin !== "generation") return null;
+  return {
+    projectId: productionProjectId ?? null,
+    model: "dreamina-seedance-2-5-260628",
+    task: "edit",
+    prompt: "Edit @Video1: change",
+    rawPrompt: "change",
+    sourceGenId: v.genId,
+    resolution: "720p",
+    generateAudio: true,
+    refine: false,
+    references: [],
+  };
+}
