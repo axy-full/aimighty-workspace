@@ -71,19 +71,18 @@ export async function pausedSinceTx(tx: Pick<Transaction, "execute">): Promise<n
 
 /**
  * What a job's credits, counted at the price it was approved at, are in the unit its workspace
- * counts in: 8 for a US$0.80 job settling in a US$0.10 record, 1/8 the other way, 1 when the two
- * agree. Only an exact whole factor (either way) restates; anything else is left as it was.
+ * counts in: 8 for a US$0.80 job settling in a US$0.10 record, 1 when the two agree. Only an exact
+ * whole factor restates, and only UP. A job approved at a lower price than its record counts in
+ * (a US$0.10 job from before 3 October settling after the merge, while the record still counts in
+ * US$0.80) keeps its own credits: the conversion follows the job's own price and keeps it ×1, so
+ * a workspace holding only pre-cutover credits keeps its count. No job can be approved after a
+ * conversion and settle after its reversal: a reversal is refused while any job runs or was made
+ * since, and a reversed workspace admits nothing new (ledgerOpenTx).
  */
 export function restateFactor(approvedUsd: number, ledgerUsd: number | null): number {
   if (ledgerUsd == null || !(approvedUsd > 0) || !(ledgerUsd > 0) || samePrice(approvedUsd, ledgerUsd)) return 1;
-  const whole = (a: number, b: number) => {
-    const k = Math.round(a / b);
-    return k >= 2 && Math.round(a * 1e6) === k * Math.round(b * 1e6) ? k : null;
-  };
-  const up = whole(approvedUsd, ledgerUsd);
-  if (up) return up;
-  const down = whole(ledgerUsd, approvedUsd);
-  return down ? 1 / down : 1;
+  const k = Math.round(approvedUsd / ledgerUsd);
+  return k >= 2 && Math.round(approvedUsd * 1e6) === k * Math.round(ledgerUsd * 1e6) ? k : 1;
 }
 
 /** The platform ledger's unit; null only on a database whose billing tables were never made. */

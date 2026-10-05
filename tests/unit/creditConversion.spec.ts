@@ -339,10 +339,11 @@ test.describe("review fixes", () => {
     process.env.CREDIT_USD = "0.10";
   });
 
-  test("restateFactor restates both ways", async () => {
+  test("restateFactor restates up only", async () => {
     const { restateFactor } = await import("../../lib/ledgerUnit");
     expect(restateFactor(0.8, 0.1)).toBe(8);
-    expect(restateFactor(0.1, 0.8)).toBe(1 / 8);
+    // A job approved at a lower price keeps its own credits (second review, M1).
+    expect(restateFactor(0.1, 0.8)).toBe(1);
     expect(restateFactor(0.15, 0.1)).toBe(1);
   });
 
@@ -665,5 +666,28 @@ test.describe("second review fixes", () => {
     // CREDIT_USD set back to 0.80: particl.si runs at $0.80 again, and a paid job is approved at it.
     await job("ws_s4", "s4_job", 3, 0.80, T4 + 3 * HOUR);
     await expect(convertAllCredits(run({ at: T4 + 5 * HOUR, universe: ["ws_s4"] }))).rejects.toThrow(/ran at US\$0\.80 again after the reversal/);
+  });
+
+  test("M1: a pre-cutover job settling between the merge and the conversion keeps its credits: 220 stays 220", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { meter } = await import("../../lib/meter");
+    process.env.CREDIT_USD = "0.80"; // #524 merged while particl.si runs at $0.80
+    await setUnit(0.8);
+    await addWorkspace("ws_s5");
+    await grant("ws_s5", "s5_welcome", 250, "welcome", BEFORE);
+    await sync("ws_s5", BEFORE);
+    // Reserved at $0.10 before the cutover, 30 credits, still running at the merge (awaiting reconciliation).
+    await job("ws_s5", "s5_job", 30, 0.10, BEFORE + 1000, "running");
+    expect((await balance("ws_s5")).balance).toBe(220);
+    // Reconciled after the merge, before the conversion, at the cost it was reserved for: still 30 credits.
+    await runInTenant(await tenantOf("ws_s5"), () => meter({ id: "s5_job", kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: 3 }));
+    const p = await platform();
+    expect(Number((await p.execute(`SELECT billed_credits FROM meter_events WHERE id='s5_job'`)).rows[0].billed_credits)).toBe(30);
+    expect((await balance("ws_s5")).balance).toBe(220);
+    process.env.CREDIT_USD = "0.10";
+    const out = await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s5"] }));
+    expect([out.results[0].before!.balance, out.results[0].after!.balance]).toEqual([220, 220]);
+    expect((await balance("ws_s5")).balance).toBe(220);
   });
 });

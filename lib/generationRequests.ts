@@ -415,7 +415,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const unit = await workspaceUnitTx(tx, ws.id);
     const terms = prior ? recordedBillingTerms(prior, event.kind, event.model)
       : { ...currentBillingTerms(event.kind, event.model), ...(unit != null ? { creditUsd: unit } : {}) };
-    /* A job approved at another price of a credit (one reserved at US$0.80 before the record moved to
+    /* A job approved at a higher price of a credit (one reserved at US$0.80 before the record moved to
        US$0.10, lib/creditConversion.ts) keeps its terms and is counted in the ledger's unit: ×8. */
     const restate = prior ? restateFactor(terms.creditUsd, unit) : 1;
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
