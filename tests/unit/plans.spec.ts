@@ -9,7 +9,7 @@ test("the four plans are §7A's four, at §7A's prices", () => {
   expect(DEFAULT_PLANS.map((p) => p.includedCredits)).toEqual([0, 400, 1600, 9000]);
 });
 
-test("Invite includes no credits, because its 50 are the welcome grant", () => {
+test("Invite includes no credits, because its 250 are the welcome grant", () => {
   /* §7A guardrail 1: "Free grant is one-time, never recurring." The 50 are
      written once at sign-up and already marked `welcome` in the ledger.
      Putting them here would grant them again every cycle and turn a signup
