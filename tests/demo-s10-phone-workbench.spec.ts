@@ -107,7 +107,7 @@ test("phone Home: what needs you first, with the price as the button; renders wi
   await expect(page.getByTestId("phone-review-row")).toContainText("3 takes to review");
   await expect(page.getByTestId("phone-project")).toHaveCount(1);
   await expect(page.getByTestId("phone-needs-badge")).toHaveText("4");
-  await expect(page.getByTestId("phone-tab-record")).toBeDisabled();
+  await expect(page.getByTestId("phone-tab-record")).toBeEnabled();
   await floors(page, "Home");
   await shot(page, info.project.name, "home");
   expect(await lastRowClearsPinned(page), "Home: the last row clears the tabs").toEqual([]);

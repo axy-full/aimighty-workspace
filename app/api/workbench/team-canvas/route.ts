@@ -15,7 +15,7 @@ import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
   approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
-  skipRigAgentStep, stopRigAgent, undoRigAgent,
+  newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +43,8 @@ function failure(error: unknown) {
  * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
  * progress, what asking would cost: the suggested limit, the per-job line, and planning's price.
  * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
+ * `agent=1&board=new` (no production): what asking would cost on a new, empty board, for Home's Start
+ * before its project exists. Prices only; nothing is reserved or written.
  * `history=1` answers the board's History: the canvas's changes, newest first, with this workspace's names (no prices).
  */
 export const GET = withTenant(async (req: Request) => {
@@ -51,6 +53,8 @@ export const GET = withTenant(async (req: Request) => {
   const url = new URL(req.url);
   const productionId = url.searchParams.get("productionId") ?? "";
   try {
+    if (url.searchParams.get("agent") === "1" && url.searchParams.get("board") === "new")
+      return Response.json({ agent: await newBoardAskTerms() }, { headers: NO_STORE });
     if (url.searchParams.get("agent") === "1") {
       const draftId = url.searchParams.get("projectId");
       return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null) }, { headers: NO_STORE });
