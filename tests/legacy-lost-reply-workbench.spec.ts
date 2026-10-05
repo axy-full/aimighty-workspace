@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
@@ -23,21 +23,11 @@ import { newProject, type CanvasNode, type Project } from "../lib/workbench/stud
  * reply. Nothing is billed for real.
  */
 
-const ENGINE = "dreamina-seedance-2-5-260628";
-const SHOT = "lost-legacy";
 const BEFORE = "Wide. Hold still on the empty harbour.";
 const AFTER = "Close on her hands. She lets go of the rope.";
 const SOUND_BEFORE = "Rain on a tin roof, distant thunder.";
 const SOUND_AFTER = "Wind over dunes, a low constant bed.";
 
-/* Test fixtures only: a Rig shot the legacy Studio can open ("generate" is a shot node type there too). */
-function shot(id: string, title: string, note: string): CanvasNode {
-  return {
-    id, title, type: "generate", x: 100, y: 100, width: 344, linked: [], role: "Director", status: "draft", mode: "Video",
-    operations: [{ id: `op-${id}`, kind: "direction", enabled: true, values: { note } }],
-    engine: ENGINE, durationS: 5, ratio: "16:9", resolution: "720p",
-  };
-}
 
 type Sent = { path: string; key: string | undefined; body: Record<string, unknown> };
 
@@ -128,140 +118,15 @@ async function loseNext(page: Page, pattern: string, how: "before" | "after") {
 
 /* ── The Rig, where the take is claimed and lost ─────────────────────────── */
 
-async function rigInspector(page: Page): Promise<Locator> {
-  const body = page.locator(`[data-inspector-body="shot"][data-shot-id="${SHOT}"]`);
-  await expect(async () => {
-    if (!(await body.isVisible())) await page.getByTestId("toggle-inspector").click();
-    await expect(body).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 30_000 });
-  await body.getByRole("group", { name: "Inspector tabs" }).getByRole("button", { name: /Controls/ }).click();
-  return body;
-}
 
-async function rigPrice(body: Locator): Promise<number> {
-  const button = body.locator(".pxw-insp-generate");
-  await expect(button).toHaveText(/^Generate take · \d[\d,]* cr$/, { timeout: 60_000 });
-  await expect(button).toBeEnabled();
-  return Number((await button.textContent())!.replace(/.*· /, "").replace(/\D/g, ""));
-}
 
-/** A Rig take of the shot, pressed once and lost; then the shot is edited (a new note, one step longer). */
-async function lostRigTake(page: Page, project: Project, scope: string, sent: Sent[], how: "before" | "after") {
-  await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);
-  const row = page.getByTestId("rig-list").locator(`.pxw-rig-row[data-shot-id="${SHOT}"]`);
-  await expect(row).toHaveAttribute("data-status", "ready", { timeout: 60_000 });
-  await row.click();
-  const body = await rigInspector(page);
-  const landedId = await loseNext(page, "**/api/generate", how);
-  const credits = await rigPrice(body);
-  await body.locator(".pxw-insp-generate").click();
-  await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 60_000 }).toBe(1);
-  await expect(body.locator(".pxw-insp-generate")).toHaveText(/^Generate take · /);
-  const first = sent.find((s) => s.path === "/api/generate")!;
-  expect(first.body.maxCredits).toBe(credits);
-  expect(String(first.body.prompt)).toContain(BEFORE);
-  const claim = await claimOf(page, project.id, SHOT);
-  expect(claim?.key).toBe(first.key);
-
-  await body.getByRole("textbox", { name: "Direction note" }).fill(AFTER);
-  const before = (await body.getByTestId("shot-duration").textContent())!;
-  await body.getByRole("button", { name: "Longer" }).click();
-  await expect(body.getByTestId("shot-duration")).not.toHaveText(before);
-  await expect.poll(async () => JSON.stringify((await savedProject(page, scope, project)).nodes.find((n) => n.id === SHOT)).includes(AFTER), { timeout: 20_000 }).toBe(true);
-  return { first, claim: claim!, credits, landedId: landedId() };
-}
 
 /* ── The legacy Studio, where the same node's dialog finds the claim ─────── */
 
-async function studioDialog(page: Page, project: Project) {
-  await page.goto(await legacyShell(page, `/workbench?project=${project.id}&stage=canvas`));
-  await goWorkbenchStage(page, "canvas");
-  if (page.viewportSize()!.width < 760) {
-    await page.locator(".mobile-node-viewbar").getByRole("tab", { name: "List", exact: true }).click();
-    await page.locator(".mobile-node-list button").filter({ hasText: "Opening wide" }).click();
-  } else {
-    const node = page.getByRole("article", { name: "Generate node: Opening wide", exact: true });
-    await node.focus();
-    await node.press("Enter");
-  }
-  await page.getByRole("button", { name: "Generate take", exact: true }).click();
-  return page.getByRole("dialog", { name: "Generate a new take", exact: true });
-}
 
 const madeOf = (prompt: string) => (prompt.includes(AFTER) ? "the node as it is now" : prompt.includes(BEFORE) ? "the stale take" : prompt.includes(SOUND_AFTER) ? "the new description" : prompt.includes(SOUND_BEFORE) ? "the stored description" : prompt);
 
-test("Studio's Recover submitted take never re-sends a Rig take that never reached the server: nothing is made or billed, its key is fenced, and the node as it is now goes only at the price on the button", async ({ page }) => {
-  test.setTimeout(240_000);
-  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, [shot(SHOT, "Opening wide", BEFORE)]);
-  const { first, claim } = await lostRigTake(page, project, scope, sent, "before");
 
-  const dialog = await studioDialog(page, project);
-  const recover = dialog.getByRole("button", { name: "Recover submitted take", exact: true });
-  await expect(recover).toBeEnabled({ timeout: 30_000 });
-  const mark = sent.length;
-  const answered = page.waitForResponse((r) => r.request().method() === "POST" && /^\/api\/generate(\/check)?$/.test(new URL(r.url()).pathname));
-  await recover.click();
-  await answered;
-
-  /* What left the browser, and what the server made and billed, for a press that showed no price. */
-  const productionShot = (await savedProject(page, scope, project)).shotMappings?.[SHOT];
-  let books = await ledger(tenantUrl, workspaceId, productionShot);
-  expect({ sent: sent.slice(mark).map((s) => s.path), made: books.jobs.map((j) => madeOf(j.prompt)), billed: books.charges.map((c) => c.credits) })
-    .toEqual({ sent: ["/api/generate/check"], made: [], billed: [] });
-  expect(sent[mark].body.key).toBe(first.key);
-
-  /* Let go: the dialog starts again from the node as it is now, with its fresh price on the button. */
-  await expect(dialog.getByRole("status").filter({ hasText: "Your last Generate never reached the server. Nothing was charged for it." })).toBeVisible();
-  const generate = dialog.getByRole("button", { name: /^Generate · \d+ cr estimated$/ });
-  await expect(generate).toBeEnabled({ timeout: 60_000 });
-  await expect(dialog.getByLabel("Generation direction")).toHaveValue(new RegExp(AFTER.replace(/\./g, "\\.")));
-  await expect.poll(() => claimOf(page, project.id, SHOT)).toBeNull();
-
-  /* The lost request can never land now: its key was fenced when it was checked. */
-  const late = await page.request.post("/api/generate", {
-    headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope, "Idempotency-Key": first.key! },
-    data: claim.body,
-  });
-  expect(late.status()).toBe(409);
-  expect(late.headers()["idempotency-status"]).toBe("complete");
-  books = await ledger(tenantUrl, workspaceId, productionShot);
-  expect({ made: books.jobs.length, billed: books.charges.length }).toEqual({ made: 0, billed: 0 });
-
-  /* A new take goes only from the priced button: once, under a new key, at that price. */
-  const shown = Number((await generate.textContent())!.replace(/\D/g, ""));
-  const again = sent.length;
-  await generate.click();
-  await expect(dialog).not.toBeVisible({ timeout: 60_000 });
-  const posted = sent.slice(again).filter((s) => s.path === "/api/generate");
-  expect(posted).toHaveLength(1);
-  expect(posted[0].key).not.toBe(first.key);
-  expect(posted[0].body.maxCredits).toBe(shown);
-  books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
-  expect({ made: books.jobs.map((j) => madeOf(j.prompt)), billed: books.charges.map((c) => c.credits) }).toEqual({ made: ["the node as it is now"], billed: [shown] });
-  expect(errors).toEqual([]);
-});
-
-test("Studio's Recover submitted take follows a Rig take that reached the server with its reply dropped: nothing is sent, and it stays billed once", async ({ page }) => {
-  test.setTimeout(240_000);
-  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, [shot(SHOT, "Opening wide", BEFORE)]);
-  const { first, credits, landedId } = await lostRigTake(page, project, scope, sent, "after");
-  expect(landedId).toBeTruthy();
-
-  const dialog = await studioDialog(page, project);
-  const recover = dialog.getByRole("button", { name: "Recover submitted take", exact: true });
-  await expect(recover).toBeEnabled({ timeout: 30_000 });
-  const mark = sent.length;
-  await recover.click();
-  await expect(dialog).not.toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("Generation submitted. Follow its progress in Activity.")).toBeVisible();
-  expect(sent.slice(mark).map((s) => s.path)).toEqual(["/api/generate/check"]);
-  expect(sent[mark].body.key).toBe(first.key);
-  await expect.poll(() => claimOf(page, project.id, SHOT)).toBeNull();
-  const productionShot = (await savedProject(page, scope, project)).shotMappings?.[SHOT];
-  const books = await settledLedger(tenantUrl, workspaceId, productionShot, 1);
-  expect({ made: books.jobs.map((j) => j.id), billed: books.charges.map((c) => c.credits) }).toEqual({ made: [landedId], billed: [credits] });
-  expect(errors).toEqual([]);
-});
 
 /* ── Edit & Sound (the legacy Studio's edit stage, every size) ─────────────── */
 

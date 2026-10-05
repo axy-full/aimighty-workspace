@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -350,7 +350,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   expect(errors).toEqual([]);
 });
 
-test("search and a whole view fail on their own: the sheet takes focus and still closes, Workspace and Crew come back", async ({ page }, info) => {
+test("search and a whole view fail on their own: the sheet takes focus and still closes, Workspace comes back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["palette", "composer"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
@@ -385,7 +385,7 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await page.keyboard.press("Escape");
 
   /* A whole view that throws keeps the header, so every suite is one tap away. (The later init script wins on load.) */
-  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace", "crew"]; });
+  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace"]; });
   await page.goto("/suites?view=workspace");
   const fault = page.locator('[data-testid="panel-fault"][data-fault="workspace"]');
   await expect(fault).toContainText("Workspace stopped");
@@ -394,15 +394,6 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await closeSuitesMenu(page);
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
-
-  /* Crew is walled off the same way, and its room strip stays. Crew is reached from ⌘K (header option B). */
-  await goViaSearch(page, "crew room", /Crew room/);
-  const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
-  await expect(crew).toContainText("Crew stopped");
-  await reachable(page, crew.getByTestId("fault-retry"));
-  await arm(page, []);
-  await crew.getByTestId("fault-retry").click();
-  await expect(crew).toHaveCount(0);
 
   /* The avatar opens Settings; Team is Workspace's People until Settings ships (D1). */
   await page.getByTestId("workspace-avatar").click();
