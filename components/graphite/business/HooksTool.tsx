@@ -7,7 +7,7 @@ import { CardHead, Field, SaveLine, briefOf, changeBrief, useLatest, type OwnEdi
 import { useOwnAgent } from "./use-own-agent";
 
 /** Only the suite agents' planners (Anthropic, OpenAI) run the Campaign agent (lib/workbench/atomik-server.ts). */
-const SUITE_MODEL = /^(anthropic|openai)\//;
+export const SUITE_MODEL = /^(anthropic|openai)\//;
 const REQUEST_MAX = 4000;
 
 /**

@@ -18,15 +18,17 @@ type Review = { name: string; description: string; tagline: string; colors: stri
  * edited by hand: name, words, voice, audience, typography, logo and palette.
  * Every brief, hook and poster made in Business carries it.
  */
-export function BrandTool({ scope, editor, items }: { scope: string; editor: OwnEditor; items: LibraryEntry[] }) {
+export function BrandTool({ scope, editor, items, initial }: { scope: string; editor: OwnEditor; items: LibraryEntry[]; /** A read of the site already made (the Ads board's), opened for review. */ initial?: BrandExtraction | null }) {
   const p = editor.project!;
   const latest = useLatest(p);
   const brief = briefOf(p);
   const kit = brief.brandKit ?? EMPTY_BRAND_KIT;
   const work = useWork();
-  const [result, setResult] = useState<BrandExtraction | null>(null);
-  const [reviewFor, setReviewFor] = useState("");
-  const [review, setReview] = useState<Review>({ name: "", description: "", tagline: "", colors: "", fontFamilies: "" });
+  const [result, setResult] = useState<BrandExtraction | null>(initial ?? null);
+  const [reviewFor, setReviewFor] = useState(initial ? (kit.website ?? "").trim() : "");
+  const [review, setReview] = useState<Review>(() => initial
+    ? { name: String(initial.brand.name ?? "").slice(0, 200), description: String(initial.brand.description ?? "").slice(0, 4000), tagline: String(initial.brand.tagline ?? "").slice(0, 300), colors: initial.brand.colors.slice(0, OWN_LIMITS.colors).join(", "), fontFamilies: initial.brand.fontFamilies.slice(0, OWN_LIMITS.fontFamilies).join(", ") }
+    : { name: "", description: "", tagline: "", colors: "", fontFamilies: "" });
   const [imported, setImported] = useState<string[]>([]);
   const [logoOpen, setLogoOpen] = useState(false);
   const reading = useRef<AbortController | null>(null);
