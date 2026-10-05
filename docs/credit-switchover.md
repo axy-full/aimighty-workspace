@@ -15,8 +15,14 @@ credits, rows from after it are $0.80 credits.
 
 **How the conversion works (PR #524).** Per row, exact:
 - rows from before the cutover stay as they are;
-- rows from after it are ×8;
-- a job is restated by the price it was reserved at (`meter_events.credit_usd`), a pack by its own dollars.
+- rows from inside the $0.80 window are ×8. The window is `[cutoverAt, endAt)`:
+  `endAt` is when an instance first ran at $0.10 (recorded on its own as
+  `pausedSince`), so a sign-up or grant during the pause, or after, is never ×8;
+- a job is restated by the price it was reserved at (`meter_events.credit_usd`), a pack by its own dollars;
+- **caps** (shot cap, production and project caps, API token ceilings, the
+  platform's default production cap) carry no time they were set, so none is
+  guessed: the dry run lists each, in credits and in dollars at both prices, and
+  each is **kept** unless you choose `x8` for it. The per-shot default stays 50 cr.
 
 Every balance ends at the dollars actually paid or granted. A workspace whose
 balance would go **down or below zero** (it spent pre-cutover $0.10 credits on
@@ -65,7 +71,8 @@ Merge it. Production builds at `CREDIT_USD` = 0.80, and the ledger records
 ## 2. Dry run on particl.si (changes nothing)
 
 Still at $0.80, preview the conversion to $0.10. A dry run is a transaction
-that is rolled back.
+that is rolled back. `cutoverAt` must carry `Z` or an offset; a time with no
+zone is refused.
 
 ```js
 await (await fetch("/api/admin/credit-unit", {
@@ -85,6 +92,22 @@ Read it:
   left out. The house workspace is skipped (it is never billed in credits).
 - **Open top-up requests at $0.80 terms:** listed. The real run declines them
   with "Price changed; please ask again at US$0.10." Nobody is emailed.
+- **`firstOldPriceJobAt`:** the first job on record approved at $0.80. It should
+  sit just after your `cutoverAt`; if it is earlier, recheck the time.
+- **`dollarsShownDrop`:** listed apart, no decision needed. Workspaces whose
+  balance reads fewer dollars after, because their credits were written at
+  $0.10 and particl.si has shown them at $0.80 since 3 October. The "after" is
+  what was actually paid or granted.
+- **`caps`:** every stored cap, `capId`, credits, `usdAtTo` ($0.10) and
+  `usdAtFrom` ($0.80). Choose `x8` for any set during the $0.80 days that should
+  keep its dollars; anything not named is kept as it is.
+- **Open top-up requests at $0.80 terms (`declinedTopups`):** each with the
+  requester's name and email, the workspace, the pack, credits and dollars. The
+  real run declines them with "Price changed; please ask again at US$0.10."
+  Nobody is emailed by the app: you contact them.
+- **Your plan for `needsDecision`:** `goodwill` by default; `apply` for your own
+  and test workspaces. Each line carries `marks` (`platformOwner`, `test`,
+  `internal`, `house`) so you can tell them apart.
 - **`comparison.uniform`:** what a flat ×8 would have given. Reference only;
   a real run is always per row.
 
@@ -99,8 +122,8 @@ Production deployment. An env change takes effect only at a build.
 
 From the moment that build is live, paid work is paused on its own.
 
-- *Check:* `GET /api/admin/credit-unit` shows `creditUsd: 0.1` and
-  `ledgerUnitUsd: 0.8`.
+- *Check:* `GET /api/admin/credit-unit` shows `creditUsd: 0.1`,
+  `ledgerUnitUsd: 0.8` and a `pausedSince` time: the end of the $0.80 window.
 - *Check:* a paid button in an internal workspace answers with the pause
   message. A free action (opening a project, a quote) works.
 - Keep this window short. Prices now read in $0.10 credits, but balances are
@@ -122,6 +145,7 @@ await (await fetch("/api/admin/credit-unit", {
   body: JSON.stringify({ action: "convert", fromUnitUsd: 0.8,
                          cutoverAt: "2026-10-03T14:39:00Z",
                          decisions: { /* "<workspaceId>": "goodwill" | "apply", one per needsDecision */ },
+                         caps: { /* "<capId>": "x8", only for caps you want restated; the rest are kept */ },
                          dryRun: false })
 })).json()
 ```
@@ -129,16 +153,23 @@ await (await fetch("/api/admin/credit-unit", {
 - Every workspace is converted in one platform transaction, then its own
   database. When the last one is done, the ledger's unit moves to 0.10 and
   **paid work resumes on its own**.
-- A workspace you left out of `decisions` is skipped whole and listed under
-  `waiting`. Paid work stays paused for the whole platform until it's done:
-  send the request again with its decision.
+- `decisions` must cover **every** workspace under `needsDecision`, or the
+  request is refused and nothing at all is written. Run the dry run again just
+  before, so the list is current.
+- `endAt` defaults to `pausedSince`; give it only to override.
 - A workspace half that failed (for example, its database was unreachable) is
-  recorded. Sending the same request again finishes it, and converting twice
-  converts once.
+  recorded, listed under `waiting`, and keeps paid work paused. Sending the
+  same request again finishes it; converting twice converts once. If a
+  workspace's own database is gone for good, add `skipTenant: ["<workspaceId>"]`
+  and it is marked skipped. A deleted workspace never holds the platform up.
+- Once the ledger counts in $0.10, a real run converts nothing more; it only
+  finishes or skips failed halves.
 - *Check:* the response lists no `waiting` and no failures, and
   `GET /api/admin/credit-unit` shows `ledgerUnitUsd: 0.1`.
 - *Roll back:* `{ action: "reverse", dryRun: false }` restores every number
-  exactly. It takes back goodwill grants (anything already spent from one stays
+  exactly, **only before paid work resumes**: once any workspace has a job,
+  grant or running job written after the conversion, the reversal is refused for
+  everyone and lists them. After that, the backup is the way back. It takes back goodwill grants (anything already spent from one stays
   as debt) and leaves declined requests declined. The ledger goes back to 0.80,
   which pauses paid work again. Then either convert again, or set `CREDIT_USD`
   back to 0.80 and redeploy. Last resort: restore the step 0 backup.
@@ -149,7 +180,8 @@ await (await fetch("/api/admin/credit-unit", {
   `needsDecision` and one with a pack. Balance × $0.10 must equal the dry run's
   "after" dollars.
 - `/statements` in two workspaces: past purchases show the dollars paid. Past
-  jobs show credits in the new unit for the same dollars.
+  jobs show credits in the new unit for the same dollars, and the foot reads
+  "Credits shown at US$0.10 each from <the day of step 4>."
 - `/admin` top-up queue: no request left open at $0.80 terms.
 - `/pricing`: "1 credit = US$0.10", Starter $50 · 500 cr, plans 400 / 1,600 /
   9,000 cr, welcome 250 cr.
@@ -171,8 +203,8 @@ Paid work resumed at the end of step 4.
 | `CREDIT_USD` | Vercel, one entry for Production and Preview | `0.10` | Step 3 |
 | `CREDIT_USD` | Coolify, before particl.si's DNS moves there (P4/P5) | `0.10`, and copy the **already converted** database | At the move, not today |
 | `SIGNUP_CREDITS`, `CREDIT_PACKS`, `CREDIT_MARGINS` | Vercel | not set, so the code defaults apply (250 welcome; §7A packs) | Nothing |
-| Platform layer overrides (welcome credits, default production cap, plans) | `/admin` platform layer | re-read: if any was set during the $0.80 days, set it for $0.10 | After step 4 |
-| Requesters whose $0.80 pack requests were declined | email or message, outside the app | tell them to ask again at US$0.10 | After step 6 |
+| Platform layer overrides (welcome credits, plans) | `/admin` platform layer | kept as set (the default production cap is in the run's `caps` list); if welcome or plans were set during the $0.80 days, set them for $0.10 | After step 4 |
+| Requesters whose $0.80 pack requests were declined | email or message, outside the app (names and emails are in the dry run's `declinedTopups`) | tell them to ask again at US$0.10 | After step 6 |
 | Money taken off-platform | your records | none was taken at $0.80 prices (owner, 5 Oct); nothing to reconcile | — |
 | Stripe / Razorpay | not wired; Production uses `manual` (`lib/payments.ts`) | nothing | — |
 | Anything published that quoted $0.80 or "500 cr for $400" | outside the repo | correct it | After step 6 |
