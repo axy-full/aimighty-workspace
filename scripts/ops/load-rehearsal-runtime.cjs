@@ -592,14 +592,18 @@ async function verify() {
           args: [ws.id],
         })
       ).rows;
+      /* In whole tenths, as the ledger counts: SQLite's float SUM of 0.6 six times is 3.5999999999999996. */
+      const tenths = (n) => Math.round(Number(n) * 10);
       invariants.noDoubleCharge &&=
         charges.every(
           (row) =>
-            Number(row.billed_credits) ===
-            (row.status === "succeeded"
-              ? expectedCredit
-              : billCredits(estimate, marginKeyOf(kind, model))),
-        ) && state.credits.used === Number(billing.billed ?? 0);
+            tenths(row.billed_credits) ===
+            tenths(
+              row.status === "succeeded"
+                ? expectedCredit
+                : billCredits(estimate, marginKeyOf(kind, model)),
+            ),
+        ) && tenths(state.credits.used) === tenths(billing.billed ?? 0);
       invariants.settlementsDrained &&=
         Number(billing.running ?? 0) === 0 &&
         Number(
