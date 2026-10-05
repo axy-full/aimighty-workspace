@@ -5,6 +5,9 @@ import { PlanCard } from "./plan/PlanCard";
 import { NextCard, NEXT_CARD_SIZE, type NextData } from "./plan/NextCard";
 import { PLAN_CARD_WIDTH, planCardHeight } from "./plan/model";
 import { LookCard } from "./looks/LookCard";
+import { LookInspector } from "./looks/LookInspector";
+import { PlanInspector } from "./plan/PlanInspector";
+import { FrameInspector } from "./storyboard/FrameInspector";
 import { LOOK_WIDTH, type LookData } from "./looks/derive";
 import { FrameCard } from "./storyboard/FrameCard";
 import { frameTileHeight } from "./storyboard/FrameTile";
@@ -34,17 +37,20 @@ export const planCards: CardSet = {
       kind: "frame",
       size: (_data, at) => ({ w: FRAME_WIDTH, h: frameTileHeight(FRAME_WIDTH, at.aspect) }),
       Card: FrameCard,
+      Inspector: FrameInspector,
     }),
     defineCard<LookData>({
       kind: "look",
       size: (_data, at) => ({ w: LOOK_WIDTH, h: frameTileHeight(LOOK_WIDTH, at.aspect) }),
       Card: LookCard,
+      Inspector: LookInspector,
     }),
     defineCard<NextData>({ kind: "next", size: () => NEXT_CARD_SIZE, Card: NextCard }),
     defineCard<PlanData>({
       kind: "plan",
       size: (data) => ({ w: PLAN_CARD_WIDTH, h: planCardHeight(data.run, data.open) }),
       Card: PlanCard,
+      Inspector: PlanInspector,
     }),
   ],
   derive: derivePlanCards,

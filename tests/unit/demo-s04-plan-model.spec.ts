@@ -29,7 +29,7 @@ function run(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
 const estimates = { 1: { credits: 43, approximate: false }, 3: { credits: 43, approximate: false }, 5: { credits: 7, approximate: false } };
 const base = (over: Partial<PlanInput> = {}): PlanInput => ({ run: run(), enabled: true, estimates, balance: 2000, rule: null, readOnly: null, ...over });
 
-test("the proposal lists every take at the server's price, the total on Approve, the fix allowance and the balance after", () => {
+test("the proposal lists every take at the server's price, the total as a line, the fix allowance and the balance after", () => {
   const m = planModel(base())!;
   expect(m.phase).toBe("proposal");
   expect(m.title).toBe("Make 3 shots");
@@ -39,7 +39,9 @@ test("the proposal lists every take at the server's price, the total on Approve,
     ["Shot 3", { kind: "exact", credits: 7 }, "estimate"],
   ]);
   expect(m.total).toEqual({ kind: "exact", credits: 93 });
-  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve · 93 cr", fingerprint: FP, blocked: null });
+  /* The button carries no figure: approving builds (free) and each render asks at its own price. The total is a line. */
+  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve", price: null, fingerprint: FP, blocked: null });
+  expect(m.totalLine).toBe("93 cr for the 3 shots");
   /* 2 × the take prices, never added to the total (decision 28: 93 → 186). */
   expect(m.fixAllowance).toBe(186);
   expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, at most 186 cr");
@@ -72,7 +74,8 @@ test("an engine that settles on what the provider states reads up to its band, a
   expect(estimatePrice({ credits: 43, approximate: true })).toEqual({ kind: "up-to", credits: 129 });
   const m = planModel(base({ estimates: { ...estimates, 1: { credits: 43, approximate: true } } }))!;
   expect(m.total).toEqual({ kind: "up-to", credits: 179 });
-  expect(m.primary).toMatchObject({ label: "Approve · up to 179 cr" });
+  expect(m.primary).toMatchObject({ label: "Approve" });
+  expect(m.totalLine).toBe("up to 179 cr for the 3 shots");
   expect(m.fixAllowance).toBe(358);
 });
 

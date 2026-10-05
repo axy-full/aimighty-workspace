@@ -67,6 +67,8 @@ export type PlanModel = {
   fixAllowance: number | null;
   /** The balance now, after the total, and how short it is. */
   balance: { now: number; after: number | null; short: number | null } | null;
+  /** "93 cr for the 3 shots": what the renders come to, as information (not what Approve spends). */
+  totalLine: string | null;
   /** "Thinking · 14 cr · billed when Atomik planned it" */
   thinking: string | null;
   /** How the renders ask, said plainly. */
@@ -226,9 +228,10 @@ export function planModel(input: PlanInput): PlanModel | null {
   const offBlock = input.readOnly ?? (!input.enabled ? SWITCHED_OFF : !run.mine ? NOT_MINE : null);
   let primary: PlanPrimary | null = null;
   if (phase === "proposal" && run.proposal) {
-    const words = total ? priceWords(total) : null;
+    /* Approving builds (free) and, when the limit is short, sets it; each render still asks at its own price (decision 27). So the button
+       carries no figure of the renders: they are on the lines above it, as information. */
     primary = {
-      kind: "approve", label: words ? `Approve · ${words}` : "Approve", price: total, raiseTo, fingerprint: run.proposal.fingerprint,
+      kind: "approve", label: total?.kind === "free" ? "Approve · free" : "Approve", price: null, raiseTo, fingerprint: run.proposal.fingerprint,
       blocked: offBlock ?? (balance?.short != null ? SHORT_LINE : null),
     };
   } else if (phase === "needs-you") {
@@ -252,6 +255,7 @@ export function planModel(input: PlanInput): PlanModel | null {
 
   return {
     runId: run.id, phase, title: planTitle(steps.length, phase) || run.proposal?.title || "", steps, total, fixAllowance, balance,
+    totalLine: total && total.kind !== "free" && takesCounted.length ? `${priceWords(total)} for ${takesCounted.length === 1 ? "the shot" : `the ${takesCounted.length} shots`}` : null,
     thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run) : null, ruleLine: ruleLine(input.rule),
     adminLine: input.rule?.rule === "cap" ? `Needs an admin · over ${creditsText(input.rule.cap)} on a shot` : "Needs an admin", primary,
     note: phase === "needs-you" || phase === "paused" || phase === "ended" ? run.reason : null,

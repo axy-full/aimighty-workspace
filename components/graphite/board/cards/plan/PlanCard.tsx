@@ -23,7 +23,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const model = plan.model;
   if (!model) return null;
   const proposal = model.phase === "proposal";
-  const lines = [fixLine(model), proposal ? balanceLine(model) : null].filter(Boolean).join(" · ");
+  const lines = [proposal ? model.totalLine : null, fixLine(model), proposal ? balanceLine(model) : null].filter(Boolean).join(" · ");
   const short = model.balance?.short != null && proposal;
   return (
     <article className="gx-plan" data-phase={model.phase} data-testid="board-plan" aria-label={model.title}>
@@ -71,7 +71,7 @@ function PrimaryButton({ primary, busy, onPress }: { primary: PlanPrimary; busy:
   );
 }
 
-function Steps({ model }: { model: PlanModel }) {
+export function Steps({ model }: { model: PlanModel }) {
   return (
     <div className="gx-plan-steps" data-testid="board-plan-steps">
       {model.thinking ? <div className="gx-plan-step gx-plan-step--quiet"><span>{model.thinking}</span></div> : null}

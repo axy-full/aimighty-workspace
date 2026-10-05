@@ -75,7 +75,7 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
     const group: GroupData = { title: NEXT_GROUP_TITLE, columns: 3 };
     cards.push({ id: STUDIO_GROUP.next, kind: "group", region: "next", order: -1, state: "empty", data: group });
     nextChoices(project.aspect).forEach((choice, i) => cards.push({
-      id: `next:${choice.id}`, kind: "next", region: "next", group: STUDIO_GROUP.next, order: i, state: "empty", data: choice,
+      id: `next:${choice.id}`, kind: "next", region: "next", group: STUDIO_GROUP.next, order: i, state: "empty", summary: `${choice.name} · ${choice.line}`, data: choice,
     }));
   }
   /* The plan sits in the Storyboard group's open slot (README § 3.1 e); once the Shots cards have taken the group's place it stands alone beside them. */

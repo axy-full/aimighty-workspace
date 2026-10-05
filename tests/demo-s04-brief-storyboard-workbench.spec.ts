@@ -85,6 +85,9 @@ test("the brief is a document card and the storyboard a frame per shot", async (
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   expect(paid).toEqual([]);
   mkdirSync(SHOTS, { recursive: true });
+  /* Frame d: the brief beside its storyboard. */
+  await page.getByTestId("board-rail").getByText("Brief", { exact: true }).click();
+  await page.waitForTimeout(600);
   await page.screenshot({ path: `${SHOTS}/brief-storyboard-${info.project.name.replace("workbench-", "")}.png` });
 });
 
@@ -94,8 +97,11 @@ test("the brief is edited in place and saves itself", async ({ page }) => {
   await page.goto(`/suites?project=${project.id}&view=board`);
   const text = page.locator('[data-card-id="doc:brief"]').getByTestId("board-brief-text");
   await expect(text).toBeVisible();
+  /* The board opens on the section that needs you; a click on Brief in the rail glides to it. */
+  await page.getByTestId("board-rail").getByText("Brief", { exact: true }).click();
+  await page.waitForTimeout(600);
   await text.click();
-  await text.press("End");
+  await text.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
   await text.pressSequentially(" The sun clears the ridge.");
   await expect.poll(async () => {
     const read = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
@@ -104,4 +110,61 @@ test("the brief is edited in place and saves itself", async ({ page }) => {
   await page.reload();
   await expect(page.locator('[data-card-id="doc:brief"]').getByTestId("board-brief-text")).toHaveValue("A runner meets the dawn on an empty hillside. The sun clears the ridge.");
   expect(paid).toEqual([]);
+});
+
+test("the List view is the shot list: its rows are edited in place, a shot is added, and each edit saves itself", async ({ page }, info) => {
+  const { project, scope, paid } = await seed(page);
+  await page.goto(`/suites?project=${project.id}&view=board&list=1`);
+  const list = page.getByTestId("board-shotlist");
+  if (!desktop(page)) {
+    /* Phone widths: the Record is the phone's (stream 10); here only the floors that hold at every width. */
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+    expect(paid).toEqual([]);
+    return;
+  }
+  await expect(list).toBeVisible();
+  const rows = list.getByTestId("board-shotlist-row");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("0:00");
+  await expect(rows.nth(1).getByLabel("Shot 2 action")).toHaveValue("A runner crests the hill.");
+  await expect(rows.nth(2).getByLabel("Shot 3 size")).toHaveValue("Close-up");
+  /* State, until the Shots cards say more: planned (no frame yet). */
+  await expect(rows.nth(0).getByTestId("board-shotlist-state")).toHaveText("Planned");
+
+  const action = rows.nth(1).getByLabel("Shot 2 action");
+  await action.click();
+  await action.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
+  await action.pressSequentially(" The valley opens below.");
+  const beatsOf = async () => {
+    const read = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
+    const saved = ((await read.json()) as { project: Project | null }).project;
+    return (saved?.production?.beats?.scenes ?? []).flatMap((s) => s.shots);
+  };
+  await expect.poll(async () => (await beatsOf())[1]?.description, { timeout: 15_000 }).toBe("A runner crests the hill. The valley opens below.");
+
+  const seconds = rows.nth(0).getByLabel("Shot 1 length in seconds");
+  await seconds.fill("5");
+  await seconds.press("Enter");
+  await expect.poll(async () => (await beatsOf())[0]?.duration, { timeout: 15_000 }).toBe(5);
+  await expect(rows.nth(1)).toContainText("0:05");
+
+  await list.getByTestId("board-shotlist-add").click();
+  await expect(rows).toHaveCount(4);
+  await expect.poll(async () => (await beatsOf()).length, { timeout: 15_000 }).toBe(4);
+
+  /* Taking a shot out is undone with ⌘Z (the shell's stack); the row comes back where it was. */
+  await rows.nth(3).getByRole("button", { name: /Take shot 4 out/ }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(page.getByTestId("toast")).toContainText("Shot 4 taken out");
+  await page.locator("body").click({ position: { x: 700, y: 600 } });
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(rows).toHaveCount(4);
+
+  const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-testid="board-shotlist"] *')]
+    .filter((el) => el.childElementCount === 0 && (el.textContent ?? "").trim() && parseFloat(getComputedStyle(el).fontSize) < 12).map((el) => el.textContent));
+  expect(small).toEqual([]);
+  expect(await overflow(page)).toBeLessThanOrEqual(0);
+  expect(paid).toEqual([]);
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/shot-list-${info.project.name.replace("workbench-", "")}.png` });
 });
