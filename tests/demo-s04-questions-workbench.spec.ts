@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type Project } from "../lib/workbench/studio";
 import type { BeatSheet } from "../lib/production/beats";
 
@@ -26,7 +26,7 @@ const beats = (): BeatSheet => ({
 });
 
 async function seed(page: Page) {
-  const workspaceId = (await signInLocally(page.request, "Questions Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Questions Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const headers = { "X-Workbench-Scope": scope };
