@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,6 +17,8 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
+test.beforeAll(async () => { await alignLedgerUnit(); });
 
 const SEEDANCE = "dreamina-seedance-2-0-260128";
 /* One run of the unit project shares a platform database across files: every id here is this run's own. */
