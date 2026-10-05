@@ -1,6 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { signInWithNewInterface } from "./helpers/newInterface";
+import { setNewInterface, signInWithNewInterface } from "./helpers/newInterface";
+import { joinLocallyAsMember } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
@@ -15,8 +16,9 @@ import { smallTargets, smallText } from "./phoneFloors";
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-settings", productionProjectId: "prod-settings", shotMappings: {} });
 
-async function open(page: Page, path: string, opts: { on?: boolean } = {}) {
-  if (opts.on !== false) await signInWithNewInterface(page.request); else await signInLocally(page.request);
+async function open(page: Page, path: string, opts: { on?: boolean; member?: APIRequestContext } = {}) {
+  if (opts.member) { const { workspace } = await joinLocallyAsMember(opts.member, page.request); await setNewInterface(workspace.id, true); }
+  else if (opts.on !== false) await signInWithNewInterface(page.request); else await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
@@ -46,7 +48,7 @@ async function open(page: Page, path: string, opts: { on?: boolean } = {}) {
   await page.route(/\/api\/statements$/, (route) => route.fulfill({ json: { months: [{ month: "2026-09", takes: 14 }] } }));
   await page.route(/\/api\/workspaces\/topups(\?.*)?$/, async (route) => {
     if (route.request().method() === "POST") { writes.push({ url: "/api/workspaces/topups", method: "POST", body: route.request().postDataJSON() }); return route.fulfill({ status: 201, json: { request: { id: "t1", label: "Starter", credits: 500, bonus: 0, usd: 50, status: "requested" }, checkout: { kind: "queued" } } }); }
-    return route.fulfill({ json: { applies: true, provider: "manual", canRequest: true, openLimit: 3, creditUsd: 0.1, credits: null,
+    return route.fulfill({ json: { applies: true, provider: "manual", canRequest: !opts.member, openLimit: 3, creditUsd: 0.1, credits: null,
       packs: [{ id: "starter", label: "Starter", credits: 500, bonus: 0, total: 500, usd: 50, perCredit: 0.1 }, { id: "team", label: "Team", credits: 2000, bonus: 200, total: 2200, usd: 200, perCredit: 0.091 }],
       requests: [], history: [{ id: "g1", credits: 250, note: "Welcome credits", createdAt: Date.UTC(2026, 9, 1) }] } });
   });
@@ -62,6 +64,34 @@ async function open(page: Page, path: string, opts: { on?: boolean } = {}) {
     sessions: [{ id: "s1", current: true, label: "Chrome on macOS", createdAt: Date.now() - 86_400_000, expiresAt: Date.now() + 86_400_000 }, { id: "s2", current: false, label: "Safari on iPhone", createdAt: Date.now() - 3 * 86_400_000, expiresAt: Date.now() + 86_400_000 }] } }));
   await page.route("**/api/workspaces/security", (route) => route.fulfill({ json: { requiresMfa: false, ownerEnrolled: true, members: 2, unenrolled: 1 } }));
   await page.route(/\/api\/workspaces\/audit(\?.*)?$/, (route) => route.fulfill({ json: { events: [{ id: "e1", workspaceId: "w", actorId: "u1", action: "member.updated", targetType: "member", targetId: "u2", details: { role: "admin" }, createdAt: Date.now() }], nextCursor: null, actors: {} } }));
+  /* GET and PATCH /api/settings: the workspace's own rules, kept as the route keeps them. */
+  const stored: Record<string, string> = { approvalRule: "cap", shotCapCredits: "50", capWarnPct: "80", atCap: "producer" };
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      const body = route.request().postDataJSON() as Record<string, string>;
+      writes.push({ url: "/api/settings", method: "PATCH", body });
+      Object.assign(stored, body);
+      return route.fulfill({ json: { settings: stored, changed: Object.keys(body) } });
+    }
+    return route.fulfill({ json: { settings: stored, defaults: { approvalRule: "anyone", shotCapCredits: "50", capWarnPct: "80", atCap: "producer" }, models: {}, platformModels: {} } });
+  });
+  /* GET /api/projects (a workspace billed in credits) and PATCH /api/projects/:id. */
+  const caps: Record<string, number | null> = { pa: 200, pb: null };
+  const unlocked: Record<string, boolean> = {};
+  await page.route(/\/api\/projects(\/[a-z]+)?$/, async (route) => {
+    const at = new URL(route.request().url()).pathname.split("/")[3];
+    if (route.request().method() === "PATCH" && at) {
+      const body = route.request().postDataJSON() as { capCredits?: number | null; capUnlocked?: boolean };
+      writes.push({ url: `/api/projects/${at}`, method: "PATCH", body });
+      if ("capCredits" in body) caps[at] = body.capCredits ?? null;
+      if ("capUnlocked" in body) unlocked[at] = Boolean(body.capUnlocked);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { unit: "cr", projects: [
+      { id: "pa", name: "Coastal light study", credits: 200, capCredits: caps.pa, capUnlocked: Boolean(unlocked.pa) },
+      { id: "pb", name: "Studio reel", credits: 31, capCredits: caps.pb, capUnlocked: false },
+    ] } });
+  });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
@@ -179,9 +209,87 @@ test("old links land on their section; the design's ws= spelling and open= work;
   expect(param(page, "tab")).toBe("team");
   await page.goto("/suites?view=workspace&tab=security");
   await expect(page.getByTestId("settings-two-step")).toBeVisible();
-  /* Spending rules is not drawn in this build: the section opens Atomik's Budget, as the avatar menu did. */
-  await page.getByTestId("settings-section-rules").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Budget");
+  /* Atomik's Budget page is Spending rules now. */
+  await page.goto("/suites?suite=atomik&page=budget");
+  await expect(page.getByTestId("settings-title")).toHaveText("Spending rules");
+  expect(param(page, "tab")).toBe("rules");
+  /* Connections is not drawn in this build: the section opens Atomik's Tools & connections, as the avatar menu did. */
+  await page.getByTestId("settings-section-connections").click();
+  await expect(page.getByTestId("page-title")).toHaveText("Tools & connections");
+  expect(errors).toEqual([]);
+});
+
+test("Spending rules: the rule, the platform line and Ask, read as the code has them; an admin changes them with Undo; an admin's cap per production", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, writes } = await open(page, "/suites?view=workspace&tab=rules");
+  await expect(page.getByTestId("settings-title")).toHaveText("Spending rules");
+  await expect(page.getByTestId("settings-approve")).toContainText("people only · Atomik never approves");
+  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
+  await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
+  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs a person’s approval, even under Auto.");
+  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 80% of a production’s cap · at the cap an admin unlocks it");
+  /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
+  await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");
+  await expect(page.getByTestId("settings-auto")).toContainText("Auto is picked per Board run, for drafts at or under 200 cr.");
+  await expect(page.getByTestId("settings-mode").locator(".gs-row-v")).toHaveText("Ask");
+  await expect(page.getByTestId("settings-auto").getByRole("button")).toHaveCount(0);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/pause asks|Set Auto|may approve up to/);
+  await expect(page.getByTestId("settings-view")).toContainText("Spending rules belong to people: Atomik prepares and explains, you decide.");
+  await floors(page, "Spending rules");
+  await shot(page, "rules");
+
+  /* Change the rule: it saves itself, a toast offers Undo, and Undo writes the old values back. */
+  await page.getByTestId("settings-rule-change").click();
+  await page.getByTestId("settings-rule-producer").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/settings")?.body).toEqual({ approvalRule: "producer" });
+  await expect(page.getByTestId("settings-rule")).toContainText("A producer signs off on every take.");
+  await shot(page, "rules-editing");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ approvalRule: "cap", shotCapCredits: "50" });
+  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot");
+  await page.getByTestId("settings-shot-cap").fill("40");
+  await page.getByTestId("settings-shot-cap-set").click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ shotCapCredits: "40" });
+  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 40 cr a shot");
+
+  await page.getByTestId("settings-budget-change").click();
+  await page.getByTestId("settings-warn-90").click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "90" });
+  await page.getByTestId("settings-atcap-stop").click();
+  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 90% of a production’s cap · rendering stops at the cap");
+  await floors(page, "Spending rules, editing");
+
+  /* Each production's cap, on the route Atomik › Budget used: a number of credits, and Unlock at the cap. */
+  await page.getByTestId("settings-fold-productions-toggle").click();
+  await expect(page.getByTestId("settings-production")).toHaveCount(2);
+  await expect(page.getByTestId("settings-production").first()).toContainText("200 of 200 cr");
+  await page.getByTestId("settings-production-unlock").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true });
+  await page.getByTestId("settings-production").nth(1).getByTestId("settings-production-change").click();
+  await page.getByTestId("settings-production-cap").fill("120");
+  await page.getByTestId("settings-production-save").click();
+  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pb")?.body).toEqual({ capCredits: 120 });
+  await expect(page.getByTestId("settings-production").nth(1)).toContainText("31 of 120 cr");
+  await floors(page, "Spending rules, productions");
+  await page.getByTestId("settings-fold-productions").scrollIntoViewIfNeeded();
+  await shot(page, "rules-productions");
+  expect(errors).toEqual([]);
+});
+
+test("a member reads Team, Plan & credits and Spending rules, and changes nothing", async ({ page, request }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { errors, writes } = await open(page, "/suites?view=workspace&tab=rules", { member: request });
+  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot");
+  await expect(page.getByTestId("settings-rule-change")).toHaveCount(0);
+  await expect(page.getByTestId("settings-budget-change")).toHaveCount(0);
+  await expect(page.getByTestId("settings-rules-readonly")).toContainText("Only an admin changes these.");
+  await page.getByTestId("settings-section-team").click();
+  await expect(page.getByTestId("settings-people")).toContainText("The team is the owner’s and admins’ to manage.");
+  await expect(page.getByTestId("settings-invite")).toHaveCount(0);
+  await page.getByTestId("settings-section-credits").click();
+  await expect(page.getByTestId("settings-top-up")).toHaveCount(0);
+  await expect(page.getByTestId("settings-top-up-ask")).toContainText("Ask an admin");
+  expect(writes).toEqual([]);
   expect(errors).toEqual([]);
 });
 

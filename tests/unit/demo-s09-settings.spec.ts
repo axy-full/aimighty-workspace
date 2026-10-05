@@ -9,9 +9,10 @@ import {
   creditPriceLine, creditsWithUsd, inviteLine, memberLine, monthKey, monthLine, monthTotalsOf, peopleMeta, planView, roleChangeable, roleOf,
   topUpLabel, topUpPack,
 } from "../../components/graphite/settings/model";
-import { spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
+import { capInput, productionLine, ruleValue, spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
 import { RIG_AGENT_JOB_CEILING_CREDITS } from "../../lib/workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "../../lib/approvalRule";
+import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { creditsText } from "../../lib/shell/price-words";
 import { DEFAULT_PLANS } from "../../lib/plans";
 import { packs } from "../../lib/packs";
@@ -33,7 +34,7 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
       if (isBuiltSection(id)) expect(target).toEqual({ kind: "section", section: id });
       else expect(target).toEqual(SETTINGS_INTERIM[id]);
     }
-    expect(SETTINGS_BUILT).toEqual(["team", "credits"]);
+    expect(SETTINGS_BUILT).toEqual(["team", "credits", "rules"]);
     expect(sectionTarget("team", "security")).toEqual({ kind: "section", section: "team", open: "security" });
   });
 
@@ -56,7 +57,8 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
     expect(on("?view=workspace&tab=usage")).toBe("?view=workspace&tab=credits&open=usage");
     expect(on("?view=workspace&tab=credits")).toBeNull();
     expect(on("?view=workspace&tab=team")).toBeNull();
-    expect(on("?view=workspace&tab=rules")).toBe("?suite=atomik&page=budget");
+    expect(on("?view=workspace&tab=rules")).toBeNull();
+    expect(on("?suite=atomik&page=budget")).toBe("?view=workspace&tab=rules");
     expect(on("?view=workspace&tab=connections")).toBe("?suite=atomik&page=skills");
     expect(on("?view=workspace&tab=advanced")).toBe("?view=workspace&tab=engines");
     expect(on("?view=workspace&tab=advanced&open=models")).toBe("?suite=atomik&page=models");
@@ -72,7 +74,7 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
     expect(off("?view=workspace&tab=credits")).toBeNull();
     expect(off("?view=workspace&tab=credits&open=usage")).toBe("?view=workspace&tab=usage");
     expect(off("?view=workspace&tab=rules")).toBe("?suite=atomik&page=budget");
-    expect(SETTINGS_SCREEN).toMatchObject({ id: "settings", landed: false, params: ["open"] });
+    expect(SETTINGS_SCREEN).toMatchObject({ id: "settings", landed: true, params: ["open"] });
   });
 });
 
@@ -147,9 +149,36 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
   });
 });
 
+test.describe("changing the rules (9.2)", () => {
+  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, platformLine: 200, mode: "ask", perJobLine: 200, capWarnPct: 80, atCap: "producer", canChange: true };
+  test("the Rule row's value is the cap in credits, or the rule's own word", () => {
+    expect(ruleValue(base, creditsText)).toBe("50 cr");
+    expect(ruleValue({ ...base, rule: "producer" }, creditsText)).toBe("producer");
+    expect(ruleValue({ ...base, rule: "anyone" }, creditsText)).toBe("anyone");
+  });
+  test("a cap is a whole number of credits; a production's may also be none", () => {
+    expect(capInput("40")).toBe(40);
+    expect(capInput(" 40 ")).toBe(40);
+    for (const bad of ["", "0", "-3", "4.5", "1e3", "abc", "123456789"]) expect(capInput(bad), bad).toBeNull();
+    expect(capInput("0", true)).toBe(0);
+  });
+  test("the settings route takes exactly the values the rules editor offers", () => {
+    for (const [id] of APPROVAL_OPTIONS) expect(settingProblem("approvalRule", id)).toBeNull();
+    for (const [id] of AT_CAP_OPTIONS) expect(settingProblem("atCap", id)).toBeNull();
+    for (const [id] of CAP_WARN_OPTIONS) expect(settingProblem("capWarnPct", id)).toBeNull();
+    expect(settingProblem("approvalRule", "always")).not.toBeNull();
+  });
+  test("each production reads as spent against its cap, in credits", () => {
+    expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left" });
+    expect(productionLine({ id: "p", name: "A", credits: 200, capCredits: 200 }, creditsText)).toEqual({ value: "200 of 200 cr", sub: "at the cap" });
+    expect(productionLine({ id: "p", name: "A", credits: 210, capCredits: 200, capUnlocked: true }, creditsText).sub).toBe("unlocked past the cap");
+    expect(productionLine({ id: "p", name: "A", credits: 12, capCredits: null }, creditsText).value).toBe("12 cr");
+  });
+});
+
 test.describe("public-repo and floor checks on Settings' own files", () => {
   const dir = join(__dirname, "../../components/graphite/settings");
-  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "index.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts"];
+  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "index.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts", "rules/RulesSection.tsx"];
   const read = (f: string) => readFileSync(join(dir, f), "utf8");
   test("no handoff placeholder names, no vendor cost words, no hard-coded credit rate", () => {
     for (const f of files) {

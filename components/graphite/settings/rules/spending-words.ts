@@ -53,3 +53,26 @@ export function spendingLines(r: SpendingRules, cr: (n: number) => string): Spen
     budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Warn at ${r.capWarnPct}% of a production’s cap · ${AT_CAP[r.atCap]}`,
   };
 }
+
+/** The value the Rule row shows: the cap in credits, or the rule's own word. */
+export function ruleValue(r: Pick<SpendingRules, "rule" | "shotCap">, cr: (n: number) => string): string {
+  return r.rule === "cap" ? (r.shotCap === null ? "cap" : cr(r.shotCap)) : r.rule ?? "—";
+}
+
+/** A cap as a person types it: a whole number of credits, 1 or more (0 too when `zero`), else null. */
+export function capInput(raw: string, zero = false): number | null {
+  const text = raw.trim();
+  if (!/^\d{1,7}$/.test(text)) return null;
+  const n = Number(text);
+  return n >= (zero ? 0 : 1) ? n : null;
+}
+
+/** GET /api/projects, as a workspace billed in credits is answered (app/api/projects/route.ts). */
+export type ProductionBudget = { id: string; name: string; credits?: number; capCredits: number | null; capUnlocked?: boolean };
+/** "184 of 200 cr" and its sub-line: what the production has spent against its cap, and where it stands. */
+export function productionLine(p: ProductionBudget, cr: (n: number) => string): { value: string; sub: string } {
+  const spent = p.credits ?? 0;
+  if (p.capCredits == null) return { value: cr(spent), sub: "No cap · new work follows the workspace rules" };
+  const state = p.capUnlocked ? "unlocked past the cap" : spent >= p.capCredits ? "at the cap" : `${cr(Math.max(0, p.capCredits - spent))} left`;
+  return { value: `${spent.toLocaleString("en-US")} of ${cr(p.capCredits)}`, sub: state };
+}

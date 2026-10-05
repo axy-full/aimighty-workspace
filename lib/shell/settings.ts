@@ -23,7 +23,7 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
 ]);
 
 /** The sections this build draws. The rest still open the page that holds them today (SETTINGS_INTERIM). */
-export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits"]);
+export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules"]);
 
 export const isSettingsSection = (value: unknown): value is SettingsSectionId => SETTINGS_SECTIONS.some((s) => s.id === value);
 export const isBuiltSection = (value: unknown): value is SettingsSectionId => isSettingsSection(value) && SETTINGS_BUILT.includes(value);

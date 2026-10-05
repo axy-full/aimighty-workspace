@@ -36,6 +36,7 @@
 .gs-usd { color: var(--gx-accent-text); }
 .gs-row-acts { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .gs-choice { display: inline-flex; gap: 6px; }
+.gs-choice-wrap { flex-wrap: wrap; }
 
 .gs-btn { height: 28px; padding: 0 12px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer; transition: background var(--gx-t), border-color var(--gx-t); }
 .gs-btn:hover { background: var(--gx-input-hover, rgba(255, 255, 255, 0.05)); }
@@ -53,6 +54,9 @@
 .gs-label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gs-field { height: 32px; padding: 0 10px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-input-border); background: var(--gx-input); color: var(--gx-text); font-size: 13px; width: 100%; min-width: 0; }
 .gs-field:focus { border-color: var(--gx-accent); }
+.gs-edit { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-capform { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 8px 0 0; }
+.gs-capform .gs-field { width: 140px; }
 .gs-fresh { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
 .gs-code { font-family: var(--gx-mono); font-size: 13px; overflow-wrap: anywhere; min-width: 0; flex: 1 1 260px; }
 

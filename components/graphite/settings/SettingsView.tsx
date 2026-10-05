@@ -5,6 +5,7 @@ import { SETTINGS_SECTIONS, isBuiltSection, isSettingsFold, sectionLabel, type S
 import { WorkspaceView } from "../WorkspaceView";
 import { TeamSection } from "./team/TeamSection";
 import { CreditsSection } from "./credits/CreditsSection";
+import { RulesSection } from "./rules/RulesSection";
 import { useGoSettings } from "./navigate";
 import "./settings.css";
 
@@ -20,6 +21,7 @@ import "./settings.css";
  */
 const FOOT: Partial<Record<SettingsSectionId, string>> = {
   credits: "Hover a figure for dollars.",
+  rules: "Spending rules belong to people: Atomik prepares and explains, you decide.",
 };
 
 export function SettingsView({ account, section, open }: { account: WorkspaceAccount | null; section: string; open: string | null }) {
@@ -55,6 +57,7 @@ export function SettingsView({ account, section, open }: { account: WorkspaceAcc
         </div>
         {section === "team" ? <TeamSection key="team" open={fold} /> : null}
         {section === "credits" ? <CreditsSection key="credits" account={account} open={fold} /> : null}
+        {section === "rules" ? <RulesSection key="rules" /> : null}
         {FOOT[section] ? <p className="gs-foot">{FOOT[section]}</p> : null}
       </div>
     </div>
