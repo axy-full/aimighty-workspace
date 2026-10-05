@@ -57,7 +57,7 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Environment$/, /^05\s*Cast$/, /^06\s*Astra$/, /^07\s*Rig$/, /^08\s*Takes$/, /^09\s*Edit & Sound$/, /^10\s*Deliver$/]);
+  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Environment$/, /^05\s*Cast$/, /^06\s*3D blocking$/, /^07\s*Board$/, /^08\s*Takes$/, /^09\s*Edit & Sound$/, /^10\s*Deliver$/]);
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
   await expect(strip.getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
@@ -94,8 +94,8 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   const suites = page.getByRole("tablist", { name: "Suites" });
   const strip = page.getByRole("navigation", { name: "Pages" });
 
-  await strip.getByRole("button", { name: /Rig/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await strip.getByRole("button", { name: /Board/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   expect([param(page, "page"), param(page, "sp")]).toEqual(["rig", "rig"]);
 
   await tapSuiteTab(page, "Atomik");
@@ -106,12 +106,12 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
 
   /* The project comes back on Rig, its Studio page, not on Brief. */
   await tapSuiteTab(page, "Coastal light study");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 
   /* Make opens as a panel over the page it is on (README § 3.2): Rig stays, its address gains make=, and the header lights Make. */
   await tapSuiteTab(page, "Make");
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   expect([param(page, "view"), param(page, "make")]).toEqual([null, "video"]);
   await page.getByTestId("make-close").click();
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
@@ -125,17 +125,17 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   await expect(page.getByTestId("workspace-balance")).toBeVisible();
 
   await page.goBack();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await page.goBack();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
   /* A pasted link opens the same place: History is still Viral's page, the project's, so the project is lit; an old
      Object Swap link is Make's quick tool over Studio. */
   await page.goto("/suites?suite=subatomik&page=history&sp=history");
   await expect(page.getByTestId("page-title")).toHaveText("History");
-  await expect(page.getByTestId("suite-mark")).toHaveText("VIRAL");
+  await expect(page.getByTestId("suite-mark")).toHaveText("SOCIAL");
   await openSuitesMenu(page);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
@@ -180,9 +180,9 @@ test("header B: Home is the Studio overview, Atomik its suite, ⌥M opens Make; 
   expect(param(page, "make")).toBeNull();
 
   /* Business, Viral and Crew left the header; ⌘K still reaches each of them. */
-  await goViaSearch(page, "business", /Moleculr Business Suite/);
+  await goViaSearch(page, "ads", /Ads/);
   await expect(page.getByTestId("page-title")).toHaveText("Image ads");
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await expect(page.getByTestId("suite-mark")).toHaveText("ADS");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
   expect(errors).toEqual([]);
 });
@@ -244,7 +244,7 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   expect(errors).toEqual([]);
 });
 
-test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
+test("⌘K finds a board region, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page);
   await openSuitesMenu(page);
@@ -252,7 +252,7 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  await expect(dialog.getByRole("option").first()).toContainText("10 Deliver");
+  await expect(dialog.getByRole("option").first()).toContainText("Deliver");
   await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);
@@ -338,7 +338,7 @@ test("an old Gen link lands on the page it names with Make open on its type, ser
   const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1");
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   expect([param(page, "view"), param(page, "mode"), param(page, "sheet"), param(page, "make"), param(page, "page")]).toEqual([null, null, null, "image", "rig"]);
 
   /* Make's type and tab are its address: a switch rewrites it, Recent included. */

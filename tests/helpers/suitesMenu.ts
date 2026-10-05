@@ -68,3 +68,14 @@ export async function goViaSearch(page: Page, query: string, option: string | Re
     await expect(dialog).toHaveCount(0, { timeout: 5_000 });
   }).toPass({ timeout: 60_000 });
 }
+
+/**
+ * Crew review is not a ⌘K row (the design's search lists Home, the board's regions, Make, Atomik and Settings); until it is a
+ * panel on the board, its room opens by its address, on the project already open.
+ */
+export async function goCrewReview(page: Page) {
+  const url = new URL(page.url());
+  url.searchParams.set("view", "crew");
+  url.searchParams.set("cp", "room");
+  await page.goto(url.toString());
+}

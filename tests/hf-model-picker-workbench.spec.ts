@@ -6,6 +6,7 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
 import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
+import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -112,7 +113,7 @@ test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 rea
   expect(count).toBeGreaterThanOrEqual(5);
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
-    await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^\d+(p|K)$/);
+    await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^up to \d+(p|K)$/);
     if (await row.getAttribute("data-model") === CINEMA_STUDIO_MODEL_ID) continue;
     await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
     await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^\d+ cr$/);
@@ -123,9 +124,14 @@ test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 rea
   }
   /* Cinema Studio 4.0 stays in the sheet and reads "quoted": no figure on its row (its price is Generate's), and no vendor's name. */
   const cinema = sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ });
-  await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "none");
-  await expect(cinema.getByTestId("gen-sheet-price")).toHaveText("quoted");
-  await expect(cinema).not.toContainText(/Higgsfield/i);
+  if (MAKE_SHOWS_CINEMA) {
+    await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "none");
+    await expect(cinema.getByTestId("gen-sheet-price")).toHaveText("quoted");
+    await expect(cinema).not.toContainText(/Higgsfield/i);
+  } else {
+    /* Not offered in Make until #523's hold is merged (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */
+    await expect(cinema).toHaveCount(0);
+  }
   /* The default engine is the selected row; its price is what the button asks for, once there is a prompt. */
   const selected = sheet.locator('[role="option"][aria-selected="true"]');
   await expect(selected).toHaveCount(1);

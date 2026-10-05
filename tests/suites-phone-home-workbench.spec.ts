@@ -57,7 +57,7 @@ test("phone: Home › the Studio tile opens the stage grid; a card opens its pag
   await page.getByTestId("phone-back").click();
   await expect(page.getByTestId("studio-home")).toBeVisible();
   await page.getByTestId("home-generate-next").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.getByTestId("phone-back").click();
   await expect(page.getByTestId("studio-home")).toBeVisible();
   await page.getByTestId("phone-back").click();

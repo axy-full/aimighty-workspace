@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
-import { closeSuitesMenu, goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goCrewReview, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Crew in the browser (design/particl-graphite/README.md), against the
@@ -27,13 +27,13 @@ async function open(page: Page) {
   return { errors, project, headers };
 }
 
-test("Crew opens from ⌘K under the project; a round streams in at the price on the button and leaves three solutions", async ({ page }, info) => {
+test("Crew review opens by its address, under the project; a round streams in at the price on the button and leaves three solutions", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers } = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
-  /* Crew left the header (option B): ⌘K reaches it, and the project's segment stays lit over it. */
-  await goViaSearch(page, "crew room", /Crew room/);
-  await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
+  /* Crew left the header (option B) and ⌘K: its address opens it, and the project's segment stays lit over it. */
+  await goCrewReview(page);
+  await expect(page.getByTestId("suite-mark")).toHaveText("CREW REVIEW");
   await openSuitesMenu(page);
   await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Dune Studies", "Make", "Atomik"]);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
@@ -90,7 +90,7 @@ test("Crew opens from ⌘K under the project; a round streams in at the price on
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");
 
   /* Coming back reopens the same room; Sessions lists it. */
-  await goViaSearch(page, "crew room", /Crew room/);
+  await goCrewReview(page);
   await expect(messages).toHaveCount(10);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Sessions/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Sessions");
