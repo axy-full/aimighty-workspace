@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Studio · Camera & shot builder — from the pipeline handoff.
+ * Studio · Camera & shot builder.
  *
  * Two ways into the same twelve choices. THE CAMERA is the bank: every move
  * and technique as a tile, with how many takes have used it, because the

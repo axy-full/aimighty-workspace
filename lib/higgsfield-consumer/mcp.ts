@@ -2171,7 +2171,7 @@ export async function readConnectedPlannerReads(accessToken: string, reads: Plan
   }
 }
 
-/* ── Soul ID build (FINAL_SPEC §3 › Soul ID) ─────────────────────────── */
+/* ── Soul ID build ─────────────────────────────────────────────────────── */
 const CHARACTERS_TOOL = "show_characters";
 export type ConsumerCharacterCreate = { name: string; type: "soul_2" | "soul_cinematic" };
 export type ConsumerCharacterCreateResult =

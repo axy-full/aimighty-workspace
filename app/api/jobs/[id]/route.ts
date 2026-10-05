@@ -85,7 +85,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     });
     if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   }
-  /* Trash and restore (FINAL_SPEC §1 step 1: delete is soft). A trashed
+  /* Trash and restore (delete is soft). A trashed
      render is hidden — `deleted=1` — and keeps its bytes for good: nothing a
      team makes is ever erased (owner, 2026-09-24), so `{ trashed: false }`
      always brings it back whole. Only a render whose bytes were removed by
