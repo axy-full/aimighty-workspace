@@ -4,7 +4,7 @@ import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
 import { openAtomikChat } from "@/lib/shell/use-skills";
 import type { WorkspaceTabId } from "@/lib/shell/ia";
-import type { SettingsSection } from "@/lib/shell/settings";
+import type { SettingsSectionId as SettingsSection } from "@/lib/shell/settings";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { countLine, UNBILLED, type DecidedItem, type QueueItem } from "@/lib/control-room/queue";
 import { useSpendingRules, type SpendingRules } from "../settings/rules/spending";

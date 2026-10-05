@@ -24,7 +24,7 @@ export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const
  * The screens this build draws. The rest arrive in their own PRs (plan approval, Change with words and the
  * take states, the Record, Make and the Atomik sheet); until then their addresses open Home.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "record"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 
@@ -48,6 +48,11 @@ export type PhoneRoute = {
   own: boolean;
 };
 
+/** The Studio's old stages: each is a region of the board (lib/board/routes.ts), and on a phone the board is its project's Record. */
+const BOARD_PAGES: ReadonlySet<string> = new Set(["rig", "brief", "boards", "cast", "takes", "astra", "edit", "deliver"]);
+const isOverview = (q: URLSearchParams) => q.get("suite") === "particl" && q.get("page") === "brief" && (q.get("sp") === "stages" || q.get("sp") === "home");
+const isBoard = (q: URLSearchParams) => q.get("view") === "board" || (q.get("suite") === "particl" && BOARD_PAGES.has(q.get("page") ?? "") && !isOverview(q));
+
 /** Pages a phone answers with its own screens: Home, the board (its Record) and the control room's Approvals (Home). */
 function ownAddress(q: URLSearchParams): boolean {
   if (q.has("screen") || q.get("make") || q.get("atomik")) return true;
@@ -57,7 +62,7 @@ function ownAddress(q: URLSearchParams): boolean {
   const suite = q.get("suite"), page = q.get("page");
   if (!suite && !page) return true;
   /* Today's Studio overview and the old phone Home are what Home replaces (components/graphite/home/routes.ts rows). */
-  if (suite === "particl" && page === "brief" && (q.get("sp") === "stages" || q.get("sp") === "home")) return true;
+  if (isOverview(q) || isBoard(q)) return true;
   return suite === "atomik" && (page === "approvals" || q.get("sp") === "approvals");
 }
 
@@ -75,7 +80,7 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
   const asked: PhoneScreen = isPhoneScreen(named) ? named
     : q.get("make") ? "make"
     : q.get("atomik") ? "atomik"
-    : q.get("view") === "board" ? "record"
+    : isBoard(q) ? "record"
     : "home";
   const take = q.get("take");
   return {
@@ -93,6 +98,7 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
  * The search with the phone's own params changed and every other param kept. `null` removes a param;
  * Home drops `screen` (it is the default), and leaving a screen drops what belonged to it.
  */
+const PLACE_PARAMS = ["view", "suite", "page", "sp", "kind", "region", "list", "drawer", "frame", "start", "review", "make", "atomik"] as const;
 export function phoneSearch(current: string, patch: Partial<Record<(typeof PHONE_PARAMS)[number], string | null>>): string {
   const q = new URLSearchParams(current);
   for (const [key, value] of Object.entries(patch)) {
@@ -100,6 +106,8 @@ export function phoneSearch(current: string, patch: Partial<Record<(typeof PHONE
     else q.set(key, value);
   }
   if (patch.screen !== undefined) {
+    /* Moving to one of the phone's screens leaves the address it came in on (the board's, an old stage's). */
+    for (const key of PLACE_PARAMS) q.delete(key);
     if (patch.screen !== "review" && patch.screen !== "fix" && patch.take === undefined) q.delete("take");
     if (patch.from === undefined) q.delete("from");
     if (patch.screen !== "plan" && patch.run === undefined) q.delete("run");

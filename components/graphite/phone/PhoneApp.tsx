@@ -1,6 +1,7 @@
 "use client";
 import "./phone-screens.css";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { QueueItem } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { moving } from "@/lib/jobsTray";
 import { useShell } from "@/lib/shell/state";
@@ -13,6 +14,7 @@ import { PhoneHeader, PhoneTabs, PhoneToast, type PhoneTab } from "./PhoneChrome
 import { HomeScreen } from "./HomeScreen";
 import { ReviewScreen } from "./ReviewScreen";
 import { PlanScreen } from "./PlanScreen";
+import { RecordScreen } from "./RecordScreen";
 import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
@@ -77,6 +79,11 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   const renders = (tray?.jobs ?? []).filter((job) => moving(job) || job.stage === "queued").length;
   const needs = approvals.items.length + renders + (reviewQueue(items).length ? 1 : 0);
   const topUp = () => shell.goWorkspace("credits");
+  /* A plan opens its approval screen, on the project it belongs to. */
+  const openPlan = (item: QueueItem) => {
+    if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId);
+    go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null });
+  };
   const home = () => { if (page) shell.goSuite("studio", "home"); go({ screen: "home" }); };
   const onTab = (tab: PhoneTab) => {
     /* Make and Atomik open today's Make panel and ⌘K over the phone until their phone screens land. */
@@ -97,16 +104,18 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
       ) : (
         <>
-          <PhoneHeader title={page ? page.title : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
+          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
           {screen === "plan" ? (
             <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
               onChange={() => go({ screen: "atomik" })} />
           ) : (
           <main className="ph-scroll" data-testid="mobile-scroll">
-            {page ? <div className="ph-page">{page.body}</div> : (
+            {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
+              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} />
+            ) : (
               <HomeScreen scope={scope} approvals={approvals} projects={data.projects} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}
-                onPlan={(item) => { if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId); go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null }); }}
+                onPlan={openPlan}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
                 onTopUp={topUp} />
             )}

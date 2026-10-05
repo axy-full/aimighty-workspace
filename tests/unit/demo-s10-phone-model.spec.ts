@@ -15,6 +15,11 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?device=phone&screen=review&take=gen_1")).toMatchObject({ asked: "review", screen: "review", framed: true, take: "gen_1", own: true });
   expect(readPhone("?screen=plan&from=notification")).toMatchObject({ asked: "plan", fromNotification: true, own: true });
   expect(readPhone("?view=board&project=p1").asked).toBe("record");
+  /* Today's Studio stages are regions of the board, and on a phone the board is its Record. */
+  for (const page of ["rig", "boards", "cast", "takes", "astra", "edit", "deliver", "brief"]) expect(readPhone(`?suite=particl&page=${page}`)).toMatchObject({ asked: "record", own: true });
+  expect(readPhone("?suite=particl&page=brief&sp=stages")).toMatchObject({ asked: "home", own: true });
+  expect(readPhone("?screen=plan&run=rar_1&project=p1").run).toBe("rar_1");
+  expect(readPhone("?screen=plan&run=../x").run).toBeNull();
   expect(readPhone("?make=video").asked).toBe("make");
   expect(readPhone("?atomik=how").asked).toBe("atomik");
   expect(readPhone("?suite=atomik&page=approvals")).toMatchObject({ asked: "home", own: true });
@@ -30,8 +35,8 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
 });
 
 test("a screen not in this build opens Home, never an empty screen", () => {
-  expect([...DRAWN_SCREENS].sort()).toEqual(["home", "review"]);
-  for (const screen of ["plan", "fix", "record", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe("home");
+  expect([...DRAWN_SCREENS].sort()).toEqual(["home", "plan", "record", "review"]);
+  for (const screen of ["fix", "make", "atomik", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe("home");
   /* Nobody is shown the phone until the PR that completes its set flips this. */
   expect(PHONE_SCREEN).toMatchObject({ id: "phone", landed: true, params: PHONE_PARAMS });
 });
@@ -40,6 +45,11 @@ test("phoneSearch changes only the phone's own params and drops what belonged to
   expect(phoneSearch("?project=p1&screen=review&take=gen_1&account=a", { screen: "home" })).toBe("?project=p1&account=a");
   expect(phoneSearch("?project=p1", { screen: "review", take: "gen_2" })).toBe("?project=p1&screen=review&take=gen_2");
   expect(phoneSearch("?screen=plan&from=notification&device=phone", { screen: "home" })).toBe("?device=phone");
+  /* Leaving the address a screen came in on: the board's, or an old stage's. */
+  expect(phoneSearch("?view=board&region=cast&project=p1", { screen: "home" })).toBe("?project=p1");
+  expect(phoneSearch("?suite=particl&page=takes&project=p1", { screen: "record" })).toBe("?project=p1&screen=record");
+  expect(phoneSearch("?screen=home&project=p1", { screen: "plan", run: "rar_1" })).toBe("?screen=plan&project=p1&run=rar_1");
+  expect(phoneSearch("?screen=plan&run=rar_1", { screen: "home" })).toBe("");
 });
 
 /** Frame C: swiping judges, and only a clear sideways drag does. */
