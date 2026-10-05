@@ -34,7 +34,7 @@ export const WORKSPACE_IS_DEFAULT = true;
 
 /**
  * Where the old entry points land since 22 September 2026: the Particl Suites
- * shell (`/suites`, FINAL_SPEC), on every device — its phone layer and Studio
+ * shell (`/suites`), on every device — its phone layer and Studio
  * home replaced the 19 September "phones keep today's surfaces" decision. The
  * redesigned workspace stays reachable at its own URL (/workspace); the old
  * shell stays one `?shell=legacy` away.

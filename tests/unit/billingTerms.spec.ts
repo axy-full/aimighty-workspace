@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-billing-terms-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -18,8 +19,8 @@ const workspace = (id: string): TenantWorkspace => ({
   storageQuotaBytes: null, deletedAt: null,
 });
 
-test.beforeEach(async () => { process.env.CREDIT_USD = "0.20"; });
-test.afterAll(() => { if (previousRate === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = previousRate; });
+test.beforeEach(async () => { process.env.CREDIT_USD = "0.20"; await alignLedgerUnit(); });
+test.afterAll(async () => { if (previousRate === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = previousRate; await alignLedgerUnit(); });
 test.beforeAll(async () => {
   const { platformReady, platformDb } = await import("../../lib/platform");
   await platformReady();
@@ -36,6 +37,7 @@ test("a reservation settles on its admitted terms after configuration changes", 
   const { platformDb } = await import("../../lib/platform");
   const event = { id: "reserved", kind: "video" as const, engine: "byteplus", model: "fixture-engine", status: "running" as const, engineCostUsd: 0.4 };
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
+  /* The price moves; the record does not (no conversion ran): the job settles in its own terms. */
   process.env.CREDIT_USD = "0.40";
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
   await runInTenant(workspace("studio_a"), () => meter({ ...event, status: "succeeded", engineCostUsd: 0.8 }));
@@ -45,6 +47,7 @@ test("a reservation settles on its admitted terms after configuration changes", 
   expect(Number(row.billed_credits)).toBe(6);
   const debit = (await platformDb().execute("SELECT credits FROM billing_debits WHERE event_id='reserved'")).rows[0];
   expect(Number(debit.credits)).toBe(6);
+  await alignLedgerUnit(); // a job first metered after the record follows the price is charged in it
   await runInTenant(workspace("studio_b"), () => meter({ ...event, id: "new-terms", status: "succeeded" }));
   const fresh = (await platformDb().execute("SELECT billed_credits,credit_usd FROM meter_events WHERE id='new-terms'")).rows[0];
   expect(Number(fresh.credit_usd)).toBe(0.4);

@@ -1546,7 +1546,7 @@
   }
 }
 
-/* The phone handoff is deliberately isolated from the existing desktop desk. */
+/* The phone layout is deliberately isolated from the existing desktop desk. */
 @media (max-width: 759px) {
   .workspace { background: var(--gen-ground); }
   .header {

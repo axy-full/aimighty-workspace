@@ -26,7 +26,7 @@ import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
 /**
- * Workspace (FINAL_SPEC §5): General · People · Plans & credits · Usage · Dashboard ·
+ * Workspace: General · People · Plans & credits · Usage · Dashboard ·
  * Engines · Security, each in Graphite on the route that already serves it.
  * The one page it opens is a month's printable statement; what a route does
  * not offer is said on the tab, never faked.

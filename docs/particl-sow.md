@@ -1,6 +1,6 @@
 # particl + Atomik — master scope of work
 
-Single source of truth for the build. Supersedes the earlier brief and folds in the node-graph design handoff. Where this document and any other artefact disagree, this one wins; where this document and the shipped code disagree, check the code and update this document.
+Single source of truth for the build. Supersedes the earlier brief; the look of every surface is `design/particl-graphite/` (§4). Where this document and any other artefact disagree, this one wins; where this document and the shipped code disagree, check the code and update this document.
 
 ---
 
@@ -49,7 +49,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | **xAI** | Grok Imagine Image 2.0, Grok Imagine Image, Grok Imagine Video 1.5, Grok Imagine Video, Grok Voice | Stills, short clips and spoken lines. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
-**AMENDED 4 October 2026 — D0 removals (design/particl-graphite/README.md › "What this design removes or renames").** The Higgsfield row above is narrowed, and the vendor's name is no longer shown to customers anywhere:
+**AMENDED 4 October 2026 — D0 removals.** The Higgsfield row above is narrowed, and the vendor's name is no longer shown to customers anywhere:
 
 - **Still running, on Particl's API key:** Motion Transfer and Object Swap (Viral), Marketing Studio Image (Business › Image ads), Cinema Studio 4.0 (Gen, priced "quoted" in the model sheet), and Soul Standard, Soul 2 and Soul Cinema (`lib/soulRender.ts`), shown as "Identity still · Standard", "Identity still · 2" and "Identity still · Cinema".
 - **Cast renders with an identity and builds identities there** (owner's decision, 4 October): the select is **Identity**, the render button carries the live quote, and "Build identity" trains through `/api/soul/identities` for Standard, 2 or Cinema at the route's live price. The identity stills are reached from Cast, not listed in Gen.
@@ -60,7 +60,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 
 **Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit costs and the monthly cap. **Nowhere else, and never on anything that spends.**
 
-Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
+Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × creditUsd()`, US$0.10 a credit unless `CREDIT_USD` says otherwise) and only ever secondary.
 
 ---
 
@@ -81,19 +81,11 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 ## 4. Design system
 
-**AMENDED 4 October 2026 — one design.** The look of every surface is `design/particl-graphite/` (the Graphite handoff of 3 October 2026): dark only, flat, one token set in its README § Design tokens. It replaces every earlier design handoff, which were deleted from the repo in D0. The node-graph documents below are kept for the behaviour they record; where they describe colours, type or a light theme, Graphite wins.
+**AMENDED 4 October 2026 — one design.** The look of every surface is `design/particl-graphite/` ("the board, made easy", 4 October 2026): dark only, flat, one token set — `app/graphite.css`, at the values of its README §2. It replaces every earlier design, which is no longer in the repo. Type, radii, motion, shadows, state dots, components and screens are the README's (§2, §3); this section keeps only the rules that are not visual.
 
-Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
+**Wires land on ports.** On a node canvas a wire ends on its port's slot, never on the node (§9, rule 6). Keep port-to-slot alignment when a canvas surface is rebuilt; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Historical theme discussion — resolved by the September 13 amendment.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
-
-**Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** in the sense that matters: nothing slides, nothing drops a soft shadow. Literally there are transitions and `box-shadow` in the stylesheet — the shadow tokens paint HAIRLINES (`0 0 0 1px`) rather than depth, and transitions are short and limited to colour and border alpha. Hover raises border alpha only.
-
-**Components** (spec'd in the handoff): app shell header with project switcher and cap readout, project sub-nav, segmented filter, primary button with cost inline, secondary, dashed add, dropdown chip, toggle, cast chip, `@mention` inline, state dot, take card, search field, composer rail, and for Rig: node with ports, wire layer, inspector, impact sheet, stage card.
-
-**State dots.** approved = filled accent; picked = filled ink; draft = 1.5px solid outline; no take yet = 1.5px dashed; rendering = word plus a 3px determinate bar. Rig adds: queued = dashed muted, running = 2.5px accent ring, done = filled accent, needs-you = filled ink on `#F7F5EC`, locked = lock glyph, no dot.
-
-**Placeholders.** Striped rectangles in the references are image wells. In production they are real keyframes, take thumbnails, reference photos, location plates and turntable views. Never ship a surface with text where a thumbnail belongs.
+**Placeholders.** Striped rectangles in the design are image wells. In production they are real keyframes, take thumbnails, reference photos, location plates and turntable views. Never ship a surface with text where a thumbnail belongs.
 
 **Do not port `support.js`** — it is a preview runtime for opening the HTML standalone. Recreate every surface in the existing Next/React components, routing and styling.
 
@@ -450,7 +442,7 @@ That continuity is the whole differentiator. Boords, StudioBinder and the rest g
 
 ## 9. Phase 3 — Rig
 
-The node layer. Design handoff at `docs/handoff/nodegraph/`.
+The node layer. Its look is `design/particl-graphite/` (README §3.1, the Studio board).
 
 **Name.** The surface is **Rig** — Canvas is already taken by the sequence wall at `/projects/:id/canvas`. Rig works twice: on a set it's the wiring and mounting that holds a setup together; in animation, rigging is exactly binding a character's attributes to controls that everything downstream reads. Nav **Rig**. The Rig lives in the Suites, as Studio › Rig (`/suites`). The `NODES` nav word of 10 September went with the old Nodes screen, which is deleted. The element library stays at `/projects/:id/rig/elements`, and an old board at `/rig/canvas/:board` stays readable and opens in the new Rig. Nouns inside it: recipes, runs, elements, ports, bindings, provenance.
 
@@ -496,7 +488,7 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 
 **Constraints that don't relax:** rule 6 — a new user must never need to open Rig to make a first render. Rule 7 — five of seven surfaces are 390×844 and must pass the Phase 0 suite. Desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
 
-**Known geometry trade-off.** With the chat panel restored, the graph viewport is ~878px against a 1040px graph, so ~162px scrolls off at rest and the collapsed stages node is partly cut. Acceptable for a scrollable canvas. If it must read at rest: pull the column x-positions in ~120px, or narrow the inspector to 240px. **Pick one before building** — the geometry is measured and exact.
+**Known geometry trade-off.** With the chat panel restored, the graph viewport is ~878px against a 1040px graph, so ~162px scrolls off at rest and the collapsed stages node is partly cut. Acceptable for a scrollable canvas. If it must read at rest: pull the column x-positions in ~120px, or narrow the inspector to 240px. **Pick one before building.**
 
 **Also built on the Suites Rig, 2 October 2026.**
 
@@ -612,8 +604,8 @@ a rework still stands and is now the only thing holding the theme together:
 `tests/desktop.spec.ts` by emulating a light machine.
 
 **§5 bindings — a shot overrides one attribute without leaving the element.**
-`bindings UNIQUE (shot_id, slot, ordinal)` could not represent the handoff's
-own sentence: one slot held one row, so pinning WARDROBE replaced the bundle,
+`bindings UNIQUE (shot_id, slot, ordinal)` could not represent that
+sentence: one slot held one row, so pinning WARDROBE replaced the bundle,
 `portsForShot` emitted a single port, and the shot stopped citing the
 character's face, hair and voice. Three shapes were put up; the key was
 widened, so a bundle row and an override row coexist.

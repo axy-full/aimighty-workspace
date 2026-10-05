@@ -4,7 +4,7 @@ import { MoviePage } from "@/components/workbench/MoviePage";
 import { movieScopeFor } from "@/lib/workbench/movie-handoff";
 import "../workbench.css";
 import "../desk.css";
-import "../mobile-handoff-stages.css";
+import "../phone-stages.css";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Particl — Final movie" };
 export const viewport = {

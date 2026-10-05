@@ -279,6 +279,8 @@ P4 and P5 notes (5 October):
 
 | P8 | Worker container; load test to 1,000 jobs; GlitchTip; Langfuse; legacy guard | P5 | Not started |
 
+P4/P5 checklist, the price of a credit (owner, 5 October 2026): CREDIT_USD=0.10 must be set on Coolify before particl.si's DNS moves, and the database copied there must be the already-converted one. The conversion (`POST /api/admin/credit-unit`, `lib/creditConversion.ts`) runs once, on Vercel, before the move; a ledger whose unit differs from CREDIT_USD pauses paid work (`lib/ledgerUnit.ts`).
+
 ### Track B: Design system, shell and ease
 
 | ID | Delivers | Needs | Status |
