@@ -5,7 +5,7 @@ import type { AdStill } from "./business";
 
 /**
  * Business › Image ads, on Particl's API key for every workspace and every
- * member (FINAL_SPEC §2.2): Marketing Studio Image through the one
+ * member: Marketing Studio Image through the one
  * workspace-credit path (lib/workspace/generate-submit.ts → POST
  * /api/generate/quote, then POST /api/generate with the approved ceiling).
  * The price on the button is that quote, said as an estimate: on 2.0 Alpha

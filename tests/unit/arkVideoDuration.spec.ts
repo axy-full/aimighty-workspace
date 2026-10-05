@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +35,8 @@ process.env.KEYRING_SECRET ??= "ark-duration-unit-keyring-not-a-real-secret";
 process.env.BLOB_READ_WRITE_TOKEN = "";
 process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
+test.beforeAll(async () => { await alignLedgerUnit(); });
 
 /** public/fixtures/clip.mp4, as the bounded inspector reads it. */
 const DELIVERED_SECONDS = 10;

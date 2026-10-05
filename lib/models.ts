@@ -226,8 +226,9 @@ export const MODELS: ModelDef[] = [
     billing: "token",
     use: "Cheaper drafts and roughs.",
     label: "Seedance 2.0",
-    /* The vendor guide lists -1 (edit) for the 2.0 series too; edit and extend
-       are offered on that reading and are UNTESTED here — verify before relying on them. */
+    /* The vendor guide lists -1 (edit) for the 2.0 series too. Edit was verified
+       with one live render (docs/gen-seedance-edit.md); extend is offered on the
+       guide's reading and is UNTESTED here — verify before relying on it. */
     supportsTasks: ["generate", "edit", "extend"],
     short: "SD 2.0",
     family: "seedance-2",

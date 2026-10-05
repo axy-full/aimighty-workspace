@@ -895,7 +895,7 @@
   }
 }
 
-/* Mobile workspace handoff. Keep all settings, security and billing controls. */
+/* Workspace pages on a phone. Keep all settings, security and billing controls. */
 @media (max-width: 759px) {
   .management {
     --graphite-panel: var(--gx-root);

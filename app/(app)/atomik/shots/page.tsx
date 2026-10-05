@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Atomik · Shot list — from the pipeline handoff.
+ * Atomik · Shot list.
  *
  * The contract with Particl. Order, cast tags, setup and the cap go across;
  * state, takes, cost and the master link come back. The right half of

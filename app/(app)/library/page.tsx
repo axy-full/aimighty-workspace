@@ -26,7 +26,7 @@ import type { LibraryAsset } from "@/lib/genLibrary";
 import type { DraggedAsset } from "@/lib/dnd";
 import genStyles from "@/components/make/gen.module.css";
 import ProjectLibraryPage, { importLibraryAsset, libraryToolHref } from '@/components/workbench/ProjectLibraryPage';
-import "@/components/studio/legacy-graphite.css";
+import "@/components/studio/projects-library.css";
 import "./mobile.css";
 
 /**
