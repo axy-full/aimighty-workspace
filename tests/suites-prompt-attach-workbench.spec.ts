@@ -89,7 +89,7 @@ test("Rig, Environment and Cast: attachments land where each engine takes them",
     p.nodes = [{ id: "n1", title: "Opening", type: "scene", x: 0, y: 0, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", durationS: 5, ratio: "16:9", resolution: "720p" } as Project["nodes"][number]];
     p.production = {
       environment: { world: "", model: "gemini-3.1-flash-image", entries: [{ id: "env-1", name: "Harbour", notes: "", prompt: "", references: [], plates: [] }] },
-      cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"],
+      cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"],
     };
   });
 
@@ -103,9 +103,9 @@ test("Rig, Environment and Cast: attachments land where each engine takes them",
 
   /* Cast: the prompt's picture is the entry's reference image. */
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const mara = page.getByTestId("cast-entry").first();
-  await mara.getByTestId("cast-prompt-attach-file").setInputFiles({ name: "mara.png", mimeType: "image/png", buffer: await png("#775544") });
-  await expect(mara.getByTestId("cast-reference")).toContainText("mara.png", { timeout: 30_000 });
+  const keeper = page.getByTestId("cast-entry").first();
+  await keeper.getByTestId("cast-prompt-attach-file").setInputFiles({ name: "keeper.png", mimeType: "image/png", buffer: await png("#775544") });
+  await expect(keeper.getByTestId("cast-reference")).toContainText("keeper.png", { timeout: 30_000 });
 
   /* The Rig last (its team canvas saves on the way out): the shot prompt's attachment is an input of the shot. */
   await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);

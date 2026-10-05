@@ -139,7 +139,7 @@ test("Soul admission pins a scoped ready identity and confirmed price without tr
     expect(workbenchGenerationModels().some(model => model.id === SOUL_CHARACTER_MODEL_ID)).toBe(true);
     await soulIdentitiesReady();
     const providerId = "067e9e94-0bea-4acd-b82a-071a264d8e26";
-    await db().execute({ sql: `INSERT INTO soul_identities(id,owner,production_project_id,name,description,subject_type,references_json,status,provider_reference_id,credential_fingerprint,settled_at,created_at,updated_at,consent_at) VALUES('soul_test','owner','project','Mira','','character','[]','ready',?,?,1,1,1,1)`, args: [providerId, higgsfieldCredentialFingerprint()] });
+    await db().execute({ sql: `INSERT INTO soul_identities(id,owner,production_project_id,name,description,subject_type,references_json,status,provider_reference_id,credential_fingerprint,settled_at,created_at,updated_at,consent_at) VALUES('soul_test','owner','project','Wren','','character','[]','ready',?,?,1,1,1,1)`, args: [providerId, higgsfieldCredentialFingerprint()] });
     const prepared = value(await service.gen.prepareGeneration({ ...body, soulReferenceId: "attacker-uuid", soulVendorCostUsd: 0, soulCredentialFingerprint: "attacker" }, actor));
     expect(prepared.compiled.params).toMatchObject({ soulIdentityId: "soul_test", soulReferenceId: providerId, soulStrength: 0.65, soulVendorCostUsd: 0.12, soulCredentialFingerprint: higgsfieldCredentialFingerprint() });
     const handler = route("generation", service);

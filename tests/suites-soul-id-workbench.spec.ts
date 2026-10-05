@@ -144,7 +144,7 @@ test("Build identity on the key: the reasons, the priced versions, the fixed pri
   /* Ready: the character above can choose it now, by the family it renders with. */
   const ada = page.getByTestId("cast-entry").filter({ has: page.locator('input[value="Ada"]') });
   await expect(ada.getByTestId("cast-identity").locator("option")).toHaveText(["None", "Ada · Standard"]);
-  await expect(page.getByTestId("cast-stage")).not.toContainText(/Soul|Higgsfield|Mira/);
+  await expect(page.getByTestId("cast-stage")).not.toContainText(/Soul|Higgsfield|Wren/);
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("soul-id-trained.png") });
   expect(f.consumer, "nothing of the connected account is read or sent").toEqual([]);

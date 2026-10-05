@@ -11,13 +11,13 @@ test("water, cloth and physics go to Kling; everything else to Seedance; a still
 });
 
 test("a reply becomes validated shots: rows only from the bank, cast only from the names given, engine by the rule when missing", () => {
-  const text = 'Sure: {"shots":[{"title":"Splash","description":"The wheel cuts through a flooded gutter.","planned":"4","setup":{"shot":"cu","move":"nope","angle":"Low"},"cast":["@Mara","@Nobody"],"why":""},{"description":"","title":"empty"}]} done';
-  const shots = shotsFromReply(text, ["Mara"])!;
+  const text = 'Sure: {"shots":[{"title":"Splash","description":"The wheel cuts through a flooded gutter.","planned":"4","setup":{"shot":"cu","move":"nope","angle":"Low"},"cast":["@Keeper","@Nobody"],"why":""},{"description":"","title":"empty"}]} done';
+  const shots = shotsFromReply(text, ["Keeper"])!;
   expect(shots.length).toBe(1);
   expect(shots[0].engine).toBe("kling");
   expect(shots[0].setup).toEqual(expect.objectContaining({ shot: "cu" }));
   expect(shots[0].setup.move).toBeUndefined();
-  expect(shots[0].cast).toEqual(["Mara"]);
+  expect(shots[0].cast).toEqual(["Keeper"]);
   expect(shots[0].planned).toBe(4);
   expect(shotsFromReply("no json")).toBeNull();
   expect(cleanSetupFields({ shot: "Wide", time: "dawn", junk: "x" })).toEqual({ shot: "ws", time: "dawn" });

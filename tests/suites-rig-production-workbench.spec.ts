@@ -19,7 +19,7 @@ function fixture(): Project {
   const at = new Date().toISOString();
   return {
     ...p, id: "ws-rig", productionProjectId: "prod-rig", shotMappings: {},
-    assets: [img("gen_frame", "Frame 1.1", "Storyboard"), img("gen_mara", "Mara", "Character"), img("gen_take", "Old take", "Generate", { nodeId: "n-old" })],
+    assets: [img("gen_frame", "Frame 1.1", "Storyboard"), img("gen_keeper", "Keeper", "Character"), img("gen_take", "Old take", "Generate", { nodeId: "n-old" })],
     nodes: [{ id: "n-old", title: "Old shot", type: "scene", x: 100, y: 100, width: 300, linked: [], mode: "Video", engine: "dreamina-seedance-2-5-260628", assetId: "gen_take" }],
     production: {
       beats: { scriptSha256: "a".repeat(64), updatedAt: at, scenes: [{ id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "", beats: [], shots: [{ id: "shot-a1", description: "The fox on the ice", framing: "Wide", movement: "Slow push", lighting: "Dusk", sound: "Wind", duration: 5 }], characters: [], locations: [], props: [] }] },
@@ -42,7 +42,7 @@ async function open(page: Page, options: { store?: { current: Project }; wiring?
   await page.route(/\/api\/workbench\/engines\?/, (route) => route.fulfill({ json: { models: [], credits: 12 } }));
   /* A finished wiring run for the old shot: the agent's prompt, notes and one input. */
   const wired = { id: WIRED_ID, requestId: "req-wired-1", projectId: "ws-rig", kind: "rig", nodeId: "n-old", model: "anthropic/claude-sonnet-4.6", effort: "auto", instructions: "", status: "succeeded", completedChunks: 1, totalChunks: 1, currentStage: "complete", completedSteps: 3, totalSteps: 3, estimateCredits: 2, credits: 1, error: null, createdAt: 1, updatedAt: 1,
-    result: { summary: "", recommendation: "", ideas: [], scenes: [], critique: [], assumptions: [], rig: { nodeId: "n-old", prompt: "Wired: Mara watches the fox from the hut window.", notes: "Hold on her eyes.", inputs: ["gen_mara"], firstFrame: null } } };
+    result: { summary: "", recommendation: "", ideas: [], scenes: [], critique: [], assumptions: [], rig: { nodeId: "n-old", prompt: "Wired: Keeper watches the fox from the hut window.", notes: "Hold on her eyes.", inputs: ["gen_keeper"], firstFrame: null } } };
   const running = { ...wired, status: "running", completedChunks: 0, currentStage: "planning", completedSteps: 1, credits: null, result: null };
   /* The run list leaves wirings off (as the server does); the shot reads the one it takes by its id. */
   await page.route(/\/api\/workbench\/development/, (route) => new URL(route.request().url()).searchParams.get("jobId") === WIRED_ID
@@ -78,7 +78,7 @@ test("Rig: shots from Storyboards, prompt and inputs, the first-frame rule, the 
 
   /* Inputs from the library and the cast; a first frame with references is refused, so it is unmarked. */
   await page.getByTestId("rig-add-library").selectOption({ label: "Harbour plate" });
-  await page.getByTestId("rig-add-cast").selectOption({ label: "Cast · Mara" });
+  await page.getByTestId("rig-add-cast").selectOption({ label: "Cast · Keeper" });
   await expect(page.getByTestId("rig-input")).toHaveCount(3);
   await expect(page.getByTestId("rig-inputs")).toContainText("A first frame cannot be combined with reference images or videos");
   await page.getByRole("button", { name: "Unmark first frame" }).click();
@@ -100,21 +100,21 @@ test("Rig: shots from Storyboards, prompt and inputs, the first-frame rule, the 
   await expect.poll(() => posts.find((p) => p.url.endsWith("/api/generate"))?.body ?? null, { timeout: 15_000 }).toMatchObject({ maxCredits: 12 });
   const sent = posts.find((p) => p.url.endsWith("/api/generate"))!.body;
   expect(String(sent.prompt)).toMatch(/^A red fox crosses the frozen harbour at dusk; hold wide, then push in on its eyes\.\n\nInputs:\nInput 1 — Frame 1\.1 \(storyboard\): reference image/);
-  expect(sent.references).toEqual(expect.arrayContaining([{ genId: "gen_frame", role: "reference_image" }, { genId: "gen_clip", role: "reference_video" }, { genId: "gen_mara", role: "reference_image" }]));
+  expect(sent.references).toEqual(expect.arrayContaining([{ genId: "gen_frame", role: "reference_image" }, { genId: "gen_clip", role: "reference_video" }, { genId: "gen_keeper", role: "reference_image" }]));
 
   /* A wiring of the old shot that finished before this tab watched it (and the shot never recorded one) is offered, not laid over the shot. */
   await list.getByText("Old shot", { exact: true }).click();
   await tabs.getByRole("button", { name: /Controls/ }).click();
   await expect(page.getByTestId("rig-wire-offer")).toBeVisible();
-  await expect(page.getByTestId("rig-prompt-input")).not.toHaveValue("Wired: Mara watches the fox from the hut window.");
+  await expect(page.getByTestId("rig-prompt-input")).not.toHaveValue("Wired: Keeper watches the fox from the hut window.");
   /* Applied on request: prompt, notes, an input from the cast, and the run recorded on the shot. */
   await page.getByTestId("rig-wire-apply").click();
-  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Mara watches the fox from the hut window.");
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Keeper watches the fox from the hut window.");
   await expect(page.getByLabel("Direction note")).toHaveValue("Hold on her eyes.");
   await expect(page.getByTestId("rig-wire-offer")).toHaveCount(0);
   await expect.poll(() => store.current.nodes.find((n) => n.id === "n-old")?.wiredJobId ?? null, { timeout: 15_000 }).toBe(WIRED_ID);
   await tabs.getByRole("button", { name: /Inputs/ }).click();
-  await expect(page.getByTestId("rig-input")).toContainText("Mara");
+  await expect(page.getByTestId("rig-input")).toContainText("Keeper");
 
   /* Build another rig from a take of the old shot. */
   await tabs.getByRole("button", { name: /Versions/ }).click();
@@ -168,7 +168,7 @@ test("Rig: the agent's wiring lands once, when this tab watched it finish; a han
   await expect(page.getByTestId("rig-wire")).toContainText("The agent is wiring this shot.");
   /* It finishes while the shot is open: laid on at once, and recorded. */
   wiring.status = "succeeded";
-  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Mara watches the fox from the hut window.", { timeout: 15_000 });
+  await expect(page.getByTestId("rig-prompt-input")).toHaveValue("Wired: Keeper watches the fox from the hut window.", { timeout: 15_000 });
   await expect(page.getByTestId("toast")).toContainText("The agent wired Old shot: 1 input");
   await expect(page.getByTestId("rig-wire-offer")).toHaveCount(0);
   await expect.poll(() => store.current.nodes.find((n) => n.id === "n-old")?.wiredJobId ?? null, { timeout: 15_000 }).toBe(WIRED_ID);

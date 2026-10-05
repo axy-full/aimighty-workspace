@@ -30,7 +30,7 @@ async function open(page: Page) {
     generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water" })],
   });
   /* After mockMedia, so it answers first: the script is a real PDF, the room tone is sound. */
-  await page.route(/\/api\/uploads\/up_script(\?.*)?$/, (route) => route.fulfill({ body: screenplayPdf([["THE CROSSING", "", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice."], ["INT. HUT - NIGHT", "Mara watches."]]), contentType: "application/octet-stream" }));
+  await page.route(/\/api\/uploads\/up_script(\?.*)?$/, (route) => route.fulfill({ body: screenplayPdf([["THE CROSSING", "", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice."], ["INT. HUT - NIGHT", "Keeper watches."]]), contentType: "application/octet-stream" }));
   await page.route(/\/api\/uploads\/up_tone(\?.*)?$/, (route) => route.fulfill({ body: Buffer.alloc(64), contentType: "audio/mpeg" }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

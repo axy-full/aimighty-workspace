@@ -40,7 +40,7 @@ const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => 
 async function rigThenCast(page: Page, how: "strip" | "reload") {
   const { project, errors, read } = await setup(page, (p) => {
     p.nodes = [{ id: "n1", title: "Opening", type: "scene", x: 0, y: 0, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", durationS: 5, ratio: "16:9", resolution: "720p" } as Project["nodes"][number]];
-    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
   });
   await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);
   const row = page.locator(".pxw-rig-row[data-shot-id='n1']");
@@ -53,9 +53,9 @@ async function rigThenCast(page: Page, how: "strip" | "reload") {
   /* Straight to Cast, with the Rig's edit not yet saved. */
   if (how === "strip") await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Cast/ }).click();
   else await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const mara = page.getByTestId("cast-entry").first();
-  await mara.getByTestId("cast-prompt-attach-file").setInputFiles({ name: "mara.png", mimeType: "image/png", buffer: await png("#775544") });
-  await expect(mara.getByTestId("cast-reference")).toContainText("mara.png", { timeout: 60_000 });
+  const keeper = page.getByTestId("cast-entry").first();
+  await keeper.getByTestId("cast-prompt-attach-file").setInputFiles({ name: "keeper.png", mimeType: "image/png", buffer: await png("#775544") });
+  await expect(keeper.getByTestId("cast-reference")).toContainText("keeper.png", { timeout: 60_000 });
 
   /* Both are saved: the Cast reference and the Rig's input. */
   await expect.poll(async () => {

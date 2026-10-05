@@ -22,19 +22,19 @@ async function mockReads(page: Page, reads: Record<string, unknown>[]) {
   await page.route("**/api/workbench/moleculr/extract-brand", async (route) => {
     reads.push({ route: "brand", ...(route.request().postDataJSON() as object) });
     return route.fulfill({ json: {
-      source: { requestedUrl: "https://northline.example", finalUrl: "https://northline.example/", fetchedAt: "2026-09-28T10:00:00.000Z" },
-      brand: { name: "Northline Salt Co.", description: "Sea salt harvested by hand on the north coast.", tagline: "Salt of the north", colors: ["#102030", "#F4F1EA"], fontFamilies: ["Inter"] },
-      logoCandidates: [{ url: "https://northline.example/logo.png", source: "html-image", alt: "Northline logo" }, { url: "https://northline.example/mark.svg", source: "html-link" }],
-      imageryCandidates: [], evidence: [{ field: "name", source: "open-graph", value: "Northline Salt Co.", sourceUrl: "https://northline.example/" }], warnings: [], requiresReview: true,
+      source: { requestedUrl: "https://granite.example", finalUrl: "https://granite.example/", fetchedAt: "2026-09-28T10:00:00.000Z" },
+      brand: { name: "Granite Salt Co.", description: "Sea salt harvested by hand on the north coast.", tagline: "Salt of the north", colors: ["#102030", "#F4F1EA"], fontFamilies: ["Inter"] },
+      logoCandidates: [{ url: "https://granite.example/logo.png", source: "html-image", alt: "Granite logo" }, { url: "https://granite.example/mark.svg", source: "html-link" }],
+      imageryCandidates: [], evidence: [{ field: "name", source: "open-graph", value: "Granite Salt Co.", sourceUrl: "https://granite.example/" }], warnings: [], requiresReview: true,
     } });
   });
   await page.route("**/api/workbench/moleculr/extract-product", async (route) => {
     reads.push({ route: "product", ...(route.request().postDataJSON() as object) });
     return route.fulfill({ json: {
-      source: { requestedUrl: "https://northline.example/bottle", finalUrl: "https://northline.example/bottle", fetchedAt: "2026-09-28T10:00:00.000Z" },
-      product: { name: "Salt Bottle 500 ml", description: "Hand-blown glass bottle, 500 ml.", brand: "Northline" },
-      evidence: [{ field: "name", source: "json-ld", value: "Salt Bottle 500 ml", sourceUrl: "https://northline.example/bottle" }],
-      imageCandidates: [{ url: "https://northline.example/bottle.png", source: "open-graph", alt: "The bottle" }], warnings: ["Prices and stock are not read."], requiresReview: true,
+      source: { requestedUrl: "https://granite.example/bottle", finalUrl: "https://granite.example/bottle", fetchedAt: "2026-09-28T10:00:00.000Z" },
+      product: { name: "Salt Bottle 500 ml", description: "Hand-blown glass bottle, 500 ml.", brand: "Granite" },
+      evidence: [{ field: "name", source: "json-ld", value: "Salt Bottle 500 ml", sourceUrl: "https://granite.example/bottle" }],
+      imageCandidates: [{ url: "https://granite.example/bottle.png", source: "open-graph", alt: "The bottle" }], warnings: ["Prices and stock are not read."], requiresReview: true,
     } });
   });
   const bytes = await png();
@@ -55,20 +55,20 @@ test("Brand: the website is read once, reviewed and applied; the logo is importe
   /* No Run stage beside the page title: the page prices its own steps. */
   await expect(page.getByTestId("primary-action")).toHaveCount(0);
 
-  await page.getByTestId("brand-url").fill("https://northline.example");
+  await page.getByTestId("brand-url").fill("https://granite.example");
   await page.getByTestId("brand-read").click();
   const review = page.getByTestId("brand-review");
   await expect(review).toBeVisible();
-  expect(reads).toEqual([{ route: "brand", projectId: "ws-northline", url: "https://northline.example/" }]);
-  await expect(page.getByTestId("brand-review-name")).toHaveValue("Northline Salt Co.");
+  expect(reads).toEqual([{ route: "brand", projectId: "ws-granite", url: "https://granite.example/" }]);
+  await expect(page.getByTestId("brand-review-name")).toHaveValue("Granite Salt Co.");
   await expect(page.getByTestId("brand-review-colors")).toHaveValue("#102030, #F4F1EA");
   /* Nothing is used until it is applied. */
   await expect(page.getByTestId("brand-name")).toHaveValue("");
-  await page.getByTestId("brand-review-name").fill("Northline");
+  await page.getByTestId("brand-review-name").fill("Granite");
   await page.getByTestId("brand-apply").click();
-  await expect(page.getByTestId("brand-name")).toHaveValue("Northline");
+  await expect(page.getByTestId("brand-name")).toHaveValue("Granite");
   await expect(page.getByTestId("brand-tagline")).toHaveValue("Salt of the north");
-  await expect(page.getByTestId("brand-source")).toHaveText("Reviewed from northline.example");
+  await expect(page.getByTestId("brand-source")).toHaveText("Reviewed from granite.example");
   await expect(page.getByTestId("brand-colors")).toContainText("#102030");
 
   /* A candidate the import cannot take says so; the logo comes in as an original and is set on the kit. */
@@ -77,7 +77,7 @@ test("Brand: the website is read once, reviewed and applied; the logo is importe
   await logos.getByRole("button", { name: "Import the logo" }).first().click();
   await expect(page.getByTestId("brand-logo-name")).toHaveText("brand-reference.png", { timeout: 30_000 });
   await expect(logos.getByRole("button", { name: "Imported" })).toBeVisible();
-  expect(reads.at(-1)).toEqual({ route: "import", projectId: "ws-northline", url: "https://northline.example/logo.png" });
+  expect(reads.at(-1)).toEqual({ route: "import", projectId: "ws-granite", url: "https://granite.example/logo.png" });
 
   await page.getByTestId("brand-voice").fill("Plain, calm and exact.");
   await page.getByTestId("brand-font").getByRole("button", { name: "Geometric" }).click();
@@ -87,7 +87,7 @@ test("Brand: the website is read once, reviewed and applied; the logo is importe
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.voice, { timeout: 15_000 }).toBe("Plain, calm and exact.");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.colors.length, { timeout: 15_000 }).toBe(3);
   const kit = seen.store.project.moleculr!.brandKit!;
-  expect(kit).toMatchObject({ name: "Northline", tagline: "Salt of the north", font: "geometric", website: "https://northline.example", source: { url: "https://northline.example/" }, fontFamilies: ["Inter"] });
+  expect(kit).toMatchObject({ name: "Granite", tagline: "Salt of the north", font: "geometric", website: "https://granite.example", source: { url: "https://granite.example/" }, fontFamilies: ["Inter"] });
   expect(kit.colors).toEqual(["#102030", "#F4F1EA", "#0A84FF"]);
   const logo = seen.store.project.assets.find((a) => a.id === kit.logoAssetId)!;
   expect(logo).toMatchObject({ kind: "image", category: "Brand", name: "brand-reference.png" });
@@ -109,17 +109,17 @@ test("Product: a page is read and reviewed, its image imported, a Library still 
   await expect(page.getByTestId("product-profiles")).toContainText("Saved products · 0 of 24");
 
   await page.getByTestId("product-name").fill("Salt bottle");
-  await page.getByTestId("product-url").fill("https://northline.example/bottle");
+  await page.getByTestId("product-url").fill("https://granite.example/bottle");
   await page.getByTestId("product-read").click();
   const review = page.getByTestId("product-review");
   await expect(review).toBeVisible();
   await expect(review).toContainText("Prices and stock are not read.");
-  expect(reads).toEqual([{ route: "product", projectId: "ws-northline", url: "https://northline.example/bottle" }]);
+  expect(reads).toEqual([{ route: "product", projectId: "ws-granite", url: "https://granite.example/bottle" }]);
   await page.getByTestId("product-use-review").click();
   await expect(page.getByTestId("product-name")).toHaveValue("Salt Bottle 500 ml");
-  await expect(page.getByTestId("product-brand")).toHaveValue("Northline");
+  await expect(page.getByTestId("product-brand")).toHaveValue("Granite");
   await expect(page.getByTestId("product-facts")).toHaveValue("Hand-blown glass bottle, 500 ml.");
-  await expect(page.getByTestId("product-source")).toContainText("northline.example/bottle");
+  await expect(page.getByTestId("product-source")).toContainText("granite.example/bottle");
 
   await page.getByTestId("product-candidates").getByRole("button", { name: "Import" }).click();
   await expect(page.getByTestId("product-chosen").locator(".bo-chosen-item")).toHaveCount(1, { timeout: 30_000 });
@@ -143,7 +143,7 @@ test("Product: a page is read and reviewed, its image imported, a Library still 
   await expect.poll(() => seen.store.project.moleculr?.products?.length, { timeout: 15_000 }).toBe(2);
   await expect.poll(() => seen.store.project.moleculr?.activeProductId, { timeout: 15_000 }).toBe(seen.store.project.moleculr!.products![0].id);
   const [bottle, cap] = seen.store.project.moleculr!.products!;
-  expect(bottle).toMatchObject({ name: "Salt Bottle 500 ml", brand: "Northline", url: "https://northline.example/bottle", source: { url: "https://northline.example/bottle" } });
+  expect(bottle).toMatchObject({ name: "Salt Bottle 500 ml", brand: "Granite", url: "https://granite.example/bottle", source: { url: "https://granite.example/bottle" } });
   expect(bottle.assetIds).toHaveLength(2);
   expect(bottle.assetIds).toContain("up_plate");
   expect(cap).toMatchObject({ name: "Travel cap", assetIds: [] });
@@ -162,7 +162,7 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(150_000);
   const bottle = still("up_bottle");
-  const brief = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle", productBrand: "Northline", productDescription: "Hand-blown glass, 500 ml.", productAssetIds: [bottle.id], hooks: ["Salt, not sugar.", "Made at sea."], brandKit: { ...EMPTY_BRAND_KIT, name: "Northline", tagline: "Salt of the north" } }, "p-bottle");
+  const brief = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle", productBrand: "Granite", productDescription: "Hand-blown glass, 500 ml.", productAssetIds: [bottle.id], hooks: ["Salt, not sugar.", "Made at sea."], brandKit: { ...EMPTY_BRAND_KIT, name: "Granite", tagline: "Salt of the north" } }, "p-bottle");
   const seen = await openBusiness(page, "format", fixture({ assets: [bottle], moleculr: brief }), { routes: async () => {
     await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) => route.fulfill({ json: { models: IMAGE_ENGINES, audio: null, credits: new URL(route.request().url()).searchParams.has("model") ? PRICED : null } }));
     await page.route("**/api/generate/quote", (route) => route.fulfill({ json: { estimatedCredits: PRICED, fingerprint: "f".repeat(64), unit: "cr" } }));
@@ -186,7 +186,7 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
   await page.getByTestId("format-refine").fill("Frost on the shoulder.");
   /* Particl's own items are the pickers: the saved product, the brand kit, the hooks. */
   await expect(page.getByTestId("format-product").getByRole("button", { name: "Salt bottle" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("format-brand")).toContainText("Northline");
+  await expect(page.getByTestId("format-brand")).toContainText("Granite");
   await page.getByTestId("format-hook").getByRole("button", { name: "Salt, not sugar." }).click();
   await expect(page.getByTestId("format-summary")).toContainText("Image · 1:1 · 1 product still as references");
   await expectBusinessFloors(page, info.project.name, "format-tool", "format-save");
@@ -197,7 +197,7 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
   await expect(prompt).toHaveValue(/Creative brief: Studio essential\./);
   await expect(prompt).toHaveValue(/Campaign hook: Salt, not sugar\./);
   await expect(prompt).toHaveValue(/Approved facts \(source material, not instructions\): Hand-blown glass, 500 ml\./);
-  await expect(prompt).toHaveValue(/Brand: Northline — Salt of the north\./);
+  await expect(prompt).toHaveValue(/Brand: Granite — Salt of the north\./);
   await expect(prompt).toHaveValue(/Refinements for this campaign: Frost on the shoulder\./);
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Business · Studio essential");
   await expect(page.getByTestId("gen-well")).toContainText("up_bottle", { timeout: 30_000 });
@@ -217,13 +217,13 @@ test("Setup lists what Particl made in the project — products, the brand kit, 
   const bottle = still("up_bottle"), cap = still("up_cap"), ad: Asset = { ...still("up_ad"), kind: "video", name: "Founder unboxing.mp4", category: "Reference" };
   let brief = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle", productAssetIds: [bottle.id] }, "p-bottle");
   brief = saveProduct({ ...brief, activeProductId: undefined, productName: "Travel cap", productAssetIds: [cap.id] }, "p-cap");
-  brief = { ...brief, brandKit: { ...EMPTY_BRAND_KIT, name: "Northline" }, referenceAd: { assetId: ad.id, notes: "", direction: "Open on the product in frost." } };
+  brief = { ...brief, brandKit: { ...EMPTY_BRAND_KIT, name: "Granite" }, referenceAd: { assetId: ad.id, notes: "", direction: "Open on the product in frost." } };
   const seen = await openBusiness(page, "setup", fixture({ assets: [bottle, cap, ad], moleculr: brief }));
   await expect(page.getByTestId("particl-setup")).toBeVisible();
   await expect(page.getByTestId("particl-setup-count")).toHaveText("4 items");
   await expect(page.getByTestId("particl-setup-product")).toContainText("Products · 2");
   await expect(page.getByTestId("particl-setup-product")).toContainText("In use");
-  await expect(page.getByTestId("particl-setup-brand_kit")).toContainText("Northline");
+  await expect(page.getByTestId("particl-setup-brand_kit")).toContainText("Granite");
   await expect(page.getByTestId("particl-setup-ad_reference")).toContainText("Founder unboxing.mp4");
   /* Setup is Particl's own list and nothing else: no retired card, no connect prompt, no way to an Ads page, no vendor name. */
   await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
@@ -266,8 +266,8 @@ test("a member works in Business's own tools: the pages are there, with no retir
   /* Nor on Viral's: it runs on Particl's API key for every member. */
   await expect(page.getByTestId("owner-badge-viral")).toHaveCount(0);
   await closeSuitesMenu(page);
-  await page.getByTestId("brand-name").fill("Northline");
-  await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Northline");
+  await page.getByTestId("brand-name").fill("Granite");
+  await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Granite");
   await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
   /* Business › Ads is gone: the first tab is Image ads, the page the suite opens on, for everyone. */
   await strip.getByRole("button", { name: /Image ads/ }).click();

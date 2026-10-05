@@ -31,15 +31,15 @@ const shot = (id: string, title: string, x: number, y: number, linked: string[])
 function fixture(name: string, id: string): Project {
   return {
     ...newProject(name), id,
-    assets: [still("face", "Mira study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("prop", "Sphere turnaround", "Element", "hero"), still("frame", "Harbour still", "Reference", "hero")],
+    assets: [still("face", "Wren study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("prop", "Sphere turnaround", "Element", "hero"), still("frame", "Harbour still", "Reference", "hero")],
     nodes: [
-      card("mira", "Mira", "character", 0, 0, { assetId: "face" }),
+      card("wren", "Wren", "character", 0, 0, { assetId: "face" }),
       card("dunes", "The mirrored dunes", "element", 0, 320, { assetId: "plate" }),
       card("sphere", "Chrome sphere", "element", 0, 640, { assetId: "prop" }),
       card("board", "Harbour board", "media", 270, 0, { assetId: "frame" }),
       card("lamp", "Desk lamp", "media", 270, 320, { assetId: "frame", refKind: "element", locked: true }),
       card("look", "Warm daylight", "moodboard", 270, 640, { text: "Warm sand. Cool chrome." }),
-      shot("open", "The opening", 540, 0, ["mira", "dunes", "sphere", "board", "lamp"]),
+      shot("open", "The opening", 540, 0, ["wren", "dunes", "sphere", "board", "lamp"]),
     ],
   };
 }
@@ -156,14 +156,14 @@ test("every reference card says what it is — Cast, Environment, Element or Ref
   const future = { ...card("check", "Continuity check", "verify" as NodeType, 540, 380), verify: { rubric: 1 } } as CanvasNode;
   const { errors } = await openMocked(page, [future]);
   const kinds: Record<string, [string, string]> = {
-    mira: ["cast", "CAST"], dunes: ["environment", "ENVIRONMENT"], sphere: ["element", "ELEMENT"], board: ["ref", "REF"], lamp: ["element", "ELEMENT"],
+    wren: ["cast", "CAST"], dunes: ["environment", "ENVIRONMENT"], sphere: ["element", "ELEMENT"], board: ["ref", "REF"], lamp: ["element", "ELEMENT"],
   };
   for (const [id, [kind, label]] of Object.entries(kinds)) {
     await expect(node(page, id)).toHaveAttribute("data-ref-kind", kind);
     await expect(node(page, id).locator(".pxw-graph-kind")).toHaveText(label);
   }
   const graph = page.getByTestId("rig-graph");
-  await expect(graph.getByRole("group", { name: "Cast: Mira" })).toHaveCount(1);
+  await expect(graph.getByRole("group", { name: "Cast: Wren" })).toHaveCount(1);
   await expect(graph.getByRole("group", { name: "Environment: The mirrored dunes" })).toHaveCount(1);
   /* A look board, a shot and a card from a newer release are not references: each says what it is, and nothing breaks. */
   for (const id of ["look", "open", "check"]) await expect(node(page, id)).not.toHaveAttribute("data-ref-kind", /.*/);
@@ -173,7 +173,7 @@ test("every reference card says what it is — Cast, Environment, Element or Ref
   await expect(graph.getByRole("group", { name: "Card: Continuity check" })).toHaveCount(1);
   if (["workbench-390x844", "workbench-1440x900"].includes(info.project.name)) await page.getByTestId("rig-graph-surface").screenshot({ path: info.outputPath(`rig-canvas-kinds-${info.project.name}.png`), animations: "disabled" });
   /* It is never wired from a page that does not know its rules. */
-  await node(page, "mira").locator(".pxw-graph-port--out").click();
+  await node(page, "wren").locator(".pxw-graph-port--out").click();
   await node(page, "check").locator(".pxw-graph-port--in").click();
   await expect(graph.getByRole("status")).toHaveText("This card is from a newer version of Particl. Reload the page to connect it.");
   await page.keyboard.press("Escape");
@@ -291,7 +291,7 @@ test("a second tab open while a kind changes keeps working, and neither tab's ki
     await showCanvas(tab);
   }
   /* Both tabs are on the team canvas before anything changes. */
-  await expect.poll(async () => Object.keys((await canvas())?.nodes ?? {}).sort()).toEqual(["board", "dunes", "lamp", "look", "mira", "open", "sphere"]);
+  await expect.poll(async () => Object.keys((await canvas())?.nodes ?? {}).sort()).toEqual(["board", "dunes", "lamp", "look", "wren", "open", "sphere"]);
 
   /* The first tab sets a kind. */
   await first.bringToFront();

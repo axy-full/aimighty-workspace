@@ -32,7 +32,7 @@ async function setup(page: Page) {
   project.production = {
     scriptApproval: { at: new Date().toISOString(), source: "hand", sha256 },
     beats: { scriptSha256: sha256, updatedAt: new Date().toISOString(), scenes: [
-      { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [shot("shot-a1", "The fox on the ice"), shot("shot-a2", "Mara at the window")], characters: ["Mara"], locations: ["Harbour"], props: [] },
+      { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [shot("shot-a1", "The fox on the ice"), shot("shot-a2", "Keeper at the window")], characters: ["Keeper"], locations: ["Harbour"], props: [] },
     ] },
   };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });

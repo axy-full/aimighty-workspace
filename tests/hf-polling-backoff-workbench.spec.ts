@@ -203,7 +203,7 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: { ...newProject("Harbour cut"), id: "ws-edit-poll", productionProjectId: "prod-edit", shotMappings: {}, fps: 24 } });
-  await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_still", title: "Mara at the window", prompt: "Mara at the window", projectId: "prod-edit" })] });
+  await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_still", title: "Keeper at the window", prompt: "Keeper at the window", projectId: "prod-edit" })] });
   /* The price and the dispatch are mocks: nothing is sent to an engine. */
   let dispatched = 0;
   await page.route(/\/api\/generate(\/quote)?$/, (route) => {
@@ -223,7 +223,7 @@ test("Production re-edit: a failed read says so while it is checked again, and a
   await page.clock.install();
   await page.goto("/suites?suite=studio&page=takes");
   await expect(page.getByTestId("project-name")).toHaveText("Harbour cut");
-  await page.getByTestId("edit-takes").getByTestId("edit-take").filter({ hasText: "Mara at the window" }).click();
+  await page.getByTestId("edit-takes").getByTestId("edit-take").filter({ hasText: "Keeper at the window" }).click();
   await page.getByTestId("edit-instruction").fill("Make it night, rain on the glass");
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
   await pauseClock(page);

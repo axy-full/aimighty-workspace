@@ -14,7 +14,7 @@ const SIZES = ["workbench-1440x900", "workbench-390x844"];
 const asset = (id: string, kind: Asset["kind"], name: string, mime: string): Asset => ({ id, name, kind, mime, category: "Shot", url: `/api/media/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
 const fixture = (): Project => ({
   ...newProject("Harbour cut"), id: "ws-deliver", productionProjectId: "prod-deliver", shotMappings: {}, fps: 24,
-  assets: [asset("gen-wide", "video", "Wide on the ice", "video/mp4"), asset("gen-still", "image", "Mara at the window", "image/png")],
+  assets: [asset("gen-wide", "video", "Wide on the ice", "video/mp4"), asset("gen-still", "image", "Keeper at the window", "image/png")],
   shots: [{ id: "s1", name: "01 — The crossing", assetId: "gen-wide", duration: 48, sourceIn: 0, note: "" }, { id: "s2", name: "02 — The window", assetId: "gen-still", duration: 72, sourceIn: 0, note: "" }],
 });
 
@@ -38,7 +38,7 @@ test("Delivery: EDL, FCPXML and Premiere XML download; the frame rate is changed
   const { errors, store } = await open(page);
   /* A render-backed shot is named by the workspace template in every export (SOW §9). */
   store.current = { ...store.current, assets: store.current.assets.map((a) => (a.id === "gen-wide" ? { ...a, generationId: "gen_wide" } : a)) };
-  await page.route("**/api/workbench/export-names", (route) => route.fulfill({ json: { names: { gen_wide: "HARBOURCUT_SC01_SH010_SD25_v2_Mara" } } }));
+  await page.route("**/api/workbench/export-names", (route) => route.fulfill({ json: { names: { gen_wide: "HARBOURCUT_SC01_SH010_SD25_v2_Keeper" } } }));
   await page.reload();
   await expect(page.getByTestId("project-name")).toHaveText("Harbour cut");
   await expect(page.getByText("Change the spec in Studio")).toHaveCount(0);
@@ -49,10 +49,10 @@ test("Delivery: EDL, FCPXML and Premiere XML download; the frame rate is changed
   const edl = await grab("deliver-edl");
   expect(edl.name).toBe("Harbour_cut.edl");
   expect(edl.text).toContain("FCM: NON-DROP FRAME");
-  expect(edl.text).toContain("* FROM CLIP NAME: HARBOURCUT_SC01_SH010_SD25_v2_Mara.mp4");
+  expect(edl.text).toContain("* FROM CLIP NAME: HARBOURCUT_SC01_SH010_SD25_v2_Keeper.mp4");
   const fcp = await grab("deliver-fcpxml");
   expect(fcp.name).toBe("Harbour_cut.fcpxml");
-  expect(fcp.text).toContain('src="media/HARBOURCUT_SC01_SH010_SD25_v2_Mara.mp4"');
+  expect(fcp.text).toContain('src="media/HARBOURCUT_SC01_SH010_SD25_v2_Keeper.mp4"');
   expect(fcp.text).toContain('<fcpxml version="1.10">');
   expect(fcp.text).toContain('name="02 — The window" offset="86448/24s"');
   const xml = await grab("deliver-xml");

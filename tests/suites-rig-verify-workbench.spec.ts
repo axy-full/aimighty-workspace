@@ -45,15 +45,15 @@ async function setup(page: Page, info: TestInfo, take: Rgb | "video", withCard =
     return response.json();
   };
   const square = (rgb: Rgb) => sharp({ create: { width: 512, height: 512, channels: 3, background: rgb } }).png().toBuffer();
-  const master = await upload("mira-master.png", await square(RED), "image/png");
+  const master = await upload("wren-master.png", await square(RED), "image/png");
   const takeReceipt = take === "video" ? await upload("opening-take.mp4", await readFile("public/fixtures/clip.mp4"), "video/mp4") : await upload("opening-take.png", await square(take), "image/png");
   const project: Project = {
     ...newProject("Verify study"), id: `verify-${Date.now().toString(36)}-${info.project.name.replace(/\D/g, "")}`,
-    assets: [picture("face", "Mira master", "Character", master), picture("take", "The opening take", "Take", takeReceipt, { nodeId: "open" })],
+    assets: [picture("face", "Wren master", "Character", master), picture("take", "The opening take", "Take", takeReceipt, { nodeId: "open" })],
     nodes: [
-      card("mira", "Mira", "character", { assetId: "face" }),
-      card("open", "The opening", "scene", { x: 300, assetId: "take", linked: ["mira"], width: 238, role: "Director", status: "draft", mode: take === "video" ? "Video" : "Image", engine: ENGINE, durationS: 5, ratio: "16:9", resolution: "720p" }),
-      ...(withCard ? [card("check", "Verify · The opening", "review", { x: 620, linked: ["open", "mira"], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } })] : []),
+      card("wren", "Wren", "character", { assetId: "face" }),
+      card("open", "The opening", "scene", { x: 300, assetId: "take", linked: ["wren"], width: 238, role: "Director", status: "draft", mode: take === "video" ? "Video" : "Image", engine: ENGINE, durationS: 5, ratio: "16:9", resolution: "720p" }),
+      ...(withCard ? [card("check", "Verify · The opening", "review", { x: 620, linked: ["open", "wren"], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } })] : []),
     ],
   };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
@@ -182,7 +182,7 @@ test("press Verify on a take: the price comes first, the approved check lands as
   const errors = await openRig(page, s.project.id);
   const body = await verifyCardFromShot(page);
   await expect(body.getByTestId("card-verify-take")).toContainText("The opening · v1 · still");
-  await expect(body.getByTestId("card-verify-masters")).toContainText("Cast · Mira v1");
+  await expect(body.getByTestId("card-verify-masters")).toContainText("Cast · Wren v1");
   await expect(body.getByTestId("card-verify-checks")).toContainText("Identity, Wardrobe, Artifacts");
   await expect(body.getByTestId("card-verify-none")).toHaveText("Not checked yet.");
   await floors(page, info, body, "before the price");
@@ -276,9 +276,9 @@ test("a changed master: the stored check says it was against an older master, an
   const again = (await page.request.post("/api/workbench/development", { headers: s.headers, data: { ...input, requestId: randomUUID(), quoteOnly: true } }).then((r) => r.json())) as DevelopmentQuote;
   expect(again).toMatchObject({ estimateCredits: 0, calls: 0, stored: { id: job.id, verdict: "pass" } });
 
-  /* Mira's master picture changes: a new version of the master. */
-  const blue = await s.upload("mira-new-wardrobe.png", await s.square(BLUE), "image/png");
-  const changed = { ...s.project, assets: [...s.project.assets, picture("face2", "Mira, new wardrobe", "Character", blue)], nodes: s.project.nodes.map((n) => (n.id === "mira" ? { ...n, assetId: "face2" } : n)) };
+  /* Wren's master picture changes: a new version of the master. */
+  const blue = await s.upload("wren-new-wardrobe.png", await s.square(BLUE), "image/png");
+  const changed = { ...s.project, assets: [...s.project.assets, picture("face2", "Wren, new wardrobe", "Character", blue)], nodes: s.project.nodes.map((n) => (n.id === "wren" ? { ...n, assetId: "face2" } : n)) };
   const saved = await page.request.put("/api/workbench/projects", { headers: s.headers, data: { project: changed, revision: s.revision } });
   expect(saved.ok(), await saved.text()).toBe(true);
 

@@ -27,7 +27,7 @@ function recognized() {
   return applyOcrPage(
     requestOcr(source(), [2, 3]),
     2,
-    "EXT. DOCK - NIGHT\nMARA\nA remembered moment.",
+    "EXT. DOCK - NIGHT\nKEEPER\nA remembered moment.",
     94,
   );
 }

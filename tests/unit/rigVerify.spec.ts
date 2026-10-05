@@ -80,18 +80,18 @@ function fixture(): Project {
   project.id = 'verify-' + randomUUID();
   project.productionProjectId = 'prod-' + randomUUID();
   project.assets = [
-    sample('face', 'Mira study', 'Character', 'character'),
+    sample('face', 'Wren study', 'Character', 'character'),
     sample('plate', 'Dunes plate', 'Environment', 'environment'),
     sample('frame', 'Harbour still', 'Reference', 'hero'),
     sample('take', 'The opening v1', 'Take', 'character', { nodeId: 'open' }),
-    sample('face2', 'Mira, new wardrobe', 'Character', 'hero'),
+    sample('face2', 'Wren, new wardrobe', 'Character', 'hero'),
   ];
   project.nodes = [
-    card('mira', 'Mira', 'character', { assetId: 'face', elementId: 'el-mira' }),
+    card('wren', 'Wren', 'character', { assetId: 'face', elementId: 'el-wren' }),
     card('dunes', 'The dunes', 'element', { assetId: 'plate' }),
     card('board', 'Harbour board', 'media', { assetId: 'frame' }),
-    card('open', 'The opening', 'scene', { assetId: 'take', linked: ['mira', 'dunes', 'board'], width: 238 }),
-    card('check', 'Verify · The opening', 'review', { linked: ['open', 'mira', 'dunes', 'board'], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } }),
+    card('open', 'The opening', 'scene', { assetId: 'take', linked: ['wren', 'dunes', 'board'], width: 238 }),
+    card('check', 'Verify · The opening', 'review', { linked: ['open', 'wren', 'dunes', 'board'], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } }),
   ];
   return project;
 }
@@ -152,18 +152,18 @@ test('a card checks its one take against its Cast, Environment and Element cards
   const subject = verifySubject(project, project.nodes.find((n) => n.id === 'check')!);
   expect(subject.problem).toBeNull();
   expect(subject.take?.identity).toBe('sample:/campaign/character.webp');
-  expect(subject.masters.map((m) => [m.node.id, m.kind])).toEqual([['mira', 'cast'], ['dunes', 'environment']]);
+  expect(subject.masters.map((m) => [m.node.id, m.kind])).toEqual([['wren', 'cast'], ['dunes', 'environment']]);
   expect(subject.context.map((n) => n.id)).toEqual(['board']);
   expect(subject.checks).toEqual(['identity', 'wardrobe', 'environment', 'artifacts']);
   const key = verifyKeyOf(subject)!;
   expect(key).toEqual({ takeId: 'sample:/campaign/character.webp', masterSet: 'cast:sample:/campaign/character.webp|environment:sample:/campaign/environment.webp', rubric: VERIFY_RUBRIC, framesKey: 'still' });
   const withNodes = (nodes: CanvasNode[]) => verifySubject({ ...project, nodes }, nodes.find((n) => n.id === 'check')!).problem;
   const at = (patch: Partial<CanvasNode>, id = 'check') => project.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n));
-  expect(withNodes(at({ linked: ['mira'] }))).toMatch(/Wire a shot/);
+  expect(withNodes(at({ linked: ['wren'] }))).toMatch(/Wire a shot/);
   expect(withNodes([...project.nodes, card('two', 'Second', 'generate')].map((n) => (n.id === 'check' ? { ...n, linked: [...n.linked, 'two'] } : n)))).toMatch(/one shot/);
   expect(withNodes(at({ assetId: undefined }, 'open').map((n) => n))).toBeNull();
   expect(verifySubject({ ...project, assets: project.assets.filter((a) => a.id !== 'take'), nodes: at({ assetId: undefined }, 'open') }, project.nodes[4]).problem).toMatch(/no take yet/);
-  expect(withNodes(at({ assetId: undefined }, 'mira'))).toMatch(/Mira has no picture yet/);
+  expect(withNodes(at({ assetId: undefined }, 'wren'))).toMatch(/Wren has no picture yet/);
   const video = { ...project, assets: [...project.assets, { ...sample('clip', 'Turntable', 'Element', 'hero'), kind: 'video' as const, url: '/api/uploads/clip-1', uploadId: 'clip-1' }] };
   expect(verifySubject(video, { ...project.nodes[4], linked: ['open', 'lamp'] }).problem).toBeNull();
   expect(verifySubject({ ...video, nodes: [...video.nodes, card('lamp', 'Lamp', 'element', { assetId: 'clip', refKind: 'element' })] }, { ...project.nodes[4], linked: ['open', 'lamp'] }).problem).toMatch(/is a video/);
@@ -194,7 +194,7 @@ test('a stored check stands against what its card checks now: the same key anywh
   const stored = (over: Partial<TakeVerification>): TakeVerification => ({ id: 'v' + Math.random(), takeId: key.takeId, verifyNodeId: 'check', masterSet: key.masterSet, rubric: 1, framesKey: 'still',
     masters: [], frames: [], checks: [], verdict: 'pass', judgeModel: model.id, credits: 2, ownKey: false, createdAt: 1, ...over });
   expect(verificationFor([stored({ verifyNodeId: 'another-card' })], 'check', subject)?.standing).toBe('current');
-  const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+  const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'wren' ? { ...n, assetId: 'face2' } : n)) };
   const now = verifySubject(changed, node);
   expect(verificationFor([stored({})], 'check', now)?.standing).toBe('older-master');
   expect(verificationStanding(stored({ takeId: 'upload:older' }), verifyParts(now))).toBe('older-take');
@@ -207,20 +207,20 @@ test('Verify this take makes one card wired to the shot and its masters, reuses 
   const base = { ...project, nodes: project.nodes.filter((n) => n.id !== 'check') };
   const made = verifyCardFor(base, 'open', 'node-verify');
   const verify = made.project.nodes.find((n) => n.id === 'node-verify')!;
-  expect(verify).toMatchObject({ type: 'review', linked: ['open', 'mira', 'dunes'], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } });
+  expect(verify).toMatchObject({ type: 'review', linked: ['open', 'wren', 'dunes'], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } });
   expect(canvasNodeSchema.safeParse(verify).success).toBe(true);
   expect(verifyCardFor(made.project, 'open').id).toBe('node-verify');
   expect(verifyCardFor(made.project, 'open').project).toBe(made.project);
   /* A master wired into the shot later joins its card. */
   const more = { ...made.project, assets: [...made.project.assets, sample('prop', 'Lamp', 'Element', 'hero')], nodes: [...made.project.nodes.map((n) => (n.id === 'open' ? { ...n, linked: [...n.linked, 'lamp'] } : n)), card('lamp', 'Lamp', 'element', { assetId: 'prop' })] };
-  expect(verifyCardFor(more, 'open').project.nodes.find((n) => n.id === 'node-verify')!.linked).toEqual(['open', 'mira', 'dunes', 'lamp']);
-  expect(() => verifyCardFor(made.project, 'mira')).toThrow('Choose a shot first.');
+  expect(verifyCardFor(more, 'open').project.nodes.find((n) => n.id === 'node-verify')!.linked).toEqual(['open', 'wren', 'dunes', 'lamp']);
+  expect(() => verifyCardFor(made.project, 'wren')).toThrow('Choose a shot first.');
   const last = { id: 'wb_development_1', takeId: 'upload:t', verdict: 'fail' as const, at: 5 };
   const withLast = withVerifyLast(made.project, 'node-verify', last);
   expect(withLast.nodes.find((n) => n.id === 'node-verify')!.verify?.last).toEqual(last);
   expect(canvasNodeSchema.parse(withLast.nodes.find((n) => n.id === 'node-verify')).verify?.last).toEqual(last);
   expect(withVerifyLast(withLast, 'node-verify', last)).toBe(withLast);
-  expect(withVerifyLast(made.project, 'mira', last)).toBe(made.project);
+  expect(withVerifyLast(made.project, 'wren', last)).toBe(made.project);
 });
 
 test('the mock judge scores by average colour: the same picture passes, a near one is unsure, another fails, and no provider is called', async () => {
@@ -228,7 +228,7 @@ test('the mock judge scores by average colour: the same picture passes, a near o
   expect(mockColourScore([10, 10, 10], [10, 10, 10])).toBe(1);
   expect(mockColourScore([255, 0, 0], [0, 0, 255])).toBe(0);
   const snapshot = { take: { assetId: 't', title: 'Shot', name: 't', kind: 'image' as const, version: 1, identity: 'upload:t' }, frames: [{ t: null, uploadId: null, sha256: 'a', image: 1 }],
-    masters: [{ nodeId: 'm', kind: 'cast' as const, title: 'Mira', assetId: 'm', name: 'm', version: 1, identity: 'upload:m', sha256: 'b', image: 2 }], checks: ['identity', 'artifacts'] as VerifySnapshot['checks'] };
+    masters: [{ nodeId: 'm', kind: 'cast' as const, title: 'Wren', assetId: 'm', name: 'm', version: 1, identity: 'upload:m', sha256: 'b', image: 2 }], checks: ['identity', 'artifacts'] as VerifySnapshot['checks'] };
   const judge = async (take: string, master: string) => readVerifyAnswer(JSON.parse((await mockVerifyReply({ prompt: verifyPrompt(snapshot), images: [take, master] })).text),
     { nodeId: 'c', key: { takeId: 'upload:t', masterSet: '', rubric: 1, framesKey: 'still' }, checks: snapshot.checks, frames: snapshot.frames });
   const red = await still(220, 40, 40);
@@ -270,7 +270,7 @@ test('a check is priced first, runs once, is stored under its key, and the same 
     expect(Number(rows[0].credits)).toBe(job.credits);
     /* What "N takes were checked against this master" will count: each master's element, when its card has one. */
     expect(JSON.parse(String(rows[0].masters))).toEqual([
-      { kind: 'cast', nodeId: 'mira', title: 'Mira', identity: 'sample:/campaign/character.webp', version: 1, elementId: 'el-mira' },
+      { kind: 'cast', nodeId: 'wren', title: 'Wren', identity: 'sample:/campaign/character.webp', version: 1, elementId: 'el-wren' },
       { kind: 'environment', nodeId: 'dunes', title: 'The dunes', identity: 'sample:/campaign/environment.webp', version: 1 },
     ]);
     expect(JSON.parse(String(rows[0].frames))).toEqual([{ t: null, uploadId: null, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
@@ -288,7 +288,7 @@ test('a check is priced first, runs once, is stored under its key, and the same 
     await expect(db().execute({ sql: `INSERT INTO take_verifications(${columns.join(',')}) VALUES(${columns.map(() => '?').join(',')})`, args: columns.map((c) => copy[c] as string | number) })).rejects.toThrow(/UNIQUE/);
 
     /* A new master version is a new key: "checked against an older master", and a new check is priced again. */
-    const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+    const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'wren' ? { ...n, assetId: 'face2' } : n)) };
     await save(changed);
     const listed = await listVerifications('owner', project.id);
     expect(listed.verifications.map((v) => [v.id, v.standing, v.mastersCurrent])).toEqual([[job.id, 'older-master', false]]);
@@ -321,7 +321,7 @@ test('an unsure check needs a person; a check needs a model that can see; frames
     const video = { ...other, assets: other.assets.map((a) => (a.id === 'take' ? { ...a, kind: 'video' as const, url: '/api/uploads/clip-1', uploadId: 'clip-1' } : a)) };
     await save(video);
     await expect(quoteDevelopmentJob(request(video), 'owner', h.deps)).rejects.toThrow(/three review frames/);
-    await expect(quoteDevelopmentJob(request(video, { nodeId: 'mira' }), 'owner', h.deps)).rejects.toThrow(/Choose a Verify card/);
+    await expect(quoteDevelopmentJob(request(video, { nodeId: 'wren' }), 'owner', h.deps)).rejects.toThrow(/Choose a Verify card/);
     expect(h.calls).toHaveLength(1);
   });
 });
@@ -356,7 +356,7 @@ test('a check is quoted at what one usually uses while its job holds the ceiling
     expect(job.credits).toBe(billCredits(textCostUsd(thinker, 5000, 300)!, 'text'));
     expect(job.credits!).toBeLessThanOrEqual(quote.holdCredits!);
     /* A check whose provider outcome is unknown is never sent again, and what was held for it (not the lower estimate) stays reserved for review. */
-    const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+    const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'wren' ? { ...n, assetId: 'face2' } : n)) };
     await save(changed);
     const u = harness({}, [thinker]);
     u.deps.call = async (call) => { u.calls.push(call); throw Object.assign(new Error('The connection closed.'), { providerSubmitted: true }); };
@@ -402,7 +402,7 @@ test('two starts of one key on two server instances at once: one claims it befor
   expect(h.events.map((e) => [e.id, e.status])).toEqual([[won[0].job.id, 'succeeded']]);
 
   /* A new master, a new key. One instance passes the free check and waits; the other checks the key to the end; then the first claims: the stored scorecard answers it, free. */
-  const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'face2' } : n)) };
+  const changed = { ...project, nodes: project.nodes.map((n) => (n.id === 'wren' ? { ...n, assetId: 'face2' } : n)) };
   await runInTenant(here, () => save(changed));
   const next = await runInTenant(here, () => approve(request(changed), h.deps));
   let reached!: () => void, release!: () => void;
@@ -419,7 +419,7 @@ test('two starts of one key on two server instances at once: one claims it befor
   expect(h.calls).toHaveLength(2);
 
   /* The same request sent twice at once (a retry racing its original): one job answers both, reserved once. */
-  const third = { ...project, nodes: project.nodes.map((n) => (n.id === 'mira' ? { ...n, assetId: 'plate' } : n)) };
+  const third = { ...project, nodes: project.nodes.map((n) => (n.id === 'wren' ? { ...n, assetId: 'plate' } : n)) };
   await runInTenant(here, () => save(third));
   const once = { ...(await runInTenant(here, () => approve(request(third), h.deps))).approved, requestId: randomUUID() };
   const twice = { ...h.deps, allowance: meeting(2) };

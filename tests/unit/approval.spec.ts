@@ -15,9 +15,9 @@ test("a reason is required past an approved take, and only a real one counts", (
 });
 
 test("the question names the take being rendered past, and the trail reads as one line", () => {
-  const ask = lockAsk(3, "Mara");
+  const ask = lockAsk(3, "Keeper");
   expect(ask.title).toContain("v3");
-  expect(ask.line).toContain("Mara approved v3");
+  expect(ask.line).toContain("Keeper approved v3");
   expect(lockAsk(null, null).title).toContain("a take");
   const ago = () => "2h ago";
   expect(trailLine({ pickedBy: "Ana", pickedAt: 1, approvedBy: "Sam", approvedAt: 2 }, ago)).toBe("Picked by Ana 2h ago · approved by Sam 2h ago");

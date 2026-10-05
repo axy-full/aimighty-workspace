@@ -37,7 +37,7 @@ const MODELS = [
   { id: "spacexai/grok-4.7", name: "Grok 4.7", vision: true, released: 3, efforts: [{ value: "auto", label: "Auto" }] },
   { id: "openai/gpt-5.5", name: "GPT-5.5", vision: true, released: 1, efforts: [{ value: "auto", label: "Auto" }] },
 ];
-const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HARBOUR MASTER'S HUT - CONTINUOUS\n\nMARA watches through the window.\n";
+const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HARBOUR MASTER'S HUT - CONTINUOUS\n\nKEEPER watches through the window.\n";
 const FAILED = "This development phase could not complete: The agent ran out of room before it finished its answer, so nothing was kept from this phase. It was not billed, and it is never sent again on its own.";
 
 type Job = Record<string, unknown> & { id: string; requestId: string; status: string };
@@ -249,7 +249,7 @@ test("Beats: a delete goes on the undo stack with a toast Undo, ⌘Z brings it b
   test.setTimeout(120_000);
   const sha = createHash("sha256").update(SCRIPT).digest("hex");
   const scene = (n: number, heading: string) => ({
-    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["MARA"], locations: [heading], props: [],
+    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["KEEPER"], locations: [heading], props: [],
     beats: [1, 2].map((b) => ({ id: `beat-${n}-${b}`, text: `Scene ${n}, beat ${b}.` })),
     shots: [1, 2].map((t) => ({ id: `shot-${n}-${t}`, description: `Scene ${n}, shot ${t}.`, framing: "Wide", movement: "Locked", lighting: "Dusk", sound: "Wind" })),
   });

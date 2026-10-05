@@ -18,12 +18,12 @@ async function open(page: Page) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const project = { ...newProject("Dune Studies"), brief: "One kitchen, one rainy dawn. The bottle is never held up to camera.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
+  const project = { ...newProject("Harbour film"), brief: "One kitchen, one rainy dawn. The bottle is never held up to camera.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
   expect((await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } })).ok()).toBe(true);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/suites?project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText("Dune Studies");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour film");
   return { errors, project, headers };
 }
 
@@ -35,7 +35,7 @@ test("Crew opens from ⌘K under the project; a round streams in at the price on
   await goViaSearch(page, "crew room", /Crew room/);
   await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
   await openSuitesMenu(page);
-  await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Dune Studies", "Make", "Atomik"]);
+  await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Harbour film", "Make", "Atomik"]);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await closeSuitesMenu(page);
   expect(new URL(page.url()).searchParams.get("view")).toBe("crew");

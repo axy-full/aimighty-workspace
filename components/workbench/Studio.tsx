@@ -141,6 +141,7 @@ import {
   STAGE_ALIASES,
   normalizeStage,
   seedProject,
+  SEED_PROJECT_ID,
   newProject,
   uid,
   timecode,
@@ -743,7 +744,7 @@ export default function Studio({
   },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn,storageKey]);
   useEffect(() => {
     // The shared async loader hydrates from the server after flushing any pending write.
-    let last='dune-studies';
+    let last=SEED_PROJECT_ID;
     try{last=new URLSearchParams(window.location.search).get('project')||localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
     const params=new URLSearchParams(window.location.search);
     const requestedStage=params.get('stage');
@@ -1432,7 +1433,7 @@ export default function Studio({
             <div>
               <span className="eyebrow">LOOK DEVELOPMENT</span>
               <h2>
-                {p.id === 'dune-studies'
+                {p.id === SEED_PROJECT_ID
                   ? 'Warm earth. Impossible reflections.'
                   : 'The visual world of ' + p.name}
               </h2>

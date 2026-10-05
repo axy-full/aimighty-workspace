@@ -28,7 +28,7 @@ const engineError: TakeFailure = { ...refused, code: "error", kind: "provider_er
 const CASES: { name: string; job: string; generation: { status: string; error?: string; failure: TakeFailure }; line: string }[] = [
   { name: "Fox", job: "gen_cast_settled", generation: { status: "failed", error: "The connected account rejected this generation during moderation.", failure: { ...refused, charge: { credits: 0, settled: true } } },
     line: "Refused by the content filter · Not billed · Change the prompt or reference" },
-  { name: "Mara", job: "gen_cast_charged", generation: { status: "failed", failure: { ...engineError, charge: { credits: 12, settled: true } } },
+  { name: "Keeper", job: "gen_cast_charged", generation: { status: "failed", failure: { ...engineError, charge: { credits: 12, settled: true } } },
     line: "The engine hit an error · 12 cr charged · Render again" },
   { name: "Ivo", job: "gen_cast_held", generation: { status: "failed", failure: { ...engineError, charge: { credits: 12, settled: false } } },
     line: "The engine hit an error · 12 cr held · Render again" },

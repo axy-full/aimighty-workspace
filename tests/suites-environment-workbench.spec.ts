@@ -13,7 +13,7 @@ import { newProject } from "../lib/workbench/studio";
  * Real local routes, mock engine.
  */
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
-const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HUT - NIGHT\n\nMara watches.\n";
+const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HUT - NIGHT\n\nKeeper watches.\n";
 const png = (fill: string) => sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="${fill}"/></svg>`)).png().toBuffer();
 const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
 
@@ -33,7 +33,7 @@ async function setup(page: Page, first: { heading?: string } = {}) {
     scriptApproval: { at: new Date().toISOString(), source: "hand", sha256 },
     beats: { scriptSha256: sha256, updatedAt: new Date().toISOString(), scenes: [
       { id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [{ id: "beat-a", text: "The fox crosses" }], shots: [], characters: ["Fox"], locations: ["Frozen harbour"], props: [], ...first },
-      { id: "scene-b", heading: "INT. HUT - NIGHT", summary: "Mara watches", beats: [{ id: "beat-b", text: "Mara watches" }], shots: [], characters: ["Mara"], locations: ["Hut"], props: [] },
+      { id: "scene-b", heading: "INT. HUT - NIGHT", summary: "Keeper watches", beats: [{ id: "beat-b", text: "Keeper watches" }], shots: [], characters: ["Keeper"], locations: ["Hut"], props: [] },
     ] },
   };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });

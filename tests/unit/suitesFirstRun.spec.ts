@@ -47,7 +47,7 @@ test("a project with nothing in it yet starts at the brief", () => {
 
 test("the Cast card counts the stage's own entries as well as pictured cast", () => {
   const project = { ...newProject("Starter"), production: { cast: { entries: [
-    { id: "cast-01", name: "Mara", kind: "character" as const, description: "", prompt: "", takes: [] },
+    { id: "cast-01", name: "Courier", kind: "character" as const, description: "", prompt: "", takes: [] },
     { id: "cast-02", name: "Mule", kind: "element" as const, description: "", prompt: "", takes: [] },
   ] } } };
   expect(stageCards(project, []).find((c) => c.id === "cast")).toMatchObject({ meta: "1 identity · 1 element", status: "done" });

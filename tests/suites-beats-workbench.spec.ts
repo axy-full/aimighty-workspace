@@ -12,13 +12,13 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
  * the beat sheet then says the script has moved on. Real local routes, mock engine.
  */
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
-const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HARBOUR MASTER'S HUT - CONTINUOUS\n\nMARA watches through the window.\n\nMARA\nNot tonight.\n";
+const SCRIPT = "EXT. FROZEN HARBOUR - DUSK\n\nA red fox crosses the ice.\n\nINT. HARBOUR MASTER'S HUT - CONTINUOUS\n\nKEEPER watches through the window.\n\nKEEPER\nNot tonight.\n";
 
 /** A feature: 180 scenes, about 260,000 characters (well over 120 pages). */
 function featureScript() {
   const places = ["EXT. FROZEN HARBOUR - DUSK", "INT. HARBOUR MASTER'S HUT - NIGHT", "EXT. LIGHTHOUSE ROAD - DAWN", "INT. CANNERY - DAY"];
-  const action = "Wind drives snow across the planks. MARA hauls a frozen line hand over hand, counting the knots under her breath, while the fox watches from the pilings and does not run. ";
-  return Array.from({ length: 180 }, (_, i) => `${places[i % 4]} ${i + 1}\n\n${action.repeat(8)}\n\nMARA\nNot tonight. Not scene ${i + 1}.\n`).join("\n");
+  const action = "Wind drives snow across the planks. KEEPER hauls a frozen line hand over hand, counting the knots under her breath, while the fox watches from the pilings and does not run. ";
+  return Array.from({ length: 180 }, (_, i) => `${places[i % 4]} ${i + 1}\n\n${action.repeat(8)}\n\nKEEPER\nNot tonight. Not scene ${i + 1}.\n`).join("\n");
 }
 
 async function setup(page: Page, script = SCRIPT) {
@@ -73,7 +73,7 @@ test("Beats: the agent breaks the script down, the director edits, the agent red
   await page.getByTestId("beat-close").click();
   await scenes.nth(1).click();
   await scenes.nth(1).getByTestId("add-shot").click();
-  await page.getByLabel("Shot 2.2 description").fill("Close: Mara's breath fogs the glass");
+  await page.getByLabel("Shot 2.2 description").fill("Close: Keeper's breath fogs the glass");
   await page.getByLabel("Scene 2 act").selectOption("1");
   await page.getByLabel("Move scene 2 up").click();
   await expect(page.getByTestId("beats-counts")).toHaveText("2 scenes · 3 beats · 3 shots");
