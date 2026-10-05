@@ -445,8 +445,8 @@ test.describe("review fixes", () => {
     const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, LEDGER_UNIT_SCHEMA } = await import("../../lib/ledgerUnit");
     const c = createClient({ url: `file:${path.join(dir, "seed.db")}` });
     await c.execute(LEDGER_UNIT_SCHEMA);
-    await c.execute(`CREATE TABLE meter_events(id TEXT, credit_usd REAL, created_at INTEGER)`);
-    await c.execute(`INSERT INTO meter_events VALUES('a',0.1,1),('b',0.8,2)`);
+    await c.execute(`CREATE TABLE meter_events(id TEXT, workspace_id TEXT, credit_usd REAL, created_at INTEGER)`);
+    await c.execute(`INSERT INTO meter_events VALUES('a','ws_x',0.1,1),('b','ws_x',0.8,2)`);
     process.env.CREDIT_USD = "0.10";
     await seedLedgerUnit(c, 1234);
     expect(await ledgerUnitTx(c)).toBe(0.8);
@@ -728,23 +728,67 @@ test.describe("second review fixes", () => {
     });
   });
 
-  test("M3: the merge at $0.80 seeds $0.80 though the last job was at $0.10, and stays open until CREDIT_USD changes", async () => {
+  /** A database as particl.si's is before the merge: credit tables, no ledger row yet. */
+  const seedDb = async (name: string) => {
     const { createClient } = await import("@libsql/client");
-    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, LEDGER_UNIT_SCHEMA } = await import("../../lib/ledgerUnit");
-    const c = createClient({ url: `file:${path.join(dir, "seed-m3.db")}` });
+    const { LEDGER_UNIT_SCHEMA } = await import("../../lib/ledgerUnit");
+    const c = createClient({ url: `file:${path.join(dir, `${name}.db`)}` });
     await c.execute(LEDGER_UNIT_SCHEMA);
-    await c.execute(`CREATE TABLE meter_events(id TEXT, credit_usd REAL, created_at INTEGER)`);
-    await c.execute(`INSERT INTO meter_events VALUES('before_cutover',0.1,1)`); // nothing metered since the price moved
+    await c.execute(`CREATE TABLE meter_events(id TEXT, workspace_id TEXT, credit_usd REAL, created_at INTEGER)`);
+    await c.execute(`CREATE TABLE credit_grants(id TEXT, workspace_id TEXT, credits REAL, created_at INTEGER)`);
+    await c.execute(`CREATE TABLE topup_requests(id TEXT, workspace_id TEXT, credits REAL, usd REAL, created_at INTEGER)`);
+    return c;
+  };
+
+  test("M3: merged with CREDIT_USD already 0.10, a record written in the $0.80 days seeds $0.80 and pauses, though no job ran at $0.80", async () => {
+    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, ledgerOpenTx } = await import("../../lib/ledgerUnit");
+    process.env.CREDIT_USD = "0.10";
+    // The last job is a $0.10 one from before the cutover; inside the window only a desk grant and a pack request.
+    for (const [name, sql] of [
+      ["seed-grant", `INSERT INTO credit_grants VALUES('g','ws_x',100,${AFTER})`],
+      ["seed-request", `INSERT INTO topup_requests VALUES('r','ws_x',500,400,${AFTER})`],
+    ] as const) {
+      const c = await seedDb(name);
+      await c.execute(`INSERT INTO meter_events VALUES('old','ws_x',0.1,${BEFORE})`);
+      await c.execute(sql);
+      await seedLedgerUnit(c, NOW);
+      expect([name, await ledgerUnitTx(c), await pausedSinceTx(c), await ledgerOpenTx(c)]).toEqual([name, 0.8, NOW, false]);
+      // Later boots keep it: the row is written once.
+      await seedLedgerUnit(c, NOW + 1000);
+      expect([await ledgerUnitTx(c), await pausedSinceTx(c)]).toEqual([0.8, NOW]);
+      c.close();
+    }
+  });
+
+  test("M3: with nothing written in the $0.80 days (the house aside), it seeds at CREDIT_USD and nothing pauses", async () => {
+    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, ledgerOpenTx, OLD_PRICE_EARLIEST } = await import("../../lib/ledgerUnit");
+    process.env.CREDIT_USD = "0.10";
+    const c = await seedDb("seed-none");
+    await c.execute(`INSERT INTO meter_events VALUES('old','ws_x',0.1,${OLD_PRICE_EARLIEST - 1}),('house','ws_legacy',0.8,${AFTER})`);
+    await c.execute(`INSERT INTO credit_grants VALUES('w','ws_x',250,${BEFORE}),('h','ws_legacy',10,${AFTER})`);
+    await seedLedgerUnit(c, NOW);
+    expect([await ledgerUnitTx(c), await pausedSinceTx(c), await ledgerOpenTx(c)]).toEqual([0.1, null, true]);
+    c.close();
+    const empty = await seedDb("seed-empty");
+    await seedLedgerUnit(empty, NOW);
+    expect([await ledgerUnitTx(empty), await pausedSinceTx(empty)]).toEqual([0.1, null]);
+    empty.close();
+  });
+
+  test("M3: a deployment at $0.80 seeds $0.80 whatever the last job cost; a ledger with no row admits nothing", async () => {
+    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, ledgerOpenTx } = await import("../../lib/ledgerUnit");
     process.env.CREDIT_USD = "0.80";
+    const c = await seedDb("seed-080");
+    await c.execute(`INSERT INTO meter_events VALUES('old','ws_x',0.1,${BEFORE})`);
     await seedLedgerUnit(c, 1000);
-    expect(await ledgerUnitTx(c)).toBe(0.8);
-    expect(await pausedSinceTx(c)).toBeNull();
-    // The owner sets 0.10 and redeploys: that boot pauses, which closes the window the conversion converts.
+    expect([await ledgerUnitTx(c), await pausedSinceTx(c)]).toEqual([0.8, null]);
     process.env.CREDIT_USD = "0.10";
     await seedLedgerUnit(c, 2000);
-    expect(await ledgerUnitTx(c)).toBe(0.8);
-    expect(await pausedSinceTx(c)).toBe(2000);
+    expect([await ledgerUnitTx(c), await pausedSinceTx(c)]).toEqual([0.8, 2000]);
     c.close();
+    const bare = await seedDb("seed-bare");
+    expect(await ledgerOpenTx(bare)).toBe(false);
+    bare.close();
   });
 
   test("L5: a test mark needs the whole word", async () => {

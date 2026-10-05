@@ -3,7 +3,8 @@ import { billingReady, billingTransaction, syncBillingLedger } from "./billingLe
 import { platformDb, platformReady, getWorkspace } from "./platform";
 import { creditRateUsd, creditUsd } from "./creditTerms";
 import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
-import { ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
+import { OLD_PRICE_EARLIEST, ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
+export { OLD_PRICE_EARLIEST };
 import { convertTenantFigures, tenantChangesSince, type CapChoice, type TenantFigure } from "./creditConversionTenant";
 
 /**
@@ -928,9 +929,6 @@ async function recordedEnd(): Promise<number | null> {
   const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
   return Number(r?.e) > 0 ? Number(r!.e) : null;
 }
-
-/** The earliest the old price can have begun: CREDIT_USD=0.80 was set on Vercel on 2 October 2026, 15:33 UTC. */
-export const OLD_PRICE_EARLIEST = Date.UTC(2026, 9, 2, 15, 33);
 
 /** A real run's window must be one the record can have: begun after the old price was set, closed after it began, not in the future, and not after the first job approved at the old price. */
 function checkWindow(cutoverAt: number | null, endAt: number | null, firstOldPriceJobAt: number | null, at: number): void {
