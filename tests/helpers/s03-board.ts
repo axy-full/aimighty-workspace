@@ -1,15 +1,15 @@
 import { expect, type Page } from "@playwright/test";
-import { signInLocally } from "./workbenchLocal";
+import { signInWithNewInterface } from "./newInterface";
 import { newProject, type CanvasNode } from "../../lib/workbench/studio";
 
-/* Stream 3's browser specs share this: a signed-in local workspace and a production with today's canvas nodes. Neutral names only. */
+/* Stream 3's browser specs share this: a signed-in local workspace with the new interface on and a production with today's canvas nodes. Neutral names only. */
 export const SHOTS = process.env.S03_SHOTS || "/private/tmp/claude-s03-shots";
 
 export const node = (id: string, type: CanvasNode["type"], title: string, extra: Partial<CanvasNode> = {}): CanvasNode =>
   ({ id, title, type, x: 0, y: 0, width: 254, linked: [], ...extra });
 
 export async function seedBoard(page: Page, more: CanvasNode[] = []) {
-  const workspaceId = (await signInLocally(page.request, "Board Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Board Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = {

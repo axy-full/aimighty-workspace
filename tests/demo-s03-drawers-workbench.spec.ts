@@ -25,7 +25,8 @@ test("a file added on the board lands in the Library drawer, and dragged onto a 
   await page.getByTestId("board-drawer-library").click();
   const library = page.getByTestId("board-library");
   const tile = library.locator(".bd-tile", { hasText: "market-stall" });
-  await expect(tile).toBeVisible();
+  /* The first upload on a cold dev server compiles its routes: give it time. */
+  await expect(tile).toBeVisible({ timeout: 60_000 });
   await shot(page, "board-library-file");
   /* Upload also puts a picture on the board as a free card, at the middle of the view. */
   await expect(page.locator('[data-card-kind="media"][data-free="true"]')).toHaveCount(1);

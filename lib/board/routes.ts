@@ -2,12 +2,12 @@ import type { ScreenModule } from "@/lib/shell/screens";
 
 /**
  * The board (stream 3): `?view=board`, with `kind`, `region`, `list`, `drawer`, `review`, `start` (a hint from Home) and the design's
- * `frame` letters. Seeded by the shell (stream 1); stream 3 owns this file from here and flips `landed` in the PR that
+ * `frame` letters. Seeded by the shell (stream 1); stream 3 owns this file from here and flipped `landed` in the PR that
  * lands BoardView. Ads and Social boards are the same entry with `kind` (lib/shell/ads-social.ts).
  */
 export const BOARD_SCREEN: ScreenModule = {
   id: "board",
-  landed: false,
+  landed: true,
   params: ["kind", "frame", "list", "region", "drawer", "review", "start"],
   /* Old → new. Each old Studio stage is a region of the board (README § 1.2); the Rig is the board itself. */
   rows: [

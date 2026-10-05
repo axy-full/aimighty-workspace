@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject } from "../lib/workbench/studio";
 import { SHOTS, desktop, node, seedBoard } from "./helpers/s03-board";
 
@@ -103,7 +104,7 @@ test("the board's controls: glide, zoom, Board | List, a note placed and typed, 
 });
 
 test("an empty production opens on 'What are we making?'", async ({ page }, info) => {
-  const workspaceId = (await signInLocally(page.request, "Board Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Board Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = newProject("Empty board fixture");
