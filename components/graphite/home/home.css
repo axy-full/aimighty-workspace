@@ -1,0 +1,139 @@
+/*
+ * Home (design/particl-graphite/README.md § 1.1; the master's `?view=home`, Particl Suites.dc.html
+ * lines 878–937). Tokens only (app/graphite.css). Measured from the master at 1440 × 900: an 880 px
+ * column, sections 40 apart, the box 14 × 16 on --gx-input, chips 26, buttons 30, cards on a
+ * 240 px grid. The right padding grows by the open right panel (--gx-overlay-right, set by the shell
+ * when Make or Atomik's panel is open), so nothing sits under it.
+ */
+.gx-hm {
+  flex: 1 1 auto; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto;
+  background: var(--gx-root);
+  padding: 56px calc(24px + var(--gx-overlay-right, 0px)) calc(64px + env(safe-area-inset-bottom, 0px)) 24px;
+  transition: padding var(--gx-t) var(--gx-ease);
+  animation: gx-in var(--gx-t-enter) var(--gx-ease) both;
+}
+.gx-hm-col { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; min-width: 0; }
+.gx-hm-make { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx-hm-title { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: var(--gx-ls-h1); line-height: 1.1; color: var(--gx-text); }
+
+/* ── What are we making? ─────────────────────────────────────────────── */
+.gx-hm-box {
+  background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-card);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  transition: border-color var(--gx-t) var(--gx-ease);
+}
+.gx-hm-box[data-filled] { border-color: var(--gx-tint-border-45); }
+/* The textarea's focus is the box's: one visible ring around the whole box. */
+.gx-hm-box:has(> .gx-hm-text:focus-visible) { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx .gx-hm-text:focus-visible { outline: none; }
+.gx-hm-text {
+  display: block; width: 100%; min-height: 84px; resize: vertical; background: transparent; border: 0; padding: 0;
+  font-size: 16px; line-height: var(--gx-lh-doc); color: var(--gx-text);
+}
+.gx-hm-text:disabled { color: var(--gx-text-2); }
+.gx-hm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.gx-hm-chips { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gx-hm-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--gx-card-border); flex: none; }
+.gx .gx-hm-btn {
+  height: var(--gx-h-strip-btn); padding: 0 11px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border);
+  background: transparent; color: var(--gx-text); font-size: 12px; font-weight: 500; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; flex: none; transition: border-color var(--gx-t);
+}
+.gx .gx-hm-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx .gx-hm-chip {
+  height: var(--gx-h-seg); padding: 0 10px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border);
+  background: transparent; color: var(--gx-text); font-size: 12px; font-weight: 500; white-space: nowrap;
+  transition: background var(--gx-t), border-color var(--gx-t), color var(--gx-t);
+}
+.gx .gx-hm-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border-50); color: var(--gx-accent-text); }
+.gx .gx-hm-btn:disabled, .gx .gx-hm-chip:disabled, .gx .gx-hm-tpl:disabled, .gx .gx-hm-link:disabled { color: var(--gx-disabled); cursor: default; }
+.gx .gx-hm-chip[aria-pressed="true"]:disabled { color: var(--gx-accent-text); }
+
+/* Added files: a brief and references, each a chip with Remove. */
+.gx-hm-files { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.gx-hm-file {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: var(--gx-h-strip-btn); padding: 0 2px 0 4px;
+  border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-card-border); background: var(--gx-card); min-width: 0;
+}
+.gx-hm-file-pic { width: 22px; height: 22px; border-radius: var(--gx-r-xs); overflow: hidden; flex: none; display: grid; place-items: center; color: var(--gx-text-2); background: var(--gx-root); }
+.gx-hm-file-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx-hm-file-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--gx-text); }
+.gx .gx-hm-file-x { width: 26px; height: 26px; flex: none; border-radius: var(--gx-r-xs); display: grid; place-items: center; font-size: 16px; line-height: 1; color: var(--gx-text-2); }
+.gx .gx-hm-file-x:hover:not(:disabled) { color: var(--gx-text); }
+
+.gx-hm-note, .gx-hm-problem { margin: 0; font-size: 12px; line-height: 1.45; }
+.gx-hm-note { color: var(--gx-text-2); }
+.gx-hm-problem { color: var(--gx-failed-text); }
+
+/* ── Templates: a quiet row tucked under the box ─────────────────────── */
+.gx-hm-starts { display: flex; flex-direction: column; gap: 10px; margin-top: -18px; min-width: 0; }
+.gx-hm-templates { display: flex; gap: 8px; flex-wrap: wrap; }
+.gx .gx-hm-tpl {
+  height: var(--gx-h-strip-btn); padding: 0 12px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-card-border);
+  background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; transition: border-color var(--gx-t);
+}
+.gx .gx-hm-tpl:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx .gx-hm-tpl[aria-busy="true"] { color: var(--gx-accent-text); border-color: var(--gx-tint-border-50); }
+
+/* ── Your projects ───────────────────────────────────────────────────── */
+.gx-hm-section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gx-hm-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; }
+.gx-hm-eyebrow { margin: 0; font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx .gx-hm-link { font-size: 12px; font-weight: 600; color: var(--gx-accent-text); white-space: nowrap; }
+.gx .gx-hm-link:hover:not(:disabled) { color: var(--gx-accent-text-hover); }
+.gx .gx-hm-more { align-self: flex-start; }
+.gx-hm-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--gx-gap-grid); min-width: 0; }
+.gx-hm-cell { display: flex; min-width: 0; }
+.gx .gx-hm-card {
+  flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text);
+  transition: border-color var(--gx-t);
+}
+.gx .gx-hm-card:hover:not(:disabled):not([data-skeleton]) { border-color: var(--gx-hover-border); }
+.gx-hm-cover {
+  position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; flex: none;
+  background: var(--gx-root);
+}
+.gx-hm-cover[data-cover="swatch"] { background: linear-gradient(135deg, var(--hm-from), var(--hm-to)); display: grid; place-items: center; }
+.gx-hm-initials { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--gx-text); }
+.gx-hm-badge {
+  position: absolute; left: 10px; top: 10px; padding: 2px 7px; border-radius: var(--gx-r-pill);
+  font-family: var(--gx-mono); font-size: 12px; letter-spacing: 0.06em; background: var(--gx-on-media); color: var(--gx-done-text);
+}
+.gx-hm-card-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; min-width: 0; }
+.gx-hm-card-name {
+  font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); line-height: 1.3; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.gx-hm-card-meta { font-size: var(--gx-fs-body); color: var(--gx-text-2); }
+.gx-hm-needs { display: inline-flex; align-items: center; gap: 8px; font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gx-hm-needs[data-tone="waiting"] { color: var(--gx-waiting-text); }
+.gx-hm-needs[data-tone="live"] { color: var(--gx-accent-text); }
+.gx-hm-needs[data-tone="sample"] { color: var(--gx-done-text); }
+.gx-hm-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.gx-hm-card[data-skeleton] .gx-hm-cover { background: var(--gx-track); }
+.gx-hm-bar { display: block; height: 12px; width: 60%; border-radius: var(--gx-r-xs); background: var(--gx-track); }
+.gx-hm-bar--short { width: 35%; }
+
+/* ── Narrow: one column, nothing wider than the screen ───────────────── */
+@media (max-width: 1023px) {
+  .gx-hm { padding: 40px calc(20px + var(--gx-overlay-right, 0px)) calc(64px + env(safe-area-inset-bottom, 0px)) 20px; }
+}
+@media (max-width: 767px) {
+  .gx-hm { padding: 24px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .gx-hm-col { gap: 32px; }
+  .gx-hm-title { font-size: 24px; }
+  .gx-hm-sep { display: none; }
+  .gx-hm-starts { margin-top: -16px; }
+  .gx-hm-grid { grid-template-columns: 1fr; }
+  .gx-hm-file-name { max-width: 160px; }
+}
+/* Phones and other touch screens (844 × 390 too): every control is at least 44 px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-hm-btn, .gx .gx-hm-tpl, .gx .gx-hm-file { height: 44px; }
+  .gx .gx-hm-chip { height: 44px; min-width: 44px; }
+  .gx .gx-hm-file-x { width: 44px; height: 44px; }
+  .gx .gx-hm-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .gx-hm-text { font-size: 16px; }
+}

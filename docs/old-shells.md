@@ -81,3 +81,14 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
+
+## Suites screens behind the new-interface switch
+
+Screens customers still see while the switch is off. Each is deleted in the switch-flip PR, not before.
+
+| Old screen | Replaced by (switch on) | Its tests |
+|---|---|---|
+| The phone's Home, "Where to?" (`components/graphite/mobile/SuiteHome.tsx`; the `.gx-where*` block in `components/graphite/shell.css`; `suiteTiles` and `assetsRowLabel` in `lib/shell/studio-home.ts`) | The phone's Home (`components/graphite/phone/HomeScreen.tsx`): what needs you, then projects | `tests/suites-phone-home-workbench.spec.ts`; the suite-tile cases in `tests/unit/suitesStudioHome.spec.ts` |
+| The phone's Studio stage grid (`components/graphite/mobile/StudioHome.tsx` on a phone; the `.gx-home*` block in `components/graphite/shell.css`). On a desktop the same component is the Studio overview, which Home replaces | The phone's Home (projects) and the phone's Record; on a desktop, Home (`components/graphite/home/HomeView.tsx`) | `tests/suites-phone-home-workbench.spec.ts`; `tests/unit/suitesStudioHome.spec.ts` |
+| The phone's tab bar Home · Gen · Suites · Assets · More (`components/graphite/TabBar.tsx`) and the phone-only `home` and `stages` pages in `lib/shell/ia.ts` | The phone's tabs Home · Record · Make · Atomik (`components/graphite/phone/PhoneChrome.tsx`) | `tests/hf-phone-chrome-workbench.spec.ts` |
+| The old shell's compact phone chrome (`components/graphite/phone.css`) | The phone's own header, tabs and screens (`components/graphite/phone/phone-screens.css`) | `tests/hf-phone-chrome-workbench.spec.ts` |
