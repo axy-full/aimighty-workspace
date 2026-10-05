@@ -17,9 +17,12 @@ export function useRecreatePrice(scope: string, id: string | null, source: Recip
   const [answer, setAnswer] = useState<{ key: string; price: RecreatePrice } | null>(null);
   useEffect(() => {
     if (!key || !source) return;
-    const kept = seen.get(key);
-    if (kept && Date.now() - kept.at < FRESH_MS) { setAnswer({ key, price: kept.price }); return; }
     let live = true;
+    const kept = seen.get(key);
+    if (kept && Date.now() - kept.at < FRESH_MS) {
+      void Promise.resolve(kept.price).then((price) => { if (live) setAnswer({ key, price }); });
+      return () => { live = false; };
+    }
     const read: QuoteReader = (url, init) => studioRequest<unknown>(url, {
       cache: "no-store",
       headers: { "X-Workbench-Scope": scope, ...(init ? { "Content-Type": "application/json" } : {}) },
