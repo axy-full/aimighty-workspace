@@ -52,6 +52,8 @@ function ownAddress(q: URLSearchParams): boolean {
   if (view) return false;
   const suite = q.get("suite"), page = q.get("page");
   if (!suite && !page) return true;
+  /* Today's Studio overview and the old phone Home are what Home replaces (components/graphite/home/routes.ts rows). */
+  if (suite === "particl" && page === "brief" && (q.get("sp") === "stages" || q.get("sp") === "home")) return true;
   return suite === "atomik" && (page === "approvals" || q.get("sp") === "approvals");
 }
 
@@ -125,11 +127,17 @@ export function versionsOf(entry: LibraryEntry, entries: readonly LibraryEntry[]
   return [...list].sort((a, b) => (generationOf(a)?.version ?? 0) - (generationOf(b)?.version ?? 0) || a.take.createdAt - b.take.createdAt);
 }
 
-/** "SH02 · v2": the shot and the version, as the review title reads (CHANGES 5); the take's own name off a shot. */
+/** "Shot 2": a shot code's number said in words, never the code itself (DECISIONS 39: no SH-style ids in the UI). Null when it has none. */
+export function shotWords(code: string | null | undefined): string | null {
+  const n = /^SH0*(\d+)$/i.exec(code ?? "")?.[1];
+  return n ? `Shot ${n}` : null;
+}
+
+/** "Shot 2 · v2": the shot and the version, as the review title reads (CHANGES 5); the take's own name off a shot. */
 export function takeTitle(entry: LibraryEntry): string {
   const g = generationOf(entry);
-  if (g?.shotCode) return `${g.shotCode} · v${g.version}`;
-  return entry.take.name;
+  const shot = shotWords(g?.shotCode);
+  return shot ? `${shot} · v${g?.version ?? 1}` : entry.take.name;
 }
 
 const seconds = (n: number) => `${Number.isInteger(n) ? n : Math.round(n * 10) / 10} s`;

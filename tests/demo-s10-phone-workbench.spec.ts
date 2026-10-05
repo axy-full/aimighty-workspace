@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Request } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type Project } from "../lib/workbench/studio";
 import type { QueueItem } from "../lib/control-room/queue";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
@@ -15,7 +15,7 @@ import { dimLabels, lastRowClearsPinned, smallTargets, smallText } from "./phone
  * never spends; with no connection the judgement waits and is sent when the phone is back. The floors hold at
  * every phone size, and `device=phone` frames it at 390 px on a desktop.
  *
- * The switch: these run with it on (stream 1's `signInWithNewInterface` replaces `signInLocally` once it lands).
+ * The switch: these run with it on (`signInWithNewInterface`).
  */
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 /* Screenshots are opt-in: S10_SHOTS names a folder outside the repo. CI writes none. */
@@ -41,18 +41,18 @@ const item = (over: Partial<QueueItem> & { id: string; title: string }): QueueIt
   open: { kind: "take", genId: "gen_held", draftId: "ws-phone" }, ...over,
 });
 const QUEUE: QueueItem[] = [
-  item({ id: "held:gen_held", title: "Keyframe · SH03 · retake" }),
-  item({ id: "board-render:r1:2", source: "board-render", where: "Board", title: "Hero take · SH04", at: Date.UTC(2026, 9, 5, 9, 51), price: { kind: "exact", credits: 43 }, needsAdmin: true, canApprove: false, why: "Over the per-shot rule: an admin presses this one.",
+  item({ id: "held:gen_held", title: "Keyframe · Shot 3 · retake" }),
+  item({ id: "board-render:r1:2", source: "board-render", where: "Board", title: "Hero take · Shot 4", at: Date.UTC(2026, 9, 5, 9, 51), price: { kind: "exact", credits: 43 }, needsAdmin: true, canApprove: false, why: "Over the per-shot rule: an admin presses this one.",
     approve: { kind: "board-render", productionId: "prod-ws", runId: "rar_aaaaaaaaaaaaaaaaaaaaaaaa", seq: 2, fingerprint: "a".repeat(64) }, decline: null }),
 ];
-const TRAY = [{ id: "gen_live", source: "engine", kind: "video", name: "SH04 · the encounter", mediaUrl: null, stage: "rendering", label: "Rendering", tone: "blue", reason: null,
+const TRAY = [{ id: "gen_live", source: "engine", kind: "video", name: "Shot 4 · the encounter", mediaUrl: null, stage: "rendering", label: "Rendering", tone: "blue", reason: null,
   progress: null, createdAt: Date.now(), settledAt: null, price: { amount: 43, unit: "cr" }, draftId: "ws-phone", projectName: "Harbour at dusk", action: null }];
 
 type Opened = { reviews: { id: string; state: string }[]; releases: { id: string; credits: unknown }[]; paid: string[]; errors: string[] };
 
 async function open(page: Page, path: string, queue: QueueItem[] = QUEUE): Promise<Opened> {
   const seen: Opened = { reviews: [], releases: [], paid: [], errors: [] };
-  await signInLocally(page.request);
+  await signInWithNewInterface(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
@@ -97,12 +97,12 @@ test("phone Home: what needs you first, with the price as the button; renders wi
   const seen = await open(page, "/suites?view=home");
   const rows = page.getByTestId("phone-approval-row");
   await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText("Keyframe · SH03 · retake");
+  await expect(rows.first()).toContainText("Keyframe · Shot 3 · retake");
   await expect(rows.first().getByTestId("phone-row-approve")).toHaveText("3 cr");
   /* Over the per-shot rule: a member sees who presses it, never a button. */
   await expect(rows.nth(1)).toContainText("Needs an admin");
   await expect(rows.nth(1).getByRole("button")).toHaveCount(0);
-  await expect(page.getByTestId("phone-render-row")).toContainText("SH04 · the encounter");
+  await expect(page.getByTestId("phone-render-row")).toContainText("Shot 4 · the encounter");
   await expect(page.getByTestId("phone-render-row").getByTestId("phone-notify")).toHaveText("Notify me");
   await expect(page.getByTestId("phone-review-row")).toContainText("3 takes to review");
   await expect(page.getByTestId("phone-project")).toHaveCount(1);
@@ -120,14 +120,14 @@ test("phone Home: a single item approves from Home through its own route, at its
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
   const seen = await open(page, "/suites?view=home");
   await page.getByTestId("phone-approval-row").first().getByTestId("phone-row-approve").click();
-  await expect(page.getByTestId("toast")).toContainText("Keyframe · SH03 · retake approved · 3 cr held");
+  await expect(page.getByTestId("toast")).toContainText("Keyframe · Shot 3 · retake approved · 3 cr held");
   expect(seen.releases).toEqual([{ id: "gen_held", credits: 3 }]);
   expect(seen.paid).toEqual([]);
 });
 
 test("phone Home: a short balance offers Top up, which opens Settings › Plan & credits under the phone header", async ({ page }, info) => {
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
-  await open(page, "/suites?view=home", [item({ id: "held:gen_held", title: "Hero take · SH04", price: { kind: "exact", credits: 43 }, shortBy: 3 })]);
+  await open(page, "/suites?view=home", [item({ id: "held:gen_held", title: "Hero take · Shot 4", price: { kind: "exact", credits: 43 }, shortBy: 3 })]);
   const row = page.getByTestId("phone-approval-row");
   await expect(row).toContainText("Short by 3 cr");
   await row.getByTestId("phone-row-topup").click();
@@ -141,7 +141,7 @@ test("phone Home: a short balance offers Top up, which opens Settings › Plan &
 test("phone review: swipe right approves, Undo puts it back, left rejects; it never spends; the floors hold", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const seen = await open(page, "/suites?screen=review");
-  await expect(page.getByTestId("phone-review-title")).toHaveText("SH01 · v1");
+  await expect(page.getByTestId("phone-review-title")).toHaveText("Shot 1 · v1");
   await expect(page.getByTestId("mobile-dock")).toHaveCount(0);
   await floors(page, "Review");
   await shot(page, info.project.name, "review");
@@ -160,12 +160,12 @@ test("phone review: swipe right approves, Undo puts it back, left rejects; it ne
     await page.mouse.up();
   };
   await swipe(Math.min(160, box.width * 0.5));
-  await expect(page.getByTestId("toast")).toContainText("SH01 · v1 approved · nothing spent");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 · v1 approved · nothing spent");
   await shot(page, info.project.name, "review-approved-undo");
   expect(seen.reviews).toEqual([{ id: "gen_a1", state: "approved" }]);
-  await expect(page.getByTestId("phone-review-title")).toHaveText("SH01 · v2");
+  await expect(page.getByTestId("phone-review-title")).toHaveText("Shot 1 · v2");
   await page.getByTestId("toast-undo").click();
-  await expect(page.getByTestId("phone-review-title")).toHaveText("SH01 · v1");
+  await expect(page.getByTestId("phone-review-title")).toHaveText("Shot 1 · v1");
   expect(seen.reviews.at(-1)).toEqual({ id: "gen_a1", state: "" });
 
   /* A short drag or a tap judges nothing. */
@@ -174,12 +174,12 @@ test("phone review: swipe right approves, Undo puts it back, left rejects; it ne
   expect(seen.reviews).toHaveLength(2);
 
   await swipe(-Math.min(160, box.width * 0.5));
-  await expect(page.getByTestId("toast")).toContainText("SH01 · v1 rejected · nothing spent");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 · v1 rejected · nothing spent");
   expect(seen.reviews.at(-1)).toEqual({ id: "gen_a1", state: "changes" });
 
   /* The buttons judge the same way. */
   await page.getByTestId("phone-approve").click();
-  await expect(page.getByTestId("toast")).toContainText("SH01 · v2 approved");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 · v2 approved");
   expect(seen.reviews.at(-1)).toEqual({ id: "gen_a2", state: "approved" });
   expect(seen.paid).toEqual([]);
   expect(seen.releases).toEqual([]);
@@ -192,7 +192,7 @@ test("phone review: versions of a shot switch in place, and Done goes Home", asy
   const versions = page.getByRole("group", { name: "Versions" }).getByRole("button");
   await expect(versions).toHaveText(["v1", "v2"]);
   await versions.nth(1).click();
-  await expect(page.getByTestId("phone-review-title")).toHaveText("SH01 · v2");
+  await expect(page.getByTestId("phone-review-title")).toHaveText("Shot 1 · v2");
   await page.getByTestId("phone-review-done").click();
   await expect(page.getByTestId("phone-home")).toBeVisible();
 });
@@ -200,10 +200,10 @@ test("phone review: versions of a shot switch in place, and Done goes Home", asy
 test("phone review offline: the judgement waits on the phone and is sent when it is back", async ({ page, context }, info) => {
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
   const seen = await open(page, "/suites?screen=review");
-  await expect(page.getByTestId("phone-review-title")).toHaveText("SH01 · v1");
+  await expect(page.getByTestId("phone-review-title")).toHaveText("Shot 1 · v1");
   await context.setOffline(true);
   await page.getByTestId("phone-approve").click();
-  await expect(page.getByTestId("toast")).toContainText("SH01 · v1 approved · sent when you're back online");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 · v1 approved · sent when you're back online");
   expect(seen.reviews).toEqual([]);
   await context.setOffline(false);
   await expect.poll(() => seen.reviews).toEqual([{ id: "gen_a1", state: "approved" }]);
@@ -211,7 +211,7 @@ test("phone review offline: the judgement waits on the phone and is sent when it
 
 test("device=phone frames the phone at 390 px on a desktop; without it a desktop keeps its own screens", async ({ page }, info) => {
   test.skip(PHONES.includes(info.project.name), "desktop widths");
-  await open(page, "/suites?view=home&device=phone");
+  await open(page, "/suites?device=phone&screen=home");
   const frame = (await page.getByTestId("phone-app").boundingBox())!;
   expect(Math.round(frame.width)).toBe(390);
   expect(Math.abs(frame.x + frame.width / 2 - page.viewportSize()!.width / 2)).toBeLessThanOrEqual(1);

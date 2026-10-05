@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { libraryEntries } from "../../lib/workspace/library";
 import {
   DRAWN_SCREENS, PHONE_PARAMS, SWIPE_MIN, judgedLine, phoneSearch, queueJudgement, readPhone, readQueued, reviewCountLine,
-  reviewQueue, swipeVerdict, takeSpec, takeTitle, versionsOf,
+  reviewQueue, shotWords, swipeVerdict, takeSpec, takeTitle, versionsOf,
 } from "../../components/graphite/phone/phone-model";
 import { PHONE_SCREEN } from "../../components/graphite/phone/routes";
 import { generation } from "../helpers/workspaceFixtures";
@@ -19,6 +19,8 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?atomik=how").asked).toBe("atomik");
   expect(readPhone("?suite=atomik&page=approvals")).toMatchObject({ asked: "home", own: true });
   expect(readPhone("")).toMatchObject({ asked: "home", screen: "home", framed: false, own: true });
+  /* Today's Studio overview and the old phone Home are what Home replaces. */
+  expect(readPhone("?suite=particl&page=brief&sp=stages")).toMatchObject({ asked: "home", own: true });
   /* Settings and the rest render under the phone's header. */
   expect(readPhone("?view=workspace&tab=credits").own).toBe(false);
   expect(readPhone("?suite=moleculr&page=marketing").own).toBe(false);
@@ -31,7 +33,7 @@ test("a screen not in this build opens Home, never an empty screen", () => {
   expect([...DRAWN_SCREENS].sort()).toEqual(["home", "review"]);
   for (const screen of ["plan", "fix", "record", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe("home");
   /* Nobody is shown the phone until the PR that completes its set flips this. */
-  expect(PHONE_SCREEN).toMatchObject({ id: "phone", landed: false, params: PHONE_PARAMS });
+  expect(PHONE_SCREEN).toMatchObject({ id: "phone", landed: true, params: PHONE_PARAMS });
 });
 
 test("phoneSearch changes only the phone's own params and drops what belonged to the screen left", () => {
@@ -48,9 +50,9 @@ test("a swipe right approves, left rejects (the trail's 'changes'), and a tap or
   expect(swipeVerdict(4, 3)).toBeNull();
   expect(swipeVerdict(70, 80)).toBeNull();
   expect(swipeVerdict(Number.NaN, 0)).toBeNull();
-  expect(judgedLine("SH02 · v2", "approved", false)).toBe("SH02 · v2 approved · nothing spent");
-  expect(judgedLine("SH02 · v2", "changes", false)).toBe("SH02 · v2 rejected · nothing spent");
-  expect(judgedLine("SH02 · v2", "changes", true)).toBe("SH02 · v2 rejected · sent when you're back online");
+  expect(judgedLine("Shot 2 · v2", "approved", false)).toBe("Shot 2 · v2 approved · nothing spent");
+  expect(judgedLine("Shot 2 · v2", "changes", false)).toBe("Shot 2 · v2 rejected · nothing spent");
+  expect(judgedLine("Shot 2 · v2", "changes", true)).toBe("Shot 2 · v2 rejected · sent when you're back online");
 });
 
 test("the review queue is the project's finished, unjudged pictures and videos, oldest first", () => {
@@ -68,7 +70,7 @@ test("the review queue is the project's finished, unjudged pictures and videos, 
   expect(reviewCountLine(3)).toBe("3 takes to review");
   const late = list.find((e) => e.take.sourceId === "late")!;
   expect(versionsOf(late, list).map((e) => e.take.sourceId)).toEqual(["first", "late"]);
-  expect(takeTitle(late)).toBe("SH01 · v2");
+  expect(takeTitle(late)).toBe("Shot 1 · v2");
 });
 
 test("the badge says the take's own frame and length, and nothing it does not know", () => {
@@ -102,4 +104,11 @@ test("no phone screen calls a paid route itself, and none formats a price by han
   for (const size of css.matchAll(/font-size:\s*([\d.]+)px/g)) expect(Number(size[1])).toBeGreaterThanOrEqual(12);
   /* Colours are tokens: no hex outside app/graphite.css. */
   expect(css.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+});
+
+test("a shot code is said in words, never shown as the code", () => {
+  expect(shotWords("SH03")).toBe("Shot 3");
+  expect(shotWords("sh12")).toBe("Shot 12");
+  expect(shotWords("A1")).toBeNull();
+  expect(shotWords(null)).toBeNull();
 });
