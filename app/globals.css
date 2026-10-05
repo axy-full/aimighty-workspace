@@ -844,20 +844,20 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .wl-tag > span { display: block; margin: 0 0 10px; font-size: 44px; line-height: 1.02; font-weight: 600; letter-spacing: -.035em; color: var(--graphite-ink); }
 .wl-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; max-width: 560px; }
 .wl-foot p { margin: 0; max-width: 560px; font: 400 12px/1.5 var(--graphite-font); color: var(--graphite-body); text-wrap: pretty; }
-.wl-atomik { flex: none; display: flex; align-items: center; gap: 9px; color: var(--graphite-accent-text); font: 600 11px/1.4 var(--graphite-font); letter-spacing: .12em; transition: color .12s; }
+.wl-atomik { flex: none; display: flex; align-items: center; gap: 9px; color: var(--graphite-accent-text); font: 600 12px/1.4 var(--graphite-font); letter-spacing: .12em; transition: color .12s; }
 @media (hover: hover) { .wl-atomik:hover { color: var(--graphite-ink); } }
 .wl-right { min-width: 0; background: var(--graphite-panel); display: flex; flex-direction: column; justify-content: center; padding: 48px; }
 .wl-form { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 360px; margin: auto; }
 .wl-form .page-h1 { font: 600 26px/1.2 var(--graphite-font); letter-spacing: -.02em; }
 .wl-form .page-sub { font: 400 14px/1.5 var(--graphite-font); color: var(--graphite-body); }
-.wl-field { display: flex; flex-direction: column; gap: 6px; font: 500 10px/1.4 var(--graphite-font); letter-spacing: .12em; color: var(--graphite-muted); }
+.wl-field { display: flex; flex-direction: column; gap: 6px; font: 500 12px/1.4 var(--graphite-font); letter-spacing: .12em; color: var(--gx-text-2); }
 .wl-field input { width: 100%; min-width: 0; height: 44px; box-sizing: border-box; background: var(--graphite-control); border: 1px solid var(--graphite-line); border-radius: 6px; padding: 11px 12px; color: var(--graphite-ink); font: 400 14px/1.4 var(--graphite-font); outline: 0; letter-spacing: 0; transition: border-color .15s; }
 .wl-field input[type="password"] { letter-spacing: .1em; }
 .wl-field input::placeholder { color: var(--graphite-muted); letter-spacing: 0; }
 .wl-field input:focus-visible { border-color: var(--graphite-accent); outline: 2px solid var(--graphite-accent); outline-offset: 2px; }
-.wl-form-foot { display: flex; flex-direction: column; align-items: stretch; gap: 18px; font: 400 12px/1.5 var(--graphite-font); color: var(--graphite-muted); }
+.wl-form-foot { display: flex; flex-direction: column; align-items: stretch; gap: 18px; font: 400 12px/1.5 var(--graphite-font); color: var(--gx-text-2); }
 .wl-form-foot a { color: var(--graphite-accent-text); }
-.wl-form-foot > .hdr-mono-link { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--graphite-line); text-align: center; font-size: 11px; color: var(--graphite-body); }
+.wl-form-foot > .hdr-mono-link { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--graphite-line); text-align: center; font-size: 12px; color: var(--graphite-body); }
 @media (max-width: 900px) { .wl { grid-template-columns: 1fr; } .wl-left { min-height: 320px; padding: 32px; } .wl-right { padding: 40px 32px; } .wl-tag > span { font-size: 36px; } }
 
 /* Shared invite, signup, reset and setup forms retain every current field. */

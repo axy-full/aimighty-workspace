@@ -21,7 +21,7 @@ export default function RootError({
     <main className="grid min-h-dvh place-items-center bg-page p-6 text-ink">
       <div className="max-w-[46ch] text-center">
         <p className="text-[20px] font-semibold tracking-[-0.02em]">This page stopped</p>
-        <p className="mt-2.5 text-[15px] leading-relaxed text-dim">
+        <p className="mt-2.5 text-[15px] leading-relaxed text-lead">
           Something threw before the page could finish. Trying again usually
           settles it; if it doesn&rsquo;t, the deployment needs a look.
         </p>
@@ -38,7 +38,7 @@ export default function RootError({
         </div>
 
         {/* 12px is the floor; the ref is the one the console line (or the server log) carries. */}
-        <p className="mt-5 break-words font-mono text-[12px] leading-relaxed text-dim">
+        <p className="mt-5 break-words font-mono text-[12px] leading-relaxed text-lead">
           {faultMessage(error) ? <>{faultMessage(error)}<br /></> : null}
           ref {faultRef(error)}
         </p>
