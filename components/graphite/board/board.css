@@ -1,0 +1,262 @@
+/*
+ * The board (components/graphite/board; design/particl-graphite/README.md § 1.1, § 2, § 3.1, and the master's board):
+ * the outline rail, the canvas, the docked panel's room, the cards' wrapper and stream 3's plain cards. Graphite
+ * tokens only (app/graphite.css); a tint of the text colour is mixed from --gx-text.
+ */
+.bd {
+  position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; height: 100%; overflow: hidden;
+  background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font);
+}
+
+/* ── The outline rail: 88 px; status dot, 16 px icon, 12 px label; Library and History at the foot ── */
+.bd-rail {
+  flex: none; width: 88px; display: flex; flex-direction: column; align-items: stretch; padding: 14px 0 10px;
+  border-right: 1px solid var(--gx-hair-strong); background: var(--gx-root); z-index: 45;
+}
+.bd-rail-sections { position: relative; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.bd-rail-line { position: absolute; left: 43px; top: 22px; bottom: 22px; width: 1px; background: var(--gx-pop-border); pointer-events: none; }
+.bd .bd-rail-item {
+  position: relative; border: 0; border-radius: 8px; margin: 0 6px; padding: 8px 0; display: flex; flex-direction: column;
+  align-items: center; gap: 5px; font-size: 12px; font-weight: 500; line-height: 1.2; background: transparent;
+  color: color-mix(in srgb, var(--gx-text) 85%, transparent); cursor: pointer; transition: background var(--gx-t), color var(--gx-t);
+}
+.bd .bd-rail-item[data-state="empty"] { color: var(--gx-quiet); }
+.bd .bd-rail-item:hover { background: var(--gx-hair-soft); }
+.bd .bd-rail-item[aria-current="location"] { background: var(--gx-hair-soft); color: var(--gx-text); }
+.bd .bd-rail-item:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.bd-rail-dot {
+  position: relative; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; background: var(--gx-root);
+  border: 1px solid color-mix(in srgb, var(--gx-text) 35%, transparent);
+}
+.bd-rail-dot[data-state="done"] { background: color-mix(in srgb, var(--gx-text) 80%, transparent); border-color: color-mix(in srgb, var(--gx-text) 80%, transparent); }
+.bd-rail-dot[data-state="working"], .bd-rail-dot[data-state="needs"] { background: var(--gx-accent); border-color: var(--gx-accent); }
+.bd-rail-dot[data-state="working"] { animation: gx-pulse var(--gx-t-pulse) ease-in-out infinite; }
+.bd-rail-count { position: absolute; left: 14px; top: -5px; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; line-height: 1; color: var(--gx-accent-text); }
+.bd-rail-drawers { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--gx-hair-strong); padding-top: 8px; }
+.bd .bd-rail-drawer { padding: 8px 0 6px; gap: 4px; color: color-mix(in srgb, var(--gx-text) 75%, transparent); }
+.bd .bd-rail-drawer[aria-pressed="true"] { background: var(--gx-seg-on); color: var(--gx-text); }
+
+/* ── The canvas: Make's panel, when open, sits over the canvas's right edge, so the canvas keeps clear of it ── */
+.bd-main { position: relative; flex: 1; min-width: 0; min-height: 0; margin-right: var(--board-make, 0px); }
+.bd-flow { background: var(--gx-root); }
+.bd-flow .react-flow__pane { cursor: default; }
+.bd-flow .react-flow__pane.dragging { cursor: grabbing; }
+.bd-flow .react-flow__selection { background: var(--gx-tint-10); border: 1px solid var(--gx-tint-border); border-radius: 2px; }
+.bd-flow .react-flow__nodesselection-rect { background: transparent; border: 0; }
+/* A group frame lets presses through to the canvas (a lasso or a pan starts on its empty space); its label does not. */
+.bd-flow .react-flow__node.bd-container { pointer-events: none !important; }
+.bd-flow .react-flow__node.bd-container .bd-group-label { pointer-events: auto; cursor: pointer; }
+.bd-flow .react-flow__node:focus-visible { outline: none; }
+.bd-flow .react-flow__node:focus-visible > .bd-node { outline: 2px solid var(--gx-accent); outline-offset: 3px; border-radius: var(--gx-r-card); }
+.bd-dots { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bd-note { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); margin: 0; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--gx-quiet); }
+
+/* ── The card wrapper: the layout's exact box, and the selection ring (mine; a teammate's or Atomik's in their colour) ── */
+.bd-node { position: relative; box-sizing: border-box; border-radius: var(--gx-r-card); }
+.bd-node[data-container] { border-radius: var(--gx-r-group); }
+.bd-node[data-selected]:not([data-container]) > .bd-card { box-shadow: var(--gx-ring-selected); }
+.bd-node[data-selected][data-container] > .bd-group { border-color: var(--gx-accent); }
+.bd-node[data-watched]:not([data-selected]) { outline: 2px solid var(--bd-ring); outline-offset: 3px; }
+.bd-node[data-dragging] { opacity: .92; }
+.bd-tag {
+  position: absolute; left: 0; top: -24px; max-width: 100%; padding: 2px 8px; border-radius: 999px; z-index: 2;
+  font-size: 12px; font-weight: 600; line-height: 16px; color: var(--gx-root); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Stream 3's plain cards (fallbacks until streams 4 and 5 land, and the board's own notes and labels) ── */
+.bd-card {
+  width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text);
+}
+.bd-card-well { flex: none; position: relative; overflow: hidden; background: var(--gx-root); border-bottom: 1px solid var(--gx-hair-soft); }
+.bd-card-well > img, .bd-card-well video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.bd-card-body { display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 10px 12px 12px; }
+.bd-eyebrow { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.bd-card-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bd-card-text { font-size: 14px; line-height: 1.45; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.bd-card-line { display: inline-flex; align-items: center; gap: 6px; font-size: var(--gx-fs-meta); color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-card-line > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-quiet); }
+.bd-card[data-tone="green"] .bd-card-line > i { background: var(--gx-done); }
+.bd-card[data-tone="gold"] .bd-card-line > i { background: var(--gx-waiting); }
+.bd-card[data-tone="red"] .bd-card-line > i { background: var(--gx-failed-text); }
+.bd-card[data-tone="blue"] .bd-card-line > i { background: var(--gx-accent); }
+.bd-note-card { padding: 12px 14px; gap: 6px; }
+.bd-card.bd-note { padding: 12px 14px; gap: 6px; }
+.bd-note-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow: hidden; }
+.bd-quiet { color: var(--gx-quiet); }
+.bd-label { height: 100%; display: flex; align-items: center; font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; border-bottom: 1px solid var(--gx-pop-border); }
+
+/* ── The shared group frame (README § 3.1): 14 px radius, its label on the top border ── */
+.bd-group { position: absolute; inset: 0; box-sizing: border-box; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-group); }
+.bd-group[data-tone="warning"] { border-color: var(--gx-waiting); }
+.bd-group-label { position: absolute; left: 16px; top: -11px; max-width: calc(100% - 32px); padding: 0 8px; display: flex; align-items: center; gap: 10px; background: var(--gx-root); white-space: nowrap; }
+.bd-group-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.bd-group-meta { font-size: 14px; color: var(--gx-text-2); overflow: hidden; text-overflow: ellipsis; }
+
+/* ── The docked Atomik panel's room (stream 7): 340 open, a 56 px rail collapsed ── */
+.bd-dock { flex: none; width: var(--board-dock, 56px); display: flex; flex-direction: column; border-left: 1px solid var(--gx-hair-strong); background: var(--gx-root); z-index: 30; }
+.bd .bd-dock-rail { border: 0; background: transparent; margin: 10px 0 0; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--gx-text-2); cursor: pointer; }
+.bd .bd-dock-rail svg { color: var(--gx-accent-text); }
+.bd .bd-dock-rail:hover { color: var(--gx-text); }
+.bd .bd-dock-rail:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; border-radius: 8px; }
+
+/* ── The bottom-left cluster: shown on hover and keyboard focus (always in the List view) ── */
+.bd-cluster {
+  position: absolute; left: 0; bottom: 0; z-index: 20; padding: 24px 24px 16px 16px; display: flex; flex-direction: column-reverse;
+  gap: 8px; align-items: flex-start; opacity: 0; transition: opacity var(--gx-t) var(--gx-ease);
+}
+.bd-cluster:hover, .bd-cluster:focus-within, .bd-cluster[data-pinned] { opacity: 1; }
+.bd-cluster-row { display: flex; gap: 6px; align-items: center; }
+.bd-mini { position: relative; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 10px; cursor: pointer; }
+.bd-mini-region { position: absolute; border: 1px solid color-mix(in srgb, var(--gx-text) 30%, transparent); border-radius: 2px; pointer-events: none; }
+.bd-mini-view { position: absolute; border: 1px solid var(--gx-accent); background: var(--gx-tint-10); pointer-events: none; }
+.bd-zoom { display: inline-flex; align-items: center; height: 32px; padding: 0 4px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 10px; }
+.bd .bd-zoom > button { min-width: 28px; height: 28px; border: 0; background: transparent; color: var(--gx-text); font-size: 15px; border-radius: 6px; cursor: pointer; }
+.bd .bd-zoom > .bd-zoom-level { min-width: 44px; font-family: var(--gx-mono); font-size: 12px; }
+.bd .bd-zoom > button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.bd .bd-tidy { height: 32px; padding: 0 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 10px; color: var(--gx-text); font-size: 12px; font-weight: 500; cursor: pointer; }
+.bd .bd-tidy:hover { border-color: var(--gx-hair-strong); }
+.bd .bd-tidy:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.bd-seg .gx-seg-btn { height: 26px; padding: 0 10px; font-size: 12px; font-weight: 500; }
+
+/* ── The tool pill, bottom centre; labels go under a 660 px canvas ── */
+.bd-pill {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; display: flex; flex-wrap: nowrap; gap: 2px;
+  max-width: calc(100% - 32px); padding: 4px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 999px;
+}
+.bd .bd-tool {
+  height: 36px; border: 0; border-radius: 999px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  background: transparent; color: color-mix(in srgb, var(--gx-text) 70%, transparent); cursor: pointer; white-space: nowrap;
+  transition: background var(--gx-t), color var(--gx-t);
+}
+.bd-pill[data-labels] .bd-tool { padding: 0 12px; }
+.bd .bd-tool:hover { color: var(--gx-text); }
+.bd .bd-tool[aria-pressed="true"] { background: var(--gx-seg-on); color: var(--gx-text); }
+.bd .bd-tool[aria-disabled="true"] { color: var(--gx-disabled); cursor: not-allowed; }
+.bd .bd-tool:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.bd[data-tool="note"] .react-flow__pane, .bd[data-tool="text"] .react-flow__pane { cursor: crosshair; }
+
+/* ── Notes and labels edited on the card ── */
+.bd .bd-edit {
+  flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none; padding: 6px 8px; border-radius: 6px; font: inherit; font-size: 14px;
+  line-height: 1.45; color: var(--gx-text); background: var(--gx-input); border: 1px solid var(--gx-accent); outline: none;
+}
+.bd .bd-edit--line { flex: none; height: 32px; font-size: var(--gx-fs-card); font-weight: 600; }
+.bd .bd-edit::placeholder { color: var(--gx-placeholder); }
+
+/* ── The empty board (frame a) ── */
+.bd-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 10; pointer-events: none; }
+.bd-empty-inner { width: 680px; max-width: 100%; display: flex; flex-direction: column; gap: 18px; margin-top: -40px; pointer-events: auto; }
+.bd-empty-title { margin: 0; font-size: 40px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; text-align: center; }
+.bd-empty-box { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: 12px; }
+.bd-empty-box:focus-within { border-color: var(--gx-accent); }
+.bd .bd-empty-words { min-height: 88px; resize: vertical; padding: 0; border: 0; outline: none; background: transparent; color: var(--gx-text); font: inherit; font-size: 17px; line-height: 1.5; }
+.bd .bd-empty-words::placeholder { color: var(--gx-placeholder); }
+.bd-empty-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bd .bd-attach, .bd .bd-template { height: 28px; padding: 0 10px; font-size: 13px; font-weight: 500; background: transparent; border: 1px solid var(--gx-btn-border); cursor: pointer; }
+.bd .bd-template { border-color: var(--gx-card-border); color: color-mix(in srgb, var(--gx-text) 80%, transparent); }
+.bd-empty-rule { width: 1px; height: 18px; margin: 0 4px; background: var(--gx-pop-border); }
+.bd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bd .bd-chip { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; cursor: pointer; }
+.bd .bd-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.bd-empty-grow { flex: 1; }
+.bd .bd-start { height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--gx-accent); color: var(--gx-on-accent); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.bd .bd-start[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.bd .bd-chip:focus-visible, .bd .bd-start:focus-visible, .bd .bd-attach:focus-visible, .bd .bd-template:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.bd-empty-line { margin: 0; text-align: center; font-size: 13px; color: var(--gx-quiet); }
+.bd-templates { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+
+/* ── Offline (README § 3.1): read-only, a pill top right ── */
+.bd-offline {
+  position: absolute; right: 16px; top: 16px; z-index: 30; margin: 0; padding: 9px 16px; border-radius: 999px; background: var(--gx-card);
+  border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 12.5px; font-weight: 500; white-space: nowrap;
+}
+
+/* ── React Flow's attribution, at the reading floor ── */
+.bd-flow .react-flow__attribution { background: var(--gx-root); padding: 2px 8px; font-size: 12px; }
+.bd-flow .react-flow__attribution a { color: var(--gx-quiet); }
+
+/* ── The List view: the same board as an ordered shot list ── */
+.bd-list { position: absolute; inset: 0; overflow: auto; padding: 28px 32px 120px; }
+.bd-list-inner { max-width: 980px; margin: 0 auto; }
+.bd-list-row {
+  width: 100%; display: grid; grid-template-columns: 40px 104px minmax(0, 1.8fr) 120px 170px 120px; gap: 12px; align-items: center;
+  padding: 14px 0; border: 0; border-bottom: 1px solid var(--gx-hair-soft); background: transparent; color: var(--gx-text);
+  font: inherit; font-size: 14px; line-height: 1.45; text-align: left;
+}
+button.bd-list-row { cursor: pointer; }
+button.bd-list-row:hover, button.bd-list-row[aria-current="true"] { background: var(--gx-hair-soft); }
+button.bd-list-row:disabled { cursor: default; }
+button.bd-list-row:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: -2px; }
+.bd-list-head { padding: 0 0 10px; border-bottom-color: var(--gx-hair-strong); font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.bd-list-state { display: inline-flex; justify-content: flex-end; align-items: center; gap: 6px; text-align: right; }
+.bd-list-state > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-quiet); }
+.bd-list-state[data-tone="green"] > i { background: var(--gx-done); }
+.bd-list-state[data-tone="gold"] > i { background: var(--gx-waiting); }
+.bd-list-state[data-tone="red"] > i { background: var(--gx-failed-text); }
+.bd-list-empty { margin: 24px 0; font-size: 14px; }
+.bd-mono { font-family: var(--gx-mono); }
+.bd-soft { color: color-mix(in srgb, var(--gx-text) 75%, transparent); }
+
+/* ── Phones (until stream 10's Record lands): the List view only, above the tab bar ── */
+.bd--compact { display: block; overflow: auto; }
+.bd--compact .bd-list { position: static; padding: 16px 16px var(--ph-clear, 96px); overflow: visible; }
+.bd--compact .bd-list-row { grid-template-columns: 40px minmax(0, 1fr) auto; min-height: 44px; }
+.bd--compact .bd-list-row > :nth-child(2), .bd--compact .bd-list-row > :nth-child(4), .bd--compact .bd-list-row > :nth-child(5) { display: none; }
+
+/* ── The rail's drawers: 280 px beside the rail, over the canvas ── */
+.bd-drawer {
+  position: absolute; left: 88px; top: 0; bottom: 0; width: 280px; z-index: 40; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--gx-root); border-right: 1px solid var(--gx-hair-strong); animation: gx-in var(--gx-t) var(--gx-ease) both;
+}
+.bd-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
+.bd-drawer-head strong { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.bd .bd-drawer-close { min-width: 28px; height: 28px; border: 0; background: transparent; color: var(--gx-quiet); font-size: 16px; line-height: 1; border-radius: 6px; cursor: pointer; }
+.bd-drawer-chips { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 12px 8px; }
+.bd .bd-drawer-chip { height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text-2); font-size: 12px; font-weight: 500; cursor: pointer; }
+.bd .bd-drawer-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.bd-drawer-grid { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; }
+.bd-tile { display: flex; flex-direction: column; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 8px; cursor: grab; }
+.bd-tile-media { position: relative; aspect-ratio: 4 / 3; background: var(--gx-root); overflow: hidden; }
+.bd-tile-media > img, .bd-tile-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.bd-tile-name { padding: 6px 8px 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-tile-meta { padding: 0 8px 8px; font-size: 12px; color: var(--gx-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-drawer-empty { grid-column: 1 / -1; margin: 8px 4px; font-size: 13px; color: var(--gx-quiet); }
+.bd-drawer-list { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 12px; }
+.bd .bd-history-row { width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--gx-text); text-align: left; font: inherit; cursor: pointer; }
+.bd .bd-history-row:hover { background: color-mix(in srgb, var(--gx-text) 4%, transparent); }
+.bd .bd-history-row:disabled { cursor: default; }
+.bd-history-who { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--gx-tint); border: 1px solid var(--gx-pop-border); color: var(--gx-accent-text); }
+.bd-history-what { display: flex; flex-direction: column; min-width: 0; font-size: 14px; line-height: 1.4; }
+.bd-history-when { font-size: 12px; color: var(--gx-quiet); }
+.bd .bd-drawer-close:focus-visible, .bd .bd-drawer-chip:focus-visible, .bd .bd-history-row:focus-visible, .bd-tile:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+/* ── A file dragged over a card that takes it (frame o): dashed accent, "Use as reference" ── */
+.bd-node[data-drop] > .bd-card { border: 1px dashed var(--gx-accent); }
+.bd-node[data-drop]::after {
+  content: "Use as reference"; position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--gx-r-card);
+  background: var(--gx-tint-10); color: var(--gx-text); font-size: 14px; font-weight: 600; pointer-events: none;
+}
+.bd-history-who { font-family: var(--gx-mono); font-size: 12px; font-weight: 600; }
+.bd-history-who[data-who="person"] { background: var(--gx-hair-soft); color: var(--gx-text); }
+.bd .bd-link { border: 0; padding: 0; background: transparent; color: var(--gx-accent-text); font: inherit; cursor: pointer; }
+
+/* ── Presence: teammates' cursors on the board, and who is here ── */
+.bd-cursor { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; z-index: 1000; display: flex; align-items: flex-start; gap: 2px; }
+.bd-cursor > span { margin-top: 14px; padding: 1px 6px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--gx-root); white-space: nowrap; }
+.bd-here { position: absolute; right: 16px; top: 16px; z-index: 25; display: flex; gap: 4px; }
+.bd-here-face {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box; background: var(--gx-card);
+  border: 1px solid var(--gx-pop-border); font-family: var(--gx-mono); font-size: 12px; font-weight: 600; color: var(--gx-text);
+}
+.bd-here-face[data-agent] { background: var(--gx-tint); color: var(--gx-accent-text); animation: gx-pulse var(--gx-t-pulse) ease-in-out infinite; }
+.bd[data-offline] .bd-here { top: 60px; }
+
+/* ── A Make result just landed: lit for a moment (accent border and ring) ── */
+.bd-node > .bd-card { transition: border-color .4s, box-shadow .4s; }
+.bd-node[data-lit] > .bd-card { border-color: var(--gx-accent); box-shadow: 0 0 0 4px var(--gx-tint-border); }
+
+/* Reordering (3.3): the line where a dragged shot or reference will land, and the card on its way. */
+.bd-slot { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--gx-accent); border-radius: 2px; pointer-events: none; z-index: 900; }
+.bd-node[data-dragging]:not([data-free]):not([data-container]) > .bd-card { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7); }
+.bd-node[data-dragging]:not([data-free]):not([data-container]) { cursor: grabbing; }
