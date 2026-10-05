@@ -12,7 +12,7 @@ test("both boards have landed, and own the frame and card params", () => {
   expect(SCREENS.find((s) => s.id === "board-ads")).toBe(ADS_SCREEN);
 });
 
-test("with the switch on, every old Business address opens the Ads board on its card; with it off nothing moves", () => {
+test("every old Business address opens the Ads board on its card, with the switch on or off (the board is for everyone)", () => {
   const on = (search: string) => route(search, true);
   const off = (search: string) => route(search, false);
   const target = (sp: string) => `?suite=moleculr&page=marketing&sp=${sp}`;
@@ -22,7 +22,11 @@ test("with the switch on, every old Business address opens the Ads board on its 
   expect(new URLSearchParams(on(target("dtc"))).toString()).toBe("view=board&kind=ads&frame=2&card=image-ad");
   expect(new URLSearchParams(on(target("design"))).toString()).toBe("view=board&kind=ads&frame=3");
   expect(new URLSearchParams(on(target("setup"))).toString()).toBe("view=board&kind=ads&frame=1");
-  for (const sp of ["brand", "product", "reference", "format", "hooks", "dtc", "design", "setup"]) expect(off(target(sp))).toBe(target(sp));
+  /* The switch off is the same board: the old page is not shown to anyone. */
+  for (const sp of ["brand", "product", "reference", "format", "hooks", "dtc", "design", "setup"]) {
+    expect(new URLSearchParams(off(target(sp))).toString(), sp).toBe(new URLSearchParams(on(target(sp))).toString());
+    expect(new URLSearchParams(off(target(sp))).get("view"), sp).toBe("board");
+  }
 });
 
 test("a frame or card names the region the board opens at, and the card the board selects", () => {
