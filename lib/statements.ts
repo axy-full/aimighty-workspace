@@ -297,11 +297,12 @@ export async function statementFor(month: string, projectId: string | null): Pro
       packs = { count: Number(r?.n ?? 0), credits: Number(r?.c ?? 0), bonus: Number(r?.b ?? 0), usd: Number(r?.u ?? 0) };
     } catch { /* no platform record, no packs line */ }
   }
-  /* Credits before the conversion were restated in today's unit (same dollars): say from when. */
+  /* Credits before the conversion were restated in today's unit (same dollars): say from when, on a
+     statement whose month reaches the old price's window (an earlier one was never restated). */
   let unitNote: string | undefined;
   if (inCredits) {
     const { convertedToUnitAt, creditUnitLine } = await import("./creditConversion");
-    const at = await convertedToUnitAt(ws.id, creditUsd());
+    const at = await convertedToUnitAt(ws.id, creditUsd(), range.to);
     if (at != null) unitNote = creditUnitLine(creditUsd(), at);
   }
   return {

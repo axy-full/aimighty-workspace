@@ -128,6 +128,8 @@ export type CreditConversion = {
 
 export const TOPUP_DECLINED_NOTE = "Price changed; please ask again at US$0.10.";
 
+const TEST_WORD = /(^|[^a-z0-9])(test|fixture|e2e)([^a-z0-9]|$)/i;
+
 async function marksOf(workspaceId: string): Promise<WorkspaceMarks> {
   const r = (await platformDb().execute({
     sql: `SELECT w.name, w.internal_test, a.email FROM workspaces w LEFT JOIN accounts a ON a.id=w.owner_id WHERE w.id=?`, args: [workspaceId],
@@ -139,7 +141,8 @@ async function marksOf(workspaceId: string): Promise<WorkspaceMarks> {
     house: workspaceId === HOUSE_WORKSPACE_ID,
     internal: Number(r?.internal_test ?? 0) === 1,
     platformOwner: Boolean(owner && email === owner),
-    test: /@example\.(test|com)$/.test(email ?? "") || /test|fixture|e2e/i.test(name) || /test|fixture|e2e/i.test(workspaceId),
+    /* Whole words only: "Latest Media" or "Contest Films" is a customer, and `apply` on a test workspace takes its shortfall. */
+    test: /@example\.(test|com)$/.test(email ?? "") || TEST_WORD.test(name) || TEST_WORD.test(workspaceId),
     name, ownerEmail: email,
   };
 }
@@ -758,6 +761,9 @@ export type ConversionRun = {
   /** Listed apart, no decision needed: balances whose dollars shown today fall because their credits
    *  were written at US$0.10 (what they read today is eight times what was paid or granted). */
   dollarsShownDrop: { workspaceId: string; name: string; usdShownToday: number; usdAfter: number; marks: WorkspaceMarks | undefined }[];
+  /** Listed apart, no decision needed: balances already below zero before the conversion (a debt
+   *  carried from before), the same dollars owed after, counted in more credits. */
+  debts: { workspaceId: string; name: string; balanceBefore: number; balanceAfter: number; usdBefore: number; usdAfter: number; marks: WorkspaceMarks | undefined }[];
   /** Pack requests open at the old price: declined (dry run: to be declined), with the note they get,
    *  and who asked, for the owner to contact. The app emails nobody. */
   declinedTopups: (DeclinedTopup & { workspaceId: string; workspaceName: string; note: string })[];
@@ -783,6 +789,10 @@ const declinesOf = (results: CreditConversion[]): ConversionRun["declinedTopups"
 const dropsOf = (results: CreditConversion[]): ConversionRun["dollarsShownDrop"] =>
   results.filter((r) => !(r.shortfall ?? 0) && r.before && r.after && r.after.balanceUsd < r.before.balanceUsd - 0.005 && r.status !== "already")
     .map((r) => ({ workspaceId: r.workspaceId, name: r.marks?.name ?? r.workspaceId, usdShownToday: r.before!.balanceUsd, usdAfter: r.after!.balanceUsd, marks: r.marks }));
+const debtsOf = (results: CreditConversion[]): ConversionRun["debts"] =>
+  results.filter((r) => !(r.shortfall ?? 0) && r.before && r.after && r.before.balance < 0 && r.status !== "already")
+    .map((r) => ({ workspaceId: r.workspaceId, name: r.marks?.name ?? r.workspaceId, balanceBefore: r.before!.balance, balanceAfter: r.after!.balance,
+      usdBefore: r.before!.balanceUsd, usdAfter: r.after!.balanceUsd, marks: r.marks }));
 function capsOf(results: CreditConversion[], layer: LayerLine | null, fromUsd: number, toUsd: number): CapLine[] {
   const line = (workspaceId: string, workspaceName: string, f: TenantFigure): CapLine => ({
     capId: f.cap!.id === PLATFORM_CAP_ID ? PLATFORM_CAP_ID : `${workspaceId}/${f.cap!.id}`, workspaceId, workspaceName, what: f.what,
@@ -859,7 +869,10 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : recorded ?? (await pausedSinceNow());
   const firstOld = (await platformDb().execute({ sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE ROUND(credit_usd*1000000)=ROUND(?*1000000)`, args: [o.fromUsd] })).rows[0];
   const firstOldPriceJobAt = firstOld?.t == null ? null : Number(firstOld.t);
-  if (!o.dryRun && !(Number(o.endAt) > 0) && recorded != null) await checkRecordedWindowHolds(o.fromUsd);
+  if (!o.dryRun) {
+    checkWindow(o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt, firstOldPriceJobAt, at);
+    if (!(Number(o.endAt) > 0) && recorded != null) await checkRecordedWindowHolds(o.fromUsd);
+  }
   const base = {
     action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
     firstOldPriceJobAt, fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
@@ -886,7 +899,7 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
         else if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) finished.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
       }
       if (!back.length)
-        return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [],
+        return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], debts: [], declinedTopups: [], caps: [],
           tenantSkipped, layer: null, results: finished, totals: totals(finished) };
       ids = back;
       reconverting = true;
@@ -905,7 +918,7 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
     : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, reconverting ? ids : o.universe);
   return {
     ...base, dryRun: Boolean(o.dryRun), ledgerUnitAfter: await ledgerUnitNow(), waiting: settled.waiting,
-    needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), declinedTopups: declinesOf(results),
+    needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), debts: debtsOf(results), declinedTopups: declinesOf(results),
     caps: capsOf(results, layer, o.fromUsd, o.toUsd), tenantSkipped, layer, results, totals: totals(results),
   };
 }
@@ -914,6 +927,23 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
 async function recordedEnd(): Promise<number | null> {
   const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
   return Number(r?.e) > 0 ? Number(r!.e) : null;
+}
+
+/** The earliest the old price can have begun: CREDIT_USD=0.80 was set on Vercel on 2 October 2026, 15:33 UTC. */
+export const OLD_PRICE_EARLIEST = Date.UTC(2026, 9, 2, 15, 33);
+
+/** A real run's window must be one the record can have: begun after the old price was set, closed after it began, not in the future, and not after the first job approved at the old price. */
+function checkWindow(cutoverAt: number | null, endAt: number | null, firstOldPriceJobAt: number | null, at: number): void {
+  const iso = (t: number) => new Date(t).toISOString();
+  if (cutoverAt != null) {
+    if (!(cutoverAt >= OLD_PRICE_EARLIEST) || cutoverAt > at)
+      throw new Error(`cutoverAt ${Number.isFinite(cutoverAt) ? iso(cutoverAt) : String(cutoverAt)} is not when the price moved: it is after ${iso(OLD_PRICE_EARLIEST)} and before now, in ms or ISO with Z.`);
+    if (firstOldPriceJobAt != null && cutoverAt > firstOldPriceJobAt)
+      throw new Error(`cutoverAt ${iso(cutoverAt)} is after the first job approved at the old price (${iso(firstOldPriceJobAt)}): the price had moved by then. Use an earlier time.`);
+    if (endAt != null && !(endAt > cutoverAt))
+      throw new Error(`endAt ${iso(endAt)} is not after cutoverAt ${iso(cutoverAt)}.`);
+  }
+  if (endAt != null && endAt > at) throw new Error(`endAt ${iso(endAt)} is in the future.`);
 }
 
 /**
@@ -961,23 +991,27 @@ export async function reverseAllCredits(o: Options & { workspaceId?: string | nu
     dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null, endAt: null, firstOldPriceJobAt: null,
     fromUsd: first?.fromUsd ?? 0, toUsd: first?.toUsd ?? 0, factor: first ? first.fromUsd / first.toUsd : 1,
     ledgerUnitBefore: unitBefore, ledgerUnitAfter: await ledgerUnitNow(), waiting: refused.length ? refused.map((r) => r.workspaceId) : waiting,
-    needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [], tenantSkipped: [], layer, results, totals: totals(results),
+    needsDecision: [], dollarsShownDrop: [], debts: [], declinedTopups: [], caps: [], tenantSkipped: [], layer, results, totals: totals(results),
   };
 }
 
 /**
  * The day this workspace's credits began to be counted at `unitUsd`: the real run of its last
  * conversion to that price, when that conversion still stands (not reversed). Null on any
- * deployment where none has run, so the statement line it feeds appears only where it is true.
+ * deployment where none has run, so the statement line it feeds appears only where it is true;
+ * null too for a range (`rangeEnd`, exclusive) that ended before the old price began, whose
+ * credits were never restated.
  */
-export async function convertedToUnitAt(workspaceId: string, unitUsd: number): Promise<number | null> {
+export async function convertedToUnitAt(workspaceId: string, unitUsd: number, rangeEnd?: number): Promise<number | null> {
   try {
     const rs = await platformDb().execute({
-      sql: `SELECT action,to_usd,created_at FROM ${CONVERSIONS_TABLE} WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      sql: `SELECT action,to_usd,created_at,cutover_at FROM ${CONVERSIONS_TABLE} WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
       args: [workspaceId],
     });
     const r = rs.rows[0];
-    return r && r.action === "convert" && samePrice(Number(r.to_usd), unitUsd) ? Number(r.created_at) : null;
+    if (!(r && r.action === "convert" && samePrice(Number(r.to_usd), unitUsd))) return null;
+    if (rangeEnd != null && r.cutover_at != null && rangeEnd <= Number(r.cutover_at)) return null;
+    return Number(r.created_at);
   } catch {
     return null; // no conversions table on this deployment: nothing was converted
   }

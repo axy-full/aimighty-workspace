@@ -191,6 +191,8 @@ test("a dry run shows both modes and writes nothing", async () => {
     requesterName: "Owner", requesterEmail: "owner@example.test", note: "Price changed; please ask again at US$0.10." }]);
   expect(uniform.results.find((r) => r.workspaceId === "ws_legacy")?.status ?? "house").toBe("house");
   expect(uniform.ledgerUnitAfter).toBe(0.8);
+  // A debt from before the conversion is listed apart, no decision: the same dollars owed, in more credits.
+  expect(perRow.debts.map((d) => [d.workspaceId, d.balanceBefore, d.balanceAfter, d.usdBefore, d.usdAfter])).toEqual([["ws_debt", -20, -160, -16, -16]]);
 });
 
 test("a real run converts per row, keeps every lot's kind and expiry, and resumes paid work", async () => {
@@ -477,6 +479,8 @@ test.describe("review fixes", () => {
     expect(usdOf(after, 0.1)).toEqual(paid);
     expect(after.packs.credits).toBe(4000);
     expect(after.unitNote).toBe("Credits shown at US$0.10 each from 5 October 2026.");
+    // A month that ended before the old price began was never restated: no line on it.
+    expect((await runInTenant(ws, () => statementFor("2026-09", null)))!.unitNote).toBeUndefined();
     expect(creditUnitLine(0.1, Date.UTC(2026, 9, 6))).toBe("Credits shown at US$0.10 each from 6 October 2026.");
   });
 
@@ -741,5 +745,35 @@ test.describe("second review fixes", () => {
     expect(await ledgerUnitTx(c)).toBe(0.8);
     expect(await pausedSinceTx(c)).toBe(2000);
     c.close();
+  });
+
+  test("L5: a test mark needs the whole word", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    const p = await platform();
+    for (const [id, name] of [["ws_s8_latest", "Latest Media"], ["ws_s8_bench", "Studio test bench"]]) {
+      await addWorkspace(id);
+      await p.execute({ sql: `UPDATE workspaces SET name=? WHERE id=?`, args: [name, id] });
+    }
+    process.env.CREDIT_USD = "0.10";
+    const dry = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: true, at: NOW, universe: ["ws_s8_latest", "ws_s8_bench"] });
+    expect(dry.results.map((r) => [r.workspaceId, r.marks?.test])).toEqual([["ws_s8_latest", false], ["ws_s8_bench", true]]);
+  });
+
+  test("L8: a real run refuses a window the record cannot have", async () => {
+    const { convertAllCredits, listCreditConversions } = await import("../../lib/creditConversion");
+    process.env.CREDIT_USD = "0.10";
+    await addWorkspace("ws_s9");
+    const base = run({ at: NOW, universe: ["ws_s9"] });
+    await expect(convertAllCredits({ ...base, cutoverAt: 2026, endAt: END })).rejects.toThrow(/is not when the price moved/);
+    await expect(convertAllCredits({ ...base, cutoverAt: AFTER + 5000, endAt: END })).rejects.toThrow(/after the first job approved at the old price/);
+    await expect(convertAllCredits({ ...base, cutoverAt: CUTOVER, endAt: CUTOVER - 1 })).rejects.toThrow(/is not after cutoverAt/);
+    await expect(convertAllCredits({ ...base, cutoverAt: CUTOVER, endAt: NOW + DAY })).rejects.toThrow(/in the future/);
+    expect(await listCreditConversions("ws_s9")).toEqual([]);
+  });
+
+  test("L12: the admin route may run for five minutes", async () => {
+    const { readFileSync } = await import("node:fs");
+    const route = readFileSync(path.resolve("app/api/admin/credit-unit/route.ts"), "utf8");
+    expect(Number(/export const maxDuration = (\d+);/.exec(route)?.[1])).toBe(300);
   });
 });

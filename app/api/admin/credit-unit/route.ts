@@ -11,6 +11,8 @@ import {
 } from "@/lib/creditConversion";
 
 export const dynamic = "force-dynamic";
+/* A real run makes a preview pass, a real pass and every workspace's own half; a dry run, two passes. */
+export const maxDuration = 300;
 
 /**
  * Restating the credit record in a new price of a credit (lib/creditConversion.ts).
@@ -20,7 +22,9 @@ export const dynamic = "force-dynamic";
  *   POST  { action: "convert", fromUnitUsd, cutoverAt, endAt?, decisions?, caps?, skipTenant?, workspaceId?, dryRun? }
  *         Per row (owner, 5 October 2026). `cutoverAt` (ms, or ISO with Z or an offset) is when
  *         the price moved to the old price: the first production build at it. `endAt` closes that
- *         window; default, when an instance first ran at the new price (billing_unit.paused_since).
+ *         window; default, the window a conversion already recorded, else when an instance first ran
+ *         at the new price (billing_unit.paused_since). A real run refuses a window the record cannot
+ *         have (cutoverAt before the old price was set, after its first job, or not before endAt).
  *         The new unit is CREDIT_USD as deployed (`toUnitUsd` is echoed; a dry run may name another
  *         to preview, and held takes are priced at it). A real run is 0.80 → 0.10 only, and
  *         `decisions` ({ [workspaceId]: "goodwill" | "apply" }) must cover every workspace the dry
