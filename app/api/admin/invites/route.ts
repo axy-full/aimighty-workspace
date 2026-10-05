@@ -14,6 +14,7 @@ import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
 import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
 import { HOUSE_WORKSPACE_ID, isHouseWorkspace } from "@/lib/houseWorkspace";
+import { readRollout } from "@/lib/shell/new-interface.server";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 14;
@@ -55,6 +56,8 @@ export const GET = recoveryRoute(async function GET() {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
   const layer = await getPlatformLayer().catch(() => null);
+  /* The per-workspace "new interface" switch (lib/shell/new-interface.ts), for the console's chip on each row. */
+  const rollout = await readRollout().catch(() => ({ everyone: false, workspaces: [] as string[] }));
   /* The welcome grant is written only for an approved invitation, at the
      platform layer's figure when it sets one; a self-serve sign-up starts
      at zero (lib/workspaceProvisioning.ts). */
@@ -66,6 +69,7 @@ export const GET = recoveryRoute(async function GET() {
     plans: layer?.plans ?? DEFAULT_PLANS,
     concurrency: { byEngine: peakByEngine(spans, now()), overall: peakOverall(spans, now()), days: 30 },
     creditUsd: creditUsd(),
+    interfaceEveryone: rollout.everyone,
     welcomeCredits,
     ready: provisioningConfigured() && keyringConfigured(),
     mail: mailConfigured(),
@@ -85,7 +89,7 @@ export const GET = recoveryRoute(async function GET() {
         const g = split.get(String(r.id));
         return { ...m, marginUsd: marginUsd(m.billedCredits, m.engineCostUsd, creditUsd(), fundedFraction(g?.paid ?? 0, g?.free ?? 0)) };
       })(),
-      suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null, internalTest: Number(r.internal_test ?? 0) === 1,
+      suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null, internalTest: Number(r.internal_test ?? 0) === 1, newInterface: rollout.workspaces.includes(String(r.id)),
       limits: { concurrency: r.concurrency == null ? null : Number(r.concurrency), rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour), storageGb: r.storage_quota_bytes == null ? null : Math.round(Number(r.storage_quota_bytes) / 1e9 * 10) / 10 } })),
   });
 });
