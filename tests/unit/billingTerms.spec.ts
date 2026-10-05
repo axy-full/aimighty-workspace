@@ -37,8 +37,8 @@ test("a reservation settles on its admitted terms after configuration changes", 
   const { platformDb } = await import("../../lib/platform");
   const event = { id: "reserved", kind: "video" as const, engine: "byteplus", model: "fixture-engine", status: "running" as const, engineCostUsd: 0.4 };
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
+  /* The price moves; the record does not (no conversion ran): the job settles in its own terms. */
   process.env.CREDIT_USD = "0.40";
-  await alignLedgerUnit();
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
   await runInTenant(workspace("studio_a"), () => meter({ ...event, status: "succeeded", engineCostUsd: 0.8 }));
   const row = (await platformDb().execute("SELECT * FROM meter_events WHERE id='reserved'")).rows[0];
@@ -47,6 +47,7 @@ test("a reservation settles on its admitted terms after configuration changes", 
   expect(Number(row.billed_credits)).toBe(6);
   const debit = (await platformDb().execute("SELECT credits FROM billing_debits WHERE event_id='reserved'")).rows[0];
   expect(Number(debit.credits)).toBe(6);
+  await alignLedgerUnit(); // a job first metered after the record follows the price is charged in it
   await runInTenant(workspace("studio_b"), () => meter({ ...event, id: "new-terms", status: "succeeded" }));
   const fresh = (await platformDb().execute("SELECT billed_credits,credit_usd FROM meter_events WHERE id='new-terms'")).rows[0];
   expect(Number(fresh.credit_usd)).toBe(0.4);

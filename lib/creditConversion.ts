@@ -800,7 +800,14 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun && !samePrice(creditUsd(), o.toUsd))
     throw new Error(`CREDIT_USD is ${dollars(creditUsd())}: change it to ${dollars(o.toUsd)} and redeploy before converting.`);
   const ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
-  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : await pausedSinceNow();
+  /* Default: when an instance first ran at the new price; after a reversal (which clears that), the
+     window the reversed conversion used. */
+  const recordedEnd = async () => {
+    const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
+    return Number(r?.e) > 0 ? Number(r!.e) : null;
+  };
+  await conversionsReady();
+  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : (await pausedSinceNow()) ?? (await recordedEnd());
   const firstOld = (await platformDb().execute({ sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE ROUND(credit_usd*1000000)=ROUND(?*1000000)`, args: [o.fromUsd] })).rows[0];
   const base = {
     action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
@@ -857,7 +864,9 @@ export async function reverseAllCredits(o: Options & { workspaceId?: string | nu
   const first = results.find((r) => r.status === "reversed" || r.status === "planned");
   const layer = o.workspaceId || refused.length ? null : await convertLayer({ ...o, reverse: true, fromUsd: 0, toUsd: 0, k: 1 }, at);
   let waiting: string[] = [];
-  if (!o.dryRun && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, Infinity, o.universe)).waiting;
+  /* A workspace the conversion never touched (none was run on it: made during or after the pause) does not
+     hold a reversal up: endAt 0 counts every such workspace as outside the window. */
+  if (!o.dryRun && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, 0, o.universe)).waiting;
   return {
     dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null, endAt: null, firstOldPriceJobAt: null,
     fromUsd: first?.fromUsd ?? 0, toUsd: first?.toUsd ?? 0, factor: first ? first.fromUsd / first.toUsd : 1,
