@@ -8,6 +8,7 @@ import type { ScreenModule } from "./screens";
 export const ADS_SCREEN: ScreenModule = {
   id: "board-ads",
   landed: true,
+  always: true,
   params: ["frame", "card"],
   rows: [
     { from: "?suite=moleculr&page=marketing&sp=dtc", to: "?view=board&kind=ads&frame=2&card=image-ad" },
@@ -30,6 +31,7 @@ export const ADS_SCREEN: ScreenModule = {
 export const SOCIAL_SCREEN: ScreenModule = {
   id: "board-social",
   landed: true,
+  always: true,
   params: ["frame", "card"],
   rows: [],
   fallback: [{ from: "?view=board&kind=social", to: "?suite=subatomik&page=history" }],

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { OLD_TO_NEW, PENDING, normalize } from "../../lib/shell/ia";
 import { fromMakeLink } from "../../lib/shell/make";
-import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenAt, screenParams, spelling, type ScreenId, type ScreenModule } from "../../lib/shell/screens";
+import { SCREENS, atomikAt, isLanded, isVisible, phoneAt, route, sameSearch, screenAt, screenParams, spelling, type ScreenId, type ScreenModule } from "../../lib/shell/screens";
 import { applyRows, matchRow } from "../../lib/shell/screen-rows";
 import { SHELL_PARAMS, shellParams } from "../../lib/shell/state";
 
@@ -47,7 +47,8 @@ test("every landed module mounts and every other one falls back, whichever the r
         /* The address may also gain Home's own `view=home` (a panel over Home), so it carries every param the row sets, not only them. */
         const out = params(route(row.from, true));
         for (const [key, value] of Object.entries(params(row.to))) expect(out[key], `${screen.id}: ${row.from} → ${row.to}`).toBe(value);
-        expect(sameSearch(route(row.from, false), row.to), `${screen.id} off: ${row.from}`).toBe(false);
+        /* With the switch off a module's rows apply only if it shows for everyone (the board, by the owner's decision). */
+        expect(sameSearch(route(row.from, false), row.to), `${screen.id} off: ${row.from}`).toBe(Boolean(screen.always));
       }
       for (const row of screen.fallback) expect(sameSearch(route(row.from, true), row.to), `${screen.id} fallback ${row.from}`).toBe(false);
     }
@@ -62,12 +63,23 @@ test("every landed module mounts and every other one falls back, whichever the r
   }
 });
 
-test("with the switch off every address the shell serves today is left exactly as it is", () => {
+test("with the switch off every address the shell serves today is left as it is, except the pages the board replaces for everyone", () => {
+  /* The board is one board for everyone (owner decision, 5 Oct): its modules' rows apply with the switch off, so an old Studio stage, a Crew page or a Business
+     Ads page opens its region. Nothing else moves. */
+  const boardRows = SCREENS.filter((s) => s.always && isLanded(s.id)).flatMap((s) => s.rows.map((r) => r.from));
+  const replaced = (url: string) => boardRows.some((from) => sameSearch(new URLSearchParams(from).toString(), [...new URLSearchParams(from).keys()].reduce((acc, k) => { const v = new URLSearchParams(url).get(k); return v === null ? acc : `${acc}${acc ? "&" : ""}${k}=${v}`; }, "")));
   for (const url of [...appForms, "", "?project=ws-1", "?find=1", "?view=workspace&tab=credits", "?view=crew&cp=room", "?suite=moleculr&page=marketing&sp=hooks", "?page=takes&sp=takes&asset=generation:gen_1"]) {
     /* Only today's own rewrites (the design file's spellings, the old Gen and Viral tool links) apply, and they apply in both modes. */
-    expect(sameSearch(route(url, false), spelling(url)), url).toBe(true);
+    const out = route(url, false);
+    if (sameSearch(out, spelling(url))) continue;
+    expect(new URLSearchParams(out).get("view"), `${url} → ${out}`).toBe("board");
+    expect(replaced(spelling(url)), `${url} is one the board's rows replace`).toBe(true);
   }
-  for (const url of appForms.filter((u) => !fromMakeLink(u))) expect(sameSearch(route(url, false), url), url).toBe(true);
+  /* Home, Atomik, Settings, the control room and the phone stay behind the switch. */
+  for (const url of ["?suite=particl&page=brief&sp=stages", "?suite=atomik&page=agent", "?suite=atomik&page=approvals", "?view=workspace&tab=people", "?view=home"]) {
+    expect(sameSearch(route(url, false), spelling(url)) || url === "?view=home", url).toBe(true);
+  }
+  expect(route("", false)).toBe("");
 });
 
 test("the design file's spellings land on the app's forms, in both modes, whatever has landed", () => {
@@ -77,7 +89,7 @@ test("the design file's spellings land on the app's forms, in both modes, whatev
       for (const on of [false, true]) {
         const out = route(row.from, on, screens);
         /* With the switch on and a screen landed, the app's form may move on to the new screen: never back to the design's. */
-        if (!on || screens === NONE) expect(sameSearch(out, fromMakeLink(row.to) ?? row.to), `${row.from} (${name}, ${on ? "on" : "off"})`).toBe(true);
+        if ((!on && !screens.some((s) => isVisible(s.id, false, screens))) || screens === NONE) expect(sameSearch(out, fromMakeLink(row.to) ?? row.to), `${row.from} (${name}, ${on ? "on" : "off"})`).toBe(true);
         expect(new URLSearchParams(out).get("palette"), row.from).toBeNull();
       }
     }
@@ -127,9 +139,13 @@ test("the board's rows: each old Studio page is a region, with the switch on and
   /* The shell writes `sp` for every page it shows: an old `&sp=brief` leaves with the page, it does not ride into the board. */
   expect(sameSearch(to("?suite=particl&page=brief&sp=brief&project=ws-1"), "?view=board&region=brief&project=ws-1")).toBe(true);
   expect(sameSearch(to("?suite=particl&page=rig&sp=rig&sel=shot:s1"), "?view=board&sel=shot:s1")).toBe(true);
-  /* With the board not landed, or the switch off, the board's addresses open today's page. */
+  /* With the board not landed the board's addresses open today's page; once landed it is one board for everyone, switch on or off. */
   expect(sameSearch(route("?view=board&region=cut", true, NONE), "?suite=particl&page=edit")).toBe(true);
-  expect(sameSearch(route("?view=board", false, ALL), "?suite=particl&page=rig")).toBe(true);
+  expect(sameSearch(route("?view=board&region=cut", false, NONE), "?suite=particl&page=edit")).toBe(true);
+  expect(sameSearch(route("?view=board", false, ALL), "?view=board")).toBe(true);
+  expect(sameSearch(route("?suite=particl&page=edit", false, ALL), "?view=board&region=cut")).toBe(true);
+  expect(sameSearch(route("?suite=particl&page=edit", false, landed("board")), "?view=board&region=cut")).toBe(true);
+  expect(sameSearch(route("?suite=particl&page=edit", false, NONE), "?suite=particl&page=edit")).toBe(true);
   expect(sameSearch(route("?view=board&list=1&kind=studio", true, NONE), "?suite=particl&page=rig&rig=list")).toBe(true);
 });
 
@@ -282,8 +298,12 @@ test("each README § 1.2 link that has a screen of its own is in exactly one mod
   for (const [url, id] of Object.entries(expected)) expect(owners(url), url).toEqual([id]);
 });
 
-test("each module's params are kept with the switch on only, and today's list is exactly today's", () => {
-  expect(shellParams(false)).toBe(SHELL_PARAMS);
+test("each module's params are kept with the switch on; with it off only the board's are, beside today's", () => {
+  /* With the switch off the shell keeps today's params and the board's alone (one board for everyone), never Home's, Atomik's or the phone's. */
+  const off = shellParams(false);
+  for (const key of SHELL_PARAMS) expect(off).toContain(key);
+  for (const key of ["kind", "frame", "list", "region", "drawer", "review", "card", "start"]) expect(off, key).toContain(key);
+  for (const key of ["atomik", "screen", "device", "run", "take"]) expect(off, key).not.toContain(key);
   const on = shellParams(true);
   for (const key of SHELL_PARAMS) expect(on).toContain(key);
   for (const key of ["kind", "frame", "list", "region", "drawer", "review", "card", "atomik", "q", "screen", "device", "from", "run", "take", "open", "start"]) expect(on, key).toContain(key);

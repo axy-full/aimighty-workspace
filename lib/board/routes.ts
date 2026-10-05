@@ -8,6 +8,7 @@ import type { ScreenModule } from "@/lib/shell/screens";
 export const BOARD_SCREEN: ScreenModule = {
   id: "board",
   landed: true,
+  always: true,
   params: ["kind", "frame", "list", "region", "drawer", "review", "start"],
   /* Old → new. Each old Studio stage is a region of the board (README § 1.2); the Rig is the board itself. */
   rows: [

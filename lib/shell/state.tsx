@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWorkspace } from "@/lib/workspace/state";
 import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { isSettingsSection } from "./settings";
-import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
+import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, tracksParams, type BoardKindId, type ScreenId } from "./screens";
 import { useNewInterface } from "./new-interface";
 import { useCompact } from "./use-compact";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
@@ -48,7 +48,8 @@ export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSE
  * atomik, q, screen, device, from, run, take and Settings' open. With the switch off the list is today's, exactly.
  */
 export function shellParams(on: boolean): readonly string[] {
-  return on ? [...SHELL_PARAMS, ...screenParams(SCREENS).filter((key) => !(SHELL_PARAMS as readonly string[]).includes(key))] : SHELL_PARAMS;
+  /* With the switch off, only the params of a screen that shows for everyone (the board's) are kept besides today's. */
+  return tracksParams(on) ? [...SHELL_PARAMS, ...screenParams(SCREENS, on).filter((key) => !(SHELL_PARAMS as readonly string[]).includes(key))] : SHELL_PARAMS;
 }
 /** The params an overlay carries from one screen to the next (Atomik's panel, like Make, stays open over a move). */
 const CARRIED_OVER = ["atomik"] as const;
@@ -185,6 +186,8 @@ type Params = {
   extra: Readonly<Record<string, string>> | null;
 };
 const screenKeys = screenParams(SCREENS);
+/** The keys the shell reads and writes for a workspace: every screen's with the switch on, the board's alone with it off. */
+const keysFor = (on: boolean) => (on ? screenKeys : screenParams(SCREENS, false));
 const EMPTY: Readonly<Record<string, string>> = Object.freeze({});
 /** Settings' fold, `&open=models`: it belongs to Workspace's view and goes when the view does. */
 const OPEN = "open";
@@ -197,9 +200,9 @@ function readParams(search: string, last: ComposerType = "video", on = false): P
   const make = readMake(q);
   /* `home` and `board` are views of the new interface only: with the switch off, or before the screen has landed, the
      address reads as today's shell reads it. */
-  const mounted = on ? screenOf({ view, kind: q.get("kind"), controlRoom: false }, true) : null;
-  const extra: Record<string, string> | null = on ? {} : null;
-  if (extra) for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
+  const mounted = screenOf({ view, kind: q.get("kind"), controlRoom: false }, on);
+  const extra: Record<string, string> | null = tracksParams(on) ? {} : null;
+  if (extra) for (const key of keysFor(on)) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
     view: view === "workspace" || view === "crew" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
     tab: WORKSPACE_TABS.some((t) => t.id === tab) || (on && isSettingsSection(tab)) ? (tab as WorkspaceTabId) : "general",
@@ -364,9 +367,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     if (tool) { openMake(tool); return; }
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
     /* With the switch on, an old page whose screen has landed opens that screen (lib/shell/screens.ts), however it is asked for. */
-    if (onRef.current) {
+    {
       const old = `?suite=${target.legacy.suite}&page=${target.legacy.page}&sp=${target.id}`;
-      const routed = route(old, true);
+      const routed = route(old, onRef.current);
       if (!sameSearch(routed, old)) { navigateRef.current?.(routed, opts); return; }
     }
     setMemory((m) => ({ ...m, [id]: target.id }));
@@ -408,7 +411,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   const goProject = useCallback(() => {
     /* With the board landed the project segment opens it (the board draws its kind from the project itself). */
-    if (onRef.current && isLanded("board")) { navigate("?view=board"); return; }
+    if (isLanded("board")) { navigate("?view=board"); return; }
     const stage = shellPage("studio", lastStage.current ?? memory.studio);
     goSuite("studio", stage && !stage.phoneOnly ? stage.id : firstShellPage("studio").id);
   }, [goSuite, memory, navigate]);
@@ -420,7 +423,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   }, [goSuite, navigate]);
 
   const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string } = {}) => {
-    if (!(onRef.current && isLanded("board"))) {
+    if (!isLanded("board")) {
       /* Today: the region's old stage, else the project's current Studio page. */
       if (opts.region) navigate(`?view=board&region=${encodeURIComponent(opts.region)}`); else goProject();
       return;
@@ -434,11 +437,11 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   }, [navigate, goProject]);
 
   const setScreenParams = useCallback((patch: Readonly<Record<string, string | null>>, mode: "push" | "replace" = "replace") => {
-    if (!onRef.current || !params.extra) return;
+    if (!params.extra) return;
     const extra: Record<string, string> = { ...params.extra };
     let changed = false;
     for (const [key, value] of Object.entries(patch)) {
-      if (!screenKeys.includes(key)) continue;
+      if (!keysFor(onRef.current).includes(key)) continue;
       if (value === null) { if (key in extra) { delete extra[key]; changed = true; } } else if (extra[key] !== value) { extra[key] = value; changed = true; }
     }
     if (changed) apply({ ...params, extra }, mode);
@@ -468,9 +471,11 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     /* The new interface: the screen registry's rows and each screen's own spellings (lib/shell/screens.ts), and the one-shot
        `settings=1` that opens the avatar menu (Header) and leaves the address. The server did this already for a signed-in
        request, so this only meets an address the client reached by itself. With the switch off none of it runs. */
-    if (onRef.current) {
-      const routed = route(window.location.search, true);
+    {
+      const routed = route(window.location.search, onRef.current);
       if (!sameSearch(routed, window.location.search)) window.history.replaceState(null, "", window.location.pathname + routed + window.location.hash);
+    }
+    if (onRef.current) {
       if (new URLSearchParams(window.location.search).get("settings") === "1") {
         const q = new URLSearchParams(window.location.search);
         q.delete("settings");
@@ -534,7 +539,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     goGen: () => openMake(),
     goCrew: (page) => {
       /* With the board landed, Crew is the board's Crew review and Project record (lib/board/routes.ts rows). */
-      if (onRef.current && isLanded("board")) { navigate(`?view=crew&cp=${page ?? params.cp}`); return; }
+      if (isLanded("board")) { navigate(`?view=crew&cp=${page ?? params.cp}`); return; }
       setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp, make: stayMake(params.make), extra: carry(params.extra) }, "push");
     },
     goWorkspace: (tab, opts) => {

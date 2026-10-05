@@ -369,7 +369,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const stageProbe = `stage:${shell.page.id}`;
   const screenCtx: ScreenContext = { shell, scope, account, project, items, library, data, projectActions, now, onCreate: createFromSeed };
   /* The new interface's chrome variables: how far right panels reach (Home and the other views pad by it), and the board's dock (Make sits beside it). */
-  const rootStyle = shell.newInterface ? ({ "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties) : undefined;
+  const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
+  const rootStyle = shell.newInterface || onBoard ? ({ "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties) : undefined;
   /* The phone's own screens replace the header, strip, body and tab bar (switch on and landed; lib/shell/screens.ts › phoneAt). */
   const phoneOn = shell.phone.on;
   const phonePage = shell.view === "workspace" ? { title: "Settings", body: shell.screen === "settings" ? <SettingsBody ctx={screenCtx} /> : <WorkspaceView account={account} /> } : null;
