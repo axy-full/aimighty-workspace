@@ -44,7 +44,9 @@ export type ScreenContext = {
   onCreate: (name: string, seed: CreateSeed) => Promise<{ id: string; productionId?: string | null } | { error: string }>;
 };
 
-const fault = (name: string) => (f: Fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={f} name={name} /></div>;
+function ScreenFault({ fault, name }: { fault: Fault; name: string }) {
+  return <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name={name} /></div>;
+}
 
 const BOARD_KINDS: readonly string[] = ["studio", "ads", "social"];
 const boardKind = (value: string | undefined): BoardKindId | null => (value && BOARD_KINDS.includes(value) ? (value as BoardKindId) : null);
@@ -55,7 +57,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
   switch (screen) {
     case "home":
       return (
-        <Boundary what="Home" probe="home" resetKey={`home:${scope}`} fallback={fault("home")}>
+        <Boundary what="Home" probe="home" resetKey={`home:${scope}`} fallback={(f) => <ScreenFault fault={f} name="home" />}>
           <HomeEntry scope={scope} projects={data.projects} status={data.status} error={data.error} onRetry={data.retry} onPick={ctx.projectActions.onPick}
             onCreate={ctx.onCreate} onStarter={ctx.projectActions.onStarter} now={ctx.now} />
         </Boundary>
@@ -64,7 +66,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "board-ads":
     case "board-social":
       return (
-        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}`} fallback={fault("board")}>
+        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
           <BoardEntry scope={scope} project={project} items={items} library={library} kind={boardKind(shell.params.kind)} frame={shell.params.frame ?? null} region={shell.params.region ?? null} />
         </Boundary>
       );
@@ -72,7 +74,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
       const page = shell.page.id;
       if (!isControlRoomPage(page)) return null;
       return (
-        <Boundary what="The control room" probe="control-room" resetKey={`control-room:${page}:${project?.id ?? ""}`} fallback={fault("control-room")}>
+        <Boundary what="The control room" probe="control-room" resetKey={`control-room:${page}:${project?.id ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="control-room" />}>
           <ControlRoomEntry page={page} project={project} />
         </Boundary>
       );
@@ -86,7 +88,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
 export function SettingsBody({ ctx }: { ctx: ScreenContext }) {
   const { shell } = ctx;
   return (
-    <Boundary what="Settings" probe="settings" resetKey={`settings:${shell.wsTab}`} fallback={fault("settings")}>
+    <Boundary what="Settings" probe="settings" resetKey={`settings:${shell.wsTab}`} fallback={(f) => <ScreenFault fault={f} name="settings" />}>
       <SettingsEntry account={ctx.account} section={shell.wsTab} open={shell.wsOpen} />
     </Boundary>
   );
@@ -109,7 +111,7 @@ export function AtomikMount({ ctx }: { ctx: ScreenContext }) {
 export function PhoneMount({ ctx, page }: { ctx: ScreenContext; page: { title: string; body: ReactNode } | null }) {
   const { scope, account, project, items, library, data, projectActions } = ctx;
   return (
-    <Boundary what="The phone" probe="phone" resetKey={`phone:${scope}`} fallback={fault("phone")}>
+    <Boundary what="The phone" probe="phone" resetKey={`phone:${scope}`} fallback={(f) => <ScreenFault fault={f} name="phone" />}>
       <PhoneEntry scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} page={page} />
     </Boundary>
   );

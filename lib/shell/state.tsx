@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type OldWorkspaceTabId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { isSettingsSection } from "./settings";
 import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
 import { useNewInterface } from "./new-interface";
@@ -22,6 +22,7 @@ import type { ComposerType } from "@/lib/workspace/composer";
 import { MAKE_PARAM, fromMakeLink, isMakeTool, makeType, readMake, viralTool, type MakeTab } from "./make";
 import { sendGenPreset } from "./gen-preset";
 import type { GenPreset } from "./recipe";
+import type { CreateSeed } from "./create-project";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
@@ -105,6 +106,8 @@ export type Shell = {
   newInterface: boolean;
   /** `&settings=1` opened the page: the header opens the avatar menu once, and the address has already dropped it. */
   settingsRequested: boolean;
+  /** The header has opened the menu: the request is spent, so a header drawn again does not reopen it. */
+  consumeSettingsRequest: () => void;
   /** The new screen the address mounts, or null while it is one of today's pages. */
   screen: ScreenId | null;
   /** The screens' own params as the address carries them (kind, frame, list, region, drawer, review, card, screen…), switch on only. */
@@ -130,6 +133,12 @@ export type Shell = {
   setDockRight: (px: number) => void;
   /** The board's right dock as it reported it (0 when there is none). */
   dockRight: number;
+  /**
+   * Makes a project the way Home's templates and ⌘K's "new …" do: today's create path with the seed's fields set, answering
+   * the new project's id or why it could not be made. Null until the shell has registered it (SuitesShell does, on mount).
+   */
+  createProject: ((name: string, seed?: CreateSeed) => Promise<{ id: string; productionId?: string | null } | { error: string }>) | null;
+  setCreateProject: (run: Shell["createProject"]) => void;
   setLibTab: (tab: LibTab) => void;
   toggleLibrary: () => void;
   toggleInspector: () => void;
@@ -193,7 +202,7 @@ function readParams(search: string, last: ComposerType = "video", on = false): P
   if (extra) for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
     view: view === "workspace" || view === "crew" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
-    tab: WORKSPACE_TABS.some((t) => t.id === tab) || isSettingsSection(tab) ? (tab as WorkspaceTabId) : "general",
+    tab: WORKSPACE_TABS.some((t) => t.id === tab) || (on && isSettingsSection(tab)) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
     make: make === "last" ? last : make,
@@ -260,8 +269,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoState] = useState<UndoEntry[]>([]);
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
+  const createRef = useRef<Shell["createProject"]>(null);
   /* `settings=1` (new interface): the avatar menu opens once on landing (Header). Read from the opening URL, like the params above. */
-  const [settingsRequested] = useState(() => on && new URLSearchParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)).get("settings") === "1");
+  const [settingsRequested, setSettingsRequested] = useState(() => on && new URLSearchParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)).get("settings") === "1");
   const onRef = useRef(on);
   useEffect(() => { onRef.current = on; }, [on]);
   /* The board's right dock (340 open, 56 closed): Make sits beside it (components/graphite/shell.css › --board-dock). */
@@ -537,6 +547,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     wsOpen: params.view === "workspace" ? params.extra?.[OPEN] ?? null : null,
     newInterface: on,
     settingsRequested,
+    consumeSettingsRequest: () => setSettingsRequested(false),
     screen,
     params: params.extra ?? EMPTY,
     atomik: atomikAt(params.extra ?? EMPTY, on),
@@ -550,6 +561,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     setScreenParams,
     setDockRight: setDock,
     dockRight: dock,
+    createProject: (name, seed) => (createRef.current ? createRef.current(name, seed) : Promise.resolve({ error: "Projects are still loading. Try again." })),
+    setCreateProject: (run) => { createRef.current = run; },
     setLibTab,
     toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
     toggleInspector: () => {
@@ -613,7 +626,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, on, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock]);
+  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, on, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

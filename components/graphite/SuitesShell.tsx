@@ -306,7 +306,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return null;
   };
   /* The same path with a seed's fields set (Home's templates, a brief): answers the new project's id, or why it could not be made. */
-  const createFromSeed = async (name: string, seed: CreateSeed): Promise<{ id: string; productionId?: string | null } | { error: string }> => {
+  const createFromSeed = async (name: string, seed: CreateSeed = {}): Promise<{ id: string; productionId?: string | null } | { error: string }> => {
     const created = seededProject(name, seed);
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
     const body = (await response?.json().catch(() => null)) as { error?: unknown; project?: { productionProjectId?: unknown }; productionProjectId?: unknown } | null;
@@ -325,6 +325,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     toast(`${typeof body.project.name === "string" ? body.project.name : "The starter production"} is open. Its takes are samples: nothing was generated or charged.`);
     return null;
   };
+  /* One way to make a project from a seed, whichever surface asks (Home, ⌘K): the shell's own, registered like its command path. */
+  useEffect(() => { shell.setCreateProject(createFromSeed); return () => shell.setCreateProject(null); });
   const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
   /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
   const noProject = (stage: string, lead: string) => data.status === "loading"

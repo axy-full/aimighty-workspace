@@ -63,6 +63,8 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const setMenu = (open: boolean) => setOpenAt(open ? here : null);
   /* `&settings=1` (new interface) opens the menu once on landing; the shell has already dropped it from the address. */
   const [settings, setSettings] = useState(shell.settingsRequested);
+  const { settingsRequested, consumeSettingsRequest } = shell;
+  useEffect(() => { if (settingsRequested) consumeSettingsRequest(); }, [settingsRequested, consumeSettingsRequest]);
   const avatar = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLElement>(null);
   useEffect(() => {
