@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { RECENT_CHIPS, inferType, makeDest, readMake, recentEntries, typeNote, wantsChange } from "../../lib/shell/make";
+import { MAKE_PARAM, MAKE_SCREEN, RECENT_CHIPS, inferType, makeDest, readMake, recentEntries, typeNote, wantsChange } from "../../lib/shell/make";
 
 /* Make with the new interface (design/particl-graphite/README.md § 3.2, "Make frames.dc.html"): Auto's type, the line
    that says where a result goes, `make=change`, and Recent's chips. */
@@ -59,4 +59,9 @@ test("Recent's chips are the master's: All, Takes, Unfiled, Filed", () => {
   expect(ids("Filed")).toEqual(["t3", "t1"]);
   /* A take with no shot field at all reads as unfiled, never filed. */
   expect(recentEntries([{ take: { kind: "GEN" as const, id: "t0" }, asset: { origin: "generation" as const, value: {} } }], "Unfiled")).toHaveLength(1);
+});
+
+test("Make's `make` param belongs to the shell, not to the screen registry: listed there, the shell would write it back over a type just picked", () => {
+  expect(MAKE_SCREEN.id).toBe("make");
+  expect(MAKE_SCREEN.params).not.toContain(MAKE_PARAM);
 });

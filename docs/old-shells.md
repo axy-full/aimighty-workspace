@@ -81,7 +81,7 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 | Atomik's Runs, Approvals, Memory and Skills pages | `components/workspace/pages/*`, `components/graphite/atomik/*` | The control room, at the same addresses | `components/graphite/control-room/ControlRoom.tsx` | `lib/control-room/routes.ts` | the switch-flip PR |
 | Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx`, `components/management/*` | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
 | The phone's header, page strip and tab bar | `components/graphite/TabBar.tsx`, `phone.css`, the compact rows of `Header.tsx` and `StageStrip.tsx` | The phone's own screens, at compact widths or with `device=phone` | `components/graphite/phone/PhoneApp.tsx` | `components/graphite/phone/routes.ts` | the switch-flip PR |
-| Make's panel as it is today | `components/graphite/MakePanel.tsx` | Make re-laid out behind the switch (the switch-off panel stays as it is) | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR |
+| Make's panel as it is today: `MakePanelToday` (Video · Images · Audio · Edit tabs, the controls under the composer, the Results grid), its engine sheet `components/graphite/ModelSheet.tsx` (used by nothing else), and the rules in `make.css` above its `.gx-mk` block | `components/graphite/MakePanel.tsx`, `ModelSheet.tsx`, `make.css` | Make as `design/particl-graphite/` draws it (README § 3.2), `components/graphite/make/*` | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR, with the specs that drive today's panel |
 
 ## Notes that change what D1 can delete
 
@@ -89,14 +89,6 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 - Four `/workbench` sheets are shared: `app/workbench/workbench.css`, `desk.css`, `graphite.css` and `editorial-graphite.css` reach `/suites` through `components/workspace/spec/tools/studio-css.ts`. `components/workspace/workspace.css` and `components/workspace/pages/assets.css` are shared the same way.
 - `WORKSPACE_TABS` in `lib/shell/ia.ts` still carries each tab's old `href` (`/settings`, `/team`, `/usage`, …). Those go when the routes do.
 - Specs that assert the old shell ask for it through `tests/helpers/legacyShell.ts`; the helper and its call sites go with the old shell.
-
-## Screens inside `/suites` behind the new-interface switch
-
-These are not routes. A workspace with the new interface switched off still sees the left column. The PR that flips the switch for everyone deletes it, with the tests that drive it.
-
-| Today (switch off) | With the switch on | Deleted at the flip |
-|---|---|---|
-| Make's panel, `components/graphite/MakePanel.tsx › MakePanelToday`: Video · Images · Audio · Edit tabs, the controls under the composer, the Results grid. Its engine sheet, `components/graphite/ModelSheet.tsx`, is used by nothing else. | `components/graphite/make/*`: Make as `design/particl-graphite/` draws it (README § 3.2) | `MakePanelToday`, `ModelSheet.tsx`, the rules in `components/graphite/make.css` above its `.gx-mk` block, and the specs that drive today's panel |
 
 ## Before a route is retired
 

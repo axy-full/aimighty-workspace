@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { setNewInterface } from "./helpers/newInterface";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 
@@ -16,13 +17,13 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.S06_SHOTS;
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
-/* The local stand-in for stream 1's switch (lib/shell/new-interface.ts). */
-const SWITCH = "particl:new-interface";
 
 const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
 
 async function seed(page: Page, opts: { credits?: number; on?: boolean } = {}) {
   const workspaceId = (await signInLocally(page.request)).workspace.id;
+  /* The per-workspace switch (lib/shell/new-interface.ts): on for this workspace's next page load, or off. */
+  await setNewInterface(workspaceId, opts.on !== false);
   if (opts.credits) {
     const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
     try {
@@ -35,14 +36,14 @@ async function seed(page: Page, opts: { credits?: number; on?: boolean } = {}) {
   const project = newProject(name);
   const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
-  await page.addInitScript(({ scope, id, key, on }) => {
-    try { localStorage.setItem(scope, id); if (on) localStorage.setItem(key, "1"); else localStorage.removeItem(key); } catch { /* storage off */ }
-  }, { scope, id: project.id, key: SWITCH, on: opts.on !== false });
+  await page.addInitScript(({ scope, id }) => {
+    try { localStorage.setItem(scope, id); } catch { /* storage off */ }
+  }, { scope, id: project.id });
   const errors: string[] = [];
   const sends: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) sends.push(request.url()); });
-  return { errors, sends, name };
+  return { errors, sends, name, workspaceId };
 }
 
 /** Text the panel draws: at least 12 px, and at least 55 % white unless it belongs to a disabled control. */
@@ -135,7 +136,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   /* Frame 7: a still, inferred from the words, and the address follows. */
   await say(page, "a still of the sphere at blue hour");
   await expect(page.getByTestId("make-type-image")).toHaveAttribute("aria-checked", "true", { timeout: 10_000 });
-  expect(param(page, "make")).toBe("image");
+  await expect.poll(() => param(page, "make")).toBe("image");
   await expect(page.getByTestId("make-type-note")).toHaveText("from your words");
   await expect(go).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$|^Make$/, { timeout: 60_000 });
   await floors(page, info.project.name);
@@ -150,7 +151,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
 
   /* Audio: no references (sound takes none); the engine line names the voice or the length. */
   await page.getByTestId("make-type-audio").click();
-  expect(param(page, "make")).toBe("audio");
+  await expect.poll(() => param(page, "make")).toBe("audio");
   await expect(page.getByTestId("gen-well")).toHaveCount(0);
   await expect(page.getByTestId("make-engine-line")).not.toBeEmpty();
   await floors(page, info.project.name);
@@ -280,7 +281,7 @@ test("Recent: the master's chips, and an empty project teaches by doing", async 
 test("the quick tools open over the new panel, and with the switch off Make is today's panel", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(120_000);
-  const { errors, sends } = await seed(page, { credits: 5000 });
+  const { errors, sends, workspaceId } = await seed(page, { credits: 5000 });
   await page.goto("/suites?make=video");
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-ui", "new");
@@ -293,8 +294,7 @@ test("the quick tools open over the new panel, and with the switch off Make is t
   await expect(panel).toHaveCount(0);
 
   /* Switch off: today's panel, untouched (its Edit tab is the sign). */
-  await page.evaluate((key) => localStorage.removeItem(key), SWITCH);
-  await page.addInitScript((key) => { try { localStorage.removeItem(key); } catch { /* storage off */ } }, SWITCH);
+  await setNewInterface(workspaceId, false);
   await page.goto("/suites?make=video");
   await expect(panel).toBeVisible();
   await expect(panel).not.toHaveAttribute("data-ui", "new");

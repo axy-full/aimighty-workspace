@@ -33,9 +33,10 @@ export type MakeProps = {
  * edge (`--gx-dock-right`, set by a docked panel), and beside the Inspector's column when that is open.
  * The logic is useMake's, which the phone's simple Make shares.
  */
-export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null, balance, onBoard = false, listOpen = false }: MakeProps) {
+export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null, balance, onBoard, listOpen = false }: MakeProps) {
   const shell = useShell();
-  const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard, listOpen });
+  /* Results land on the board too when the board is the screen under the panel (the shell's own view, unless the host says). */
+  const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: onBoard ?? shell.view === "board", listOpen });
   const panel = useRef<HTMLElement>(null);
   useMakeTop(panel);
   const title = make.tool ? toolName(make.tool) : "Make";
