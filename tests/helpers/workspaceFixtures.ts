@@ -99,7 +99,8 @@ export async function mockMedia(page: Page) {
 /** Any paid route reached without an explicit mock fails the test. */
 export async function forbidPaidWork(page: Page) {
   await page.route(/\/api\/(generate|jobs\/[^/]+\/retry|soul\/identities|audio(\/dub)?)$/, (route) => {
-    if (route.request().method() === "POST") throw new Error("Workspace tests must not submit paid work without a mock.");
+    /* A quote asks the server for a price and reserves nothing (`quoteOnly`, lib/shell/recreate-price.ts); only a send is paid work. */
+    if (route.request().method() === "POST" && route.request().postDataJSON()?.quoteOnly !== true) throw new Error("Workspace tests must not submit paid work without a mock.");
     return route.fallback();
   });
 }

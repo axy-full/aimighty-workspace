@@ -382,10 +382,10 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
   expect(errors).toEqual([]);
 });
 
-test("a take from a tool Gen does not have — an edit, a dub — cannot be recreated, and says why", async ({ page }, info) => {
+test("a take from a tool Make does not have — an edit, a dub — cannot be recreated, and says why", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors } = await open(page);
-  const why = "Made with a tool Gen does not have. Run it again from that tool.";
+  const why = "Made with a tool Make does not have. Run it again from that tool.";
   let inspector = await inspect(page, "gen_cut");
   await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
   await expect(inspector.getByTestId("inspector-settings-only")).toBeDisabled();
@@ -433,7 +433,7 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
   await expect(model).toHaveAttribute("data-state", "changed");
   /* The account's catalogue id is not a name: it is not dressed up as one. */
   await expect(model).toHaveText("Account model → Seedance 2.5");
-  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
+  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Make runs on Studio engines only");
   /* The settings the account was asked for still carry over where this engine offers them. */
   await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("6");
@@ -467,7 +467,7 @@ test("the owner's Soul take is recreated on Studio engines: its identity is not 
   await expect(page.getByTestId("gen-prompt")).toHaveValue("a keeper on the pier at first light");
   await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Account model → /);
-  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Gen runs on Studio engines only");
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Make runs on Studio engines only");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveText("Identity → none");
   await expect(page.getByTestId("gen-blocked")).not.toHaveText("Reading the account’s identities…");
   expect(priced).toEqual([]);
