@@ -73,7 +73,7 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
 
 test("phone: Assets from More (Workspace) opens the Library over the suite page", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
-  const errors = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await page.getByTestId("tabbar-more").click();
   await expect(page.getByTestId("tabbar-more")).toHaveAttribute("aria-current", "page");
   await page.getByTestId("tabbar-assets").click();
@@ -84,54 +84,12 @@ test("phone: Assets from More (Workspace) opens the Library over the suite page"
   expect(errors).toEqual([]);
 });
 
-test("Run stage opens the page's Atomik plan with what stops it; Escape closes it", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=particl&page=deliver&sp=deliver");
-  await expect(page.getByTestId("page-title")).toHaveText("Deliver");
-  await page.getByTestId("primary-action").click();
-  const sheet = page.getByTestId("atomik-panel");
-  await expect(sheet).toBeVisible();
-  await expect(page.getByTestId("atomik-plan-title")).not.toBeEmpty();
-  /* Whatever the engine did with the press is on screen: a refusal, a reason, steps or the gate. */
-  await expect(sheet.locator("[data-testid='atomik-notice'], [data-testid='atomik-reason'], [data-testid='atomik-step'], [data-testid='atomik-gate']").first()).toBeVisible();
-  await expect(page.getByTestId("atomik-run")).toBeVisible();
-  if (PHONES.includes(info.project.name)) {
-    expect(await smallTargets(page, "[data-testid='atomik-panel']"), "targets under 44×44").toEqual([]);
-    const tiny = await sheet.evaluate((root) => Array.from(root.querySelectorAll<HTMLElement>("*"))
-      .filter((el) => Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim()) && Number.parseFloat(getComputedStyle(el).fontSize) < 12)
-      .map((el) => `${getComputedStyle(el).fontSize}: ${el.textContent?.slice(0, 30)}`));
-    expect(tiny, "text under 12px").toEqual([]);
-  }
-  await page.keyboard.press("Escape");
-  await expect(sheet).toHaveCount(0);
-  expect(errors).toEqual([]);
-});
 
-test("Library › Tools: a Deliver row opens its tool; Business and Viral offer Assets only", async ({ page }, info) => {
-  test.skip(!WIDE.includes(info.project.name), "the Library is a column from 1280px");
-  const errors = await open(page, "/suites?suite=particl&page=deliver&sp=deliver");
-  const library = page.getByTestId("library");
-  await library.getByRole("tab", { name: /Tools/ }).click();
-  await library.getByRole("button", { name: /^Master/ }).click();
-  await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
-
-  /* Viral left the header (option B); from ⌘K it opens on Motion transfer, Make's quick tool, over the page: the
-     Library shows what can be dragged into it. */
-  await goViaSearch(page, "viral", /Subatomik Viral Studio/);
-  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
-  await expect(library.getByTestId("library-assets")).toBeVisible();
-  /* Viral's page, History, offers Assets only too. */
-  await page.goto("/suites?suite=subatomik&page=history&sp=history");
-  await expect(page.getByTestId("page-title")).toHaveText("History");
-  await expect(library.getByRole("tab", { name: /Tools/ })).toHaveCount(0);
-  await expect(library.getByTestId("library-assets")).toBeVisible();
-  expect(errors).toEqual([]);
-});
 
 test("phone: the Studio grid counts the project as saved now, not as first loaded", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const store = { current: fixture() };
-  const errors = await open(page, "/suites?suite=particl&page=deliver&sp=deliver", store);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", store);
   await page.getByTestId("tabbar-home").click();
   await page.getByTestId("home-suite-studio").click();
   await expect(page.getByTestId("home-stage-brief")).toContainText("5 words");
@@ -140,30 +98,19 @@ test("phone: the Studio grid counts the project as saved now, not as first loade
     const read = await fetch("/api/workbench/projects?id=ws-audit").then((r) => r.json()) as { project: Project; revision: number };
     await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: { ...read.project, brief }, revision: read.revision }) });
   }, "A fox crosses the frozen harbour at dusk and meets the keeper");
+  /* A card opens its region of the board (the stage pages are deleted); Back is the grid again. */
   await page.getByTestId("home-stage-takes").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await page.getByTestId("phone-back").click();
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
+  await page.goBack();
   await expect(page.getByTestId("home-stage-brief")).toContainText("12 words");
   /* Opened again with nothing saved since: only the list of revisions is read, never the whole project. */
   await page.getByTestId("home-stage-takes").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("board");
   const full: string[] = [];
   page.on("request", (request) => { if (request.method() === "GET" && /\/api\/workbench\/projects\?id=/.test(request.url())) full.push(request.url()); });
-  await page.getByTestId("phone-back").click();
+  await page.goBack();
   await expect(page.getByTestId("home-stage-brief")).toContainText("12 words");
   await page.waitForTimeout(2500);
   expect(full).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("Takes: an audio take opens its transcript; the picture tools stay with pictures", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=particl&page=takes&sp=takes");
-  await expect(page.getByTestId("edit-stage")).toBeVisible();
-  /* Takes holds every take once now, the room tone upload too: the generated line is the one opened. */
-  await page.getByTestId("edit-takes").locator("[data-testid='edit-take'][data-media='audio']").filter({ hasText: "Harbour voice" }).click();
-  await expect(page.getByTestId("transcribe")).toBeVisible();
-  await expect(page.getByTestId("edit-to-timeline")).toHaveCount(0);
-  await expect(page.getByTestId("edit-image")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

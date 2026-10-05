@@ -522,7 +522,7 @@ test("when the engines cannot be read, the card gives the composer's one reason 
 
 test("from a page's Library, the card lands where it can be read, clear of the sticky Generate", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, { url: "/suites?suite=particl&page=boards&sp=boards" });
+  const { errors } = await open(page, { url: "/suites?suite=atomik&page=agent&sp=agent" });
   const wide = info.project.name === "workbench-1440x900" || info.project.name === "workbench-1920x1080";
   if (!wide) await page.getByTestId("toggle-library").click();
   const library = page.getByTestId("library");

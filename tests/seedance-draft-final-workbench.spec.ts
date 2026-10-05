@@ -270,14 +270,7 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await floors(page, info, strip);
   await shot(page, info, strip, "draft-final");
 
-  /* Studio › Takes, the review desk, files the pair under their one shot (a final is filed on its draft's), each card
-     named as the final or the draft, newest first. */
-  await page.goto(`/suites?suite=studio&page=takes&project=${s.project.id}`);
-  const grid = page.getByTestId("takes-grid");
-  await expect(grid.getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
-  await expect(grid.locator("[data-pair]")).toHaveCount(2);
-  await expect(grid.getByTestId("takes-shot")).toHaveCount(1);
-
+  /* (The Takes desk that filed the pair under its shot is deleted with the stage pages: the board's Shots region draws it.) */
   /* The Library's flat grid keeps the pair together, each card named as the draft or the final. */
   await openGen(page, s.project);
   if (await page.getByTestId("make-open-library").isVisible()) await page.getByTestId("make-open-library").click();

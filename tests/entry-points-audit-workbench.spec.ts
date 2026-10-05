@@ -39,7 +39,8 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   expect(moved.status()).toBe(307);
   const response = await page.goto("/workbench?stage=brief");
   expect(response?.request().redirectedFrom()?.url()).toContain("/workbench?stage=brief");
-  await expect(page).toHaveURL(/\/suites\?suite=particl&page=brief/);
+  /* The Studio's Brief page is deleted: the old stage address ends on the board's Brief region (one more 307 inside /suites). */
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/suites\?suite=particl/);
   await expect(page.getByTestId("switchover-note")).toHaveCount(0);

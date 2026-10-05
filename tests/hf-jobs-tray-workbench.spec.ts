@@ -68,7 +68,7 @@ async function open(page: Page, tray: Tray, options: { url?: string; generations
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(options.url ?? "/suites?suite=studio&page=rig");
+  await page.goto(options.url ?? "/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
   return errors;
 }
@@ -362,7 +362,7 @@ test("Release approves the figure on its button; short, a moved price and a lost
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs: 2 rendering · 2 queued");
 });
 
-test("Open in Takes opens the take that was clicked — also when Takes is already open — and Recreate hands Gen its recipe without sending anything", async ({ page }, info) => {
+test("Open in Takes opens the take that was clicked on the board's Shots region — also when the board is already open — and Recreate hands Gen its recipe without sending anything", async ({ page }, info) => {
   test.skip(![...DESKTOP, "workbench-390x844", "workbench-844x390"].includes(info.project.name), "desktop, a phone, and a phone on its side");
   const now = Date.now();
   const older = generation({ id: "gen_older", title: "Older still: nets drying on the quay", projectId: "prod-tray", createdAt: now - 40 * MIN });
@@ -372,27 +372,28 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   const errors = await open(page, tray, { generations: [newer, older] });
   const paid: string[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && /\/api\/(generate|audio|jobs\/[^/]+\/retry)(\?|$)/.test(new URL(request.url()).pathname)) paid.push(request.url()); });
-  const selected = page.locator("[data-section='edit-panel']");
+  const asset = () => new URL(page.url()).searchParams.get("asset");
+  const onShots = () => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; };
 
-  /* The older of two finished takes: Takes opens on it, not on the newest. */
+  /* The older of two finished takes: the board's Shots region (where the Takes page went) opens on it, not on the newest. */
   await page.getByTestId("running-jobs").click();
   await page.getByRole("button", { name: "Open in Takes: Older still: nets drying on the quay" }).click();
   await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(selected).toContainText("Selected · Older still: nets drying on the quay");
+  await expect.poll(onShots).toEqual(["board", "shots"]);
+  await expect.poll(asset).toBe("generation:gen_older");
   await shoot(page, info.project.name, "jobs-open-in-takes");
-  /* Takes already open: the other take is picked the same way. */
+  /* The board already open: the other take is picked the same way. */
   await page.getByTestId("running-jobs").click();
   await page.getByRole("button", { name: "Open in Takes: Newer still: a gull on a bollard" }).click();
-  await expect(selected).toContainText("Selected · Newer still: a gull on a bollard");
+  await expect.poll(asset).toBe("generation:gen_newer");
 
   /* Recreate: the failed take's recipe, in Gen, priced again there; nothing is sent from here. */
   await page.getByTestId("running-jobs").click();
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
   await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
-  /* Make opens over the page that was open; the page stays put underneath. */
+  /* Make opens over the page that was open; the board stays put underneath. */
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push-in on a lighthouse at dusk");
   await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Gen.");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");

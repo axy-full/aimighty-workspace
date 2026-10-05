@@ -290,7 +290,7 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
     refuse ? route.fulfill({ status: 503, json: { error: "The ledger could not be read." } }) : route.fallback());
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=particl&page=boards&sp=boards");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name")).toHaveText("Harbour ledger");
   if (!wide) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();

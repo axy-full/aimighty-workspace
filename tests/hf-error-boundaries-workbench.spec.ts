@@ -14,7 +14,7 @@ import { closeSuitesMenu, goViaSearch, openSuitesMenu } from "./helpers/suitesMe
  * the generic root error page, and the 404 offered legacy destinations. Now a
  * panel that throws shows its own fault card inside its own frame and the rest
  * of the shell keeps working; a throw in the chrome lands on a page that keeps
- * the header; a link to nothing offers Studio, Takes and ⌘K search — or, to a
+ * the header; a link to nothing offers Studio, Shots and ⌘K search — or, to a
  * visitor, the front page.
  *
  * Failures are injected with the development-only crash probes
@@ -117,12 +117,12 @@ async function withinOneLoad(page: Page, step: () => Promise<void>) {
 
 test("a stage that throws keeps the shell: its own card, the strip still moves, and Try again is Next's retry", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites", ["stage:brief"]);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["stage:agent"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
 
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:agent"]');
   await expect(fault).toBeVisible();
-  await expect(fault).toContainText("Brief & Script stopped");
+  await expect(fault).toContainText("Agent stopped");
   await expect(fault).toContainText("Takes in progress keep generating.");
   await expect(fault.getByTestId("fault-copy")).toHaveText("Copy details");
   await refIsReadable(fault.getByTestId("fault-ref"));
@@ -131,7 +131,7 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   await closeSuitesMenu(page);
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   const strip = page.getByRole("navigation", { name: "Pages" });
   await settled(page);
   /* Try again is above the fold at every size — at 360×640 and 844×390 too, where the stage under the page head is short. */
@@ -143,14 +143,14 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   await noHorizontalScroll(page);
 
   /* Moving on is a fresh go; the next stage renders. */
-  await strip.getByRole("button", { name: /Beats/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Beats & Shots");
+  await strip.getByRole("button", { name: /Runs/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Runs");
   await expect(page.getByTestId("panel-fault")).toHaveCount(0);
 
   /* Back on the broken stage, Try again fetches the route again (Next's retry): while the refresh is on its way
      the button says so and ignores presses; when it fails again the attempt is counted, Reload is offered and
      focus is on the new Try again. */
-  await strip.getByRole("button", { name: /Brief/ }).click();
+  await strip.getByRole("button", { name: /Agent/ }).click();
   await withinOneLoad(page, async () => {
     await expect(fault).toBeVisible();
     let release!: () => void;
@@ -187,7 +187,7 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
     await arm(page, []);
     await fault.getByTestId("fault-retry").click();
     await expect(page.getByTestId("panel-fault")).toHaveCount(0);
-    await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+    await expect(page.getByTestId("page-title")).toHaveText("Agent");
   });
   expect(errors, "a caught throw never reaches the window").toEqual([]);
 });
@@ -195,15 +195,15 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
 test("a stale build asks for Reload, and a long message stays inside its card", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const long = "TypeError: Cannot read properties of undefined (reading 'shots') while laying out beat 14 of the second act, where the note carries an_unbroken_identifier_that_never_wraps_on_its_own_and_keeps_going";
-  const errors = await open(page, "/suites", [{ name: "stage:brief", errorName: "ChunkLoadError", message: "Loading chunk 812 failed." }]);
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", [{ name: "stage:agent", errorName: "ChunkLoadError", message: "Loading chunk 812 failed." }]);
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:agent"]');
   await expect(fault).toContainText("Particl was updated. Reload to carry on.");
   await expect(fault.getByTestId("fault-reload")).toBeVisible();
   await expect(fault.getByTestId("fault-retry")).toHaveCount(0);
 
-  await arm(page, [{ name: "stage:beats", message: long }]);
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Beats/ }).click();
-  const beats = page.locator('[data-testid="panel-fault"][data-fault="stage:beats"]');
+  await arm(page, [{ name: "stage:runs", message: long }]);
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Runs/ }).click();
+  const beats = page.locator('[data-testid="panel-fault"][data-fault="stage:runs"]');
   await expect(beats.getByTestId("fault-ref")).toContainText("…");
   await settled(page);
   const card = (await beats.boundingBox())!;
@@ -216,7 +216,7 @@ test("a stale build asks for Reload, and a long message stays inside its card", 
 
 test("desktop: the Library and the Inspector fail inside their own columns and the grid does not move", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "the three-column shell");
-  const errors = await open(page, "/suites", ["library", "inspector"]);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["library", "inspector"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
 
   const body = page.getByTestId("shell-body");
@@ -232,7 +232,7 @@ test("desktop: the Library and the Inspector fail inside their own columns and t
   await refIsReadable(library.getByTestId("fault-ref"));
 
   /* The stage between them works. */
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.locator('[data-testid="content"] [data-testid="panel-fault"]')).toHaveCount(0);
 
   /* Copy details puts the ref on the clipboard. */
@@ -257,7 +257,7 @@ test("desktop: the Library and the Inspector fail inside their own columns and t
 
 test("phones: a Library overlay that throws still closes, and its card meets the floors", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "the overlay panels");
-  const errors = await open(page, "/suites", ["library", "inspector"]);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["library", "inspector"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   await page.getByTestId("toggle-library").click();
   const library = page.getByTestId("library");
@@ -280,7 +280,7 @@ test("phones: a Library overlay that throws still closes, and its card meets the
   expect(await smallTargets(page, '[data-testid="inspector"]'), "targets under 44×44").toEqual([]);
   await inspector.getByTestId("close-inspector").click();
   await expect(page.getByTestId("inspector")).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await noHorizontalScroll(page);
   expect(errors).toEqual([]);
 });
@@ -352,7 +352,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
 
 test("search and a whole view fail on their own: the sheet takes focus and still closes, Workspace and Crew come back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites", ["palette", "composer"]);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["palette", "composer"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   /* The composer is closed, so its failure shows nothing and costs nothing. */
   await expect(page.locator('[data-fault="composer"]')).toHaveCount(0);
@@ -414,14 +414,14 @@ test("search and a whole view fail on their own: the sheet takes focus and still
 
 test("Atomik: the gate row and the plan sheet fail on their own, and the sheet still closes", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites", ["atomik-gate", "atomik-sheet", "strip"]);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["atomik-gate", "atomik-sheet", "strip"]);
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
 
   /* The gate row and the run strip fail in their own rows; the stage between them works. */
   const gate = page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]');
   await expect(gate).toContainText("The Atomik gate stopped");
   await expect(page.locator('[data-fault="strip"]')).toContainText("The run strip stopped");
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await settled(page);
   await reachable(page, gate.getByTestId("fault-retry"));
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="atomik-gate"]'), "targets under 44×44").toEqual([]);
@@ -477,7 +477,7 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await expect(page.getByTestId("suites-error")).toHaveCount(0);
 });
 
-test("a link to nothing: the 404 keeps the header and offers Studio, Takes and ⌘K search", async ({ page }, info) => {
+test("a link to nothing: the 404 keeps the header and offers Studio, Shots and ⌘K search", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page, "/suites");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
@@ -491,7 +491,7 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
   expect((await me).status()).toBe(200);
   await expect(screen).toHaveAttribute("data-member", "true");
   await expect(screen.getByTestId("missing-studio")).toHaveAttribute("href", "/suites");
-  await expect(screen.getByTestId("missing-takes")).toHaveAttribute("href", "/suites?page=takes&sp=takes");
+  await expect(screen.getByTestId("missing-shots")).toHaveAttribute("href", "/suites?view=board&region=shots");
   await expect(screen.getByTestId("missing-search")).toHaveAttribute("href", "/suites?find=1");
   await expect(screen.getByText(/Go to Video|All takes/)).toHaveCount(0);
   expect(await floorText(page, info.project.name), "text under 12px").toEqual([]);
@@ -508,10 +508,11 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Takes and �
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);
 
-  /* Open Takes lands on Takes. */
+  /* Open Shots lands on the board's Shots region. */
   await page.goto("/no-such-page");
-  await page.getByTestId("missing-takes").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await page.getByTestId("missing-shots").click();
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
 
   /* ⌘K on the 404 itself goes to search too (a keyboard is a desktop thing). */
   if (DESKTOP.includes(info.project.name)) {

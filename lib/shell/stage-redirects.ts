@@ -36,8 +36,16 @@ const EXTRA: readonly Row[] = [
   { from: "?suite=particl&page=brief&sp=beats&beats=graph", to: "?view=board" },
 ];
 
-/** The screen registry's rows for the old stage addresses (lib/board/routes.ts), applied for every workspace. */
-export const STAGE_ROWS: readonly Row[] = [...STAGE_REDIRECTS.map(({ from, to }) => ({ from, to })), ...EXTRA];
+/** A page id names its suite (lib/workspace/navigation.ts › fromSearch: the page is the more specific claim), so a link may leave `suite` out. */
+const withoutSuite = (from: string) => from.replace("?suite=particl&", "?");
+
+/**
+ * The screen registry's rows for the old stage addresses (lib/board/routes.ts), applied for every workspace. Each is there twice, with
+ * and without `suite=particl`: a copied take link (`?page=takes&sp=takes&ws=…&asset=…`) never named its suite. The longer one wins
+ * where both match (lib/shell/screen-rows.ts), so `suite` leaves with the page.
+ */
+export const STAGE_ROWS: readonly Row[] = [...STAGE_REDIRECTS.map(({ from, to }) => ({ from, to })), ...EXTRA]
+  .flatMap((row) => [row, { from: withoutSuite(row.from), to: row.to }]);
 
 export function isStageId(value: unknown): value is StageId {
   return typeof value === "string" && STAGE_REDIRECTS.some((stage) => stage.id === value);

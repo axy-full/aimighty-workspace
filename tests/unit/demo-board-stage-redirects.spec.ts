@@ -51,7 +51,24 @@ test("the redirect table, row by row: the app's address opens its region with th
   /* The two sub-views with a board form of their own. */
   expect(sameSearch(route("?suite=particl&page=rig&rig=list", false), "?view=board&list=1")).toBe(true);
   expect(sameSearch(route("?suite=particl&page=brief&sp=beats&beats=graph", false), "?view=board")).toBe(true);
-  expect(STAGE_ROWS).toHaveLength(12);
+  expect(STAGE_ROWS).toHaveLength(24);
+});
+
+test("a copied take link never named its suite, and still opens the board's Shots region with the take", () => {
+  /* Links teammates copied before the Takes page was deleted: `?page=takes&sp=takes&ws=…&production=…&asset=…`. */
+  for (const on of [false, true]) {
+    const out = params(route("?page=takes&sp=takes&ws=ws_1&production=prj_9&asset=generation%3Agen_1", on));
+    expect(out, `switch ${on ? "on" : "off"}`).toEqual({ view: "board", region: "shots", ws: "ws_1", production: "prj_9", asset: "generation:gen_1" });
+  }
+  /* The same without a suite for every stage; `suite` leaves with the page when it is named. */
+  for (const stage of STAGE_REDIRECTS) {
+    const bare = stage.from.replace("?suite=particl&", "?");
+    expect(sameSearch(route(`${bare}&project=p1`, false), `${stage.to}&project=p1`), stage.id).toBe(true);
+  }
+  expect(params(route("?suite=particl&page=takes&sp=takes", false)).suite).toBeUndefined();
+  /* A page of another suite is not a stage: Atomik's Agent is `page=agent`, Business's is `page=marketing`. */
+  expect(params(route("?page=agent&sp=agent", false)).view).toBeUndefined();
+  expect(params(route("?suite=moleculr&page=marketing&sp=hooks", false)).view).toBe("board");
 });
 
 test("the design file's spellings of the stages open the same regions", () => {

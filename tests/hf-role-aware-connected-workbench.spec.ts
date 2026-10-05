@@ -186,36 +186,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await noSideScroll(page);
   await shot(page, "viral-owner", project);
 
-  /* Cast runs on the platform's key (28 September): no retired card and no connect prompt. The list, Build identity and
-     each character's render are this workspace's, on its credits, and each entry's still can be made in Gen. */
-  await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
-  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
-  for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  const soul = page.getByTestId("soul-card");
-  await expect(soul).toBeVisible();
-  await expect(soul.getByRole("heading", { name: "Build identity" })).toBeVisible();
-  const fox = page.getByTestId("cast-entry");
-  await expect(fox).toHaveCount(1);
-  await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
-  await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
-  /* Cast renders with an identity built here, on the platform's key: none yet, so the reason says so. */
-  await expect(fox.getByTestId("cast-render-why")).toHaveText("Build an identity below to render it.", { timeout: 30_000 });
-  await expect(fox.getByTestId("cast-render-run")).toBeDisabled();
-  await noSideScroll(page);
-  await fingerSized(soul.locator(".gx-gen-enhance"), project);
-  await shot(page, "cast-owner", project);
-  const still = fox.getByTestId("cast-still-gen");
-  await still.scrollIntoViewIfNeeded();
-  await hydrated(still);
-  await fingerSized(fox.locator(".gx-gen-enhance"), project);
-  await still.click();
-  await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("A red fox on ice at dusk");
-  await expect(page.getByTestId("gen-preset-note")).toHaveText("Reference still · Fox");
-  await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
-  await shot(page, "gen-owner-still", project);
+  /* Cast (a stage page until the board replaced it) is the board's Cast region now; its card has its own specs (tests/demo-s05-cast-workbench.spec.ts). */
 
   /* The phone's Home: no suite ran on the account as a whole any more (Viral is on the key), so none says retired or who
      runs it; Business names the page it opens on. */

@@ -32,7 +32,7 @@ test("the project list and the library say they failed and recover on Try again"
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto("/suites?suite=studio&page=brief&sp=brief");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
   await expect(page.getByTestId("projects-error")).toContainText("Projects are unavailable right now.");
   await expect(page.getByTestId("brief-no-project")).toHaveCount(0);

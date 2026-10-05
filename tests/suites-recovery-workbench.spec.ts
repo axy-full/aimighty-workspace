@@ -65,7 +65,7 @@ test("the landing replaces the entry URL: one Back leaves /suites", async ({ pag
 test("a failed Library read says so with Try again; Load more reaches takes past the first page", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   let failing = true;
-  const { errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards", { pageSize: 2, failFirst: () => failing });
+  const { errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent", { pageSize: 2, failFirst: () => failing });
   await openAssets(page, WIDE.includes(info.project.name));
   const library = page.getByTestId("library");
   await expect(library.getByTestId("library-error")).toContainText("The library is busy. Try again shortly.");

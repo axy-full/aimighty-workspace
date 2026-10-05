@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DefaultFault, type Fault } from "../../components/Boundary";
 import { HEADER_SEGMENT } from "../../lib/shell/ia";
 import {
-  CRASH_PROBE, FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF,
+  CRASH_PROBE, FIND_HREF, HOME_HREF, STUDIO_HREF, SHOTS_HREF,
   asError, attemptsFor, countTry, faultMessage, faultPrimary, faultRef, faultReport, findRequested, isStaleBuild, probeArmed, segmentHref, throwIfArmed, withoutFind,
   type Tries,
 } from "../../lib/shell/fault";
@@ -115,9 +115,9 @@ test("faultReport: what, ref, message, where and when — and nothing about the 
 });
 
 test.describe("the ways back in", () => {
-  test("Studio, Takes and Search are Suites destinations, not legacy ones; a visitor goes to the front page", () => {
+  test("Studio, Shots and Search are Suites destinations, not legacy ones; a visitor goes to the front page", () => {
     expect(STUDIO_HREF).toBe("/suites");
-    expect(TAKES_HREF).toBe("/suites?page=takes&sp=takes");
+    expect(SHOTS_HREF).toBe("/suites?view=board&region=shots");
     expect(FIND_HREF).toBe("/suites?find=1");
     expect(HOME_HREF).toBe("/");
   });
@@ -126,7 +126,7 @@ test.describe("the ways back in", () => {
     /* The places the live header opens until their packages ship: the Studio overview, Studio, Make's panel, the Atomik suite. */
     expect(Object.fromEntries(HEADER_SEGMENT.map((s) => [s.id, segmentHref(s.id)]))).toEqual({
       home: "/suites?suite=particl&page=brief&sp=stages",
-      project: "/suites?suite=particl",
+      project: "/suites?view=board",
       make: "/suites?make=video",
       atomik: "/suites?suite=atomik",
     });
@@ -246,7 +246,7 @@ test.describe("the shell's walls, in source", () => {
     const faultPage = read("components/graphite/FaultPage.tsx");
     expect(faultPage).toContain("<StaticHeader member={member} />");
     expect(faultPage).toContain("Back to Studio");
-    expect(faultPage).toContain("Open Takes");
+    expect(faultPage).toContain("Open Shots");
   });
 
   test("the 404 stays static and light: it never reads the request, and its page loads only with a 404", () => {

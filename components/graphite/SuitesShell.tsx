@@ -375,7 +375,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
           <AtomikGate />
         </Boundary>
-        {fullScreen ? (
+        {fullScreen && linkCard && shell.screen !== "home" ? (
+          /* A link to a take that has not opened yet (a teammate's, or another workspace's) says what it is doing before the board draws: offered, never made while it loads. */
+          <div className="gx-screen gx-scroll" data-testid="screen" data-screen={shell.screen}><div className="gx-stage" data-testid="content">{linkCard}</div></div>
+        ) : fullScreen ? (
           <div className="gx-screen" data-testid="screen" data-screen={shell.screen}><ScreenBody screen={shell.screen!} ctx={screenCtx} /></div>
         ) : shell.view === "crew" ? <><CrewStrip room={crew} />
           <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>

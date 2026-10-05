@@ -101,7 +101,8 @@ export function faultReport(input: { what: string; error: FaultError; where?: st
 /* ── The ways back in ───────────────────────────────────────────────────── */
 
 export const STUDIO_HREF = "/suites";
-export const TAKES_HREF = "/suites?page=takes&sp=takes";
+/** The board's Shots region, where the Takes page went (lib/shell/stage-redirects.ts). */
+export const SHOTS_HREF = "/suites?view=board&region=shots";
 /** `?find=1` opens ⌘K search as the shell lands (lib/shell/state.tsx), so a page outside the shell can offer it. */
 export const FIND_PARAM = "find";
 export const FIND_HREF = `/suites?${FIND_PARAM}=1`;
@@ -112,12 +113,12 @@ export type SegmentId = HeaderSegmentId;
 
 /**
  * Each header segment as a plain link, for the pages drawn outside the live shell: the same places the live
- * header opens (components/graphite/Header.tsx) — Home the Studio overview, the project its Studio pages,
+ * header opens (components/graphite/Header.tsx) — Home the Studio overview, the project its board,
  * Make its panel (over Studio), Atomik its suite.
  */
 export function segmentHref(id: SegmentId): string {
   if (id === "home") return `${STUDIO_HREF}?suite=particl&page=brief&sp=stages`;
-  if (id === "project") return `${STUDIO_HREF}?suite=particl`;
+  if (id === "project") return `${STUDIO_HREF}?view=board`;
   if (id === "make") return `${STUDIO_HREF}?make=video`;
   return `${STUDIO_HREF}?suite=${shellSuite("atomik").legacy}`;
 }

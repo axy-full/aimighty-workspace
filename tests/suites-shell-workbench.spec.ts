@@ -42,61 +42,48 @@ async function open(page: Page, path = "/suites") {
 
 const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
 
-test("the shell lands on Studio with the README's header, strip and columns", async ({ page }, info) => {
+test("the shell lands on Studio's overview with the README's header and columns; the stage pages are the board's regions", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
   const errors = await open(page);
 
-  /* Header option B: Home · the open project (its name) · Make · Atomik; a Studio stage lights the project. */
+  /* Header option B: Home · the open project (its name) · Make · Atomik. On a desktop the Studio overview is Home's, on a phone the project's. */
   const suites = page.getByRole("tablist", { name: "Suites" });
   await openSuitesMenu(page);
   await expect(suites.getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
-  await expect(suites.getByRole("tab", { name: "Coastal light study" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab", { name: wide ? "Home" : "Coastal light study" })).toHaveAttribute("aria-selected", "true");
   await expect(suites.getByRole("tab", { name: "Make" })).toHaveAttribute("aria-keyshortcuts", "Alt+M");
   await closeSuitesMenu(page);
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Environment$/, /^05\s*Cast$/, /^06\s*Astra$/, /^07\s*Rig$/, /^08\s*Takes$/, /^09\s*Edit & Sound$/, /^10\s*Deliver$/]);
-  await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
-  await expect(strip.getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
-  await expect(page.getByTestId("page-hint")).toHaveText("Find the story");
+  /* The ten stage pages are deleted: there is no strip of stage tabs, and the overview's title is the project. */
+  await expect(page.locator(".gx-strip")).toHaveCount(0);
+  await expect(page.getByTestId("studio-home")).toBeVisible();
+  await expect(page.getByTestId("page-title")).toHaveText("Coastal light study");
 
   const body = page.getByTestId("shell-body");
   if (wide) {
-    await expect(body).toHaveAttribute("data-columns", "280px minmax(0,1fr) 320px");
+    /* Library | overview; the Inspector opens for a take picked here, never for a stage spec. */
+    await expect(body).toHaveAttribute("data-columns", "280px minmax(0,1fr)");
     await expect(page.getByTestId("library")).toBeVisible();
-    await expect(page.getByTestId("inspector")).toBeVisible();
+    await expect(page.getByTestId("inspector")).toHaveCount(0);
     await expect(page.getByTestId("toggle-library")).toHaveCount(0);
     expect(Math.round((await page.getByTestId("library").boundingBox())!.width)).toBe(280);
-    expect(Math.round((await page.getByTestId("inspector").boundingBox())!.width)).toBe(320);
   } else {
-    /* Below 1280 the stage has the row to itself and the panels are overlays. */
+    /* Below 1280 the overview has the row to itself and the panels are overlays. */
     await expect(page.getByTestId("library")).toHaveCount(0);
-    await expect(page.getByTestId("inspector")).toHaveCount(0);
-    await page.getByTestId("toggle-library").click();
-    await expect(page.getByTestId("library")).toBeVisible();
-    await page.getByTestId("close-library").click();
-    await expect(page.getByTestId("library")).toHaveCount(0);
-    await page.getByTestId("toggle-inspector").click();
-    await expect(page.getByTestId("inspector")).toBeVisible();
-    await page.keyboard.press("Escape");
     await expect(page.getByTestId("inspector")).toHaveCount(0);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
   expect(errors).toEqual([]);
 });
 
-test("suites remember their page, Make (Gen) and Workspace are views, and Back retraces all of it", async ({ page }, info) => {
+test("suites remember their page, the project is the board, Make (Gen) and Workspace are views, and Back retraces all of it", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
   const strip = page.getByRole("navigation", { name: "Pages" });
-
-  await strip.getByRole("button", { name: /Rig/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
-  expect([param(page, "page"), param(page, "sp")]).toEqual(["rig", "rig"]);
+  const board = page.locator(".gx");
 
   await tapSuiteTab(page, "Atomik");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
@@ -104,15 +91,16 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   await strip.getByRole("button", { name: /Budget/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Budget");
 
-  /* The project comes back on Rig, its Studio page, not on Brief. */
+  /* The project is the board (the Studio stage pages are deleted: each is a region of it). */
   await tapSuiteTab(page, "Coastal light study");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(board).toHaveAttribute("data-screen", "board");
+  expect(param(page, "view")).toBe("board");
 
-  /* Make opens as a panel over the page it is on (README § 3.2): Rig stays, its address gains make=, and the header lights Make. */
+  /* Make opens as a panel over the page it is on (README § 3.2): the board stays, its address gains make=, and the header lights Make. */
   await tapSuiteTab(page, "Make");
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
-  expect([param(page, "view"), param(page, "make")]).toEqual([null, "video"]);
+  await expect(board).toHaveAttribute("data-screen", "board");
+  expect([param(page, "view"), param(page, "make")]).toEqual(["board", "video"]);
   await page.getByTestId("make-close").click();
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
   expect(param(page, "make")).toBeNull();
@@ -125,10 +113,10 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   await expect(page.getByTestId("workspace-balance")).toBeVisible();
 
   await page.goBack();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(board).toHaveAttribute("data-screen", "board");
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await page.goBack();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(board).toHaveAttribute("data-screen", "board");
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
   /* A pasted link opens the same place: History is still Viral's page, the project's, so the project is lit; an old
@@ -141,7 +129,7 @@ test("suites remember their page, Make (Gen) and Workspace are views, and Back r
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
   await expect(page.getByTestId("make-title")).toHaveText("Object swap");
-  expect([param(page, "suite"), param(page, "make")]).toEqual(["particl", "swap"]);
+  expect(param(page, "make")).toBe("swap");
   expect(errors).toEqual([]);
 });
 
@@ -159,9 +147,9 @@ test("header B: Home is the Studio overview, Atomik its suite, ⌥M opens Make; 
   await expect(suites.getByRole("tab", { name: "Coastal light study" })).toHaveAttribute("aria-selected", "false");
   await closeSuitesMenu(page);
 
-  /* The project: its Studio page (the board is S3), Brief until another was opened. */
+  /* The project: the board (the Studio stage pages are deleted). */
   await tapSuiteTab(page, "Coastal light study");
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
 
   /* Atomik: today's Atomik suite under its own mark. */
   await tapSuiteTab(page, "Atomik");
@@ -181,8 +169,9 @@ test("header B: Home is the Studio overview, Atomik its suite, ⌥M opens Make; 
 
   /* Business, Viral and Crew left the header; ⌘K still reaches each of them. */
   await goViaSearch(page, "business", /Moleculr Business Suite/);
-  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  /* Business is the Ads board for everyone (its pages are the board's cards). */
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads");
+  await expect(page.getByTestId("suite-mark")).toHaveText("ADS");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
   expect(errors).toEqual([]);
 });
@@ -227,14 +216,16 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   expect(sent.status()).toBe(307);
   expect(new URL(sent.headers()["location"], "http://x").search).toBe("?suite=moleculr&page=marketing&project=ws-suites&sp=hooks");
   await page.goto("/suites?suite=business&page=hooks&project=ws-suites");
-  await expect(page.getByTestId("page-title")).toHaveText("Hooks");
-  expect([param(page, "suite"), param(page, "page"), param(page, "sp"), param(page, "project")]).toEqual(["moleculr", "marketing", "hooks", "ws-suites"]);
+  /* The Business Hooks page is the Ads board's Hooks card, for everyone (the spelling became the app's, then the board's). */
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads");
+  expect([param(page, "view"), param(page, "kind"), param(page, "card"), param(page, "project")]).toEqual(["board", "ads", "hooks", "ws-suites"]);
   await page.goto("/suites?suite=atomik&page=memory&palette=1&lib=0");
   await expect(page.getByTestId("page-title")).toHaveText("Memory");
   await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
   for (const gone of ["palette", "lib", "find"]) expect(param(page, gone), gone).toBeNull();
-  /* The app's own links are served where they are. */
-  expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(200);
+  /* The app's own links to a page that is a board's card are sent to it (one 307); one to a page that is still a page is served where it is. */
+  expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(307);
+  expect((await page.request.get("/suites?suite=subatomik&page=history&sp=history", { maxRedirects: 0 })).status()).toBe(200);
   /* An old Gen or Viral tool link in the design file's spelling reaches Make in the same one 307: never a chain. */
   for (const [from, to] of [["/suites?view=make&mode=images&project=ws-suites", "?project=ws-suites&make=image"], ["/suites?suite=viral&page=motion&project=ws-suites", "?project=ws-suites&make=motion"]]) {
     const once = await page.request.get(from, { maxRedirects: 0 });
@@ -252,11 +243,13 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  await expect(dialog.getByRole("option").first()).toContainText("10 Deliver");
+  /* The stage pages are the board's regions: Deliver is a place on it. */
+  await expect(dialog.getByRole("option").first()).toContainText("Deliver");
   await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Deliver");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect.poll(() => [param(page, "view"), param(page, "region")]).toEqual(["board", "deliver"]);
 
   await page.keyboard.press("ControlOrMeta+k");
   await expect(dialog).toBeVisible();
@@ -264,10 +257,10 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   await expect(dialog).toHaveCount(0);
 });
 
-test("assets sit beside every stage, drag as their id, and right-click opens the menu inside the viewport", async ({ page }, info) => {
+test("assets sit beside every page, drag as their id, and right-click opens the menu inside the viewport", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
-  await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   if (!wide) await page.getByTestId("toggle-library").click();
   const library = page.getByTestId("library");
   await library.getByRole("tab", { name: /Assets/ }).click();
@@ -306,7 +299,7 @@ test("assets sit beside every stage, drag as their id, and right-click opens the
 
 test("⌘J toggles the Inspector on a wide screen", async ({ page }, info) => {
   test.skip(!WIDE.includes(info.project.name), "three columns exist at 1280 and wider");
-  await open(page);
+  await open(page, '+V+');
   await expect(page.getByTestId("inspector")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+j");
   await expect(page.getByTestId("inspector")).toHaveCount(0);
@@ -317,7 +310,7 @@ test("⌘J toggles the Inspector on a wide screen", async ({ page }, info) => {
 
 test("the chrome keeps the phone floors: 12px text, 44px targets, no label under #7C7C84", async ({ page }, info) => {
   test.skip(WIDE.includes(info.project.name), "the three phone viewports");
-  await open(page);
+  await open(page, '+V+');
   /* The hosted page bodies are the existing ones and are measured by their
      own specs; step 1 owns the chrome around them. */
   const chrome = ".gx-header, .gx-strip, .gx-project, .gx-pagehead";
@@ -338,8 +331,9 @@ test("an old Gen link lands on the page it names with Make open on its type, ser
   const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1");
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
-  expect([param(page, "view"), param(page, "mode"), param(page, "sheet"), param(page, "make"), param(page, "page")]).toEqual([null, null, null, "image", "rig"]);
+  /* The Rig page is the board: the old address keeps its Make panel over it. */
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  expect([param(page, "view"), param(page, "mode"), param(page, "sheet"), param(page, "make"), param(page, "page")]).toEqual(["board", null, null, "image", null]);
 
   /* Make's type and tab are its address: a switch rewrites it, Recent included. */
   await page.getByRole("tab", { name: "Audio" }).click();
@@ -354,7 +348,7 @@ test("an old Gen link lands on the page it names with Make open on its type, ser
   await page.evaluate(() => { history.pushState(null, "", "/suites?view=gen&mode=video"); dispatchEvent(new PopStateEvent("popstate")); });
   await expect(page.getByRole("tab", { name: "Video" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect.poll(() => [param(page, "view"), param(page, "mode"), param(page, "make")]).toEqual([null, null, "video"]);
+  await expect.poll(() => [param(page, "mode"), param(page, "make")]).toEqual([null, "video"]);
 
   /* make=1 is the last type; Esc closes Make. */
   await page.goto("/suites?make=1");

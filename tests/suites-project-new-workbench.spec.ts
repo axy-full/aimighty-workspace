@@ -13,7 +13,7 @@ const SIZES = ["workbench-1440x900", "workbench-390x844"];
 test("New project starts and opens in the Suites, without leaving for the older workbench", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   await signInLocally(page.request);
-  await page.goto("/suites?suite=studio&page=brief");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await page.getByTestId("project-switcher").click();
   await page.getByTestId("project-new").click();
   const name = `Harbour ${Date.now().toString(36)}`;

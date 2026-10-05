@@ -104,8 +104,9 @@ test("History lists the project's transform takes from the Library, each state i
   await shoot(page, info.project.name, "history");
 
   await done.nth(1).getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
+  /* Takes is the board's Shots region now: it opens there, with that take selected. */
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
+  await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toMatch(/^(generation|upload):/);
   expect(viralAsked(asked), "Viral asks the connected account for nothing").toEqual([]);
   expect(errors).toEqual([]);
 });
