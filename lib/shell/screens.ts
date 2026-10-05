@@ -96,7 +96,8 @@ function activeRows(on: boolean, screens: readonly ScreenModule[]): { rows: Row[
 export function route(search: string, on: boolean, screens: readonly ScreenModule[] = SCREENS): string {
   const spelled = spelling(search, screens);
   const { rows, fallback } = activeRows(on, screens);
-  const params = screenParams(screens);
+  /* `q` is shared with ⌘K's own search words (`find=1&q=…`), so it is never dropped with a screen's params. */
+  const params = screenParams(screens).filter((key) => key !== "q");
   /* The two row sets compete as one: the most specific row wins (a tie goes to old → new), and a row back to an old
      page takes the new screen's own params with it. */
   const forward = matchRow(spelled, rows), back = matchRow(spelled, fallback);

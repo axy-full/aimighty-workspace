@@ -13,7 +13,12 @@ const SUBPAGE = ["sp", "rig", "beats"] as const;
 
 const keysOf = (search: string): string[] => [...new URLSearchParams(search).keys()];
 
-/** The most specific row `search` matches, or null. */
+/**
+ * The most specific row `search` matches, or null. One rule beyond the subset: `sp` names a shell page that shares a
+ * backing `page` (Brief, Beats and the Studio overview are all `page=brief`), so a row that names a `page` but no `sp`
+ * is for that page's own shell page and does not match an address whose `sp` names another one. The overview
+ * (`page=brief&sp=stages`) is Home's, never the board's Brief region.
+ */
 export function matchRow(search: string, rows: readonly Row[]): Row | null {
   const q = new URLSearchParams(search);
   let best: { row: Row; weight: number } | null = null;
@@ -22,6 +27,7 @@ export function matchRow(search: string, rows: readonly Row[]): Row | null {
     let hit = true;
     for (const [key, value] of from) if (q.get(key) !== value) { hit = false; break; }
     if (!hit) continue;
+    if (from.has("page") && !from.has("sp") && q.has("sp") && q.get("sp") !== q.get("page")) continue;
     const weight = keysOf(row.from).length;
     if (!best || weight > best.weight) best = { row, weight };
   }
