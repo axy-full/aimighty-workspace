@@ -49,3 +49,15 @@
 .gx-insp-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--gx-hair-soft); font-size: 13px; }
 .gx-insp-rows dt { color: var(--gx-text-2); }
 .gx-insp-rows dd { margin: 0; font-family: var(--gx-mono); text-align: right; overflow-wrap: anywhere; }
+
+/* Open Edit & Sound (README § 3.1 frame i): the existing editor, full screen under the header, with Close. */
+.gx-edit-host { position: fixed; inset: var(--gx-h-header) 0 0 0; z-index: 50; display: flex; flex-direction: column; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-edit-host:focus { outline: none; }
+.gx-edit-top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-edit-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.gx-edit-close { height: 28px; padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); cursor: pointer; }
+.gx-edit-close:hover { border-color: var(--gx-hover-border); }
+.gx-edit-close:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-edit-body { flex: 1; min-height: 0; overflow-y: auto; }
+.gx-insp-rows-plain { display: flex; flex-direction: column; }
+.gx-insp-rows-plain .gx-deliver-row { min-height: 36px; }
