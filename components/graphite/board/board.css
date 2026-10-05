@@ -114,6 +114,9 @@
 .bd .bd-zoom > button { min-width: 28px; height: 28px; border: 0; background: transparent; color: var(--gx-text); font-size: 15px; border-radius: 6px; cursor: pointer; }
 .bd .bd-zoom > .bd-zoom-level { min-width: 44px; font-family: var(--gx-mono); font-size: 12px; }
 .bd .bd-zoom > button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.bd .bd-tidy { height: 32px; padding: 0 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 10px; color: var(--gx-text); font-size: 12px; font-weight: 500; cursor: pointer; }
+.bd .bd-tidy:hover { border-color: var(--gx-hair-strong); }
+.bd .bd-tidy:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
 .bd-seg .gx-seg-btn { height: 26px; padding: 0 10px; font-size: 12px; font-weight: 500; }
 
 /* ── The tool pill, bottom centre; labels go under a 660 px canvas ── */
@@ -252,3 +255,8 @@ button.bd-list-row:focus-visible { outline: 2px solid var(--gx-accent); outline-
 /* ── A Make result just landed: lit for a moment (accent border and ring) ── */
 .bd-node > .bd-card { transition: border-color .4s, box-shadow .4s; }
 .bd-node[data-lit] > .bd-card { border-color: var(--gx-accent); box-shadow: 0 0 0 4px var(--gx-tint-border); }
+
+/* Reordering (3.3): the line where a dragged shot or reference will land, and the card on its way. */
+.bd-slot { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--gx-accent); border-radius: 2px; pointer-events: none; z-index: 900; }
+.bd-node[data-dragging]:not([data-free]):not([data-container]) > .bd-card { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7); }
+.bd-node[data-dragging]:not([data-free]):not([data-container]) { cursor: grabbing; }

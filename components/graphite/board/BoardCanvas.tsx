@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, BackgroundVariant, ReactFlow, SelectionMode, useReactFlow, type NodeChange, type OnMoveEnd, type OnNodeDrag, type Viewport } from "@xyflow/react";
+import { Background, BackgroundVariant, ReactFlow, SelectionMode, ViewportPortal, useReactFlow, type NodeChange, type OnMoveEnd, type OnNodeDrag, type Viewport } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import { BOARD_DOTS } from "@/lib/board/layout";
+import type { ReorderSlot } from "@/lib/board/reorder";
 import { dropPlace, type FreeMove } from "@/lib/board/snap";
 import type { BoardPoint } from "@/lib/board/types";
 import { BoardNode, type BoardFlowNode } from "./BoardNode";
@@ -41,6 +42,11 @@ export type BoardCanvasProps = {
   /** Note or Text is the tool: the next press on the canvas places that card there. */
   placing: boolean;
   onPlace: (at: BoardPoint) => void;
+  /**
+   * Reordering: an arranged card of a kind that can be dragged to a new place in its frame (shots, references).
+   * `slot` says where a card let go at a point would land (null: where it is); `commit` saves that as the new order.
+   */
+  reorder?: { can: (id: string) => boolean; slot: (id: string, point: BoardPoint) => ReorderSlot | null; commit: (id: string, slot: ReorderSlot) => void };
   /** Live presence: where the pointer is on the board, and a free card being dragged (by how much), for the team. */
   onPresence?: (patch: { cursor?: BoardPoint | null; drag?: { id: string; dx: number; dy: number } | null }) => void;
   /** Teammates dragging free cards, by card: by how much. */
@@ -48,10 +54,12 @@ export type BoardCanvasProps = {
   children?: React.ReactNode;
 };
 
-export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, onOpen, onReady, placing, onPlace, onPresence, peerDrags, children }: BoardCanvasProps) {
+export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, onOpen, onReady, placing, onPlace, onPresence, peerDrags, reorder, children }: BoardCanvasProps) {
   const flow = useReactFlow();
   const [drag, setDrag] = useState<ReadonlyMap<string, BoardPoint>>(new Map());
   const [measured, setMeasured] = useState<ReadonlyMap<string, { width: number; height: number }>>(new Map());
+  /* Where the card being dragged to a new place would land (a line between two cards), while it is dragged. */
+  const [slot, setSlot] = useState<ReorderSlot | null>(null);
   const alt = useRef(false);
   useEffect(() => {
     const track = (event: KeyboardEvent) => { alt.current = event.altKey; };
@@ -73,13 +81,13 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       height: box.h,
       data: {},
       selected: selection.ids.has(card.id),
-      draggable: free && !readOnly,
+      draggable: !readOnly && (free || !!reorder?.can(card.id)),
       selectable: true,
-      zIndex: container ? 0 : 1,
+      zIndex: container ? 0 : drag.has(card.id) ? 5 : 1,
       ...(container ? { className: "bd-container" } : {}),
       ...(measured.get(card.id) ? { measured: measured.get(card.id) } : {}),
     }];
-  }), [placed, drag, measured, selection, readOnly, peerDrags]);
+  }), [placed, drag, measured, selection, readOnly, peerDrags, reorder]);
 
   const onNodesChange = useCallback((changes: NodeChange<BoardFlowNode>[]) => {
     let picked: Set<string> | null = null;
@@ -91,7 +99,8 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
         picked ??= new Set(selection.ids);
         if (change.selected) { picked.add(change.id); primary = change.id; } else picked.delete(change.id);
       } else if (change.type === "position" && change.position) {
-        moved.set(change.id, dropPlace(change.position, alt.current));
+        /* A free card lands on the dots; an arranged one follows the pointer, to be put back in order when let go. */
+        moved.set(change.id, placed.byId.get(change.id)?.region ? { x: change.position.x, y: change.position.y } : dropPlace(change.position, alt.current));
       } else if (change.type === "dimensions" && change.dimensions) {
         sized.set(change.id, change.dimensions);
       }
@@ -106,22 +115,37 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       setDrag((was) => new Map([...was, ...moved]));
       const [id, at] = [...moved][0];
       const box = placed.boxes.get(id);
-      if (box) onPresence?.({ drag: { id, dx: at.x - box.x, dy: at.y - box.y } });
+      if (box && !placed.byId.get(id)?.region) onPresence?.({ drag: { id, dx: at.x - box.x, dy: at.y - box.y } });
+      /* One arranged card on its way to a new place: show where it would land. */
+      const arranged = [...moved].filter(([moving]) => placed.byId.get(moving)?.region);
+      if (reorder && arranged.length === 1 && box) {
+        const [moving, to] = arranged[0];
+        const size = placed.boxes.get(moving)!;
+        setSlot(reorder.slot(moving, { x: to.x + size.w / 2, y: to.y + size.h / 2 }));
+      }
     }
     if (sized.size) setMeasured((was) => new Map([...was, ...sized]));
-  }, [onPresence, onSelect, placed.boxes, placed.containers, selection]);
+  }, [onPresence, onSelect, placed.boxes, placed.byId, placed.containers, reorder, selection]);
 
   const onNodeDragStop = useCallback<OnNodeDrag<BoardFlowNode>>((_event, _node, dragged) => {
     const moves: FreeMove[] = [];
+    const arranged: string[] = [];
     for (const node of dragged) {
       const at = drag.get(node.id);
       const card = placed.byId.get(node.id);
       if (at && card?.nodeId && !card.region) moves.push({ id: card.nodeId, x: at.x, y: at.y });
+      else if (at && card?.region) arranged.push(node.id);
     }
     if (moves.length) onFreeMoved(moves);
+    if (reorder && arranged.length === 1) {
+      const id = arranged[0], at = drag.get(id)!, size = placed.boxes.get(id)!;
+      const landing = reorder.slot(id, { x: at.x + size.w / 2, y: at.y + size.h / 2 });
+      if (landing) reorder.commit(id, landing);
+    }
+    setSlot(null);
     onPresence?.({ drag: null });
     setDrag((was) => { const next = new Map(was); for (const node of dragged) next.delete(node.id); return next; });
-  }, [drag, onFreeMoved, onPresence, placed.byId]);
+  }, [drag, onFreeMoved, onPresence, placed.boxes, placed.byId, reorder]);
 
   const handleMoveEnd = useCallback<OnMoveEnd>((_event, viewport) => onMoveEnd(viewport), [onMoveEnd]);
 
@@ -153,9 +177,11 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       minZoom={0.25}
       maxZoom={2}
       onlyRenderVisibleElements={nodes.length > VISIBLE_ONLY_FROM}
+      nodeDragThreshold={4}
       elevateNodesOnSelect={false}
     >
       {children}
+      {slot ? <ViewportPortal><span className="bd-slot" aria-hidden="true" data-testid="board-slot" style={{ transform: `translate(${slot.line.x}px, ${slot.line.y}px)`, width: slot.line.w, height: slot.line.h }} /></ViewportPortal> : null}
       <Background variant={BackgroundVariant.Dots} gap={BOARD_DOTS} size={2} color="var(--gx-hair-soft)" bgColor="var(--gx-root)" />
     </ReactFlow>
   );

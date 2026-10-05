@@ -11,7 +11,7 @@ import type { BoardBox } from "@/lib/board/types";
 const MINI = { w: 150, h: 92 };
 const STEP = 0.1;
 
-export function HoverCluster({ regions, bounds, list, onList }: { regions: readonly BoardBox[]; bounds: BoardBox | null; list: boolean; onList: (list: boolean) => void }) {
+export function HoverCluster({ regions, bounds, list, onList, onTidy }: { regions: readonly BoardBox[]; bounds: BoardBox | null; list: boolean; onList: (list: boolean) => void; onTidy?: () => void }) {
   const flow = useReactFlow();
   const x = useStore((s) => s.transform[0]), y = useStore((s) => s.transform[1]), zoom = useStore((s) => s.transform[2]);
   const width = useStore((s) => s.width), height = useStore((s) => s.height);
@@ -41,6 +41,7 @@ export function HoverCluster({ regions, bounds, list, onList }: { regions: reado
             <button type="button" aria-label="Zoom in" onClick={() => zoomTo(zoom + STEP)}>+</button>
           </div>
         )}
+        {list || !onTidy ? null : <button type="button" className="bd-tidy" data-testid="board-tidy" title="Lay the free cards out on the grid, in order" onClick={onTidy}>Tidy</button>}
         <div className="gx-seg bd-seg" role="tablist" aria-label="Board or list">
           <button type="button" role="tab" className="gx-seg-btn" aria-selected={!list} onClick={() => onList(false)}><span>Board</span></button>
           <button type="button" role="tab" className="gx-seg-btn" aria-selected={list} onClick={() => onList(true)} data-testid="board-list-toggle"><span>List</span></button>

@@ -9,7 +9,10 @@ import { DOCK_WIDTH, MAKE_WIDTH } from "@/lib/board/geometry";
 import { boardKindOf } from "@/lib/board/kind";
 import { useOnline } from "@/lib/board/online";
 import { railStatus } from "@/lib/board/regions";
+import { useBoardCommands } from "@/lib/board/commands";
+import { canReorder, moved, reorderNodes, reorderSlot, siblingsOf, type ReorderSlot } from "@/lib/board/reorder";
 import { addFreeCard, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
+import { tidyFree } from "@/lib/board/tidy";
 import { isBoardKind, type BoardBox, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
 import { readBoardView, saveBoardView } from "@/lib/board/view";
 import { useMadeOnBoard } from "@/lib/board/made";
@@ -83,6 +86,8 @@ export function BoardView(props: BoardViewProps) {
 }
 
 const NO_SELECTION: BoardSelection = { primary: null, ids: new Set() };
+/** The rail's drawers are this wide (board.css `.bd-drawer`). */
+const DRAWER_WIDTH = 280;
 /** Where a glide leaves a region's top-left on screen. */
 const INSET = 24;
 const inField = (target: EventTarget | null) => {
@@ -117,13 +122,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   const empty = !!project && placed.cards.length === 0;
 
+  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame));
   /* ── Glides: a region's top-left to the canvas's top-left at this zoom, or a card to its middle ── */
   const viewportFor = useCallback((box: BoardBox, zoom: number, centre = false): Viewport => {
     const { width, height } = store.getState();
+    /* A drawer lies over the canvas's left edge: what a glide brings into view stays clear of it. */
+    const left = drawer ? DRAWER_WIDTH : 0;
     return centre
-      ? { x: width / 2 - (box.x + box.w / 2) * zoom, y: height / 2 - (box.y + box.h / 2) * zoom, zoom }
-      : { x: INSET - box.x * zoom, y: INSET - box.y * zoom, zoom };
-  }, [store]);
+      ? { x: left + (width - left) / 2 - (box.x + box.w / 2) * zoom, y: height / 2 - (box.y + box.h / 2) * zoom, zoom }
+      : { x: left + INSET - box.x * zoom, y: INSET - box.y * zoom, zoom };
+  }, [drawer, store]);
   const [inView, setInView] = useState<RegionId | null>(null);
   const measureInView = useCallback((viewport: Viewport) => {
     const { width, height } = store.getState();
@@ -197,6 +205,65 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (refusal) { ws.toast(refusal); return; }
     undoable("The card is back where it was", () => { rig.apply((p) => moveFreeCards(p, before)); });
   }, [rig, undoable, ws]);
+  /* Tidy: the free cards in one block, in canvas order, on the dots; one edit, with Undo. Arranged cards are always in order. */
+  const freeCards = useMemo(() => placed.cards.filter((card) => !card.region && card.nodeId), [placed.cards]);
+  const tidy = useCallback((): boolean => {
+    const current = rig.project;
+    if (!current || offline) return false;
+    const order = new Map(current.nodes.map((node, i) => [node.id, i]));
+    const nodes = new Map(current.nodes.map((node) => [node.id, node]));
+    const sized = freeCards
+      .map((card) => ({ card, node: nodes.get(card.nodeId!), box: placed.boxes.get(card.id) }))
+      .filter((entry): entry is { card: typeof entry.card; node: NonNullable<typeof entry.node>; box: NonNullable<typeof entry.box> } => !!entry.node && !!entry.box)
+      .sort((a, b) => (order.get(a.node.id) ?? 0) - (order.get(b.node.id) ?? 0));
+    const moves = tidyFree(sized.map(({ node, box }) => ({ id: node.id, w: box.w, h: box.h, x: node.x, y: node.y, locked: !!node.locked })));
+    if (!moves.length) { ws.toast(sized.length ? "Nothing to tidy · the free cards are already in order" : "Nothing to tidy · there are no free cards"); return true; }
+    const before = moves.flatMap((move) => { const node = nodes.get(move.id); return node ? [{ id: node.id, x: node.x, y: node.y }] : []; });
+    const refusal = rig.apply((p) => moveFreeCards(p, moves));
+    if (refusal) { ws.toast(refusal); return true; }
+    undoable("The cards are back where they were", () => { rig.apply((p) => moveFreeCards(p, before)); });
+    /* The block lands right of the bands: if it is not in view, the board goes to it. */
+    const sizes = new Map(sized.map(({ node, box }) => [node.id, box]));
+    const block = moves.reduce<BoardBox | null>((acc, move) => {
+      const box = sizes.get(move.id)!;
+      const at = { x: move.x, y: move.y, w: box.w, h: box.h };
+      if (!acc) return at;
+      const x = Math.min(acc.x, at.x), y = Math.min(acc.y, at.y);
+      return { x, y, w: Math.max(acc.x + acc.w, at.x + at.w) - x, h: Math.max(acc.y + acc.h, at.y + at.h) - y };
+    }, null);
+    if (block) {
+      const { width, height, transform } = store.getState();
+      const [vx, vy, zoom] = transform;
+      const seen = block.x * zoom + vx >= 0 && block.y * zoom + vy >= 0 && (block.x + block.w) * zoom + vx <= width && (block.y + block.h) * zoom + vy <= height;
+      if (!seen) {
+        const next = viewportFor(block, zoom, block.w * zoom <= width && block.h * zoom <= height);
+        void flow.setViewport(next, { duration: GLIDE_MS, ease: glideEase }).then(() => measureInView(next));
+      }
+    }
+    ws.toast(`Tidied · ${moves.length === 1 ? "1 card" : `${moves.length} cards`} moved · free`);
+    return true;
+  }, [flow, freeCards, measureInView, offline, placed.boxes, rig, store, undoable, viewportFor, ws]);
+
+  /* Reorder: a shot or a reference dragged to a new place in its frame is one edit to the draft's order (shot order is draft order). */
+  const reorder = useMemo(() => offline ? undefined : {
+    can: (id: string) => { const card = placed.byId.get(id); return !!card && canReorder(card); },
+    slot: (id: string, point: BoardPoint): ReorderSlot | null => {
+      const card = placed.byId.get(id);
+      if (!card || !canReorder(card)) return null;
+      const siblings = siblingsOf(placed.cards, card).flatMap((s) => { const box = placed.boxes.get(s.id); return box ? [{ id: s.id, box }] : []; });
+      return reorderSlot(siblings, id, point);
+    },
+    commit: (id: string, slot: ReorderSlot) => {
+      const current = rig.project, card = placed.byId.get(id);
+      if (!current || !card?.nodeId) return;
+      const group = siblingsOf(placed.cards, card).map((s) => s.nodeId!);
+      const was = [...group].sort((a, b) => current.nodes.findIndex((n) => n.id === a) - current.nodes.findIndex((n) => n.id === b));
+      const next = moved(was, card.nodeId, slot.index);
+      const refusal = rig.apply((p) => reorderNodes(p, next));
+      if (refusal) { ws.toast(refusal); return; }
+      undoable("The order is back as it was", () => { rig.apply((p) => reorderNodes(p, was)); });
+    },
+  }, [offline, placed.boxes, placed.byId, placed.cards, rig, undoable, ws]);
   const [editing, setEditing] = useState<string | null>(null);
   const finishEdit = useCallback((id: string, value: string | null) => {
     setEditing(null);
@@ -251,7 +318,6 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }, [shell]);
 
   /* ── The board's keys (README § 6): V F N T I ⇧V ⇧A U, 0 (fit), L (list), ⌫, Esc; never while typing ── */
-  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame));
   useEffect(() => {
     if (compact) return;
     const onKey = (event: KeyboardEvent) => {
@@ -278,6 +344,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [compact, drawer, flow, offline, pick, remove, selection.ids.size, tool, chooseTool]);
+
+  /* ── The same, said by name (⌘K, Atomik's palette): each runs the code its button runs ── */
+  useBoardCommands((command) => {
+    if (compact) return false;
+    switch (command.name) {
+      case "tidy": return tidy();
+      case "fit": void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }); return true;
+      case "list": setList(true); return true;
+      case "board": setList(false); return true;
+      case "glide": glide(command.to); return true;
+    }
+  });
 
   /* ── A Make result landing (README § 3.2 made): glide to its card, light it for a moment, the Library open on it ── */
   const [lit, setLit] = useState<string | null>(null);
@@ -396,13 +474,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 if ((card.kind === "note" || card.kind === "label") && !offline) { setEditing(id); return; }
                 registry.defs.get(card.kind)?.onOpen?.(card, ctx);
               }}
-              onReady={() => setReady(true)} onPresence={live ? onPresence : undefined} peerDrags={peerDrags}>
+              onReady={() => setReady(true)} onPresence={live ? onPresence : undefined} peerDrags={peerDrags} reorder={reorder}>
               <PeerCursors peers={peers} />
             </BoardCanvas>
           )}
           {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
           {list ? null : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
-          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} />
+          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} />
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />

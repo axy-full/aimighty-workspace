@@ -8,6 +8,8 @@ import { useEffect, useRef } from "react";
  * result was sent with boardMade(); a board on screen for that project takes it.
  */
 export type MadeOnBoard = { projectId: string; nodeId: string; name?: string };
+/** The same message as a window event, for a part of the app that does not import this file: `detail` is a MadeOnBoard. */
+export const BOARD_MADE_EVENT = "particl:board-made";
 type Listener = (made: MadeOnBoard) => void;
 const listeners = new Set<Listener>();
 
@@ -29,6 +31,12 @@ export function useMadeOnBoard(projectId: string | null, fn: (made: MadeOnBoard)
   useEffect(() => { latest.current = fn; });
   useEffect(() => {
     if (!projectId) return;
-    return onBoardMade(projectId, (made) => latest.current(made));
+    const stop = onBoardMade(projectId, (made) => latest.current(made));
+    const heard = (event: Event) => {
+      const made = (event as CustomEvent<Partial<MadeOnBoard> | null>).detail;
+      if (made && made.projectId === projectId && typeof made.nodeId === "string") latest.current({ projectId, nodeId: made.nodeId, ...(made.name ? { name: made.name } : {}) });
+    };
+    window.addEventListener(BOARD_MADE_EVENT, heard);
+    return () => { stop(); window.removeEventListener(BOARD_MADE_EVENT, heard); };
   }, [projectId]);
 }
