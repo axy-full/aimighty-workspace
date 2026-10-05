@@ -80,6 +80,6 @@ export const fromMakeLink = (search: string | URLSearchParams): string | null =>
 /**
  * Make's entry in the screen registry (lib/shell/screens.ts). Make is a panel over any screen and has been live
  * since D0, so it is landed from the start; its addresses (`make=…`, and the old Gen and Viral tool links, see
- * `fromMakeLink`) are read in the spelling step, so it adds no rows. Stream 6 owns this export from here.
+ * `fromMakeLink`) are read in the spelling step, so it adds no rows and no params (`make` is already one the shell keeps). Stream 6 owns this export from here.
  */
-export const MAKE_SCREEN: ScreenModule = { id: "make", landed: true, params: [MAKE_PARAM], rows: [], fallback: [] };
+export const MAKE_SCREEN: ScreenModule = { id: "make", landed: true, params: [], rows: [], fallback: [] };

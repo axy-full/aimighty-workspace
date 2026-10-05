@@ -62,9 +62,16 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const menu = openAt === here;
   const setMenu = (open: boolean) => setOpenAt(open ? here : null);
   /* `&settings=1` (new interface) opens the menu once on landing; the shell has already dropped it from the address. */
-  const [settings, setSettings] = useState(shell.settingsRequested);
+  const [settings, setSettings] = useState(false);
+  /* Opened after the landing has settled: the shell draws its first frames more than once, and a menu opened in the first would be
+     torn down with it, taking its focus along. The request is spent only once the menu is open, so a header drawn again still opens it. */
   const { settingsRequested, consumeSettingsRequest } = shell;
-  useEffect(() => { if (settingsRequested) consumeSettingsRequest(); }, [settingsRequested, consumeSettingsRequest]);
+  useEffect(() => {
+    if (!settingsRequested) return;
+    const open = setTimeout(() => { setSettings(true); consumeSettingsRequest(); }, 0);
+    return () => clearTimeout(open);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the request, not the callback's identity, is what this reacts to.
+  }, [settingsRequested]);
   const avatar = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLElement>(null);
   useEffect(() => {

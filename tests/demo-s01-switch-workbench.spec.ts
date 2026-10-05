@@ -54,7 +54,7 @@ async function landsOn(page: Page, want: Record<string, string | null>) {
 const TODAYS: [string, Record<string, string | null>][] = [
   ["/suites?view=home", { suite: "particl", page: "brief", view: null }],
   ["/suites?view=board&region=cut", { suite: "particl", page: "edit", view: null, region: null }],
-  ["/suites?view=board&list=1", { suite: "particl", page: "rig", rig: "list", view: null }],
+  ["/suites?view=board&list=1", { suite: "particl", page: "rig", view: null, list: null }],
   ["/suites?view=board&kind=ads&frame=2", { suite: "moleculr", page: "marketing", sp: "dtc", view: null, kind: null }],
   ["/suites?view=board&kind=social", { suite: "subatomik", page: "history", view: null }],
   ["/suites?atomik=1", { suite: "atomik", page: "agent", atomik: null }],
@@ -117,6 +117,7 @@ test("switch ON, nothing landed: the same pages at every address, the new-interf
   await expect(page.getByTestId("settings-menu")).toBeVisible();
   await expect.poll(() => "settings" in here(page)).toBe(false);
   await expect(page.getByTestId("settings-menu")).toBeVisible();
+  await expect(page.getByTestId("settings-team")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("settings-menu")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal overflow").toBe(true);
