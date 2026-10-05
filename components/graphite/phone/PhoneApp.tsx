@@ -12,6 +12,7 @@ import type { ProjectActions } from "../FirstRun";
 import { PhoneHeader, PhoneTabs, PhoneToast, type PhoneTab } from "./PhoneChrome";
 import { HomeScreen } from "./HomeScreen";
 import { ReviewScreen } from "./ReviewScreen";
+import { PlanScreen } from "./PlanScreen";
 import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
@@ -48,7 +49,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
@@ -86,7 +87,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   };
 
   const screen = page ? null : route.screen;
-  const tabs = screen !== "review";
+  const tabs = screen !== "review" && screen !== "plan";
   const active: PhoneTab | null = page ? null : route.asked === "record" ? "record" : screen === "home" ? "home" : null;
 
   return (
@@ -97,14 +98,20 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
       ) : (
         <>
           <PhoneHeader title={page ? page.title : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
+          {screen === "plan" ? (
+            <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
+              onChange={() => go({ screen: "atomik" })} />
+          ) : (
           <main className="ph-scroll" data-testid="mobile-scroll">
             {page ? <div className="ph-page">{page.body}</div> : (
               <HomeScreen scope={scope} approvals={approvals} projects={data.projects} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}
+                onPlan={(item) => { if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId); go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null }); }}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
                 onTopUp={topUp} />
             )}
           </main>
+          )}
         </>
       )}
       {tabs ? <PhoneTabs active={active} needs={needs} onTab={onTab} drawn={(tab) => tab !== "record" || DRAWN_SCREENS.has("record")} /> : null}

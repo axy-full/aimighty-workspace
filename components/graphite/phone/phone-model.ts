@@ -11,6 +11,8 @@ import type { ReviewState } from "@/lib/workspace/takes";
 
 /* ── Addresses ─────────────────────────────────────────────────────────── */
 
+const ID = /^[A-Za-z0-9_-]{1,100}$/;
+
 /** The design's phone screens (README § 1.1). */
 export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states"] as const;
 export type PhoneScreen = (typeof PHONE_SCREENS)[number];
@@ -22,7 +24,7 @@ export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const
  * The screens this build draws. The rest arrive in their own PRs (plan approval, Change with words and the
  * take states, the Record, Make and the Atomik sheet); until then their addresses open Home.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "review"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 
@@ -37,6 +39,8 @@ export type PhoneRoute = {
   fromNotification: boolean;
   /** The take a review opens on (`take=`, a generation id). */
   take: string | null;
+  /** The Atomik run a plan opens on (`run=`). */
+  run: string | null;
   /**
    * The address is one of the phone's own screens. Otherwise (Settings, an old page) the shell's page for it
    * renders under the phone's header, with a back to Home (DECISIONS 11).
@@ -79,7 +83,8 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
     screen: DRAWN_SCREENS.has(asked) ? asked : "home",
     framed: q.get("device") === "phone",
     fromNotification: q.get("from") === "notification",
-    take: take && /^[A-Za-z0-9_-]{1,100}$/.test(take) ? take : null,
+    take: take && ID.test(take) ? take : null,
+    run: q.get("run") && ID.test(q.get("run")!) ? q.get("run") : null,
     own: ownAddress(q),
   };
 }
@@ -97,6 +102,7 @@ export function phoneSearch(current: string, patch: Partial<Record<(typeof PHONE
   if (patch.screen !== undefined) {
     if (patch.screen !== "review" && patch.screen !== "fix" && patch.take === undefined) q.delete("take");
     if (patch.from === undefined) q.delete("from");
+    if (patch.screen !== "plan" && patch.run === undefined) q.delete("run");
   }
   const text = q.toString();
   return text ? `?${text}` : "";
@@ -184,7 +190,6 @@ export function judgedLine(title: string, verdict: Judgement, queued: boolean): 
 export type QueuedJudgement = { projectId: string; generationId: string; state: ReviewState; at: number };
 
 const REVIEW_STATES: readonly ReviewState[] = ["", "picked", "approved", "changes"];
-const ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** The queue as stored: only well-formed rows survive a read, at most 200, oldest first. */
 export function readQueued(raw: unknown): QueuedJudgement[] {

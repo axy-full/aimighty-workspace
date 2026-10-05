@@ -40,7 +40,7 @@ const when = (at: number, now: number) => {
  * Projects are stream 2's project cards (components/graphite/home/use-project-cards.ts): the same lines as the
  * desktop Home, counted from the same queue.
  */
-export function HomeScreen({ scope, approvals, projects, project, items, online, now, onReview, onProject, onTopUp }: {
+export function HomeScreen({ scope, approvals, projects, project, items, online, now, onReview, onPlan, onProject, onTopUp }: {
   scope: string;
   approvals: ApprovalsState;
   projects: readonly ProjectSummary[];
@@ -49,6 +49,8 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
   online: boolean;
   now: number;
   onReview: () => void;
+  /** A plan (a proposed build) opens the plan screen; a single item approves in place. */
+  onPlan: (item: QueueItem) => void;
   onProject: (id: string) => void;
   onTopUp: () => void;
 }) {
@@ -70,7 +72,7 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
             <button type="button" className="ph-btn" onClick={() => void approvals.refresh()}>Try again</button>
           </div>
         ) : null}
-        {queue.map((item) => <ApprovalRow key={item.id} item={item} approvals={approvals} online={online} now={now} onTopUp={onTopUp} />)}
+        {queue.map((item) => <ApprovalRow key={item.id} item={item} approvals={approvals} online={online} now={now} onTopUp={onTopUp} onPlan={onPlan} />)}
         {renders.map((job) => <RenderRow key={job.id} job={job} />)}
         {review && project ? (
           <div className="ph-row" data-testid="phone-review-row">
@@ -91,7 +93,7 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
   );
 }
 
-function ApprovalRow({ item, approvals, online, now, onTopUp }: { item: QueueItem; approvals: ApprovalsState; online: boolean; now: number; onTopUp: () => void }) {
+function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan }: { item: QueueItem; approvals: ApprovalsState; online: boolean; now: number; onTopUp: () => void; onPlan: (item: QueueItem) => void }) {
   const { toast } = useWorkspace();
   const [busy, setBusy] = useState(false);
   const live = useRef(true);
@@ -112,6 +114,12 @@ function ApprovalRow({ item, approvals, online, now, onTopUp }: { item: QueueIte
   if (item.sample) action = <button type="button" className="ph-btn ph-btn--price" disabled title={SAMPLE_LINE}><Price value={item.price} /></button>;
   else if (short && item.canApprove) action = <button type="button" className="ph-btn ph-btn--hot" onClick={onTopUp} data-testid="phone-row-topup">Top up</button>;
   else if (!item.canApprove || !item.approve) action = null;
+  /* A plan is several steps priced together: it opens its approval screen rather than approving in place. */
+  else if (item.approve.kind === "board-approve") action = (
+    <button type="button" className="ph-btn ph-btn--hot ph-btn--price" onClick={() => onPlan(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-plan">
+      {item.price ? <Price value={item.price} /> : "Open"}
+    </button>
+  );
   else if (!online) action = <button type="button" className="ph-btn" disabled>{NEEDS_CONNECTION}</button>;
   else action = (
     <button type="button" className="ph-btn ph-btn--hot ph-btn--price" disabled={busy} onClick={() => void approve()} data-testid="phone-row-approve">

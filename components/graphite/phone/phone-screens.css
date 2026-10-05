@@ -98,6 +98,25 @@
 .ph-review-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .ph-hint-line { margin: 0; font-size: 12px; color: var(--gx-text-2); text-align: center; }
 
+/* ── Plan approval (frames B1–B3): the steps and the Total scroll; Approve · Change · Hold are pinned ── */
+.ph-pinned { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px max(12px, var(--ph-safe-b)); border-top: 1px solid var(--gx-hair-strong); background: var(--gx-root); }
+.ph-pinned > .ph-btn { width: 100%; }
+.ph-btn--primary { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; font-size: 15px; }
+.ph-btn--primary:disabled { background: transparent; border-color: var(--gx-hair-soft); color: var(--gx-disabled); }
+.ph-plan { display: flex; flex-direction: column; min-width: 0; }
+.ph-plan-title { margin: 2px 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.ph-plan-steps { display: flex; flex-direction: column; margin-top: 10px; }
+.ph-plan-step, .ph-plan-line, .ph-plan-total { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); min-width: 0; }
+.ph-plan-line { align-items: baseline; font-size: 14px; color: var(--gx-text-2); }
+.ph-plan-total { align-items: baseline; font-size: 17px; font-weight: 600; }
+.ph-plan-price, .ph-plan-mono { flex: none; font-family: var(--gx-mono); font-size: 15px; font-weight: 600; text-align: right; }
+.ph-plan-line .ph-plan-mono { font-size: 13px; font-weight: 400; color: var(--gx-text-2); }
+.ph-plan-note { margin: 12px 0 0; }
+.ph-plan-why { margin: 0; text-align: center; }
+.ph-plan-short { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--gx-waiting); border-radius: 12px; font-size: 13px; color: var(--gx-text-2); }
+.ph-plan-short-text { min-width: 0; overflow-wrap: anywhere; }
+.ph-plan-short-text strong { color: var(--gx-waiting-text); font-weight: 600; }
+
 /* ── Toast: the shell's own words, under the header (frame C) ── */
 .ph-toast { position: absolute; left: 16px; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 90; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 6px 0 14px; min-height: 48px; border-radius: 12px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 14px; font-weight: 500; animation: gx-in var(--gx-t-toast) var(--gx-ease) both; }
 .ph-toast-text { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 0; }
@@ -112,6 +131,11 @@
   .ph-app:not([data-framed]) .ph-review { flex-direction: row; }
   .ph-app:not([data-framed]) .ph-review-panel { width: 360px; max-width: 46%; border-top: 0; border-left: 1px solid var(--gx-hair-strong); overflow-y: auto; }
   .ph-tabs { --ph-tabs-h: 50px; }
+  /* Pinned actions share a row, so a short screen keeps its steps in view. */
+  .ph-pinned { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .ph-pinned > .ph-btn--primary { flex: 1 1 200px; width: auto; }
+  .ph-pinned > .ph-pair { flex: 1 1 220px; }
+  .ph-pinned > .ph-plan-short, .ph-pinned > .ph-plan-why { flex: 1 1 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
