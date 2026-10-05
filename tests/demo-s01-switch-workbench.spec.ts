@@ -6,11 +6,13 @@ import { password, signupInvite } from "./helpers/identityAdmin";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { route, screenAt } from "../lib/shell/screens";
 
 /**
  * The per-workspace "new interface" switch and the shell wiring behind it (lib/shell/new-interface.ts, lib/shell/screens.ts).
- * Nothing has landed yet, so with the switch ON every address still opens today's page: what the switch changes now is
- * the routing pipeline, the chrome's markers and the one-shot `settings=1`. With it OFF the shell is exactly today's.
+ * With the switch ON, an address mounts its new screen when the registry (lib/shell/screens.ts) says that screen has landed
+ * and opens today's page for it when not; the spec reads the registry, so it holds whichever streams have landed. With the
+ * switch OFF the shell is exactly today's.
  * Local ENGINE_MOCK server only; the server must run with SUPER_ADMIN_EMAIL set to the fixture address (CI does).
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
@@ -50,7 +52,7 @@ async function landsOn(page: Page, want: Record<string, string | null>) {
   await expect.poll(() => { const now = here(page); return Object.entries(want).every(([k, v]) => (v === null ? !(k in now) : now[k] === v)); }, { message: `the address lands on ${JSON.stringify(want)}`, timeout: 20_000 }).toBe(true);
 }
 
-/** New addresses, and the page of today's each one opens while no new screen has landed (switch off, or on with nothing landed). */
+/** New addresses, and the page of today's each one opens with the switch off (and with it on while that screen has not landed). */
 const TODAYS: [string, Record<string, string | null>][] = [
   ["/suites?view=home", { suite: "particl", page: "brief", view: null }],
   ["/suites?view=board&region=cut", { suite: "particl", page: "edit", view: null, region: null }],
@@ -92,23 +94,30 @@ test("switch OFF: today's shell. New addresses open today's page for them, old o
   expect(problems).toEqual([]);
 });
 
-test("switch ON, nothing landed: the same pages at every address, the new-interface marker, `settings=1` opens the avatar menu once", async ({ page }, info) => {
+test("switch ON: landed screens mount, the rest open today's page; the new-interface marker, `settings=1` opens the avatar menu once", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const problems = await open(page, "/suites", true);
-  /* A bare landing is still Studio: Home has not landed. */
-  await landsOn(page, { suite: "particl", view: null });
+  /* A bare landing is Home once Home has landed, else Studio. */
+  const bare = route("", true);
+  await landsOn(page, bare ? { view: new URLSearchParams(bare).get("view") } : { suite: "particl", view: null });
   await expect(page.getByTestId("shell-body")).toBeVisible();
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
   await closeSuitesMenu(page);
-  for (const [path, want] of TODAYS) {
-    /* Settings has landed (stream 9): its own spec (demo-s09-settings-workbench) holds the Workspace addresses. */
-    if (path.includes("view=workspace")) continue;
+  for (const [path, today] of TODAYS) {
+    const search = path.replace("/suites", "") || "";
+    const routed = route(search, true);
+    const screen = screenAt(routed, true);
     await page.goto(path);
-    await landsOn(page, want);
+    if (screen) {
+      /* Landed: the address settles on the routed one, and that screen is the one mounted. */
+      await landsOn(page, Object.fromEntries(new URLSearchParams(routed)));
+      await expect(page.locator(".gx")).toHaveAttribute("data-screen", screen);
+    } else {
+      await landsOn(page, today);
+      await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
+    }
     await expect(page.locator(".gx")).toHaveAttribute("data-interface", "new");
-    /* No new screen is mounted, so the shell is today's. */
-    await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
   }
   /* The design's `palette=1` is ⌘K's `find=1`, in both modes; it opens search once and leaves the address. */
   await page.goto("/suites?suite=particl&page=rig&palette=1");
