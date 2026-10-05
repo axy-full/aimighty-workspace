@@ -134,8 +134,8 @@ function RecentFoot({ entry, models, aspect, fetcher, prices, onAgain, onReferen
       {rerun || referable ? (
         <span className="gx-make-card-actions">
           {rerun ? (
-            <button type="button" className="gx-hbtn" onClick={() => onAgain(entry)} title={againTitle} data-testid="make-again" data-priced={again ? "" : undefined}
-              aria-label={again ? `${word} · ${figureWords(again)}` : word}>
+            <button type="button" className="gx-hbtn" onClick={() => onAgain(entry)} disabled={!again} title={again ? againTitle : "No price yet"} data-testid="make-again" data-priced={again ? "" : undefined}
+              data-spend={again ? "priced" : "unpriced"} aria-label={again ? `${word} · ${figureWords(again)}` : word}>
               <span>{word}{again ? <> · <MakeFigureView figure={again} /></> : null}</span>
             </button>
           ) : null}
@@ -700,7 +700,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
             moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
           aria-label={submitting ? "Submitting…" : recipeWait ? "Make" : buttonName} title={!submitting && !recipeWait ? buttonTitle : undefined}
-          data-priced={!submitting && !recipeWait && buttonFig ? "" : undefined}>
+          data-priced={!submitting && !recipeWait && buttonFig ? "" : undefined} data-spend={!submitting && !recipeWait && buttonFig ? "priced" : "unpriced"}>
           {submitting ? "Submitting…" : recipeWait ? "Make" : (
             <>
               <span className="gx-go-act">{buttonParts.action}</span>
