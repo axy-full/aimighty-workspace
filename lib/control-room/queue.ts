@@ -90,6 +90,14 @@ export type QueueItem = {
   open: OpenRef;
 };
 
+/**
+ * What the ledger shows for something sent: settled at a figure, not settled
+ * yet, or nothing charged (only where the ledger confirms it, or nothing was
+ * ever sent). `unbilled`: the workspace is not billed in credits. `unknown`:
+ * the ledger holds no row for it, so no figure is shown.
+ */
+export type Outcome = { kind: "settled"; credits: number } | { kind: "settling" } | { kind: "nothing" } | { kind: "unbilled" } | { kind: "unknown" };
+
 /** A decision taken in the last days, as the Decided list shows it. */
 export type DecidedItem = {
   id: string;
@@ -101,12 +109,7 @@ export type DecidedItem = {
   by: string | null;
   byYou: boolean;
   at: number;
-  /**
-   * What the ledger shows: settled at a figure, not settled yet, or nothing
-   * charged (only where the ledger confirms it, or nothing was ever sent).
-   * `unknown` when the ledger holds no row for it: no figure is shown.
-   */
-  outcome: { kind: "settled"; credits: number } | { kind: "settling" } | { kind: "nothing" } | { kind: "unbilled" } | { kind: "unknown" };
+  outcome: Outcome;
 };
 
 export type ApprovalsReply = {

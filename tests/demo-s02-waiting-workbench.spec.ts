@@ -88,7 +88,7 @@ test("Start shows Atomik's thinking at the server's figure, the dollars on hover
   expect(errors).toEqual([]);
 });
 
-test("the figure is read without a session token: an API token is refused, and reading it spends and writes nothing", async ({ page }, info) => {
+test("the figure is read without a session token: an API token is refused, and reading it spends and writes nothing", async ({ page, playwright, baseURL }, info) => {
   test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);
   const before = await page.request.get("/api/workbench/projects", { headers }).then((r) => r.json());
@@ -96,8 +96,15 @@ test("the figure is read without a session token: an API token is refused, and r
   await newBoardFigure(page, headers);
   const after = await page.request.get("/api/workbench/projects", { headers }).then((r) => r.json());
   expect(after.projects).toEqual(before.projects);
-  const token = await page.request.get("/api/workbench/team-canvas?agent=1&board=new", { headers: { Authorization: "Bearer pk_not_a_session" } });
-  expect(token.status()).toBeGreaterThanOrEqual(401);
+  /* A real render-scoped token, called with no session cookie: people only (requireSession). */
+  const minted = await page.request.post("/api/tokens", { headers, data: { name: "Home read check", scope: "render", capCredits: 5 } });
+  expect(minted.ok(), await minted.text()).toBe(true);
+  const agent = await playwright.request.newContext({ baseURL, extraHTTPHeaders: { Authorization: `Bearer ${(await minted.json()).token}`, ...headers } });
+  try {
+    const token = await agent.get("/api/workbench/team-canvas?agent=1&board=new");
+    expect(token.status()).toBe(403);
+    expect(await token.text()).not.toContain("planning");
+  } finally { await agent.dispose(); }
 });
 
 test("Start makes the project, checks the figure for it, and asks Atomik once with that limit, in Ask", async ({ page }, info) => {

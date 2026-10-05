@@ -163,7 +163,7 @@
   .gx .gx-hm-btn, .gx .gx-hm-tpl, .gx .gx-hm-file { height: 44px; }
   .gx .gx-hm-chip { height: 44px; min-width: 44px; }
   .gx .gx-hm-file-x { width: 44px; height: 44px; }
-  .gx .gx-hm-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .gx .gx-hm-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
   .gx .gx-hm-start { height: 44px; }
   .gx-hm-text { font-size: 16px; }
 }

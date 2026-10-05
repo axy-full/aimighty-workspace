@@ -56,8 +56,8 @@ const RENDER_NOT_YOURS = "Only the person who asked Atomik for this run can appr
 /** What a take held for credits is waiting for (lib/held.ts: released as soon as credits arrive). */
 export const HELD_NOTE = "It starts when credits arrive; nothing is spent until then";
 
-const text = (value: unknown) => (value == null || value === "" ? null : String(value));
-const shortText = (value: string, max = 60) => {
+export const text = (value: unknown) => (value == null || value === "" ? null : String(value));
+export const shortText = (value: string, max = 60) => {
   const line = value.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 };
@@ -72,7 +72,7 @@ async function shotCap(): Promise<number | null> {
 const capWords = (cap: number) => `Members up to ${cap.toLocaleString("en-US")} cr a shot; an admin above it`;
 
 /** Production names, and this viewer's own draft of each production (the project Home's cards show). */
-async function projectsOf(viewer: string, productions: string[]): Promise<Map<string, QueueProject>> {
+export async function projectsOf(viewer: string, productions: string[]): Promise<Map<string, QueueProject>> {
   const ids = [...new Set(productions.filter(Boolean))];
   const out = new Map<string, QueueProject>();
   if (!ids.length) return out;
@@ -96,7 +96,7 @@ async function projectsOf(viewer: string, productions: string[]): Promise<Map<st
   return out;
 }
 
-const NO_PROJECT: QueueProject = { productionId: null, draftId: null, name: null };
+export const NO_PROJECT: QueueProject = { productionId: null, draftId: null, name: null };
 
 /** Approve, unless the rule puts the price over the cap for this viewer. */
 function capGate(credits: number | null, cap: number | null, admin: boolean): { needsAdmin: boolean; why: string | null } {
@@ -146,7 +146,7 @@ const isDemoTake = (g: Pick<Generation, "params">) => Boolean((g.params as { dem
 
 /* ── Atomik on a board (lib/workbench/rig-agent*.ts) ───────────────────── */
 
-async function ledgerOf(run: RunRow): Promise<RunLedger> {
+export async function ledgerOf(run: RunRow): Promise<RunLedger> {
   const [charges, ceiling] = await Promise.all([
     run.capCredits == null ? Promise.resolve([]) : runCharges(run.id).catch(() => []),
     rigJobCeiling().catch(() => null),
@@ -155,7 +155,7 @@ async function ledgerOf(run: RunRow): Promise<RunLedger> {
 }
 
 /** A render's price as the run card holds it: its quote, or up to the most it may settle at when that is higher. */
-function renderPrice(step: RigAgentPaidStepView, inCredits: boolean): QueuePrice {
+export function renderPrice(step: RigAgentPaidStepView, inCredits: boolean): QueuePrice {
   if (!inCredits || step.quote == null) return null;
   return step.worst != null && step.worst > step.quote ? upTo(step.worst) : exact(step.quote);
 }
@@ -301,10 +301,10 @@ async function threadItems(_viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items:
 
 /* ── What was decided ──────────────────────────────────────────────────── */
 
-type MeterRow = { status: string; credits: number };
+export type MeterRow = { status: string; credits: number };
 
 /** What the meter holds for these jobs in this workspace: status and the credits charged. */
-async function meterOf(workspaceId: string, ids: string[]): Promise<Map<string, MeterRow>> {
+export async function meterOf(workspaceId: string, ids: string[]): Promise<Map<string, MeterRow>> {
   const out = new Map<string, MeterRow>();
   if (!ids.length) return out;
   await platformReady();
@@ -321,7 +321,7 @@ async function meterOf(workspaceId: string, ids: string[]): Promise<Map<string, 
 }
 
 /** A sent job's outcome from the meter: settled at a figure, still settling, or confirmed as nothing charged. */
-function outcomeOf(id: string | null, meter: Map<string, MeterRow>, inCredits: boolean): DecidedItem["outcome"] {
+export function outcomeOf(id: string | null, meter: Map<string, MeterRow>, inCredits: boolean): DecidedItem["outcome"] {
   if (!inCredits) return { kind: "unbilled" };
   const row = id ? meter.get(id) : undefined;
   if (!row) return { kind: "unknown" };
@@ -341,7 +341,7 @@ type Found = {
   sent: boolean;
 };
 
-const missingTable = (error: unknown) => /no such table/i.test(String(error));
+export const missingTable = (error: unknown) => /no such table/i.test(String(error));
 
 async function boardDecisions(since: number): Promise<Found[]> {
   if (!(await rigAgentExists())) return [];
