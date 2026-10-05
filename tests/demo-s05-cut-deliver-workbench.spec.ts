@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type Asset, type CanvasNode } from "../lib/workbench/studio";
 
 /*
@@ -25,7 +25,7 @@ const take = (id: string, shotId: string, over: Record<string, unknown> = {}): G
 const clip = (id: string, genId: string, name: string): Asset => ({ id, name, kind: "image", category: "Take", url: `/api/media/${genId}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], generationId: genId, mime: "image/png" });
 
 async function seed(page: Page) {
-  const workspaceId = (await signInLocally(page.request, "Cut Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Cut Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = {

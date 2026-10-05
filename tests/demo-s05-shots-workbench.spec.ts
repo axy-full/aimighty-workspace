@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type CanvasNode } from "../lib/workbench/studio";
 
 /*
@@ -27,7 +27,7 @@ const take = (id: string, shotId: string, version: number, over: Record<string, 
 });
 
 async function seed(page: Page) {
-  const workspaceId = (await signInLocally(page.request, "Shots Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Shots Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = {

@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type CanvasNode } from "../lib/workbench/studio";
 
 /*
@@ -15,7 +15,7 @@ const shotNode = (id: string, title: string, boardShotId: string): CanvasNode =>
   ({ id, title, type: "scene", x: 0, y: 0, width: 344, linked: [], boardShotId }) as CanvasNode;
 
 async function seed(page: Page) {
-  const workspaceId = (await signInLocally(page.request, "Cast Tester")).workspace.id;
+  const workspaceId = (await signInWithNewInterface(page.request, "Cast Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const shot = (id: string) => ({ id, description: "A shot", framing: "Wide", movement: "Held", lighting: "", sound: "" });
