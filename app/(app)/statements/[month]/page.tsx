@@ -102,6 +102,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
               : "none"}</span>
           </div>
         )}
+        {data.unitNote && <p className="mt-4 text-[12px] text-dim" data-testid="statement-unit-note">{data.unitNote}</p>}
         <p className="mt-4 text-[12px] text-mute">Months are counted in UTC. {data.unit === "cr" ? "Credits are what this workspace was billed; a pack's price is the only dollar figure." : "Costs are what the vendors charged."}</p>
       </footer>
     </div>
