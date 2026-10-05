@@ -150,7 +150,7 @@ async function floors(page: Page, root: string, phone: boolean) {
       if (!m) continue;
       const a = m[4] == null ? 1 : Number(m[4]);
       const over = (c: number, bg: number) => c * a + bg * (1 - a);
-      if (lum(over(+m[1], 13), over(+m[2], 13), over(+m[3], 16)) + 1e-6 < floor) out.push(`${name(el)}: ${getComputedStyle(el).color} is dimmer than #7C7C84`);
+      if (lum(over(+m[1], 0), over(+m[2], 0), over(+m[3], 0)) + 1e-6 < floor) out.push(`${name(el)}: ${getComputedStyle(el).color} is dimmer than #7C7C84`);
     }
     /* A price is never cut short. */
     for (const el of Array.from(scope.querySelectorAll<HTMLElement>('[data-testid$="price"]'))) {

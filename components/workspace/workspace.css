@@ -70,9 +70,9 @@
   --pxw-red-tint: color-mix(in srgb, var(--gx-failed) 12%, transparent);
 
   /* Interaction values the prototype uses alongside the table */
-  --pxw-row-hover: var(--gx-input);
+  --pxw-row-hover: var(--gx-input-hover);
   --pxw-hover-border: var(--gx-hover-border);
-  --pxw-footer-hover: var(--gx-input);
+  --pxw-footer-hover: var(--gx-input-hover);
   --pxw-toggle-on: var(--gx-thumb);
   --pxw-toast-border: var(--gx-pop-border);
   --pxw-avatar: var(--gx-input-hover);

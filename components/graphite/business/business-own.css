@@ -63,7 +63,7 @@
 /* ── Format: the eighteen briefs as cards. ── */
 .bo-briefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 .bo-brief { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 14px; border: 1px solid var(--gx-hair); background: var(--gx-card); min-width: 0; }
-.bo-brief:hover { background: var(--gx-input); }
+.bo-brief:hover { background: var(--gx-input-hover); }
 .bo-brief[aria-pressed="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
 .bo-brief-face { --a: color-mix(in srgb, var(--gx-accent) 35%, var(--gx-card)); --b: var(--gx-root); aspect-ratio: 16 / 9; border-radius: 10px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; padding: 10px; background: var(--a); }
 .bo-brief[data-category="ads"] .bo-brief-face { --a: color-mix(in srgb, var(--gx-waiting) 35%, var(--gx-card)); }
