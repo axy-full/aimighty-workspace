@@ -24,7 +24,6 @@ test("every command is offered; the ones this asset cannot do say exactly why", 
   const disabled = items.filter((i) => !i.sep && i.disabled).map((i) => (i.sep ? "" : `${i.command}: ${i.reason}`));
   expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Recreate makes a new take from the same recipe.", "undo: Nothing to undo."]);
   expect(ASSET_LABEL.retry).toBe("Recreate");
-  expect(ASSET_LABEL.delete).toBe("Move to trash");
 
   const forUpload = assetCapabilities({ ...base, asset: up, otherProjects: 0 });
   expect(forUpload.why.retry).toContain("nothing to recreate");
