@@ -32,7 +32,11 @@ export function referenceRole(media: AssetRef["media"]): "Image" | "Video" | nul
 }
 
 /** What the commands are called for an asset — the prototype's labels. */
-export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Recreate" };
+export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Recreate", delete: "Move to trash" };
+/** The menu's labels for one asset: an upload is taken out of the project, not trashed (it stays in All assets). */
+export function assetLabels(origin: AssetRef["origin"] | null): Partial<Record<CtxCommand, string>> {
+  return origin === "upload" ? { ...ASSET_LABEL, delete: "Remove from project" } : ASSET_LABEL;
+}
 
 /**
  * Which commands this build carries out for an asset, and why the others
@@ -76,9 +80,10 @@ export const SAY = {
   cut: (name: string) => `Cut ${name} — paste to move it.`,
   pasted: (name: string, project: string) => `Pasted ${name} into ${project}`,
   moved: (name: string, project: string) => `Moved ${name} to ${project}`,
+  /* Nothing is erased: a generation is hidden in the trash and an upload is taken out of this project; Undo (the toast's button, ⌘Z) puts it back. */
   deleted: (asset: AssetRef) => asset.origin === "generation"
-    ? `Deleted ${asset.name} · ⌘Z to undo. The original stays on the server indefinitely.`
-    : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
+    ? `Moved ${asset.name} to trash`
+    : `Removed ${asset.name} from this project. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
   recreate: (name: string) => `${name}’s recipe is in Gen.`,

@@ -5,6 +5,8 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { personLine, workspaceLine } from "@/lib/shell/person";
 import { signOut } from "@/lib/shell/sign-out";
+import { SETTINGS_SECTIONS } from "@/lib/shell/ia";
+import { goSettings } from "@/lib/shell/settings-nav";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 type Item = { id: string; label: string; run: () => void };
@@ -36,11 +38,7 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const close = () => { onClose(); anchor.current?.focus(); };
   const go = (run: () => void) => () => { onClose(); run(); };
   const items: Item[] = [
-    { id: "team", label: "Team", run: go(() => shell.goWorkspace("people")) },
-    { id: "credits", label: "Plan & credits", run: go(() => shell.goWorkspace("credits")) },
-    { id: "rules", label: "Spending rules", run: go(() => shell.goSuite("atomik", "budget")) },
-    { id: "connections", label: "Connections", run: go(() => shell.goSuite("atomik", "skills")) },
-    { id: "advanced", label: "Advanced", run: go(() => shell.goWorkspace("engines")) },
+    ...SETTINGS_SECTIONS.map((section): Item => ({ id: section.id, label: section.label, run: go(() => goSettings(shell, section.id)) })),
     {
       id: "sign-out", label: busy ? "Signing out…" : "Sign out", run: () => {
         if (busy) return;

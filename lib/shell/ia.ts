@@ -151,6 +151,34 @@ export const HEADER_SEGMENT: { id: HeaderSegmentId; label: string; title: string
   { id: "atomik", label: "Atomik", title: "Atomik" },
 ];
 
+/**
+ * The board's regions (design/particl-graphite/README.md § 1.1: Brief · Looks · Storyboard · Shots · Cast · Cut · Deliver), each
+ * with today's nearest page. They open that page until the board lands (README § 1.2 says where each old page goes). ⌘K lists them.
+ */
+export type BoardRegionId = "brief" | "looks" | "storyboard" | "shots" | "cast" | "cut" | "deliver";
+export const BOARD_REGIONS: { id: BoardRegionId; label: string; opens: { suite: ShellSuiteId; page: string } }[] = [
+  { id: "brief", label: "Brief", opens: { suite: "studio", page: "brief" } },
+  { id: "looks", label: "Looks", opens: { suite: "studio", page: "boards" } },
+  { id: "storyboard", label: "Storyboard", opens: { suite: "studio", page: "boards" } },
+  { id: "shots", label: "Shots", opens: { suite: "studio", page: "takes" } },
+  { id: "cast", label: "Cast", opens: { suite: "studio", page: "cast" } },
+  { id: "cut", label: "Cut", opens: { suite: "studio", page: "edit" } },
+  { id: "deliver", label: "Deliver", opens: { suite: "studio", page: "deliver" } },
+];
+
+/**
+ * Settings in the five sections the design draws (README § 3.5), each with the page that holds it today (Settings itself is D1).
+ * The avatar menu and ⌘K list the same five.
+ */
+export type SettingsSectionId = "team" | "credits" | "rules" | "connections" | "advanced";
+export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string; opens: { workspace: WorkspaceTabId } | { suite: ShellSuiteId; page: string } }[] = [
+  { id: "team", label: "Team", opens: { workspace: "people" } },
+  { id: "credits", label: "Plan & credits", opens: { workspace: "credits" } },
+  { id: "rules", label: "Spending rules", opens: { suite: "atomik", page: "budget" } },
+  { id: "connections", label: "Connections", opens: { suite: "atomik", page: "skills" } },
+  { id: "advanced", label: "Advanced", opens: { workspace: "engines" } },
+];
+
 export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [
   { id: "general", label: "General", href: "/settings" },
   { id: "people", label: "People", href: "/team" },

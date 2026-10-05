@@ -24,6 +24,7 @@ test("every command is offered; the ones this asset cannot do say exactly why", 
   const disabled = items.filter((i) => !i.sep && i.disabled).map((i) => (i.sep ? "" : `${i.command}: ${i.reason}`));
   expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Recreate makes a new take from the same recipe.", "undo: Nothing to undo."]);
   expect(ASSET_LABEL.retry).toBe("Recreate");
+  expect(ASSET_LABEL.delete).toBe("Move to trash");
 
   const forUpload = assetCapabilities({ ...base, asset: up, otherProjects: 0 });
   expect(forUpload.why.retry).toContain("nothing to recreate");
@@ -46,8 +47,8 @@ test("paste needs a clip and a project; a copied generation cannot be pasted, a 
 });
 
 test("delete says what really happens to each kind of asset", () => {
-  expect(SAY.deleted(gen)).toBe("Deleted Wide on the water · ⌘Z to undo. The original stays on the server indefinitely.");
-  expect(SAY.deleted(up)).toBe("Deleted Harbour plate from this project · ⌘Z to undo. The original stays in All assets.");
+  expect(SAY.deleted(gen)).toBe("Moved Wide on the water to trash");
+  expect(SAY.deleted(up)).toBe("Removed Harbour plate from this project. The original stays in All assets.");
   expect(SAY.cut("X")).toBe("Cut X — paste to move it.");
   expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");
 });

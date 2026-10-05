@@ -30,7 +30,7 @@ test("Atomik › Memory is the shell's own page on Agent's backing page, told ap
   expect(shellPage("atomik", "memory")).toMatchObject({ title: "Memory", own: true, legacy: { suite: "atomik", page: "agent" } });
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "memory")?.id).toBe("memory");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
+  expect(searchPalette(paletteIndex({ assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
 });
 
 test("Atomik › Skills is the shell's own page beside Memory, on Agent's backing page; `skills` still means Tools & connections", () => {
@@ -38,7 +38,7 @@ test("Atomik › Skills is the shell's own page beside Memory, on Agent's backin
   expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "saved runs")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
+  expect(searchPalette(paletteIndex({ assets: [] }), "skills")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
@@ -88,8 +88,6 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
     ["SOCIAL", "Social"],
     ["AGENT", "Atomik Agent"],
   ]);
-  /* The suites left the header: each is still a ⌘K row, under its own name, until its board ships. */
-  for (const s of SHELL_SUITES) expect(paletteIndex({ models: [], assets: [] }).find((r) => r.run.type === "suite" && r.run.suite === s.id)).toMatchObject({ label: s.label, hint: s.name });
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */
@@ -246,31 +244,48 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
 /* ── ⌘K ─────────────────────────────────────────────────────────────────── */
 
 const rows = paletteIndex({
-  models: [{ id: "m1", name: "Seedance 2.5", kind: "video" }],
   assets: [{ id: "tk_1", name: "Board diagram", kind: "image" }],
 });
 
-test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
-  expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
-  expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
-  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages: no " Where to?" rows. */
-  expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);
-  expect(rows.some((r) => r.run.type === "page" && (r.run.page === "home" || r.run.page === "stages"))).toBe(false);
-  expect(rows.some((r) => r.label.trim() === "Where to?" || r.label.trim() === "Studio" && r.run.type === "page")).toBe(false);
-  expect(rows.filter((r) => r.run.type === "page").every((r) => /^\d{2} \S/.test(r.label))).toBe(true);
-  expect(rows.filter((r) => r.run.type === "workspace")).toHaveLength(WORKSPACE_TABS.length);
-  expect(rows.some((r) => r.run.type === "model")).toBe(true);
-  expect(rows.some((r) => r.run.type === "asset")).toBe(true);
+test("the palette lists what the design lists: Home, the regions with Ads and Social, Make and its modes, Atomik's places, Settings, assets", () => {
+  /* The twelve the empty box shows, in the design's order (README § 3.4). */
+  expect(searchPalette(rows, "").map((r) => `${r.group}:${r.label}`)).toEqual([
+    "HOME:Home", "BOARD:Brief", "BOARD:Looks", "BOARD:Storyboard", "BOARD:Shots", "BOARD:Cast", "BOARD:Cut", "BOARD:Deliver", "BOARD:Ads", "BOARD:Social", "MAKE:Make", "ATOMIK:Atomik",
+  ]);
+  expect(rows.find((r) => r.label === "Atomik")?.hint).toBe("Approvals · Activity · Skills · Memory");
+  expect(rows.filter((r) => r.group === "MAKE").map((r) => r.label)).toEqual(["Make", "Make › Video", "Make › Images", "Make › Audio", "Make › Recent", "Make › Motion transfer", "Make › Object swap"]);
+  expect(rows.filter((r) => r.group === "ATOMIK").map((r) => r.label)).toEqual(["Atomik", "Atomik › Approvals", "Atomik › Activity", "Atomik › Skills", "Atomik › Memory"]);
+  expect(rows.filter((r) => r.group === "SETTINGS").map((r) => r.label)).toEqual(["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"]);
+  expect(rows.filter((r) => r.group === "ASSET")).toHaveLength(1);
+  /* Nothing of the retired names, no stage numbers, no Generate. */
+  const text = rows.map((r) => `${r.group} ${r.label} ${r.hint}`).join("\n");
+  expect(text).not.toMatch(/Generate|Business|Viral|Moleculr|Subatomik|Genjutsu|\bRig\b|Astra|\bSoul\b|Higgsfield|Crew|\b\d{2} /);
 });
 
-test("search ranks a page's own name first and always ends with Ask Atomik", () => {
-  const hits = searchPalette(rows, "board");
-  expect(hits[0].run).toEqual({ type: "page", suite: "studio", page: "rig" });
-  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: board", run: { type: "ask", text: "board" } });
-  /* The asset "Board diagram" matches too, below the page. */
-  expect(hits.some((r) => r.run.type === "asset")).toBe(true);
+test("each row opens today's nearest page until the board lands", () => {
+  const open = (label: string) => rows.find((r) => r.label === label)!.run;
+  expect(open("Home")).toEqual({ type: "home" });
+  expect(open("Brief")).toEqual({ type: "page", suite: "studio", page: "brief" });
+  expect(open("Cut")).toEqual({ type: "page", suite: "studio", page: "edit" });
+  expect(open("Ads")).toEqual({ type: "suite", suite: "business" });
+  expect(open("Social")).toEqual({ type: "suite", suite: "viral" });
+  expect(open("Make › Motion transfer")).toEqual({ type: "make", mode: "motion" });
+  expect(open("Make › Object swap")).toEqual({ type: "make", mode: "swap" });
+  expect(open("Atomik › Activity")).toEqual({ type: "page", suite: "atomik", page: "runs" });
+  expect(open("Spending rules")).toEqual({ type: "settings", section: "rules" });
+});
+
+test("search ranks a row's own name first and always ends with Ask Atomik", () => {
+  const hits = searchPalette(rows, "cast");
+  expect(hits[0].run).toEqual({ type: "page", suite: "studio", page: "cast" });
+  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: cast", run: { type: "ask", text: "cast" } });
+  /* The asset is found by its own name. */
+  expect(searchPalette(rows, "diagram")[0].run).toEqual({ type: "asset", id: "tk_1" });
   expect(searchPalette(rows, "zzzz")).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
   expect(searchPalette(rows, "")).toHaveLength(PALETTE_ROWS);
   expect(searchPalette(rows, "a").length).toBeLessThanOrEqual(PALETTE_ROWS);
-  expect(searchPalette(rows, "budget atomik")[0].run).toEqual({ type: "page", suite: "atomik", page: "budget" });
+  /* The retired names find nothing but the agent. */
+  for (const old of ["viral", "business", "generate", "rig", "astra", "moleculr", "genjutsu", "soul", "higgsfield"]) expect(searchPalette(rows, old).map((r) => r.run.type), old).toEqual(["ask"]);
+  expect(searchPalette(rows, "motion transfer")[0].run).toEqual({ type: "make", mode: "motion" });
+  expect(searchPalette(rows, "spending")[0].run).toEqual({ type: "settings", section: "rules" });
 });
