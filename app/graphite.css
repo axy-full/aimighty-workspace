@@ -1,6 +1,7 @@
 /*
- * Graphite — Particl's one token set (design/particl-graphite/README.md
- * › Design tokens). Dark only. Loaded once by the root layout, on `:root`, so
+ * Graphite — Particl's one token set, at the values of
+ * design/particl-graphite/README.md › §2 Design tokens (the board, made easy,
+ * 4 October 2026). Dark only. Loaded once by the root layout, on `:root`, so
  * every surface reads the same values: the Suites shell, the public site, the
  * sign-in pages, the root-level layers and the older shells.
  *
@@ -13,13 +14,14 @@
 
   /* ── Colours: surfaces ───────────────────────────────────────────────── */
   --gx-root: #000000;                 /* canvas */
-  --gx-panel: #0D0D10;
-  --gx-card: #17171B;
-  --gx-input: #1B1B1F;                /* input, tile */
-  --gx-input-hover: #26262B;
-  --gx-thumb: #3A3A40;                /* pressed, popover-open, selected segment */
-  --gx-track: #1C1C20;                /* segment track */
-  --gx-viewport: #07070A;
+  --gx-panel: #000000;                /* every panel: black, separated by hairlines only */
+  --gx-card: #0B0B0D;                 /* object cards, dialogs, popovers */
+  --gx-input: #0A0A0C;                /* inputs, textareas, selects */
+  --gx-input-hover: #26262B;          /* hover and highlighted rows (lifts above --gx-card) */
+  --gx-thumb: #3A3A40;                /* pressed, popover-open */
+  --gx-track: #0D0D10;                /* segment track */
+  --gx-seg-on: #1C1C20;               /* selected segment (README §2) */
+  --gx-viewport: #000000;
 
   /* ── Colours: hairlines ──────────────────────────────────────────────── */
   --gx-hair-soft: rgba(255, 255, 255, 0.06);    /* row separators */
@@ -29,17 +31,20 @@
   --gx-card-border: rgba(255, 255, 255, 0.10);
   --gx-pop-border: rgba(255, 255, 255, 0.12);
   --gx-dialog-border: rgba(255, 255, 255, 0.14);
+  --gx-btn-border: rgba(255, 255, 255, 0.14);   /* secondary buttons, outlined on black (README §2) */
   --gx-dashed: rgba(255, 255, 255, 0.16);
   --gx-hover-border: rgba(255, 255, 255, 0.24);
 
   /* ── Colours: text ───────────────────────────────────────────────────── */
   --gx-text: #F5F5F7;
   --gx-text-2: rgba(235, 235, 245, 0.6);        /* secondary */
-  --gx-text-half: rgba(235, 235, 245, 0.5);     /* tertiary, upper step */
-  --gx-text-3: rgba(235, 235, 245, 0.45);       /* tertiary */
-  --gx-eyebrow: rgba(235, 235, 245, 0.4);       /* quiet */
-  --gx-idle: rgba(235, 235, 245, 0.35);         /* quiet, lower step */
-  --gx-placeholder: rgba(235, 235, 245, 0.35);
+  --gx-quiet: rgba(235, 235, 245, 0.55);        /* quiet: the floor for text people read (README §0.8, §2) */
+  --gx-text-half: rgba(235, 235, 245, 0.55);    /* tertiary, at the read floor */
+  --gx-text-3: rgba(235, 235, 245, 0.55);       /* tertiary, at the read floor */
+  --gx-eyebrow: rgba(255, 255, 255, 0.55);      /* eyebrows (README §2) */
+  --gx-idle: rgba(235, 235, 245, 0.45);         /* idle glyphs, not read text */
+  --gx-placeholder: rgba(255, 255, 255, 0.55);
+  --gx-disabled: rgba(235, 235, 245, 0.45);     /* disabled only: the one tier under the floor (README §2) */
 
   /* ── Colours: accent ─────────────────────────────────────────────────── */
   --gx-accent: #0A84FF;
@@ -88,15 +93,17 @@
   --gx-fs-h1: 26px;          /* 600 / -0.03em / 1.1 */
   --gx-fs-h2: 16px;          /* 16–17 / 600 / -0.01em */
   --gx-fs-panel: 15px;       /* panel title, 600 */
-  --gx-fs-card: 13.5px;      /* card title 13–14 / 600 */
-  --gx-fs-body: 13px;        /* root, line-height 1.45 */
-  --gx-fs-control: 12.5px;   /* 12–12.5 / 500, primary 600 */
-  --gx-fs-meta: 11.5px;      /* 11–11.5 */
-  --gx-fs-eyebrow: 10px;     /* 600 / +0.12em / uppercase */
+  --gx-fs-card: 15px;        /* card titles 15 / 600 / -0.01em */
+  --gx-fs-body: 14px;        /* body 14; line-height 1.45 */
+  --gx-fs-doc: 15px;         /* documents 15 / 1.5 */
+  --gx-fs-control: 12.5px;   /* controls 12.5–13 / 500, primary 600 */
+  --gx-fs-meta: 13px;        /* meta 13, at 0.6 */
+  --gx-fs-eyebrow: 12px;     /* eyebrows 12 / 600 / +0.08em / uppercase, at 0.55 */
   --gx-ls-h1: -0.03em;
   --gx-ls-h2: -0.01em;
-  --gx-ls-eyebrow: 0.12em;
+  --gx-ls-eyebrow: 0.08em;
   --gx-lh-body: 1.45;
+  --gx-lh-doc: 1.5;
 
   /* ── Spacing and sizes ───────────────────────────────────────────────── */
   --gx-page-pad: 20px;
@@ -119,9 +126,12 @@
 
   /* ── Radii ───────────────────────────────────────────────────────────── */
   --gx-r-panel: 0;           /* hairline-separated */
-  --gx-r-card: 8px;          /* cards, popovers, tiles */
+  --gx-r-card: 10px;         /* cards 10–12, popovers, tiles */
+  --gx-r-group: 14px;        /* groups */
+  --gx-r-sheet: 16px;        /* sheets, top corners */
   --gx-r-dialog: 10px;
   --gx-r-ctl: 6px;           /* buttons, inputs, chips */
+  --gx-r-ctl-phone: 10px;    /* buttons, inputs on phones */
   --gx-r-sm: 5px;            /* small inputs, tile buttons */
   --gx-r-xs: 4px;            /* segment buttons, badges, kbd */
   --gx-r-pill: 999px;        /* pills, jobs button, suite mark, toasts */
@@ -145,6 +155,7 @@
   --gx-t-toast: .25s;
   --gx-t-tile: .3s;
   --gx-t-pulse: 1.4s;
+  --gx-t-glide: .35s;        /* board glides */
   --gx-t-progress: .4s;      /* width, linear */
 }
 
@@ -168,7 +179,7 @@
   --graphite-control: var(--gx-input);
   --graphite-hover: var(--gx-input-hover);
   --graphite-segment: var(--gx-track);
-  --graphite-selected: var(--gx-thumb);
+  --graphite-selected: var(--gx-seg-on);
   --graphite-ink: var(--gx-text);
   --graphite-body: var(--gx-text-2);
   --graphite-muted: var(--gx-text-half);

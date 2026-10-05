@@ -1,58 +1,50 @@
 repo: axy-full/aimighty-workspace
 branch: main
-path: components/, app/, lib/workbench/, docs/, tests/
+path: components/, app/, lib/, docs/, CLAUDE.md
 
 ## Last sync
-date: 2026-10-02T17:40:00Z
+date: 2026-10-04T15:40:00Z
 ### Updated in this project
-- Step 2 of PROMPT.md: Gen built inside the Suites shell (Video · Images · Audio, one composer with Auto/Enhance · 1 cr, Shot control, References well fed by the Library, model sheet, Takes & assets wall grouped by day with File to shot, Seedance Edit, Astra and Topaz upscales) from components/graphite/GenView.tsx + ModelSheet.tsx copy and the earlier Particl Gen.dc.html layout
-- Engines limited to the CLAUDE.md rate card (Seedance 2.5/2.0, Kling 3.0 Standard/Pro, Nano Banana 2/Pro, Topaz Astra, ElevenLabs quoted, Identity 54 cr); actions without a card row read "quoted"
-- Step 1 follow-ups: suite name "Moleculr Business Suite", Setup hint, Viral motion-library row removed
+- Round "the board, made easy" complete (steps 1–8 of PROMPT.md) in Particl Suites.dc.html: header option B (Home · project · Make · Atomik), one Studio board per production with the outline rail, Ads and Social boards, Make as a panel, Atomik everywhere (⌘K, panel, control room in four places, Settings in five sections), the phone (judge, not make); README.md rewritten as the single handoff (IA old → new, tokens, every screen and state, actions, money rules, keys, names, placeholders, open decisions)
+- Rate card re-read from CLAUDE.md § Pricing: Seedance 2.5 8.6 cr/s at 1080p (43 cr · 5 s), Kling 3.0 Standard 1.4 cr/s (7 cr · 5 s), Nano Banana Pro 3 cr, Nano Banana 2 1 cr, Topaz Astra 23/38 cr per 5 s, identity training 54 cr, enhance 1 cr; ElevenLabs and Atomik thinking shown as live estimates ("up to N cr")
+- Money rules from lib/approvalRule.ts (the 200 cr platform line) re-stated with this round's 40 cr per-shot admin rule, the 80 % budget pause, Ask/Auto and the fix allowance (README § 5)
 
 ## Previous sync
-date: 2026-10-02T16:55:00Z
+date: 2026-10-04T10:12:36Z
 ### Updated in this project
-- Step 1 of PROMPT.md in Particl Suites.dc.html: IA re-read from lib/shell/ia.ts (Atomik = "Atomik Agent", mark AGENT, eight pages incl. Memory and Skills; Business pages Image ads · Setup · Brand · Product · Format · Hooks · Reference · Design; Cast hint "Characters that stay themselves")
-- Removed per CLAUDE.md rule 10 / lib/shell/connected-capability.ts: the Higgsfield catalogue model group, the higgsfield-* skills, Business › Ads, Cast's reference elements and Soul ID/Soul Cinema wording
-- Rate card re-read from CLAUDE.md § Pricing (unchanged)
+- Step 1 system pass (names, type floor, prices as "N cr" / "up to N cr" / "free"); step 3 of the earlier PROMPT: Atomik's eight pages from lib/shell/ia.ts, lib/shell/tools-connections.ts, lib/approvalRule.ts, docs/atomik-model-policy.md, docs/atomik-models.md, components/graphite/AtomikGate.tsx, components/graphite/atomik/*; step 2: Gen in the Suites shell from components/graphite/GenView.tsx + ModelSheet.tsx
 
 ## Sync history
-- 2026-09-28T12:36:00Z — New Particl Suites.dc.html (Graphite look) rebuilt on the repo's four-suite shell: lib/shell/ia.ts IA, header segment, stage strip, project head, Library (Tools | Assets), Inspector, ⌘K palette, right-click menu with undo, Jobs tray; Studio's ten stages built from components/graphite/production/* copy
-- 2026-09-16T06:05:21Z
-### Updated in this project
-- Rebuilt Particl iPhone.dc.html: Studio mobile (MobileNavigation Home · Workflow · Canvas · Takes · Edit, MobilePanel sheets for workflow / Add to canvas / Node controls / Atomik / settings / project, every stage) + Particl v2 mobile M1–M10 (dock, header, bottom sheets, pinned priced primary, Atomik compact/expanded, slot inspector, New asset, Composer, Settings)
-- Overview canvas now shows 30 phone frames alongside desktop
-- 2026-09-15T19:40:00Z — Rebuilt Studio (Home + 10 stages + Atomik rail + 12 dialogs) from Studio.tsx, production-graph.tsx, ScriptPanel, SequenceColor, SoundMix, EditVersions, MovieExport, GenerationDialog, AtomikRunDialog; built Gen from GenWorkspace.tsx + tests/gen.spec.ts; Workspace (settings · team · billing · usage · security · activity), pricing/packs from CLAUDE.md, auth flows; Particl v2 routes (productions · project · shots · media · canvas · shot bindings · provenance · rig canvas/recipe/run · pipelines · library · Atomik ideas/treatment/breakdown/shot list · connect/platform/admin)
-- Rebuilt Studio (Home + 10 stages + Atomik rail + 12 dialogs) from Studio.tsx, production-graph.tsx, ScriptPanel, SequenceColor, SoundMix, EditVersions, MovieExport, GenerationDialog, AtomikRunDialog, crew.ts
-- Built Gen from GenWorkspace.tsx + tests/gen.spec.ts (Composer, Shot control chips, engines/rate card, Takes & assets wall, Seedance Edit, Astra/Topaz)
-- Built Workspace (settings · team · billing · usage · security · activity), pricing tiers/packs from CLAUDE.md, auth flows (login · signup · invite · reset · setup · welcome)
-- Built Particl v2 routes (productions · project · shots · media · canvas · shot bindings · provenance · rig canvas/recipe/run · pipelines · library · Atomik ideas/treatment/breakdown/shot list · connect · platform · admin · terms/privacy/policy/report) and refreshed iPhone tabs + overview canvas
-
-- 2026-09-15T18:25:10Z — first read of shell, STAGES, Gen workspace, mobile nav; gap analysis vs the public look-around prototype
+- 2026-10-02T16:55:00Z — Step 1 of the earlier PROMPT: IA from lib/shell/ia.ts; Higgsfield catalogue, higgsfield-* skills, Business › Ads and Soul wording removed per CLAUDE.md rule 10 / lib/shell/connected-capability.ts
+- 2026-09-28T12:36:00Z — Particl Suites.dc.html (Graphite) rebuilt on the four-suite shell; Studio's ten stages from components/graphite/production/*
+- 2026-09-16T06:05:21Z — Particl iPhone.dc.html rebuilt from components/workbench/mobile-ui.tsx and design/particl-v2-mobile
+- 2026-09-15T19:40:00Z — Studio, Gen, Workspace, Particl v2 routes rebuilt from components/workbench/*, components/make/*, app/(app)/*
+- 2026-09-15T18:25:10Z — first read of shell, STAGES, Gen workspace, mobile nav
 
 ## Screen map
-| Screen (prototype) | Repo source |
+Each screen of Particl Suites.dc.html → the repo source it replaces (→) or extends (+).
+
+| Screen (URL) | Repo source |
 |---|---|
-| Particl Suites.dc.html · shell | lib/shell/ia.ts, components/graphite/{Header,StageStrip,Library,Inspector,Palette,ContextMenu,JobsTray}.tsx, design/particl-suites/{README,FINAL_SPEC}.md |
-| Particl Suites.dc.html · Studio stages | components/graphite/production/{BriefStage,BeatsStage,BeatGraph,EnvironmentStage,CastStage,AstraOutputs,EditStage}.tsx |
-| Particl Suites.dc.html · Gen (?view=gen&mode=video|images|audio&task=edit|upscale) | components/graphite/GenView.tsx, ModelSheet.tsx, lib/models.ts, CLAUDE.md § Pricing |
-| Particl.dc.html — shell, project bar, Home, stages brief/moodboard/characters/elements/assets | components/workbench/Studio.tsx, lib/workbench/studio.ts, components/workbench/WorkspaceMenu.tsx, components/studio/StudioNavigation |
-| Particl.dc.html?stage=canvas | components/workbench/production-graph.tsx, lib/workbench/node-graph.ts |
-| Particl.dc.html?stage=script | components/workbench/ScriptPanel.tsx, ScreenplayOcrReview.tsx |
-| Particl.dc.html?stage=storyboard | components/workbench/production-crew.tsx (StoryboardPanel) |
-| Particl.dc.html?stage=edit | components/workbench/SequenceColor.tsx, SoundMix.tsx, EditVersions.tsx, TimelinePreview.tsx |
-| Particl.dc.html?stage=export | components/workbench/MovieExport.tsx, lib/workbench/studio-export.ts |
-| Particl.dc.html rail + dialogs run/models | production-crew.tsx (CrewPanel), lib/workbench/crew.ts, AtomikRunDialog.tsx, components/atomik/ModelPicker.tsx |
-| Particl.dc.html dialog generate | components/workbench/GenerationDialog.tsx |
-| Particl Gen.dc.html | components/make/GenWorkspace.tsx, Composer.tsx, GenAssetLibrary.tsx, SeedanceEdit.tsx, AstraUpscale.tsx, TopazImageUpscale.tsx, components/Studio.tsx (shot control), tests/gen.spec.ts |
-| Particl Workspace.dc.html tabs | app/(app)/settings/page.tsx, team/page.tsx, usage/page.tsx, components/management/*, app/(auth)/billing, app/(app)/statements |
-| Particl Workspace.dc.html?screen=pricing | app/(auth)/pricing, CLAUDE.md §Pricing |
-| Particl Workspace.dc.html auth screens | app/(auth)/login, signup, invite/[code], reset, reset/[token], setup, welcome; components/WelcomeSignIn.tsx, RequestAccess.tsx |
-| Particl Productions.dc.html?screen=productions/project/shots/media/canvas | app/(app)/productions/page.tsx, projects/[id]/page.tsx, productions/[prod]/[project]/shots, media, projects/[id]/canvas, components/ProductionNav.tsx |
-| …?screen=shot/provenance/rig/recipe/run | app/(app)/shots/[id], takes/[id], rig/canvas/[boardId], rig/recipes, rig/run/[runId]; docs/handoff/nodegraph/README.md; components/ShotBindings.tsx, ProvenanceCard.tsx, ImpactSheet.tsx |
-| …?screen=pipelines | app/(app)/pipelines, docs/durable-production-pipelines.md |
-| …?screen=library/refs/unfiled | app/(app)/library/page.tsx |
-| …?screen=ideas/treatment/breakdown/shotlist | app/(app)/atomik/ideas, treatment, breakdown, shots; components/ModeSwitch.tsx |
-| …?screen=connect/platform/admin/terms/privacy/policy/report | app/(app)/connect, platform, admin, terms, privacy, policy, report |
-| Particl iPhone.dc.html · Studio (?tab=…&sheet=…) | components/workbench/mobile-ui.tsx (MobileNavigation, MobilePanel), production-graph.tsx (mobile header/list/sheets), app/workbench/mobile.css |
-| Particl iPhone.dc.html · v2 mobile (?app=v2&screen=…) | design/particl-v2-mobile/README.md (M1–M10: dock, header, sheets, pinned primary, per-screen notes) |
+| Header B, suite pill, Jobs, credits, avatar menu (every screen) | → components/graphite/Header.tsx, StageStrip.tsx (removed: no stage strip); lib/shell/ia.ts (replaced by README § 1) |
+| Home (?view=home) | → app/(app)/productions/page.tsx, components/workbench/Studio.tsx (Home); + components/ProductionNav.tsx |
+| Studio board canvas, rail, tool pill, zoom/minimap/list (?view=board) | → components/workbench/production-graph.tsx, lib/workbench/node-graph.ts (the Rig), app/(app)/rig/canvas/[boardId]; docs/handoff/nodegraph/README.md |
+| Board › Brief and questions (frame=b, d) | → components/graphite/production/BriefStage.tsx, components/workbench/ScriptPanel.tsx; app/(app)/atomik/ideas, treatment |
+| Board › Looks and Storyboard, List view (frame=c, d) | → components/graphite/production/BeatsStage.tsx, BeatGraph.tsx, components/workbench/production-crew.tsx (StoryboardPanel); app/(app)/atomik/breakdown, shots |
+| Board › Approval card, pause card (frame=e, f2) | + components/graphite/AtomikGate.tsx, AtomikRunDialog.tsx, lib/approvalRule.ts |
+| Board › Shots rendering, take card, Inspector, Review mode (frame=f, g, k, l) | → app/(app)/shots/[id], takes/[id], components/ShotBindings.tsx, ProvenanceCard.tsx, components/graphite/Inspector.tsx |
+| Board › Cast, Environment, Elements, consent (frame=h) | → components/graphite/production/CastStage.tsx, EnvironmentStage.tsx; + a consent record (new) |
+| Board › 3D blocking (Inspector › Advanced) | → components/graphite/production/AstraOutputs.tsx |
+| Board › Cut and Deliver (frame=i) | → components/graphite/production/EditStage.tsx, components/workbench/SequenceColor.tsx, SoundMix.tsx, EditVersions.tsx, MovieExport.tsx, lib/workbench/studio-export.ts |
+| Board › Crew review (frame=m) | → components/workbench/production-crew.tsx (CrewPanel), lib/workbench/crew.ts |
+| Board › Project record (frame=n), History drawer (frame=p) | + app/(app)/pipelines, docs/durable-production-pipelines.md; app/(app)/statements |
+| Board › Library drawer (frame=o) | → components/graphite/Library.tsx, app/(app)/library/page.tsx, components/make/GenAssetLibrary.tsx |
+| Make panel, type switch, engine line, fill, made, Recent (make=…) | → components/make/GenWorkspace.tsx, Composer.tsx, components/graphite/GenView.tsx, ModelSheet.tsx, lib/models.ts; Seedance Edit / upscales → components/make/SeedanceEdit.tsx, AstraUpscale.tsx, TopazImageUpscale.tsx (now card actions) |
+| Make › Motion transfer, Object swap (make=motion, swap) | → the Subatomik Viral Studio pages (lib/shell/ia.ts viral), components/graphite/viral/* |
+| Ads board (kind=ads&frame=1–3) | → the Moleculr Business Suite pages (lib/shell/ia.ts business), components/graphite/business/*; poster Designer → the Design page |
+| Social board (kind=social&frame=1–2) | + new (clips, hook review, effects, narrated video, posts); publishing → app/(app)/connect |
+| ⌘K (palette=1&q=…) | → components/graphite/Palette.tsx; + Atomik commands (new) |
+| Atomik panel, Ask Atomik how (atomik=1, how) | → components/graphite/atomik/*, AtomikRunDialog.tsx, components/atomik/ModelPicker.tsx |
+| Control room › Approvals, Activity, Skills, Memory (?suite=atomik&page=…) | → components/graphite/atomik/{Memory,Skills,Tools}View.tsx, lib/shell/tools-connections.ts, lib/approvalRule.ts; Budget/Models/Tools tabs fold into Settings |
+| Settings › Team, Plan & credits, Spending rules, Connections, Advanced (?view=workspace&ws=…) | → app/(app)/settings/page.tsx, team/page.tsx, usage/page.tsx, components/management/*, app/(auth)/billing, app/(auth)/pricing, CLAUDE.md § Pricing; MCP → mcp/README.md, app/(app)/platform |
+| Phone (?device=phone&screen=…) | → components/workbench/mobile-ui.tsx (MobileNavigation, MobilePanel), app/workbench/mobile.css, design/particl-v2-mobile/README.md |

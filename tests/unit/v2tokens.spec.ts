@@ -26,13 +26,14 @@ test("the Graphite colour tokens are the README's values", () => {
   const want: Record<string, string> = {
     // surfaces
     "--gx-root": "#000000",
-    "--gx-panel": "#0D0D10",
-    "--gx-card": "#17171B",
-    "--gx-input": "#1B1B1F",
+    "--gx-panel": "#000000",
+    "--gx-card": "#0B0B0D",
+    "--gx-input": "#0A0A0C",
     "--gx-input-hover": "#26262B",
     "--gx-thumb": "#3A3A40",
-    "--gx-track": "#1C1C20",
-    "--gx-viewport": "#07070A",
+    "--gx-track": "#0D0D10",
+    "--gx-seg-on": "#1C1C20",
+    "--gx-viewport": "#000000",
     // hairlines
     "--gx-hair-soft": "rgba(255,255,255,0.06)",
     "--gx-hair": "rgba(255,255,255,0.08)",
@@ -40,16 +41,19 @@ test("the Graphite colour tokens are the README's values", () => {
     "--gx-card-border": "rgba(255,255,255,0.10)",
     "--gx-pop-border": "rgba(255,255,255,0.12)",
     "--gx-dialog-border": "rgba(255,255,255,0.14)",
+    "--gx-btn-border": "rgba(255,255,255,0.14)",
     "--gx-dashed": "rgba(255,255,255,0.16)",
     "--gx-hover-border": "rgba(255,255,255,0.24)",
     // text
     "--gx-text": "#F5F5F7",
     "--gx-text-2": "rgba(235,235,245,0.6)",
-    "--gx-text-half": "rgba(235,235,245,0.5)",
-    "--gx-text-3": "rgba(235,235,245,0.45)",
-    "--gx-eyebrow": "rgba(235,235,245,0.4)",
-    "--gx-idle": "rgba(235,235,245,0.35)",
-    "--gx-placeholder": "rgba(235,235,245,0.35)",
+    "--gx-quiet": "rgba(235,235,245,0.55)",
+    "--gx-text-half": "rgba(235,235,245,0.55)",
+    "--gx-text-3": "rgba(235,235,245,0.55)",
+    "--gx-eyebrow": "rgba(255,255,255,0.55)",
+    "--gx-idle": "rgba(235,235,245,0.45)",
+    "--gx-placeholder": "rgba(255,255,255,0.55)",
+    "--gx-disabled": "rgba(235,235,245,0.45)",
     // accent and its tints
     "--gx-accent": "#0A84FF",
     "--gx-accent-hover": "#2D95FF",
@@ -91,12 +95,15 @@ test("the Graphite colour tokens are the README's values", () => {
   expect(uncomment(tokens)).not.toMatch(/color-scheme:\s*light/);
 });
 
-test("radii, shadows and easing are the README's", () => {
+test("radii, type, shadows and motion are the README's", () => {
   const want: Record<string, string> = {
     "--gx-r-panel": "0",
-    "--gx-r-card": "8px",
+    "--gx-r-card": "10px",
+    "--gx-r-group": "14px",
+    "--gx-r-sheet": "16px",
     "--gx-r-dialog": "10px",
     "--gx-r-ctl": "6px",
+    "--gx-r-ctl-phone": "10px",
     "--gx-r-sm": "5px",
     "--gx-r-xs": "4px",
     "--gx-r-pill": "999px",
@@ -109,6 +116,16 @@ test("radii, shadows and easing are the README's", () => {
     "--gx-glow-port": "0 0 0 4px rgba(10,132,255,0.35)",
     "--gx-glow-live": "0 0 8px rgba(10,132,255,0.8)",
     "--gx-ease": "cubic-bezier(.2,.7,.2,1)",
+    "--gx-t-glide": ".35s",
+    // type (README § Type, desktop)
+    "--gx-fs-h1": "26px",
+    "--gx-fs-card": "15px",
+    "--gx-fs-body": "14px",
+    "--gx-fs-doc": "15px",
+    "--gx-lh-doc": "1.5",
+    "--gx-fs-meta": "13px",
+    "--gx-fs-eyebrow": "12px",
+    "--gx-ls-eyebrow": "0.08em",
   };
   for (const [name, value] of Object.entries(want)) {
     const got = declIn(tokens, name);
@@ -123,6 +140,8 @@ test("every older --graphite-* name is an alias, never a second value", () => {
   for (const [, name, value] of decls) {
     expect(value.trim(), name).toMatch(/^var\(--gx-[\w-]+\)$/);
   }
+  // The selected segment is the README's #1C1C20, not the pressed thumb.
+  expect(declIn(tokens, "--graphite-selected")).toBe("var(--gx-seg-on)");
   // …and globals.css does not declare them again.
   expect(uncomment(css)).not.toMatch(/--graphite-[\w-]+\s*:/);
   expect(uncomment(css)).not.toMatch(/--gx-[\w-]+\s*:/);
