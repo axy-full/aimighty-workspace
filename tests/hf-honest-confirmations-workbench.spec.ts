@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch } from "./helpers/suitesMenu";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -85,8 +85,8 @@ async function roomWithSolutions(page: Page, overRig = false) {
     await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
     await expect(page.getByTestId("page-title")).toHaveText("Rig");
     await expect(page.getByTestId("rig-list")).toBeVisible();
-    await openSuitesMenu(page);
-    await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+    /* Crew is reached from ⌘K (header option B). */
+    await goViaSearch(page, "crew room", /Crew room/);
   } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
@@ -236,8 +236,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(library).toContainText("crew-min");
   expect(new URL(page.url()).searchParams.get("view")).toBeNull();
   if (info.project.name === "workbench-390x844") await library.getByRole("button", { name: "Close" }).click();
-  await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+  await goViaSearch(page, "crew room", /Crew room/);
   await expect(solutions).toHaveCount(3);
 
   /* Open in Gen goes to Gen: the solution is the prompt, and the toast does not ask for a paste. */

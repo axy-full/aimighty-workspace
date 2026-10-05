@@ -3,7 +3,7 @@ import { restorePage, shellPage, type ShellPage, type ShellSuiteId } from "./ia"
 /**
  * Confirmations that say what was done and where it is (idea 18). Pure: the
  * words of each toast, and the one place it opens — a page of the shell, Gen
- * or the Library. A toast names its destination by the label that place goes
+ * (Make's panel, over the page) or the Library. A toast names its destination by the label that place goes
  * by on screen, so "Added to Rig" opens Rig and nothing else.
  */
 export type Destination =
@@ -28,12 +28,12 @@ export function landingPage(d: Extract<Destination, { to: "page" }>): ShellPage 
   return restorePage(d.suite, d.page);
 }
 
-/** Where the person is: the shell view, its suite and page, and whether the Library's assets are already on screen. */
-export type Here = { view: "suite" | "gen" | "workspace" | "crew"; suite: ShellSuiteId; page: string; library: boolean };
+/** Where the person is: the shell view, its suite and page, whether Make's panel is open over it, and whether the Library's assets are already on screen. */
+export type Here = { view: "suite" | "gen" | "workspace" | "crew"; suite: ShellSuiteId; page: string; make?: boolean; library: boolean };
 
 /** A toast shown where its result already is carries no Open. */
 export function isHere(d: Destination, here: Here): boolean {
-  if (d.to === "gen") return here.view === "gen";
+  if (d.to === "gen") return Boolean(here.make);
   if (d.to === "library") return here.library;
   return here.view === "suite" && here.suite === d.suite && here.page === d.page && !d.select;
 }

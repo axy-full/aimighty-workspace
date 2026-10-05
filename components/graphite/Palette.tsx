@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MODELS, displayModelName, isOffered } from "@/lib/models";
-import { sendGenPreset } from "@/lib/shell/gen-preset";
+import { Glyph } from "./icons";
 import { paletteIndex, searchPalette, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -29,12 +29,12 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
   const run = (r: PaletteRun) => {
     shell.setPalette(false);
     switch (r.type) {
-      case "gen": shell.goGen(); return;
+      case "gen": shell.openMake(r.tool); return;
       case "model": {
-        /* Gen opens on the model picked, on the studio's engines (the index lists MODELS). */
+        /* Make opens on the model picked, on the studio's engines (the index lists MODELS). */
         const model = MODELS.find((m) => m.id === r.id && isOffered(m));
-        if (model) sendGenPreset({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
-        shell.goGen();
+        if (model) shell.openMake({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
+        else shell.openMake();
         return;
       }
       case "suite": shell.goSuite(r.suite); return;
@@ -46,17 +46,18 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
     }
   };
   return (
-    <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
+    <div className="gx-veil gx-palette-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
       <div className="gx-palette" role="dialog" aria-label="Search" onClick={(e) => e.stopPropagation()}>
         <div className="gx-palette-input-row">
-          <input ref={input} className="gx-palette-input" aria-label="Search" placeholder="Suites, stages, tools, models, assets — or ask Atomik" value={query}
+          <Glyph name="search" size={15} className="gx-glyph gx-palette-glyph" />
+          <input ref={input} className="gx-palette-input" aria-label="Search" placeholder="Search, or tell Atomik what to do" value={query}
             onChange={(e) => { setQuery(e.target.value); setAt(0); }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") { e.preventDefault(); setAt((i) => Math.min(rows.length - 1, i + 1)); }
               else if (e.key === "ArrowUp") { e.preventDefault(); setAt((i) => Math.max(0, i - 1)); }
               else if (e.key === "Enter") { e.preventDefault(); const hit = rows[at] ?? rows[0]; if (hit) run(hit.run); }
             }} />
-          <span className="gx-key">esc</span>
+          <span className="gx-key">Esc</span>
         </div>
         <div className="gx-palette-list" role="listbox" aria-label="Results">
           {rows.map((r, i) => (

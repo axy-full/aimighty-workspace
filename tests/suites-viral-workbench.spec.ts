@@ -14,7 +14,9 @@ import { smallTargets } from "./phoneFloors";
  * real POST /api/generate at that figure, and the take is collected by the
  * real job read (the provider is the mock engine: fixed estimates, a fixture
  * clip, nothing billed). Not one request reaches the connected account's
- * routes. History from the Library and its states: hf-viral-real-runs.
+ * routes. Motion transfer and Object swap are Make's quick tools
+ * (`make=motion|swap`); the old Viral page links land on them. History from
+ * the Library and its states: hf-viral-real-runs.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -91,14 +93,18 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   test.setTimeout(240_000);
   const s = await seed(page, playwright, "owner");
   await page.goto("/suites?suite=subatomik&page=motion&sp=motion");
+  /* The old page's link is Make's quick tool now, over Studio. */
+  await expect(page).toHaveURL(/[?&]make=motion(&|$)/);
+  expect(new URL(page.url()).searchParams.get("suite")).not.toBe("subatomik");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
+  await expect(page.getByTestId("make-title")).toHaveText("Motion transfer");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
   /* The account's owner-run card is gone for good: this page is the composer. */
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
 
   await dropFiles(page, [CLIP]);
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
+  await expect(page.getByTestId("viral-source-card")).toContainText("SOURCE · 10 s");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add at least one reference image.");
   await expect(page.getByTestId("viral-source-download")).toHaveAttribute("href", /^\/api\/uploads\/[A-Za-z0-9_-]+\?download=1$/);
   await dropFiles(page, STILLS);
@@ -110,6 +116,8 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   /* The button wears the live estimate for exactly this input: the route's own quote, in the director's order. */
   await expect(page.getByTestId("viral-generate")).toHaveText(priced("Transfer motion"), { timeout: 60_000 });
   await expect(page.getByTestId("viral-foot")).toHaveText("An estimate from the live price · filed to this project’s takes");
+  /* The tool's line carries the same estimate as the button. */
+  await expect(page.getByTestId("make-engine-price")).toHaveText(/^about \d[\d,]* cr$/);
   const quote = s.quotes.at(-1)!;
   expect(quote).toMatchObject({ model: "higgsfield-genjutsu-motion-transfer", task: "genjutsu", resolution: "720p", prompt: "", workbenchProjectId: s.projectId, refine: false });
   expect(quote).not.toHaveProperty("shotId");
@@ -142,7 +150,7 @@ test("the source's own tools: a frame saved to the project joins the references,
   test.setTimeout(180_000);
   const s = await seed(page, playwright, "owner");
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
   await expect(page.getByTestId("viral-prompt")).toHaveAttribute("placeholder", "Replace the bottle with the Glow serum; keep the hands as filmed.");
   await dropFiles(page, [CLIP]);
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4", { timeout: 60_000 });
@@ -180,9 +188,6 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   await page.goto("/suites?suite=subatomik&page=motion&sp=motion");
   await expect(page.getByTestId("viral-view")).toBeVisible();
   for (const gone of ["owner-run-viral", "owner-badge-viral", "owner-badge-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  /* A member moves between Viral's pages like anyone else. */
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button", { name: /History/ })).toBeVisible();
   await dropFiles(page, [CLIP, STILLS[0]]);
   await expect(page.getByTestId("viral-reference")).toHaveCount(1, { timeout: 60_000 });
   await expect(page.getByTestId("viral-generate")).toHaveText(priced("Transfer motion"), { timeout: 60_000 });
@@ -190,8 +195,10 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   await page.getByTestId("viral-generate").click();
   await expect(page.getByTestId("viral-done")).toContainText("Rendered.", { timeout: 90_000 });
   expect(s.sends.map((send) => send.body.maxCredits)).toEqual([shown]);
-  /* History lists it from the Library, with its next steps. */
-  await strip.getByRole("button", { name: /History/ }).click();
+  /* History lists it from the Library, with its next steps: a member reaches it from the tool like anyone else. */
+  await page.getByTestId("viral-open-history").click();
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   const result = page.getByTestId("history-result");
   await expect(result).toHaveCount(1, { timeout: 30_000 });
   await expect(result).toContainText("Motion Transfer · 720p");
@@ -203,6 +210,7 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   await compare.getByRole("button", { name: "Close" }).click();
   /* Recreate brings the same inputs back, priced again before anything runs. */
   await result.getByRole("button", { name: "Recreate" }).click();
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");
   await expect(page.getByTestId("viral-reference")).toHaveCount(1);
