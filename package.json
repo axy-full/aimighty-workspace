@@ -29,6 +29,7 @@
     "@vercel/blob": "^2.8.0",
     "@vercel/oidc": "^3.8.8",
     "@vercel/sandbox": "3.3.0",
+    "@xyflow/react": "12.12.0",
     "ai": "7.0.106",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
