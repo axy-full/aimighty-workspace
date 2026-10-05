@@ -268,6 +268,10 @@ Status on 4 October. Tracks run side by side where they don't share files. PRs m
 | P4 | Docker under Coolify; self-hosted Inngest sized for 1,000 jobs with per-plan limits; tested at staging.particl.si | P2, P3 | Not started |
 | P5 | particl.si's DNS to the VPS; particl.app redirected in Cloudflare; cron moved; rollback ready; Blob retired after two weeks | P4 | Not started |
 
+Payments package (card checkout, wired at the very end, as its own package):
+- Stripe (or another provider) is connected last. Until then packs stay requests approved in /admin (`lib/payments.ts` is `manual`).
+- The credits a payment grants always come from `CREDIT_USD`: credits = amount paid ÷ `CREDIT_USD` (for example $50 → 500 cr at $0.10). Never a number typed into Stripe's products or metadata, and never a figure written in the code.
+
 P4 and P5 notes (5 October):
 - Staging shares the live database: no paid work there until the credit switchover is done on Vercel.
 - When cleaning Vercel's settings for the VPS, keep `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`: 3D blocking's Blender renders still run in Vercel Sandbox.
