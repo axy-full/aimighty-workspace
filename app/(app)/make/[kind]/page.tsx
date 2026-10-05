@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
 
-export const metadata = { title: "Gen · Particl" };
+export const metadata = { title: "Make · Particl" };
 
 /** Enter the canonical workspace before any client-side prompt or asset handoff. */
 export default async function MakePage({
