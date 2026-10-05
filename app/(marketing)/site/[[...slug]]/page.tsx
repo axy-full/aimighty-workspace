@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import Gen, { metadata as gen } from "../_pages/gen";
 import Studio, { metadata as studio } from "../_pages/studio";
 import Business, { metadata as business } from "../_pages/business";
 import Viral, { metadata as viral } from "../_pages/viral";
@@ -9,7 +8,6 @@ import Atomik, { metadata as atomik } from "../_pages/atomik";
 import Workspace, { metadata as workspace } from "../_pages/workspace";
 import Pricing, { metadata as pricing } from "../_pages/pricing";
 import { GuestHome } from "@/components/graphite/guest/GuestHome";
-import { readSite } from "@/lib/site/settings.server";
 import { guestSample } from "@/lib/guest/sample.server";
 import { SAMPLE_TITLE } from "@/lib/guest/sample";
 import { approvedWelcomeCredits } from "@/lib/workspaceProvisioning";
@@ -24,7 +22,6 @@ import { approvedWelcomeCredits } from "@/lib/workspaceProvisioning";
  */
 type Entry = { Page: () => ReactNode | Promise<ReactNode>; metadata: Metadata };
 const PAGES: Record<string, Entry> = {
-  "": { Page: Gen, metadata: gen },
   studio: { Page: Studio, metadata: studio },
   business: { Page: Business, metadata: business },
   viral: { Page: Viral, metadata: viral },
@@ -39,16 +36,16 @@ const entryFor = async (params: Props["params"]) => PAGES[((await params).slug ?
 const isRoot = async (params: Props["params"]) => ((await params).slug ?? []).length === 0;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  if ((await isRoot(params)) && (await readSite()).guestHome) return { title: { absolute: "particl" } };
+  if (await isRoot(params)) return { title: { absolute: "particl" } };
   return (await entryFor(params))?.metadata ?? {};
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? null;
 
 export default async function SiteRoute({ params, searchParams }: Props) {
-  /* "/" for a signed-out visitor: Guest Home when the platform owner turned it on in /admin (lead decision 35),
-     else today's page. proxy.ts already sends a member, an app link or the old shell to the app instead. */
-  if ((await isRoot(params)) && (await readSite()).guestHome) {
+  /* "/" for a signed-out visitor is Guest Home (lead decisions 35, 39 and 41: the old homepage was deleted when it
+     was turned on). proxy.ts already sends a member, an app link or the old shell to the app instead. */
+  if (await isRoot(params)) {
     const q = (await searchParams) ?? {};
     const invite = one(q.invite);
     const [sample, welcome] = await Promise.all([guestSample(), approvedWelcomeCredits().catch(() => null)]);

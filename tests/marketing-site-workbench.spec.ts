@@ -7,12 +7,11 @@ import { signInLocally } from "./helpers/workbenchLocal";
  * it at the product's own paths; a member at / still gets the app. Every
  * page is checked at the five sizes for overflow, phone targets, copy about
  * charging, and anything that needs a Higgsfield sign-in, none of which the
- * public site carries. The hero's handoff is followed into Gen, which prices
- * the take itself.
+ * public site carries. Signed out, / is Guest Home (tests/demo-s15-guest-home-workbench.spec.ts).
  */
 
 const PAGES: [string, string][] = [
-  ["/", "Gen"], ["/studio", "Studio"], ["/business", "Business"], ["/viral", "Viral"],
+  ["/studio", "Studio"], ["/business", "Business"], ["/viral", "Viral"],
   ["/atomik", "Atomik"], ["/workspace", "Workspace"], ["/pricing", "Pricing"],
 ];
 const DESKTOP = "workbench-1440x900";
@@ -93,26 +92,4 @@ test("a member keeps the app at /, and the site offers the app instead of sign-i
   await page.goto("/studio");
   await expect(page.locator(".mk-header").getByRole("link", { name: "Open Particl" })).toHaveAttribute("href", "/suites");
   await expect(page.locator(".mk-header").getByRole("link", { name: "Sign in" })).toHaveCount(0);
-});
-
-test("the hero keeps a visitor's prompt and opens it in Gen, which prices the take live", async ({ page }, info) => {
-  test.skip(info.project.name !== DESKTOP, "one handoff");
-  await page.goto("/");
-  const go = page.locator(".mk-go");
-  /* The public hero prints no price. */
-  await expect(go).toHaveText("Generate");
-  await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
-  await go.click();
-  const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
-  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fmake%3Dvideo");
-  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
-
-  await signInLocally(page.request);
-  await page.goto("/suites?make=video");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("A lighthouse keeper walks the gallery in a storm.");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
-  await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("gen-length")).toHaveValue("5");
-  /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
-  await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]* cr/, { timeout: 30_000 });
 });

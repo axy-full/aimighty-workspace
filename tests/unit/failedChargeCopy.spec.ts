@@ -34,7 +34,6 @@ test("the public site claims nothing about what a failed render is charged", () 
 test("the seven places that promised it say only what they are about", () => {
   const read = (file: string) => readFileSync(file, "utf8");
   expect(read("app/(marketing)/site/_pages/pricing/index.tsx")).not.toMatch(/Failed renders/);
-  expect(read("app/(marketing)/site/_pages/gen/index.tsx")).not.toMatch(/Failed renders|failed render/);
   expect(read("app/(marketing)/site/_pages/workspace/index.tsx")).not.toMatch(/Failed renders/);
   expect(read("app/(marketing)/site/_pages/atomik/index.tsx")).not.toMatch(/Failed generations|failed generation/);
   /* The shell's credits tile is gone with the rest of the site's charging copy; nothing there speaks of a failure. */

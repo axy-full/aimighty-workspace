@@ -20,7 +20,6 @@ import {
   stepAudioSeconds,
 } from "../../lib/workspace/composer";
 import { nodeAudioBody, speechVoiceFor } from "../../lib/workbench/generation-audio";
-import { readFileSync } from "node:fs";
 import { SITE_SUITES } from "../../lib/marketing/site";
 import { suiteTiles } from "../../lib/shell/studio-home";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
@@ -329,7 +328,6 @@ test("Gen's copy promises only the outputs its composer makes: no 3D while the c
   expect(COMPOSER_TYPES).not.toContain("3d");
   const gen = SITE_SUITES.find((suite) => suite.id === "gen")!;
   expect(`${gen.blurb} · ${gen.pages.join(" · ")}`).not.toMatch(/3D/i);
-  expect(readFileSync("app/(marketing)/site/_pages/gen/index.tsx", "utf8")).not.toMatch(/3D/i);
   /* In the app: the Home tile's line (lib/shell/studio-home.ts). */
   expect(suiteTiles([], { rendering: 0, videoEngine: "", viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
 });
