@@ -477,7 +477,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         </>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
-        {shell.make ? (
+        {shell.make && !phoneOn ? (
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
@@ -494,7 +494,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           <Palette items={items} onAsk={ask} />
         </Boundary>
         {/* Atomik's panel (new interface, `&atomik=`): over whatever is on screen. */}
-        <AtomikMount ctx={screenCtx} />
+        {!phoneOn ? <AtomikMount ctx={screenCtx} /> : null}
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
           {/* Closed, the composer shows nothing, so a failure there shows nothing either until it is opened — like Search and Atomik. */}
           <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => !state.composer ? null : (
