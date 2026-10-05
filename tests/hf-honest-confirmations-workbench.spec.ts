@@ -172,11 +172,11 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   expect(reply).toMatchObject({ status: "boarded", title: "Cut on the drop" });
 
   /* The toast names the Rig and the shot; nothing about Boards or frames. The room stays where it was. */
-  await expect(toast).toContainText("Added to Rig · Cut on the drop");
+  await expect(toast).toContainText("Added to the Board · Cut on the drop");
   await expect(toast).not.toContainText(/Board|frame/);
   const open = page.getByTestId("toast-open");
-  await expect(open).toHaveText("Open Rig");
-  await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to Rig");
+  await expect(open).toHaveText("Open Board");
+  await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to the Board");
   /* A second press would add a second shot: the button says so. */
   await expect(second.getByRole("button", { name: "→ Rig again" })).toBeVisible();
   await expect(page.getByTestId("crew-view")).toBeVisible();
@@ -246,7 +246,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
-  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Make’s prompt");
   await expect(page.getByTestId("toast-open"), "already there: no Open").toHaveCount(0);
   await noSideScroll(page);
   await settle(page);
@@ -272,7 +272,7 @@ test("Crew › Open in Gen while the browser refuses to store anything for the s
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
-  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Make’s prompt");
   await noSideScroll(page);
   await settle(page);
   await shot(page, "gen-storage-refused", info.project.name);
@@ -316,7 +316,7 @@ test("Crew › → Rig with a long pinned line: the shot is named to a word with
   expect(saved.nodes.find((n) => n.id === reply.nodeId)).toMatchObject({ title: reply.title, text: expect.stringContaining("fills with colour over four seconds") });
 
   const text = page.getByTestId("toast").locator(".gx-toast-text");
-  await expect(text).toHaveText(`Added to Rig · ${reply.title}`);
+  await expect(text).toHaveText(`Added to the Board · ${reply.title}`);
   await reachable(page, page.getByTestId("toast-open"), info.project.name);
   const lines = await text.evaluate((el) => Math.round(el.clientHeight / parseFloat(getComputedStyle(el).lineHeight)));
   expect(lines, "two lines at most").toBeLessThanOrEqual(2);
@@ -334,7 +334,7 @@ test("Crew › → Rig over the Rig page: the Rig reads the new shot when it is 
   const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
-  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await expect(page.getByTestId("toast")).toContainText("Added to the Board · Cut on the drop");
   await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Board");
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
@@ -359,7 +359,7 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
   const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
-  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await expect(page.getByTestId("toast")).toContainText("Added to the Board · Cut on the drop");
   await page.getByTestId("toast-open").click();
   await expect(page.getByTestId("page-title")).toHaveText("Board");
   const rows = page.locator(".pxw-rig-row");

@@ -36,7 +36,7 @@ export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
     g("EDIT", [["Seedance Edit", "Video · 2.5 or 2.0", "video"], ["Re-edit a still", "Instruction · Nano Banana", "image"]]),
   ],
   astra: [
-    g("OUTPUTS", [["Renders & files", "Download · Send to Rig", "outputs"]]),
+    g("OUTPUTS", [["Renders & files", "Download · Send to the Board", "outputs"]]),
   ],
   rig: [
     g("BUILD", [["Build from Storyboards", "One shot per frame", "rig-build"], ["Shots", "Select · Add a shot", "rig-list"]]),

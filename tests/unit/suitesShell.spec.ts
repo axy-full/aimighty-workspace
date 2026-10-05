@@ -173,11 +173,11 @@ test("a blocked item stays in the menu, disabled, with its reason", () => {
 
 test("a Rig node leaves out commands the Rig does not carry out, and keeps a blocked one that has its own reason", () => {
   /* What SuitesShell gives a node while the Rig is on screen, and while it is not. */
-  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Rig to delete a shot." }, canUndo: true }));
+  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Board to delete a shot." }, canUndo: true }));
   expect(commands(onRig)).toEqual(["paste", "—", "delete", "undo"]);
   expect(find(onRig, "delete").disabled).toBeFalsy();
-  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Rig to delete a shot." } }));
-  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Rig to delete a shot." });
+  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Board to delete a shot." } }));
+  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Board to delete a shot." });
   for (const gone of ["copy", "cut", "duplicate", "bypass", "unplug", "move", "retry"]) expect(onRig.some((i) => !i.sep && i.command === gone)).toBe(false);
   /* When Bypass is wired it appears, in the README's place. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, delete: true } })))).toEqual(["paste", "—", "bypass", "—", "delete", "undo"]);

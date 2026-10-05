@@ -392,7 +392,7 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push-in on a lighthouse at dusk");
-  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Make.");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
