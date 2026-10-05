@@ -6,7 +6,7 @@ Read-only inventory of the workbench `canvas` stage ("Rig": `components/workbenc
 
 1. **Undo history floods per keystroke/slider tick; the 40-entry cap then destroys real history.** `Studio.tsx:501-510` (`change`, `remember=true`, `structuredClone` of the whole project per call, cap 40) driven by `production-graph.tsx:125` (`update`), `:144` (`opUpdate`), `:197`/`:202` (name/direction inputs), `:209-213` (sliders). The `remember` parameter exists but no caller passes `false`. Fix: coalesce continuous edits (one history entry per gesture / per field focus), and stop cloning the whole project per tick.
 2. **`publishSelection` bypasses `change()`** (`Studio.tsx:910-943`, `:942` sets `pRef`/`setP` directly): publishes are not undoable, the redo stack is not cleared, and `next` mixes `pRef.current` with an earlier captured `project`. Redo after publish drops `sharedNodes`/`bibleVersion` locally → next publish fails with `bible_conflict`.
-3. **Undo silently dead on the shared canvas; no Undo affordance on phones.** `Studio.tsx:751-752` swallows Ctrl+Z in shared scope with no feedback (private-scope entries would be safe to undo); the same edits *can* be undone from the edit stage. `mobile-handoff.css:117` hides the canvas Undo tool on phones.
+3. **Undo silently dead on the shared canvas; no Undo affordance on phones.** `Studio.tsx:751-752` swallows Ctrl+Z in shared scope with no feedback (private-scope entries would be safe to undo); the same edits *can* be undone from the edit stage. `phone-layout.css` hides the canvas Undo tool on phones (fixed by B, row 3 below).
 4. **`undo()` discards entries from another project.** `Studio.tsx:512-516` pops first, then checks `last.id===pRef.current.id`; a mismatch eats one real step silently.
 5. **/rig "Run unrun" has no credit ceiling and no idempotency.** `page.tsx:328` loops `runNode` (`:294-298` POSTs `/api/generate` without `maxCredits`), priced from a client-side table (`:147-158`). The workbench path always sends `maxCredits` and holds a localStorage claim (`GenerationDialog.tsx:318-345`).
 6. **/rig board saves are fire-and-forget.** `page.tsx:129-136`: debounced PUT with `.catch(() => {})`, no revision check, no `beforeunload`, no save-state UI; last-writer-wins across tabs.
@@ -34,7 +34,7 @@ Read-only inventory of the workbench `canvas` stage ("Rig": `components/workbenc
 22. No `lostpointercapture` handling: a node removed mid-drag leaves a ghost offset (`:84`, `:113` releases capture on the wrong element).
 23. Marquee hit test inclusive at edges; collapsed node height 50 vs CSS 48 (`canvas-selection.ts:35-50`, `desk.css:20`); marquee border sub-pixel at fitted zoom.
 24. Marquee drag calls `onSelect` per pointermove (`:104`) and the keyboard effect (`:150-164`) has no dependency array → listeners re-attached every render.
-25. Box-select unreachable by touch except via a tool button that two CSS files hide/unhide in import order (`mobile.css:17`, `mobile-handoff.css:116`).
+25. Box-select unreachable by touch except via a tool button that two CSS files hide/unhide in import order (`mobile.css:17`, `phone-layout.css:118`).
 26. Canvas touch targets stay 28 px / 12 px at 844×390 (`desk.css:16,20`); the 44 px coarse-pointer bump is scoped to the edit workspace only.
 27. `wideScreen` / `shortLandscape` / `mobile` are three stores that disagree at 760–1099 px (`production-graph.tsx:28-31`, `mobile-ui.tsx:9-13`).
 28. 70 px dead strip at the bottom of the phone canvas: `mobile.css:18` reserves room for a nav that `four-suites.css:124-128` hides.
@@ -70,13 +70,13 @@ Fix P1 and P2 in the workbench canvas first (1–4, 8–18), add unit tests for 
 
 ## PR E status — workbench canvas (19 September 2026, branch `feat/rig-bug-pass`)
 
-Commits: **A** `893b6ae` (`lib/workbench/node-graph.ts`, `canvas-selection.ts`, unit specs) and **B** `0c8043a` (`Studio.tsx`, `production-graph.tsx`, `desk.css`, `mobile-handoff.css`, `tests/rig-workbench.spec.ts`). The legacy /rig board (5–7, 29–33) is untouched pending the owner's decision. Everything else keeps its appearance.
+Commits: **A** `893b6ae` (`lib/workbench/node-graph.ts`, `canvas-selection.ts`, unit specs) and **B** `0c8043a` (`Studio.tsx`, `production-graph.tsx`, `desk.css`, `phone-layout.css`, `tests/rig-workbench.spec.ts`). The legacy /rig board (5–7, 29–33) is untouched pending the owner's decision. Everything else keeps its appearance.
 
 | # | Status | Where |
 | --- | --- | --- |
 | 1 | Fixed (B) | `change(fn, remember)` takes a coalescing key: name, direction, tool notes, sliders and held arrow keys record one entry per field focus / gesture (`onSettle` on blur, `onValueCommit`, arrow keyup); the previous project reference is the snapshot, no `structuredClone` per tick. |
 | 2 | Fixed (B) | `publishSelection` computes the shared set from `old` inside `change()`: one snapshot, undoable, redo stack cleared. `publishBible` still applies the server's version outside history; undo/redo carry the current `bibleVersion` so a step back never offers a stale version. |
-| 3 | Fixed (B) | Ctrl/⌘+Z in Shared view toasts "Undo is unavailable in Shared view…"; the Undo tool and context item are labelled with the reason when read-only; `mobile-handoff.css` no longer hides the Undo tool on phones. |
+| 3 | Fixed (B) | Ctrl/⌘+Z in Shared view toasts "Undo is unavailable in Shared view…"; the Undo tool and context item are labelled with the reason when read-only; `phone-layout.css` no longer hides the Undo tool on phones. |
 | 4 | Fixed (B) | `undo()`/`redo()` peek first and pop only when the entry belongs to the current project; an empty stack says "Nothing to undo". |
 | 5 | Fixed (`fix/replay-idempotency-keys`) | `runNode` sends the price on the button as `maxCredits` (credit workspaces), under an Idempotency-Key claimed in recovery storage first (`sendClaimedGeneration`); after a lost reply the next Run asks `POST /api/generate/check` what became of it, and a run that landed is followed, never sent twice. The phone board's Apply does the same per shot. |
 | 6–7 | Deferred | Legacy /rig board — owner decision (safeguards vs retire). |
