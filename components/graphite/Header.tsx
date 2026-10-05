@@ -11,10 +11,6 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import Boundary from "@/components/Boundary";
 import { JobsFault, JobsPill } from "./JobsTray";
 import { SettingsMenu } from "./SettingsMenu";
-/* LOCAL WIRING, stream 7's worktree only. */
-import { useNewInterface } from "@/lib/shell/new-interface";
-import { openAtomikPanel } from "@/lib/shell/atomik-panel";
-import { useAtomikPanelMode } from "./atomik/panel/use-atomik-panel";
 
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
@@ -34,8 +30,6 @@ function initialsOf(name: string) {
  */
 export function Header({ account, project = null, bar = null }: { account: WorkspaceAccount | null; project?: string | null; bar?: ReactNode }) {
   const shell = useShell();
-  const newInterface = useNewInterface();
-  const atomikOpen = useAtomikPanelMode() !== null;
   const { rates, name, requestScope } = useSession();
   const balance = account?.credits?.balance ?? null;
   const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
@@ -51,7 +45,7 @@ export function Header({ account, project = null, bar = null }: { account: Works
     project: (shell.view === "suite" && shell.suite.id !== "atomik" && !onHome) || shell.view === "crew",
     /* Make is a panel over the page on screen (README § 3.2): lit while it is open, beside whatever else is. */
     make: shell.make !== null,
-    atomik: newInterface ? atomikOpen : shell.view === "suite" && shell.suite.id === "atomik",
+    atomik: shell.view === "suite" && shell.suite.id === "atomik",
   };
   /* The suite pill names where you are: HOME, an old page's own mark, MAKE, CREW, SETTINGS; the phone's Library reads ASSETS. */
   const mark = shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark;
@@ -79,8 +73,6 @@ export function Header({ account, project = null, bar = null }: { account: Works
     if (id === "home") shell.goSuite("studio", shell.wide ? "stages" : "home");
     else if (id === "project") shell.goProject();
     else if (id === "make") shell.goGen();
-    /* LOCAL WIRING, stream 7's worktree only: with the new interface, Atomik is a panel over any screen. */
-    else if (newInterface) openAtomikPanel("1");
     else shell.goSuite("atomik");
   };
   const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;

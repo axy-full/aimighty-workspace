@@ -34,7 +34,6 @@ import type { ShellSeams } from "../WorkspaceShell";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
-import { useBoardOpen } from "@/lib/board/active";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -186,9 +185,7 @@ function useReferenceQuote(scope: string, query: string | null): Quote | null {
 export function RigProvider({ scope, children }: { scope: string; children: ReactNode }) {
   const ws = useWorkspace();
   const { state, dispatch, toast } = ws;
-  /* The board (components/graphite/board) is the Rig's page in the new interface: open, it is the Rig on screen. */
-  const boardOpen = useBoardOpen();
-  const projectId = state.view === "studio" || boardOpen ? state.projectId : null;
+  const projectId = state.view === "studio" ? state.projectId : null;
   /* The project the shell is on right now, on any page: an undo is only ever for it. */
   const shellProject = useRef(state.projectId);
   useEffect(() => { shellProject.current = state.projectId; }, [state.projectId]);
@@ -409,7 +406,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
      anything is built from it. */
-  const onRig = state.page === "rig" || boardOpen;
+  const onRig = state.page === "rig";
   const wasOnRig = useRef(onRig);
   useEffect(() => {
     const came = onRig && !wasOnRig.current;
@@ -450,7 +447,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
   const empty = useMemo(() => newProject(""), []);
-  const jobsEnabled = !!project && (onRig || run !== null);
+  const jobsEnabled = !!project && (state.page === "rig" || run !== null);
   /* Takes the poller files are made from their job, the same in every window: noted as made. */
   const change = useCallback((fn: (p: Project) => Project) => make(fn), [make]);
   const jobs = useProductionJobs(project ?? empty, jobsEnabled, change, scope);
@@ -860,7 +857,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     window.addEventListener(RIG_INTENT_EVENT, waiting);
     return () => window.removeEventListener(RIG_INTENT_EVENT, waiting);
   }, []);
-  const openId = project?.id ?? null, onRigPage = onRig;
+  const openId = project?.id ?? null, onRigPage = state.page === "rig";
   useEffect(() => {
     if (!openId || !onRigPage) return;
     const asset = takeRigIntent(openId);
