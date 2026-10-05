@@ -794,7 +794,8 @@ async function skipTenantHalf(workspaceId: string, at: number): Promise<boolean>
 type RunOptions = Options & {
   fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; workspaceId?: string | null;
   decisions?: Record<string, ShortfallDecision>;
-  /** End of the old price's window; default: when an instance first ran at the new price (billing_unit.paused_since). */
+  /** End of the old price's window; default: the window a conversion already recorded, else when an
+   *  instance first ran at the new price (billing_unit.paused_since). */
   endAt?: number | null;
   caps?: Record<string, CapChoice>;
   /** Workspaces whose own database half to mark skipped (it is gone or unreachable). */
@@ -823,18 +824,18 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun && !samePrice(creditUsd(), o.toUsd))
     throw new Error(`CREDIT_USD is ${dollars(creditUsd())}: change it to ${dollars(o.toUsd)} and redeploy before converting.`);
   let ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
-  /* Default: when an instance first ran at the new price; after a reversal (which clears that), the
-     window the reversed conversion used. */
-  const recordedEnd = async () => {
-    const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
-    return Number(r?.e) > 0 ? Number(r!.e) : null;
-  };
   await conversionsReady();
-  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : (await pausedSinceNow()) ?? (await recordedEnd());
+  /* The window a conversion already used, when one ran: kept for every later run (a reversal and a
+     cold start since may have written a later pausedSince, and rows from that pause were never at the
+     old price). Otherwise, when an instance first ran at the new price. */
+  const recorded = await recordedEnd();
+  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : recorded ?? (await pausedSinceNow());
   const firstOld = (await platformDb().execute({ sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE ROUND(credit_usd*1000000)=ROUND(?*1000000)`, args: [o.fromUsd] })).rows[0];
+  const firstOldPriceJobAt = firstOld?.t == null ? null : Number(firstOld.t);
+  if (!o.dryRun && !(Number(o.endAt) > 0) && recorded != null) await checkRecordedWindowHolds(o.fromUsd);
   const base = {
     action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
-    firstOldPriceJobAt: firstOld?.t == null ? null : Number(firstOld.t), fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
+    firstOldPriceJobAt, fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
   };
   const pass = (dryRun: boolean) => async () => {
     const results: CreditConversion[] = [];
@@ -880,6 +881,29 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
     needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), declinedTopups: declinesOf(results),
     caps: capsOf(results, layer, o.fromUsd, o.toUsd), tenantSkipped, layer, results, totals: totals(results),
   };
+}
+
+/** The window a conversion recorded (the latest, if several ran), or null before any ran. */
+async function recordedEnd(): Promise<number | null> {
+  const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
+  return Number(r?.e) > 0 ? Number(r!.e) : null;
+}
+
+/**
+ * The recorded window ends when particl.si first ran at the new price. It describes the record only
+ * if the old price never ran again afterwards: after a reversal and CREDIT_USD set back to the old
+ * price, rows were written at it later still, outside that window. A paid job at the old price
+ * after the last reversal shows it; then the default window is refused, and the owner asks for help.
+ */
+async function checkRecordedWindowHolds(fromUsd: number): Promise<void> {
+  const last = (await platformDb().execute({ sql: `SELECT MAX(created_at) AS t FROM ${CONVERSIONS_TABLE} WHERE action='reverse' AND workspace_id<>?`, args: [PLATFORM_LAYER_ID] })).rows[0];
+  if (!(Number(last?.t) > 0)) return;
+  const ran = (await platformDb().execute({
+    sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE paid_by_platform=1 AND workspace_id<>? AND ROUND(credit_usd*1000000)=ROUND(?*1000000) AND created_at>?`,
+    args: [HOUSE_WORKSPACE_ID, fromUsd, Number(last!.t)],
+  })).rows[0];
+  if (Number(ran?.t) > 0)
+    throw new Error(`particl.si ran at ${dollars(fromUsd)} again after the reversal (a paid job on ${new Date(Number(ran!.t)).toISOString()}): the window the first conversion recorded no longer covers the record. Stop and ask Claude; do not give endAt to force it.`);
 }
 
 /**

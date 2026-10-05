@@ -504,6 +504,8 @@ test.describe("review fixes", () => {
 /* ── Second review of #524 (5 October 2026): each defect, asserted fixed ──────────────────── */
 
 test.describe("second review fixes", () => {
+  const HOUR = 3_600_000;
+  const MIN = 60_000;
   const sync = async (ws: string, at: number) => {
     const { billingTransaction, syncBillingLedger } = await import("../../lib/billingLedger");
     await billingTransaction(async (tx) => { await syncBillingLedger(tx, ws, at); }, at);
@@ -617,5 +619,51 @@ test.describe("second review fixes", () => {
     expect(again.results.map((r) => [r.status, r.tenantDone])).toEqual([["converted", true]]);
     expect(await shotCap("ws_s2")).toBe("200");
     expect((await balance("ws_s2", NOW + 7000)).balance).toBe(800);
+  });
+
+  test("H2: converting again after a reversal keeps the recorded window, whatever a cold start wrote since", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const { seedLedgerUnit, pausedSinceTx, ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    const T1 = NOW + 10 * DAY; // the first boot at $0.10: the true end of the window, later than every window above
+    process.env.CREDIT_USD = "0.80";
+    await setUnit(0.8);
+    await granted("ws_s3e");
+    process.env.CREDIT_USD = "0.10";
+    const p = await platform();
+    await seedLedgerUnit(p, T1);
+    expect(await pausedSinceTx(p)).toBe(T1);
+    // A sign-up during the pause: 250 welcome credits at $0.10.
+    await addWorkspace("ws_s3new");
+    await p.execute(`UPDATE workspaces SET created_at=${T1 + 10 * MIN} WHERE id='ws_s3new'`);
+    await grant("ws_s3new", "welcome:ws_s3new", 250, "welcome", T1 + 10 * MIN);
+    await sync("ws_s3new", T1 + 10 * MIN);
+    const both = ["ws_s3e", "ws_s3new"];
+    const first = await convertAllCredits(run({ endAt: T1, at: T1 + 60 * MIN, universe: both }));
+    expect(first.results.map((r) => r.status)).toEqual(["converted", "new"]);
+    await reverseAllCredits({ dryRun: false, at: T1 + 62 * MIN, by: "owner", universe: both });
+    expect(await ledgerUnitTx(p)).toBe(0.8);
+    // Any instance cold-starts: the ledger ($0.80) is not CREDIT_USD ($0.10), so it notes a pause from now.
+    await seedLedgerUnit(p, T1 + 70 * MIN);
+    expect(await pausedSinceTx(p)).toBe(T1 + 70 * MIN);
+    // Converted again as the runbook says, with no endAt: the window the first conversion recorded.
+    const again = await convertAllCredits(run({ at: T1 + 80 * MIN, universe: both }));
+    expect(again.endAt).toBe(T1);
+    expect(again.results.map((r) => r.status)).toEqual(["converted", "new"]);
+    expect((await balance("ws_s3new", T1 + 81 * MIN)).balance).toBe(250);
+    expect((await balance("ws_s3e", T1 + 81 * MIN)).balance).toBe(800);
+  });
+
+  test("H2: after a reversal and a return to $0.80 with paid work, the recorded window is refused", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const T4 = NOW + 20 * DAY;
+    process.env.CREDIT_USD = "0.80";
+    await setUnit(0.8);
+    await granted("ws_s4");
+    process.env.CREDIT_USD = "0.10";
+    await convertAllCredits(run({ endAt: T4, at: T4 + HOUR, universe: ["ws_s4"] }));
+    await reverseAllCredits({ dryRun: false, at: T4 + 2 * HOUR, by: "owner", universe: ["ws_s4"] });
+    // CREDIT_USD set back to 0.80: particl.si runs at $0.80 again, and a paid job is approved at it.
+    await job("ws_s4", "s4_job", 3, 0.80, T4 + 3 * HOUR);
+    await expect(convertAllCredits(run({ at: T4 + 5 * HOUR, universe: ["ws_s4"] }))).rejects.toThrow(/ran at US\$0\.80 again after the reversal/);
   });
 });
