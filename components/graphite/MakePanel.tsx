@@ -557,9 +557,10 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
     ? [model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null]
     : state.type === "image" ? [settings.ratio, settings.resolution]
     : [settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter(Boolean) as string[];
-  const enginePrice = composer.credits != null
-    ? composer.quote?.approximate ? `about ${composer.credits.toLocaleString("en-US")} cr, ${atMost(composer.credits)}` : `${composer.credits.toLocaleString("en-US")} cr`
-    : null;
+  /* Two unbreakable runs, so a narrow line breaks the price only between them, never inside a figure (make.css). */
+  const enginePrice = composer.credits == null ? null
+    : composer.quote?.approximate ? <><span className="gx-make-price-run">about {composer.credits.toLocaleString("en-US")} cr,</span>{" "}<span className="gx-make-price-run">{atMost(composer.credits)}</span></>
+    : `${composer.credits.toLocaleString("en-US")} cr`;
   const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
   const compose = mode === "edit" ? (
     <div className="gx-make-compose">
@@ -614,7 +615,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{model?.label ?? "Choose an engine"}</span>
           {engineSpec.map((part) => <span key={part} className="gx-make-engine-part">{part}</span>)}
-          {enginePrice ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price">{enginePrice}</span> : null}
+          {enginePrice != null ? <span className="gx-make-engine-part gx-make-engine-price gx-mono" data-testid="make-engine-price">{enginePrice}</span> : null}
         </span>
         <span className="gx-make-change">Change</span>
       </button>

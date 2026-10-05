@@ -163,6 +163,18 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
       oneLine: p.height <= px * 1.6, legible: px >= 12 };
   });
   expect(fit).toEqual({ inside: true, uncut: true, oneLine: true, legible: true });
+  /* The engine line's price is never cut either: it wraps whole inside the line and the panel (the name may ellipsize),
+     and the line stays a full touch target where touch is the input. */
+  await page.getByTestId("gen-model").scrollIntoViewIfNeeded();
+  const line = await page.getByTestId("make-engine-price").evaluate((price) => {
+    const within = (a: DOMRect, b: DOMRect) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+    const p = price.getBoundingClientRect(), engine = price.closest("[data-testid=gen-model]")!.getBoundingClientRect();
+    const px = parseFloat(getComputedStyle(price).fontSize);
+    const touch = matchMedia("(max-width: 767px), (pointer: coarse)").matches;
+    return { uncut: price.scrollWidth <= price.clientWidth + 1, inLine: within(p, price.parentElement!.getBoundingClientRect()), inEngine: within(p, engine),
+      inPanel: within(p, price.closest(".gx-make")!.getBoundingClientRect()), legible: px >= 12, target: !touch || engine.height >= 44 };
+  });
+  expect(line).toEqual({ uncut: true, inLine: true, inEngine: true, inPanel: true, legible: true, target: true });
   expect(await noOverflow(page)).toBe(true);
   const readsBefore = reads.length;
 
