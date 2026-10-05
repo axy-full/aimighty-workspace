@@ -56,13 +56,25 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
     if (!model) return { state: "unavailable", reason: "No engine is offered for this take right now." };
     const settings = composerSettings(model, project?.aspect, preset.picks ?? {});
     const query = new URLSearchParams({ model: model.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration), ...(settings.generateAudio ? { audio: "1" } : {}) });
-    /* The references the recipe names, as the composer's own quote names them. */
-    for (const ref of preset.references ?? []) query.append(ref.origin === "generation" ? "genId" : "uploadId", ref.id);
-    query.set("imageRefs", "0");
-    query.set("unresolvedVideoRefs", "0");
-    const answer = await read(`/api/workbench/engines?${query}`);
-    const n = record(answer) ? credits(answer.credits) : null;
-    return n == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: n, approximate: record(answer) && answer.approximate === true };
+    const refs = preset.references ?? [];
+    const ask = async (withRefs: boolean) => {
+      const query = new URLSearchParams({ model: model.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration), ...(settings.generateAudio ? { audio: "1" } : {}) });
+      /* The references the recipe names, as the composer's own quote names them. */
+      if (withRefs) for (const ref of refs) query.append(ref.origin === "generation" ? "genId" : "uploadId", ref.id);
+      query.set("imageRefs", "0");
+      query.set("unresolvedVideoRefs", "0");
+      const answer = await read(`/api/workbench/engines?${query}`);
+      return record(answer) ? { credits: credits(answer.credits), approximate: answer.approximate === true } : { credits: null, approximate: false };
+    };
+    let result: { credits: number | null; approximate: boolean };
+    let withoutRefs = false;
+    try { result = await ask(true); } catch (error) {
+      /* A reference that is gone (deleted, or not in this workspace) is dropped by Make; the price is then the engine's own, said as "about". */
+      if (!refs.length) throw error;
+      withoutRefs = true;
+      result = await ask(false);
+    }
+    return result.credits == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: result.credits, approximate: result.approximate || withoutRefs };
   } catch (error) {
     return { state: "unavailable", reason: reasonOf(error) };
   }
