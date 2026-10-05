@@ -23,7 +23,6 @@ import type { Project } from "@/lib/workbench/studio";
 import { AUDIO_SECONDS, COMPOSER_TYPES, EMPTY_PROMPT, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
-import { SeedanceEditHost } from "./tools/SeedanceEditHost";
 import { entryBatch, entryDraft, libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { groupTakes, stripLabel, takeLabel, isVariation, type TakeCell } from "@/lib/variations";
 import { LoadBanner, TakeSkeletons, TakeTile } from "./TakeTile";
@@ -202,8 +201,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
      never written into the words) and WAV sound references in the well. */
   const cinemaModel = model != null && isCinemaStudioModel(model.id);
   const dispatchComposer = composer.dispatch;
-  const [mode, setMode] = useState<"compose" | "edit">("compose");
-  const dispatchType = useCallback((value: ComposerType) => { setMode("compose"); dispatchComposer({ type: "type", value }); }, [dispatchComposer]);
+  const dispatchType = useCallback((value: ComposerType) => dispatchComposer({ type: "type", value }), [dispatchComposer]);
   /* The address and the composer name one type: a type the address moved to (a link, an Open, Back) is the composer's,
      and a type the composer moved to (a tab here, a recipe) is the address's. Each follows only the other's change. */
   const { setMake } = shell;
@@ -261,6 +259,8 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const takesCount = settings.draft ? 1 : Math.max(1, state.count);
   const idleRate = idleSound && rates ? (model?.audioTask === "sound" ? rates.audio?.sound : rates.audio?.music) ?? null : null;
   const idleOne = idleRate && (idleRate.seconds == null || idleRate.seconds === composer.seconds) ? idleRate.credits : null;
+  /* Advanced is closed whenever Make opens; the design asks for no memory of it. */
+  const [advanced, setAdvanced] = useState(false);
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [filter, setFilter] = useState<RecentChip>("All");
@@ -299,7 +299,6 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   useEffect(() => { latest.current = state; });
   const { dismiss: dismissEnhanced, setAuto } = enhancer;
   const applyPreset = useCallback((next: GenPreset) => {
-    setMode("compose");
     setWellError(null);
     if (!next.from) {
       /* New words replace the old, an enhancement of them and any recipe that brought them. A model or
@@ -618,11 +617,10 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   ) : null;
 
   const tabs = (
-    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={4}>
+    <div className="gx-seg gx-seg--fill" role="tablist" aria-label="Output" data-tabs={3}>
       {ORDER.filter((t) => COMPOSER_TYPES.includes(t)).map((t) => (
-        <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "compose" && state.type === t} onClick={() => dispatchType(t)}><span>{TYPE_TAB[t]}</span></button>
+        <button key={t} type="button" role="tab" className="gx-seg-btn" aria-selected={state.type === t} onClick={() => dispatchType(t)}><span>{TYPE_TAB[t]}</span></button>
       ))}
-      <button type="button" role="tab" className="gx-seg-btn" aria-selected={mode === "edit"} onClick={() => setMode("edit")} data-testid="gen-tab-edit"><span>Edit</span></button>
     </div>
   );
   /* The engine line (README § 0 rule 2): the engine, what it renders and one take's live price as the composer quotes it. */
@@ -640,13 +638,45 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const buttonName = buttonWords ? `${buttonParts.action} · ${buttonWords}` : buttonParts.action;
   /* What every row's figure is at: the composer's own size and length for one take, so a row is never read at a size it does not name. */
   const sheetBasis = [...engineSpec, takesCount > 1 ? "each take" : "one take"].join(" · ");
+  /* The essentials the short form keeps (README § 0 rule 2): the aspect and the length are each a part of the price. */
+  const aspectRow = model?.ratios?.length ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" data-functional-label="">Aspect</span>
+            <div className="gx-chips" role="group" aria-label="Aspect">
+              {model.ratios.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.ratio === r} onClick={() => composer.dispatch({ type: "pick", value: { ratio: r } })}>{r}</button>)}
+            </div>
+          </div>
+        ) : null;
+  const lengthRow = model?.durations?.length ? (
+          <div className="gx-gen-row">
+            <label className="gx-eyebrow" htmlFor="gx-length" data-functional-label="">Length</label>
+            <select id="gx-length" className="gx-select" value={settings.duration} onChange={(e) => composer.dispatch({ type: "pick", value: { duration: Number(e.target.value) } })} data-testid="gen-length">
+              {model.durations.map((d) => <option key={d} value={d}>{d} s</option>)}
+            </select>
+          </div>
+        ) : null;
+  const soundLength = soundTask ? (
+          <div className="gx-gen-row">
+            <span className="gx-eyebrow" id="gx-seconds-label" data-functional-label="">Length</span>
+            <div className="gx-gen-sound">
+              <div className="gx-stepper" role="group" aria-labelledby="gx-seconds-label" data-testid="gen-seconds">
+                <button type="button" aria-label="Shorter" disabled={composer.seconds <= AUDIO_SECONDS[soundTask].min} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, -1), task: soundTask })}>–</button>
+                <span aria-live="polite" data-testid="gen-seconds-value">{composer.seconds} s</span>
+                <button type="button" aria-label="Longer" disabled={composer.seconds >= AUDIO_SECONDS[soundTask].max} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, 1), task: soundTask })}>+</button>
+              </div>
+            </div>
+          </div>
+        ) : null;
+  /* What a closed Advanced is holding that differs from the plain default, said on its line, so nothing that changes what is made hides. */
+  const advancedNotes = [
+    !settings.draft && state.count > 1 ? `${state.count} takes` : null,
+    settings.draft ? "Draft" : null,
+    settings.generateAudio ? "With sound" : null,
+    enhancer.auto ? "Auto enhance" : null,
+    soundTask === "music" && state.instrumental ? "Instrumental" : null,
+  ].filter(Boolean) as string[];
   const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
-  const compose = mode === "edit" ? (
-    <div className="gx-make-compose">
-      <section className="gx-gen-card" aria-label="Output">{tabs}</section>
-      <SeedanceEditHost scope={scope} project={project} onBack={() => setMode("compose")} />
-    </div>
-  ) : (
+  const compose = (
     <section className="gx-gen-card gx-make-compose" aria-label="Composer">
       {banner}
       {pickedUp.length ? (
@@ -689,6 +719,9 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         </div>
       ) : null}
 
+      {/* The essentials under the references (README § 0 rule 2): the picture's shape and the take's length, each a live part of the price. */}
+      {aspectRow || lengthRow || soundLength ? <div className="gx-make-shape" data-testid="make-shape">{aspectRow}{lengthRow}{soundLength}</div> : null}
+
       <button ref={modelButton} type="button" className="gx-make-engine" aria-haspopup="dialog" aria-expanded={sheet} onClick={openSheet} title="Studio engine · Change" data-testid="gen-model">
         <Glyph name="spark" size={16} className="gx-glyph" />
         <span className="gx-make-engine-line">
@@ -718,6 +751,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
           )}
         </button>
       </div>
+      <p className="gx-gen-foot">{composer.wording}</p>
 
       <div className="gx-make-tools" data-testid="make-quick-tools">
         <span className="gx-eyebrow" data-functional-label="">Quick tools</span>
@@ -728,9 +762,15 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         </div>
       </div>
 
-      {/* Below: every control Make's drawn panel does not have yet (README § 3.2 draws none of them), exactly as Gen had them
-          and in Gen's order — the film chips and Enhance under the words, then the output's own settings, then takes. */}
-      <div className="gx-make-more" data-testid="make-more">
+      {/* Everything else sits in ONE folded Advanced (README § 0 rule 2: "Advanced settings sit folded"), closed every time Make
+          opens: the film chips and Enhance, then the output's own settings, then takes. The price is never in here: the engine
+          line and the Make button above it carry it, and follow every value changed below. */}
+      <button type="button" className="gx-make-adv" aria-expanded={advanced} aria-controls="gx-make-advanced" onClick={() => setAdvanced((open) => !open)} data-testid="make-advanced-toggle">
+        <Glyph name="chev" size={16} className="gx-make-adv-chev" />
+        <span className="gx-make-adv-name">Advanced</span>
+        {advancedNotes.length ? <span className="gx-make-adv-notes" data-testid="make-advanced-notes">{advancedNotes.join(" · ")}</span> : null}
+      </button>
+      {advanced ? <div className="gx-make-more" id="gx-make-advanced" data-testid="make-more">
         {cinemaModel
           ? <FilmChips key="cinema" scope={scope} type={state.type} setup={state.cinema} onChange={setCinema} bank={CINEMA_BANK} testId="gen-cinema" />
           : <FilmChips key="film" scope={scope} type={state.type} setup={state.shot} onChange={setShot} />}
@@ -756,14 +796,6 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
           </div>
         ) : null}
 
-        {model?.ratios?.length ? (
-          <div className="gx-gen-row">
-            <span className="gx-eyebrow" data-functional-label="">Aspect</span>
-            <div className="gx-chips" role="group" aria-label="Aspect">
-              {model.ratios.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.ratio === r} onClick={() => composer.dispatch({ type: "pick", value: { ratio: r } })}>{r}</button>)}
-            </div>
-          </div>
-        ) : null}
         {/* Draft mode (lib/draftFinal.ts). */}
         {state.type === "video" && draftOffered(model) ? (
           <div className="gx-gen-row" data-testid="gen-draft-option">
@@ -783,14 +815,6 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
               {model.resolutions.map((r) => <button key={r} type="button" className="gx-chip" aria-pressed={settings.resolution === r} disabled={Boolean(settings.draft) && r !== settings.resolution}
                 title={settings.draft && r !== settings.resolution ? "A draft is 480p; its final is 1080p." : undefined} onClick={() => composer.dispatch({ type: "pick", value: { resolution: r } })}>{r}</button>)}
             </div>
-          </div>
-        ) : null}
-        {model?.durations?.length ? (
-          <div className="gx-gen-row">
-            <label className="gx-eyebrow" htmlFor="gx-length" data-functional-label="">Length</label>
-            <select id="gx-length" className="gx-select" value={settings.duration} onChange={(e) => composer.dispatch({ type: "pick", value: { duration: Number(e.target.value) } })} data-testid="gen-length">
-              {model.durations.map((d) => <option key={d} value={d}>{d} s</option>)}
-            </select>
           </div>
         ) : null}
         {/* Cinema Studio's Sound switch: off unless turned on here, whatever sound references the well holds. It is in the
@@ -816,20 +840,13 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
             </select>
           </div>
         ) : null}
-        {soundTask ? (
+        {soundTask === "music" ? (
           <div className="gx-gen-row">
-            <span className="gx-eyebrow" id="gx-seconds-label" data-functional-label="">Length</span>
+            <span className="gx-eyebrow" data-functional-label="">Vocals</span>
             <div className="gx-gen-sound">
-              <div className="gx-stepper" role="group" aria-labelledby="gx-seconds-label" data-testid="gen-seconds">
-                <button type="button" aria-label="Shorter" disabled={composer.seconds <= AUDIO_SECONDS[soundTask].min} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, -1), task: soundTask })}>–</button>
-                <span aria-live="polite" data-testid="gen-seconds-value">{composer.seconds} s</span>
-                <button type="button" aria-label="Longer" disabled={composer.seconds >= AUDIO_SECONDS[soundTask].max} onClick={() => composer.dispatch({ type: "seconds", value: stepAudioSeconds(soundTask, composer.seconds, 1), task: soundTask })}>+</button>
-              </div>
-              {soundTask === "music" ? (
-                <button type="button" className="gx-toggle" role="switch" aria-checked={state.instrumental} onClick={() => composer.dispatch({ type: "instrumental", value: !state.instrumental })} data-testid="gen-instrumental">
+              <button type="button" className="gx-toggle" role="switch" aria-checked={state.instrumental} onClick={() => composer.dispatch({ type: "instrumental", value: !state.instrumental })} data-testid="gen-instrumental">
                   <span className="gx-toggle-dot" aria-hidden="true" /><span>Instrumental</span>
                 </button>
-              ) : null}
             </div>
           </div>
         ) : null}
@@ -843,8 +860,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
           </div>
         </div>
         <p className="gx-gen-foot">{footer}{enhancer.auto && enhancer.enhanced ? " · enhanced first" : ""}</p>
-        <p className="gx-gen-foot">{composer.wording}</p>
-      </div>
+      </div> : null}
     </section>
   );
 

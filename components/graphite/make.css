@@ -52,8 +52,16 @@
 /* A recreated take's card comes into view clear of Make's sticky row. */
 .gx .gx-make .gx-recipe { scroll-margin-bottom: 84px; }
 
-/* What the drawn panel does not have yet, as Gen had it, under a hairline. */
-.gx-make-more { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--gx-hair); }
+/* The short form's shape row (aspect, length) sits between the references and the engine line. */
+.gx-make-shape { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* Advanced: one folded line under the quick tools, then what the drawn panel does not have, under a hairline. */
+.gx .gx-make-adv { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 6px 0; background: transparent; border: 0; border-top: 1px solid var(--gx-hair); border-radius: 0; color: var(--gx-text); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.gx-make-adv-chev { color: var(--gx-text-2); transition: transform .15s var(--gx-ease); }
+.gx-make-adv[aria-expanded="true"] .gx-make-adv-chev { transform: rotate(90deg); }
+.gx-make-adv-notes { min-width: 0; font-size: 13px; font-weight: 400; color: var(--gx-text-2); overflow-wrap: anywhere; }
+@media (max-width: 767px), (pointer: coarse) { .gx .gx-make-adv { min-height: 44px; } }
+.gx-make-more { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-top: 14px; }
 
 /* Recent: Gen's results, two to a row. */
 .gx .gx-make-recent { padding: 0 16px 16px; }
@@ -103,9 +111,8 @@
 .gx-veil--make .gx-sheet-row--spec > .gx-tool-tag { display: none; }
 .gx .gx-veil--make .gx-sheet-row[aria-selected="true"] { background: var(--gx-tint); box-shadow: inset 0 0 0 1px var(--gx-tint-border); }
 
-/* Four type tabs keep the 44 px floor on the narrowest phones. */
+/* Three type tabs keep the 44 px floor on the narrowest phones. */
 @media (max-width: 400px) {
-  .gx-make .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(4, 1fr); height: auto; }
   .gx-make .gx-seg--fill .gx-seg-btn { min-width: 44px; padding: 0 4px; }
 }
 
