@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { ParticlMark, ParticlWordmark } from "@/components/ParticlMark";
 import ActiveTab from "./ActiveTab";
-import { ACCESS_HREF, APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, type SiteSuiteId } from "@/lib/marketing/site";
+import { ACCESS_HREF, APP_HREF, NAV_SUITES, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, type SiteSuiteId } from "@/lib/marketing/site";
 
 /**
  * The site's header and footer. Server-rendered: the page says which tab is
  * current (the path cannot be trusted under the proxy's rewrites), and
  * whether the visitor already has a session, in which case the header offers
- * the app instead of sign-in and access.
+ * the app instead of Sign in and Request access.
  */
 
 export function Brand() {
@@ -26,7 +26,7 @@ export function SiteHeader({ active, member }: { active: SiteSuiteId | "pricing"
       <div className="mk-header-in">
         <Brand />
         <nav className="mk-nav" aria-label="Suites">
-          {SITE_SUITES.map((suite) => (
+          {NAV_SUITES.map((suite) => (
             <Link key={suite.id} href={suite.href} className="mk-tab" aria-current={active === suite.id ? "page" : undefined}>
               {suite.tab}
             </Link>
@@ -56,12 +56,12 @@ export function SiteFooter({ member }: { member: boolean }) {
         <div className="mk-footer-top">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Brand />
-            <p className="mk-footer-blurb">The studio&rsquo;s own room for making shots.</p>
+            <p className="mk-footer-blurb">One board per production. Every price shown; a person approves the spend.</p>
           </div>
           <div className="mk-footer-cols">
             <nav className="mk-footer-col" aria-label="Suites">
-              <span className="mk-tag mk-tag--muted">Suites</span>
-              {(["studio", "gen", "business", "viral", "atomik"] as const).map((id) => (
+              <span className="mk-tag mk-tag--muted">Particl</span>
+              {(["studio", "business", "viral", "gen", "atomik"] as const).map((id) => (
                 <Link key={id} href={suite(id).href}>{suite(id).tab}</Link>
               ))}
             </nav>
@@ -75,10 +75,10 @@ export function SiteFooter({ member }: { member: boolean }) {
               <Link href="/terms">Terms</Link>
               <Link href="/privacy">Privacy</Link>
             </nav>
-            <nav className="mk-footer-col" aria-label="Workspace">
-              <span className="mk-tag mk-tag--muted">Workspace</span>
-              <Link href="/workspace">General · People · Plans &amp; credits</Link>
-              <Link href="/workspace">Usage · Engines · Security</Link>
+            <nav className="mk-footer-col" aria-label="Settings">
+              <span className="mk-tag mk-tag--muted">Settings</span>
+              <Link href={suite("workspace").href}>Team · Plan &amp; credits</Link>
+              <Link href={suite("workspace").href}>Advanced · Security</Link>
             </nav>
           </div>
         </div>
