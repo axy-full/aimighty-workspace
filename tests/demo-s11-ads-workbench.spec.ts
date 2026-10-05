@@ -94,6 +94,7 @@ test("Edit opens the card's panel on the board's draft; the old Business links o
   await panel.getByTestId("brand-name").fill("Clear Water Co");
   await expect(page.getByTestId("ads-brand")).toContainText("Clear Water Co · brand kit");
   await shot(page, "ads-brand-panel");
+  expect(await faintText(page, '[data-testid="ads-panel"]')).toEqual([]);
   await page.getByTestId("ads-panel-close").click();
   await expect(panel).toHaveCount(0);
 
@@ -154,6 +155,7 @@ test("the poster Designer opens from frame 3, edits layers, exports a PNG free, 
   await expect(text).toHaveValue("Water, simply.");
   await text.fill("Fill it again.");
   await shot(page, "ads-designer");
+  expect(await faintText(page, '[data-testid="ads-designer"]')).toEqual([]);
   const download = page.waitForEvent("download");
   await designer.getByTestId("ads-designer-export").click();
   expect((await download).suggestedFilename()).toMatch(/\.png$/);
@@ -179,6 +181,7 @@ test("at every size the Ads and Social boards open without errors and without sc
   await page.goto(adsUrl(ads.project.id, "&frame=1"));
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
+  await shot(page, "ads-board");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
   /* A narrow screen lists the board's cards (the phone's record is stream 10's); it never says "No shots yet" about an ad. */
   if (!desktop(page)) {
