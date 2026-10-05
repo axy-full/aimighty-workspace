@@ -64,7 +64,7 @@ test("Open in Gen and Retry hand Gen what they carry in memory, so their toasts 
   const stop = readGenPresets((p) => got.push(p));
   stop();
   expect(got).toEqual([{ prompt: "Locked dawn frame", note: "Crew · solution" }]);
-  expect(CONFIRM.crewGen().text).toBe("The solution is Gen’s prompt");
+  expect(CONFIRM.crewGen().text).toBe("The solution is Make’s prompt");
 });
 
 test("a Crew solution becomes a shot named by its words before the dash, cut at a word with an ellipsis", () => {
@@ -87,7 +87,7 @@ test("a Crew solution becomes a shot named by its words before the dash, cut at 
 
 test("Crew › → Rig says Rig and opens that shot; it never claims a Storyboards frame", () => {
   const rig = CONFIRM.crewRig("Cut on the drop", "node-abc");
-  expect(rig.text).toBe("Added to Rig · Cut on the drop");
+  expect(rig.text).toBe("Added to the Board · Cut on the drop");
   expect(rig.text).not.toMatch(/board|frame/i);
   expect(rig.open).toEqual({ to: "page", suite: "studio", page: "rig", select: { kind: "shot", id: "node-abc" } });
   expect(CONFIRM.crewRig("Cut on the drop").open).toEqual({ to: "page", suite: "studio", page: "rig" });
@@ -100,9 +100,9 @@ test("a solution's line names the same place its route's confirmation opens", ()
   expect(solutionStatusLabel("open")).toBeNull();
   const routes: ["sent_to_brief" | "boarded" | "generated", Confirmation][] = [["sent_to_brief", CONFIRM.crewBrief()], ["boarded", CONFIRM.crewRig("x")], ["generated", CONFIRM.crewGen()]];
   for (const [status, c] of routes) expect(solutionStatusLabel(status), status).toContain(destinationName(c.open!));
-  expect(solutionStatusLabel("boarded")).toBe("Added to Rig");
+  expect(solutionStatusLabel("boarded")).toBe("Added to the Board");
   expect(solutionStatusLabel("sent_to_brief")).toBe("Added to the Brief");
-  expect(solutionStatusLabel("generated")).toBe("Opened in Gen");
+  expect(solutionStatusLabel("generated")).toBe("Opened in Make");
 });
 
 test("a toast shown where its result already is carries no Open", () => {

@@ -105,7 +105,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
     /* A Rig shot: Delete (with ⌘Z) while the Rig is on screen; the asset commands do not apply. */
-    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Rig to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
+    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Board to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
     const entry = target?.kind === "asset" ? items.find((i) => i.take.id === target.id) : null;
     return assetCapabilities({
       asset: entry ? assetRef(entry) : selectedAsset, clip: shell.clip && clipPayload ? { mode: shell.clip.mode, asset: clipPayload.asset } : null,
@@ -124,7 +124,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (target.kind === "node") {
       const remove = rigDeleteHandler();
       if (cmd !== "delete") { toast("Not available for a shot."); return; }
-      if (!remove) { toast("Open the Rig to delete a shot."); return; }
+      if (!remove) { toast("Open the Board to delete a shot."); return; }
       const why = remove(target.id);
       if (why) toast(why);
       return;
@@ -154,7 +154,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const rigProject = useRef(rigProjectId);
   useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
   const sinkRigUndo = (entry: RigUndo) =>
-    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
