@@ -135,7 +135,7 @@ test("older takes page in by the Library's own cursor, and Recent beside a compo
   await expect(page.getByTestId("history-result")).toHaveCount(5);
   await expect(page.getByTestId("history-more")).toHaveCount(0);
   /* Recent beside Object Swap: its own takes only, each a way into Takes. */
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Object Swap/ }).click();
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Object swap/ }).click();
   const recent = page.getByTestId("viral-recent").getByTestId("viral-take");
   await expect(recent).toHaveCount(2);
   await expect(recent.getByTestId("viral-take-status")).toHaveText(["Done", "Done"]);

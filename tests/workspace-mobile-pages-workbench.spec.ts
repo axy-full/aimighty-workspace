@@ -423,7 +423,7 @@ test("above the breakpoint the desktop pages are unchanged", async ({ page }, in
 
   await goTo(page, "rig");
   await expect(page.getByTestId("rig-list")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.locator(".pxw-rig-row")).toHaveCount(4);
   /* Nothing of the phone exists here. */
   await expect(page.getByTestId("phone-shell")).toHaveCount(0);

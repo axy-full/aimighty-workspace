@@ -33,7 +33,7 @@ test("Crew opens from ⌘K under the project; a round streams in at the price on
   const suites = page.getByRole("tablist", { name: "Suites" });
   /* Crew left the header (option B): ⌘K reaches it, and the project's segment stays lit over it. */
   await goViaSearch(page, "crew room", /Crew room/);
-  await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
+  await expect(page.getByTestId("suite-mark")).toHaveText("CREW REVIEW");
   await openSuitesMenu(page);
   await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Dune Studies", "Make", "Atomik"]);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
