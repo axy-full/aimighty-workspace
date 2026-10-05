@@ -2,6 +2,7 @@ import { displayModelName, isRetiredModel } from "../models";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { cinemaPriceWords } from "../cinemaHold";
 
 /**
  * The global Generate composer's own state, as pure data.
@@ -567,11 +568,12 @@ export function composerButtonParts(input: ButtonInput): { action: string; price
   const total = shownTotal(input.quote, input.quoteKey, count);
   const action = input.draft ? "Generate draft" : count > 1 ? `Generate ${count} takes` : "Generate";
   if (total === null) return { action, price: null };
-  const about = input.quote?.approximate ? "about " : "";
-  return { action, price: `${about}${total.toLocaleString("en-US")} cr` };
+  /* An approximate figure is Cinema Studio's (the only engine the composer quotes approximately, lib/workbench/media-quote.ts):
+     it holds "about N cr, at most 3N cr", the whole of what the press approves (lib/cinemaHold.ts). */
+  return { action, price: input.quote?.approximate ? cinemaPriceWords(total) : `${total.toLocaleString("en-US")} cr` };
 }
 
-/** "Generate · 18 cr" / "Generate 4 takes · 72 cr" / "Generate · about 18 cr" — the live figure, or no figure at all. */
+/** "Generate · 18 cr" / "Generate 4 takes · 72 cr" / "Generate · about 18 cr, at most 54 cr" — the live figure, or no figure at all. */
 export function composerButtonLabel(input: ButtonInput): string {
   const { action, price } = composerButtonParts(input);
   return price ? `${action} · ${price}` : action;

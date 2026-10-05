@@ -6,6 +6,7 @@ import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
 import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
+import { holdBandOf } from "./cinemaHold";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
@@ -115,8 +116,9 @@ export async function discardHeldJob(id: string, tx?: Transaction): Promise<bool
   return out.rowsAffected > 0;
 }
 
+/** `needs`: what starting it approves — for a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts), its hold. */
 export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
-  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
+  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)) * holdBandOf(model), at: now(), why };
 }
 
 export function heldMessage(needs: number, left: number): string {
@@ -319,7 +321,8 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
                     engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
-                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
+                    /* A take that holds its ceiling (Cinema Studio) starts at the hold its `needs` approved. */
+                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false, holdBand: holdBandOf(r.model) });
     } catch (e) {
       /* Nothing else stops it, only a shared slot: it waits in that line (from its own hold time), unreserved and unsent. */
       if (e instanceof ProviderPoolBusyError) {

@@ -348,6 +348,14 @@ type ReservationOptions = {
    * on the reservation, so every paid action of the run carries its id.
    */
   run?: RunSpend;
+  /**
+   * The take holds its ceiling, not its estimate: its bill at the quote times this band (a Cinema Studio
+   * take, lib/cinemaHold.ts). The hold is what the balance must cover, what is reserved, and it is recorded
+   * on the meter row (`hold_band`), so the take settles at its actual cost and never past the hold, and at
+   * its quote when it has no figure (lib/meter.ts). Being the take's worst case already, a run counts it
+   * once, at band 1.
+   */
+  holdBand?: number;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -363,6 +371,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
+  const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
   await ready();
   await reservationsReady();
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
@@ -421,7 +430,11 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
     const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
-    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
+    /* What this job reserves, and the balance must cover: its bill, or for a take held at its ceiling, the
+       bill times its band (Cinema Studio's "at most 3N cr"). Short of it, nothing is reserved (402). */
+    const held = billed * holdBand;
+    const heldAtCeiling = paid && holdBand > 1;
+    try { await setCreditDebitTx(tx, ws.id, event.id, held, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
     const merged = new Map(baseline);
     merged.delete(event.id);
@@ -479,12 +492,13 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's
        jobs have settled, what its jobs in flight could still settle at, and this job at its worst. */
     if (options.run) {
-      const job = runCredits({ paid, billed, costUsd: cost });
+      const job = runCredits({ paid, billed: held, costUsd: cost });
       const verdict = runLimitVerdict({
         limitTenths: toTenths(options.run.limitCredits),
         tally: runTally(await runCharges(options.run.id, { except: event.id, workspaceId: ws.id, platform: tx })),
         jobTenths: toTenths(job),
-        band: options.run.band,
+        /* A take held at its ceiling reserved its worst case already: counted once, never again at its band. */
+        band: heldAtCeiling ? 1 : options.run.band,
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
     }
@@ -494,10 +508,11 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
       if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
     }
-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
+    /* The hold is recorded on the take's row (`hold_band`): its settlement charges what it cost, never past the hold. */
+    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=excluded.hold_band`,
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling ? holdBand : null] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? Math.max(1, Math.round(options.run.band)) : null] });
+      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
 }

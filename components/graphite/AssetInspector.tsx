@@ -26,6 +26,7 @@ import { ReleaseTake } from "./ReleaseTake";
 import { AssetNextActions, revealNext } from "./AssetNextActions";
 import { madeFrom as toolSource, type NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
+import { overHoldMark } from "@/lib/cinemaHold";
 
 /**
  * The Inspector for an asset: a fixed
@@ -92,6 +93,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
     ...(generation ? [["Engine", displayModelName(generation.model)] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
+    /* Its engine charged past the hold approved for it: charged the hold, nothing above it (lib/cinemaHold.ts). */
+    ...(generation && overHoldMark(generation.params) ? [["Charge", overHoldMark(generation.params)!] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
     ["Status", takeStatusWord(take)],

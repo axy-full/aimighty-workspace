@@ -129,14 +129,18 @@ export async function quoteDispatch(scope: string, request: DispatchRequest): Pr
   const headers = { "Content-Type": "application/json", "X-Workbench-Scope": scope };
   if (request.endpoint === "/api/generate") {
     if (!request.input) throw new Error("This request could not be prepared. Nothing was submitted.");
-    const fresh = await studioRequest<{ estimatedCredits: number; fingerprint: string }>("/api/generate/quote", {
+    const fresh = await studioRequest<{ estimatedCredits: number; fingerprint: string; ceilingCredits?: number }>("/api/generate/quote", {
       method: "POST",
       headers,
       body: JSON.stringify(generationRequestBody(request.input)),
     });
     if (!Number.isFinite(fresh.estimatedCredits) || fresh.estimatedCredits < 0 || !FINGERPRINT.test(fresh.fingerprint ?? ""))
       throw new Error("The live price could not be confirmed. Nothing was submitted.");
-    return { credits: fresh.estimatedCredits, body: generationRequestBody({ ...request.input, maxCredits: fresh.estimatedCredits, quoteFingerprint: fresh.fingerprint }) };
+    /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) is approved at its hold: "at most" is the ceiling sent. */
+    const ceiling = fresh.ceilingCredits;
+    if (ceiling != null && !(Number.isInteger(ceiling) && ceiling >= fresh.estimatedCredits))
+      throw new Error("The live price could not be confirmed. Nothing was submitted.");
+    return { credits: fresh.estimatedCredits, body: generationRequestBody({ ...request.input, maxCredits: ceiling ?? fresh.estimatedCredits, quoteFingerprint: fresh.fingerprint }) };
   }
   const fresh = await studioRequest<{ estimatedCredits: number }>("/api/audio", {
     method: "POST",

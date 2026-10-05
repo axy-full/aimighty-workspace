@@ -5,7 +5,7 @@ import { engineFor } from "./engines";
 import type { RenderHandle } from "./engines/types";
 import { isGenjutsuModel } from "./genjutsuTypes";
 import { isCinemaStudioModel, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
-import { cinemaStudioDeliveredUsd, cinemaStudioSettlementUsd } from "./cinemaStudio";
+import { cinemaStudioDeliveredUsd, cinemaStudioSettlement } from "./cinemaStudio";
 import { restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { HiggsfieldHttpError, HiggsfieldKeyChangedError } from "./higgsfield";
@@ -116,20 +116,26 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
       // A transform settles at its live estimate. Cinema Studio was quoted
       // approximately and settles on what was delivered: the provider's own
       // charge if it states one, else its published formula on the measured
-      // output (with what sound adds, for a take made with sound), kept within
-      // a sane band of the quote.
-      const settledUsd = isCinemaStudioModel(String(row.model))
-        ? cinemaStudioSettlementUsd(usd, cinemaStudioDeliveredUsd({
+      // output (with what sound adds, for a take made with sound), never past
+      // the hold a person approved (lib/cinemaHold.ts). A take the engine
+      // charged more for is kept and shown, charged the hold, and marked; what
+      // passed the hold is the platform's, and only its admin desk sees it.
+      const settlement = isCinemaStudioModel(String(row.model))
+        ? cinemaStudioSettlement(usd, cinemaStudioDeliveredUsd({
             resolution: String(params.resolution), width: original.width, height: original.height, seconds: original.seconds,
             hasVideoInput: Boolean(params.hasVideoInput), inputSeconds: Number(params.inputSeconds),
             generateAudio: params.generateAudio === true,
           }), reportedUsd)
-        : usd;
+        : { usd, overrunUsd: null };
+      const settledUsd = settlement.usd;
+      /* The mark is words only, never a figure: the take's own record reaches its workspace. */
+      const overHold = settlement.overrunUsd != null;
       await writeGenerationOutcome({ sql: `UPDATE generations SET status='succeeded',stored_url=?,source_url=NULL,bytes=?,cost_usd=?,error=NULL,duration_s=?,
-        params=json_set(params,'$.duration',?,'$.width',?,'$.height',?,'$.ratio',?),updated_at=?
+        params=json_set(params,'$.duration',?,'$.width',?,'$.height',?,'$.ratio',?${overHold ? ",'$.overHold',json('true')" : ""}),updated_at=?
         WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=? AND json_extract(params,'$.higgsfieldVideoPollUntil')>?`,
         args: [stored.url,stored.bytes,settledUsd,Math.round(original.seconds * 1000) / 1000,keptDuration,original.width,original.height,keptRatio,now(),id,token,now()] },
         { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "succeeded", engineCostUsd: settledUsd,
+          ...(overHold ? { overrunUsd: settlement.overrunUsd } : {}),
           projectId: row.project_id == null ? null : String(row.project_id), shotId: row.shot_id == null ? null : String(row.shot_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
       await deliverGenerationSettlement(id);
       await settleHiggsfieldGenerationReceipt(id);

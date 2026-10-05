@@ -26,6 +26,14 @@ import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, ty
  * the workspace pays — whole credits at the engine's margin — and only when
  * the platform's key paid the vendor. A workspace on its own key for that
  * vendor is metered at zero credits: the money was theirs.
+ *
+ * A take reserved at its hold (`hold_band`: Cinema Studio holds its quote
+ * times its band, lib/cinemaHold.ts) settles at what it cost, never past the
+ * hold, so its rest is released the moment it settles and it never goes into
+ * debt; with no figure it settles at its quote. Its `engine_cost_usd` is then
+ * what it was charged at, and `overrun_usd` what the vendor charged past the
+ * hold: absorbed by the platform, and read only by its admin desk
+ * (holdOverrunsSince).
  */
 export type MeterKind = "video" | "image" | "audio" | "training" | "text";
 export type MeterStatus = "running" | "succeeded" | "failed";
@@ -55,7 +63,33 @@ export type MeterEvent = {
    * platform admin desk reads it back.
    */
   providerOutcome?: ProviderOutcome | null;
+  /**
+   * What the vendor charged past the hold a person approved (lib/cinemaStudio.ts cinemaStudioSettlement),
+   * in its dollars, when `engineCostUsd` is already the figure capped at the hold. Information only: the
+   * platform absorbs it; it never changes `billed_credits`, and only the platform admin desk reads it back.
+   */
+  overrunUsd?: number | null;
 };
+
+/** The meter row as a settlement reads it: its status, what it holds and what it was reserved or settled at. */
+type HeldRow = { readonly [column: string]: unknown };
+
+/**
+ * The cost a held take (`hold_band` > 1, lib/cinemaHold.ts) is charged at as it ends, and what the vendor charged
+ * past its hold. While it runs, its row holds its quote: it settles at its figure up to the quote times its band,
+ * and at the quote itself when it ends with no figure — so its bill is never past the hold, never in debt, and the
+ * rest of the hold is released at once. Once settled, a later figure may lower its charge, never raise it; and
+ * while it runs, nothing moves its hold. Any other job is charged at its figure, unchanged.
+ */
+export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, figure: number | null): { cost: number | null; overrunUsd: number | null } {
+  const band = Number(row?.hold_band ?? 0);
+  const basis = Number(row?.engine_cost_usd);
+  if (!row || !(band > 1) || !Number.isFinite(basis) || basis < 0) return { cost: figure, overrunUsd: null };
+  if (status === "running") return { cost: null, overrunUsd: null };
+  const cap = row.status === "running" ? basis * band : basis;
+  if (figure == null) return { cost: row.status === "running" ? basis : null, overrunUsd: null };
+  return figure > cap ? { cost: cap, overrunUsd: figure - cap } : { cost: figure, overrunUsd: null };
+}
 
 export class FundingSourceChangedError extends Error {
   constructor(
@@ -111,19 +145,25 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   const workspaceId = e.workspaceId ?? currentTenant()?.workspace?.id;
   if (!workspaceId) return;
   const paid = paidByPlatformEngine(e.engine);
-  const cost = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
+  const figure = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
+  const reportedOverrun = typeof e.overrunUsd === "number" && Number.isFinite(e.overrunUsd) && e.overrunUsd > 0 ? e.overrunUsd : 0;
   const ts = now();
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await billingTransaction(async (tx) => {
         await syncBillingLedger(tx, workspaceId, ts);
-        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform,credit_usd,credit_margin,kind,model,engine_cost_usd FROM meter_events WHERE id=?`, args: [e.id] });
+        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform,credit_usd,credit_margin,kind,model,engine_cost_usd,hold_band FROM meter_events WHERE id=?`, args: [e.id] });
         const row = previous.rows[0];
         if (row && row.workspace_id !== workspaceId) throw new Error("Meter event belongs to another workspace.");
         // A late start notification cannot replace a completed bill with its old estimate.
         if (row && row.status !== "running" && e.status === "running") return;
         if (row?.status === "succeeded" && e.status === "failed") return;
+        /* A take held at its ceiling is charged what it cost, never past its hold, and its quote with no figure
+           (heldSettlement); what the vendor charged past the hold is the platform's, recorded for its admin. */
+        const held = heldSettlement(row, e.status, figure);
+        const cost = held.cost;
+        const overrun = reportedOverrun + (held.overrunUsd ?? 0);
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
         /* A NEW paid row while the record (the platform's, or this workspace's own) counts in another price
@@ -150,8 +190,8 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         await tx.execute({
         sql: `INSERT INTO meter_events
                 (id, workspace_id, project_id, shot_id, kind, engine, model, status,
-                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, credit_usd, credit_margin, provider_outcome)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at, credit_usd, credit_margin, provider_outcome, overrun_usd)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
               ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 engine_cost_usd = COALESCE(excluded.engine_cost_usd, meter_events.engine_cost_usd),
@@ -164,10 +204,11 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
                 duration_ms = COALESCE(excluded.duration_ms, meter_events.duration_ms),
                 created_by = COALESCE(excluded.created_by, meter_events.created_by),
                 provider_outcome = COALESCE(excluded.provider_outcome, meter_events.provider_outcome),
+                overrun_usd = COALESCE(excluded.overrun_usd, meter_events.overrun_usd),
                 updated_at = excluded.updated_at`,
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
                cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin,
-               e.providerOutcome ? serializeOutcome(e.providerOutcome) : null],
+               e.providerOutcome ? serializeOutcome(e.providerOutcome) : null, overrun > 0 ? overrun : null],
         });
         if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);
       }, ts);
@@ -216,7 +257,7 @@ export async function meterSummary(workspaceId: string, sinceMs = 0): Promise<Me
   const rs = await platformDb().execute({
     sql: `SELECT engine, COUNT(*) AS jobs,
                  SUM(status = 'failed') AS failed, SUM(status = 'running') AS running,
-                 COALESCE(SUM(COALESCE(engine_cost_usd, 0)), 0) AS cost,
+                 COALESCE(SUM(COALESCE(engine_cost_usd, 0) + COALESCE(overrun_usd, 0)), 0) AS cost,
                  COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS billed
           FROM meter_events WHERE workspace_id = ? AND created_at >= ? GROUP BY engine ORDER BY billed DESC`,
     args: [workspaceId, sinceMs],
@@ -287,7 +328,7 @@ export async function meterByWorkspace(sinceMs: number): Promise<Map<string, Wor
   await platformReady();
   const rs = await platformDb().execute({
     sql: `SELECT workspace_id, COUNT(*) AS jobs, SUM(status = 'failed') AS failed, SUM(status = 'running') AS running,
-                 COALESCE(SUM(CASE WHEN paid_by_platform = 1 THEN COALESCE(engine_cost_usd, 0) ELSE 0 END), 0) AS cost,
+                 COALESCE(SUM(CASE WHEN paid_by_platform = 1 THEN COALESCE(engine_cost_usd, 0) + COALESCE(overrun_usd, 0) ELSE 0 END), 0) AS cost,
                  COALESCE(SUM(CASE WHEN paid_by_platform = 1 THEN COALESCE(billed_credits, 0) ELSE 0 END), 0) AS billed
           FROM meter_events WHERE created_at >= ? GROUP BY workspace_id`,
     args: [sinceMs],
@@ -314,7 +355,7 @@ export async function engineHealth(sinceMs: number): Promise<EngineHealthRow[]> 
     sql: `SELECT engine, model, COUNT(*) AS jobs, SUM(status = 'failed') AS failed, SUM(status = 'running') AS running,
                  AVG(CASE WHEN status = 'succeeded' THEN duration_ms END) AS avg_ms,
                  MAX(CASE WHEN status = 'succeeded' THEN duration_ms END) AS max_ms,
-                 COALESCE(SUM(COALESCE(engine_cost_usd, 0)), 0) AS cost
+                 COALESCE(SUM(COALESCE(engine_cost_usd, 0) + COALESCE(overrun_usd, 0)), 0) AS cost
           FROM meter_events WHERE created_at >= ? GROUP BY engine, model ORDER BY jobs DESC`,
     args: [sinceMs],
   });
@@ -378,4 +419,26 @@ export async function providerFailuresSince(sinceMs: number, recent = 20): Promi
     byEngine.set(row.engine, s);
   }
   return { summary: [...byEngine.values()].sort((a, b) => b.failed - a.failed), recent: rows.slice(0, recent) };
+}
+
+export type HoldOverrunRow = { engine: string; model: string; takes: number; absorbedUsd: number };
+
+/**
+ * PLATFORM ADMIN DESK ONLY (the route requires the super admin): per engine
+ * and model, since a moment and across every workspace, the takes whose
+ * engine charged past the hold a person approved (lib/cinemaHold.ts), and the
+ * dollars the platform absorbed for them. So the owner can see whether the
+ * band is too narrow. Never read by a workspace route: no customer sees a
+ * vendor dollar.
+ */
+export async function holdOverrunsSince(sinceMs: number): Promise<HoldOverrunRow[]> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT engine, model, COUNT(*) AS takes, COALESCE(SUM(overrun_usd), 0) AS absorbed FROM meter_events
+          WHERE overrun_usd > 0 AND updated_at >= ? GROUP BY engine, model ORDER BY absorbed DESC, takes DESC`,
+    args: [sinceMs],
+  });
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+    engine: String(r.engine), model: String(r.model), takes: Number(r.takes ?? 0), absorbedUsd: Number(r.absorbed ?? 0),
+  }));
 }

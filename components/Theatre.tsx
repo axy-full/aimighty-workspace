@@ -30,6 +30,7 @@ import { failureKind, failureCopy } from "@/lib/jobState";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { castThumbs } from "@/lib/castUsage";
+import { overHoldMark } from "@/lib/cinemaHold";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -477,6 +478,8 @@ export default function Theatre({
             <div className="theatre-ledger">
               <span><span className="text-mute">Charged</span> {money.take(gen)}</span>
               <span className="text-mute">{gen.refineModel ? "prompt writing included" : "prompt as written"}</span>
+              {/* Its engine charged past the hold approved for it: charged the hold, nothing above it (lib/cinemaHold.ts). */}
+              {overHoldMark(gen.params) && <span data-testid="take-over-hold">{overHoldMark(gen.params)}</span>}
             </div>
           )}
           {gen.costUsd != null && !money.inCredits && (
