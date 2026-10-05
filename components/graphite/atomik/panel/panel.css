@@ -1,0 +1,90 @@
+/*
+ * Atomik's panel over any screen, and the parts ⌘K's Atomik cards share with it
+ * (design/particl-graphite "Atomik frames" f and p; the master's "Atomik panel").
+ * Graphite tokens only (app/graphite.css). Nothing read is under 12 px or under 55 % white.
+ */
+
+.ak-panel {
+  position: fixed; top: var(--ak-top, 56px); right: 0; bottom: 0; width: 340px; z-index: 66;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--gx-panel); border-left: 1px solid var(--gx-hair-strong); color: var(--gx-text);
+  font-family: var(--gx-font);
+  animation: ak-in var(--gx-t-pop) var(--gx-ease) both;
+}
+/* Below 768 px the phone's own Atomik sheet is stream 10's; until it lands, this panel fills the width under the header. */
+.ak-panel:not([data-wide]) { width: 100%; border-left: 0; }
+@keyframes ak-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ak-panel { animation: none; } }
+
+.ak-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px; }
+.ak-title { display: inline-flex; align-items: center; gap: 8px; font-size: var(--gx-fs-panel); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.ak-spark { color: var(--gx-accent); display: inline-flex; }
+.ak-close { border: 0; background: transparent; color: var(--gx-quiet); font-size: 16px; line-height: 1; min-width: 32px; min-height: 32px; border-radius: var(--gx-r-ctl); }
+.ak-close:hover { color: var(--gx-text); }
+
+.ak-links { flex: none; display: flex; gap: 2px; padding: 0 12px 10px; border-bottom: 1px solid var(--gx-hair); }
+.ak-link-btn { border: 0; background: transparent; color: var(--gx-text-2); height: 28px; padding: 0 10px; border-radius: var(--gx-r-ctl); font-size: var(--gx-fs-control); font-weight: 500; }
+.ak-link-btn:hover { color: var(--gx-text); }
+.ak-link-btn[aria-current="page"] { background: var(--gx-seg-on); color: var(--gx-text); }
+
+.ak-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+
+.ak-eyebrow { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.ak-eyebrow[data-who="Atomik"], .ak-accent { color: var(--gx-accent-text); }
+.ak-warn { color: var(--gx-waiting-text); }
+
+.ak-hints { display: flex; flex-direction: column; gap: 8px; }
+.ak-hint { text-align: left; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-ctl); padding: 8px 10px; font-size: 13px; font-weight: 500; line-height: 1.4; }
+.ak-hint:hover { border-color: var(--gx-hover-border); }
+
+.ak-msg { display: flex; flex-direction: column; gap: 8px; }
+.ak-msg-text { margin: 0; font-size: var(--gx-fs-body); line-height: 1.55; color: var(--gx-text); overflow-wrap: anywhere; }
+.ak-line { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.ak-problem { color: var(--gx-failed-text); }
+.ak-note { margin: 6px 2px 0; font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+
+.ak-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ak-btn {
+  height: 28px; padding: 0 10px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border); background: transparent;
+  color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.ak-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.ak-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.ak-btn-primary { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.ak-btn-primary:hover:not(:disabled) { background: var(--gx-accent-hover); border-color: var(--gx-accent-hover); }
+.ak-btn-primary:disabled { background: var(--gx-seg-on); border-color: var(--gx-seg-on); color: var(--gx-disabled); }
+.ak-btn-offer { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
+.ak-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font-weight: 600; font-size: inherit; }
+.ak-btn:focus-visible, .ak-hint:focus-visible, .ak-link:focus-visible, .ak-link-btn:focus-visible, .ak-close:focus-visible, .ak-chip:focus-visible {
+  outline: 2px solid var(--gx-accent); outline-offset: 2px;
+}
+
+.ak-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ak-chip { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; }
+.ak-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border-50); color: var(--gx-accent-text); }
+
+.ak-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
+.ak-card-title { font-size: 14px; font-weight: 600; }
+.ak-picks { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--gx-text); }
+.ak-pick { display: flex; gap: 8px; align-items: flex-start; }
+.ak-pick em { font-style: normal; color: var(--gx-text-2); }
+
+.ak-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ak-step { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.ak-step-title { font-size: 13px; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.ak-step-meta { grid-column: 1; font-size: 12px; color: var(--gx-text-2); }
+.ak-step-price { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-family: var(--gx-mono); font-size: 12px; white-space: nowrap; }
+.ak-step[data-checkpoint] .ak-step-title { color: var(--gx-waiting-text); }
+
+.ak-compose { flex: none; padding: 10px 14px 14px; border-top: 1px solid var(--gx-hair); }
+.ak-box { display: flex; gap: 6px; background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-card); padding: 6px 6px 6px 12px; }
+.ak-box:focus-within { border-color: var(--gx-tint-border-50); }
+.ak-box textarea { flex: 1; min-width: 0; resize: none; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-body); line-height: 1.45; padding: 3px 0; outline: none; }
+.ak-box textarea::placeholder { color: var(--gx-placeholder); }
+.ak-send { align-self: flex-end; height: 32px; font-size: var(--gx-fs-control); }
+.ak-mono { font-family: var(--gx-mono); }
+
+@media (max-width: 767px), (pointer: coarse) {
+  .ak-btn, .ak-chip, .ak-link-btn, .ak-close, .ak-send { min-height: 44px; min-width: 44px; }
+  .ak-hint { min-height: 44px; }
+}

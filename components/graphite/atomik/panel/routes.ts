@@ -7,7 +7,7 @@ import type { ScreenModule } from "@/lib/shell/screens";
  */
 export const ATOMIK_SCREEN: ScreenModule = {
   id: "atomik",
-  landed: false,
+  landed: true,
   params: ["atomik", "q"],
   /* Old → new: Atomik's Agent page is the panel (over Home, once Home has landed). */
   rows: [{ from: "?suite=atomik&page=agent", to: "?atomik=1" }],

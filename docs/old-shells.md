@@ -92,6 +92,19 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 
 The Rig's data layer stays when these go: `components/workspace/rig/RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are what the board reads. `RigImport.tsx` stays until the board shows an import.
 
+## `/suites` pieces the new interface replaces
+
+With the new interface switched on, these `/suites` pieces are not shown; with it off, customers still use them. They are deleted in the switch-flip PR.
+
+### Atomik: ⌘K, the panel and "Ask Atomik how"
+
+| Piece (switch off) | Rendered by | Replacement (switch on) | Tests that go with it |
+|---|---|---|---|
+| ⌘K's suite index (Generate, suites, stage pages, Crew pages, Workspace tabs) and its "Ask Atomik: …" row, which hands the words to the Agent page | `components/graphite/Palette.tsx` › `PaletteDialog`, `lib/shell/palette.ts` › `paletteIndex`, `searchPalette` | ⌘K as search and Atomik in one box: `AtomikPalette` in the same file, `newPaletteIndex`, `searchNewPalette`, the cards in `components/graphite/atomik/panel/` | `tests/unit/suitesShell.spec.ts` (palette cases), `tests/suites-shell-workbench.spec.ts` (palette cases) |
+| Atomik › Agent `?suite=atomik&page=agent` | `components/workspace/spec/tools/AtomikTool.tsx` (agent branch) → `components/suites/SuiteAgentPanel.tsx`, `components/atomik/threads/ThreadsPanel.tsx`, `ThreadSwitcher.tsx`, `threads.module.css` | Atomik's panel `&atomik=1` (`components/graphite/atomik/panel/AtomikPanel.tsx`) on the same thread engine (`components/atomik/AtomikProvider.tsx`); the plan card on the board. `SuiteAgentPanel` stays while `AtomikSuite`, `SubatomikWorkspace` and `Studio` import it | `tests/atomik-threads-workbench.spec.ts` (Agent page cases), `tests/suite-agent-workbench.spec.ts` |
+| The page's Atomik plan sheet and its gate row under the stage strip | `components/graphite/AtomikSheet.tsx`, `AtomikGate.tsx`, `lib/shell/atomik-sheet.ts` | Waiting runs reach people through the control room's Approvals and Atomik's panel; the stage pages they sit on retire with the board | `tests/suites-atomik-gate-workbench.spec.ts`, parts of `tests/unit/atomikNoAccount.spec.ts` and `tests/unit/suitesShellAudit.spec.ts` |
+| Atomik's run card on the Rig (the ask, the proposal, the renders, Undo) | `components/workspace/rig/RigAgentCard.tsx` on the old Rig page | The board's docked Atomik panel: `components/graphite/board/agent/` (the ask at its price, the proposal and each render approved through the one approvals queue, Raise, Stop, Undo) | `tests/suites-rig-agent-workbench.spec.ts` (card cases) |
+
 ## Notes that change what D1 can delete
 
 - `/suites` still imports old-shell code: `components/suites/AtomikSuite.tsx`, `SubatomikWorkspace.tsx`, `MoleculrWorkspace.tsx`, `components/workbench/MovieExport.tsx`, `ProjectLibraryPage.tsx` and `components/management/ManagementPage.tsx`. Retiring a route does not make these deletable.
