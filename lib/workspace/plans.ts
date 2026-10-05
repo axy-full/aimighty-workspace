@@ -116,6 +116,8 @@ type GenerateQuote = {
   price: number;
   unit: "cr" | "usd";
   fingerprint: string;
+  /** A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts): what it may charge, its approval. */
+  ceilingCredits?: number;
 };
 
 /** POST /api/generate/quote for each body; the quote forces refine:false, so the body sent back does too. */
@@ -136,6 +138,7 @@ function generationGate(
         const quote = await call<GenerateQuote>(ctx, "/api/generate/quote", { body });
         parts.push({
           credits: quote.estimatedCredits,
+          ...(quote.ceilingCredits != null ? { ceiling: quote.ceilingCredits } : {}),
           fingerprint: quote.fingerprint,
           body,
           meta: { name: item.name },
@@ -162,7 +165,8 @@ function generationDispatch(prefix: string, noun: string): DispatchExecutor {
       const admitted: Admitted[] = [];
       for (const part of approved.parts) {
         const result = await call<Admitted>(ctx, "/api/generate", {
-          body: { ...part.body, maxCredits: part.credits, quoteFingerprint: part.fingerprint },
+          /* A part that holds its ceiling (Cinema Studio) is approved at its hold (lib/cinemaHold.ts). */
+          body: { ...part.body, maxCredits: part.ceiling ?? part.credits, quoteFingerprint: part.fingerprint },
           headers: { "Idempotency-Key": idempotencyKey(prefix, part, approved) },
         });
         admitted.push({ id: result.id, status: result.status, held: result.held });

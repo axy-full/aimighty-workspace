@@ -74,6 +74,8 @@ import {
   notifyComposerStorage,
   type PendingAudio,
 } from "@/lib/useComposerPersistence";
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 
 /** The Gen creation desk. Paid requests retain the existing scoped recovery protocol. */
 const subscribeHydration = () => () => {};
@@ -691,7 +693,10 @@ function ScopedComposer({
               (pendingBatch.variants.length - pendingBatch.cursor),
             unit: pendingBatch.display.unit,
           })
-        : money.price(price ?? 0);
+        /* Cinema Studio holds "about N cr, at most 3N cr", the whole of what Generate approves (lib/cinemaHold.ts). */
+        : isCinemaStudioModel(modelId) && rates.unit === "cr" && price != null
+          ? cinemaPriceWords(price)
+          : money.price(price ?? 0);
   const playSample = (v: Voice) => {
     if (!v.previewUrl) return;
     if (playing === v.id) {
@@ -831,7 +836,8 @@ function ScopedComposer({
           shotSpec: applied,
           references: refs.map((r) => ({ ...referenceIdentity(r), role: r.role })),
           useAs: kind === "image" ? useAs : undefined,
-          ...(rates.unit === "cr" ? { maxCredits: perTakePrice } : {}),
+          /* The approval is what one take may charge: Cinema Studio's hold, its quote times its band (lib/cinemaHold.ts). */
+          ...(rates.unit === "cr" ? { maxCredits: perTakePrice == null ? perTakePrice : heldCredits(perTakePrice, modelId) } : {}),
         };
         const batchId = count > 1 ? newBatchId() : undefined;
         const proposed: GenerationBatch = pendingBatch ?? {

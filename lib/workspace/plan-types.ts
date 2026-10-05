@@ -44,6 +44,8 @@ export type CreditUnit = "cr" | "connected";
 export type QuotePart = {
   /** Exact credits approved for this request (sent back as maxCredits or the route's equivalent). */
   credits: number;
+  /** What this request may charge when it holds its ceiling (Cinema Studio, lib/cinemaHold.ts): sent as maxCredits instead. */
+  ceiling?: number;
   /** Route-issued proof of the priced inputs (fingerprint, quoteDigest, quote id...). */
   fingerprint: string;
   /** The route's own quote id where it issues one (pipelines, connected account). */
@@ -58,6 +60,8 @@ export type LiveQuote = {
   unit: CreditUnit;
   /** Sum of parts; the figure on the gate card and the Approve button. */
   credits: number;
+  /** When a part holds its ceiling: the sum of what the parts may charge, said beside `credits` ("about N cr, at most M cr"). */
+  ceiling?: number;
   parts: QuotePart[];
   /** Epoch ms. The engine caps this at quotedAt + QUOTE_MAX_AGE_MS. */
   expiresAt: number;

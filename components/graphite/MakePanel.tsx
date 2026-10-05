@@ -557,6 +557,10 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const enginePrice = composer.credits == null ? null
     : composer.quote?.approximate ? <><span className="gx-make-price-run">{cinemaPriceParts(composer.credits)[0]}</span>{" "}<span className="gx-make-price-run">{cinemaPriceParts(composer.credits)[1]}</span></>
     : `${composer.credits.toLocaleString("en-US")} cr`;
+  /* While a price is on its way, a hidden stand-in of its shape holds its room on the line, so the line wraps the same
+     way before and after it lands and nothing below it moves (the takes stepper stays put). */
+  const pricePending = enginePrice == null && model != null && (!composer.quote || composer.quote.key !== composer.quoteKey || composer.quote.state === "loading");
+  const standIn = cinemaModel ? <><span className="gx-make-price-run">{cinemaPriceParts(88)[0]}</span>{" "}<span className="gx-make-price-run">{cinemaPriceParts(88)[1]}</span></> : "00 cr";
   const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
   const compose = mode === "edit" ? (
     <div className="gx-make-compose">
@@ -611,7 +615,8 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{model?.label ?? "Choose an engine"}</span>
           {engineSpec.map((part) => <span key={part} className="gx-make-engine-part">{part}</span>)}
-          {enginePrice != null ? <span className="gx-make-engine-part gx-make-engine-price gx-mono" data-testid="make-engine-price">{enginePrice}</span> : null}
+          {enginePrice != null ? <span className="gx-make-engine-part gx-make-engine-price gx-mono" data-testid="make-engine-price">{enginePrice}</span>
+            : pricePending ? <span className="gx-make-engine-part gx-make-engine-price gx-mono gx-make-price-pending" aria-hidden="true">{standIn}</span> : null}
         </span>
         <span className="gx-make-change">Change</span>
       </button>

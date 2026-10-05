@@ -28,7 +28,8 @@
 
 /* The engine line: what renders it and its price, Change at its end; the whole line opens the sheet. The engine's
    name may ellipsize; its settings and its price never are cut — a part that has no room wraps whole onto the next
-   line, and a price wider than the line ("about 31 cr, at most 93 cr" on a phone) breaks only between its runs. */
+   line, and a price wider than the line ("about 31 cr, at most 93 cr" on a phone) breaks only between its runs. While
+   the price is on its way a hidden stand-in of its shape holds its room (MakePanel), so nothing moves as it lands. */
 .gx .gx-make-engine { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--gx-hair); background: transparent; }
 .gx .gx-make-engine:hover { background: var(--gx-input-hover); }
 .gx-make-engine > .gx-glyph { flex: none; color: var(--gx-text-2); }
@@ -37,6 +38,7 @@
 .gx-make-engine-line > .gx-make-engine-part { flex: none; }
 .gx-make-engine-line > .gx-make-engine-price { flex: 0 1 auto; min-width: 0; white-space: normal; }
 .gx-make-price-run { white-space: nowrap; }
+.gx-make-price-pending { visibility: hidden; }
 /* Non-breaking spaces: a flex item drops a plain leading space. */
 .gx-make-engine-part::before { content: "\00a0·\00a0"; color: var(--gx-text-2); }
 .gx-make-engine-part { color: var(--gx-text); }
