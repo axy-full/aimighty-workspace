@@ -106,6 +106,9 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   await expect(deliver.getByTestId("deliver-render")).toContainText("Render master · free");
   await expect(page.locator("body")).not.toContainText(/Dune|Mira\b|Northline/);
 
+  /* Cards are draggable: every control inside one opts out of the drag and the pan, or a press starts a drag. */
+  expect(await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button, ${sel} input, ${sel} select, ${sel} textarea, ${sel} a`)].filter((el) => !el.closest(".nodrag")).length, "[data-testid=\"cut-card\"]")).toBe(0);
+  expect(await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button, ${sel} input, ${sel} select, ${sel} textarea, ${sel} a`)].filter((el) => !el.closest(".nodrag")).length, "[data-testid=\"deliver-card\"]")).toBe(0);
   mkdirSync(SHOTS, { recursive: true });
   await page.locator('[data-region="cut"]').click();
   await page.waitForTimeout(700);

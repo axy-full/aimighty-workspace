@@ -110,6 +110,8 @@ test("the Cast region draws a character, a place and an element: their words, st
   await page.waitForTimeout(700);
   await page.screenshot({ path: `${SHOTS}/cast-${info.project.name.replace("workbench-", "")}.png` });
 
+  /* Cards are draggable: every control inside one opts out of the drag and the pan, or a press starts a drag. */
+  expect(await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button, ${sel} input, ${sel} select, ${sel} textarea, ${sel} a`)].filter((el) => !el.closest(".nodrag")).length, "[data-testid=\"cast-card\"]")).toBe(0);
   /* Render a still hands the words to Make (which prices them); nothing is sent. */
   await lead.getByTestId("cast-render").click();
   await expect(page.getByTestId("make-panel")).toBeVisible();

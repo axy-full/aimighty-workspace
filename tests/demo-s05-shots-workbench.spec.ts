@@ -123,6 +123,9 @@ test("shots render in place, the take that waits is frame g, and judging spends 
   await page.locator('[data-card-id="group:shots"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${SHOTS}/shots-${size}.png` });
 
+  /* Cards are draggable: every control inside one opts out of the drag and the pan, or a press starts a drag. */
+  expect(await page.evaluate(() => [...document.querySelectorAll('[data-testid="take-card"] button, [data-testid="take-card"] input, [data-testid="take-review"] button, [data-testid="take-review"] input, [data-testid="board-group"] button')].filter((el) => !el.closest(".nodrag")).length)).toBe(0);
+
   /* Approve v2: one approved version per take, so v1's approval is cleared in the same action. */
   await review.getByTestId("take-approve").click();
   await expect.poll(() => reviews).toEqual([{ id: "tk-s1-v2", state: "approved" }, { id: "tk-s1-v1", state: "" }]);
