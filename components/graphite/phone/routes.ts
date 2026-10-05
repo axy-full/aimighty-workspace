@@ -1,3 +1,4 @@
+import type { ScreenModule } from "@/lib/shell/screens";
 import { PHONE_PARAMS } from "./phone-model";
 
 /**
@@ -6,10 +7,10 @@ import { PHONE_PARAMS } from "./phone-model";
  * readPhone), so it adds no redirect rows. `landed` turns true in the PR that completes the phone's set,
  * not before: until then nobody is shown a phone screen that leads nowhere.
  */
-export const PHONE_SCREEN = {
-  id: "phone" as const,
+export const PHONE_SCREEN: ScreenModule = {
+  id: "phone",
   landed: false,
   params: PHONE_PARAMS,
-  rows: [] as const,
-  fallback: [] as const,
+  rows: [],
+  fallback: [],
 };
