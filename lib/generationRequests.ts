@@ -19,6 +19,7 @@ import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
+import { sampleSpendRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 
 export class SpendReservationError extends Error {
@@ -364,6 +365,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
   await ready();
+  /* The sample production spends nothing, for anyone (lib/demo/spend-guard.server.ts). */
+  const sample = await sampleSpendRefusal(projectId, event.shotId);
+  if (sample) throw new SpendReservationError(sample, 409, true);
   await reservationsReady();
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
   const pool = sharedPoolOf(event);
