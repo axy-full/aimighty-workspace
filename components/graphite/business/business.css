@@ -1,4 +1,4 @@
-/* Business = Marketing Studio (FINAL_SPEC §2; components/graphite/business). Graphite tokens; scoped under .bz. The bz-
+/* Business = Marketing Studio (components/graphite/business). Graphite tokens; scoped under .bz. The bz-
    classes other views use too (bz-intro, bz-note, bz-role) are in components/graphite/shell.css › Shared primitives. */
 .bz .gx-gen-card { max-width: 560px; }
 .bz .gx-chip[data-off="true"] { opacity: .4; cursor: not-allowed; }

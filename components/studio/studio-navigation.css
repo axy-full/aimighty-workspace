@@ -65,7 +65,7 @@
 @media(min-width:768px){.studio-sections>a>svg{display:none}.studio-navigation-brand>svg{width:26px;height:16px}}
 @media(max-width:767px){.studio-navigation .studio-workspace-trigger,.studio-navigation .studio-credit,.studio-navigation .studio-account-entry>a{min-height:44px}.studio-account-menu [data-slot=dropdown-menu-item]{min-height:44px}}
 
-/* Mobile handoff: workspace drawer and the four destination dock. */
+/* On a phone: workspace drawer and the four destination dock. */
 @media(max-width:759px){
  .studio-application.shell{height:var(--app-visible-height,100dvh);overflow:hidden}
  .studio-navigation:not(.studio-navigation-compact){height:calc(57px + env(safe-area-inset-top));min-height:calc(57px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;gap:14px}

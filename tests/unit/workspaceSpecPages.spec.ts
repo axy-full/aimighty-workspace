@@ -15,7 +15,7 @@ import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { vendorNameIn as productVendorNameIn } from "../../lib/vendorNames";
 import type { PageId } from "../../lib/workspace/types";
 
-/* 03-pages.md, "Card counts per page". */
+/* Card counts per page. */
 const COUNTS: Record<string, number[]> = {
   brief: [4, 3], boards: [2, 3], astra: [4, 2], deliver: [2, 3],
   agent: [4, 2], runs: [4, 2], recipes: [4], builds: [4, 3], skills: [6], models: [2, 4], approvals: [4], budget: [4],

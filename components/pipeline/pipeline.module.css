@@ -489,7 +489,7 @@
 
 @media (max-width: 650px) {.workspace button, .heading a, .empty a, .workspace input, .workspace select { min-height: 44px; } .workspace input, .workspace select { font-size: 16px; }}
 
-/* Mobile handoff: grouped production controls and readable, touchable stages. */
+/* On a phone: grouped production controls and readable, touchable stages. */
 @media (max-width: 759px) {
   .workspace {
     --graphite-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
