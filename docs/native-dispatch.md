@@ -43,6 +43,8 @@ A busy 202 is therefore the one case where nothing runs immediately: the render 
 
 After a successful release the route makes **one** best-effort chained dispatch for the same kind and workspace: for renders, the oldest reserved-but-unclaimed generation with a `render_dispatches` row and no provider handle; for Astra, the oldest queued funded job. Whatever the chain misses, the cron finds.
 
+The limits hold only for work that arrives through `POST /api/worker`, the one caller of `acquireSlot`. Work that falls back to the request's own `after()` (inline mode, or a send that is refused, times out or has no origin or secret) takes no slot: it runs outside these limits, inside the original request's function.
+
 ## Retry semantics: single attempt plus the cron
 
 Native mode is **one attempt per event**. There is no retry loop in the worker; the durable retry is the ten-minute recovery cron, which already reconstructs and re-sends unclaimed dispatches and reconciles everything else.

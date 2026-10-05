@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { WORKFLOW_SURFACES, workflowReason } from "../../lib/shell/workflows";
 import { VOICE_TOOL_NAMES } from "../../lib/higgsfield-consumer/voice-tools";
 
-/** FINAL_SPEC §4 › Workflows: the surfaces the brief names, each on an advertised tool, and the one reason a tool cannot run. */
+/** Workflows: the surfaces the brief names, each on an advertised tool, and the one reason a tool cannot run. */
 test("the surfaces are the brief's: Deliver › Social cuts = reframe, Edit › Dub · Change voice, Gen › Analysis; nothing without a tool behind it", () => {
   expect(WORKFLOW_SURFACES["studio:deliver"].map((s) => s.tool)).toEqual(["reframe"]);
   expect(WORKFLOW_SURFACES["studio:edit"].map((s) => s.tool)).toEqual(["dubbing", "voice_change"]);

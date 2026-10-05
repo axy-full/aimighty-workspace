@@ -2,7 +2,7 @@
 
 /**
  * Canvas — the sequence on a wall, in order, next to the references it came
- * from. From the pipeline handoff.
+ * from.
  *
  * Three rows, one column per shot: REFS (the stills pinned to the shot),
  * WALL (the shot's best take — approved, else picked, else the latest — as

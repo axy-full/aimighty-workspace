@@ -54,7 +54,7 @@ export const CONSUMER_VIDEO_SETUP_MODES = ["ugc", "ugc_how_to", "ugc_unboxing", 
 export const CONSUMER_VIDEO_MEDIA_ROLES = ["image", "start_image", "end_image"] as const;
 const setupId = z.string().min(1).max(200).regex(/^[A-Za-z0-9_.:-]+$/);
 /**
- * FINAL_SPEC §2.1: the whole Marketing Studio contract (cli/MODELS.md ›
+ * The whole Marketing Studio contract (cli/MODELS.md ›
  * marketing_studio_video). Everything past the first six fields is optional
  * and omitted from the params when absent, so quotes admitted before this
  * widening still match. The two server rules are enforced here as well:
@@ -442,7 +442,7 @@ export function consumerVideoOriginalResult(
   if (params.prompt !== input.prompt || params.duration !== input.duration ||
       params.resolution !== input.resolution || params.aspect_ratio !== input.aspectRatio ||
       params.generate_audio !== input.generateAudio || params.mode !== (input.mode ?? "ugc")) return null;
-  /* FINAL_SPEC §2.1: a job carrying exactly the ids and medias we sent is ours;
+  /* A job carrying exactly the ids and medias we sent is ours;
      one carrying anything we did not send is still refused. */
   const sent = consumerVideoParams(input, false) as Record<string, unknown>;
   const sameIds = (key: string, ours: unknown) => {

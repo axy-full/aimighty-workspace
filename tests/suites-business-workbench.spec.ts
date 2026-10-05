@@ -8,7 +8,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, uploa
 import { smallTargets } from "./phoneFloors";
 
 /**
- * Business = Marketing Studio (FINAL_SPEC §2), in the browser.
+ * Business = Marketing Studio, in the browser.
  *
  * Image ads runs Marketing Studio Image on Particl's API key for every
  * workspace and member: those tests drive the real page against the real

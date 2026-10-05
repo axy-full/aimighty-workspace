@@ -13,7 +13,7 @@ import { forgoConnectedJob, releaseConnectedJob, unwatchConnectedJob, watchConne
 import { announceJob } from "./jobs-bus";
 
 /**
- * One connected-account job from a Business composer (FINAL_SPEC §2), on the
+ * One connected-account job from a Business composer, on the
  * existing catalogue-generation route: quote → the exact price on the
  * button → submit with that price → poll to completion. Nothing here prices
  * anything; a moved price refuses at the server and comes back as an error.

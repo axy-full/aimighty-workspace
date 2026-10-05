@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEPT_COLORS, KIND_DOT, SEGMENT_LOOK, SUITE_LOOK, posterOf } from "../../components/graphite/icons";
 import { HEADER_SEGMENT } from "../../lib/shell/ia";
@@ -27,8 +27,9 @@ test("project posters: the sample palette for the sample names, a stable swatch 
   expect(posterOf("Coastal light study")).not.toEqual(posterOf("Night market"));
 });
 
-test("the shell's sheets are flat: no glass or flair layer, no blur, and a gradient only on a project swatch and an avatar", () => {
-  for (const layer of ["glass", "flair"]) expect(existsSync(join(process.cwd(), "app", `${layer}.css`)), layer).toBe(false);
+test("the shell's sheets are flat: one token set and no layer over it, no blur, and a gradient only on a project swatch and an avatar", () => {
+  /* app/ keeps three top-level sheets, the fonts, the globals and the one token set; a sheet beside them would be a layer over every page. */
+  expect(readdirSync(join(process.cwd(), "app")).filter((name) => name.endsWith(".css")).sort()).toEqual(["fonts.css", "globals.css", "graphite.css"]);
   const sheets = { shell: read("components", "graphite", "shell.css"), phone: read("components", "graphite", "phone.css"), fault: read("components", "graphite", "fault.css") };
   for (const [name, css] of Object.entries(sheets)) {
     /* No blur behind or on anything, and none of the two removed layers' variables or keyframes (gl-, om-). */

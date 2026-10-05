@@ -12,6 +12,7 @@ import { textVendor } from '@/lib/openai-direct';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { DevelopmentError, developmentRequestSchema, developmentState, listDevelopmentJobs, listVerifications, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep } from '@/lib/workbench/development-server';
 import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
+import { LEDGER_UNIT_PAUSED } from "@/lib/ledgerUnit";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -24,6 +25,7 @@ function scopeError(req: Request, owner: string) {
 function failure(error: unknown) {
   const status = Number((error as { status?: number })?.status) || 500;
   console.error('Development workflow request failed with status', status);
+  if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return response({ error: LEDGER_UNIT_PAUSED }, 503);
   return response({ error: status >= 500 ? 'This workflow could not be updated. Check its saved status before starting another request.' : (error as Error).message }, status);
 }
 async function schedule(id: string, owner: string) {

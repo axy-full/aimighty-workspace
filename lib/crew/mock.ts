@@ -1,8 +1,8 @@
 import type { CrewPhase } from "./room";
 
 /**
- * ENGINE_MOCK answers: the prototype's own canned room (Particl Crew.dc.html),
- * so a local run and the browser specs read like the design without a vendor.
+ * ENGINE_MOCK answers: a canned room, so a local run and the browser specs
+ * read like a real one without a vendor.
  */
 const PROPOSE: Record<string, string> = {
   director: "Hold one frame: the window, the rain, the bottle already on the sill — nothing moves but water. The product is simply where the light lands, so it is unmistakable without ever being presented.",
