@@ -67,7 +67,8 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?:
   const cap = allowanceUsd();
   if (cap == null) return { ok: true };
   const spent = await platformSpendThisMonth();
-  if (spent >= cap || spent + Math.max(0, estUsd) > cap) {
+  /* A take that holds its ceiling counts at its hold's dollars: what it may settle at. */
+  if (spent >= cap || spent + Math.max(0, estUsd) * (Number.isInteger(band) && band > 1 ? band : 1) > cap) {
     /* No figures. The cap and what counts against it are the vendors'
        dollars, and the workspace hearing this is billed in credits. */
     return { ok: false, status: 429, error: ALLOWANCE_REACHED };

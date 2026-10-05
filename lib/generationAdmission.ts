@@ -2053,6 +2053,8 @@ export async function executeGenerationAdmission(
         takeUsd: estUsd,
         modelId,
         isAdmin: got.user.role === "admin",
+        /* A take that holds its ceiling counts at its hold (lib/cinemaHold.ts). */
+        band,
       });
       if (stop)
         return admissionReply(
@@ -2069,7 +2071,7 @@ export async function executeGenerationAdmission(
     if (!wall.ok && wall.status !== 402)
       return admissionReply({ error: wall.error }, { status: wall.status });
     let hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
-    const capV = await checkCap(projectId, estUsd, modelId);
+    const capV = await checkCap(projectId, estUsd, modelId, band);
     if (!capV.allow)
       return admissionReply({ error: capV.error }, { status: 409 });
     if (capV.notice) notices.push(capV.notice);

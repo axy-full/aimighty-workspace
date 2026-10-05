@@ -156,12 +156,14 @@ export async function projectCapSpent(projectId: string): Promise<ProjectCap | n
  * credits at the engine's margin, like everything else — or, given the exact
  * terms the job's reservation will charge (currentBillingTerms), at those.
  */
-export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms): Promise<CapVerdict> {
+export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms, band = 1): Promise<CapVerdict> {
   if (!projectId) return { allow: true, pct: null, warned: false };
   const row = await projectCap(projectId);
   if (!row || row.cap == null) return { allow: true, pct: null, warned: false };
   const pc = await withSpent(projectId, row);
-  const needs = pc.unit === "cr" ? creditsFor(needsUsd, engine) : needsUsd;
+  /* `band`: a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) counts at its hold, not its estimate. */
+  const hold = Number.isInteger(band) && band > 1 ? band : 1;
+  const needs = pc.unit === "cr" ? creditsFor(needsUsd, engine) * hold : needsUsd * hold;
   const ruleRaw = await getSetting("atCap");
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const warnPct = Math.max(1, Math.min(100, Number(await getSetting("capWarnPct")) || 80));
