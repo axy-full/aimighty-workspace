@@ -1,7 +1,8 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
-import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { smallTargets } from "./phoneFloors";
 
 /**
@@ -46,7 +47,7 @@ async function floors(page: Page, phone: boolean) {
 
 /** A held take in this person's own fresh workspace, held for credits at a price the server re-derives. */
 async function seedHeld(page: Page): Promise<{ id: string }> {
-  const signed = await signInLocally(page.request);
+  const signed = await signInWithNewInterface(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   let tenantUrl = "";
@@ -141,7 +142,7 @@ const FIXTURE = {
 
 test("every kind of wait reads as the code has it; one tap approves only the listed items, one at a time, and stops at the first refusal", async ({ page }, info) => {
   test.setTimeout(180_000);
-  await signInLocally(page.request);
+  await signInWithNewInterface(page.request);
   await page.route("**/api/control-room/approvals", (route) => route.fulfill({ json: FIXTURE }));
   const sent: { url: string; body: unknown }[] = [];
   await page.route(/\/api\/(jobs\/[^/]+\/release|workbench\/team-canvas)$/, async (route) => {

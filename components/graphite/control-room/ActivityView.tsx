@@ -123,7 +123,9 @@ function runFigure(run: ActivityRun, inCredits: boolean) {
   if (!inCredits) return UNBILLED;
   const value = settledValue(run);
   if (value) return <><Price value={value} /> settled{run.settling ? " · settling" : ""}</>;
-  return run.settling ? "settling" : "nothing billed";
+  if (run.settling) return "settling";
+  /* "Nothing billed" only where the ledger confirms it for every step; otherwise no figure yet. */
+  return run.steps.length && run.steps.every((s) => s.settled.kind === "nothing") ? "nothing billed" : "";
 }
 
 function Stat({ k, v, sub, tone }: { k: string; v: React.ReactNode; sub: string; tone?: "waiting" }) {

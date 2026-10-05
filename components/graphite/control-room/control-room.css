@@ -75,7 +75,7 @@
 @media (max-width: 767px), (pointer: coarse) {
   .cr-head { padding: 14px 16px 12px; }
   .cr-body { padding: 16px; }
-  .cr-btn, .cr-seg-btn { min-height: 44px; }
+  .cr-btn, .cr-seg-btn { min-height: 44px; min-width: 44px; }
   .cr-btn { padding: 0 14px; border-radius: var(--gx-r-ctl-phone); }
   .cr-primary, .cr-input { min-height: 44px; border-radius: var(--gx-r-ctl-phone); }
   .cr-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }

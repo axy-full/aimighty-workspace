@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { smallTargets } from "./phoneFloors";
 
 /**
@@ -42,7 +42,7 @@ async function floors(page: Page, phone: boolean) {
 }
 
 test("the real read answers for this person's own fresh workspace", async ({ page }) => {
-  await signInLocally(page.request);
+  await signInWithNewInterface(page.request);
   const reply = await page.request.get("/api/control-room/activity");
   expect(reply.ok()).toBeTruthy();
   const body = await reply.json();
@@ -76,7 +76,7 @@ const FIXTURE = {
 
 test("projects, runs, the filter and a run's steps read as the ledger has them", async ({ page }, info) => {
   test.setTimeout(180_000);
-  await signInLocally(page.request);
+  await signInWithNewInterface(page.request);
   await page.route("**/api/control-room/activity**", (route) => route.fulfill({ json: FIXTURE }));
   const posts: string[] = [];
   page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/(jobs|workbench|atomik|generate)/.test(r.url())) posts.push(r.url()); });
@@ -92,6 +92,8 @@ test("projects, runs, the filter and a run's steps read as the ledger has them",
   await expect(page.locator('[data-run="thread:ach_fly"]')).toContainText("3 cr settled · settling");
   await expect(page.locator('[data-run="thread:ach_no"]')).toContainText("nothing billed");
   await expect(page.locator('[data-run="thread:ach_wait"]').getByTestId("run-approvals")).toHaveText("Approvals ›");
+  /* Nothing settled and nothing confirmed: no figure, never a guessed "nothing billed". */
+  await expect(page.locator('[data-run="thread:ach_wait"]')).not.toContainText("nothing billed");
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "activity");
 
