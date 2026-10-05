@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goCrewReview, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -396,7 +396,7 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await noHorizontalScroll(page);
 
   /* Crew is walled off the same way, and its room strip stays. Crew is reached from ⌘K (header option B). */
-  await goViaSearch(page, "crew room", /Crew room/);
+  await goCrewReview(page);
   const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
   await expect(crew).toContainText("Crew stopped");
   await reachable(page, crew.getByTestId("fault-retry"));

@@ -160,7 +160,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   const inspector = await inspect(page, "gen_harbour");
   await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled();
   await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Make.");
 
   /* The words as typed, the model, and each setting, applied in the open composer. */
   const card = page.getByTestId("gen-recipe");
@@ -253,19 +253,16 @@ test("× hides the card, and a recipe still being read keeps Generate waiting al
   expect(errors).toEqual([]);
 });
 
-test("a model picked in ⌘K while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "the palette is a desktop key");
+test("a model picked in the model sheet while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
   const { errors, release, priced } = await open(page, { holdPlate: true });
   const inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-recreate").click();
   const refs = page.getByTestId("gen-recipe-refs");
   await expect(refs).toHaveText("2 refs…");
-  /* ⌘K hands Gen a model and no words: a change made here, not a new recipe. */
-  const palette = page.getByRole("dialog", { name: "Search" });
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
-  await expect(palette).toBeVisible();
-  await palette.getByRole("textbox").fill("Kling 3.0 Pro");
-  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
+  /* A model picked in the sheet hands Gen a model and no words: a change made here, not a new recipe. */
+  await page.getByTestId("gen-model").click();
+  await page.getByRole("dialog", { name: "Choose a model" }).getByRole("option", { name: /^Kling 3\.0 Pro/ }).first().click();
   await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
   await expect(page.getByTestId("gen-prompt")).toHaveValue(RAW);
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText("Seedance 2.0 → Kling 3.0 Pro");
@@ -352,7 +349,7 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
 
   let inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-settings-only").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Make.");
   const card = page.getByTestId("gen-recipe");
   await expect(card).toHaveAttribute("data-settings-only", "true");
   await expect(card).toContainText("Settings from");

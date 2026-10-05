@@ -114,7 +114,7 @@ test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted 
   await expect(rows.nth(0)).toHaveAttribute("aria-selected", "false");
   await page.keyboard.press("Enter");
   await expect(palette).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   await expect(inspector).toBeVisible();
 
@@ -163,7 +163,7 @@ test("the keyboard map: Enter on home, 1–9, A, I, G, Esc, and the status-bar l
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
 
   await page.keyboard.press("5");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.keyboard.press("a");
   await expect(page.getByTestId("atomik-panel")).toBeVisible();
   await page.keyboard.press("Escape");

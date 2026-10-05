@@ -75,25 +75,28 @@ test("right-click: every command works or says exactly why not; delete is soft a
   const wideTile = library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']");
   await wideTile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
-  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeEnabled();
+  /* Recreate spends once Make is pressed: it shows Make's own price (the server's quote), and is enabled only once there is one. */
+  await expect(menu.getByRole("menuitem", { name: /^Recreate · (about )?[\d,]+ cr$/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Recreate makes a new take from the same recipe.");
   await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();
-  await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
-  await menu.getByRole("menuitem", { name: /^Delete/ }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Deleted Wide on the water · ⌘Z to undo. The original stays on the server indefinitely.");
+  await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: /^Move to trash/ })).toBeEnabled();
+  await menu.getByRole("menuitem", { name: /^Move to trash/ }).click();
+  await expect(page.getByTestId("toast")).toHaveText(/^Moved Wide on the water to trash/);
+  await expect(page.getByTestId("toast-undo")).toBeVisible();
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: true } });
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.getByTestId("toast-undo").click();
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: false } });
 
   /* Recreate opens Gen with the render's own recipe, and the toast says it is there. */
   await wideTile.click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "Recreate" }).click();
+  await menu.getByRole("menuitem", { name: /^Recreate/ }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
-  await expect(page.getByTestId("toast")).toHaveText("Wide on the water’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Wide on the water’s recipe is in Make.");
   expect(errors).toEqual([]);
 });
 
