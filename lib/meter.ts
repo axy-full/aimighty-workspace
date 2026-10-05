@@ -88,7 +88,8 @@ export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, fi
   if (status === "running") return { cost: null, overrunUsd: null };
   const cap = row.status === "running" ? basis * band : basis;
   if (figure == null) return { cost: row.status === "running" ? basis : null, overrunUsd: null };
-  return figure > cap ? { cost: cap, overrunUsd: figure - cap } : { cost: figure, overrunUsd: null };
+  /* Past the hold, the platform's: counted once, when the take first settles. */
+  return figure > cap ? { cost: cap, overrunUsd: row.status === "running" ? figure - cap : null } : { cost: figure, overrunUsd: null };
 }
 
 export class FundingSourceChangedError extends Error {

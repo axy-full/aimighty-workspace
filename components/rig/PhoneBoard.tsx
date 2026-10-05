@@ -6,6 +6,8 @@ import type { ElementFull } from "@/lib/elements";
 import type { RateTable } from "@/lib/rateTable";
 import { charged, estimateVideo } from "@/lib/rateTable";
 import { applySummary, rerenderable, rerenderBody, rerenderParams, sendTakes, takeOf } from "@/lib/rigApply";
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 import { useSession } from "@/lib/session";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { NO_CONFIRMED_PRICE, sendClaimedGeneration } from "@/lib/workspace/generate-submit";
@@ -219,7 +221,8 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
   const quote = (s: ShotLike) => { const p = paramsOf(s); return engine ? charged(rates, estimateVideo(rates, engine, p.resolution, p.duration, estimateTokens(p.resolution, p.ratio, p.duration), costUsd)) : null; };
   /* One shot the engine cannot price leaves the lot unpriced: no price, no Apply (never "0 cr"). */
   const cost = (list: ShotLike[]) => { let total = 0; for (const s of rerenderable(list)) { const q = quote(s); if (q == null) return null; total += q; } return total; };
-  const price = (list: ShotLike[]) => { const c = cost(list); return c == null ? "No price" : fmt(c); };
+  /* A Cinema Studio engine holds "about N cr, at most 3N cr", the whole of what Apply approves (lib/cinemaHold.ts). */
+  const price = (list: ShotLike[]) => { const c = cost(list); return c == null ? "No price" : rates.unit === "cr" && isCinemaStudioModel(engine) ? cinemaPriceWords(c) : fmt(c); };
   const subsets: { id: Subset; label: string; note: string; list: ShotLike[] }[] = [
     { id: "approved", label: `Apply to approved · ${approved.length}`, note: "Re-renders the approved takes with the new version.", list: approved },
     { id: "draft", label: `Apply to draft · ${draft.length}`, note: "Only the shots nobody has approved yet.", list: draft },
@@ -241,7 +244,8 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
         return takeOf(await sendClaimedGeneration({
           scope: requestScope,
           storageId: pendingGenerationKey(requestScope, projectId ?? "unfiled", `rig-apply:${s.id}`),
-          body: rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: credits }),
+          /* The approval is what the take may charge: a Cinema Studio take's hold (lib/cinemaHold.ts). */
+          body: rerenderBody(s, { engine, projectId, params: paramsOf(s), maxCredits: credits == null ? null : heldCredits(credits, engine) }),
           credits: credits ?? 0,
         }));
       });

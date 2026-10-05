@@ -3,6 +3,7 @@ import { getGeneration } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
 import { releaseHeldJobs } from "@/lib/held";
 import { mayRelease } from "@/lib/workspace/release";
+import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -32,6 +33,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (!mayRelease(got.user, gen.createdBy)) {
     return NextResponse.json({ error: "Only the person who made this take, or an admin, can release it." }, { status: 403 });
   }
+  /* Releasing a take that holds its ceiling (Cinema Studio) approves its hold: a person's alone, never an API token's
+     (an outside agent, an MCP client) or an Atomik run's own id (lib/cinemaHold.ts). */
+  if (holdBandOf(gen.model) > 1 && (got.token || isAgentApprover(got.user.id)))
+    return NextResponse.json({ error: HOLD_NEEDS_A_PERSON }, { status: 403 });
   if (gen.status !== "held") {
     if (releasedBefore(gen)) return NextResponse.json({ released: true, id, already: true });
     return NextResponse.json({ error: "This take is not held." }, { status: 409 });

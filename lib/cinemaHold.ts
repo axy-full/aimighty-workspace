@@ -35,8 +35,7 @@ export function heldCredits(credits: number, model: string | null | undefined): 
  * its two runs: ["about 31 cr,", "at most 93 cr"]. A screen that wraps the
  * price breaks it only between them, never inside a figure.
  */
-export function cinemaPriceParts(credits: number): [string, string] {
-  const ceiling = fromTenths(toTenths(credits) * STATED_CHARGE_BAND);
+export function cinemaPriceParts(credits: number, ceiling = fromTenths(toTenths(credits) * STATED_CHARGE_BAND)): [string, string] {
   return [`about ${credits.toLocaleString("en-US")} cr,`, `at most ${ceiling.toLocaleString("en-US")} cr`];
 }
 
@@ -44,9 +43,11 @@ export function cinemaPriceParts(credits: number): [string, string] {
  * "about 31 cr, at most 93 cr": the one wording of a Cinema Studio price, for
  * every place that approves a take (Make, the canvas dialog, Gen, the Rig, an
  * Atomik step or run, a held take's Release). Pure: the same words everywhere.
+ * `ceiling` is given only for a total that mixes held takes with others (a
+ * plan's): the sum of what each part may charge.
  */
-export function cinemaPriceWords(credits: number): string {
-  return cinemaPriceParts(credits).join(" ");
+export function cinemaPriceWords(credits: number, ceiling?: number): string {
+  return cinemaPriceParts(credits, ceiling).join(" ");
 }
 
 /**

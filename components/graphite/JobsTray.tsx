@@ -12,6 +12,7 @@ import { useJobsTray, type JobsTrayState, type RowProblem } from "@/lib/shell/us
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 
 /**
  * The header's jobs pill and its tray (a popover on desktop and on a phone on
@@ -171,7 +172,9 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
   };
   /* Release carries the figure it approves: the one approved when it was held, or a new one the route named. */
   const releaseAt = job.action === "release" ? problem?.credits ?? job.releaseCredits ?? null : null;
-  const label = problem?.topUp ? "Top up" : releaseAt ? `Release · ${releaseAt.toLocaleString("en-US")}\u00a0cr` : job.action ? ACTION_LABEL[job.action] : null;
+  /* A held Cinema Studio take's Release approves its hold, said as every approval of it says it (lib/cinemaHold.ts). */
+  const releasePrice = releaseAt == null ? null : job.releaseBand ? cinemaPriceWords(releaseAt / job.releaseBand, releaseAt) : `${releaseAt.toLocaleString("en-US")}\u00a0cr`;
+  const label = problem?.topUp ? "Top up" : releasePrice ? `Release · ${releasePrice}` : job.action ? ACTION_LABEL[job.action] : null;
   return (
     <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
       <span className="gx-jobs-thumb" aria-hidden="true">
