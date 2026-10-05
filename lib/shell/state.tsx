@@ -106,6 +106,8 @@ export type Shell = {
   newInterface: boolean;
   /** `&settings=1` opened the page: the header opens the avatar menu once, and the address has already dropped it. */
   settingsRequested: boolean;
+  /** The header has opened the menu: the request is spent, so a header drawn again does not reopen it. */
+  consumeSettingsRequest: () => void;
   /** The new screen the address mounts, or null while it is one of today's pages. */
   screen: ScreenId | null;
   /** The screens' own params as the address carries them (kind, frame, list, region, drawer, review, card, screen…), switch on only. */
@@ -200,7 +202,7 @@ function readParams(search: string, last: ComposerType = "video", on = false): P
   if (extra) for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
     view: view === "workspace" || view === "crew" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
-    tab: WORKSPACE_TABS.some((t) => t.id === tab) || isSettingsSection(tab) ? (tab as WorkspaceTabId) : "general",
+    tab: WORKSPACE_TABS.some((t) => t.id === tab) || (on && isSettingsSection(tab)) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
     make: make === "last" ? last : make,
@@ -269,7 +271,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
   const createRef = useRef<Shell["createProject"]>(null);
   /* `settings=1` (new interface): the avatar menu opens once on landing (Header). Read from the opening URL, like the params above. */
-  const [settingsRequested] = useState(() => on && new URLSearchParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)).get("settings") === "1");
+  const [settingsRequested, setSettingsRequested] = useState(() => on && new URLSearchParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)).get("settings") === "1");
   const onRef = useRef(on);
   useEffect(() => { onRef.current = on; }, [on]);
   /* The board's right dock (340 open, 56 closed): Make sits beside it (components/graphite/shell.css › --board-dock). */
@@ -545,6 +547,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     wsOpen: params.view === "workspace" ? params.extra?.[OPEN] ?? null : null,
     newInterface: on,
     settingsRequested,
+    consumeSettingsRequest: () => setSettingsRequested(false),
     screen,
     params: params.extra ?? EMPTY,
     atomik: atomikAt(params.extra ?? EMPTY, on),
