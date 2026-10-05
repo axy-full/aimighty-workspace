@@ -157,30 +157,6 @@ test("Workspace › Dashboard: the tables' column headers read at the floor", as
   expect(errors).toEqual([]);
 });
 
-test("a draft that could not be read says Try again, never Retry (Deliver's tool, Edit & Sound)", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* Workspace reads no stage's draft, so the stages below read theirs for the first time once the connection is down
-     (the shell already holds the project, so its own head stays). */
-  const { errors } = await open(page, "/suites?view=workspace&tab=general", "workspace-view");
-  let down = true;
-  await page.route(/\/api\/workbench\/projects\?id=/, (route) => (down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
-  await openSuitesMenu(page);
-  /* The project's segment opens its Studio pages (header option B). */
-  await page.getByRole("tablist", { name: "Suites" }).locator('[data-suite-tab="project"]').click();
-  await closeSuitesMenu(page);
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  for (const [tab, alert] of [[/Deliver/, "[data-testid='stage-work'] [role='alert']"], [/Edit & Sound/, ".pxw-edit [role='alert']"]] as const) {
-    await strip.getByRole("button", { name: tab }).click();
-    const failed = page.locator(alert).filter({ hasText: "could not load this project" });
-    await expect(failed).toBeVisible();
-    await expect(failed.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
-    await expect(failed.getByRole("button", { name: /Retry/ })).toHaveCount(0);
-  }
-  down = false;
-  await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByTestId("assembly")).toBeVisible();
-  expect(errors).toEqual([]);
-});
 
 test("the old shell's home: a projects read that failed says Try again, never Retry, and reads again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");

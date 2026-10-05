@@ -132,15 +132,16 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
   await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("kind")]; }).toEqual(["board", "ads"]);
 });
 
-test("a selection and any other query param survive the switch", async ({ page }, info) => {
+test("the project and any other query param survive the switch", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signedIn(page);
 
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas&sel=shot:sw-b`);
-  /* The Rig page is the board: the selection rides along to it. */
+  /* The Rig page is the board, and the project rides along to it. (A `sel=shot:` selection is not carried: the board keeps its own
+     selection, and an old selection link opens it unselected.) */
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   await expect(page).toHaveURL(/[?&]view=board(&|$)/);
-  await expect(page).toHaveURL(/[?&]sel=shot%3Asw-b(&|$)/);
+  await expect(page).toHaveURL(new RegExp(`[?&]project=${PROJECT}(&|$)`));
 
   /* Subatomik's connected-account override is a param the mapping does not
      own, so it is carried through untouched rather than dropped. */

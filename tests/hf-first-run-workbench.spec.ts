@@ -119,7 +119,8 @@ test("New project on the card is the switcher's own create: a double press makes
   await expect(page.getByTestId("toast")).toContainText(`${name} is open`, { timeout: 30_000 });
   await expect(page.getByTestId("project-name")).toHaveText(name, { timeout: 30_000 });
   await expect(page.getByTestId("first-run")).toHaveCount(0);
-  await expect(page.getByTestId("brief-stage")).toBeVisible();
+  /* The project opens on Studio's overview (the Brief stage page is the board's Brief region now). */
+  await expect(page.getByTestId("studio-home")).toBeVisible();
   expect(creates, "one press of Create, one project").toHaveLength(1);
   const pill = (await page.getByTestId("project-switcher").boundingBox())!;
   const label = (await page.getByTestId("project-name").boundingBox())!;
@@ -148,7 +149,8 @@ test("Explore the starter production opens it with its sample takes, charges not
   await expect(page.getByTestId("project-name")).toHaveText("Starter production", { timeout: 60_000 });
   expect(presses).toHaveLength(1);
   await expect(page.getByTestId("first-run")).toHaveCount(0);
-  await expect(page.getByTestId("brief-stage")).toBeVisible();
+  /* The project opens on Studio's overview (the Brief stage page is the board's Brief region now). */
+  await expect(page.getByTestId("studio-home")).toBeVisible();
 
   /* The server's side: a lost reply retried opens the same draft and seeds nothing; one starter in the workspace; no take cost anything. */
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };

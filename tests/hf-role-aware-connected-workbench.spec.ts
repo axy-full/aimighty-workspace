@@ -94,22 +94,22 @@ async function noBadges(page: Page) {
   await closeSuitesMenu(page);
 }
 
-/** An old link to Business › Ads: Image ads, the address rewritten to name it, and nothing of the removed page or the retired card. */
+/** An old link to Business › Ads: the Ads board (Business's pages are the board's cards, for everyone), and nothing of the removed page or the retired card. */
 async function oldAdsLink(page: Page, projectId: string) {
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${projectId}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
-  await expect.poll(() => new URL(page.url()).searchParams.get("sp")).toBe("dtc");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("kind")]; }).toEqual(["board", "ads"]);
   for (const gone of ["ads-view", "owner-run-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   await expect(page.getByText(/Connect the account|Reconnect the account|Only the workspace owner|Higgsfield/)).toHaveCount(0);
 }
-/** Business › Setup: what Particl made in this project, and nothing of the connected account. */
+/** Business › Setup: the Ads board's brand and product cards, and nothing of the connected account. */
 async function setupIsParticls(page: Page, projectId: string) {
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${projectId}`);
-  await expect(page.getByTestId("particl-setup")).toBeVisible();
-  await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
-  for (const gone of ["owner-run-business", "setup-view", "setup-connect", "primary-action"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  await expect(page.getByTestId("business-setup")).not.toContainText(/Higgsfield|Open Ads|Use in Ads|run by/i);
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  for (const gone of ["owner-run-business", "setup-view", "setup-connect"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  await expect(page.getByTestId("board")).not.toContainText(/Higgsfield|Open Ads|Use in Ads|run by/i);
 }
 
 test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's own list, Gen offers Studio engines only; Viral and Image ads run on the API key, Cast on the platform's key", async ({ page }, info) => {
@@ -123,15 +123,13 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await noSideScroll(page);
   await shot(page, "business-owner", project);
 
-  /* Business's pages are listed; Setup is what Particl made in the project. */
-  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  /* Setup is the board's brand and product cards: what Particl made in the project. */
   await setupIsParticls(page, film.id);
   await noSideScroll(page);
-  /* Image ads runs on Particl's API key: the composer, not a card. */
+  /* Image ads is the board's ads group (Particl's API key): a card, never an account's. */
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await noSideScroll(page);
   await shot(page, "image-ads-owner", project);
 
@@ -198,15 +196,14 @@ test("an old sp=ads link shows image-ads-view for a member too, Setup names no o
   await noBadges(page);
   await noSideScroll(page);
   await setupIsParticls(page, film.id);
-  await expect(page.getByTestId("business-setup")).not.toContainText(ownerName);
+  await expect(page.getByTestId("board")).not.toContainText(ownerName);
   await noBadges(page);
   await noSideScroll(page);
   await shot(page, "business-member", info.project.name);
   /* Image ads and Viral run on Particl's API key for a member as for anyone: the composers, not a card. */
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await noSideScroll(page);
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();

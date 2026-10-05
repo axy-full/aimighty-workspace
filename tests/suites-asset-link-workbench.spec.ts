@@ -93,10 +93,10 @@ async function copyLink(sender: Person, draftId: string, asset: string, info: Te
   return new URL(await page.evaluate(() => navigator.clipboard.readText()));
 }
 
-/** The board is up with the take selected (the Shots region is where the Takes page went). */
-async function takeOpened(page: Page, asset: string) {
+/** The board is up on its Shots region (where the Takes page went), the link's own params gone from the address. The fixture's take is filed on no shot, so no shot card holds it to select. */
+async function takeOpened(page: Page, _asset: string) {
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region"), q.get("asset")]; }).toEqual(["board", "shots", asset]);
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region"), q.has("ws"), q.has("production")]; }).toEqual(["board", "shots", false, false]);
 }
 
 /** Nothing about the take was shown or asked for. */
@@ -144,7 +144,6 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await reader.page.getByTestId("link-open").click();
     await takeOpened(reader.page, made.asset);
     const url = new URL(reader.page.url());
-    expect(url.searchParams.get("asset")).toBe(made.asset);
     expect(url.searchParams.has("ws")).toBe(false);
     expect(url.searchParams.has("production")).toBe(false);
     const own = (await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json())) as { id: string };
@@ -173,7 +172,7 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await reader.page.getByTestId("link-dismiss").click();
     await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
     await expect.poll(() => new URL(reader.page.url()).searchParams.get("asset")).toBeNull();
-    await expect(reader.page.getByTestId("board")).toBeVisible();
+    await expect(reader.page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   } finally {
     await reader.page.context().close();
     await sender.page.context().close();

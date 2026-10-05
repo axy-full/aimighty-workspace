@@ -394,6 +394,10 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await closeSuitesMenu(page);
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
+  /* Fixed underneath: Try again brings the view back. */
+  await arm(page, []);
+  await fault.getByTestId("fault-retry").click();
+  await expect(fault).toHaveCount(0);
 
   /* The avatar opens Settings; Team is Workspace's People until Settings ships (D1). */
   await page.getByTestId("workspace-avatar").click();
@@ -494,7 +498,7 @@ test("a link to nothing: the 404 keeps the header and offers Studio, Shots and â
   /* Search lands in the shell with âŒ˜K open, once: the URL drops the request. */
   await screen.getByTestId("missing-search").click();
   await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Search" })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Search", exact: true })).toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get("find")).toBeNull();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);

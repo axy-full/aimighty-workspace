@@ -198,7 +198,9 @@ test("the same template pressed again with an empty box reopens the project it m
   await expect(page).toHaveURL(new RegExp(`project=${film.id}`));
   expect(puts).toBe(1);
 
-  /* Another template is another project; Start from a script opens where the script goes. */
+  /* Another template is another project; Start from a script opens where the script goes. (The board replaced Home on screen: back to Home first.) */
+  await page.goto(HOME);
+  await expect(page.getByTestId("home")).toBeVisible({ timeout: 60_000 });
   const script = createdBy(page);
   await page.getByTestId("home-template-script").click();
   expect(await script).toMatchObject({ name: "Untitled script", boardKind: "studio" });

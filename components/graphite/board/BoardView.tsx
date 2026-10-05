@@ -180,6 +180,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */
   const projectId = project?.id ?? null;
   const opened = useRef<string | null>(null);
+  /* The take the address named when the board opened (the Workspace's selection, which a later list read may clear). */
+  const asset = useRef<string | null>(shell.asset);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (!ready || !projectId || opened.current === projectId || !placed.bounds) return;
@@ -189,9 +191,12 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const saved = linked ? null : readBoardView(scope, projectId);
     const needs = board.rail.find((entry) => status.get(entry.id)?.state === "needs" && placed.regions.has(entry.id));
     const target = linked ? placed.regions.get(linked) ?? placed.slots.get(linked) : needs ? placed.regions.get(needs.id) : null;
-    const first = saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, 1);
-    void flow.setViewport(first).then(() => measureInView(first));
-  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.regions, placed.slots, projectId, ready, region, scope, shell.params.card, status, viewportFor]);
+    /* A link to a take (`asset=`: a copied link, Open in Takes, a jobs-tray Open): the shot card holding that take opens first and is selected. */
+    const linkedTake = asset.current ? placed.cards.find((c) => c.kind === "take" && (c.data as { row?: { versions?: { id: string }[] } } | undefined)?.row?.versions?.some((v) => v.id === asset.current)) : undefined;
+    const box = linkedTake ? placed.boxes.get(linkedTake.id) : null;
+    const first = box ? viewportFor(box, 1, true) : saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, 1);
+    void flow.setViewport(first).then(() => { measureInView(first); if (linkedTake) select(linkedTake.id); });
+  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scope, select, shell.params.card, status, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);

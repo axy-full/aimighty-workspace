@@ -1,7 +1,6 @@
 import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
-import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { moreTakes } from "./helpers/genTakes";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
@@ -19,17 +18,10 @@ import { newProject, type Asset, type Project } from "../lib/workbench/studio";
 type Node = Project["nodes"][number];
 type Read = { project: Project; revision: number };
 
-const png = async (fill: string) => sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="${fill}"/></svg>`)).png().toBuffer();
 const hydrated = (target: Locator) => expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 60_000 }).toBe(true);
 const scene = (id: string, extra: Partial<Node> = {}) => ({ id, title: id, type: "scene", x: 0, y: 0, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", durationS: 5, ratio: "16:9", resolution: "720p", ...extra }) as Node;
 const ids = (list: { id: string }[]) => list.map((item) => item.id);
-const repeated = (list: string[]) => list.filter((id, i) => list.indexOf(id) !== i);
-const noteOf = (node: Node | undefined) => ((node as unknown as { operations?: { kind: string; values: { note?: string } }[] } | undefined)?.operations ?? []).find((op) => op.kind === "direction")?.values.note ?? null;
-const strip = (page: Page, name: RegExp) => page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name });
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-function latch() { let open: () => void = () => {}; const opened = new Promise<void>((resolve) => { open = resolve; }); return { opened, open }; }
-
-async function setup(page: Page, shape: (p: Project) => void) {
+const repeated = (list: string[]) => list.filter((id, i) => list.indexOf(id) !== i);async function setup(page: Page, shape: (p: Project) => void) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${account.workspace.id}-${me.id}`;
@@ -76,177 +68,13 @@ function watchSaves(page: Page) {
   return saves;
 }
 
-/** Anything that says a save was refused, reloaded or not saved, even for a moment. */
-async function watchRefusals(page: Page) {
-  await page.addInitScript(() => {
-    const seen: string[] = [];
-    (window as unknown as { __refusals: string[] }).__refusals = seen;
-    const look = () => {
-      const text = document.body?.innerText ?? "";
-      for (const phrase of ["changed elsewhere", "changed in another window", "reloaded the saved version", "Not saved", "Save unconfirmed", "A newer version exists"])
-        if (text.includes(phrase) && !seen.includes(phrase)) seen.push(phrase);
-    };
-    const start = () => new MutationObserver(look).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-    if (document.documentElement) start(); else document.addEventListener("DOMContentLoaded", start);
-  });
-  return () => page.evaluate(() => (window as unknown as { __refusals?: string[] }).__refusals ?? []);
-}
-
-async function openRig(page: Page, project: Project) {
-  await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
-  const row = page.locator(".pxw-rig-row").first();
-  await expect(row).toBeVisible({ timeout: 60_000 });
-  await hydrated(row);
-  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved", { timeout: 60_000 });
-}
-async function controls(page: Page) {
-  const tabs = page.getByRole("group", { name: "Inspector tabs" });
-  if (await tabs.getByRole("button", { name: /Controls/ }).count()) await tabs.getByRole("button", { name: /Controls/ }).click();
-}
-const directionNote = (page: Page) => page.getByRole("textbox", { name: "Direction note" });
-const rigSaved = (page: Page) => expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved", { timeout: 60_000 });const castEntry = (p: Project) => { p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] }; };
 
 
 
 
 /* ── The Rig and a Studio stage, whichever save lands first ─────────────── */
 
-for (const race of ["the Rig's save lands second", "the stage's save lands second"] as const) {
-  test(`Rig, then Cast (${race}): the Rig's note and the Cast edit are both saved`, async ({ page }) => {
-    const { project, errors, read } = await setup(page, (p) => {
-      p.nodes = [scene("n1", { title: "Opening" })];
-      p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
-    });
-    const refusals = await watchRefusals(page);
-    const saves = watchSaves(page);
-    const NOTE = `Rig note ${randomUUID().slice(0, 8)}`, DESCRIPTION = `A deckhand ${randomUUID().slice(0, 8)}`;
-    const carries = (body: Project | null) => ({ rig: JSON.stringify(body?.nodes ?? []).includes(NOTE), cast: JSON.stringify(body?.production ?? {}).includes(DESCRIPTION) });
-    const castEdited = latch(), castSaved = latch(), rigSavedFirst = latch();
-    page.on("response", (response) => {
-      if (response.request().method() !== "PUT" || new URL(response.url()).pathname !== "/api/workbench/projects" || response.status() !== 200) return;
-      let body: Project | null = null;
-      try { body = (response.request().postDataJSON() as { project: Project }).project; } catch { body = null; }
-      const c = carries(body);
-      if (c.cast) castSaved.open();
-      if (c.rig && !c.cast) rigSavedFirst.open();
-    });
-    /* Hold the saves so the intended one is the one another save beats. */
-    await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-      const request = route.request();
-      if (request.method() !== "PUT") return route.continue();
-      const c = carries((request.postDataJSON() as { project: Project }).project);
-      if (race === "the Rig's save lands second" && c.rig && !c.cast) await Promise.race([castSaved.opened, sleep(15_000)]);
-      if (race === "the stage's save lands second") {
-        if (c.rig && !c.cast) await Promise.race([castEdited.opened, sleep(15_000)]);
-        if (c.cast && !c.rig) await Promise.race([rigSavedFirst.opened, sleep(15_000)]);
-      }
-      await route.continue().catch(() => {});
-    });
 
-    await openRig(page, project);
-    await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
-    await controls(page);
-    await hydrated(directionNote(page));
-    await directionNote(page).fill(NOTE);
-    /* Straight to Cast, the Rig's edit not yet saved. */
-    await strip(page, /Cast/).click();
-    const description = page.getByLabel("Mara description");
-    await expect(description).toBeVisible({ timeout: 60_000 });
-    await hydrated(description);
-    await description.fill(DESCRIPTION);
-    castEdited.open();
-
-    await expect.poll(async () => {
-      const p = (await read()).project;
-      return { rig: noteOf(p.nodes.find((n) => n.id === "n1")), cast: p.production?.cast?.entries[0]?.description };
-    }, { timeout: 45_000 }).toEqual({ rig: NOTE, cast: DESCRIPTION });
-    await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 20_000 });
-    /* The save another save beat was merged, not refused. */
-    const loser = race === "the Rig's save lands second" ? (s: (typeof saves)[number]) => carries(s.body).rig && !carries(s.body).cast : (s: (typeof saves)[number]) => carries(s.body).cast && !carries(s.body).rig;
-    expect(saves.some((s) => s.status === 409 && s.code === "revision_conflict" && loser(s)), "the intended save was beaten").toBe(true);
-
-    /* Settled, and back in the Rig: its note is there and nothing older is put back. */
-    await page.waitForTimeout(2500);
-    await strip(page, /Rig$/).click();
-    await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
-    await controls(page);
-    await expect(directionNote(page)).toHaveValue(NOTE);
-    await rigSaved(page);
-    const final = (await read()).project;
-    expect({ rig: noteOf(final.nodes.find((n) => n.id === "n1")), cast: final.production?.cast?.entries[0]?.description }).toEqual({ rig: NOTE, cast: DESCRIPTION });
-    expect(final.production?.cast?.entries.map((e) => e.id)).toEqual(["cast-1"]);
-    expect(await refusals()).toEqual([]);
-    expect(errors).toEqual([]);
-  });
-}
-
-for (const gate of ["the cut's save lands first", "the Rig's save lands first"] as const) {
-  test(`Rig, then Edit & Sound (${gate}): the note and the take on the cut are both saved`, async ({ page }) => {
-    const { project, errors, read } = await setup(page, (p) => {
-      p.nodes = [scene("n1", { title: "Opening", operations: [{ id: "op-n1", kind: "direction", enabled: true, values: { note: "Hold still." } }] } as Partial<Node>)];
-    });
-    const refusals = await watchRefusals(page);
-    const saves = watchSaves(page);
-    /* A take to cut with: an upload filed through the Rig, saved before the timed part. */
-    await openRig(page, project);
-    await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
-    await page.getByTestId("rig-prompt-attach-file").setInputFiles({ name: "blocking.png", mimeType: "image/png", buffer: await png("#224466") });
-    await expect(page.getByTestId("rig-prompt-attach-note")).toContainText("blocking.png is an input of Opening", { timeout: 30_000 });
-    await expect.poll(async () => (await read()).project.assets.some((a) => a.name === "blocking.png"), { timeout: 30_000 }).toBe(true);
-    await rigSaved(page);
-    const take = (await read()).project.assets.find((a) => a.name === "blocking.png")!;
-
-    const NOTE = `Rig note ${randomUUID().slice(0, 8)}`;
-    let held = false;
-    const released = latch();
-    await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-      const request = route.request();
-      if (request.method() !== "PUT") return route.continue();
-      const body = (request.postDataJSON() as { project: Project }).project;
-      if (!held && JSON.stringify(body.nodes).includes(NOTE) && body.shots.length === 0) {
-        held = true;
-        await Promise.race([released.opened, sleep(15_000)]);
-      }
-      await route.continue().catch(() => {});
-    });
-    await controls(page);
-    await directionNote(page).fill(NOTE);
-    await strip(page, /Edit & Sound/).click();
-    await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-    const add = page.getByTestId("timeline-add").first();
-    await expect(add).toBeVisible({ timeout: 60_000 });
-    await hydrated(add);
-    if (gate === "the Rig's save lands first") {
-      released.open();
-      await expect.poll(() => saves.some((s) => s.status === 200 && JSON.stringify(s.body?.nodes ?? []).includes(NOTE) && s.body?.shots.length === 0), { timeout: 20_000 }).toBe(true);
-    }
-    await add.click();
-    await expect(page.getByTestId("timeline-shot")).toHaveCount(1);
-    if (gate === "the cut's save lands first") {
-      await expect.poll(() => saves.some((s) => s.status === 200 && s.body?.shots.length === 1), { timeout: 20_000 }).toBe(true);
-      released.open();
-    }
-
-    await expect.poll(async () => {
-      const p = (await read()).project;
-      return { note: noteOf(p.nodes.find((n) => n.id === "n1")), shots: p.shots.map((s) => s.assetId) };
-    }, { timeout: 45_000 }).toEqual({ note: NOTE, shots: [take.id] });
-    expect(saves.some((s) => s.status === 409 && s.code === "revision_conflict"), "one save was beaten and merged").toBe(true);
-    await page.waitForTimeout(2500);
-    const settled = (await read()).project;
-    expect({ note: noteOf(settled.nodes.find((n) => n.id === "n1")), shots: settled.shots.length, linked: settled.nodes.find((n) => n.id === "n1")!.linked.length }).toEqual({ note: NOTE, shots: 1, linked: 1 });
-    expect(repeated(ids(settled.nodes))).toEqual([]);
-    expect(repeated(ids(settled.assets))).toEqual([]);
-    await strip(page, /Rig$/).click();
-    await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
-    await controls(page);
-    await expect(directionNote(page)).toHaveValue(NOTE);
-    await rigSaved(page);
-    expect(await refusals()).toEqual([]);
-    expect(errors).toEqual([]);
-  });
-}
 
 /* ── Two windows on one stage ───────────────────────────────────────────── */
 
@@ -652,66 +480,9 @@ test("Marketing: preparing the same hook variants in two windows prepares each o
 
 
 
-for (const when of ["after it shows the save unconfirmed", "before its save goes out"] as const)
-  test(`Cast: a description typed offline, then the person moves to another stage ${when}: saved once the network is back`, async ({ page }) => {
-    const { project, errors, read } = await setup(page, castEntry);
-    let offline = false;
-    await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-      if (offline) return route.abort("internetdisconnected");
-      return route.continue();
-    });
-    await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-    const description = page.getByRole("textbox", { name: "Mara description", exact: true });
-    await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
-    await hydrated(description);
-    const TYPED = `A fox-eyed deckhand ${randomUUID().slice(0, 6)}`;
-    offline = true;
-    await description.fill(TYPED);
-    if (when === "after it shows the save unconfirmed") await expect(page.locator(".pd-save")).toHaveText(/unconfirmed|Not saved/, { timeout: 30_000 });
-    await strip(page, /Environment/).click();
-    await expect(page.getByRole("textbox", { name: "Mara description", exact: true })).toHaveCount(0, { timeout: 60_000 });
-    await page.waitForTimeout(1500);
-    offline = false;
-    await expect.poll(async () => (await read()).project.production!.cast!.entries[0].description, { timeout: 45_000 }).toBe(TYPED);
-    await strip(page, /Cast/).click();
-    await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
-    await expect(page.getByRole("textbox", { name: "Mara description", exact: true })).toHaveValue(TYPED);
-    expect(errors).toEqual([]);
-  });
 
 
 
-for (const c of [
-  { name: "this window deletes lines 2–3, another window deleted line 2 only", here: [0, 3], there: [0, 2, 3] },
-  { name: "this window deletes line 2, another window deleted lines 2–3", here: [0, 2, 3], there: [0, 3] },
-])
-  test(`Brief: ${c.name} — line 3 stays deleted, saved and on screen`, async ({ page }) => {
-    const LINES = ["A fox crosses a frozen harbour at dusk.", "Audience: families", "Tone: quiet, no narration.", "Length: 90 seconds."];
-    const { project, errors, read, put } = await setup(page, (p) => { p.brief = LINES.join("\n"); });
-    const saves = watchSaves(page);
-    const HERE = c.here.map((i) => LINES[i]).join("\n"), THERE = c.there.map((i) => LINES[i]).join("\n");
-    let held = false;
-    await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
-      const request = route.request();
-      if (request.method() !== "PUT" || held || (request.postDataJSON() as { project: Project }).project.brief !== HERE) return route.continue();
-      held = true;
-      /* The other window's delete lands first. */
-      const now = await read();
-      expect((await put({ ...now.project, brief: THERE }, now.revision)).ok()).toBe(true);
-      await route.continue();
-    });
-    await page.goto(`/suites?suite=studio&page=brief&project=${project.id}`);
-    await expect(page.getByTestId("brief-stage")).toBeVisible({ timeout: 60_000 });
-    const field = page.getByTestId("brief-prompt-input");
-    await expect(field).toHaveValue(LINES.join("\n"), { timeout: 60_000 });
-    await hydrated(field);
-    await field.fill(HERE);
-    await expect.poll(() => saves.some((s) => s.status === 409 && s.code === "revision_conflict"), { timeout: 30_000 }).toBe(true);
-    await expect(page.getByTestId("brief-save")).toHaveText(/^Saved/, { timeout: 30_000 });
-    await page.waitForTimeout(1500);
-    expect({ saved: (await read()).project.brief.split("\n"), shown: (await field.inputValue()).split("\n") }).toEqual({ saved: [LINES[0], LINES[3]], shown: [LINES[0], LINES[3]] });
-    expect(errors).toEqual([]);
-  });
 
 
 

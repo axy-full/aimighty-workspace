@@ -20,7 +20,7 @@ function fixture(): Project {
   return { ...newProject("Coastal light study"), id: "ws-suites", productionProjectId: "prod-ws", shotMappings: {} };
 }
 
-async function open(page: Page, path = "/suites") {
+async function open(page: Page, path = "/suites", named = true) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -36,7 +36,8 @@ async function open(page: Page, path = "/suites") {
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error" && /hydrat|did not match/i.test(message.text())) errors.push(message.text()); });
   await page.goto(path);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  /* The board has no project head (its header carries the project): an address that opens it names no project here. */
+  if (named) await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   return errors;
 }
 
@@ -225,7 +226,8 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   for (const gone of ["palette", "lib", "find"]) expect(param(page, gone), gone).toBeNull();
   /* The app's own links to a page that is a board's card are sent to it (one 307); one to a page that is still a page is served where it is. */
   expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(307);
-  expect((await page.request.get("/suites?suite=subatomik&page=history&sp=history", { maxRedirects: 0 })).status()).toBe(200);
+  expect((await page.request.get("/suites?suite=subatomik&page=history&sp=history", { maxRedirects: 0 })).status()).toBe(307);
+  expect((await page.request.get("/suites?suite=atomik&page=agent&sp=agent", { maxRedirects: 0 })).status()).toBe(200);
   /* An old Gen or Viral tool link in the design file's spelling reaches Make in the same one 307: never a chain. */
   for (const [from, to] of [["/suites?view=make&mode=images&project=ws-suites", "?project=ws-suites&make=image"], ["/suites?suite=viral&page=motion&project=ws-suites", "?project=ws-suites&make=motion"]]) {
     const once = await page.request.get(from, { maxRedirects: 0 });
@@ -299,7 +301,7 @@ test("assets sit beside every page, drag as their id, and right-click opens the 
 
 test("⌘J toggles the Inspector on a wide screen", async ({ page }, info) => {
   test.skip(!WIDE.includes(info.project.name), "three columns exist at 1280 and wider");
-  await open(page, '+V+');
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("inspector")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+j");
   await expect(page.getByTestId("inspector")).toHaveCount(0);
@@ -310,7 +312,7 @@ test("⌘J toggles the Inspector on a wide screen", async ({ page }, info) => {
 
 test("the chrome keeps the phone floors: 12px text, 44px targets, no label under #7C7C84", async ({ page }, info) => {
   test.skip(WIDE.includes(info.project.name), "the three phone viewports");
-  await open(page, '+V+');
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   /* The hosted page bodies are the existing ones and are measured by their
      own specs; step 1 owns the chrome around them. */
   const chrome = ".gx-header, .gx-strip, .gx-project, .gx-pagehead";
@@ -328,7 +330,7 @@ test("the chrome keeps the phone floors: 12px text, 44px targets, no label under
 test("an old Gen link lands on the page it names with Make open on its type, server and client, and no link breaks", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* Server: the redirect happens before anything renders, and keeps the rest of the query. */
-  const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1");
+  const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1", false);
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
   /* The Rig page is the board: the old address keeps its Make panel over it. */
