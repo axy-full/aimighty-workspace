@@ -2,7 +2,7 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
@@ -42,6 +42,8 @@ export type Statement = {
   totals: { credits: number; usd: number; takes: number };
   packs: { count: number; credits: number; bonus: number; usd: number };
   funding?: StatementFunding;
+  /** Where the record was restated in today's price of a credit (lib/creditConversion.ts): the line that says so. */
+  unitNote?: string;
 };
 
 /**
@@ -121,6 +123,7 @@ export function statementCsv(s: Statement): string {
       for (const [label, credits] of Object.entries(s.funding)) rows.push(["", "", "", "", `${label} credits used`, "", credits]);
     }
   }
+  if (s.unitNote) rows.push(["", "", "", "", s.unitNote, "", ""]);
   return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 
@@ -294,8 +297,16 @@ export async function statementFor(month: string, projectId: string | null): Pro
       packs = { count: Number(r?.n ?? 0), credits: Number(r?.c ?? 0), bonus: Number(r?.b ?? 0), usd: Number(r?.u ?? 0) };
     } catch { /* no platform record, no packs line */ }
   }
+  /* Credits before the conversion were restated in today's unit (same dollars): say from when, on a
+     statement whose month reaches the old price's window (an earlier one was never restated). */
+  let unitNote: string | undefined;
+  if (inCredits) {
+    const { convertedToUnitAt, creditUnitLine } = await import("./creditConversion");
+    const at = await convertedToUnitAt(ws.id, creditUsd(), range.to);
+    if (at != null) unitNote = creditUnitLine(creditUsd(), at);
+  }
   return {
-    month, from: range.from, to: range.to, unit,
+    month, from: range.from, to: range.to, unit, ...(unitNote ? { unitNote } : {}),
     workspace: { name: ws.name, slug: ws.slug },
     projectFilter: projectId,
     projects,
