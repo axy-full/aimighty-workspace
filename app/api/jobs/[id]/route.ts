@@ -62,6 +62,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* Judging a take (picking it, approving it, sending it back, or clearing that) is a person's call: it signs the take
+     off to the production under the person's name. An API token, read or render, can list and fetch takes but never
+     judges one, whatever it is allowed to render. */
+  if (body.reviewState !== undefined && got.token) {
+    return NextResponse.json({ error: "Approving or sending back a take needs a signed-in person. An API token cannot judge a take." }, { status: 403 });
+  }
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or
