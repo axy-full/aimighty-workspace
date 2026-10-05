@@ -109,3 +109,82 @@ test("the platform desk reads the house workspace as never billed: no balance, n
   await expect(row).not.toContainText(/ CR\b|margin/);
   expect(await noSideScroll(page)).toBe(true);
 });
+
+/* The engine cap (lib/allowanceDesk.ts) on a workspace row: read in dollars with credits at the server's credit price beside,
+   set through the existing admin route, $0 included, and removed only by its own button. At the desk's desktop size and
+   at the narrow layout (below 1024 px wide). */
+test("the platform desk sets a workspace's monthly engine cap, $0 included, and removes it on purpose", async ({ page }, testInfo) => {
+  test.skip(!["customer-1440x900", "customer-390x844"].includes(testInfo.project.name), "the desk's desktop size and its narrow layout");
+  const me = await platformOwner(page);
+  const name = `Cap ${randomBytes(4).toString("hex")}`;
+  const created = await page.request.post("/api/workspaces", {
+    headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
+    data: { name },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const ws = (await created.json()).workspace as { id: string };
+  type Desk = { creditUsd: number; defaultAllowanceUsd: number | null; workspaces: { id: string; allowanceUsd: number | null }[] };
+  const desk = async () => (await page.request.get("/api/admin/invites").then((r) => r.json())) as Desk;
+  const capOf = async () => (await desk()).workspaces.find((w) => w.id === ws.id)?.allowanceUsd;
+  const { creditUsd, defaultAllowanceUsd } = await desk();
+  expect(defaultAllowanceUsd, "this spec reads a deployment with no default cap").toBeNull();
+  const crAt = (usd: number) => `${(Math.round((usd / creditUsd) * 10) / 10).toLocaleString("en-US")} CR`;
+  try {
+    await page.goto("/admin");
+    const row = page.locator(".steam").filter({ hasText: name });
+    const cap = row.getByRole("button", { name: new RegExp(`^Engine cap for ${name}`) });
+    await expect(cap).toContainText("NO CAP");
+    expect(await capOf()).toBeNull();
+    await row.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("engine-cap-none.png"), fullPage: false });
+
+    // Blank is refused, never read as $0.
+    await cap.click();
+    const box = row.getByRole("textbox", { name: `Engine cap for ${name}, dollars a month` });
+    await box.fill("  ");
+    await box.press("Enter");
+    await expect(row.getByRole("alert")).toHaveText("Type dollars a month, 0 or more.");
+    await box.fill("abc");
+    await box.press("Enter");
+    await expect(row.getByRole("alert")).toHaveText("Dollars a month, 0 or more, to the cent.");
+    expect(await capOf()).toBeNull();
+
+    // $0 saves as 0, and reads as a wall.
+    await box.fill("0");
+    await row.getByRole("button", { name: "Save" }).click();
+    await expect(cap).toContainText(`$0.00 · ${crAt(0)}`);
+    await expect(cap).toContainText("Nothing can spend");
+    expect(await capOf()).toBe(0);
+    expect(await noSideScroll(page)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("engine-cap-zero.png"), fullPage: false });
+
+    // A figure, in dollars, with the credits at the server's own credit price.
+    await cap.click();
+    await box.fill("21.80");
+    await box.press("Enter");
+    await expect(cap).toContainText(`$21.80 · ${crAt(21.8)}`);
+    await expect(cap).toContainText("Engine cost a month");
+    expect(await capOf()).toBe(21.8);
+
+    // Removing it is its own, confirmed act.
+    await cap.click();
+    await expect(box).toHaveValue("21.8");
+    await row.getByRole("button", { name: "REMOVE CAP" }).click();
+    await page.getByRole("button", { name: "Remove cap", exact: true }).last().click();
+    await expect(cap).toContainText("NO CAP");
+    expect(await capOf()).toBeNull();
+    expect(await noSideScroll(page)).toBe(true);
+    await cap.click();
+    await expect(box).toHaveValue("");
+    await page.screenshot({ path: testInfo.outputPath("engine-cap-editing.png"), fullPage: false });
+  } finally {
+    // Hide it again, so reruns never fill this owner's five workspaces.
+    const back = await page.request.post("/api/workspaces/switch", { data: { id: ws.id } });
+    expect(back.ok(), await back.text()).toBe(true);
+    const removed = await page.request.delete("/api/workspaces", {
+      headers: { "X-Workbench-Scope": `particl-active-${ws.id}-${me.id}` },
+      data: { name },
+    });
+    expect(removed.ok(), await removed.text()).toBe(true);
+  }
+});

@@ -24,6 +24,7 @@ import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import type { ProviderFailureRow, ProviderFailureSummary } from "@/lib/meter";
 import { billingAmount, failureCopy } from "@/lib/errors";
 import { SharedKeyCard } from "@/components/SharedKeyCard";
+import { capLabel, capView, parseCapUsd } from "@/lib/allowanceDesk";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -159,15 +160,16 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The house workspace is never billed in credits; its spend reads at cost.</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The engine cap limits what the engines may charge the platform for a workspace each month; $0 stops every paid job. The house workspace is never billed in credits; its spend reads at cost.</span></div>
               <div className="flex flex-col">
-                <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
+                <div className="steam is-head admin-ws"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span title="What the engines charge the platform for this workspace a month">ENGINE CAP / MO</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
-                  <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.deletedAt ? "opacity-60" : w.suspended ? "opacity-70" : ""}`}>
+                  <div key={w.id} className={`steam admin-ws ${w.deletedAt ? "opacity-60" : w.suspended ? "opacity-70" : ""}`}>
                     <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.deletedAt ? <span className="ml-2 text-[11px] text-lift">DELETED</span> : w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
+                    <CapCell w={w} defaultUsd={data.defaultAllowanceUsd} creditUsd={data.creditUsd} onChanged={refresh} />
                     <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} onChanged={refresh} />
                   </div>
                 ))}
@@ -220,6 +222,79 @@ function CreditsCell({ w, onChanged }: {
   return (
     <button type="button" className="mono-s text-left hover:text-ink" title={c ? `${creditsNumber(c.used)} used of ${creditsNumber(c.granted)} granted — click to add credits` : "Click to add credits"} onClick={() => setEditing(true)}>
       PLATFORM · {c ? `${creditsNumber(c.balance)} CR` : "—"}{w.gatewayKey ? " · OWN GATEWAY KEY" : ""}
+    </button>
+  );
+}
+
+/**
+ * The workspace's monthly engine cap (lib/allowanceDesk.ts): what the engines
+ * may charge the platform for it a month, in dollars, with the credits at the
+ * server's credit price beside. Saved through the same admin route as every
+ * other lever on this row. $0 is a wall; "no cap" is its own button, so an
+ * empty box can never open or close a workspace by accident.
+ */
+function CapCell({ w, defaultUsd, creditUsd, onChanged }: {
+  w: Pick<Ws, "id" | "name" | "allowanceUsd" | "house" | "deletedAt">;
+  defaultUsd: number | null; creditUsd: number; onChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const view = capView(w, defaultUsd, creditUsd);
+  const label = capLabel(view, creditUsd);
+  const shown = (
+    <span className="flex flex-col gap-0.5">
+      <span className="admin-cap-k">ENGINE CAP / MO</span>
+      <span className="mono-s">{label.main}</span>
+      <span className={`text-[11.5px] ${view.kind === "own" && view.usd === 0 ? "text-lift" : "text-dim"}`}>{label.sub}</span>
+    </span>
+  );
+  // The house takes no cap, and nobody can open a deleted workspace: read, not set.
+  if (view.kind === "house" || w.deletedAt) return <span className="admin-cap" title={label.title}>{shown}</span>;
+  async function save(usd: number | null) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/workspaces/${encodeURIComponent(w.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowanceUsd: usd }),
+      });
+      if (!res.ok) throw new Error(await refusal(res));
+      setEditing(false); setVal(""); setProblem(null); onChanged();
+    } catch (e) { await appAlert("Cap not changed", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  function submit() {
+    const got = parseCapUsd(val);
+    if (!got.ok) { setProblem(got.error); return; }
+    void save(got.usd);
+  }
+  async function remove() {
+    const after = defaultUsd == null ? "There will be no engine cap at all." : `The deployment's default applies: $${defaultUsd.toFixed(2)} a month.`;
+    if (!(await appConfirm("Remove this workspace's own cap?", after, { confirmLabel: "Remove cap", danger: true }))) return;
+    await save(null);
+  }
+  if (editing) {
+    return (
+      <span className="admin-cap flex flex-col gap-1">
+        <span className="flex items-center gap-1">
+          <input className="ctl !h-7 !w-[78px] !px-2 !text-[12px]" value={val} inputMode="decimal" placeholder="$0.00" autoFocus
+            onChange={(e) => { setVal(e.target.value); setProblem(null); }}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setEditing(false); setProblem(null); } }}
+            aria-label={`Engine cap for ${w.name}, dollars a month`} aria-invalid={problem ? true : undefined} />
+          <button type="button" className="btn-primary !h-7 !px-2 !text-[11px]" onClick={submit} disabled={busy || !val.trim()}>Save</button>
+        </span>
+        {problem
+          ? <span className="text-[11.5px] text-lift" role="alert">{problem}</span>
+          : <span className="text-[11.5px] text-dim">$0 stops every paid job</span>}
+        {w.allowanceUsd != null && <button type="button" className="ak-act is-muted self-start" disabled={busy} onClick={remove}>REMOVE CAP</button>}
+      </span>
+    );
+  }
+  return (
+    <button type="button" className="admin-cap text-left hover:text-ink" title={`${label.title} Click to change it.`} aria-label={`Engine cap for ${w.name}: ${label.main}, ${label.sub}. Change`}
+      onClick={() => { setVal(w.allowanceUsd == null ? "" : String(Number(w.allowanceUsd.toFixed(2)))); setEditing(true); }}>
+      {shown}
     </button>
   );
 }
@@ -370,7 +445,7 @@ function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged
   if (w.deletedAt) return (
     <span className="flex flex-col items-end gap-1">
       <span className="mono-s text-lift" title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>DELETED {timeAgo(w.deletedAt).toUpperCase()}{w.suspended ? " · SUSPENDED" : w.flagged ? " · FLAGGED" : ""}</span>
-      <span className="flex gap-1.5">
+      <span className="flex flex-wrap justify-end gap-1.5">
         {marks}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={restore}>Restore</button>
       </span>
@@ -379,7 +454,7 @@ function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged
   return (
     <span className="flex flex-col items-end gap-1">
       <span className={`mono-s ${w.suspended ? "text-lift" : ""}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
-      <span className="flex gap-1.5">
+      <span className="flex flex-wrap justify-end gap-1.5">
         {marks}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
         <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
