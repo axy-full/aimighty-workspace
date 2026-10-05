@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADS_CARD_REGION, ADS_SCREEN, SOCIAL_SCREEN, adsSocialRegion, boardCardId, wantsDesigner } from "../../lib/shell/ads-social";
+import { ADS_CARD_REGION, ADS_SCREEN, SOCIAL_SCREEN, adsSocialRegion, boardCardId, suiteAgentFor, wantsDesigner } from "../../lib/shell/ads-social";
 import { SCREENS, route } from "../../lib/shell/screens";
 import { posterFor, posterHeadline, withAsset } from "../../components/graphite/board/ads/designer-model";
 import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
@@ -70,4 +70,10 @@ test("the Designer opens on the project's poster, or makes one; an image from a 
   expect(twice.poster.layers.filter((l) => l.kind === "image")).toHaveLength(1);
   expect(twice.project.assets).toHaveLength(1);
   expect(withAsset(twice.project, image("g1"), "x")!.project).toBe(twice.project);
+});
+
+test("the docked panel's Ask runs the Campaign agent on Ads and the Viral studio agent on Social", () => {
+  expect(suiteAgentFor("ads")).toEqual({ suite: "moleculr", name: "Campaign agent" });
+  expect(suiteAgentFor("social")).toEqual({ suite: "subatomik", name: "Viral studio agent" });
+  expect([suiteAgentFor("studio"), suiteAgentFor(null), suiteAgentFor("toString")]).toEqual([null, null, null]);
 });

@@ -80,7 +80,7 @@ export function ImageAdCard({ data }: CardProps<ImageAdData>) {
         {run.phase === "failed" ? <Note tone="bad" role="alert">{run.error}</Note> : null}
         {take.note ? <Note role="status">{take.note}</Note> : null}
         {running ? <Note role="status">{running.held ? "Held · it starts when credits arrive" : running.generation?.status === "queued" ? "Queued" : "Rendering"} · <Price value={exact(running.credits)} /></Note> : null}
-        {run.phase === "done" ? <Note role="status">Done · it is in Ads below.</Note> : null}
+        {run.phase === "done" ? <Note role="status">Done · the ad is on the board.</Note> : null}
         <Actions>
           <Btn primary disabled={Boolean(reason) || busy || rig.status !== "ready"} onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="ads-image-ad-make">
             {phase === "submitting" ? "Submitting…" : running ? "Rendering…" : <>Make the image ad{price ? <> · <Price value={price} /></> : null}</>}
@@ -113,7 +113,7 @@ export function ResultCard({ data }: CardProps<ResultData>) {
       <Well url={data.failure || inFlight ? null : data.url} media={data.media} tag={`${data.tag}${data.review ? ` · ${REVIEW_WORDS[data.review]?.toUpperCase() ?? ""}` : ""}`} height={173}
         empty={inFlight ? (data.status === "held" ? "Held for credits" : "Rendering…") : data.failure ? "Failed" : undefined} />
       <span className="ab-body">
-        <Title>{data.name}</Title>
+        <span title={data.name !== data.title ? data.name : undefined}><Title>{data.title}</Title></span>
         <Meta>{data.engine}{data.credits != null ? <> · <Price value={exact(data.credits)} /> paid</> : null}</Meta>
         {data.failure ? <Note tone="bad" role="alert">{data.failure}</Note> : null}
         {!data.failure && !inFlight ? (

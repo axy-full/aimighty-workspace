@@ -5,6 +5,7 @@ import { adsCards, SIZES, type BrandData, type FormatsData, type HooksData, type
 import { BrandCard, ProductCard, ReferenceCard } from "./cards/StartCards";
 import { FormatsCard, HooksCard } from "./cards/HookCards";
 import { ImageAdCard, ResultCard, UnavailableCard } from "./cards/AdCards";
+import { KindList } from "./KindList";
 import { StartBoard } from "./StartBoard";
 
 /*
@@ -24,7 +25,7 @@ const defs = [
   defineCard<UnavailableData>({ kind: "ads-unavailable", size: () => SIZES.unavailable, Card: UnavailableCard }),
 ];
 
-export const adsCardSet: CardSet = { id: "ads", defs, derive: (src): BoardCard[] => adsCards(src) };
+export const adsCardSet: CardSet = { id: "ads", defs, derive: (src): BoardCard[] => adsCards(src), List: KindList };
 
 export const adsBoard: BoardKindModule = {
   kind: "ads",

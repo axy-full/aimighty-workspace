@@ -63,8 +63,13 @@ test("Hooks: pick lasts for the session; Format briefs hand one brief to Make, w
   await expect(hooks.locator(".ab-hook-pick")).toHaveCount(3);
   await hooks.getByRole("button", { name: /Pick “Water, simply\./ }).click();
   await expect(hooks.getByRole("button", { name: /Pick “Water, simply\./ })).toHaveAttribute("aria-pressed", "true");
-  /* The agent writes the nine more: pressing opens its dialog, which quotes before anything is reserved. */
-  await expect(hooks.getByTestId("ads-hooks-write")).toContainText("Write 9 more");
+  /* The agent writes the nine more: the button carries the free estimate, and pressing opens its dialog, which quotes again before anything is reserved. */
+  const write = hooks.getByTestId("ads-hooks-write");
+  await expect(write).toContainText(/Write 9 more · up to \d[\d.,]* cr/, { timeout: 30_000 });
+  await write.click();
+  await expect(page.getByTestId("atomik-run-estimate")).toContainText(/up to \d[\d.,]* cr reserved/, { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("atomik-run-estimate")).toHaveCount(0);
   const formats = page.getByTestId("ads-formats");
   await expect(formats).toContainText("Format briefs · 6 formats · 18 briefs");
   await formats.getByTestId("ads-format-posters").click();
@@ -175,12 +180,49 @@ test("at every size the Ads and Social boards open without errors and without sc
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
+  /* A narrow screen lists the board's cards (the phone's record is stream 10's); it never says "No shots yet" about an ad. */
+  if (!desktop(page)) {
+    await expect(page.getByTestId("board-list")).toContainText("Clear Co");
+    await expect(page.getByTestId("board-list")).not.toContainText("No shots yet");
+  }
   const social = await seedAds(page, null, "social");
   await page.goto(`/suites?project=${social.project.id}&view=board&kind=social`);
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
-  /* A narrow screen draws no canvas card of its own here: the phone's record is stream 10's. Nothing it shows may be a price made up. */
+  if (!desktop(page)) await expect(page.getByTestId("board-list")).toContainText("Nothing on this board yet.");
   expect(errors).toEqual([]);
   await shot(page, "ads-social-sizes");
+});
+
+test("one press makes one image ad on the mock engine; it lands as a result card that is approved by a person and opens in the Designer", async ({ page }) => {
+  test.skip(!desktop(page), "the canvas is desktop only");
+  test.setTimeout(180_000);
+  const { project, paid } = await seedAds(page);
+  await page.goto(adsUrl(project.id, "&frame=1"));
+  await expect(page.getByTestId("ads-product")).toBeVisible({ timeout: 60_000 });
+  await page.getByTestId("ads-product-edit").click();
+  await page.getByTestId("product-picker-file").setInputFiles({ name: "bottle.png", mimeType: "image/png", buffer: grey() });
+  await expect(page.getByTestId("product-chosen")).toContainText("bottle.png", { timeout: 30_000 });
+  await page.getByTestId("ads-panel-close").click();
+  await page.getByTestId("board-rail").locator('[data-region="ads"]').click();
+  const make = page.getByTestId("ads-image-ad-make");
+  await expect(make).toContainText(/Make the image ad · \d[\d.,]* cr/, { timeout: 30_000 });
+  expect(paid).toEqual([]);
+  await make.click();
+  const result = page.getByTestId("ads-result").first();
+  await expect(result).toBeVisible({ timeout: 120_000 });
+  /* Exactly one send, and it is the press. */
+  expect(paid.filter((p) => p === "/api/generate")).toHaveLength(1);
+  await expect(result).toContainText("IMAGE AD");
+  await shot(page, "ads-result");
+  await expect(page.getByTestId("board-rail").locator('[data-region="ads"]')).toHaveAttribute("data-state", "needs");
+  await result.getByRole("button", { name: "Approve" }).click();
+  await expect(result).toHaveAttribute("data-review", "approved", { timeout: 30_000 });
+  await expect(page.getByTestId("board-rail").locator('[data-region="ads"]')).toHaveAttribute("data-state", "done");
+  await result.getByTestId("ads-open-designer").click();
+  await expect(page.getByTestId("ads-designer-layers")).toContainText("bottle", { timeout: 30_000 }).catch(() => undefined);
+  await expect(page.getByTestId("ads-designer")).toBeVisible();
+  expect((await page.getByTestId("ads-designer-layers").locator("li").count())).toBe(3);
+  await shot(page, "ads-designer-from-result");
 });

@@ -55,7 +55,7 @@ export type HooksData = { lines: string[]; picked: string[]; room: number; writi
 export type FormatsData = { formats: { id: string; label: string; briefs: { id: string; name: string; kind: "image" | "video"; aspect: string }[] }[]; chosen: string | null; kind: "image" | "video" };
 export type ImageAdData = { productName: string; stillUrl: string | null; stillName: string | null; still: AdStill | null; hasProduct: boolean; hook: string | null; defaultPrompt: string; productionId: string | null };
 export type ResultData = {
-  id: string; sourceId: string; name: string; tag: "IMAGE AD" | "VIDEO AD"; media: "image" | "video"; url: string | null; engine: string; credits: number | null;
+  id: string; sourceId: string; name: string; title: string; tag: "IMAGE AD" | "VIDEO AD"; media: "image" | "video"; url: string | null; engine: string; credits: number | null;
   status: string; review: "" | "approved" | "picked" | "changes"; failure: string | null; at: number; asset: Asset;
 };
 export type UnavailableData = { title: string; line: string };
@@ -189,7 +189,7 @@ export function adResults(library: readonly LibraryEntry[]): ResultData[] {
     const g = entry.asset.value;
     const t = entry.take;
     return [{
-      id: t.id, sourceId: t.sourceId, name: t.name, tag: entry.media === "video" ? "VIDEO AD" : "IMAGE AD", media: entry.media, url: entry.url, engine: t.meta, credits: t.credits,
+      id: t.id, sourceId: t.sourceId, name: t.name, title: t.name.length <= 48 ? t.name : entry.media === "video" ? "Video ad" : "Image ad", tag: entry.media === "video" ? "VIDEO AD" : "IMAGE AD", media: entry.media, url: entry.url, engine: t.meta, credits: t.credits,
       status: t.status, review: g.reviewState, failure: t.status === "failed" ? t.failureLine ?? t.reason ?? "It failed." : null, at: t.createdAt, asset: entryAsset(entry),
     }];
   });
@@ -247,7 +247,7 @@ export function adsCards(src: BoardSource): BoardCard[] {
   };
   cards.push({ id: "ads:image-ad", kind: "ads-image", region: "ads", order: 21, group: ADS_GROUP.ads, state: working ? "working" : unjudged ? "needs" : results.length ? "done" : "empty", ...(unjudged ? { needs: unjudged } : {}), summary: unjudged ? `${unjudged} ${unjudged === 1 ? "ad" : "ads"} to judge` : working ? "An ad is rendering" : results.length ? `${results.length} ${results.length === 1 ? "ad" : "ads"}` : "No ads yet", data: imageAd });
   results.slice(0, RESULTS_SHOWN).forEach((r, i) => cards.push({
-    id: `ads:result:${r.id}`, kind: "ads-result", region: "ads", order: 30 + i, group: ADS_GROUP.ads, state: "empty", data: r,
+    id: `ads:result:${r.id}`, kind: "ads-result", region: "ads", order: 30 + i, group: ADS_GROUP.ads, state: "empty", summary: `${r.title} · ${r.tag.toLowerCase()}`, data: r,
   }));
   cards.push({ id: "ads:ugc", kind: "ads-unavailable", region: "ads", order: 99, group: ADS_GROUP.ads, state: "empty", data: { title: "UGC with consent", line: "Not in Particl yet" } satisfies UnavailableData });
   cards.push(group(ADS_GROUP.adapt, "adapt", "Adapt", "", 1, 40));

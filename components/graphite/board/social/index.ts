@@ -3,6 +3,7 @@ import { defineCard, type BoardKindModule, type CardSet } from "../cards/types";
 import { EffectsCard, SocialUnavailableCard, SourceCard } from "./cards";
 import { SocialHistoryDrawer } from "./HistoryDrawer";
 import { SIZES, socialCards, type EffectsData, type SourceData, type UnavailableData } from "./social-model";
+import { KindList } from "../ads/KindList";
 import { StartSource } from "./StartSource";
 
 /*
@@ -16,7 +17,7 @@ const defs = [
   defineCard<UnavailableData>({ kind: "social-unavailable", size: () => SIZES.unavailable, Card: SocialUnavailableCard }),
 ];
 
-export const socialCardSet: CardSet = { id: "social", defs, derive: (src): BoardCard[] => socialCards(src) };
+export const socialCardSet: CardSet = { id: "social", defs, derive: (src): BoardCard[] => socialCards(src), List: KindList };
 
 export const socialBoard: BoardKindModule = {
   kind: "social",

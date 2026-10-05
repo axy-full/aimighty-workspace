@@ -141,3 +141,8 @@
   .ab-inspect { border-left: 0; border-top: 1px solid var(--gx-hair-strong); }
   .ab-panel { width: calc(100% - 24px); right: 0; }
 }
+
+/* The List view of an Ads or Social board: card, section, state. */
+.ab-list .ab-list-row { grid-template-columns: minmax(0, 1fr) 120px 130px; }
+.bd--compact .ab-list .ab-list-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 44px; }
+.bd--compact .ab-list .ab-list-row > :nth-child(2) { display: none; }

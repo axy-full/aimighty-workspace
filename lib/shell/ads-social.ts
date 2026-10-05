@@ -78,3 +78,15 @@ export function adsSocialRegion(kind: string, frame: string | null | undefined, 
 
 /** Whether the address asks for the poster Designer over the Ads board (`frame=3`). */
 export const wantsDesigner = (kind: string, frame: string | null | undefined): boolean => kind === "ads" && frame === "3";
+
+/**
+ * The suite agent the docked Atomik panel's Ask runs on an Ads or Social board today (decision 32): the Campaign agent on Ads, the
+ * Viral studio agent on Social. Same dialog, same estimate, the same approval: `applySuiteAgentPlan` already places their hooks and
+ * variants. Stream 7 wires the panel by board kind and reads this; null for any other kind (the Rig board agent).
+ */
+export const BOARD_SUITE_AGENT: Readonly<Record<"ads" | "social", { suite: "moleculr" | "subatomik"; name: string }>> = {
+  ads: { suite: "moleculr", name: "Campaign agent" },
+  social: { suite: "subatomik", name: "Viral studio agent" },
+};
+export const suiteAgentFor = (kind: string | null | undefined): { suite: "moleculr" | "subatomik"; name: string } | null =>
+  kind === "ads" || kind === "social" ? BOARD_SUITE_AGENT[kind] : null;
