@@ -12,8 +12,7 @@ import { SkillsInspector } from "./atomik/SkillsView";
 export function Inspector({ scope, project, overlay, held = false }: { scope: string; project: Project | null; overlay: boolean; held?: boolean }) {
   const { state } = useWorkspace();
   const shell = useShell();
-  /* The Cast stage edits its entries in place and selects nothing into the Inspector, so there it shows the stage. */
-  const kind = held || (state.selKind === "cast" && shell.page.own && shell.page.id === "cast") ? "page" : state.selKind;
+  const kind = held ? "page" : state.selKind;
   const Body = INSPECTOR_BODIES[kind];
   /* Atomik › Tools & connections is the shell's own page; the legacy spec behind its page id (the old Skills registry) describes nothing on it. */
   const tools = kind === "page" && shell.page.own === true && shell.suite.id === "atomik" && shell.page.id === "skills";

@@ -1,3 +1,4 @@
+import { STUDIO_RAIL } from "@/lib/board/regions";
 import type { MakeTool } from "./make";
 import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
@@ -35,6 +36,8 @@ export function paletteIndex(input: { models: { id: string; name: string; kind: 
     { group: "CREATE", label: "Object swap", hint: "Make · one element replaced", run: { type: "gen", tool: "swap" } },
     /* The suites left the header (header option B); until their boards ship (S3, S4) and the control room (D1), ⌘K is how they are reached. */
     ...SHELL_SUITES.map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.name, run: { type: "suite", suite: s.id } })),
+    /* The ten Studio stage pages are gone: the board's regions are where each of them went. */
+    ...STUDIO_RAIL.map((r): PaletteRow => ({ group: "STUDIO", label: r.label, hint: "The board", run: { type: "region", region: r.id } })),
     /* The phone's own Home and Studio grid have no desktop page to open. */
     ...ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
     ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),

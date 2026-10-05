@@ -87,7 +87,7 @@ export type ShotTakes = {
 const FINISHED: ReadonlySet<TakeStatus> = new Set<TakeStatus>(["review", "picked", "approved", "changes"]);
 export const isFinished = (v: Pick<ShotVersion, "status">) => FINISHED.has(v.status);
 export const inFlight = (v: Pick<ShotVersion, "status">) => v.status === "rendering" || v.status === "held";
-/** A take a person can judge: finished, with its picture (or sound) here to look at (lib/workspace/takes-desk.ts `reviewable`). */
+/** A take a person can judge: finished, with its picture (or sound) here to look at. */
 export const judgeable = (v: Pick<ShotVersion, "status" | "url" | "media">) => isFinished(v) && Boolean(v.url) && v.media !== null;
 /** Waits for a person: finished and not yet judged. */
 export const needsReview = (v: Pick<ShotVersion, "status" | "url" | "media">) => (v.status === "review" || v.status === "picked") && judgeable(v);

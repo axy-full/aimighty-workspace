@@ -4,19 +4,18 @@ import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 
-/** 46px. The active suite's pages as `01 Label`, 14px of space before each group (the master's strip). Hidden in Gen and Workspace, and in an owner-run suite for a member. */
+/** 46px. The active suite's pages as `01 Label`, 14px of space before each group (the master's strip). Hidden in Studio (the board), Gen and Workspace, and in an owner-run suite for a member. */
 export function StageStrip() {
   const shell = useShell();
   const { owner } = useConnectedCapability(undefined, { read: false });
   /* A strip wider than its row (a phone) scrolls the current page to its middle, so the page it names is in sight. */
   const nav = useRef<HTMLElement>(null);
   const current = `${shell.suite.id}:${shell.page.id}`;
-  /* The phone's Home and Studio grid stand outside the strip (design/particl-graphite/README.md › Phone): nothing else on those screens.
-     On a desktop the Studio home keeps the strip, with no stage lit, so every stage stays one click away.
-     Every page of a suite the owner runs on the connected account is the same owner-run card for a member
+  /* Every page of a suite the owner runs on the connected account is the same owner-run card for a member
      (idea 19), so a member is shown no tabs there. A strip drawn again on the same page (back from Gen) is
      observed again too. */
-  const hidden = shell.view !== "suite" || Boolean(shell.page.phoneOnly && !(shell.wide && shell.page.id === "stages")) || (!owner && isOwnerRunSuite(shell.suite.id));
+  /* Studio has no stage pages any more (the board is the whole production): its overview and the phone's Home have no strip. */
+  const hidden = shell.view !== "suite" || shell.suite.id === "studio" || Boolean(shell.page.phoneOnly) || (!owner && isOwnerRunSuite(shell.suite.id));
   useEffect(() => {
     const strip = nav.current;
     if (!strip) return;

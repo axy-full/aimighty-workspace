@@ -130,13 +130,6 @@
 .pxw .pxw-graph-tools button:hover { background: var(--gx-input-hover); }
 .pxw .pxw-graph-tools button:disabled { opacity: 0.6; cursor: default; background: transparent; }
 @media (pointer: coarse) { .pxw .pxw-graph-tools button { min-width: 44px; height: 44px; } }
-/* The Rig library strip (components/graphite/production/RigExtras.tsx; laid out in components/graphite/production/production.css, whose 44 px rules stop at
-   759 px wide): on any touch screen, a landscape phone included, its head link, group chips and "+" are thumb-sized targets. */
-@media (pointer: coarse) {
-  .gx .pxw-rig-library .pxw-rig-library-head .pxw-link-button,
-  .gx .pxw-rig-library .pxw-rig-library-groups button { min-height: 44px; min-width: 44px; }
-  .gx .pxw-rig-library .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
-}
 
 /* ── Inspector: shot ──────────────────────────────────────────────────── */
 .pxw .pxw-insp-output { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }

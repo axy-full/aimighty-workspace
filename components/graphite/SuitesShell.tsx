@@ -47,22 +47,13 @@ import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
-import { STAGE_VIEW_PAGES, StageView } from "./StageView";
-import { BriefStage } from "./production/BriefStage";
-import { BeatsStage } from "./production/BeatsStage";
-import { StoryboardStage } from "./production/StoryboardStage";
-import { CastStage } from "./production/CastStage";
-import { EnvironmentStage } from "./production/EnvironmentStage";
-import { EditStage } from "./production/EditStage";
-import { AstraOutputs } from "./production/AstraOutputs";
-import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
 import { FaultAside, PanelFault } from "./PanelFault";
-import { FirstRun, type ProjectActions } from "./FirstRun";
+import type { ProjectActions } from "./FirstRun";
 import { AtomikMount, PhoneMount, ScreenBody, SettingsBody, type ScreenContext } from "./screens";
 import { isLanded } from "@/lib/shell/screens";
 import { seededProject, type CreateSeed } from "@/lib/shell/create-project";
@@ -331,14 +322,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* One way to make a project from a seed, whichever surface asks (Home, ⌘K): the shell's own, registered like its command path. */
   useEffect(() => { shell.setCreateProject(createFromSeed); return () => shell.setCreateProject(null); });
   const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
-  /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
-  const noProject = (stage: string, lead: string) => data.status === "loading"
-    ? <p className="gx-empty" role="status" data-testid={`${stage}-opening`}>Opening your projects…</p>
-    : <FirstRun key={`first-run:${stage}`} stage={stage} lead={lead} actions={projectActions} now={now} />;
-  /* The Studio stages whose bodies are tools (Rig, Astra, Edit & Sound, Deliver) keep them, with the same card above. */
-  const firstRunAbove = !project && data.status === "ready" && shell.view === "suite" && shell.suite.id === "studio"
-    ? <FirstRun key={`first-run:${shell.page.id}`} stage={shell.page.id} lead={`Open or create a project to use ${shell.page.title}.`} actions={projectActions} now={now} />
-    : null;
   /* The project list failed to read: said, with Try again, instead of an empty shell (a failed library read is each grid's own banner). */
   const projectsError = data.status === "error" ? data.error ?? "Projects could not be loaded." : null;
   /* Every card and skeleton holds the project's frame (the card contract, components/graphite/TakeTile.tsx). */
@@ -431,24 +414,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
                       <StudioHome key="stages" project={project} items={items} actions={projectActions} loading={data.status === "loading"} now={now} />
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "brief" ? (
-                      project ? <BriefStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("brief", "Open or create a project to write its script.")
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "beats" ? (
-                      project ? <BeatsStage key={project.id} projectId={project.id} scope={scope} onBrief={() => shell.goSuite("studio", "brief")} onBoards={() => shell.goSuite("studio", "boards")} /> : noProject("beats", "Open or create a project to break its script into beats.")
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "takes" ? (
-                      project ? <EditStage key={project.id} scope={scope} projectId={project.id} items={items} onTimeline={() => shell.goSuite("studio", "edit")} /> : noProject("takes", "Open or create a project to see its takes.")
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "environment" ? (
-                      project ? <EnvironmentStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("environment", "Open or create a project to build its world.")
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "cast" ? (
-                      project ? <CastStage key={project.id} projectId={project.id} scope={scope} items={items} onBeats={() => shell.goSuite("studio", "beats")} /> : noProject("cast", "Open or create a project to cast it.")
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "boards" ? (
-                      project ? <StoryboardStage key={project.id} projectId={project.id} scope={scope} onBeats={() => shell.goSuite("studio", "beats")} onRig={() => shell.goSuite("studio", "rig")} /> : noProject("boards", "Open or create a project to storyboard it.")
-                    ) : shell.page.own && shell.suite.id === "studio" && STAGE_VIEW_PAGES.includes(shell.page.legacy.page) ? (
-                      <div className="gx-stage-host" key={shell.page.id}>
-                        {firstRunAbove}
-                        {shell.page.id === "astra" ? <AstraOutputs /> : null}
-                        <StageView page={shell.page.legacy.page} project={project} scope={scope} />
-                      </div>
                     ) : shell.page.own && shell.suite.id === "business" ? (
                       <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
@@ -456,9 +421,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
-                      {firstRunAbove}
                       <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                        {shell.suite.id === "studio" && shell.page.id === "rig" ? <RigLibrary /> : null}
                         <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
                       </div>
                     </>)}

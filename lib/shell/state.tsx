@@ -1,8 +1,9 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { isSettingsSection } from "./settings";
+import { isStageId, stageAddress } from "./stage-redirects";
 import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, tracksParams, type BoardKindId, type ScreenId } from "./screens";
 import { useNewInterface } from "./new-interface";
 import { useCompact } from "./use-compact";
@@ -82,7 +83,7 @@ export type Shell = {
   canUndo: boolean;
   /** `closeMake`: the page is where the person is going from Make (Viral History from a quick tool), so Make closes. */
   goSuite: (suite: ShellSuiteId, page?: string, opts?: { closeMake?: boolean }) => void;
-  /** The header's project segment: the Studio page last shown (never the overview or the phone's Home), else Brief. */
+  /** The header's project segment: the board. */
   goProject: () => void;
   /** Make's panel as the address carries it (`make=`): its type, Recent or a quick tool, or null while it is closed. */
   make: MakeTab | null;
@@ -121,7 +122,7 @@ export type Shell = {
   phone: { on: boolean; framed: boolean };
   /** Home: `?view=home`, or today's Studio overview. */
   goHome: () => void;
-  /** The board: `?view=board`, with the kind, a region, the List view or a start; or the project's current Studio page. */
+  /** The board: `?view=board`, with the kind, a region, the List view or a start. */
   goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
   goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
@@ -365,6 +366,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
        suite on its own opened on Motion Transfer, and still does until History is the page it remembers. */
     const tool = id !== "viral" ? null : pageId !== undefined ? (isMakeTool(pageId) ? pageId : null) : memory.viral ? null : "motion";
     if (tool) { openMake(tool); return; }
+    /* The ten Studio stage pages are gone: an old stage id (a card's, a link's, a toast's Open) is the board's region for it. */
+    if (id === "studio" && isStageId(pageId)) { navigateRef.current?.(stageAddress(pageId), opts); return; }
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
     /* With the switch on, an old page whose screen has landed opens that screen (lib/shell/screens.ts), however it is asked for. */
     {
@@ -383,11 +386,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     apply({ view: "suite", tab: "general", sp: target.id, cp: "room", make: opts?.closeMake ? null : stayMake(params.make), extra: carry(params.extra) }, pushed ? "replace" : "push");
   }, [ws, memory, apply, params.make, params.extra, openMake]);
 
-  /* The Studio page the project segment returns to: the last one shown that is a stage, not the overview or the phone's Home. */
-  const lastStage = useRef<string | null>(null);
-  useEffect(() => {
-    if (params.view === "suite" && suiteId === "studio" && !page.phoneOnly) lastStage.current = page.id;
-  }, [params.view, suiteId, page]);
   /**
    * Moves to an address, after the screen registry has had its say (`route`): a new screen's address sets the view and
    * the screens' own params; one of today's pages goes through goSuite, Workspace and Crew as ever. The one way the new
@@ -409,12 +407,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   }, [apply, goSuite, params.make, params.extra]);
   useEffect(() => { navigateRef.current = navigate; }, [navigate]);
 
-  const goProject = useCallback(() => {
-    /* With the board landed the project segment opens it (the board draws its kind from the project itself). */
-    if (isLanded("board")) { navigate("?view=board"); return; }
-    const stage = shellPage("studio", lastStage.current ?? memory.studio);
-    goSuite("studio", stage && !stage.phoneOnly ? stage.id : firstShellPage("studio").id);
-  }, [goSuite, memory, navigate]);
+  /* The project segment opens the board (it draws its kind from the project itself): the board is the whole production. */
+  const goProject = useCallback(() => { navigate("?view=board"); }, [navigate]);
 
   const goHome = useCallback(() => {
     /* Today: the Studio overview on a desktop, the phone's "Where to?" on a phone. */
@@ -423,18 +417,13 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   }, [goSuite, navigate]);
 
   const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string } = {}) => {
-    if (!isLanded("board")) {
-      /* Today: the region's old stage, else the project's current Studio page. */
-      if (opts.region) navigate(`?view=board&region=${encodeURIComponent(opts.region)}`); else goProject();
-      return;
-    }
     const q = new URLSearchParams({ view: "board" });
     if (opts.kind) q.set("kind", opts.kind);
     if (opts.region) q.set("region", opts.region);
     if (opts.list) q.set("list", "1");
     if (opts.start) q.set("start", opts.start);
     navigate(`?${q}`);
-  }, [navigate, goProject]);
+  }, [navigate]);
 
   const setScreenParams = useCallback((patch: Readonly<Record<string, string | null>>, mode: "push" | "replace" = "replace") => {
     if (!params.extra) return;
@@ -537,11 +526,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     closeMake: () => { if (params.make) apply({ ...params, make: null }, "push"); },
     setMake: (tab) => { if (params.make && params.make !== tab) apply({ ...params, make: tab }, "replace"); },
     goGen: () => openMake(),
-    goCrew: (page) => {
-      /* With the board landed, Crew is the board's Crew review and Project record (lib/board/routes.ts rows). */
-      if (isLanded("board")) { navigate(`?view=crew&cp=${page ?? params.cp}`); return; }
-      setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp, make: stayMake(params.make), extra: carry(params.extra) }, "push");
-    },
+    /* Crew is the board's Crew review and Project record (lib/board/routes.ts rows). */
+    goCrew: (page) => navigate(`?view=crew&cp=${page ?? params.cp}`),
     goWorkspace: (tab, opts) => {
       const wanted = tab ?? params.tab;
       /* One of Settings' five sections: its screen, or (switch off, or not landed) the page that holds it today (settings rows). */

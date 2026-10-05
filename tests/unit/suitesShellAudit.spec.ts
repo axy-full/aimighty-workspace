@@ -129,9 +129,10 @@ test("a resumed Business job lands only on the composer still waiting for it, an
 /* Viral › History and Recent are the project's Library alone (tests/unit/suitesViral.spec.ts): nothing is read from the account. */
 
 /* Library › Tools only where the page has tools of its own. */
-test("the Library has Tools on the Studio stages and the spec pages, not on Gen, Business, Viral or the phone's pickers", () => {
-  expect(libraryHasTools("suite", "studio", "brief")).toBe(true);
-  expect(libraryHasTools("suite", "studio", "deliver")).toBe(true);
+test("the Library has Tools on the spec pages, not on Studio, Gen, Business, Viral or the phone's pickers", () => {
+  /* Studio has no stage pages: the board carries its own Library drawer. */
+  expect(libraryHasTools("suite", "studio", "brief")).toBe(false);
+  expect(libraryHasTools("suite", "studio", "deliver")).toBe(false);
   expect(libraryHasTools("suite", "atomik", "agent")).toBe(true);
   expect(libraryHasTools("gen", "studio", "brief")).toBe(false);
   expect(libraryHasTools("suite", "business", "dtc")).toBe(false);

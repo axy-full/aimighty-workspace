@@ -5,7 +5,6 @@ import type { Fault } from "@/components/Boundary";
 import { ACTION_LABEL, moving, priceLabel, trayWhen, type TrayJob } from "@/lib/jobsTray";
 import { Glyph } from "./icons";
 import { SAY } from "@/lib/shell/assets";
-import { handTakeToTakes } from "@/lib/shell/take-handover";
 import { useJobsTray, type JobsTrayState, type RowProblem } from "@/lib/shell/use-jobs-tray";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
@@ -149,8 +148,8 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
     switch (job.action) {
       case "open":
         toProject();
-        /* That take and no other: Takes opens on it, and says so while it is found. */
-        if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
+        /* That take and no other: the board's Shots region opens on it. */
+        if (job.takeId) ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } });
         shell.goSuite("studio", "takes"); onDone(); return;
       case "gen": toProject(); shell.openMake(); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;

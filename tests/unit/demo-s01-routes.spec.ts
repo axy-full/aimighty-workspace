@@ -139,14 +139,15 @@ test("the board's rows: each old Studio page is a region, with the switch on and
   /* The shell writes `sp` for every page it shows: an old `&sp=brief` leaves with the page, it does not ride into the board. */
   expect(sameSearch(to("?suite=particl&page=brief&sp=brief&project=ws-1"), "?view=board&region=brief&project=ws-1")).toBe(true);
   expect(sameSearch(to("?suite=particl&page=rig&sp=rig&sel=shot:s1"), "?view=board&sel=shot:s1")).toBe(true);
-  /* With the board not landed the board's addresses open today's page; once landed it is one board for everyone, switch on or off. */
-  expect(sameSearch(route("?view=board&region=cut", true, NONE), "?suite=particl&page=edit")).toBe(true);
-  expect(sameSearch(route("?view=board&region=cut", false, NONE), "?suite=particl&page=edit")).toBe(true);
+  /* The stage pages are deleted, so the board has no way back: a board address is never sent to one, landed or not. */
+  expect(sameSearch(route("?view=board&region=cut", true, NONE), "?view=board&region=cut")).toBe(true);
+  expect(sameSearch(route("?view=board&region=cut", false, NONE), "?view=board&region=cut")).toBe(true);
+  /* Once landed it is one board for everyone, switch on or off. */
   expect(sameSearch(route("?view=board", false, ALL), "?view=board")).toBe(true);
   expect(sameSearch(route("?suite=particl&page=edit", false, ALL), "?view=board&region=cut")).toBe(true);
   expect(sameSearch(route("?suite=particl&page=edit", false, landed("board")), "?view=board&region=cut")).toBe(true);
   expect(sameSearch(route("?suite=particl&page=edit", false, NONE), "?suite=particl&page=edit")).toBe(true);
-  expect(sameSearch(route("?view=board&list=1&kind=studio", true, NONE), "?suite=particl&page=rig&rig=list")).toBe(true);
+  expect(sameSearch(route("?view=board&list=1&kind=studio", true, NONE), "?view=board&list=1&kind=studio")).toBe(true);
 });
 
 test("Ads and Social boards need the board too; without both, Ads' addresses open today's Business pages", () => {

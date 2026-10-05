@@ -60,44 +60,30 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The two screens outside the strip (design/particl-graphite/README.md › Phone): `home` is the phone's
- * suite picker — "Where to?" — that the Home tab and the phone's mark return
- * to; `stages` is the Studio home: the stage grid behind the phone's Studio
- * tile (with a Home back), and where the mark goes on a desktop. Both share
- * Brief's backing page.
+ * The Studio suite's two pages (design/particl-graphite/README.md › Phone). The ten stage pages it used to have
+ * (Brief, Beats, Storyboards, Environment, Cast, Astra, Rig, Takes, Edit & Sound, Deliver) are gone: the board is the
+ * whole production, and each old address opens its region (lib/shell/stage-redirects.ts). What is left is Home, drawn
+ * until the new interface's Home replaces it: `stages` is the Studio overview (on a desktop, where the mark goes) and
+ * `home` the phone's suite picker, "Where to?". Both share the state layer's Brief page as their backing page.
  */
-function withHome(suite: ShellSuite): ShellSuite {
-  const legacy = { suite: suite.legacy, page: suite.pages[0].legacy.page };
-  return { ...suite, pages: [...suite.pages,
-    { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
-    { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
-  ] };
+function studioSuite(): ShellSuite {
+  const legacy = { suite: "particl" as Suite, page: "brief" as PageId };
+  return {
+    id: "studio", label: "Studio", mark: "STUDIO", name: "Particl Production Studio", legacy: "particl",
+    pages: [
+      { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+      { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+    ],
+  };
 }
 
 function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 07; Business after 01 and 02; Atomik after 01 and 04. */
+/** Group starts: Business after 01 and 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
-  /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
-  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
-    ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
-    /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
-    ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],
-    ["boards", "Storyboards", "Storyboards", "Every shot, framed", "boards"],
-    /* Owner, 24 September: where the world is built, before Cast & Elements. The shell renders its own
-       view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
-    ["environment", "Environment", "Environment", "Build the world", "boards"],
-    ["cast", "Cast", "Cast & Elements", "Characters that stay themselves", "cast"],
-    ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
-    ["rig", "Rig", "Rig", "Bring it all together", "rig"],
-    /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.
-       Idea 6: Takes is the review desk every "Filed in Takes for review" points at. */
-    ["takes", "Takes", "Takes", "Review every take", "takes"],
-    ["edit", "Edit & Sound", "Edit & Sound", "Cut the takes, add the sound", "edit"],
-    ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
-  ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),
+  studioSuite(),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them.
      Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
      Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),

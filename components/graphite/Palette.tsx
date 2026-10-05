@@ -55,6 +55,7 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
       }
       case "suite": shell.goSuite(r.suite); return;
       case "page": shell.goSuite(r.suite, r.page); return;
+      case "region": shell.goBoard({ region: r.region }); return;
       case "workspace": shell.goWorkspace(r.tab); return;
       case "crew": shell.goCrew(r.page); return;
       case "asset": dispatch({ type: "patch", patch: { selKind: "take", selId: r.id } }); shell.openInspector(); return;
