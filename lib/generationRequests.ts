@@ -9,6 +9,7 @@ import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
+import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
@@ -182,6 +183,8 @@ export async function withGenerationRequestData(
     response.headers.set("Idempotency-Status", "complete");
     return response;
   } catch (error) {
+    /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
+    if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
     // Keep the durable claim: a provider might have accepted an interrupted request.
     console.error("Generation request interrupted:", (error as Error).message);
     if (options.atomicBinding) {
@@ -401,10 +404,22 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
     const prior = own.rows[0];
+    /* A price of a credit the record (the platform's, or this workspace's own) does not count in yet
+       (lib/ledgerUnit.ts): no NEW job is reserved until the conversion restates the record. A job
+       already reserved keeps its reservation and terms. */
+    if (!prior && paid && creditsApply(ws) && !(await ledgerOpenTx(tx, ws.id))) throw new SpendReservationError(LEDGER_UNIT_PAUSED, 503);
     if (prior && (Boolean(prior.paid_by_platform) !== paid || prior.engine !== event.engine || prior.kind !== event.kind || prior.model !== event.model))
       throw new SpendReservationError("This job's funding or engine changed. Request a new quote.", 409, true);
-    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
-    const billed = paid ? creditsAtTerms(cost, terms) : 0;
+    /* A new job is priced in the unit this workspace's record counts in, as meter() charges one first
+       metered at settlement; admitted, that is today's price. */
+    const unit = await workspaceUnitTx(tx, ws.id);
+    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model)
+      : { ...currentBillingTerms(event.kind, event.model), ...(unit != null ? { creditUsd: unit } : {}) };
+    /* A job approved at a higher price of a credit (one reserved at US$0.80 before the record moved to
+       US$0.10, lib/creditConversion.ts) keeps its terms and is counted in the ledger's unit: ×8. */
+    const restate = prior ? restateFactor(terms.creditUsd, unit) : 1;
+    const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
+    const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
     try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
@@ -428,12 +443,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + creditsAtTerms(cost, terms) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      if (shotCredits + charge(cost) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
     if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
-      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms) : cost + (baseline.get(event.id)?.cost ?? 0),
+      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) : cost + (baseline.get(event.id)?.cost ?? 0),
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
@@ -450,7 +465,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
       const job = cost + (baseline.get(event.id)?.cost ?? 0);
       const spending = creditsApply(ws)
-        ? (mine.reduce((sum, r) => sum + r.credits, 0) + creditsAtTerms(job, terms)) * creditUsd()
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + charge(job)) * creditUsd()
         : mine.reduce((sum, r) => sum + r.cost, 0) + job;
       if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
@@ -458,7 +473,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
     if (options.token?.capCredits != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
-      const needs = creditsAtTerms(cost + (baseline.get(event.id)?.cost ?? 0), terms);
+      const needs = charge(cost + (baseline.get(event.id)?.cost ?? 0));
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
     /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's

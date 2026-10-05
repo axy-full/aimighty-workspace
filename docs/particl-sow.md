@@ -60,7 +60,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 
 **Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit costs and the monthly cap. **Nowhere else, and never on anything that spends.**
 
-Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
+Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × creditUsd()`, US$0.10 a credit unless `CREDIT_USD` says otherwise) and only ever secondary.
 
 ---
 
