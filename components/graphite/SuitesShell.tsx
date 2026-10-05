@@ -58,10 +58,6 @@ import { AstraOutputs } from "./production/AstraOutputs";
 import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
-/* LOCAL WIRING (stream 1 owns this file): the phone behind the switch. Never committed by stream 10. */
-import { PhoneApp } from "./phone/PhoneApp";
-import { readPhone } from "./phone/phone-model";
-import { useNewInterface } from "@/lib/shell/new-interface";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
@@ -346,19 +342,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
   const stageProbe = `stage:${shell.page.id}`;
 
-  const newInterface = useNewInterface();
-  const phone = newInterface && (compact || readPhone(typeof window === "undefined" ? "" : window.location.search).framed);
-  const phonePage = shell.view === "workspace" ? { title: "Settings", body: <WorkspaceView account={account} /> } : null;
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
       <JobsTrayProvider>
-      <div className="gx" data-interface={newInterface ? "new" : "old"} data-phone={phone ? "" : undefined} data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
+      <div className="gx" data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        {phone ? <PhoneApp scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} page={phonePage} /> : <>
         <Header account={account} project={project?.name ?? null} bar={bar} />
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
@@ -445,7 +437,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
           </div>
         )}
-        </>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
         {shell.make ? (
@@ -498,8 +489,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             </div>
           </div>
         ) : null}
-        {phone ? null : <TabBar />}
-        {!phone && state.toast ? (() => {
+        <TabBar />
+        {state.toast ? (() => {
           /* A confirmation with somewhere to go carries its Open (lib/shell/confirmations); one the undo stack can take back
              carries its Undo, the phone's ⌘Z (lib/shell/state › pushUndo), while that step is still the one ⌘Z would undo.
              A mouse over it, or keyboard focus on it, holds it on screen. A tap does not: on a phone it sits over the page's

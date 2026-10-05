@@ -36,8 +36,7 @@ import type { GenPreset } from "./recipe";
  */
 export const SUITES_PATH = "/suites";
 /* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
-/* LOCAL WIRING (stream 1 owns this file): the phone's params, kept. Never committed by stream 10. */
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS, "screen", "device", "from", "run", "take"] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
