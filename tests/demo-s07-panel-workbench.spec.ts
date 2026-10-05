@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
+import { smallTargets } from "./phoneFloors";
 import { smallTextIn } from "./helpers/s07Floors";
 import { newProject } from "../lib/workbench/studio";
 
@@ -49,13 +50,12 @@ test("the panel over a page: the control room's places, Ask Atomik how, and Ask 
   const { project } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&atomik=1`);
   const panel = page.getByTestId("atomik-panel-global");
-  if (!wide(page)) {
-    await page.waitForTimeout(800);
-    await expect(panel, "phones answer with stream 10's sheet").toHaveCount(0);
-    await noSideways(page);
-    return;
-  }
   await expect(panel).toBeVisible();
+  if (!wide(page)) {
+    /* Until stream 10's phone sheet lands, the same panel fills the width under the header. */
+    const box = await panel.boundingBox();
+    expect(Math.round(box!.width)).toBe(page.viewportSize()!.width);
+  }
   await expect(panel.getByRole("navigation", { name: "Control room" }).getByRole("button")).toHaveText(["Approvals", "Activity", "Skills", "Memory"]);
   const hints = panel.getByTestId("atomik-hints");
   await expect(hints).toContainText("Ask Atomik how");
@@ -64,6 +64,7 @@ test("the panel over a page: the control room's places, Ask Atomik how, and Ask 
   await expect(panel.getByTestId("atomik-send")).toHaveText("Ask · free");
   await expect(panel.getByTestId("atomik-send")).toHaveAttribute("title", "How-to answers are free");
   expect(await smallTextIn(page, ".ak-panel"), "text under 12 px").toEqual([]);
+  if (!wide(page)) expect(await smallTargets(page, ".ak-panel"), "targets under 44 px").toEqual([]);
   await noSideways(page);
   await shot(page, "panel", info);
   /* Esc closes it, and the address forgets it. */

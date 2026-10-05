@@ -108,13 +108,14 @@ export function handAtomik(text: string, opts: { send?: boolean; approved?: numb
 /* ── ⌘K's first query (`&palette=1&q=…`, or handed by an offer) ───────────────────────────── */
 
 let paletteQuery: string | null = null;
+let addressRead: { words: string; at: number } | null = null;
 /** Words ⌘K opens with next time it opens (Atomik's "Open ⌘K" offer). */
 export function handPaletteQuery(query: string) {
   paletteQuery = query;
 }
 /**
- * What ⌘K opens with: words handed to it, else the address's `q` (a link such as `?palette=1&q=go%20to%20cast`),
- * which then leaves the address so a reload does not type it again. Once.
+ * What ⌘K opens with: words handed to it, else the address's `q` (a link such as `?find=1&q=go%20to%20cast`). Once;
+ * the caller then drops `q` from the address through the shell (shell.setScreenParams), so a reload does not type it again.
  */
 export function takePaletteQuery(): string {
   if (paletteQuery !== null) {
@@ -122,14 +123,13 @@ export function takePaletteQuery(): string {
     paletteQuery = null;
     return words;
   }
+  /* The address is read once a page load: Next may write its own copy of the address back, `q` and all. */
   if (typeof window === "undefined") return "";
-  const q = new URLSearchParams(window.location.search);
-  const words = q.get("q");
-  if (words === null) return "";
-  q.delete("q");
-  const text = q.toString();
-  window.history.replaceState(window.history.state, "", window.location.pathname + (text ? `?${text}` : "") + window.location.hash);
-  return words.slice(0, 500);
+  /* (A dev render may ask twice at once; the same answer.) */
+  if (addressRead) return Date.now() - addressRead.at < 1500 ? addressRead.words : "";
+  const words = new URLSearchParams(window.location.search).get("q");
+  addressRead = { words: words === null ? "" : words.slice(0, 500), at: Date.now() };
+  return addressRead.words;
 }
 
 /* ── Board places ("go to cast") ─────────────────────────────────────────────────────────────── */

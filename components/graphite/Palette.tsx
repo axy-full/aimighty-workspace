@@ -99,6 +99,13 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
   const { dispatch } = useWorkspace();
   const places = usePlaces();
   const [query, setQuery] = useState(takePaletteQuery);
+  /* The words came in the address (`&q=`): they leave it, so a reload does not type them again. */
+  const { live } = shell;
+  useEffect(() => {
+    /* After the shell's own landing write, which would put them back, and from the shell as it is by then. */
+    const later = setTimeout(() => live().setScreenParams({ q: null }, "replace"), 0);
+    return () => clearTimeout(later);
+  }, [live]);
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);

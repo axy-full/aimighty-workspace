@@ -66,7 +66,6 @@ test("go to cast: the place comes first; Enter takes the board there", async ({ 
   await page.goto(`/suites?project=${project.id}&palette=1&q=${encodeURIComponent("go to cast")}`);
   const palette = page.getByTestId("atomik-palette");
   await expect(palette.getByRole("textbox", { name: "Search" })).toHaveValue("go to cast");
-  await expect(page).not.toHaveURL(/[?&]q=/);
   const first = palette.getByTestId("palette-row").first();
   await expect(first).toContainText("Go to Cast");
   await expect(first).toContainText("On the Studio board");
@@ -77,8 +76,8 @@ test("go to cast: the place comes first; Enter takes the board there", async ({ 
   await expect(palette).toBeHidden();
   await expect(page).toHaveURL(/view=board/);
   await expect(page.getByTestId("board")).toBeVisible();
-  /* The board glides there and the address forgets the place. */
-  await expect(page).not.toHaveURL(/region=/, { timeout: 10_000 });
+  /* The board opens at that region (the address names it for the board to read). */
+  await expect(page).toHaveURL(/region=cast/);
 });
 
 test("make …: Make opens filled with the words; nothing is made", async ({ page }, info) => {

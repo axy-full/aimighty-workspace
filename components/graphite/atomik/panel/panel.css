@@ -84,7 +84,7 @@
 .ak-send { align-self: flex-end; height: 32px; font-size: var(--gx-fs-control); }
 .ak-mono { font-family: var(--gx-mono); }
 
-@media (pointer: coarse) {
-  .ak-btn, .ak-chip, .ak-link-btn, .ak-close, .ak-send { min-height: 44px; }
+@media (max-width: 767px), (pointer: coarse) {
+  .ak-btn, .ak-chip, .ak-link-btn, .ak-close, .ak-send { min-height: 44px; min-width: 44px; }
   .ak-hint { min-height: 44px; }
 }
