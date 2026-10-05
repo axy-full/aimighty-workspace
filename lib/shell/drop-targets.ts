@@ -1,8 +1,7 @@
 "use client";
 import { hasFiles, isDroppable, readDrop } from "../drop";
 /**
- * Drop targets outside the shell's own components (FINAL_SPEC §1 step 1:
- * Rig nodes). The legacy Rig list renders in both shells; the Suites shell
+ * Drop targets outside the shell's own components (Rig nodes). The legacy Rig list renders in both shells; the Suites shell
  * registers what a drop on a shot does, the old shell registers nothing and
  * its rows stay plain. A module-level slot keeps the legacy tree untouched.
  * The Rig's own library (Production › Rig) registers a second slot that wins

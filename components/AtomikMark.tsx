@@ -3,14 +3,14 @@
 import { RING_DOTS } from "@/lib/ring";
 
 /**
- * The atomik mark, from the pipeline handoff.
+ * The atomik mark.
  *
  * particl's trail, closed into a ring: eight dots on a 62-unit circle with
  * the head at the top, radii 2 → 16 running clockwise from the tail. The
  * earlier six-dot "compressed trail" is superseded — this is the shipped
  * mark, and it is the one the assets carry.
  *
- * Two rules the handoff is emphatic about. The wordmark sets the ring AS
+ * Two rules matter. The wordmark sets the ring AS
  * the letter o — `at◯mık` — so the standalone ring must never be placed
  * beside the wordmark, or the o appears twice. The standalone ring appears
  * only as a badge next to an all-caps mono label (`ATOMIK`, `FROM ATOMIK`)

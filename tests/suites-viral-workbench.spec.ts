@@ -6,7 +6,7 @@ import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 
 /**
- * Viral = Genjutsu (FINAL_SPEC §1 step 3) on Particl's API key, in the
+ * Viral = Genjutsu on Particl's API key, in the
  * browser against a local ENGINE_MOCK server, in a MANAGED workspace (on the
  * platform's keys, paying in credits) — the owner's and a member's. Nothing
  * here is route-mocked: the files are really uploaded into the project, the

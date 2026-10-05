@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 
 /**
- * "Send this asset into the current composer" (FINAL_SPEC §1 step 1). The
+ * "Send this asset into the current composer". The
  * Library's `+`, a right-click, or a drop can happen on any page; the
  * composer that takes references lives inside the Gen view. This is the
  * letterbox between them: senders post an asset id, the composer collects

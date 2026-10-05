@@ -1,5 +1,5 @@
 /**
- * The phone's Studio home (Particl Mobile.dc.html › STUDIO HOME): the eight
+ * The phone's Studio home: the eight
  * stages as cards with a live line each, the next shot to generate, and the
  * recent takes. Pure: every figure comes from the project and the library,
  * never from sample data.

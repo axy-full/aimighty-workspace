@@ -20,7 +20,7 @@ export function workflowGroups(groups: readonly SpecGroup[]): SpecGroup[] {
   return groups.map((group) => ({ ...group, cards: group.cards.filter(workflowCard) })).filter((group) => group.cards.length > 0);
 }
 
-/** The Studio stages this view owns: the ones FINAL_SPEC's six steps left on the spec-card template. */
+/** The Studio stages this view owns: the ones still on the spec-card template. */
 export const STAGE_VIEW_PAGES: readonly PageId[] = ["brief", "boards", "astra", "deliver"];
 const RUN_PAGES = new Set<PageId>(["agent", "runs", "recipes", "approvals"]);
 const DOT: Record<string, "done" | "progress" | "waiting" | "ready"> = { COMPLETE: "done", ACTIVE: "progress", WAITING: "waiting", READY: "ready" };

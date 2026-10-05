@@ -250,8 +250,9 @@ export const ELEVENLABS_RATES = {
   dialogue: { modelId: "eleven_v3", creditsPerChar: 1, maxChars: 2000, maxVoices: 10 },
   /** POST /v1/speech-to-speech/{voice_id} — model eleven_multilingual_sts_v2,
    *  $0.12 per minute of input audio, whole minutes rounded up. Wired in
-   *  PR C2 (`lib/elevenlabs.ts` speechToSpeech); the first live call is a
-   *  qualification under a stated ceiling (docs/four-suites-v2-plan.md). */
+   *  PR C2 (`lib/elevenlabs.ts` speechToSpeech) from the vendor's documentation
+   *  with no paid call yet; the first live call is a one-minute qualification
+   *  under a stated ceiling (docs/sound-mix.md, "Change voice and Dub"). */
   voiceChange: { modelId: "eleven_multilingual_sts_v2", usdPerMinute: 0.12 },
   /** POST /v1/dubbing — an asynchronous project (status and download calls)
    *  that charges ONE target language up front, per whole minute of source:

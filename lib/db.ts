@@ -973,7 +973,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.
                          `category TEXT NOT NULL DEFAULT ''`,
-        /* The pipeline handoff: a production has a kind ("30s car spot"), a
+        /* A production has a kind ("30s car spot"), a
            runtime target in seconds, a cap the producer owns, and a stage.
            The cap is what the header reads `$57.20 OF $250 CAP` against. */
         `kind TEXT`,

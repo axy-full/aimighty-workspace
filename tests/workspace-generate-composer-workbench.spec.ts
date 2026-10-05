@@ -19,7 +19,7 @@ import { displayModelName } from "../lib/models";
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-/* The named image default (FINAL_SPEC §3: GPT Image 2.5), on the OpenAI API. */
+/* The named image default (GPT Image 2.5), on the OpenAI API. */
 const IMAGE_ENGINE = "gpt-image-2.5-flare";
 
 async function account(page: Page) {

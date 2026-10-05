@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Welcome + Sign in, one screen — from the pipeline handoff.
+ * Welcome + Sign in, one screen.
  *
  * The left half says what particl is, in a lockup and one sentence. The
  * right half is the door: email, password, sign in, and two smaller ways

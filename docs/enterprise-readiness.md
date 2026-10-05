@@ -4,7 +4,7 @@ Updated 15 September 2026. Scope: independent production-house workspaces, prese
 
 ## Released source and product evidence
 
-Current released main: `d4a68a729c546638ad5cb3bf2f340ce60f5c0c04` (PR192, 18 September 2026). Its production deployment is `dpl_3JYXuZJg5ut6RkuRGjwVfA9Sdufv`, serving www.particl.app with mock:false; the post-release checks are recorded in `docs/handoff/status.md`. The paragraph that follows describes the earlier `444ecc66` release and is kept as history.
+Current released main: `d4a68a729c546638ad5cb3bf2f340ce60f5c0c04` (PR192, 18 September 2026). Its production deployment is `dpl_3JYXuZJg5ut6RkuRGjwVfA9Sdufv`, serving www.particl.app with mock:false. The paragraph that follows describes the earlier `444ecc66` release and is kept as history.
 
 Earlier released main: `444ecc66f6d47b68ffe7a8fca5a96f85c95c6607`. Its production deployment was `dpl_EPRpQ2RquwBDPvwbCnRXMyeou21Z`, serving www.particl.app with mock:false. The internal production rehearsal returned 200 for health, login, identity, account security, workspace policy, People, the account-security page and edit history. Workspace policy took 155 ms in this individual observation; no production factor, policy, generation or email changed. Public health reported database:ok/storage:ok, and the inspected ten-minute runtime error window was empty. Those checks demonstrate availability of the inspected paths, not universal reliability.
 
