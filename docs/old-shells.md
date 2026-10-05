@@ -64,6 +64,16 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 | `/report` | `app/(app)/report/page.tsx` | none yet — public form; needs a home outside the old shell layout | No | `mobile` | — |
 | `/policy`, `/privacy`, `/terms` | `app/(app)/<route>/page.tsx` → `components/PolicyPage.tsx` | none yet — public pages; need a home outside the old shell layout | No | `desktop`, `mobile`; `/terms` also `entry-points-audit-workbench` | — |
 
+## Suites screens behind the new-interface switch
+
+Old `/suites` screens that customers still see while the switch is off. Each is deleted in the switch-flip PR, not before.
+
+| Old screen | Files | Replacement (switch on) | Deleted |
+|---|---|---|---|
+| Workspace › People, Security (`?view=workspace&tab=people`, `tab=security`) | `components/graphite/WorkspaceView.tsx` (`People`, `Security`) | Settings › Team `?view=workspace&tab=team` (`&open=security`), `components/graphite/settings/team/` | switch-flip PR |
+| Workspace › Plans & credits, Usage (`tab=credits`, `tab=usage`) | `components/graphite/WorkspaceView.tsx` (`Plans`, `Usage`) | Settings › Plan & credits `?view=workspace&tab=credits` (`&open=usage`), `components/graphite/settings/credits/` | switch-flip PR |
+| Workspace › General, Engines, Dashboard (`tab=general`, `tab=engines`, `tab=dashboard`) | `components/graphite/WorkspaceView.tsx`, `ManagementDashboard.tsx`, `ConnectRow.tsx` | Settings › Spending rules and Advanced (later PRs); Dashboard → Activity `?suite=atomik&page=runs`. Until then Settings shows Workspace's own tab for these ids | switch-flip PR |
+
 ## Notes that change what D1 can delete
 
 - `/suites` still imports old-shell code: `components/suites/AtomikSuite.tsx`, `SubatomikWorkspace.tsx`, `MoleculrWorkspace.tsx`, `components/workbench/MovieExport.tsx`, `ProjectLibraryPage.tsx` and `components/management/ManagementPage.tsx`. Retiring a route does not make these deletable.

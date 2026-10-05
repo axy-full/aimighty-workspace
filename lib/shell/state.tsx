@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
 import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { SETTINGS_OPEN_PARAM, SETTINGS_SCREEN, applyRows, isSettingsSection, readSettingsOpen, type SettingsSectionId } from "./settings";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
@@ -36,7 +37,7 @@ import type { GenPreset } from "./recipe";
  */
 export const SUITES_PATH = "/suites";
 /* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", SETTINGS_OPEN_PARAM, MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -48,7 +49,9 @@ export type Shell = {
   view: ShellView;
   suite: ShellSuite;
   page: ShellPage;
-  wsTab: WorkspaceTabId;
+  wsTab: WorkspaceTabId | SettingsSectionId;
+  /** LOCAL WIRING (s09): Settings' `open` fold. */
+  wsOpen: string | null;
   crewPage: CrewPageId;
   wide: boolean;
   libTab: LibTab;
@@ -81,7 +84,7 @@ export type Shell = {
   /** Gen is Make's panel now: kept for the header, which calls it until it calls openMake. It opens Make. */
   goGen: () => void;
   goCrew: (page?: CrewPageId) => void;
-  goWorkspace: (tab?: WorkspaceTabId) => void;
+  goWorkspace: (tab?: WorkspaceTabId | SettingsSectionId, opts?: { open?: string }) => void;
   setLibTab: (tab: LibTab) => void;
   toggleLibrary: () => void;
   toggleInspector: () => void;
@@ -122,7 +125,7 @@ export function useShell(): Shell {
   return value;
 }
 
-type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; make: MakeTab | null; asset: string | null };
+type Params = { view: ShellView; tab: WorkspaceTabId | SettingsSectionId; open?: string | null; sp: string | null; cp: CrewPageId; make: MakeTab | null; asset: string | null };
 /** The old Gen page (`view=gen`) and Viral's two tools read as Make open over a page (lib/shell/make.ts › fromMakeLink). */
 function readParams(search: string, last: ComposerType = "video"): Params {
   const q = new URLSearchParams(fromMakeLink(search) ?? search);
@@ -131,7 +134,8 @@ function readParams(search: string, last: ComposerType = "video"): Params {
   const make = readMake(q);
   return {
     view: view === "workspace" || view === "crew" ? view : "suite",
-    tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : "general",
+    tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : isSettingsSection(tab) ? tab : "general",
+    open: view === "workspace" ? readSettingsOpen(q) : null,
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
     make: make === "last" ? last : make,
@@ -142,6 +146,7 @@ function writeParams(params: Params, mode: "push" | "replace") {
   const q = new URLSearchParams(window.location.search);
   if (params.view === "suite") q.delete("view"); else q.set("view", params.view);
   if (params.view === "workspace") q.set("tab", params.tab); else q.delete("tab");
+  if (params.view === "workspace" && params.open) q.set(SETTINGS_OPEN_PARAM, params.open); else q.delete(SETTINGS_OPEN_PARAM);
   if (params.sp) q.set("sp", params.sp); else q.delete("sp");
   if (params.view === "crew") q.set("cp", params.cp); else q.delete("cp");
   if (params.make) q.set(MAKE_PARAM, params.make); else q.delete(MAKE_PARAM);
@@ -295,6 +300,13 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => {
     if (landed.current) return;
     landed.current = true;
+    /* LOCAL WIRING (s09, never committed): with the switch on, the design's `ws=<section>` and Settings' rows (stream 1 does this on the server). */
+    if (document.cookie.split(/;\s*/).includes("s09_new_interface=1")) {
+      const q0 = new URLSearchParams(window.location.search);
+      if (q0.get("view") === "workspace" && isSettingsSection(q0.get("ws")) && !q0.has("asset")) { q0.set("tab", q0.get("ws")!); q0.delete("ws"); }
+      const routed = applyRows("?" + q0.toString(), SETTINGS_SCREEN.rows) ?? "?" + q0.toString();
+      if (routed !== window.location.search && routed !== "?" + new URLSearchParams(window.location.search).toString()) { window.location.replace(window.location.pathname + routed); return; }
+    }
     /* An old link in the design file's spelling (lib/shell/ia.ts › normalize): the server already rewrote it on the
        way in, so this only meets one the client reached by itself. The address names the app's form from here on;
        the providers above were handed that form too (components/graphite/SuitesApp.tsx). */
@@ -344,7 +356,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const value = useMemo<Shell>(() => ({
     /* Where a page has no tools of its own (Make open over it, the Business and Viral composers, the phone's
        Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
+    view: params.view, suite, page, wsTab: params.tab, wsOpen: params.open ?? null, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
     goProject,
@@ -355,7 +367,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     setMake: (tab) => { if (params.make && params.make !== tab) apply({ ...params, make: tab }, "replace"); },
     goGen: () => openMake(),
     goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp, make: stayMake(params.make) }, "push"); },
-    goWorkspace: (tab) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "workspace", tab: tab ?? params.tab, make: stayMake(params.make) }, "push"); },
+    goWorkspace: (tab, opts) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "workspace", tab: tab ?? params.tab, open: opts?.open ?? null, make: stayMake(params.make) }, "push"); },
     setLibTab,
     toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
     toggleInspector: () => {

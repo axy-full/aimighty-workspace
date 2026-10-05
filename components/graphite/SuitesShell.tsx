@@ -59,6 +59,8 @@ import { RigLibrary } from "./production/RigExtras";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
+import { SettingsView } from "./settings/SettingsView";
+import { useNewInterface } from "@/lib/shell/new-interface";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
 import { FaultAside, PanelFault } from "./PanelFault";
@@ -79,6 +81,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const shell = useShell();
   const { state, dispatch, selectProject, toast } = ws;
   const session = useSession();
+  /* LOCAL WIRING (s09, never committed): stream 1 mounts Settings from the screen registry. */
+  const freshUi = useNewInterface();
   const account = useAccount(initialAccount);
   /* A link to a take holds project resolution until it can open in a project of this person's (lib/shell/use-asset-link.ts). */
   const scopedFetch = useScopedFetch();
@@ -362,7 +366,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
           </Boundary></> : shell.view === "workspace" ? (
           <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
-            <WorkspaceView account={account} />
+            {freshUi ? <SettingsView account={account} section={shell.wsTab} open={shell.wsOpen} /> : <WorkspaceView account={account} />}
           </Boundary>
         ) : (
           <div className="gx-body" style={{ gridTemplateColumns: columns, ...(aspect ? { "--tile-aspect": aspect } : {}) } as React.CSSProperties} data-testid="shell-body" data-columns={columns}>

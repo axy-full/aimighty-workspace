@@ -28,6 +28,8 @@ function initialsOf(name: string) {
  * On a phone (components/graphite/phone.css) the context badge is a button: the segment and Search open under it,
  * one tap away. `bar` is the top bar's second row there — the project switcher beside the page strip.
  */
+/* LOCAL WIRING (s09): the address as the page landed, before the shell rewrites it. */
+const LANDED_SETTINGS = { pending: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("settings") === "1" };
 export function Header({ account, project = null, bar = null }: { account: WorkspaceAccount | null; project?: string | null; bar?: ReactNode }) {
   const shell = useShell();
   const { rates, name, requestScope } = useSession();
@@ -58,6 +60,18 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const menu = openAt === here;
   const setMenu = (open: boolean) => setOpenAt(open ? here : null);
   const [settings, setSettings] = useState(false);
+  /* LOCAL WIRING (s09, never committed): `settings=1` opens the menu once on landing, then leaves the address (stream 1). */
+  useEffect(() => {
+    if (!LANDED_SETTINGS.pending) return;
+    const t = setTimeout(() => {
+      if (!LANDED_SETTINGS.pending) return;
+      LANDED_SETTINGS.pending = false;
+      const q = new URLSearchParams(window.location.search);
+      if (q.has("settings")) { q.delete("settings"); window.history.replaceState(null, "", window.location.pathname + (q.toString() ? `?${q}` : "") + window.location.hash); }
+      setSettings(true);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const avatar = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLElement>(null);
   useEffect(() => {
