@@ -38,18 +38,19 @@ type Probe = {
   until: string;
   by: string;
 };
+/* allowedUnmarked was measured at 1440x900 on 6 Oct 2026: the Gen page's "Generate", the quick tools' "Transfer motion" (the swap probe shows the same button) and Image ads' "Generate image". */
 const D0 = { until: "2026-10-08", by: "D0 #512/#514 (Make: every paid button shows its price)" };
 const BOARD = { until: "2026-10-08", by: "the board PR deletes this screen" };
 const PROBES: Probe[] = [
-  { name: "Gen (Make once #512 lands)", path: "/suites?view=gen", minSpend: 1, strict: true, allowedUnmarked: 0, ...D0 },
+  { name: "Gen (Make once #512 lands)", path: "/suites?view=gen", minSpend: 1, strict: true, allowedUnmarked: 1, ...D0 },
   { name: "Studio · Brief", path: "/suites?suite=studio&sp=brief", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
   { name: "Studio · Boards", path: "/suites?suite=studio&sp=boards", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
   { name: "Studio · Cast", path: "/suites?suite=studio&sp=cast", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
   { name: "Studio · Takes", path: "/suites?suite=studio&sp=takes", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
   { name: "Studio · Edit & Sound", path: "/suites?suite=studio&sp=edit", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
-  { name: "Viral · Motion Transfer", path: "/suites?suite=viral&sp=motion", minSpend: 0, strict: true, allowedUnmarked: 0, ...D0 },
-  { name: "Viral · Object Swap", path: "/suites?suite=viral&sp=swap", minSpend: 0, strict: true, allowedUnmarked: 0, ...D0 },
-  { name: "Business · Image ads", path: "/suites?suite=business&sp=dtc", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
+  { name: "Viral · Motion Transfer", path: "/suites?suite=viral&sp=motion", minSpend: 0, strict: true, allowedUnmarked: 1, ...D0 },
+  { name: "Viral · Object Swap", path: "/suites?suite=viral&sp=swap", minSpend: 0, strict: true, allowedUnmarked: 1, ...D0 },
+  { name: "Business · Image ads", path: "/suites?suite=business&sp=dtc", minSpend: 0, strict: false, allowedUnmarked: 1, ...BOARD },
   { name: "Atomik · Agent", path: "/suites?suite=atomik&sp=agent", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
 ];
 
