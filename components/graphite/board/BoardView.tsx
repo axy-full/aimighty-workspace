@@ -5,6 +5,7 @@ import { useRig } from "@/components/workspace/rig/RigProvider";
 import { markBoardOpen } from "@/lib/board/active";
 import { GLIDE_MS, glideEase } from "@/lib/board/ease";
 import { frameDrawer, frameRegion } from "@/lib/board/frames";
+import { adsSocialRegion } from "@/lib/shell/ads-social";
 import { DOCK_WIDTH, MAKE_WIDTH } from "@/lib/board/geometry";
 import { boardKindOf } from "@/lib/board/kind";
 import { useOnline } from "@/lib/board/online";
@@ -36,7 +37,7 @@ import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
 import { HoverCluster } from "./HoverCluster";
 import { BoardInspector } from "./inspector";
-import { BOARD_MODULES } from "./kinds";
+import { BOARD_MODULES, useKindExtra } from "./kinds";
 import { placeBoard } from "./layout-cards";
 import { Rail, type BoardDrawer } from "./Rail";
 import { BoardReview } from "./review";
@@ -117,9 +118,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const polled = usePlanRun({ scope: rig.scope, productionId: project?.productionProjectId ?? null, draftId: project?.id ?? null, joined: rig.team.mode !== "off", enabled: !agentSeam.run });
   const agent = agentSeam.run ?? polled;
 
+  /* An Ads or Social board's own session data (stream 11): pending site reads, the agent's runs. */
+  const extra = useKindExtra(kind, project);
   const src = useMemo<BoardSource | null>(() => (project ? {
-    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent, now,
-  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, agent, now]);
+    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, extra, agent, now,
+  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, extra, agent, now]);
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
@@ -184,13 +187,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   useEffect(() => {
     if (!ready || !projectId || opened.current === projectId || !placed.bounds) return;
     opened.current = projectId;
-    const linked = (region && board.rail.some((entry) => entry.id === region) ? region as RegionId : null) ?? frameRegion(frame);
+    const kindRegion = adsSocialRegion(kind, frame, shell.params.card);
+    const linked = (region && board.rail.some((entry) => entry.id === region) ? region as RegionId : null) ?? frameRegion(frame) ?? (kindRegion && board.rail.some((entry) => entry.id === kindRegion) ? kindRegion as RegionId : null);
     const saved = linked ? null : readBoardView(scope, projectId);
     const needs = board.rail.find((entry) => status.get(entry.id)?.state === "needs" && placed.regions.has(entry.id));
     const target = linked ? placed.regions.get(linked) ?? placed.slots.get(linked) : needs ? placed.regions.get(needs.id) : null;
     const first = saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, 1);
     void flow.setViewport(first).then(() => measureInView(first));
-  }, [board.rail, flow, frame, measureInView, placed.arranged, placed.bounds, placed.regions, placed.slots, projectId, ready, region, scope, status, viewportFor]);
+  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.regions, placed.slots, projectId, ready, region, scope, shell.params.card, status, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);
@@ -517,10 +521,12 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
         </div>
         {drawer === "library" ? <LibraryDrawer items={items} project={project} onClose={() => setDrawer(null)} />
+          : drawer === "history" && board.HistoryDrawer ? <board.HistoryDrawer ctx={ctx} items={items} onClose={() => setDrawer(null)} />
           : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} /> : null}
         <BoardAgentDock ctx={ctx} open={dockOpen} onOpenChange={setDockOpen} />
         <BoardInspector ctx={ctx} card={primary} def={primary ? registry.defs.get(primary.kind) ?? null : null} right={dockWidth} onClose={() => select(null)} />
         <BoardReview ctx={ctx} />
+        {board.Overlay ? <board.Overlay ctx={ctx} /> : null}
       </div>
     </BoardInternalsProvider>
   );

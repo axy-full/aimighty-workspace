@@ -77,6 +77,8 @@ export type BoardSource = {
   library: readonly LibraryEntry[];
   /** Locked element ids (useRig().masters). */
   masters: ReadonlySet<string>;
+  /** A board kind's own session data for its cards (stream 11: Ads' pending reads and agent runs), or null. Plain data. */
+  extra?: unknown;
   /** Atomik's run on this production; null until stream 7 provides it. */
   agent: BoardAgentView | null;
   now: number;

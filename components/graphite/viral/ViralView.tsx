@@ -59,6 +59,21 @@ const TOOL = {
 } as const;
 export const toolName = (page: ViralPage) => TOOL[page].name;
 
+/**
+ * The Social board's source video, handed to a quick tool (stream 11): the same letter Recreate leaves (session storage, then
+ * a window event for a tool already open), and Make opens on the tool. It prices again in Make before anything runs.
+ */
+export function sendViralSource(page: ViralPage, source: ViralMedia, openMake: (tab: ViralPage) => void) {
+  try { sessionStorage.setItem(PRESET_KEY, JSON.stringify({ ...INITIAL_VIRAL, source, page })); } catch { /* the tool starts empty */ }
+  openMake(page);
+  window.dispatchEvent(new Event(PRESET_EVENT));
+}
+
+/** Today's History view, for the Social board's History drawer (stream 11): every Motion transfer and Object swap take in the project. */
+export function ViralHistory({ scope, project, items }: { scope: string; project: Project | null; items: LibraryEntry[] }) {
+  return <HistoryView scope={scope} project={project} items={items} />;
+}
+
 /** Viral's page: History. Motion Transfer and Object Swap are ViralTool, in the Make panel. */
 export function ViralView({ scope, project, items }: { scope: string; project: Project | null; items: LibraryEntry[] }) {
   return <HistoryView scope={scope} project={project} items={items} />;

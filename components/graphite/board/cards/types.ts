@@ -4,6 +4,7 @@ import type { ContainerSpec } from "@/lib/board/layout";
 import type { RailEntry } from "@/lib/board/regions";
 import type { BoardCard, BoardKind, BoardSource, CardSize, RegionId } from "@/lib/board/types";
 import type { ComposerType } from "@/lib/workspace/composer";
+import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 
 /*
@@ -94,4 +95,8 @@ export type BoardKindModule = {
   sets: readonly CardSet[];
   /** The empty board; absent: the canvas shows its dots and the rail. */
   Empty?: ComponentType<{ ctx: BoardCtx }>;
+  /** Panels and full-screen screens this kind draws over the board (Ads: the edit panel and the poster Designer). */
+  Overlay?: ComponentType<{ ctx: BoardCtx }>;
+  /** This kind's History drawer, in place of the board's change log (Social: today's History view). */
+  HistoryDrawer?: ComponentType<{ ctx: BoardCtx; items: readonly LibraryEntry[]; onClose: () => void }>;
 };
