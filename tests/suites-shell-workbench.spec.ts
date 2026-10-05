@@ -220,7 +220,7 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   expect(errors).toEqual([]);
 });
 
-test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
+test("⌘K finds a board region, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page);
   await openSuitesMenu(page);
@@ -228,7 +228,7 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  await expect(dialog.getByRole("option").first()).toContainText("10 Deliver");
+  await expect(dialog.getByRole("option").first()).toContainText("Deliver");
   await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);
