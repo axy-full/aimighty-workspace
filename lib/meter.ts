@@ -5,7 +5,7 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import type { Span } from "./concurrency";
 import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
-import { LedgerUnitPausedError, ledgerOpenTx, ledgerUnitTx, restateFactor } from "./ledgerUnit";
+import { LedgerUnitPausedError, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, type FailureKind, type ProviderOutcome } from "./providerOutcome";
 
@@ -129,9 +129,9 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         // A new paid start while the record counts in another price of a credit (lib/ledgerUnit.ts) does not start.
         if (!row && e.status === "running" && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx)))
           throw new LedgerUnitPausedError();
-        const ledger = await ledgerUnitTx(tx);
-        /* A job first metered now is charged in the unit the record counts in, which is today's price
-           except in the minutes between a price change and its conversion (lib/ledgerUnit.ts). */
+        const ledger = await workspaceUnitTx(tx, workspaceId);
+        /* A job first metered now is charged in the unit this workspace's record counts in, which is
+           today's price except in the minutes between a price change and its conversion (lib/ledgerUnit.ts). */
         const terms = row ? recordedBillingTerms(row, String(row.kind), String(row.model))
           : { ...currentBillingTerms(e.kind, e.model), ...(ledger != null ? { creditUsd: ledger } : {}) };
         /* Settled at the price it was approved at, counted in the ledger's unit: a US$0.80 job that

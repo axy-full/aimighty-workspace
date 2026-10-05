@@ -3,8 +3,8 @@ import { billingReady, billingTransaction, syncBillingLedger } from "./billingLe
 import { platformDb, platformReady, getWorkspace } from "./platform";
 import { creditRateUsd, creditUsd } from "./creditTerms";
 import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
-import { ledgerUnitTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
-import { convertTenantFigures, type TenantFigure } from "./creditConversionTenant";
+import { ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
+import { convertTenantFigures, type CapChoice, type TenantFigure } from "./creditConversionTenant";
 
 /**
  * Restating the credit record in a new price of a credit.
@@ -83,7 +83,10 @@ export type BalanceSnapshot = {
   lots: { id: string; kind: string; remaining: number; expiresAt: number | null }[];
 };
 
-export type ConversionStatus = "planned" | "converted" | "reversed" | "already" | "refused" | "house" | "nothing" | "needs-decision";
+export type ConversionStatus = "planned" | "converted" | "reversed" | "already" | "refused" | "house" | "nothing" | "needs-decision" | "new";
+/** The only real run there is (owner, 5 October 2026). */
+export const REAL_FROM_USD = 0.80;
+export const REAL_TO_USD = 0.10;
 /** What the owner decided for a workspace whose balance the conversion would lower: write the shortfall off, or apply it. */
 export type ShortfallDecision = "goodwill" | "apply";
 /** Marked, never excluded: so the owner can read the dry run. */
@@ -117,7 +120,9 @@ export type CreditConversion = {
   decision?: ShortfallDecision | null;
   goodwillGrantId?: string | null;
   /** Pack requests still open at the old price: declined, not converted. */
-  declinedTopups?: { id: string; credits: number; usd: number }[];
+  declinedTopups?: DeclinedTopup[];
+  /** A reversal refused: what was written since the conversion. */
+  activity?: { what: string; id: string; status: string; createdAt: number }[];
   reason?: string;
 };
 
@@ -164,6 +169,9 @@ export async function conversionsReady(): Promise<void> {
       `CREATE TABLE IF NOT EXISTS ${CONVERSION_ROWS_TABLE}(conversion_id TEXT NOT NULL, tbl TEXT NOT NULL, row_key TEXT NOT NULL,
         factor REAL NOT NULL, PRIMARY KEY(conversion_id, tbl, row_key))`,
     ], "write");
+    const have = new Set((await platformDb().execute(`PRAGMA table_info(${CONVERSIONS_TABLE})`)).rows.map((r) => String(r.name)));
+    for (const col of ["end_at INTEGER", "caps_json TEXT"])
+      if (!have.has(col.split(" ")[0])) await platformDb().execute(`ALTER TABLE ${CONVERSIONS_TABLE} ADD COLUMN ${col}`);
   })().catch((error) => { tableReady = undefined; throw error; });
   await tableReady;
 }
@@ -209,26 +217,43 @@ async function snapshotTx(tx: Transaction, workspaceId: string, at: number, unit
   };
 }
 
-type Plan = { mode: ConversionMode; k: number; fromUsd: number; cutoverAt: number | null };
+/** The old price's window is [cutoverAt, endAt): rows written in it are ×k; before and after it, ×1. */
+type Plan = { mode: ConversionMode; k: number; fromUsd: number; cutoverAt: number | null; endAt: number };
+const inWindow = (p: Plan, ts: unknown): boolean => {
+  const t = Number(ts);
+  return Number.isFinite(t) && t < p.endAt && (p.mode === "uniform" || t >= (p.cutoverAt ?? Infinity));
+};
 type RowFactor = { tbl: string; key: string; factor: number };
 
 /** Which platform rows of a workspace change, and by how much. */
-type Factors = { rows: RowFactor[]; shortfall: number; declines: { id: string; credits: number; usd: number }[] };
-async function factorsTx(tx: Transaction, workspaceId: string, p: Plan): Promise<Factors> {
-  const byTime = (ts: unknown) => (p.mode === "uniform" ? p.k : Number(ts) >= (p.cutoverAt ?? Infinity) ? p.k : 1);
+/** An open pack request at the old price: declined by the real run, listed so the owner can tell whoever asked. */
+export type DeclinedTopup = {
+  id: string; pack: string; credits: number; usd: number; requestedAt: number;
+  requesterName: string | null; requesterEmail: string | null;
+};
+type Factors = { rows: RowFactor[]; shortfall: number; declines: DeclinedTopup[] };
+async function factorsTx(tx: Transaction, workspaceId: string, p: Plan, at: number): Promise<Factors> {
+  const byTime = (ts: unknown) => (inWindow(p, ts) ? p.k : 1);
   const out: RowFactor[] = [];
   const add = (tbl: string, key: string, factor: number) => { if (factor !== 1) out.push({ tbl, key, factor }); };
   const rows = async (sql: string) => (await tx.execute({ sql, args: [workspaceId] })).rows;
 
   const requests = new Map<string, number>();
   const declines: Factors["declines"] = [];
-  for (const r of await rows(`SELECT id,credits,bonus_credits,usd,status FROM topup_requests WHERE workspace_id=?`)) {
+  for (const r of await rows(`SELECT t.id,t.credits,t.bonus_credits,t.usd,t.status,t.label,t.pack_id,t.created_at,a.name AS requester_name,a.email AS requester_email
+      FROM topup_requests t LEFT JOIN accounts a ON a.id=t.requested_by WHERE t.workspace_id=?`)) {
     const credits = Number(r.credits), usd = Number(r.usd);
     // A pack request carries its own unit: the dollars it was priced at for its credits.
-    const f = p.mode === "uniform" ? p.k : credits > 0 && Math.abs(usd - credits * p.fromUsd) < 0.005 ? p.k : 1;
+    const f = p.mode === "uniform" ? byTime(r.created_at) : credits > 0 && Math.abs(usd - credits * p.fromUsd) < 0.005 ? p.k : 1;
     requests.set(String(r.id), f);
     /* Still open at the old price: no money was taken at it, so it is declined, not converted (owner, 5 October 2026). */
-    if (r.status === "requested" && f !== 1) { declines.push({ id: String(r.id), credits: credits + Number(r.bonus_credits ?? 0), usd }); continue; }
+    if (r.status === "requested" && f !== 1) {
+      declines.push({
+        id: String(r.id), pack: String(r.label ?? r.pack_id), credits: credits + Number(r.bonus_credits ?? 0), usd, requestedAt: Number(r.created_at),
+        requesterName: r.requester_name == null ? null : String(r.requester_name), requesterEmail: r.requester_email == null ? null : String(r.requester_email),
+      });
+      continue;
+    }
     add("topup_requests", String(r.id), f);
   }
   const lotFactor = new Map<string, number>();
@@ -242,9 +267,9 @@ async function factorsTx(tx: Transaction, workspaceId: string, p: Plan): Promise
   for (const r of await rows(`SELECT id,created_at FROM credit_grants WHERE workspace_id=?`))
     add("credit_grants", String(r.id), lotFactor.get(String(r.id)) ?? byTime(r.created_at));
   const eventFactor = new Map<string, number>();
-  for (const r of await rows(`SELECT id,credit_usd FROM meter_events WHERE workspace_id=?`)) {
+  for (const r of await rows(`SELECT id,credit_usd,created_at FROM meter_events WHERE workspace_id=?`)) {
     const unit = Number(r.credit_usd) > 0 ? Number(r.credit_usd) : 0.10;
-    const f = p.mode === "uniform" ? p.k : samePrice(unit, p.fromUsd) ? p.k : 1;
+    const f = p.mode === "uniform" ? byTime(r.created_at) : samePrice(unit, p.fromUsd) ? p.k : 1;
     eventFactor.set(String(r.id), f);
     add("meter_events", String(r.id), f);
   }
@@ -254,13 +279,27 @@ async function factorsTx(tx: Transaction, workspaceId: string, p: Plan): Promise
     debitFactor.set(String(r.event_id), f);
     add("billing_debits", String(r.event_id), f);
   }
-  /* A job at the new-old price drawing a lot written in the old-old one (a US$0.80 job spending credits
-     given at US$0.10) costs more of that lot once both are in one unit: that is the shortfall. */
-  let shortfall = 0;
+  /* A job at the old price drawing a lot written at the new one (a US$0.80 job spending credits given
+     at US$0.10) costs more of that lot once both are in one unit: that is the shortfall. It is read
+     per lot, as the balance reads a lot (an expired lot counts nothing unless overdrawn), so credits
+     that had already lapsed are never revived: what each lot was worth, restated, against what it
+     is worth after. */
+  const drawnDelta = new Map<string, number>();
   for (const r of await rows(`SELECT event_id,lot_id,credits FROM billing_allocations WHERE workspace_id=?`)) {
     const f = debitFactor.get(String(r.event_id)) ?? 1;
-    shortfall += Number(r.credits) * Math.max(0, f - (lotFactor.get(String(r.lot_id)) ?? 1));
+    drawnDelta.set(String(r.lot_id), (drawnDelta.get(String(r.lot_id)) ?? 0) + Number(r.credits) * (f - 1));
     add("billing_allocations", JSON.stringify([String(r.event_id), String(r.lot_id)]), f);
+  }
+  const counted = (credits: number, drawn: number, expiresAt: number | null) =>
+    credits < drawn ? credits - drawn : expiresAt == null || expiresAt > at ? credits - drawn : 0;
+  let shortfall = 0;
+  for (const r of await rows(`SELECT id,credits,drawn,expires_at FROM billing_lots WHERE workspace_id=?`)) {
+    const lf = lotFactor.get(String(r.id)) ?? 1;
+    const exp = r.expires_at == null ? null : Number(r.expires_at);
+    const c = Number(r.credits), d = Number(r.drawn);
+    const expected = lf * counted(c, d, exp);
+    const actual = counted(c * lf, d + (drawnDelta.get(String(r.id)) ?? 0), exp);
+    shortfall += Math.max(0, expected - actual);
   }
   for (const r of await rows(`SELECT id,source_id,created_at FROM billing_refunds WHERE workspace_id=?`))
     add("billing_refunds", String(r.id), lotFactor.get(String(r.source_id)) ?? byTime(r.created_at));
@@ -343,7 +382,15 @@ async function lastRowTx(tx: Pick<Transaction, "execute">, workspaceId: string):
 }
 
 function tenantFactorAt(p: Plan): (ts: number | null) => number {
-  return (ts) => (p.mode === "uniform" ? p.k : ts != null && ts >= (p.cutoverAt ?? Infinity) ? p.k : 1);
+  return (ts) => (ts != null && inWindow(p, ts) ? p.k : 1);
+}
+
+/** The owner's cap choices for one workspace, keyed as the workspace's own module reads them. */
+function capsFor(workspaceId: string, caps: Record<string, CapChoice> | undefined): Record<string, CapChoice> {
+  const out: Record<string, CapChoice> = {};
+  for (const [key, choice] of Object.entries(caps ?? {}))
+    if (key.startsWith(`${workspaceId}/`)) out[key.slice(workspaceId.length + 1)] = choice;
+  return out;
 }
 
 /** Finish the workspace-database half of a recorded row, once. */
@@ -352,9 +399,14 @@ async function finishTenant(workspaceId: string, row: Record<string, unknown>, a
   const ws = await getWorkspace(workspaceId);
   /* A purged workspace has no database left to restate. */
   const purged = (await platformDb().execute({ sql: `SELECT purged_at FROM workspaces WHERE id=?`, args: [workspaceId] })).rows[0]?.purged_at != null;
-  const plan: Plan = { mode: (row.mode as ConversionMode) ?? "uniform", k: Number(row.from_usd) / Number(row.to_usd), fromUsd: Number(row.from_usd), cutoverAt: row.cutover_at == null ? null : Number(row.cutover_at) };
+  const k = Math.round(Number(row.from_usd) / Number(row.to_usd));
+  const plan: Plan = { mode: (row.mode as ConversionMode) ?? "per-row", k, fromUsd: Number(row.from_usd),
+    cutoverAt: row.cutover_at == null ? null : Number(row.cutover_at), endAt: row.end_at == null ? Infinity : Number(row.end_at) };
+  let caps: Record<string, CapChoice> = {};
+  try { caps = JSON.parse(String(row.caps_json ?? "{}")); } catch { caps = {}; }
   const figures = ws && !purged
-    ? await convertTenantFigures(ws, { factorAt: tenantFactorAt(plan), conversionId: String(row.id), dryRun: false, reverses: row.reverses == null ? null : String(row.reverses) })
+    ? await convertTenantFigures(ws, { factorAt: tenantFactorAt(plan), factor: k, caps, conversionId: String(row.id), dryRun: false,
+      reverses: row.reverses == null ? null : String(row.reverses) })
     : [];
   await platformDb().execute({
     sql: `UPDATE ${CONVERSIONS_TABLE} SET tenant_json=?, tenant_applied_at=? WHERE id=? AND tenant_applied_at IS NULL`,
@@ -369,7 +421,14 @@ async function finishTenant(workspaceId: string, row: Record<string, unknown>, a
  */
 export async function convertWorkspaceCredits(
   workspaceId: string,
-  o: Options & { fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; decision?: ShortfallDecision | null },
+  o: Options & { fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; decision?: ShortfallDecision | null;
+    /** End of the old price's window (exclusive): when an instance first ran at the new price. */
+    endAt?: number | null;
+    /** The owner's choice per cap, keyed `<workspaceId>/<table>:<id>`; a cap not named is kept. */
+    caps?: Record<string, CapChoice>;
+    /** The price held takes are re-priced at in a dry run (default CREDIT_USD). */
+    previewUnitUsd?: number;
+  },
 ): Promise<CreditConversion> {
   if (!o.dryRun && o.mode !== "per-row") throw new Error("A real run is per row (owner, 5 October 2026); uniform is a dry-run comparison only.");
   const k = unitFactor(o.fromUsd, o.toUsd);
@@ -378,13 +437,25 @@ export async function convertWorkspaceCredits(
   if (workspaceId === HOUSE_WORKSPACE_ID) return houseLine(workspaceId, "convert", o.mode, o.fromUsd, o.toUsd);
   await conversionsReady();
   const at = o.at ?? Date.now();
-  const plan: Plan = { mode: o.mode, k, fromUsd: o.fromUsd, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null };
+  if (!o.dryRun && !(Number(o.endAt) > 0)) throw new Error("A real run needs the end of the old price's window (endAt).");
+  const plan: Plan = { mode: o.mode, k, fromUsd: o.fromUsd, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null,
+    endAt: Number(o.endAt) > 0 ? Number(o.endAt) : Infinity };
+  const myCaps = capsFor(workspaceId, o.caps);
   let result: CreditConversion;
   try {
     result = await billingTransaction(async (tx) => {
       await syncBillingLedger(tx, workspaceId, at);
       const { row: last, count } = await lastRowTx(tx, workspaceId);
       const base = { workspaceId, action: "convert" as const, mode: o.mode, fromUsd: o.fromUsd, toUsd: o.toUsd, rows: {}, tenant: [] as TenantFigure[], tenantDone: false };
+      /* Made after the old price's window closed: it never held a credit at the old price. */
+      const born = (await tx.execute({
+        sql: `SELECT created_at FROM workspaces WHERE id=? UNION ALL SELECT created_at FROM workspace_provisioning WHERE workspace_id=? LIMIT 1`, args: [workspaceId, workspaceId],
+      }).catch(() => tx.execute({ sql: `SELECT created_at FROM workspaces WHERE id=?`, args: [workspaceId] }))).rows[0];
+      if (!last && born && Number(born.created_at) >= plan.endAt) {
+        const now = await snapshotTx(tx, workspaceId, at, o.toUsd);
+        return { ...base, id: null, status: "new" as const, before: now, after: now, tenantDone: true,
+          reason: "Made after the price changed: already counted in the new price." };
+      }
       if (last && samePrice(Number(last.to_usd), o.toUsd)) {
         const now = await snapshotTx(tx, workspaceId, at, o.toUsd);
         return { ...base, id: String(last.id), mode: (last.mode as ConversionMode) ?? null, status: "already" as const, before: now, after: now,
@@ -394,7 +465,7 @@ export async function convertWorkspaceCredits(
       if (!samePrice(stated, o.fromUsd))
         return { ...base, id: null, status: "refused" as const, before: null, after: null, reason: `This workspace is stated in ${dollars(stated)} credits, not ${dollars(o.fromUsd)}.` };
       const before = await snapshotTx(tx, workspaceId, at, o.fromUsd);
-      const plan2 = await factorsTx(tx, workspaceId, plan);
+      const plan2 = await factorsTx(tx, workspaceId, plan, at);
       const factors = plan2.rows;
       await applyTx(tx, workspaceId, factors);
       const id = `unit:${workspaceId}:${count + 1}`;
@@ -405,7 +476,8 @@ export async function convertWorkspaceCredits(
         });
       const exact = await snapshotTx(tx, workspaceId, at, o.toUsd);
       const shortfall = plan2.shortfall;
-      const goesDown = shortfall > 0 && exact.balance < before.balance;
+      /* In dollars: credits before and after are different units. */
+      const goesDown = shortfall > 0 && exact.balanceUsd < before.balanceUsd - 0.005;
       const belowZero = shortfall > 0 && exact.balance < 0 && before.balance >= 0;
       const facts = {
         shortfall, shortfallUsd: money(shortfall * o.toUsd), goesDown, belowZero,
@@ -430,9 +502,9 @@ export async function convertWorkspaceCredits(
       if (shortfall > 0 && !o.decision) throw new DryRun({ ...out, id: null, status: "needs-decision",
         reason: `Its US$0.80 jobs spent ${dollars(shortfall * o.toUsd)} of credits given at US$0.10. Decide goodwill or apply.` });
       await tx.execute({
-        sql: `INSERT INTO ${CONVERSIONS_TABLE}(id,workspace_id,action,mode,cutover_at,from_usd,to_usd,reverses,balance_before,balance_after,usd_before,usd_after,before_json,after_json,rows_json,created_by,created_at)
-          VALUES(?,?,'convert',?,?,?,?,NULL,?,?,?,?,?,?,?,?,?)`,
-        args: [id, workspaceId, o.mode, plan.cutoverAt, o.fromUsd, o.toUsd, before.balance, after.balance, before.balanceUsd, after.balanceUsd,
+        sql: `INSERT INTO ${CONVERSIONS_TABLE}(id,workspace_id,action,mode,cutover_at,end_at,caps_json,from_usd,to_usd,reverses,balance_before,balance_after,usd_before,usd_after,before_json,after_json,rows_json,created_by,created_at)
+          VALUES(?,?,'convert',?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?)`,
+        args: [id, workspaceId, o.mode, plan.cutoverAt, plan.endAt, JSON.stringify(myCaps), o.fromUsd, o.toUsd, before.balance, after.balance, before.balanceUsd, after.balanceUsd,
           JSON.stringify(before), JSON.stringify(after), JSON.stringify(out.rows), o.by ?? null, at],
       });
       for (const f of factors)
@@ -442,7 +514,8 @@ export async function convertWorkspaceCredits(
   } catch (error) {
     if (!(error instanceof DryRun)) throw error;
     const ws = await getWorkspace(workspaceId);
-    const tenant = ws ? await convertTenantFigures(ws, { factorAt: tenantFactorAt(plan), conversionId: "dry-run", dryRun: true }) : [];
+    const tenant = ws ? await convertTenantFigures(ws, { factorAt: tenantFactorAt(plan), factor: k, caps: myCaps, unitUsd: o.previewUnitUsd,
+      conversionId: "dry-run", dryRun: true }).catch(() => [] as TenantFigure[]) : [];
     return { ...error.result, tenant, marks: await marksOf(workspaceId) };
   }
   result.marks = await marksOf(workspaceId);
@@ -472,6 +545,19 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
         return { id: null, workspaceId, status: "nothing" as const, action: "reverse" as const, mode: null, fromUsd: 0, toUsd: 0, before: null, after: null,
           rows: {}, tenant: [], tenantDone: true, reason: "There is no conversion to reverse: none was run, or the last one was already reversed." };
       const fromUsd = Number(last.to_usd), toUsd = Number(last.from_usd);
+      /* Safe only before paid work resumes: anything written since in the new unit would be read in the
+         old one afterwards. Refused, and listed. */
+      const since = Number(last.created_at);
+      const goodwill = `${String(last.id)}:goodwill`;
+      const activity = [
+        ...(await tx.execute({ sql: `SELECT 'job' AS what,id,status,created_at FROM meter_events WHERE workspace_id=? AND (created_at>? OR status='running')`, args: [workspaceId, since] })).rows,
+        ...(await tx.execute({ sql: `SELECT 'grant' AS what,id,kind AS status,created_at FROM credit_grants WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
+        ...(await tx.execute({ sql: `SELECT 'lot' AS what,id,kind AS status,created_at FROM billing_lots WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
+      ].map((r) => ({ what: String(r.what), id: String(r.id), status: String(r.status), createdAt: Number(r.created_at) }));
+      if (activity.length)
+        return { id: null, workspaceId, status: "refused" as const, action: "reverse" as const, mode: null, fromUsd, toUsd, before: null, after: null,
+          rows: {}, tenant: [], tenantDone: true, activity,
+          reason: `Not reversed: ${activity.length} job(s) or grant(s) since the conversion, in the new price. A reversal is only safe before paid work resumes.` };
       const recorded = (await tx.execute({ sql: `SELECT tbl,row_key,factor FROM ${CONVERSION_ROWS_TABLE} WHERE conversion_id=?`, args: [String(last.id)] })).rows;
       const factors = recorded.map((r) => ({ tbl: String(r.tbl), key: String(r.row_key), factor: 1 / Number(r.factor) }));
       const before = await snapshotTx(tx, workspaceId, at, fromUsd);
@@ -507,19 +593,20 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
 
 /**
  * The platform layer's own credit figure: the cap a new production starts with
- * (`caps.defaultCapCredits`), restated like a workspace's, recorded under
- * PLATFORM_LAYER_ID. The welcome grant (`caps.signupCredits`) and the plans'
- * included credits are NOT restated: the owner set them for a US$0.10 credit
- * (250 welcome; 400 / 1,600 / 9,000 a month), and they are reported as kept.
+ * (`caps.defaultCapCredits`). Like every cap, it is listed and kept unless the owner chose ×factor
+ * for it (`caps: { "platform/caps:defaultCapCredits": "x8" }`); recorded under PLATFORM_LAYER_ID.
+ * The welcome grant (`caps.signupCredits`) and the plans' included credits are NOT restated: the
+ * owner set them for a US$0.10 credit (250 welcome; 400 / 1,600 / 9,000 a month); reported as kept.
  */
 export const PLATFORM_LAYER_ID = "*platform-layer*";
+export const PLATFORM_CAP_ID = "platform/caps:defaultCapCredits";
 export type LayerLine = { status: ConversionStatus; figures: TenantFigure[]; kept: TenantFigure[] };
 
-async function convertLayer(o: Options & { plan: Plan | null; reverse: boolean; fromUsd: number; toUsd: number }, at: number): Promise<LayerLine> {
+async function convertLayer(o: Options & { reverse: boolean; fromUsd: number; toUsd: number; k: number; caps?: Record<string, CapChoice> }, at: number): Promise<LayerLine> {
   await conversionsReady();
   return billingTransaction(async (tx) => {
     const { row: last, count } = await lastRowTx(tx, PLATFORM_LAYER_ID);
-    const caps = (await tx.execute(`SELECT value,updated_at FROM platform_layer WHERE key='caps'`)).rows[0];
+    const caps = (await tx.execute(`SELECT value FROM platform_layer WHERE key='caps'`)).rows[0];
     const plans = (await tx.execute(`SELECT value FROM platform_layer WHERE key='plans'`)).rows[0];
     const kept: TenantFigure[] = [];
     let parsed: Record<string, unknown> = {};
@@ -530,50 +617,65 @@ async function convertLayer(o: Options & { plan: Plan | null; reverse: boolean; 
         if (typeof p?.includedCredits === "number") kept.push({ what: "platform_layer.plans.includedCredits (kept)", id: String(p.id), before: p.includedCredits, after: p.includedCredits });
     } catch { /* an unreadable row is the layer's defaults */ }
     let factor = 1;
+    let choice: CapChoice = "keep";
     if (o.reverse) {
       if (!last || last.action !== "convert") return { status: "nothing" as const, figures: [], kept };
       const rec = (await tx.execute({ sql: `SELECT factor FROM ${CONVERSION_ROWS_TABLE} WHERE conversion_id=? AND tbl='platform_layer'`, args: [String(last.id)] })).rows[0];
       factor = rec ? 1 / Number(rec.factor) : 1;
+      choice = rec ? "x8" : "keep";
     } else {
       if (last && samePrice(Number(last.to_usd), o.toUsd)) return { status: "already" as const, figures: [], kept };
-      const p = o.plan!;
-      factor = p.mode === "uniform" ? p.k : caps && Number(caps.updated_at) >= (p.cutoverAt ?? Infinity) ? p.k : 1;
+      choice = o.caps?.[PLATFORM_CAP_ID] === "x8" ? "x8" : "keep";
+      factor = choice === "x8" ? o.k : 1;
     }
     const n = typeof parsed.defaultCapCredits === "number" ? parsed.defaultCapCredits : null;
-    const figures: TenantFigure[] = n != null && factor !== 1 ? [{ what: "platform_layer.caps.defaultCapCredits", id: "caps", before: n, after: n * factor }] : [];
+    const figures: TenantFigure[] = n != null
+      ? [{ what: "platform_layer.caps.defaultCapCredits", id: "caps", before: n, after: n * factor, cap: { id: PLATFORM_CAP_ID, choice } }] : [];
     if (o.dryRun) return { status: "planned" as const, figures, kept };
-    if (figures.length)
-      await tx.execute({ sql: `UPDATE platform_layer SET value=? WHERE key='caps'`, args: [JSON.stringify({ ...parsed, defaultCapCredits: n! * factor })] });
+    if (n != null && factor !== 1)
+      await tx.execute({ sql: `UPDATE platform_layer SET value=? WHERE key='caps'`, args: [JSON.stringify({ ...parsed, defaultCapCredits: n * factor })] });
     const id = `unit:${PLATFORM_LAYER_ID}:${count + 1}`;
     const snap = JSON.stringify({ figures, kept });
     await tx.execute({
-      sql: `INSERT INTO ${CONVERSIONS_TABLE}(id,workspace_id,action,mode,cutover_at,from_usd,to_usd,reverses,before_json,after_json,tenant_applied_at,created_by,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [id, PLATFORM_LAYER_ID, o.reverse ? "reverse" : "convert", o.plan?.mode ?? (last?.mode == null ? null : String(last.mode)), o.plan?.cutoverAt ?? null,
+      sql: `INSERT INTO ${CONVERSIONS_TABLE}(id,workspace_id,action,mode,from_usd,to_usd,reverses,before_json,after_json,tenant_applied_at,created_by,created_at)
+        VALUES(?,?,?,'per-row',?,?,?,?,?,?,?,?)`,
+      args: [id, PLATFORM_LAYER_ID, o.reverse ? "reverse" : "convert",
         o.reverse ? Number(last!.to_usd) : o.fromUsd, o.reverse ? Number(last!.from_usd) : o.toUsd, o.reverse ? String(last!.id) : null, snap, snap, at, o.by ?? null, at],
     });
-    if (figures.length && !o.reverse)
+    if (n != null && factor !== 1 && !o.reverse)
       await tx.execute({ sql: `INSERT INTO ${CONVERSION_ROWS_TABLE}(conversion_id,tbl,row_key,factor) VALUES(?,?,?,?)`, args: [id, "platform_layer", "caps.defaultCapCredits", factor] });
     return { status: (o.reverse ? "reversed" : "converted") as ConversionStatus, figures, kept };
   }, at);
 }
 
-/** Every workspace on the platform, deleted ones included: a restore must find its balance in the right unit. */
+/**
+ * Every workspace on the platform, deleted ones included (a restore must find its balance in the
+ * right unit), and workspaces still being provisioned, whose welcome may be counted at the old price.
+ */
 async function allWorkspaceIds(): Promise<string[]> {
   await platformReady();
-  const rs = await platformDb().execute(`SELECT id FROM workspaces ORDER BY created_at, id`);
-  return rs.rows.map((r) => String(r.id));
+  const ids = (await platformDb().execute(`SELECT id FROM workspaces ORDER BY created_at, id`)).rows.map((r) => String(r.id));
+  try {
+    const pending = (await platformDb().execute(`SELECT workspace_id FROM workspace_provisioning ORDER BY created_at`)).rows.map((r) => String(r.workspace_id));
+    for (const id of pending) if (!ids.includes(id)) ids.push(id);
+  } catch { /* no provisioning table */ }
+  return ids;
 }
 
 /**
- * The ledger's unit moves only when every workspace but the house states it and has its own
- * half in. Until then paid jobs stay paused (lib/ledgerUnit.ts); running the conversion again finishes it.
+ * The ledger's unit moves only when every live workspace but the house states it and has its own
+ * half in (or the owner skipped that half by name). A deleted workspace, one still being provisioned
+ * and one made after the window never hold it up. Until then paid jobs stay paused (lib/ledgerUnit.ts);
+ * running the conversion again finishes it.
  */
-async function settleLedgerUnit(target: number, by: string | null, at: number, universe?: string[]): Promise<{ moved: boolean; waiting: string[] }> {
+async function settleLedgerUnit(target: number, by: string | null, at: number, endAt: number, universe?: string[]): Promise<{ moved: boolean; waiting: string[] }> {
   const waiting: string[] = [];
   for (const id of universe ?? (await allWorkspaceIds())) {
     if (id === HOUSE_WORKSPACE_ID) continue;
+    const ws = (await platformDb().execute({ sql: `SELECT deleted_at,created_at FROM workspaces WHERE id=?`, args: [id] })).rows[0];
+    if (!ws || ws.deleted_at != null) continue;
     const { row } = await lastRowTx(platformDb(), id);
+    if (!row && Number(ws.created_at) >= endAt) continue;
     if (!row || !samePrice(Number(row.to_usd), target) || row.tenant_applied_at == null) waiting.push(id);
   }
   if (waiting.length) return { moved: false, waiting };
@@ -581,11 +683,19 @@ async function settleLedgerUnit(target: number, by: string | null, at: number, u
   return { moved: true, waiting };
 }
 
+/** Every stored cap, for the owner to choose keep or ×factor: in credits and in dollars at both prices. */
+export type CapLine = { capId: string; workspaceId: string; workspaceName: string; what: string; credits: number;
+  usdAtTo: number; usdAtFrom: number; choice: CapChoice };
+
 export type ConversionRun = {
   dryRun: boolean;
   action: "convert" | "reverse";
   mode: ConversionMode | null;
   cutoverAt: number | null;
+  /** The end of the old price's window: when an instance first ran at the new price. */
+  endAt: number | null;
+  /** The first job on record approved at the old price, beside cutoverAt, to check it. */
+  firstOldPriceJobAt: number | null;
   fromUsd: number;
   toUsd: number;
   factor: number;
@@ -596,8 +706,16 @@ export type ConversionRun = {
   /** Listed apart: balances this lowers, each needing the owner's decision (goodwill or apply). */
   needsDecision: { workspaceId: string; name: string; shortfall: number; shortfallUsd: number; goesDown: boolean; belowZero: boolean;
     balanceBefore: number; balanceExact: number; balanceWithGoodwill: number; decision: ShortfallDecision | null; marks: WorkspaceMarks | undefined }[];
-  /** Pack requests open at the old price: declined (dry run: to be declined), with the note they get. */
-  declinedTopups: { workspaceId: string; id: string; credits: number; usd: number; note: string }[];
+  /** Listed apart, no decision needed: balances whose dollars shown today fall because their credits
+   *  were written at US$0.10 (what they read today is eight times what was paid or granted). */
+  dollarsShownDrop: { workspaceId: string; name: string; usdShownToday: number; usdAfter: number; marks: WorkspaceMarks | undefined }[];
+  /** Pack requests open at the old price: declined (dry run: to be declined), with the note they get,
+   *  and who asked, for the owner to contact. The app emails nobody. */
+  declinedTopups: (DeclinedTopup & { workspaceId: string; workspaceName: string; note: string })[];
+  /** Every stored cap and what the owner chose for it (default keep). */
+  caps: CapLine[];
+  /** Workspaces whose own database half the owner skipped by name. */
+  tenantSkipped: string[];
   layer: LayerLine | null;
   results: CreditConversion[];
   totals: { workspaces: number; changed: number; balanceBefore: number; balanceAfter: number; usdBefore: number; usdAfter: number };
@@ -612,7 +730,20 @@ function decisionsOf(results: CreditConversion[]): ConversionRun["needsDecision"
   }));
 }
 const declinesOf = (results: CreditConversion[]): ConversionRun["declinedTopups"] =>
-  results.flatMap((r) => (r.declinedTopups ?? []).map((d) => ({ workspaceId: r.workspaceId, ...d, note: TOPUP_DECLINED_NOTE })));
+  results.flatMap((r) => (r.declinedTopups ?? []).map((d) => ({ workspaceId: r.workspaceId, workspaceName: r.marks?.name ?? r.workspaceId, ...d, note: TOPUP_DECLINED_NOTE })));
+const dropsOf = (results: CreditConversion[]): ConversionRun["dollarsShownDrop"] =>
+  results.filter((r) => !(r.shortfall ?? 0) && r.before && r.after && r.after.balanceUsd < r.before.balanceUsd - 0.005 && r.status !== "already")
+    .map((r) => ({ workspaceId: r.workspaceId, name: r.marks?.name ?? r.workspaceId, usdShownToday: r.before!.balanceUsd, usdAfter: r.after!.balanceUsd, marks: r.marks }));
+function capsOf(results: CreditConversion[], layer: LayerLine | null, fromUsd: number, toUsd: number): CapLine[] {
+  const line = (workspaceId: string, workspaceName: string, f: TenantFigure): CapLine => ({
+    capId: f.cap!.id === PLATFORM_CAP_ID ? PLATFORM_CAP_ID : `${workspaceId}/${f.cap!.id}`, workspaceId, workspaceName, what: f.what,
+    credits: Number(f.before), usdAtTo: money(Number(f.before) * toUsd), usdAtFrom: money(Number(f.before) * fromUsd), choice: f.cap!.choice,
+  });
+  return [
+    ...results.flatMap((r) => r.tenant.filter((f) => f.cap).map((f) => line(r.workspaceId, r.marks?.name ?? r.workspaceId, f))),
+    ...(layer?.figures ?? []).filter((f) => f.cap).map((f) => line("platform", "Platform layer", f)),
+  ];
+}
 
 function totals(results: CreditConversion[]): ConversionRun["totals"] {
   const changed = results.filter((r) => r.status === "planned" || r.status === "converted" || r.status === "reversed");
@@ -625,37 +756,89 @@ function totals(results: CreditConversion[]): ConversionRun["totals"] {
 }
 
 const ledgerUnitNow = async () => { await billingReady(); return ledgerUnitTx(platformDb()); };
+const pausedSinceNow = async () => { await billingReady(); return pausedSinceTx(platformDb()); };
+
+/** Mark a workspace's own half skipped, by the owner's name for it (its database is gone or unreachable). */
+async function skipTenantHalf(workspaceId: string, at: number): Promise<boolean> {
+  const { row } = await lastRowTx(platformDb(), workspaceId);
+  if (!row || row.tenant_applied_at != null) return false;
+  await platformDb().execute({
+    sql: `UPDATE ${CONVERSIONS_TABLE} SET tenant_json=?, tenant_applied_at=? WHERE id=? AND tenant_applied_at IS NULL`,
+    args: [JSON.stringify([{ what: "skipped by the owner", id: workspaceId, before: "", after: "" }]), at, String(row.id)],
+  });
+  return true;
+}
+
+type RunOptions = Options & {
+  fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; workspaceId?: string | null;
+  decisions?: Record<string, ShortfallDecision>;
+  /** End of the old price's window; default: when an instance first ran at the new price (billing_unit.paused_since). */
+  endAt?: number | null;
+  caps?: Record<string, CapChoice>;
+  /** Workspaces whose own database half to mark skipped (it is gone or unreachable). */
+  skipTenant?: string[];
+  /** A dry run may preview held prices at the price about to be set. */
+  previewUnitUsd?: number;
+  /** The workspaces that make up the platform (default: every row of `workspaces`). Tests only. */
+  universe?: string[];
+};
 
 /**
- * The run the platform owner starts (app/api/admin/credit-unit). For real, it
- * needs paid jobs paused, which is what a ledger unit that differs from
- * CREDIT_USD already is: the record must still count in `fromUsd`.
+ * The run the platform owner starts (app/api/admin/credit-unit). For real it is US$0.80 → US$0.10
+ * only, after CREDIT_USD changed (which paused paid work), with a decision for every workspace the
+ * dry run lists under needsDecision, all in one call. Once the ledger counts in the new price a
+ * real run converts nothing more: it only finishes workspace halves that failed, or skips them.
  */
-export async function convertAllCredits(
-  o: Options & { fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; workspaceId?: string | null;
-    decisions?: Record<string, ShortfallDecision>;
-    /** The workspaces that make up the platform (default: every row of `workspaces`). Tests only. */
-    universe?: string[] },
-): Promise<ConversionRun> {
+export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun && o.mode !== "per-row") throw new Error("A real run is per row (owner, 5 October 2026); uniform is a dry-run comparison only.");
   const k = unitFactor(o.fromUsd, o.toUsd);
   if (k == null) throw new Error(`${dollars(o.fromUsd)} is not a whole number of ${dollars(o.toUsd)} credits.`);
+  if (!o.dryRun && !(samePrice(o.fromUsd, REAL_FROM_USD) && samePrice(o.toUsd, REAL_TO_USD)))
+    throw new Error(`A real run is ${dollars(REAL_FROM_USD)} → ${dollars(REAL_TO_USD)} only.`);
   const unitBefore = await ledgerUnitNow();
   const at = o.at ?? Date.now();
-  if (!o.dryRun && unitBefore != null && !samePrice(unitBefore, o.fromUsd) && !samePrice(unitBefore, o.toUsd))
-    throw new Error(`The ledger counts in ${dollars(unitBefore)} credits, neither ${dollars(o.fromUsd)} nor ${dollars(o.toUsd)}.`);
   if (!o.dryRun && !samePrice(creditUsd(), o.toUsd))
     throw new Error(`CREDIT_USD is ${dollars(creditUsd())}: change it to ${dollars(o.toUsd)} and redeploy before converting.`);
   const ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
-  const results: CreditConversion[] = [];
-  for (const id of ids) results.push(await convertWorkspaceCredits(id, { ...o, at, decision: o.decisions?.[id] ?? null }));
-  const plan: Plan = { mode: o.mode, k, fromUsd: o.fromUsd, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null };
-  const layer = o.workspaceId ? null : await convertLayer({ ...o, plan, reverse: false }, at);
-  const settled = o.dryRun ? { moved: false, waiting: [] as string[] } : await settleLedgerUnit(o.toUsd, o.by ?? null, at, o.universe);
+  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : await pausedSinceNow();
+  const firstOld = (await platformDb().execute({ sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE ROUND(credit_usd*1000000)=ROUND(?*1000000)`, args: [o.fromUsd] })).rows[0];
+  const base = {
+    action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
+    firstOldPriceJobAt: firstOld?.t == null ? null : Number(firstOld.t), fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
+  };
+  const pass = (dryRun: boolean) => async () => {
+    const results: CreditConversion[] = [];
+    for (const id of ids) results.push(await convertWorkspaceCredits(id, { ...o, endAt, dryRun, at, decision: o.decisions?.[id] ?? null }));
+    return results;
+  };
+  if (!o.dryRun) {
+    /* Finished already: convert nothing more; finish or skip what failed. */
+    if (unitBefore != null && samePrice(unitBefore, o.toUsd)) {
+      const tenantSkipped: string[] = [];
+      for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
+      const results: CreditConversion[] = [];
+      for (const id of ids) {
+        const { row } = await lastRowTx(platformDb(), id);
+        if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) results.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
+      }
+      return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [],
+        tenantSkipped, layer: null, results, totals: totals(results) };
+    }
+    if (endAt == null) throw new Error("No end to the old price's window: CREDIT_USD has not changed on any instance yet, and no endAt was given.");
+    /* Every balance it lowers needs a decision before anything is written, so all convert in one call. */
+    const preview = await pass(true)();
+    const undecided = preview.filter((r) => (r.shortfall ?? 0) > 0 && !o.decisions?.[r.workspaceId]).map((r) => r.workspaceId);
+    if (undecided.length) throw new Error(`Decide goodwill or apply for every workspace under needsDecision first: ${undecided.join(", ")}.`);
+  }
+  const results = await pass(Boolean(o.dryRun))();
+  const layer = o.workspaceId ? null : await convertLayer({ ...o, reverse: false, k }, at);
+  const tenantSkipped: string[] = [];
+  if (!o.dryRun) for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
+  const settled = o.dryRun ? { moved: false, waiting: [] as string[] } : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, o.universe);
   return {
-    dryRun: Boolean(o.dryRun), action: "convert", mode: o.mode, cutoverAt: plan.cutoverAt,
-    fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore, ledgerUnitAfter: await ledgerUnitNow(),
-    waiting: settled.waiting, needsDecision: decisionsOf(results), declinedTopups: declinesOf(results), layer, results, totals: totals(results),
+    ...base, dryRun: Boolean(o.dryRun), ledgerUnitAfter: await ledgerUnitNow(), waiting: settled.waiting,
+    needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), declinedTopups: declinesOf(results),
+    caps: capsOf(results, layer, o.fromUsd, o.toUsd), tenantSkipped, layer, results, totals: totals(results),
   };
 }
 
@@ -663,17 +846,48 @@ export async function reverseAllCredits(o: Options & { workspaceId?: string | nu
   const unitBefore = await ledgerUnitNow();
   const at = o.at ?? Date.now();
   const ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
+  /* All or nothing: a refusal anywhere (activity since the conversion) reverses nobody. */
+  const check: CreditConversion[] = [];
+  for (const id of ids) check.push(await reverseWorkspaceCredits(id, { ...o, at, dryRun: true }));
+  const live = !o.dryRun && !check.some((r) => r.status === "refused");
   const results: CreditConversion[] = [];
-  for (const id of ids) results.push(await reverseWorkspaceCredits(id, { ...o, at }));
+  if (live) for (const id of ids) results.push(await reverseWorkspaceCredits(id, { ...o, at }));
+  else results.push(...check);
+  const refused = results.filter((r) => r.status === "refused");
   const first = results.find((r) => r.status === "reversed" || r.status === "planned");
-  const layer = o.workspaceId ? null : await convertLayer({ ...o, plan: null, reverse: true, fromUsd: 0, toUsd: 0 }, at);
+  const layer = o.workspaceId || refused.length ? null : await convertLayer({ ...o, reverse: true, fromUsd: 0, toUsd: 0, k: 1 }, at);
   let waiting: string[] = [];
-  if (!o.dryRun && first) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, o.universe)).waiting;
+  if (!o.dryRun && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, Infinity, o.universe)).waiting;
   return {
-    dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null,
+    dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null, endAt: null, firstOldPriceJobAt: null,
     fromUsd: first?.fromUsd ?? 0, toUsd: first?.toUsd ?? 0, factor: first ? first.fromUsd / first.toUsd : 1,
-    ledgerUnitBefore: unitBefore, ledgerUnitAfter: await ledgerUnitNow(), waiting, needsDecision: [], declinedTopups: [], layer, results, totals: totals(results),
+    ledgerUnitBefore: unitBefore, ledgerUnitAfter: await ledgerUnitNow(), waiting: refused.length ? refused.map((r) => r.workspaceId) : waiting,
+    needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [], tenantSkipped: [], layer, results, totals: totals(results),
   };
+}
+
+/**
+ * The day this workspace's credits began to be counted at `unitUsd`: the real run of its last
+ * conversion to that price, when that conversion still stands (not reversed). Null on any
+ * deployment where none has run, so the statement line it feeds appears only where it is true.
+ */
+export async function convertedToUnitAt(workspaceId: string, unitUsd: number): Promise<number | null> {
+  try {
+    const rs = await platformDb().execute({
+      sql: `SELECT action,to_usd,created_at FROM ${CONVERSIONS_TABLE} WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      args: [workspaceId],
+    });
+    const r = rs.rows[0];
+    return r && r.action === "convert" && samePrice(Number(r.to_usd), unitUsd) ? Number(r.created_at) : null;
+  } catch {
+    return null; // no conversions table on this deployment: nothing was converted
+  }
+}
+
+/** "Credits shown at US$0.10 each from 5 October 2026." — the date in UTC, as statements count months. */
+export function creditUnitLine(unitUsd: number, at: number): string {
+  const day = new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  return `Credits shown at ${dollars(unitUsd)} each from ${day}.`;
 }
 
 /** The record, newest first. */

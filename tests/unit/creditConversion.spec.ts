@@ -35,6 +35,8 @@ const CUTOVER = Date.UTC(2026, 9, 3, 14, 39);
 const BEFORE = CUTOVER - 5 * DAY;
 const AFTER = CUTOVER + DAY;
 const NOW = CUTOVER + 2 * DAY;
+/** When an instance first ran at US$0.10: the end of the old price's window. */
+const END = NOW - 3_600_000;
 
 const wsRow = (id: string) => ({ id, dbUrl: `file:${path.join(dir, `${id}.db`)}` });
 
@@ -96,6 +98,7 @@ test.beforeAll(async () => {
   process.env.CREDIT_USD = "0.80"; // particl.si today: a deployment at this price, its ledger in it.
   for (const id of ALL) await addWorkspace(id);
   await setUnit(0.8);
+  await (await platform()).execute({ sql: `INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES('acct_owner','owner@example.test','Owner','!',?)`, args: [BEFORE] });
   const p = await platform();
   // A plain balance: a welcome grant at US$0.10 before the cutover, an admin grant at US$0.80 after it.
   await grant("ws_plain", "plain_welcome", 250, "welcome", BEFORE);
@@ -104,7 +107,7 @@ test.beforeAll(async () => {
   await job("ws_plain", "plain_new_job", 3, 0.80, AFTER + 1000);
   // A pack bought at US$0.80 (Starter: 500 cr for $400), one at US$0.10 ($50), and one still open at US$0.80.
   for (const [id, credits, usd, at, status] of [["req_old", 500, 50, BEFORE, "approved"], ["req_new", 500, 400, AFTER, "approved"], ["req_open", 500, 400, AFTER, "requested"]] as const)
-    await p.execute({ sql: `INSERT INTO topup_requests(id,workspace_id,pack_id,label,credits,bonus_credits,usd,status,created_at) VALUES(?,?,'starter','Starter',?,0,?,?,?)`,
+    await p.execute({ sql: `INSERT INTO topup_requests(id,workspace_id,pack_id,label,credits,bonus_credits,usd,status,created_at,requested_by) VALUES(?,?,'starter','Starter',?,0,?,?,?,'acct_owner')`,
       args: [id, "ws_pack", credits, usd, status, at] });
   // Approved after the cutover, though asked before it: the grant follows its request, not its time.
   await grant("ws_pack", "topup:req_old:purchase", 500, "purchase", AFTER);
@@ -162,8 +165,8 @@ test("the ledger is seeded at the deployment's price; changing CREDIT_USD pauses
 test("a dry run shows both modes and writes nothing", async () => {
   const { convertAllCredits } = await import("../../lib/creditConversion");
   const before = await Promise.all(ALL.map(dump));
-  const uniform = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "uniform", dryRun: true, at: NOW, universe: ALL });
-  const perRow = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: true, at: NOW, universe: ALL });
+  const uniform = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "uniform", endAt: END, dryRun: true, at: NOW, universe: ALL });
+  const perRow = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: true, at: NOW, universe: ALL });
   expect(await Promise.all(ALL.map(dump))).toEqual(before);
   const line = (run: typeof uniform, id: string) => run.results.find((r) => r.workspaceId === id)!;
   // Uniform: what every balance reads today, in dollars, kept exactly.
@@ -184,7 +187,8 @@ test("a dry run shows both modes and writes nothing", async () => {
   expect(line(perRow, "ws_pack").after!.purchased).toBe(4500);
   expect(line(perRow, "ws_pack").before!.pendingPacks).toBe(500);
   expect(line(perRow, "ws_pack").after!.pendingPacks).toBe(0);
-  expect(perRow.declinedTopups).toEqual([{ workspaceId: "ws_pack", id: "req_open", credits: 500, usd: 400, note: "Price changed; please ask again at US$0.10." }]);
+  expect(perRow.declinedTopups).toMatchObject([{ workspaceId: "ws_pack", workspaceName: "ws_pack", id: "req_open", pack: "Starter", credits: 500, usd: 400,
+    requesterName: "Owner", requesterEmail: "owner@example.test", note: "Price changed; please ask again at US$0.10." }]);
   expect(uniform.results.find((r) => r.workspaceId === "ws_legacy")?.status ?? "house").toBe("house");
   expect(uniform.ledgerUnitAfter).toBe(0.8);
 });
@@ -193,13 +197,13 @@ test("a real run converts per row, keeps every lot's kind and expiry, and resume
   const { convertAllCredits } = await import("../../lib/creditConversion");
   const { ledgerOpenTx } = await import("../../lib/ledgerUnit");
   const plan = await dump("ws_plan");
-  // Without the owner's decision, the balance it lowers is skipped whole, and paid work stays paused.
-  const undecided = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: false, at: NOW, by: "owner", universe: ALL });
-  expect(undecided.results.find((r) => r.workspaceId === "ws_plain")?.status).toBe("needs-decision");
-  expect(undecided.waiting).toEqual(["ws_plain"]);
+  // Without a decision for every balance it lowers, nothing is written anywhere, and paid work stays paused.
+  await expect(convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, by: "owner", universe: ALL }))
+    .rejects.toThrow(/needsDecision first: ws_plain/);
   expect(await ledgerOpenTx(await platform())).toBe(false);
+  expect((await dump("ws_debt")).grants).toEqual([{ id: "debt_grant", credits: 10 }]);
   expect((await dump("ws_plain")).grants).toEqual([{ id: "plain_manual", credits: 100 }, { id: "plain_welcome", credits: 250 }]);
-  const run = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: false, at: NOW, by: "owner", universe: ALL, decisions: { ws_plain: "goodwill" } });
+  const run = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, by: "owner", universe: ALL, decisions: { ws_plain: "goodwill" } });
   expect(run.waiting).toEqual([]);
   // Goodwill: the shortfall written off as a recorded grant; the balance ends where it was heading.
   expect((await balance("ws_plain")).balance).toBe(1027);
@@ -233,7 +237,7 @@ test("a real run converts per row, keeps every lot's kind and expiry, and resume
     await runInTenant((await getWorkspace("ws_running"))!, () => meter({ id: "run_job", kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: 2 }));
   expect((await balance("ws_running")).balance).toBe(800 - 32);
   // Twice is once.
-  const again = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: false, at: NOW, universe: ALL, decisions: { ws_plain: "goodwill" } });
+  const again = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, universe: ALL, decisions: { ws_plain: "goodwill" } });
   expect(again.results.filter((r) => r.status === "converted")).toEqual([]);
   expect((await balance("ws_debt")).balance).toBe(-160);
 });
@@ -252,7 +256,7 @@ test("a reversal is its own row and gives back the exact numbers; converting aga
   const record = await listCreditConversions("ws_plain");
   expect(record.map((r) => r.action)).toEqual(["reverse", "convert"]);
   expect(record[0].reverses).toBe(record[1].id);
-  await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: false, at: NOW + 2000, universe: ALL, decisions: { ws_plain: "goodwill" } });
+  await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW + 2000, universe: ALL, decisions: { ws_plain: "goodwill" } });
   expect((await balance("ws_plain")).balance).toBe(plain.balance);
   expect(await ledgerUnitTx(await platform())).toBe(0.1);
 });
@@ -273,11 +277,13 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
     await db().execute({ sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind) VALUES('held1','fixture','',?,'held',?,?,'video')`,
       args: [JSON.stringify({ held: { estUsd: 0.5, needs: 1, at: AFTER, why: "credits" } }), AFTER, AFTER] });
   });
-  const plan = { factorAt: (ts: number | null) => (ts != null && ts >= CUTOVER ? 8 : 1), conversionId: "unit:test:1", dryRun: false };
+  // Caps are never guessed from a timestamp: the owner chooses; one not named is kept.
+  const plan = { factorAt: (ts: number | null) => (ts != null && ts >= CUTOVER ? 8 : 1), factor: 8, conversionId: "unit:test:1", dryRun: false,
+    caps: { "settings:shotCapCredits": "x8" as const, "api_tokens:tok": "x8" as const } };
   process.env.CREDIT_USD = "0.10";
   const figures = await convertTenantFigures(ws, plan);
-  expect(figures.find((f) => f.what === "settings.shotCapCredits")).toMatchObject({ before: 25, after: 200 });
-  expect(figures.filter((f) => f.what === "api_tokens.cap_credits")).toEqual([{ what: "api_tokens.cap_credits", id: "tok", before: 50, after: 400 }]);
+  expect(figures.find((f) => f.what === "settings.shotCapCredits")).toMatchObject({ before: 25, after: 200, cap: { id: "settings:shotCapCredits", choice: "x8" } });
+  expect(figures.filter((f) => f.what === "api_tokens.cap_credits").map((f) => [f.id, f.after, f.cap?.choice]).sort()).toEqual([["tok", 400, "x8"], ["tok_old", 50, "keep"]]);
   // $0.50 at margin 1.5 is $0.75: 8 credits at $0.10, as Release will charge it.
   expect(figures.find((f) => f.what === "generations.params.held.needs")).toMatchObject({ before: 1, after: 8 });
   // Run again: nothing more changes.
@@ -297,8 +303,197 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
 test("a real run refuses while CREDIT_USD has not moved, a uniform run, and a factor that is not whole", async () => {
   const { convertAllCredits } = await import("../../lib/creditConversion");
   process.env.CREDIT_USD = "0.80";
-  await expect(convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, dryRun: false, universe: ALL })).rejects.toThrow(/CREDIT_USD/);
+  await expect(convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, universe: ALL })).rejects.toThrow(/CREDIT_USD/);
   await expect(convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "uniform", dryRun: false, universe: ALL })).rejects.toThrow(/per row/);
   await expect(convertAllCredits({ fromUsd: 0.15, toUsd: 0.10, mode: "uniform", dryRun: true })).rejects.toThrow(/whole number/);
   process.env.CREDIT_USD = "0.10";
+  await expect(convertAllCredits({ fromUsd: 0.30, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, universe: ALL })).rejects.toThrow(/0\.80 → US\$0\.10 only/);
+  process.env.CREDIT_USD = "0.10";
+});
+
+/* ── Review of #524 (5 October 2026): each defect, asserted fixed ─────────────────────────── */
+
+const REVIEW = ["ws_ra", "ws_rneeds", "ws_rexp", "ws_rrev"];
+
+test.describe("review fixes", () => {
+  test.beforeAll(async () => {
+    process.env.CREDIT_USD = "0.80";
+    for (const id of REVIEW) await addWorkspace(id);
+    await setUnit(0.8);
+    const sync = async (ws: string, at: number) => {
+      const { billingTransaction, syncBillingLedger } = await import("../../lib/billingLedger");
+      await billingTransaction(async (tx) => { await syncBillingLedger(tx, ws, at); }, at);
+    };
+    await grant("ws_ra", "ra_grant", 100, "manual", AFTER); await sync("ws_ra", AFTER);
+    await job("ws_ra", "ra_run", 5, 0.8, AFTER + 1000, "running");
+    await grant("ws_rneeds", "rn_welcome", 250, "welcome", BEFORE); await sync("ws_rneeds", BEFORE);
+    await job("ws_rneeds", "rn_job", 3, 0.8, AFTER + 2000);
+    // A $0.10 lot that expired after the cutover, 100 of its 400 drawn by a $0.80 job; 300 lapsed.
+    await grant("ws_rexp", "re_lot", 400, "manual", BEFORE); await sync("ws_rexp", BEFORE);
+    await (await platform()).execute(`UPDATE billing_lots SET expires_at=${AFTER + DAY / 2} WHERE id='re_lot'`);
+    await job("ws_rexp", "re_job", 100, 0.8, AFTER + 3000);
+    await grant("ws_rrev", "rr_grant", 100, "manual", AFTER); await sync("ws_rrev", AFTER);
+    process.env.CREDIT_USD = "0.10";
+  });
+
+  test("restateFactor restates both ways", async () => {
+    const { restateFactor } = await import("../../lib/ledgerUnit");
+    expect(restateFactor(0.8, 0.1)).toBe(8);
+    expect(restateFactor(0.1, 0.8)).toBe(1 / 8);
+    expect(restateFactor(0.15, 0.1)).toBe(1);
+  });
+
+  test("an expired $0.10 lot's lapsed credits are not revived by goodwill", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: true, at: NOW, universe: ["ws_rexp"] });
+    const r = run.results[0];
+    expect(r.before!.balance).toBe(0);
+    expect(r.shortfall).toBe(400);
+    expect(r.balanceWithGoodwill).toBe(0); // $0 before, $0 with goodwill
+  });
+
+  test("a converted workspace settles a $0.80 job ×8 even while others are not converted yet", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    // All-or-nothing on decisions: run 1 without one refuses and writes nothing.
+    await expect(convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, universe: ["ws_ra", "ws_rneeds"] }))
+      .rejects.toThrow(/ws_rneeds/);
+    expect(Number((await (await platform()).execute(`SELECT billed_credits FROM meter_events WHERE id='ra_run'`)).rows[0].billed_credits)).toBe(5);
+    // One workspace on its own (as after a failed half): it counts in $0.10 while the ledger still says $0.80.
+    await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, workspaceId: "ws_ra" });
+    expect(await ledgerUnitTx(await platform())).toBe(0.8);
+    const { runInTenant } = await import("../../lib/tenant");
+    const { getWorkspace } = await import("../../lib/platform");
+    const { meter } = await import("../../lib/meter");
+    await runInTenant((await getWorkspace("ws_ra"))!, () => meter({ id: "ra_run", kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: 2 }));
+    expect(Number((await (await platform()).execute(`SELECT billed_credits FROM meter_events WHERE id='ra_run'`)).rows[0].billed_credits)).toBe(32);
+    await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW + 1000, universe: ["ws_ra", "ws_rneeds"], decisions: { ws_rneeds: "apply" } });
+    expect(await ledgerUnitTx(await platform())).toBe(0.1);
+    expect((await balance("ws_ra", NOW + 2000)).balance).toBe(800 - 32);
+  });
+
+  test("a run after completion converts nothing; a workspace made after the window is new, its welcome kept", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    await addWorkspace("ws_rlate");
+    await (await platform()).execute(`UPDATE workspaces SET created_at=${END + 1000} WHERE id='ws_rlate'`);
+    await grant("ws_rlate", "rl_welcome", 250, "welcome", END + 1000);
+    const dry = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: true, at: NOW + 6000, universe: ["ws_rlate"] });
+    expect(dry.results[0].status).toBe("new");
+    const again = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW + 6000,
+      universe: ["ws_ra", "ws_rneeds", "ws_rlate"], decisions: { ws_rneeds: "apply" } });
+    expect(again.results).toEqual([]);
+    expect((await balance("ws_rlate", NOW + 7000)).balance).toBe(250);
+  });
+
+  test("a grant written after the window closed stays ×1 (a sign-up during the pause)", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    await setUnit(0.8);
+    await addWorkspace("ws_rpause");
+    await grant("ws_rpause", "rp_old", 10, "manual", AFTER);
+    await grant("ws_rpause", "rp_new", 250, "welcome", END + 10);
+    const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: true, at: NOW, universe: ["ws_rpause"] });
+    expect(run.results[0].after!.balance).toBe(80 + 250);
+    await setUnit(0.1);
+  });
+
+  test("a reversal after new activity is refused and lists it; nothing is divided", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    await setUnit(0.8);
+    await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, by: "owner", universe: ["ws_rrev"] });
+    expect(await ledgerUnitTx(await platform())).toBe(0.1);
+    const { runInTenant } = await import("../../lib/tenant");
+    const { getWorkspace } = await import("../../lib/platform");
+    const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+    await runInTenant((await getWorkspace("ws_rrev"))!, () =>
+      reserveGenerationSpend({ id: "rr_job", kind: "video", engine: "byteplus", model: "fixture", status: "running", engineCostUsd: 0.4 }));
+    const before = (await balance("ws_rrev", NOW + 10)).balance;
+    const out = await reverseAllCredits({ dryRun: false, at: NOW + 20_000, by: "owner", universe: ["ws_rrev"] });
+    expect(out.results[0].status).toBe("refused");
+    expect(out.results[0].activity?.map((a) => a.id)).toContain("rr_job");
+    expect(await ledgerUnitTx(await platform())).toBe(0.1);
+    expect((await balance("ws_rrev", NOW + 30)).balance).toBe(before);
+  });
+
+  test("a run's rig limit follows its approval time, not updated_at", async () => {
+    const { convertTenantFigures } = await import("../../lib/creditConversionTenant");
+    const { getWorkspace } = await import("../../lib/platform");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db, ready } = await import("../../lib/db");
+    await addWorkspace("ws_rrig");
+    const ws = (await getWorkspace("ws_rrig"))!;
+    await runInTenant(ws, async () => {
+      await ready();
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      for (const [id, approved, req] of [["run_old", BEFORE, "q1"], ["run_new", AFTER, "q2"]] as const)
+        await db().execute({ sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,model,state,approved_at,created_at,updated_at)
+          VALUES(?,?,'d','o',?,'g','ask',60,25,'m','done',?,?,?)`, args: [id, `p_${id}`, req, approved, approved, AFTER + 99] });
+    });
+    const figures = await convertTenantFigures(ws, { factorAt: (ts) => (ts != null && ts >= CUTOVER && ts < END ? 8 : 1), factor: 8, conversionId: "unit:rig:1", dryRun: true });
+    expect(figures.filter((f) => f.what === "rig_agent_runs.cap_credits").map((f) => [f.id, f.after])).toEqual([["run_new", 480]]);
+  });
+
+  test("the ledger is seeded from the last job's price, so a first boot at a new price pauses", async () => {
+    const { createClient } = await import("@libsql/client");
+    const { seedLedgerUnit, ledgerUnitTx, pausedSinceTx, LEDGER_UNIT_SCHEMA } = await import("../../lib/ledgerUnit");
+    const c = createClient({ url: `file:${path.join(dir, "seed.db")}` });
+    await c.execute(LEDGER_UNIT_SCHEMA);
+    await c.execute(`CREATE TABLE meter_events(id TEXT, credit_usd REAL, created_at INTEGER)`);
+    await c.execute(`INSERT INTO meter_events VALUES('a',0.1,1),('b',0.8,2)`);
+    process.env.CREDIT_USD = "0.10";
+    await seedLedgerUnit(c, 1234);
+    expect(await ledgerUnitTx(c)).toBe(0.8);
+    expect(await pausedSinceTx(c)).toBe(1234);
+    c.close();
+  });
+
+  test("a pre-conversion receipt's dollars are unchanged after conversion, and statements say from when", async () => {
+    const { convertAllCredits, creditUnitLine } = await import("../../lib/creditConversion");
+    const { getWorkspace } = await import("../../lib/platform");
+    const { runInTenant } = await import("../../lib/tenant");
+    await setUnit(0.8);
+    process.env.CREDIT_USD = "0.80";
+    await addWorkspace("ws_rstmt");
+    const p = await platform();
+    await p.execute({ sql: `INSERT INTO topup_requests(id,workspace_id,pack_id,label,credits,bonus_credits,usd,status,created_at,decided_at) VALUES('rs_req','ws_rstmt','starter','Starter',500,0,400,'approved',?,?)`, args: [AFTER, AFTER] });
+    await grant("ws_rstmt", "topup:rs_req:purchase", 500, "purchase", AFTER);
+    await job("ws_rstmt", "rs_job", 30, 0.8, AFTER + 5000);
+    const { statementFor } = await import("../../lib/statements");
+    const month = "2026-10";
+    const ws = (await getWorkspace("ws_rstmt"))!;
+    const before = (await runInTenant(ws, () => statementFor(month, null)))!;
+    expect(before.unitNote).toBeUndefined();
+    const usdOf = (s: typeof before, unit: number) => ({ packs: s.packs.usd, jobs: Math.round(s.totals.credits * unit * 100) / 100 });
+    const paid = usdOf(before, 0.8);
+    process.env.CREDIT_USD = "0.10";
+    const at = Date.UTC(2026, 9, 5, 15);
+    await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at, by: "owner", universe: ["ws_rstmt"] });
+    const after = (await runInTenant(ws, () => statementFor(month, null)))!;
+    expect(usdOf(after, 0.1)).toEqual(paid);
+    expect(after.packs.credits).toBe(4000);
+    expect(after.unitNote).toBe("Credits shown at US$0.10 each from 5 October 2026.");
+    expect(creditUnitLine(0.1, Date.UTC(2026, 9, 6))).toBe("Credits shown at US$0.10 each from 6 October 2026.");
+  });
+
+  test("a deleted workspace never holds the ledger up; the owner can skip a workspace's own half", async () => {
+    const { convertAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    await setUnit(0.8);
+    await addWorkspace("ws_rgone");
+    await addWorkspace("ws_rbroken");
+    await grant("ws_rgone", "rg", 10, "manual", AFTER);
+    await grant("ws_rbroken", "rb", 10, "manual", AFTER);
+    const p = await platform();
+    await p.execute(`UPDATE workspaces SET deleted_at=${AFTER} WHERE id='ws_rgone'`);
+    // A database that cannot be opened: its own half fails and is recorded as not done.
+    await p.execute(`UPDATE workspaces SET db_url='file:${path.join(dir, "missing-dir", "nope", "x.db")}' WHERE id='ws_rbroken'`);
+    await p.execute(`UPDATE workspaces SET db_url='libsql://unreachable.invalid' WHERE id='ws_rbroken'`);
+    const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, universe: ["ws_rgone", "ws_rbroken"] });
+    expect(run.waiting).toEqual(["ws_rbroken"]);
+    expect(await ledgerUnitTx(p)).toBe(0.8);
+    const finish = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW + 1, universe: ["ws_rgone", "ws_rbroken"], skipTenant: ["ws_rbroken"] });
+    expect(finish.tenantSkipped).toEqual(["ws_rbroken"]);
+    expect(await ledgerUnitTx(p)).toBe(0.1);
+  });
 });

@@ -37,36 +37,86 @@ export class LedgerUnitPausedError extends Error {
 export const samePrice = (a: number, b: number) => Math.round(a * 1e6) === Math.round(b * 1e6);
 
 export const LEDGER_UNIT_SCHEMA = `CREATE TABLE IF NOT EXISTS billing_unit(id INTEGER PRIMARY KEY CHECK(id=1), unit_usd REAL NOT NULL,
-  updated_at INTEGER NOT NULL, updated_by TEXT)`;
+  updated_at INTEGER NOT NULL, updated_by TEXT, paused_since INTEGER)`;
 
 /**
- * What a job's credits, counted at the price it was approved at, are in the ledger's unit:
- * 8 for a US$0.80 job settling after the record moved to US$0.10, 1 when the two agree.
- * Only an exact whole factor restates; anything else is left as it was (×1).
+ * Seed and watch the row, once per server instance (lib/billingLedger.ts billingReady).
+ *
+ * Seeded from the price the last job was approved at, falling back to CREDIT_USD: a deployment
+ * whose first boot of this code is already at a new price still counts its record in the old
+ * one, and pauses. When an instance boots at a price the record does not count in, the moment is
+ * kept (`paused_since`): the end of the old price's window, which the conversion converts up to
+ * and never past (lib/creditConversion.ts).
+ */
+export async function seedLedgerUnit(c: Pick<Transaction, "execute">, at: number): Promise<void> {
+  let seed = creditUsd();
+  try {
+    const last = (await c.execute(`SELECT credit_usd FROM meter_events WHERE credit_usd IS NOT NULL ORDER BY created_at DESC LIMIT 1`)).rows[0];
+    if (Number(last?.credit_usd) > 0) seed = Number(last!.credit_usd);
+  } catch { /* no meter yet */ }
+  await c.execute({ sql: `INSERT OR IGNORE INTO billing_unit(id,unit_usd,updated_at,updated_by) VALUES(1,?,?,'boot')`, args: [seed, at] });
+  const unit = await ledgerUnitTx(c);
+  if (unit != null && !samePrice(unit, creditUsd()))
+    await c.execute({ sql: `UPDATE billing_unit SET paused_since=? WHERE id=1 AND paused_since IS NULL`, args: [at] });
+}
+
+/** When an instance first ran at a price the record does not count in; null while they agree. */
+export async function pausedSinceTx(tx: Pick<Transaction, "execute">): Promise<number | null> {
+  const rs = await tx.execute(`SELECT paused_since FROM billing_unit WHERE id=1`);
+  const n = Number(rs.rows[0]?.paused_since);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * What a job's credits, counted at the price it was approved at, are in the unit its workspace
+ * counts in: 8 for a US$0.80 job settling in a US$0.10 record, 1/8 the other way, 1 when the two
+ * agree. Only an exact whole factor (either way) restates; anything else is left as it was.
  */
 export function restateFactor(approvedUsd: number, ledgerUsd: number | null): number {
   if (ledgerUsd == null || !(approvedUsd > 0) || !(ledgerUsd > 0) || samePrice(approvedUsd, ledgerUsd)) return 1;
-  const k = Math.round(approvedUsd / ledgerUsd);
-  return k >= 2 && Math.round(approvedUsd * 1e6) === k * Math.round(ledgerUsd * 1e6) ? k : 1;
+  const whole = (a: number, b: number) => {
+    const k = Math.round(a / b);
+    return k >= 2 && Math.round(a * 1e6) === k * Math.round(b * 1e6) ? k : null;
+  };
+  const up = whole(approvedUsd, ledgerUsd);
+  if (up) return up;
+  const down = whole(ledgerUsd, approvedUsd);
+  return down ? 1 / down : 1;
 }
 
-/** The ledger's unit; null only on a database whose billing tables were never made. */
+/** The platform ledger's unit; null only on a database whose billing tables were never made. */
 export async function ledgerUnitTx(tx: Pick<Transaction, "execute">): Promise<number | null> {
   const rs = await tx.execute(`SELECT unit_usd FROM billing_unit WHERE id=1`);
   const n = Number(rs.rows[0]?.unit_usd);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Whether a paid job may be admitted now: the ledger counts in today's price of a credit. */
+/**
+ * The unit ONE workspace's record counts in: its last conversion's target, or the platform's.
+ * A workspace converted in a run that has not finished everywhere already counts in the new
+ * price; settlement and new charges follow it, not the platform row.
+ */
+export async function workspaceUnitTx(tx: Pick<Transaction, "execute">, workspaceId: string): Promise<number | null> {
+  try {
+    const rs = await tx.execute({
+      sql: `SELECT to_usd FROM billing_unit_conversions WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`, args: [workspaceId],
+    });
+    const n = Number(rs.rows[0]?.to_usd);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch { /* no conversions on this deployment */ }
+  return ledgerUnitTx(tx);
+}
+
+/** Whether a paid job may be admitted now: the platform ledger counts in today's price of a credit. */
 export async function ledgerOpenTx(tx: Pick<Transaction, "execute">): Promise<boolean> {
   const unit = await ledgerUnitTx(tx);
   return unit == null || samePrice(unit, creditUsd());
 }
 
-export async function setLedgerUnitTx(tx: Transaction, unitUsd: number, by: string | null, at: number): Promise<void> {
+export async function setLedgerUnitTx(tx: Pick<Transaction, "execute">, unitUsd: number, by: string | null, at: number): Promise<void> {
   await tx.execute({
     sql: `INSERT INTO billing_unit(id,unit_usd,updated_at,updated_by) VALUES(1,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET unit_usd=excluded.unit_usd, updated_at=excluded.updated_at, updated_by=excluded.updated_by`,
+      ON CONFLICT(id) DO UPDATE SET unit_usd=excluded.unit_usd, updated_at=excluded.updated_at, updated_by=excluded.updated_by, paused_since=NULL`,
     args: [unitUsd, at, by],
   });
 }

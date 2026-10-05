@@ -2,7 +2,7 @@ import type { Client, Transaction } from "@libsql/client";
 import type { TenantWorkspace } from "./tenant";
 import { runInTenant } from "./tenant";
 import { db, ready } from "./db";
-import { heldPriceNow } from "./creditTerms";
+import { billCreditsWith, heldPriceNow, marginFor, marginKeyOf } from "./creditTerms";
 import { memoDrop } from "./memo";
 
 /**
@@ -43,7 +43,12 @@ import { memoDrop } from "./memo";
  * and asking again at the new price is safer than editing a priced body.
  * Dollars, and vendors' own credits (ElevenLabs, Higgsfield), are never touched.
  */
-export type TenantFigure = { what: string; id: string; before: number | string; after: number | string };
+export type TenantFigure = {
+  what: string; id: string; before: number | string; after: number | string;
+  /** A cap a person saved: never guessed from a timestamp; kept unless the owner chose ×factor for it. */
+  cap?: { id: string; choice: CapChoice };
+};
+export type CapChoice = "keep" | "x8";
 
 export type TenantPlan = {
   /** The factor for a row given its time (ms), or null when the row has none. */
@@ -52,15 +57,27 @@ export type TenantPlan = {
   dryRun: boolean;
   /** Reverse the rows this conversion recorded instead of choosing rows. */
   reverses?: string | null;
+  /** The whole factor (8), for caps the owner chose to multiply. */
+  factor?: number;
+  /** The owner's choice per cap, keyed `<table>:<id>` (`settings:shotCapCredits`); a cap not named is kept. */
+  caps?: Record<string, CapChoice>;
+  /** The price held takes are re-priced at (a dry run before CREDIT_USD changes names it); default CREDIT_USD. */
+  unitUsd?: number;
 };
+
+/** Caps a person saved. Their tables carry no time a cap was set, so the owner decides each one. */
+const CAPS: { table: string; key: string; col?: string; json?: string; where?: string }[] = [
+  { table: "projects", key: "id", col: "cap_credits" },
+  { table: "productions", key: "id", col: "cap_credits" },
+  { table: "api_tokens", key: "id", col: "cap_credits" },
+  { table: "archived_rows", key: "id", json: "cap_credits", where: "table_name IN ('projects','productions','api_tokens')" },
+];
 
 type Spec = { table: string; key: string; ts: string[]; cols: string[]; json?: { col: string; paths: string[] }[]; where?: string };
 
 const SPECS: Spec[] = [
-  { table: "projects", key: "id", ts: ["updated_at", "created_at"], cols: ["cap_credits"] },
-  { table: "productions", key: "id", ts: ["updated_at", "created_at"], cols: ["cap_credits"] },
-  { table: "api_tokens", key: "id", ts: ["created_at"], cols: ["cap_credits"] },
-  { table: "rig_agent_runs", key: "id", ts: ["updated_at", "created_at"], cols: ["cap_credits", "per_job_cap"], json: [{ col: "limits", paths: ["[].credits", "[].jobCeiling"] }] },
+  /* A run's limit is approved by a person at a time on record; patchRun moves updated_at, so it is not used. */
+  { table: "rig_agent_runs", key: "id", ts: ["approved_at", "created_at"], cols: ["cap_credits", "per_job_cap"], json: [{ col: "limits", paths: ["[].credits", "[].jobCeiling"] }] },
   { table: "rig_agent_steps", key: "id", ts: ["created_at"], cols: ["quote_credits", "credits_reserved", "credits_settled"],
     json: [{ col: "admission", paths: ["request.maxCredits", "quote.estimatedCredits"] }] },
   { table: "pipeline_attempts", key: "id", ts: ["created_at"], cols: [], json: [{ col: "prepared", paths: ["request.maxCredits", "quote.estimatedCredits"] }] },
@@ -72,8 +89,6 @@ const SPECS: Spec[] = [
   { table: "dubbing_jobs", key: "id", ts: ["created_at"], cols: ["estimate_credits"] },
   { table: "take_verifications", key: "id", ts: ["created_at"], cols: ["credits"] },
   { table: "crew_sessions", key: "id", ts: ["created_at"], cols: ["spend_cr"] },
-  { table: "archived_rows", key: "id", ts: ["archived_at"], cols: [], json: [{ col: "body", paths: ["cap_credits"] }],
-    where: "table_name IN ('projects','productions','api_tokens')" },
 ];
 
 type Exec = Pick<Transaction, "execute">;
@@ -136,17 +151,43 @@ async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
   const factorFor = (tbl: string, key: string, ts: number | null): number =>
     recorded ? (recorded.get(`${tbl}\u0000${key}`) ?? 1) : plan.factorAt(ts);
 
-  /* The shot cap setting, stored as a string. */
+  /* Caps: listed every time, multiplied only where the owner chose it (or reversed where it was). */
+  const capFactor = (capId: string): { f: number; choice: CapChoice } => {
+    if (recorded) return { f: recorded.get(capId.replace(":", "\u0000")) ?? 1, choice: recorded.has(capId.replace(":", "\u0000")) ? "x8" : "keep" };
+    const choice: CapChoice = plan.caps?.[capId] === "x8" ? "x8" : "keep";
+    return { f: choice === "x8" ? (plan.factor ?? 1) : 1, choice };
+  };
   if (await tableExists(c, "settings")) {
-    const rs = await c.execute(`SELECT key,value,updated_at FROM settings WHERE key='shotCapCredits'`);
+    const rs = await c.execute(`SELECT value FROM settings WHERE key='shotCapCredits'`);
     for (const r of rs.rows) {
       const n = num(r.value);
-      const f = factorFor("settings", "shotCapCredits", num(r.updated_at));
-      if (n == null || f === 1) continue;
-      const after = String(Math.round(n * f * 1e6) / 1e6);
-      figures.push({ what: "settings.shotCapCredits", id: "shotCapCredits", before: n, after: Number(after) });
-      if (!plan.dryRun) await c.execute({ sql: `UPDATE settings SET value=? WHERE key='shotCapCredits'`, args: [after] });
+      if (n == null) continue;
+      const { f, choice } = capFactor("settings:shotCapCredits");
+      const after = Math.round(n * f * 1e6) / 1e6;
+      figures.push({ what: "settings.shotCapCredits", id: "shotCapCredits", before: n, after, cap: { id: "settings:shotCapCredits", choice } });
+      if (f === 1) continue;
+      if (!plan.dryRun) await c.execute({ sql: `UPDATE settings SET value=? WHERE key='shotCapCredits'`, args: [String(after)] });
       await record("settings", "shotCapCredits", f);
+    }
+  }
+  for (const cap of CAPS) {
+    if (!(await tableExists(c, cap.table))) continue;
+    if (cap.col && !(await columnsOf(c, cap.table)).has(cap.col)) continue;
+    const value = cap.col ? cap.col : `json_extract(body,'$.${cap.json}')`;
+    const rs = await c.execute(`SELECT ${cap.key} AS k, ${value} AS v${cap.json ? ", body" : ""} FROM ${cap.table} WHERE ${value} IS NOT NULL${cap.where ? ` AND ${cap.where}` : ""}`);
+    for (const r of rs.rows) {
+      const n = num(r.v);
+      if (n == null) continue;
+      const key = String(r.k);
+      const capId = `${cap.table}:${key}`;
+      const { f, choice } = capFactor(capId);
+      figures.push({ what: `${cap.table}.${cap.col ?? `body.${cap.json}`}`, id: key, before: n, after: n * f, cap: { id: capId, choice } });
+      if (f === 1) continue;
+      if (!plan.dryRun)
+        await c.execute(cap.col
+          ? { sql: `UPDATE ${cap.table} SET ${cap.col}=? WHERE ${cap.key}=?`, args: [n * f, key] }
+          : { sql: `UPDATE ${cap.table} SET body=json_set(body,'$.${cap.json}',?) WHERE ${cap.key}=?`, args: [n * f, key] });
+      await record(cap.table, key, f);
     }
   }
 
@@ -202,7 +243,8 @@ async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
       const est = num(held.estUsd);
       // Forward: priced from its dollars at the new price; a reversal, or a take without dollars, by the factor.
       const after = !recorded && est != null && est > 0
-        ? heldPriceNow({ estUsd: est }, String(r.kind), String(r.model))
+        ? (plan.unitUsd ? billCreditsWith(est, marginFor(marginKeyOf(String(r.kind), String(r.model))), plan.unitUsd)
+          : heldPriceNow({ estUsd: est }, String(r.kind), String(r.model)))
         : Math.ceil(needs * f - 1e-9);
       if (after === needs) continue;
       figures.push({ what: "generations.params.held.needs", id, before: needs, after });

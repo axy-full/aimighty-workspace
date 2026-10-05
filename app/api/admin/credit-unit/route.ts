@@ -4,9 +4,10 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { creditUsd } from "@/lib/creditTerms";
 import { billingReady } from "@/lib/billingLedger";
 import { platformDb } from "@/lib/platform";
-import { ledgerUnitTx } from "@/lib/ledgerUnit";
+import { ledgerUnitTx, pausedSinceTx } from "@/lib/ledgerUnit";
+import type { CapChoice } from "@/lib/creditConversionTenant";
 import {
-  convertAllCredits, listCreditConversions, reverseAllCredits, unitFactor, type ShortfallDecision,
+  REAL_FROM_USD, REAL_TO_USD, convertAllCredits, listCreditConversions, reverseAllCredits, unitFactor, type ShortfallDecision,
 } from "@/lib/creditConversion";
 
 export const dynamic = "force-dynamic";
@@ -16,22 +17,29 @@ export const dynamic = "force-dynamic";
  * The platform owner only. A dry run unless the body says `dryRun: false`.
  *
  *   GET   the record, newest first (?workspace=<id> for one), the ledger's unit and CREDIT_USD.
- *   POST  { action: "convert", fromUnitUsd, cutoverAt, decisions?, workspaceId?, dryRun? }
- *         Per row (owner, 5 October 2026): `cutoverAt` (ms or ISO) is when the price moved, the
- *         first production build at the old-new price. The new unit is CREDIT_USD as this
- *         deployment runs (`toUnitUsd` is echoed; a dry run may name another to preview before the
- *         price is changed). A dry run also shows the uniform ×factor figures beside it, for
- *         comparison only. `decisions` is { [workspaceId]: "goodwill" | "apply" } for every
- *         workspace the dry run lists under `needsDecision`; one left out is skipped.
+ *   POST  { action: "convert", fromUnitUsd, cutoverAt, endAt?, decisions?, caps?, skipTenant?, workspaceId?, dryRun? }
+ *         Per row (owner, 5 October 2026). `cutoverAt` (ms, or ISO with Z or an offset) is when
+ *         the price moved to the old price: the first production build at it. `endAt` closes that
+ *         window; default, when an instance first ran at the new price (billing_unit.paused_since).
+ *         The new unit is CREDIT_USD as deployed (`toUnitUsd` is echoed; a dry run may name another
+ *         to preview, and held takes are priced at it). A real run is 0.80 → 0.10 only, and
+ *         `decisions` ({ [workspaceId]: "goodwill" | "apply" }) must cover every workspace the dry
+ *         run lists under `needsDecision`. `caps` ({ "<workspaceId>/<table>:<id>": "keep" | "x8" },
+ *         "platform/caps:defaultCapCredits" for the platform's) chooses per stored cap; default keep.
+ *         `skipTenant` names workspaces whose own database half is to be marked skipped. A dry run
+ *         also shows uniform ×factor figures beside it, for comparison only.
  *   POST  { action: "reverse", workspaceId?, dryRun? }
  */
 const price = (v: unknown): number | null => {
   const n = Number(v);
   return v != null && v !== "" && Number.isFinite(n) && n > 0 && n <= 1000 ? n : null;
 };
+/** Milliseconds, or ISO with Z or an offset: a time with no zone would be read in the server's. */
 const instant = (v: unknown): number | null => {
   if (v == null || v === "") return null;
-  const n = typeof v === "number" ? v : /^\d+$/.test(String(v)) ? Number(v) : Date.parse(String(v));
+  if (typeof v === "number" || /^\d+$/.test(String(v))) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; }
+  if (!/(Z|[+-]\d\d:?\d\d)$/i.test(String(v).trim())) return null;
+  const n = Date.parse(String(v));
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
@@ -44,7 +52,9 @@ export const GET = recoveryRoute(async function GET(req: Request) {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   const workspace = new URL(req.url).searchParams.get("workspace") || undefined;
-  return NextResponse.json({ creditUsd: creditUsd(), ledgerUnitUsd: await ledgerUnit(), conversions: await listCreditConversions(workspace) });
+  await billingReady();
+  return NextResponse.json({ creditUsd: creditUsd(), ledgerUnitUsd: await ledgerUnit(), pausedSince: await pausedSinceTx(platformDb()),
+    conversions: await listCreditConversions(workspace) });
 });
 
 export const POST = recoveryRoute(async function POST(req: Request) {
@@ -72,17 +82,29 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     if (body.mode != null && body.mode !== "per-row" && !(dryRun && body.mode === "uniform"))
       return NextResponse.json({ error: "A real run is per row; uniform is a dry-run comparison only." }, { status: 400 });
     if (cutoverAt == null)
-      return NextResponse.json({ error: "Give cutoverAt: when the price moved (ms or ISO)." }, { status: 400 });
+      return NextResponse.json({ error: "Give cutoverAt: when the price moved, in ms or ISO with Z or an offset." }, { status: 400 });
+    const endAt = body.endAt == null ? null : instant(body.endAt);
+    if (body.endAt != null && endAt == null)
+      return NextResponse.json({ error: "endAt is ms, or ISO with Z or an offset." }, { status: 400 });
+    if (!dryRun && !(fromUnitUsd === REAL_FROM_USD && toUnitUsd === REAL_TO_USD))
+      return NextResponse.json({ error: `A real run is $${REAL_FROM_USD} → $${REAL_TO_USD} only.` }, { status: 400 });
+    const caps: Record<string, CapChoice> = {};
+    for (const [id, c] of Object.entries((body.caps ?? {}) as Record<string, unknown>)) {
+      if (c !== "keep" && c !== "x8") return NextResponse.json({ error: `caps.${id} is keep or x8.` }, { status: 400 });
+      caps[id] = c;
+    }
+    const skipTenant = Array.isArray(body.skipTenant) ? body.skipTenant.filter((x: unknown): x is string => typeof x === "string") : [];
     const decisions: Record<string, ShortfallDecision> = {};
     for (const [id, d] of Object.entries((body.decisions ?? {}) as Record<string, unknown>)) {
       if (d !== "goodwill" && d !== "apply") return NextResponse.json({ error: `decisions.${id} is goodwill or apply.` }, { status: 400 });
       decisions[id] = d;
     }
-    const echo = { fromUnitUsd, toUnitUsd, factor, creditUsd: creditUsd(), cutoverAt, decisions };
-    const perRow = await convertAllCredits({ fromUsd: fromUnitUsd, toUsd: toUnitUsd, mode: "per-row", cutoverAt, decisions, by, dryRun, workspaceId });
+    const echo = { fromUnitUsd, toUnitUsd, factor, creditUsd: creditUsd(), decisions, capsChosen: caps };
+    const perRow = await convertAllCredits({ fromUsd: fromUnitUsd, toUsd: toUnitUsd, mode: "per-row", cutoverAt, endAt, decisions, caps, skipTenant, by, dryRun, workspaceId,
+      previewUnitUsd: dryRun ? toUnitUsd : undefined });
     if (!dryRun) return NextResponse.json({ ...echo, ...perRow });
     /* The comparison column: the same record ×factor throughout. Never a real run. */
-    const uniform = await convertAllCredits({ fromUsd: fromUnitUsd, toUsd: toUnitUsd, mode: "uniform", by, dryRun: true, workspaceId });
+    const uniform = await convertAllCredits({ fromUsd: fromUnitUsd, toUsd: toUnitUsd, mode: "uniform", endAt, by, dryRun: true, workspaceId });
     return NextResponse.json({ ...echo, ...perRow, comparison: { uniform: { totals: uniform.totals,
       results: uniform.results.map((r) => ({ workspaceId: r.workspaceId, status: r.status, before: r.before?.balance ?? null, after: r.after?.balance ?? null,
         usdBefore: r.before?.balanceUsd ?? null, usdAfter: r.after?.balanceUsd ?? null })) } } });

@@ -9,7 +9,7 @@ import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
-import { LEDGER_UNIT_PAUSED, ledgerOpenTx, ledgerUnitTx, restateFactor } from "./ledgerUnit";
+import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
@@ -183,6 +183,8 @@ export async function withGenerationRequestData(
     response.headers.set("Idempotency-Status", "complete");
     return response;
   } catch (error) {
+    /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
+    if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
     // Keep the durable claim: a provider might have accepted an interrupted request.
     console.error("Generation request interrupted:", (error as Error).message);
     if (options.atomicBinding) {
@@ -410,7 +412,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
     /* A job approved at another price of a credit (one reserved at US$0.80 before the record moved to
        US$0.10, lib/creditConversion.ts) keeps its terms and is counted in the ledger's unit: ×8. */
-    const restate = prior ? restateFactor(terms.creditUsd, await ledgerUnitTx(tx)) : 1;
+    const restate = prior ? restateFactor(terms.creditUsd, await workspaceUnitTx(tx, ws.id)) : 1;
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
     const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
