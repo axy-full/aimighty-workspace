@@ -17,7 +17,7 @@ const keysOf = (search: string): string[] => [...new URLSearchParams(search).key
  * The most specific row `search` matches, or null. One rule beyond the subset: `sp` names a shell page that shares a
  * backing `page` (Brief, Beats and the Studio overview are all `page=brief`), so a row that names a `page` but no `sp`
  * is for that page's own shell page and does not match an address whose `sp` names another one. The overview
- * (`page=brief&sp=stages`) is Home's, never the board's Brief region. A row for an old page never matches an address
+ * (`page=brief&sp=stages`) is Home's, never the board's Brief region. A row for an old page or suite never matches an address
  * that names a `view`: that address is already somewhere new.
  */
 export function matchRow(search: string, rows: readonly Row[]): Row | null {
@@ -32,7 +32,7 @@ export function matchRow(search: string, rows: readonly Row[]): Row | null {
     /* An address that already names a view (`view=board`, `view=home`, `view=workspace`) is not an old page: the `suite` and `page`
        beside it are the state layer's own backing (lib/workspace/navigation.ts › toSearch writes them on every landing), never a
        second place to go to. Without this a reload of `?view=board&region=cut&suite=particl&page=brief` would open the Brief. */
-    if (from.has("page") && !from.has("view") && q.has("view")) continue;
+    if ((from.has("page") || from.has("suite")) && !from.has("view") && q.has("view")) continue;
     const weight = keysOf(row.from).length;
     if (!best || weight > best.weight) best = { row, weight };
   }

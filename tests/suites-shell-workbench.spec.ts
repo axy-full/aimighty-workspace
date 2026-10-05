@@ -119,11 +119,11 @@ test("suites remember their page, the project is the board, Make (Gen) and Works
   await expect(board).toHaveAttribute("data-screen", "board");
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
-  /* A pasted link opens the same place: History is still Viral's page, the project's, so the project is lit; an old
-     Object Swap link is Make's quick tool over Studio. */
+  /* A pasted link opens the same place: Viral's History is the Social board's History drawer, the project's, so the project is
+     lit; an old Object Swap link is Make's quick tool over Studio. */
   await page.goto("/suites?suite=subatomik&page=history&sp=history");
-  await expect(page.getByTestId("page-title")).toHaveText("History");
-  await expect(page.getByTestId("suite-mark")).toHaveText("VIRAL");
+  await expect(board).toHaveAttribute("data-screen", "board-social");
+  await expect(page.getByTestId("suite-mark")).toHaveText("SOCIAL");
   await openSuitesMenu(page);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");

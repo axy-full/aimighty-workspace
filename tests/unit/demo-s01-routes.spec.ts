@@ -150,19 +150,23 @@ test("the board's rows: each old Studio page is a region, with the switch on and
   expect(sameSearch(route("?view=board&list=1&kind=studio", true, NONE), "?view=board&list=1&kind=studio")).toBe(true);
 });
 
-test("Ads and Social boards need the board too; without both, Ads' addresses open today's Business pages", () => {
+test("Ads and Social boards need the board too; the Business pages and Viral's History are deleted as pages, so nothing falls back to them", () => {
   const adsOnly = landed("board-ads");
   expect(isLanded("board-ads", adsOnly)).toBe(false);
+  /* Without the board, the old addresses are left as they are (the pages behind them are not shown to anyone once the board has landed). */
   expect(sameSearch(route("?suite=moleculr&page=marketing&sp=hooks", true, adsOnly), "?suite=moleculr&page=marketing&sp=hooks")).toBe(true);
-  expect(sameSearch(route("?view=board&kind=ads&frame=2", true, adsOnly), "?suite=moleculr&page=marketing&sp=dtc")).toBe(true);
-  expect(sameSearch(route("?view=board&kind=social", true, landed("board")), "?suite=subatomik&page=history")).toBe(true);
-  const both = landed("board", "board-ads");
+  expect(sameSearch(route("?view=board&kind=ads&frame=2", true, adsOnly), "?view=board&kind=ads&frame=2")).toBe(true);
+  const both = landed("board", "board-ads", "board-social");
   expect(isLanded("board-ads", both)).toBe(true);
   expect(sameSearch(route("?suite=moleculr&page=marketing&sp=dtc", true, both), "?view=board&kind=ads&frame=2&card=image-ad")).toBe(true);
   expect(sameSearch(route("?suite=moleculr&page=marketing&sp=design&sp=design", true, both), "?view=board&kind=ads&frame=3")).toBe(true);
   expect(sameSearch(route("?suite=moleculr&page=marketing&sp=brand", true, both), "?view=board&kind=ads&frame=1&card=brand")).toBe(true);
-  /* Ads landed, Social not: a Social address opens today's page. */
-  expect(sameSearch(route("?view=board&kind=social", true, both), "?suite=subatomik&page=history")).toBe(true);
+  /* The suite, and its backing page with no `sp`, are the Ads board too; Viral's History is the Social board's History drawer. */
+  expect(sameSearch(route("?suite=moleculr&page=marketing&project=ws-1", false, both), "?view=board&kind=ads&project=ws-1")).toBe(true);
+  expect(sameSearch(route("?suite=moleculr", false, both), "?view=board&kind=ads")).toBe(true);
+  expect(sameSearch(route("?suite=subatomik&page=history&sp=history", false, both), "?view=board&kind=social&drawer=history")).toBe(true);
+  /* An address that already names a board is not an old page, whatever suite the state layer wrote beside it. */
+  expect(sameSearch(route("?view=board&kind=ads&suite=moleculr&page=marketing", false, both), "?view=board&kind=ads&suite=moleculr&page=marketing")).toBe(true);
 });
 
 test("Home: the Studio overview opens it once landed; a bare landing does too; before that, the overview", () => {

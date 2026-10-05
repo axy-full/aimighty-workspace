@@ -20,7 +20,6 @@ import { grokTranscriptionUsd } from "../lib/xaiVoice";
  * Nothing is billed for real.
  */
 
-type Claim = { body: string; state: "running" | "answered" | "set_aside" | "held" };
 
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
