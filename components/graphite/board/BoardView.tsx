@@ -128,7 +128,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   const empty = !!project && placed.cards.length === 0;
 
-  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame));
+  /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
+  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" ? shell.params.drawer : null));
   /* ── Glides: a region's top-left to the canvas's top-left at this zoom, or a card to its middle ── */
   const viewportFor = useCallback((box: BoardBox, zoom: number, centre = false): Viewport => {
     const { width, height } = store.getState();
