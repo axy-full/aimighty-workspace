@@ -60,17 +60,17 @@ test("every old deep link lands on the page that now holds its work", async ({ p
   /* `make`: the old page is a Make quick tool now (lib/shell/make.ts). The switch still names Viral's page; /suites then
      sends it on to Studio with Make open in that tool, so the page underneath is Studio's first. */
   const cases: { from: string; page: RegExp; title: string; suite: string; make?: { tool: "motion" | "swap"; title: string } }[] = [
-    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Rig", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Board", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Storyboards", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "Cast & Elements", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "Astra 3D", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "3D blocking", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Takes", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Deliver", suite: "particl" },
     /* Stage ids retired before this change still resolve. */
     { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "Brief & Script", suite: "particl" },
     /* The Suites shell folds the old Generate page into Agent (lib/shell/ia.ts). */
     { from: `/atomik?project=${PROJECT}&page=generate`, page: /[?&]page=generate(&|$)/, title: "Agent", suite: "atomik" },
-    { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Runs", suite: "atomik" },
+    { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Activity", suite: "atomik" },
     { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Brief & Script", suite: "subatomik", make: { tool: "motion", title: "Motion transfer" } },
     { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Brief & Script", suite: "subatomik", make: { tool: "swap", title: "Object swap" } },
     { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "Image ads", suite: "moleculr" },
@@ -165,7 +165,7 @@ test("the back button leaves the redirect alone instead of bouncing", async ({ p
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   /* An old bookmark, arriving over the top of it. */
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   /* Back returns to where the person was, not to /workbench and forward again. */
   await page.goBack();
   await expect(page).toHaveURL(/[?&]page=brief(&|$)/);
@@ -180,7 +180,7 @@ test("phones land on the Suites shell as well, at the same mapped URLs", async (
 
   /* Motion Transfer is Make's quick tool now (lib/shell/make.ts): its old link opens Make in that tool over Studio. */
   for (const [from, title, make] of [
-    [`/workbench?project=${PROJECT}&stage=canvas`, "Rig", null],
+    [`/workbench?project=${PROJECT}&stage=canvas`, "Board", null],
     [`/subatomik?project=${PROJECT}&page=motion-transfer`, "Brief & Script", "motion"],
     ["/", "Brief & Script", null],
   ] as const) {
@@ -230,7 +230,7 @@ test("the escape hatch opens the old shell, is remembered, and can be cancelled"
   await expect.poll(shellCookie).toBeUndefined();
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 });
 
 test("the account menu carries the person back to the previous workspace", async ({ page }, info) => {

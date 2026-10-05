@@ -239,7 +239,7 @@ function Controls({ settings: s, facts, onChange }: { settings: NextSettings; fa
       if (s.media === "video") return (
         <>
           <Field label="Frame rate">{(l) => <Choice labelledBy={l} testId="next-fps" value={s.fps} onChange={(fps) => onChange({ ...s, fps })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} />}</Field>
-          <p className="gx-next-note">Astra chooses the output size, usually 4K, and keeps the clip’s length.</p>
+          <p className="gx-next-note">Topaz upscale chooses the output size, usually 4K, and keeps the clip’s length.</p>
         </>
       );
       return (

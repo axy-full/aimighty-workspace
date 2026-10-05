@@ -5,16 +5,13 @@ import { Glyph, SEGMENT_LOOK, posterOf } from "./icons";
 import { HEADER_SEGMENT, type HeaderSegmentId } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
+import { avatarInitials, readableName } from "@/lib/shell/person";
 import { creditsLabel } from "@/lib/workspace/format";
 import { lowBalance, useLastQuote } from "@/lib/workspace/last-quote";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import Boundary from "@/components/Boundary";
 import { JobsFault, JobsPill } from "./JobsTray";
 import { SettingsMenu } from "./SettingsMenu";
-
-function initialsOf(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "W";
-}
 
 /**
  * 56px, header option B (design/particl-graphite/README.md § 1): the particl mark and the suite pill; the segment
@@ -23,7 +20,7 @@ function initialsOf(name: string) {
  *
  * Until the packages that build the new screens ship, each segment opens today's page for it: Home the Studio
  * overview (on a phone, Home's "Where to?"), the project its current Studio page, Make its panel over the page on
- * screen (⌥M), Atomik its suite. Business, Viral and Crew are reached from ⌘K and the phone's Home.
+ * screen (⌥M), Atomik its suite. Ads, Social and Crew review are reached from ⌘K and the phone's Home.
  *
  * On a phone (components/graphite/phone.css) the context badge is a button: the segment and Search open under it,
  * one tap away. `bar` is the top bar's second row there — the project switcher beside the page strip.
@@ -48,8 +45,8 @@ export function Header({ account, project = null, bar = null }: { account: Works
     atomik: shell.view === "suite" && shell.suite.id === "atomik",
   };
   /* The suite pill names where you are: HOME, an old page's own mark, MAKE, CREW, SETTINGS; the phone's Library reads ASSETS. */
-  const mark = shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark;
-  const who = account?.workspace?.name ?? name ?? "Workspace";
+  const mark = shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW REVIEW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark;
+  const who = readableName(account?.workspace?.name) ?? readableName(name) ?? "Workspace";
   /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
   const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
   /* The phone's menu: a tap outside it, Escape, a pick or going anywhere else closes it (it is open only where it was opened). */
@@ -125,9 +122,9 @@ export function Header({ account, project = null, bar = null }: { account: Works
       </button>
       <button type="button" ref={avatar} className="gx-avatar" onClick={() => { setMenu(false); setSettings((open) => !open); }} aria-haspopup="menu" aria-expanded={settings}
         aria-label={`Workspace and account: ${who}`} title="Settings" data-testid="workspace-avatar">
-        {initialsOf(who)}
+        {avatarInitials({ name }, account?.workspace?.name)}
       </button>
-      {settings ? <SettingsMenu anchor={avatar} who={who} onClose={() => setSettings(false)} /> : null}
+      {settings ? <SettingsMenu anchor={avatar} onClose={() => setSettings(false)} /> : null}
       {bar ? <div className="gx-bar" data-row="bar">{bar}</div> : null}
     </header>
   );

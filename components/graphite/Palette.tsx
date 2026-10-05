@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { Glyph } from "./icons";
 import { paletteIndex, searchPalette, type PaletteRun } from "@/lib/shell/palette";
+import { goSettings } from "@/lib/shell/settings-nav";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
-/** ⌘K: Generate, suites, every page, Workspace, models, assets and "Ask Atomik: …". Enter runs the top hit; Esc closes. */
+/** ⌘K (lib/shell/palette.ts): what the design lists, then the person's assets and "Ask Atomik: …". Enter runs the top hit; Esc closes. */
 export function Palette(props: { items: LibraryEntry[]; onAsk: (text: string) => void }) {
   const shell = useShell();
   /* Mounted only while open, so every opening starts from an empty query. */
@@ -22,25 +22,20 @@ function PaletteDialog({ items, onAsk }: { items: LibraryEntry[]; onAsk: (text: 
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
   const index = useMemo(() => paletteIndex({
-    models: MODELS.filter((m) => isOffered(m) && !m.hidden).map((m) => ({ id: m.id, name: displayModelName(m.id), kind: m.kind === "video" ? "Video" : "Images" })),
     assets: items.map((i) => ({ id: i.take.id, name: i.take.name, kind: i.media ?? "file" })),
   }), [items]);
   const rows = useMemo(() => searchPalette(index, query), [index, query]);
   const run = (r: PaletteRun) => {
     shell.setPalette(false);
     switch (r.type) {
-      case "gen": shell.openMake(r.tool); return;
-      case "model": {
-        /* Make opens on the model picked, on the studio's engines (the index lists MODELS). */
-        const model = MODELS.find((m) => m.id === r.id && isOffered(m));
-        if (model) shell.openMake({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
-        else shell.openMake();
+      case "home": shell.goSuite("studio", shell.wide ? "stages" : "home"); return;
+      case "make":
+        /* Make's panel over the page on screen, on the mode picked (Motion transfer and Object swap are its quick tools). */
+        shell.openMake(r.mode ?? undefined);
         return;
-      }
       case "suite": shell.goSuite(r.suite); return;
       case "page": shell.goSuite(r.suite, r.page); return;
-      case "workspace": shell.goWorkspace(r.tab); return;
-      case "crew": shell.goCrew(r.page); return;
+      case "settings": goSettings(shell, r.section); return;
       case "asset": dispatch({ type: "patch", patch: { selKind: "take", selId: r.id } }); shell.openInspector(); return;
       case "ask": onAsk(r.text); return;
     }

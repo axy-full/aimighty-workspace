@@ -75,9 +75,9 @@ test("what stays, stays offered: Cinema Studio 4.0, Motion Transfer, Object Swap
   expect(retiredReason(null)).toBeNull();
 });
 
-test("the offer lists filter on the flag: the engines route and the palette", () => {
+test("the offer lists filter on the flag: the engines route; ⌘K lists no models at all (the design's search has none)", () => {
   expect(source("app/api/engines/route.ts")).toMatch(/models: offeredModels\(\)\.filter\(/);
-  expect(source("components/graphite/Palette.tsx")).toMatch(/MODELS\.filter\(\(m\) => isOffered\(m\) && !m\.hidden\)/);
+  expect(source("components/graphite/Palette.tsx")).not.toMatch(/MODELS/);
 });
 
 test("an identity still reads Identity still · Standard, · 2 and · Cinema, everywhere a name is made", () => {

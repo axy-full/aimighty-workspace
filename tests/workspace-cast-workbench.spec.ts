@@ -150,7 +150,7 @@ test("Cast renders cards from the draft and identities, inspects, walks with arr
   /* Use in Rig: Rig opens on the shot that cites this identity. */
   await card(page, "up_lead").click();
   await page.getByTestId("use-in-rig").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page).toHaveURL(/[?&]sel=shot%3As2(&|$)/);
   expect(errors).toEqual([]);
 });

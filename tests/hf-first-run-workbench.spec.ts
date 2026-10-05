@@ -125,8 +125,8 @@ test("with no project open, every Studio stage offers New project, the starter a
   for (const [id, page_, lead] of [
     ["environment", "boards", "Open or create a project to build its world."],
     ["cast", "cast", "Open or create a project to cast it."],
-    ["rig", "rig", "Open or create a project to use Rig."],
-    ["astra", "astra", "Open or create a project to use Astra 3D."],
+    ["rig", "rig", "Open or create a project to use Board."],
+    ["astra", "astra", "Open or create a project to use 3D blocking."],
     ["edit", "edit", "Open or create a project to use Edit & Sound."],
     ["deliver", "deliver", "Open or create a project to use Deliver."],
   ] as const) {
