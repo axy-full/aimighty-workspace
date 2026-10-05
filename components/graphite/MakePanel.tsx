@@ -41,7 +41,9 @@ import type { GenInputAsset } from "@/lib/genAssetInput";
 import { FilmChips, useFilmTypeahead } from "./FilmVocabulary";
 import { Glyph, type GlyphName } from "./icons";
 import { ViralTool, toolName } from "./viral/ViralView";
-import { isMakeTool, makeType, type MakeTool } from "@/lib/shell/make";
+import { isMakeTool, makeType, wantsChange, type MakeTool } from "@/lib/shell/make";
+import { useNewInterface } from "@/lib/shell/new-interface";
+import { Make, type MakeProps } from "./make/Make";
 
 const TYPE_TAB: Record<ComposerType, string> = { video: "Video", image: "Images", audio: "Audio" };
 const ORDER: ComposerType[] = ["video", "image", "audio"];
@@ -103,7 +105,7 @@ type RecipeCard = {
  * signed-in account are still shown until they land (the shell's collector
  * files them); nothing new starts there.
  */
-export function MakePanel({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null }: {
+function MakePanelToday({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null }: {
   scope: string; project: Project | null; items: LibraryEntry[];
   /** The open project's library store (its read: skeletons, a failed read's banner); `projects` is the project list's own read. */
   library: ProjectLibrary; projects?: "loading" | "ready" | "error";
@@ -868,4 +870,16 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
       ) : null}
     </aside>
   );
+}
+
+/**
+ * Make: today's panel, or with the new interface switched on for this workspace, the panel as the handoff draws it
+ * (components/graphite/make/Make.tsx). Customers keep today's until the switch flips (docs/old-shells.md).
+ */
+export function MakePanel(props: MakeProps) {
+  const next = useNewInterface();
+  /* `make=change` asks for the engine list open. The shell names the type in the address once it has landed, so the
+     ask is read here, on the first render, before that. */
+  const [change] = useState(() => typeof window !== "undefined" && wantsChange(window.location.search));
+  return next ? <Make {...props} listOpen={change} /> : <MakePanelToday {...props} />;
 }
