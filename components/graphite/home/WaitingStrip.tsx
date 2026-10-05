@@ -48,7 +48,7 @@ function Row({ item, now, onApprove, onOpen, onTopUp }: {
           : canPress ? (
             <button type="button" className="gx-hm-btn gx-hm-approve" onClick={() => void press()} disabled={busy || Boolean(short)} aria-busy={busy || undefined}
               title={title ?? undefined} data-testid="home-waiting-approve">
-              {busy ? "Approving…" : <>Approve · <Price value={item.price} /></>}
+              {busy ? "Approving…" : <span>Approve · <Price value={item.price} /></span>}
             </button>
           ) : null}
       </span>

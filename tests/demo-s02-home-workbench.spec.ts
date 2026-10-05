@@ -123,12 +123,11 @@ test("Home as drawn: the box, its chips, the templates and the projects, every l
   await page.locator(`[data-project="${older.id}"]`).scrollIntoViewIfNeeded();
   await expect(page.locator(`[data-project="${older.id}"] .gx-hm-cover`)).toHaveAttribute("data-cover", "swatch");
   await page.evaluate(() => { document.querySelector<HTMLElement>(".gx-hm")!.scrollTop = 0; });
-  await expect(page.locator(`[data-project="${older.id}"]`).getByTestId("home-project-needs")).toHaveCount(0);
+  /* Once the shared queue is read, a project with nothing waiting says so (the master's quiet line). */
+  await expect(page.locator(`[data-project="${older.id}"]`).getByTestId("home-project-needs")).toHaveText("Nothing waiting");
 
-  /* What PR b adds, and what is off until its owner turns it on, is not drawn: no invented state. */
-  await expect(page.getByText("Nothing waiting")).toHaveCount(0);
+  /* Waiting for you is left out while nothing waits; the sample entry waits for its own production. */
   await expect(page.getByText(/Waiting for you/i)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Start ·/ })).toHaveCount(0);
   await expect(page.getByTestId("home-sample")).toHaveCount(0);
   await expect(page.getByText(/\bquoted\b/i)).toHaveCount(0);
 

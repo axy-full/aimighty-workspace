@@ -29,12 +29,12 @@ export function StartFooter({ thinking, figure, busy, disabled, onStart, onRetry
   return (
     <div className="gx-hm-foot" data-testid="home-start-row">
       <span className="gx-hm-thinking" data-testid="home-thinking">
-        {line ?? <>Atomik’s thinking may cost <Price value={price} testId="home-thinking-price" /></>}
+        {line ?? <span>Atomik’s thinking may cost <Price value={price} testId="home-thinking-price" /></span>}
         {retry ? <button type="button" className="gx-hm-link gx-hm-retry" onClick={onRetry} data-testid="home-thinking-retry">Try again</button> : null}
       </span>
       <button type="button" className="gx-hm-start" onClick={onStart} disabled={disabled || busy || !price} aria-busy={busy || undefined}
         title={title ?? undefined} data-testid="home-start">
-        {busy ? "Starting…" : price ? <>Start · <Price value={price} /></> : "Start"}
+        {busy ? "Starting…" : price ? <span>Start · <Price value={price} /></span> : "Start"}
       </button>
       {problem ? <p className="gx-hm-problem gx-hm-foot-problem" role="alert" data-testid="home-start-problem">{problem}</p> : null}
     </div>
