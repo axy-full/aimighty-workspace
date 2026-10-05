@@ -49,3 +49,17 @@ test("every stream that has a built screen has landed it: Home, the board, Ads, 
   const { SCREENS, isLanded } = await import("../../lib/shell/screens");
   for (const screen of SCREENS) expect(isLanded(screen.id), screen.id).toBe(true);
 });
+
+test("seam i: Make sits left of the board's dock by the one variable the shell sets (--board-dock), never a name nobody sets", () => {
+  const make = read("components/graphite/make.css");
+  expect(make).toContain(".gx .gx-make.gx-mk { right: var(--board-dock, 0px); }");
+  expect(make).not.toContain("--gx-dock-right");
+  expect(read("components/graphite/SuitesShell.tsx")).toContain('"--board-dock": `${shell.dockRight}px`');
+});
+
+test("seam g: Make tells the Rig its draft was written before it tells the board which card to light", () => {
+  const make = read("components/graphite/make/use-make.ts");
+  const at = make.indexOf("announceDraftWritten(made.projectId);");
+  expect(at).toBeGreaterThan(0);
+  expect(at).toBeLessThan(make.indexOf("announceMade({ projectId: made.projectId"));
+});

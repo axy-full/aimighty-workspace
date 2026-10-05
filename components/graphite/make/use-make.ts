@@ -5,6 +5,7 @@ import { dropToIds, readDrop } from "@/lib/drop";
 import { displayModelName } from "@/lib/models";
 import { isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import { announceMade, inferType, isMakeTool, madeLine, makeDest, makeType, typeNote } from "@/lib/shell/make";
 import { exact, priceWords, shortByWords, type PriceValue } from "@/lib/shell/price-words";
 import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
@@ -75,6 +76,9 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const sent = useCallback((made: ComposerSent) => {
     if (made.held) return;
     ws.toast(madeLine(made.name, priceWords(exact(made.credits)), made.takes));
+    /* The composer filed the take on a shot node in the saved draft: the board's own copy reads it again, so the card Make
+       tells the board about is there to glide to (the Rig only catches up on arriving at a page, and Make is a panel over it). */
+    announceDraftWritten(made.projectId);
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
   }, [ws, shell]);
