@@ -62,7 +62,7 @@ test("guest components and the guest reader import only what they are allowed", 
     "@/lib/guest/brief", "@/components/graphite/home/home-model", "./brief", "./sample",
     "@/lib/platform", "@/lib/site/settings.server",
     /* The guest reader: one workspace's sample, read through stream 12's reader (lib/demo), nothing written. */
-    "@/lib/tenant", "@/lib/workbench/records", "@/lib/demo/board.server", "@/lib/demo/mark.server", "./board", "../demo/board", "../demo/content",
+    "@/lib/tenant", "@/lib/workbench/records", "@/lib/demo/board.server", "@/lib/demo/mark.server", "./board", "../demo/board", "../demo/content", "@/lib/guest/board",
     "@/lib/shell/create-project", "@/lib/workbench/request-scope",
   ]);
   for (const file of [...files("components/graphite/guest"), ...files("lib/guest")]) {
