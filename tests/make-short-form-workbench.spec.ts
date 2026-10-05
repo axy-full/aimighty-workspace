@@ -64,6 +64,8 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   await expect(page.getByTestId("make-engine-price")).toBeVisible();
   await expect(page.getByTestId("gen-generate")).toBeVisible();
 
+  await page.screenshot({ path: `/private/tmp/claude-make-short-shots/closed-${info.project.name}.png` });
+
   /* Opening it shows the rest; the toggle says it is open. */
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
