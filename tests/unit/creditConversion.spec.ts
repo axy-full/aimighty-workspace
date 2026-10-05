@@ -815,6 +815,41 @@ test.describe("second review fixes", () => {
     expect(await listCreditConversions("ws_s9")).toEqual([]);
   });
 
+  test("a job first metered at completion is refused while paused; a row that charges nothing is still recorded", async () => {
+    const { runInTenant } = await import("../../lib/tenant");
+    const { meter } = await import("../../lib/meter");
+    const { LEDGER_UNIT_PAUSED } = await import("../../lib/ledgerUnit");
+    await addWorkspace("ws_s10");
+    await grant("ws_s10", "s10_grant", 100, "manual", BEFORE);
+    process.env.CREDIT_USD = "0.10";
+    await setUnit(0.8); // paused: the record counts in $0.80, CREDIT_USD is $0.10
+    const p = await platform();
+    const ws = await tenantOf("ws_s10");
+    const done = await runInTenant(ws, () => meter({ id: "s10_done", kind: "text", engine: "openai", model: "fixture", status: "succeeded", engineCostUsd: 2 }))
+      .then(() => null, (e: Error) => e);
+    expect(done?.message).toBe(LEDGER_UNIT_PAUSED);
+    expect((await p.execute(`SELECT id FROM meter_events WHERE id='s10_done'`)).rows).toHaveLength(0);
+    await runInTenant(ws, () => meter({ id: "s10_free", kind: "text", engine: "openai", model: "fixture", status: "failed", engineCostUsd: 0 }));
+    expect(Number((await p.execute(`SELECT billed_credits FROM meter_events WHERE id='s10_free'`)).rows[0].billed_credits)).toBe(0);
+    await setUnit(0.1);
+    // Open again: the same completion is charged in today's unit.
+    await runInTenant(ws, () => meter({ id: "s10_done", kind: "text", engine: "openai", model: "fixture", status: "succeeded", engineCostUsd: 2 }));
+    expect(Number((await p.execute(`SELECT credit_usd FROM meter_events WHERE id='s10_done'`)).rows[0].credit_usd)).toBe(0.1);
+  });
+
+  test("N1: after a rollback, a $0.80 job well after pausedSince refuses the default window", async () => {
+    const { checkPausedWindowHolds, ROLLOUT_GRACE_MS } = await import("../../lib/creditConversion");
+    const T = NOW + 100 * DAY; // pausedSince: the merged build's first boot
+    await addWorkspace("ws_s11");
+    // An old instance finishing a request just after the switch: inside the grace, fine.
+    await job("ws_s11", "s11_overlap", 3, 0.80, T + ROLLOUT_GRACE_MS - 1000);
+    await checkPausedWindowHolds(0.8, T);
+    // The $0.80 build live again a day later (an Instant Rollback): refused, endAt asked for.
+    await job("ws_s11", "s11_rollback", 3, 0.80, T + DAY);
+    await expect(checkPausedWindowHolds(0.8, T)).rejects.toThrow(/give endAt: the time the redeployed build went live/);
+    await checkPausedWindowHolds(0.8, T + DAY + 1000);
+  });
+
   test("L12: the admin route may run for five minutes", async () => {
     const { readFileSync } = await import("node:fs");
     const route = readFileSync(path.resolve("app/api/admin/credit-unit/route.ts"), "utf8");

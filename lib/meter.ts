@@ -126,8 +126,13 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        // A new paid start while the record (the platform's, or this workspace's own) counts in another price of a credit (lib/ledgerUnit.ts) does not start.
-        if (!row && e.status === "running" && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx, workspaceId)))
+        /* A NEW paid row while the record (the platform's, or this workspace's own) counts in another price
+           of a credit (lib/ledgerUnit.ts) is refused, whatever its status: a start, and equally a job first
+           metered at completion, which would otherwise be charged in credits the balance does not count in
+           yet (and never restated in a workspace made after the window). A row that charges nothing (a
+           failure at no cost, an unbilled attempt) is still recorded. */
+        const charges = e.status === "running" || (!e.unbilled && cost != null && cost > 0);
+        if (!row && charges && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx, workspaceId)))
           throw new LedgerUnitPausedError();
         const ledger = await workspaceUnitTx(tx, workspaceId);
         /* A job first metered now is charged in the unit this workspace's record counts in, which is

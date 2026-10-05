@@ -133,6 +133,13 @@ its own (see "The pause is automatic").
   own price, so the figures stay exact, but the pause is not absolute.
 - *Roll back (only before step 3):* Vercel → Instant Rollback to the previous
   deployment. It runs at $0.80 over the unconverted $0.80 record, as before.
+- **After any rollback and a redeploy of #524**, `pausedSince` still shows the
+  first deploy's time, while the $0.80 build may have written more since. In
+  steps 2 and 3, add `endAt`: the time the redeployed build went live (Vercel
+  "Ready" time, ISO with `Z`). The step 1 check tells you: a `pausedSince`
+  earlier than this deployment's Ready time means it happened. A conversion
+  without `endAt` refuses when a $0.80 job was approved well after
+  `pausedSince`; grants alone leave no such trace, so give `endAt` either way.
 
 ## 2. Dry run (changes no balance)
 
