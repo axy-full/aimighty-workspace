@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The wall, grouped by shot — from the pipeline handoff.
+ * The wall, grouped by shot.
  *
  * A render is a TAKE of a shot, and the wall reads that way: one group per
  * shot, its takes as cards, and a state on every card — draft, picked,

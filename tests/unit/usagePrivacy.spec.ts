@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -20,6 +21,8 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
+test.beforeAll(async () => { await alignLedgerUnit(); });
 
 const run = randomUUID().slice(0, 8);
 function workspace(name: string, credits: boolean): TenantWorkspace {

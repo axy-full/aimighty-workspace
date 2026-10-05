@@ -1,6 +1,6 @@
 /**
- * The connected account's workflows on the Studio pages the brief names
- * (FINAL_SPEC §4 › Workflows): Deliver › Social cuts = `reframe`, Edit ›
+ * The connected account's workflows on the Studio pages the brief names:
+ * Deliver › Social cuts = `reframe`, Edit ›
  * Dub = `dubbing`, Edit › Change voice = `voice_change`, Gen › Analysis =
  * `video_analysis` (the Virality Predictor's report). Pure: the surfaces and
  * the one reason a tool cannot run.

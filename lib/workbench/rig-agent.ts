@@ -568,7 +568,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
     if (!(error instanceof SpendReservationError)) throw error;
     const said = error.message === RUN_LIMIT_REACHED
       ? `Planning this board may cost up to about ${creditFigure(quotedCredits(ceiling, "text"))} cr, more than this run's limit of ${creditFigure(run.capCredits)} cr. Ask again with a higher limit.`
-      : /Nothing was charged/.test(error.message) ? error.message : `${error.message} Nothing was charged.`;
+      : /Nothing (was|has been) charged/.test(error.message) ? error.message : `${error.message} Nothing was charged.`;
     return failRun(run.id, said, ["planning"]);
   }
   await patchRun(db(), run.id, { plan_charge: "reserved" });

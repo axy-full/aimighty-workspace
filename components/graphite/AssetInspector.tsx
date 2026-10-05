@@ -29,7 +29,7 @@ import { RememberAsset } from "./atomik/MemoryView";
 import { overHoldMark } from "@/lib/cinemaHold";
 
 /**
- * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
+ * The Inspector for an asset: a fixed
  * 180px preview card, provenance — where it came from, what it cost, what it
  * is — and the actions the right-click menu offers, as buttons. Every action
  * is the shell's own (the context-menu command path), so the two never drift.
