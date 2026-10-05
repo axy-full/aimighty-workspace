@@ -481,7 +481,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
