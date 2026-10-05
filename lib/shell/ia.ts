@@ -77,7 +77,7 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
 /** Group starts: Studio after 03 and 07; Business after 01 and 02; Viral after 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   /* Brief, Boards, 3D blocking and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
-  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
+  own(withHome(build("studio", "Studio", "STUDIO", "Studio", "particl", [3, 7], [
     ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
     /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
     ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],

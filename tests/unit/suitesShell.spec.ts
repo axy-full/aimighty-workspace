@@ -83,7 +83,7 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      README's names; the never-name rule covers the legacy screens only.
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
-    ["STUDIO", "Particl Production Studio"],
+    ["STUDIO", "Studio"],
     ["ADS", "Ads"],
     ["SOCIAL", "Social"],
     ["AGENT", "Atomik Agent"],
