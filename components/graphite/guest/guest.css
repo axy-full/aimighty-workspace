@@ -49,6 +49,24 @@
   color: var(--gx-accent-text); font-size: 13px; font-weight: 600; white-space: nowrap;
 }
 .gx .gx-gs-gated:hover { background: var(--gx-tint); }
+.gx-gs-text { margin: 0; font-size: 15px; line-height: 1.55; color: var(--gx-text); overflow-wrap: anywhere; }
+.gx-gs-frame, .gx-gs-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-gs-plan--card { flex-direction: column; align-items: stretch; }
+.gx-gs-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gx-gs-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gx-gs-step { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--gx-hair); font-size: 14px; color: var(--gx-text); }
+.gx-gs-step:first-child { border-top: 0; }
+.gx-gs-step-name { min-width: 0; overflow-wrap: anywhere; }
+.gx-gs-step-price { flex: none; white-space: nowrap; color: var(--gx-text); }
+.gx-gs-shot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gx-gs-shot-name { font-size: 14px; font-weight: 600; color: var(--gx-text); }
+.gx-gs-shot-meta { font-size: 13px; color: var(--gx-text-2); }
+.gx-gs-shot[data-state="waiting"] .gx-gs-shot-meta { color: var(--gx-waiting-text, var(--gx-text)); }
+.gx-gs-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
+.gx-gs-check { padding: 10px 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
+.gx-gs-check dt { font-size: 12px; font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-gs-check dd { margin: 4px 0 0; font-size: 15px; color: var(--gx-text); }
+.gx-gs-pending { color: var(--gx-text-2); }
 
 /* ── The sign-up sheet: centred dialog; a bottom sheet on a phone ────── */
 .gx-su-layer { position: fixed; inset: 0; z-index: 90; }

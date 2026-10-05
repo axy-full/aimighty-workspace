@@ -7,6 +7,7 @@ import { GuestBox } from "./GuestBox";
 import { GuestHeader } from "./GuestHeader";
 import { GuestSample } from "./GuestSample";
 import { SignupSheet } from "./SignupSheet";
+import type { GuestBoard } from "@/lib/guest/board";
 import "../home/home.css";
 import "./guest.css";
 
@@ -24,12 +25,14 @@ export type GuestView = "home" | "sample";
  *
  * What the guest types is kept in this browser (lib/guest/brief.ts) and becomes their first board after sign-up.
  */
-export function GuestHome({ initialView, initialSignup, invite, sampleTitle, welcomeCredits }: {
+export function GuestHome({ initialView, initialSignup, invite, sampleTitle, sampleBoard = null, welcomeCredits }: {
   initialView: GuestView;
   initialSignup: boolean;
   /** An invitation code from the address (`?invite=`): the sheet opens in its "Create your account" state. */
   invite: string | null;
   sampleTitle: string;
+  /** The sample production's board, read from the "Particl sample" workspace; null until one is marked. */
+  sampleBoard?: GuestBoard | null;
   welcomeCredits: number | null;
 }) {
   const [view, setView] = useState<GuestView>(initialView);
@@ -76,7 +79,7 @@ export function GuestHome({ initialView, initialSignup, invite, sampleTitle, wel
     <div className="gx-guest" data-testid="guest-home" data-view={view}>
       <GuestHeader mark={view === "sample" ? "BOARD" : "HOME"} view={view} onHome={goHome} onGated={openSheet} onSignup={openSheet} />
       {view === "sample" ? (
-        <GuestSample title={sampleTitle} onSignup={openSheet} />
+        <GuestSample title={sampleTitle} board={sampleBoard} onSignup={openSheet} />
       ) : (
         <div className="gx-hm gx-scroll" data-screen-label="Home">
           <div className="gx-hm-col">

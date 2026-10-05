@@ -60,7 +60,9 @@ test("guest components and the guest reader import only what they are allowed", 
     "../home/BriefBox", "../home/brief-file", "../home/home-model", "../home/TemplateRow", "../home/home.css", "./guest.css",
     "./GuestBox", "./GuestHeader", "./GuestSample", "./SignupSheet", "./RequestAccess",
     "@/lib/guest/brief", "@/components/graphite/home/home-model", "./brief", "./sample",
-    "@/lib/platform", "@/lib/db", "@/lib/site/settings.server",
+    "@/lib/platform", "@/lib/site/settings.server",
+    /* The guest reader: one workspace's sample, read through stream 12's reader (lib/demo), nothing written. */
+    "@/lib/tenant", "@/lib/workbench/records", "@/lib/demo/board.server", "@/lib/demo/mark.server", "./board", "../demo/board", "../demo/content", "@/lib/guest/board",
     "@/lib/shell/create-project", "@/lib/workbench/request-scope",
   ]);
   for (const file of [...files("components/graphite/guest"), ...files("lib/guest")]) {
@@ -79,6 +81,7 @@ test("guest screens call no route but the invitation check and Request access", 
   const reader = readFileSync(path.join(ROOT, "lib/guest/sample.server.ts"), "utf8");
   expect(reader).not.toMatch(/\b(INSERT|UPDATE|DELETE|REPLACE)\b/);
   expect(reader).not.toMatch(/searchParams|headers\(|cookies\(/);
+  expect(reader).not.toMatch(/saveDraft|writeSite|markSampleProduction|hideSampleMark|openSampleDraft/);
 });
 
 test("no invented names or shot ids in anything a guest sees", () => {

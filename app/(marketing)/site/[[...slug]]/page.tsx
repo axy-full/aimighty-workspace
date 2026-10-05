@@ -52,7 +52,7 @@ export default async function SiteRoute({ params, searchParams }: Props) {
     return (
       <GuestHome initialView={one(q.sample) === "1" ? "sample" : "home"} initialSignup={one(q.signup) === "1"}
         invite={invite && /^[A-Za-z0-9_-]{8,200}$/.test(invite) ? invite : null}
-        sampleTitle={sample?.title ?? SAMPLE_TITLE} welcomeCredits={welcome} />
+        sampleTitle={sample?.title ?? SAMPLE_TITLE} sampleBoard={sample?.board ?? null} welcomeCredits={welcome} />
     );
   }
   const entry = await entryFor(params);
