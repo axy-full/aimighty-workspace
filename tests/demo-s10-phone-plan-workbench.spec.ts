@@ -188,3 +188,26 @@ test("offline: Approve says it needs a connection", async ({ page, context }, in
   expect(posts).toEqual([]);
   await context.setOffline(false);
 });
+
+test("Change hands the plan to Atomik's sheet with the words started, and calls nothing", async ({ page }, info) => {
+  test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
+  const { posts, paid } = await open(page, proposal(500, 486), [43, 43, 7]);
+  await expect(page.getByTestId("phone-plan-step")).toHaveCount(3);
+  await page.getByTestId("phone-plan-change").click();
+  await expect(page.getByTestId("phone-atomik")).toBeVisible();
+  await expect(page.getByTestId("phone-atomik-input")).toHaveValue("Change the plan: ");
+  /* The plan is still under the sheet; closing it returns to the plan. */
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("phone-plan-title")).toBeVisible();
+  expect(posts).toEqual([]);
+  expect(paid).toEqual([]);
+});
+
+test("device=phone frames the plan at 390 px on a desktop, with no overflow", async ({ page }, info) => {
+  test.skip(PHONES.includes(info.project.name), "desktop widths");
+  await open(page, proposal(500, 486), [43, 43, 7], "device=phone&screen=plan");
+  await expect(page.getByTestId("phone-plan-step")).toHaveCount(3);
+  expect(Math.round((await page.getByTestId("phone-app").boundingBox())!.width)).toBe(390);
+  await floors(page, "Framed plan");
+  await shot(page, info.project.name, "framed-plan");
+});

@@ -24,7 +24,7 @@ export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const
  * The screens this build draws. The rest arrive in their own PRs (plan approval, Change with words and the
  * take states, the Record, Make and the Atomik sheet); until then their addresses open Home.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "record"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "record", "make", "atomik"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 

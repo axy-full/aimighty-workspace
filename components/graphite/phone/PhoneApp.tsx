@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { QueueItem } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { moving } from "@/lib/jobsTray";
+import { isMakeTool } from "@/lib/shell/make";
 import { useShell } from "@/lib/shell/state";
 import { useJobsTray } from "@/lib/shell/use-jobs-tray";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
@@ -15,6 +16,8 @@ import { HomeScreen } from "./HomeScreen";
 import { ReviewScreen } from "./ReviewScreen";
 import { PlanScreen } from "./PlanScreen";
 import { RecordScreen } from "./RecordScreen";
+import { MakeScreen } from "./MakeScreen";
+import { AtomikSheet } from "./AtomikSheet";
 import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
@@ -51,7 +54,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
@@ -85,17 +88,37 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
     go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null });
   };
   const home = () => { if (page) shell.goSuite("studio", "home"); go({ screen: "home" }); };
+  /* The screen under the Atomik sheet: the one the sheet was opened from (Home when it is the address itself). */
+  const [under, setUnder] = useState<PhoneScreen>("home");
+  if (!page && route.screen !== "atomik" && under !== route.screen) setUnder(route.screen);
+  /* Words handed to the sheet: Plan's Change, or an address's `q`. */
+  const [handed, setHanded] = useState<string | null>(null);
+  const openAtomik = (words: string | null = null) => { setHanded(words); go({ screen: "atomik" }); };
   const onTab = (tab: PhoneTab) => {
-    /* Make and Atomik open today's Make panel and ⌘K over the phone until their phone screens land. */
-    if (tab === "make") { shell.openMake(); return; }
-    if (tab === "atomik") { shell.setPalette(true); return; }
     if (page) shell.goSuite("studio", "home");
+    if (tab === "atomik") { openAtomik(); return; }
     go({ screen: tab });
   };
+  /* An address or a link that opens the shell's Make panel or Atomik panel (`make=video`, `atomik=1&q=…`) opens the phone's own
+     screens instead: the panel is the desktop's, and the phone has its own (DECISIONS 11). A quick tool and Recent stay the panel's. */
+  const { make: shellMake, atomik: shellAtomik, atomikQuery } = shell;
+  useEffect(() => {
+    if (shellMake && !isMakeTool(shellMake) && shellMake !== "recent") { shell.closeMake(); go({ screen: "make" }, "replace"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the shell's close and the router's go are stable enough; only the address matters
+  }, [shellMake]);
+  const [seenAtomik, setSeenAtomik] = useState<string | null>(null);
+  const addressed = shellAtomik ? `${shellAtomik}:${atomikQuery ?? ""}` : null;
+  if (addressed && seenAtomik !== addressed) { setSeenAtomik(addressed); setHanded(atomikQuery); }
+  useEffect(() => {
+    if (shellAtomik) { shell.closeAtomik(); go({ screen: "atomik" }, "replace"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- as above
+  }, [shellAtomik]);
 
-  const screen = page ? null : route.screen;
+  const sheet = !page && route.screen === "atomik";
+  /* Under the Atomik sheet the screen it was opened from still shows. */
+  const screen = page ? null : sheet ? under : route.screen;
   const tabs = screen !== "review" && screen !== "plan";
-  const active: PhoneTab | null = page ? null : route.asked === "record" ? "record" : screen === "home" ? "home" : null;
+  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" ? "home" : null;
 
   return (
     <div className="ph-app" data-framed={route.framed || undefined} data-screen={screen ?? "page"} data-online={online ? undefined : "off"} data-testid="phone-app">
@@ -105,9 +128,12 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
       ) : (
         <>
           <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
-          {screen === "plan" ? (
+          {screen === "make" && !page ? (
+            <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
+              projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
+          ) : screen === "plan" ? (
             <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
-              onChange={() => go({ screen: "atomik" })} />
+              onChange={() => openAtomik("Change the plan: ")} />
           ) : (
           <main className="ph-scroll" data-testid="mobile-scroll">
             {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
@@ -123,7 +149,11 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           )}
         </>
       )}
-      {tabs ? <PhoneTabs active={active} needs={needs} onTab={onTab} drawn={(tab) => tab !== "record" || DRAWN_SCREENS.has("record")} /> : null}
+      {tabs ? <PhoneTabs active={active} needs={needs} onTab={onTab} /> : null}
+      {sheet ? (
+        <AtomikSheet project={project} query={handed} online={online} onClose={() => go({ screen: under })}
+          places={{ home, record: () => go({ screen: "record" }), make: () => go({ screen: "make" }) }} />
+      ) : null}
       <PhoneToast />
     </div>
   );

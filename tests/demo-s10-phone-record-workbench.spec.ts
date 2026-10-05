@@ -119,3 +119,12 @@ test("the board's address opens that project's Record on a phone, and a project 
   await page.getByTestId("phone-project").first().click();
   await expect(page.getByTestId("phone-record")).toBeVisible();
 });
+
+test("device=phone frames the Record at 390 px on a desktop, with no overflow", async ({ page }, info) => {
+  test.skip(PHONES.includes(info.project.name), "desktop widths");
+  await open(page, 200, "/suites?device=phone&screen=record");
+  const frame = (await page.getByTestId("phone-app").boundingBox())!;
+  expect(Math.round(frame.width)).toBe(390);
+  await floors(page, "Framed Record");
+  await shot(page, info.project.name, "framed-record");
+});
