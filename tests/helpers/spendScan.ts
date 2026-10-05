@@ -59,8 +59,8 @@ function resolve(from: string, spec: string, files: Set<string>): string | null 
   return null;
 }
 
-function parse(path: string, files: Set<string>): Mod {
-  const source = readFileSync(path, "utf8");
+function parse(path: string, files: Set<string>, read: (path: string) => string): Mod {
+  const source = read(path);
   const sf = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const mod: Mod = { path, tops: new Map(), imports: new Map(), exports: new Map(), reexports: new Map(), starFrom: [], hasJsx: false, hasControl: false, optedIn: false, labels: [] };
 
@@ -169,9 +169,9 @@ export type SpendReport = {
   labels: { path: string; line: number; label: string }[];
 };
 
-export function scanSpend(files = sourceFiles()): SpendReport {
+export function scanSpend(files = sourceFiles(), read: (path: string) => string = (path) => readFileSync(path, "utf8")): SpendReport {
   const set = new Set(files);
-  const mods = new Map(files.map((path) => [path, parse(path, set)]));
+  const mods = new Map(files.map((path) => [path, parse(path, set, read)]));
 
   /** Follow imports and re-exports to the module that declares a name. */
   const origin = (path: string, name: string, depth = 0): { path: string; name: string } | null => {
