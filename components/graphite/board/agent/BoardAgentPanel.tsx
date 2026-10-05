@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useShell } from "@/lib/shell/state";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { agentAsk, runNeedsYou } from "@/lib/shell/board-agent";
 import { useProvideBoardSeam } from "../BoardContext";
@@ -8,6 +9,7 @@ import { showQuestions } from "../cards/questions/model";
 import { DrawStoryboard } from "../cards/storyboard/DrawStoryboard";
 import type { BoardCtx } from "../cards/types";
 import { usePriceTitle } from "../../Price";
+import { CrewReview } from "./CrewReview";
 import { RecordTab } from "./RecordTab";
 import { AgentLines } from "./AgentLines";
 import { useAgentRun } from "./use-board-agent";
@@ -27,7 +29,11 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
-  const [tab, setTab] = useState<"atomik" | "record">("atomik");
+  const shell = useShell();
+  /* The design's frames: m is Crew review, n the Record (old Crew links land on them). */
+  const frame = shell.params.frame ?? null;
+  const [tab, setTab] = useState<"atomik" | "record">(frame === "n" ? "record" : "atomik");
+  const [crew, setCrew] = useState(frame === "m");
   const box = useRef<HTMLTextAreaElement>(null);
   /* ctx.askAtomik(words): the panel with these words in its box, never sent. */
   const fill = useCallback((text?: string) => { if (text) setWords(text); box.current?.focus(); }, []);
@@ -68,8 +74,10 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
       {tab === "record" ? <RecordTab ctx={ctx} onAtomik={() => setTab("atomik")} /> : (
       <div className="ag-body">
         <AgentLines agent={agent} approvals={approvals} sample={sample} />
-        {answer?.enabled && showQuestions(ctx.project, run) ? <BoardQuestions readOnly={ctx.offline ? "Needs a connection" : null} /> : null}
+        {crew ? <CrewReview ctx={ctx} /> : null}
+        {showQuestions(ctx.project, run) ? <BoardQuestions readOnly={ctx.offline ? "Needs a connection" : null} /> : null}
         <DrawStoryboard readOnly={ctx.offline ? "Needs a connection" : null} />
+        {crew ? null : <button type="button" className="ag-link ag-crew-open" onClick={() => setCrew(true)} data-testid="crew-open">Ask the crew</button>}
       </div>)}
       {tab === "atomik" ? <div className="ag-compose">
         <div className="ag-box">

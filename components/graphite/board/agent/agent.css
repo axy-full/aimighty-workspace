@@ -69,3 +69,13 @@
 .ag-bar { height: 4px; border-radius: 2px; background: var(--gx-seg-on); overflow: hidden; }
 .ag-bar > span { display: block; height: 100%; background: var(--gx-accent); }
 .ag-bar[data-over] > span { background: var(--gx-waiting); }
+
+/* ── Crew review ── */
+.ag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-chip { height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text-2); font-size: 13px; font-weight: 500; }
+.ag-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border-50); color: var(--gx-accent-text); }
+.ag-chip:disabled { color: var(--gx-disabled); }
+.ag-chip:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.ag-note-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
+.ag-crew-open { align-self: flex-start; }
+@media (pointer: coarse) { .ag-chip { min-height: 44px; } }

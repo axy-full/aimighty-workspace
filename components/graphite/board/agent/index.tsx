@@ -5,6 +5,7 @@ import { DOCK_WIDTH } from "@/lib/board/geometry";
 import type { BoardAgentView } from "@/lib/board/types";
 import { runNeedsYou } from "@/lib/shell/board-agent";
 import type { BoardCtx } from "../cards/types";
+import { showQuestions } from "../cards/questions/model";
 import { AgentRail, BoardAgentPanel } from "./BoardAgentPanel";
 import { useAgentRun } from "./use-board-agent";
 
@@ -60,7 +61,9 @@ export const BoardAgentDock: ComponentType<BoardAgentDockProps> = function Board
   /* Opens itself once when the board agent first needs this person (a proposal to approve), never again after it is closed. */
   const [offered, setOffered] = useState<string | null>(null);
   const needs = runNeedsYou(run);
-  const key = needs && run ? `${run.id}:${run.state}` : null;
+  /* …and once when the panel has questions to ask (a brief and no look yet, README § 3.1 b), so the board opens on them. */
+  const asking = agent.ready && showQuestions(ctx.project, run);
+  const key = needs && run ? `${run.id}:${run.state}` : asking ? "questions" : null;
   useEffect(() => {
     if (!key || offered === key) return;
     setOffered(key); // eslint-disable-line react-hooks/set-state-in-effect -- one shot per state

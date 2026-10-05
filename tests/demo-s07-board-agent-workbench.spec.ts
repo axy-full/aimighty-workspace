@@ -29,7 +29,11 @@ test("the dock: a rail that opens to Atomik, an ask at the server's price, a pro
   await page.goto(`/suites?project=${project.id}&view=board`);
   const dock = page.getByTestId("board-agent-dock");
   await expect(dock).toBeVisible();
-  await expect(dock).toHaveAttribute("data-open", "false");
+  /* A board with a brief and no look yet opens the panel on its questions; collapse it to see the rail. */
+  await expect(async () => {
+    if ((await dock.getAttribute("data-open")) === "true") await dock.getByTestId("agent-collapse").click({ timeout: 3000 });
+    await expect(dock).toHaveAttribute("data-open", "false", { timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
   await expect(dock.getByTestId("agent-rail")).toContainText("Atomik");
   expect((await dock.boundingBox())!.width).toBe(56);
   await shot(page, "dock-rail", info);
