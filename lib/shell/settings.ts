@@ -104,7 +104,7 @@ const OFF_ROWS: Row[] = [
 
 export const SETTINGS_SCREEN: ScreenModule = Object.freeze({
   id: "settings",
-  landed: false,
+  landed: true,
   params: [SETTINGS_OPEN_PARAM],
   rows: ON_ROWS,
   fallback: OFF_ROWS,

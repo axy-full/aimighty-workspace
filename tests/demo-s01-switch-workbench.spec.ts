@@ -102,6 +102,8 @@ test("switch ON, nothing landed: the same pages at every address, the new-interf
   await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
   await closeSuitesMenu(page);
   for (const [path, want] of TODAYS) {
+    /* Settings has landed (stream 9): its own spec (demo-s09-settings-workbench) holds the Workspace addresses. */
+    if (path.includes("view=workspace")) continue;
     await page.goto(path);
     await landsOn(page, want);
     await expect(page.locator(".gx")).toHaveAttribute("data-interface", "new");

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
@@ -14,15 +15,8 @@ import { smallTargets, smallText } from "./phoneFloors";
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-settings", productionProjectId: "prod-settings", shotMappings: {} });
 
-/** The new interface for this browser. Stream 1's helper (tests/helpers/newInterface.ts) replaces this when the switch lands. */
-async function switchOn(page: Page) {
-  const base = process.env.PW_BASE_URL || "http://localhost:4551";
-  await page.context().addCookies([{ name: "s09_new_interface", value: "1", url: base }]);
-}
-
 async function open(page: Page, path: string, opts: { on?: boolean } = {}) {
-  await signInLocally(page.request);
-  if (opts.on !== false) await switchOn(page);
+  if (opts.on !== false) await signInWithNewInterface(page.request); else await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
   await mockProjects(page, { current: fixture() });
