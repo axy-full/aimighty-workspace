@@ -10,6 +10,7 @@ import {
   masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
+import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
@@ -44,6 +45,7 @@ function failure(error: unknown) {
  * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
  * `agent=1&board=new` (no production): what asking would cost on a new, empty board, for Home's Start
  * before its project exists. Prices only; nothing is reserved or written.
+ * `history=1` answers the board's History: the canvas's changes, newest first, with this workspace's names (no prices).
  */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
@@ -58,6 +60,8 @@ export const GET = withTenant(async (req: Request) => {
       return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null) }, { headers: NO_STORE });
     }
     await requireProduction(productionId);
+    /* The board's History (stream 3; lead decision 26): this production's canvas changes and who made them, read only. */
+    if (url.searchParams.get("history") === "1") return Response.json({ history: await boardHistory(productionId) }, { headers: NO_STORE });
     /* Anything the live room has not taken yet goes out again, after this answer. */
     scheduleCanvasPush(productionId);
     const server = await latestServerChange(productionId);
