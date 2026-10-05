@@ -38,9 +38,9 @@ export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; nam
           </button>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="flex flex-col gap-0.5"><span className="font-medium">Guest Home</span><span className="text-[12px] text-lead">{data.guestHome ? "A signed-out visitor at / sees Home and the sample production, read-only." : "A signed-out visitor at / sees today’s site."}</span></span>
+          <span className="flex flex-col gap-0.5"><span className="font-medium">Guest Home’s sample</span><span className="text-[12px] text-lead">{data.guestHome ? "Guests at / read the sample production, read-only." : "Guests at / see Home with the sample’s layout and no sample read."}</span></span>
           <button type="button" className={`chip !py-0.5 !text-[12px] ${data.guestHome ? "is-on" : ""}`} disabled={busy} aria-pressed={data.guestHome} data-testid="site-guest-home"
-            onClick={() => void save({ guestHome: !data.guestHome }, data.guestHome ? undefined : ["Show Guest Home at /?", "Signed-out visitors then see Home with the sample production instead of today’s site. Nothing they do there thinks or spends.", "Show Guest Home"])}>
+            onClick={() => void save({ guestHome: !data.guestHome }, data.guestHome ? undefined : ["Show the sample to guests?", "Signed-out visitors then read the sample production’s title from the workspace below. Nothing they do there thinks or spends.", "Show the sample"])}>
             {data.guestHome ? "Guest Home · on" : "Guest Home · off"}
           </button>
         </div>

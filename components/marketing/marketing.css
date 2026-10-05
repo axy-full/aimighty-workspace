@@ -145,28 +145,6 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-role { font-size: 12.5px; color: var(--gx-text-2); margin-top: -6px; }
 
 /* ── Gen hero: the campaign still, the prompt bar ─────────────────────── */
-.mk-hero { position: relative; min-height: min(92vh, 900px); display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
-.mk-hero-img { position: absolute; inset: 0; width: 100%; height: 100% !important; object-fit: cover; object-position: 72% 30%; }
-.mk-hero-shade { position: absolute; inset: 0; background: var(--gx-scrim); }
-.mk-hero-in { position: relative; max-width: 1200px; margin: 0 auto; width: 100%; padding: clamp(120px, 18vh, 180px) clamp(16px, 4vw, 40px) 48px; display: flex; flex-direction: column; gap: 22px; }
-.mk-hero-title { font-size: clamp(40px, 6.4vw, 84px); line-height: .98; max-width: 14ch; text-wrap: balance; }
-.mk-hero-lead { margin: 0; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.5; color: var(--gx-text-2); max-width: 58ch; text-wrap: pretty; }
-.mk-hero-actions { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
-.mk-prompt { max-width: 920px; background: var(--gx-panel); border: 1px solid var(--gx-pop-border); border-radius: 14px; padding: 12px; box-shadow: var(--gx-shadow-dialog); }
-.mk-prompt textarea { display: block; width: 100%; resize: none; background: transparent; border: 0; outline: none; color: var(--gx-text); font: inherit; font-size: 16px; line-height: 1.5; padding: 6px 8px; min-height: 64px; }
-.mk-prompt-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
-.mk-model-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-input-border); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.mk-model-tag { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .1em; padding: 3px 6px; border-radius: 4px; background: var(--gx-tint); color: var(--gx-accent-text); }
-.mk-set { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; }
-.mk-set--on { border-color: var(--gx-tint-border); background: var(--gx-tint); color: var(--gx-accent-text); }
-.mk-prompt-meta { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--gx-text-2); }
-.mk-go.mk-btn { border-radius: 10px; }
-.mk-hero-status { min-height: 44px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mk-take { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; max-width: 680px; width: 100%; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: none; animation: mk-rise .4s var(--gx-ease) both; }
-.mk-take-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px; }
-.mk-take-prompt { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mk-take-meta { font-size: 12.5px; color: var(--gx-text-2); }
-.mk-take-actions { display: flex; gap: 8px; flex: none; }
 
 /* ── Widths ───────────────────────────────────────────────────────────── */
 /* Six suites: six across, then three by two, then two by three, then a column. */
@@ -188,13 +166,8 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
   .mk-footer-col { gap: 0; }
   .mk-footer-col a { min-height: 44px; display: flex; align-items: center; }
   .mk-body a, .mk-lead a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
-  .mk-prompt textarea { min-height: 96px; }
   .mk-header .mk-btn { height: 44px; }
   .mk-btn { min-height: 44px; }
-  .mk-wrap-text { white-space: normal !important; }
-  .mk-hero { min-height: 0; }
-  .mk-hero-in { padding-top: 104px; padding-bottom: 36px; }
-  .mk-go.mk-btn { flex: 1 1 100%; }
 }
 /* A phone on its side is wider than 720 but still a finger: the same 44px targets, nothing else. */
 @media (pointer: coarse) and (min-width: 721px) {

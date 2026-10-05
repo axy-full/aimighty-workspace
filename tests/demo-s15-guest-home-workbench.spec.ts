@@ -79,11 +79,13 @@ test.beforeEach(async ({ request }) => {
 });
 test.afterAll(async () => { await setSite({}); });
 
-test("Guest Home off (the default): a visitor at / sees today's site", async ({ page }) => {
+test("the old homepage is gone: a visitor at / sees Guest Home whatever the setting says", async ({ page }) => {
   await setSite({});
   await page.goto("/");
-  await expect(page.getByTestId("guest-home")).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Suites" }).first()).toBeVisible();
+  await expect(page.getByTestId("guest-home")).toBeVisible();
+  await expect(page.locator(".mk-hero, .mk-prompt")).toHaveCount(0);
+  /* The other site pages stay. */
+  expect((await page.request.get("/pricing")).status()).toBe(200);
 });
 
 test("Guest Home on: Home signed out, and every action that thinks or spends opens the sheet", async ({ page }, info) => {

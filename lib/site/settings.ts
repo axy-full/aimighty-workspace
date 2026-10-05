@@ -8,7 +8,8 @@
  *
  * - `openSignup`: anyone may create an account without an invitation link. Off, the server refuses a self-serve
  *   sign-up whatever the environment is configured for (lead decision 36).
- * - `guestHome`: a signed-out visitor at "/" sees Home in its guest state instead of today's site (decision 35).
+ * - `guestHome`: guests may read the sample production. Since the old homepage was deleted (decision 41), "/"
+ *   signed out is always Guest Home; this switch only lets it read the sample.
  * - `guestWorkspace`: the one workspace whose sample production a guest may read. Nothing else is ever read for a
  *   guest; null means there is no sample to show.
  */
