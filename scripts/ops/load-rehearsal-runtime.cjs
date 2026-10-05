@@ -114,7 +114,7 @@ const { claimRender } = load("renderWork.ts"),
   { reconcileWorkspaces } = load("reconciliation.ts");
 const { saveDraft, readDraft, workbenchReady } = load("workbench/records.ts"),
   { newProject } = load("workbench/studio.ts");
-const { billingStateFor } = load("billingLedger.ts"),
+const { billingStateFor, billingReady } = load("billingLedger.ts"),
   { billCredits, marginKeyOf } = load("creditTerms.ts");
 const user = {
   id: "user_load",
@@ -204,6 +204,9 @@ function unexpected(error) {
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function initialize(setup = false) {
   await platform.platformReady();
+  /* The ledger's unit is read from the record on its first start (lib/ledgerUnit.ts): seeded on the
+     empty database, before the fixture rows, it counts in the price this rehearsal runs at. */
+  await billingReady();
   const p = platform.platformDb();
   if (setup) {
     await p.batch(
