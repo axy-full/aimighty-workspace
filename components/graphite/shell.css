@@ -1281,7 +1281,9 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-project-btn, .gx-project-btn > span:last-child { position: static; }
   .gx-project-meta { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; white-space: nowrap; }
   /* The tab bar: five 44px targets in a bar that floats 12px in from the sides, over the page. */
-  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(5, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  /* Hidden only over a full-screen review (the take previewer, mounted on the body) and a plan's approval (the Atomik sheet). */
+  body:has(.pv-veil) .gx .gx-tabbar, .gx:has([data-testid="atomik-veil"]) .gx-tabbar { display: none; }
   .gx-tabbar-btn { min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--gx-r-pill); color: var(--gx-text-2); }
   .gx-tabbar-btn[aria-current="page"] { color: var(--gx-accent-text); background: var(--gx-tint); }
   .gx-tabbar-label { font-size: 12px; font-weight: 500; }

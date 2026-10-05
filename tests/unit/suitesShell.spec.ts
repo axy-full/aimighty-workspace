@@ -19,10 +19,10 @@ test("every suite has the README's pages, numbered in order, with its group gaps
   const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.phoneOnly);
   expect(home).toMatchObject({ id: "home", n: "", own: true });
   expect(shape).toEqual({
-    studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
+    studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 3D blocking", "07 Board", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
     business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
-    viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
-    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
+    viral: ["01 Motion transfer", "02 Object swap", "|03 History"],
+    atomik: ["01 Agent", "|02 Activity", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
   });
 });
 
@@ -84,8 +84,8 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
     ["STUDIO", "Particl Production Studio"],
-    ["BUSINESS", "Moleculr Business Suite"],
-    ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
+    ["ADS", "Ads"],
+    ["SOCIAL", "Social"],
     ["AGENT", "Atomik Agent"],
   ]);
   /* The suites left the header: each is still a ⌘K row, under its own name, until its board ships. */
@@ -247,7 +247,7 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
 
 const rows = paletteIndex({
   models: [{ id: "m1", name: "Seedance 2.5", kind: "video" }],
-  assets: [{ id: "tk_1", name: "Rigging diagram", kind: "image" }],
+  assets: [{ id: "tk_1", name: "Board diagram", kind: "image" }],
 });
 
 test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
@@ -264,10 +264,10 @@ test("the palette indexes Generate, suites, every page, Workspace, models and as
 });
 
 test("search ranks a page's own name first and always ends with Ask Atomik", () => {
-  const hits = searchPalette(rows, "rig");
+  const hits = searchPalette(rows, "board");
   expect(hits[0].run).toEqual({ type: "page", suite: "studio", page: "rig" });
-  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: rig", run: { type: "ask", text: "rig" } });
-  /* The asset "Rigging diagram" matches too, below the page. */
+  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: board", run: { type: "ask", text: "board" } });
+  /* The asset "Board diagram" matches too, below the page. */
   expect(hits.some((r) => r.run.type === "asset")).toBe(true);
   expect(searchPalette(rows, "zzzz")).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
   expect(searchPalette(rows, "")).toHaveLength(PALETTE_ROWS);

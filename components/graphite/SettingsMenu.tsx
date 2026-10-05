@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { createPortal } from "react-dom";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
+import { personLine, workspaceLine } from "@/lib/shell/person";
 import { signOut } from "@/lib/shell/sign-out";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -14,7 +15,7 @@ type Item = { id: string; label: string; run: () => void };
  * until then each item opens the page that holds it today — Workspace's People, Plans & credits and Engines tabs,
  * and Atomik's Budget and Tools & connections.
  */
-export function SettingsMenu({ anchor, who, onClose }: { anchor: RefObject<HTMLButtonElement | null>; who: string; onClose: () => void }) {
+export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButtonElement | null>; onClose: () => void }) {
   const shell = useShell();
   const session = useSession();
   const scopedFetch = useScopedFetch();
@@ -59,15 +60,14 @@ export function SettingsMenu({ anchor, who, onClose }: { anchor: RefObject<HTMLB
     else if (e.key === "End") { e.preventDefault(); all[all.length - 1]?.focus(); }
     else if (e.key === "Tab") onClose();
   };
-  const workspace = session.workspace?.name ?? who;
   const style = at ? ({ "--menu-top": `${at.top}px`, "--menu-right": `${at.right}px` } as React.CSSProperties) : undefined;
   /* Out of the header, which clips to its 56px: the veil is fixed to the viewport, so it mounts on the shell root. */
   return createPortal(
     <div className="gx-settings-veil" onClick={close} data-testid="settings-veil">
       <div ref={menu} className="gx-settings-menu" role="menu" aria-label="Settings" style={style} onClick={(e) => e.stopPropagation()} onKeyDown={onKey} data-testid="settings-menu">
         <div className="gx-settings-who">
-          <span className="gx-settings-name">{session.name ?? workspace}</span>
-          <span className="gx-settings-meta">{[workspace, session.role].filter(Boolean).join(" · ")}</span>
+          <span className="gx-settings-name">{personLine(session)}</span>
+          <span className="gx-settings-meta">{workspaceLine(session.workspace?.name, session.role)}</span>
         </div>
         <div className="gx-settings-rule" role="separator" />
         {items.map((item) => (
