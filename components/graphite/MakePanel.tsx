@@ -15,7 +15,8 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { AUDIO_SECONDS, COMPOSER_TYPES, EMPTY_PROMPT, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, EMPTY_PROMPT, READING_MODELS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { STATED_CHARGE_BAND, fromTenths, toTenths } from "@/lib/runLimit";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
@@ -122,7 +123,14 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const tool = isMakeTool(shell.make) ? shell.make : null;
   const [initialType] = useState(opened);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
-  const { state, model, offered, settings, blocked: waiting, buttonLabel, buttonParts, submitting } = composer;
+  const { state, model, offered, settings, blocked: waiting, submitting } = composer;
+  /* An approximate quote (Cinema Studio 4.0) can settle up to STATED_CHARGE_BAND times itself (lib/cinemaStudio.ts),
+     so Make says the ceiling too: "about 31 cr, at most 93 cr" — on the engine line for one take, on the button for
+     what Make approves (one take, a draft, or the batch's total, as the composer adds it up). Display only. */
+  const atMost = (credits: number) => `at most ${fromTenths(toTenths(credits) * STATED_CHARGE_BAND).toLocaleString("en-US")} cr`;
+  const approxTotal = composer.quote?.approximate && !submitting ? shownTotal(composer.quote, composer.quoteKey, settings.draft ? 1 : Math.max(1, state.count)) : null;
+  const buttonParts = approxTotal != null && composer.buttonParts.price ? { ...composer.buttonParts, price: `${composer.buttonParts.price}, ${atMost(approxTotal)}` } : composer.buttonParts;
+  const buttonLabel = approxTotal != null && composer.buttonParts.price ? `${composer.buttonLabel}, ${atMost(approxTotal)}` : composer.buttonLabel;
   /* Make's own words for an empty prompt; every other reason is the composer's. */
   const blocked = waiting === EMPTY_PROMPT ? "Say what to make." : waiting;
   const recentTab = shell.make === "recent";
@@ -549,7 +557,9 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
     ? [model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null]
     : state.type === "image" ? [settings.ratio, settings.resolution]
     : [settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter(Boolean) as string[];
-  const enginePrice = composer.credits != null ? `${composer.quote?.approximate ? "about " : ""}${composer.credits.toLocaleString("en-US")} cr` : null;
+  const enginePrice = composer.credits != null
+    ? composer.quote?.approximate ? `about ${composer.credits.toLocaleString("en-US")} cr, ${atMost(composer.credits)}` : `${composer.credits.toLocaleString("en-US")} cr`
+    : null;
   const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
   const compose = mode === "edit" ? (
     <div className="gx-make-compose">

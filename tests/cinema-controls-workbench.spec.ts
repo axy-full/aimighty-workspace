@@ -150,7 +150,20 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
+  /* An approximate quote says its ceiling (STATED_CHARGE_BAND, lib/runLimit.ts): one take's on the engine line, what Make approves on the button. */
+  await expect(page.getByTestId("make-engine-price")).toHaveText("about 31 cr, at most 93 cr");
+  await expect(go).toHaveAccessibleName("Make · about 31 cr, at most 93 cr");
+  /* The longer price fits whole: on the button, inside the screen, on one line, never cut, never under 12 px. */
+  const fit = await go.evaluate((el) => {
+    const price = el.querySelector(".gx-go-price")!;
+    const box = el.getBoundingClientRect(), p = price.getBoundingClientRect();
+    const px = parseFloat(getComputedStyle(price).fontSize);
+    return { inside: box.left >= 0 && box.right <= innerWidth + 1, uncut: el.scrollWidth <= el.clientWidth + 1 && p.left >= box.left - 1 && p.right <= box.right + 1,
+      oneLine: p.height <= px * 1.6, legible: px >= 12 };
+  });
+  expect(fit).toEqual({ inside: true, uncut: true, oneLine: true, legible: true });
+  expect(await noOverflow(page)).toBe(true);
   const readsBefore = reads.length;
 
   /* Movement: Auto first, then every documented move, each drawn; search narrows by name. */
@@ -227,7 +240,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Contre-jour");
 
   /* The price stayed where it was: no control is in the published formula, so none asked for a new one. */
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(reads.length).toBe(readsBefore);
   await page.getByTestId("gen-cinema").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, info, "cinema-chips");
@@ -261,7 +274,7 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill(`${WORDS} to the hum of @Audio1`);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const well = page.getByTestId("gen-well");
   await expect(well).toContainText("Drag stills, clips or WAV sounds here from the Library.");
 
@@ -276,7 +289,7 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   await expect(well.locator(".gx-ref-wave")).toBeVisible();
   /* Priced with the sound in the read, at the same approximate figure. */
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(await noOverflow(page)).toBe(true);
   await well.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, info, "cinema-sound");
@@ -312,7 +325,7 @@ test("Recreate brings a Cinema Studio take's controls back onto its chips and it
   await expect(row).toHaveAttribute("data-state", "kept");
   await expect(page.getByTestId("gen-well")).toContainText("@Audio1 · Room tone.wav");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("@Audio1 hums while a lighthouse keeper climbs");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await shot(page, info, "cinema-recreate");
   /* A change made here: the card says so. */
   await chip(page, "genre").click();

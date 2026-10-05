@@ -177,7 +177,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
 
   await page.getByTestId("gen-prompt").fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   /* A WAV dropped as a reference is cited and priced, and the switch stays where it was. */
   const well = page.getByTestId("gen-well");
   await dropId(page, well, "upload:room-tone");
@@ -185,7 +185,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
   await expect(sound).toHaveAttribute("aria-checked", "false");
   expect(reads.every((q) => !q.has("audio")), "a read asked for sound").toBe(true);
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
 
   /* The floors, on the switch: clear of the sticky Generate and the tab bar, a full target, a readable label. */
   await row.evaluate((el) => el.scrollIntoView({ block: "center" }));
@@ -215,7 +215,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   await pickModel(page, /^Cinema Studio 4\.0/);
   await page.getByTestId("gen-prompt").fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const sound = page.getByTestId("gen-sound-toggle");
   await sound.scrollIntoViewIfNeeded();
 
@@ -233,7 +233,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   held.open();
   holdSound(null);
   /* The fresh figure is the one for a take with sound. */
-  await expect(go).toHaveText("Make · about 36 cr");
+  await expect(go).toHaveText("Make · about 36 cr, at most 108 cr");
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "gen-sound-on");
 
@@ -247,7 +247,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   await sound.click();
   await expect(sound).toHaveAttribute("aria-checked", "false");
   await expect.poll(() => reads.slice(again).some((q) => q.get("model") === CINEMA && !q.has("audio"))).toBe(true);
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   /* Another engine has no switch; back on Cinema Studio it is as it was left. */
   await pickModel(page, /^Seedance 2\.5/);
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
@@ -269,7 +269,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await expect(chip).toHaveText("With sound");
   await expect(chip).toHaveAttribute("data-state", "kept");
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.get("audio") === "1")).toBe(true);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 36 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 36 cr, at most 108 cr");
   await shot(page, info, "gen-sound-recreate");
   /* Turned off here: the card says so, and Generate sends a silent take. */
   await sound.scrollIntoViewIfNeeded();
@@ -277,7 +277,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await expect(chip).toHaveText("With sound → silent");
   await expect(chip).toHaveAttribute("data-state", "changed");
   await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Changed here");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS });
@@ -304,7 +304,7 @@ test("Gen, where sound is not offered: Cinema Studio has no Sound switch, a Recr
   await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Cinema Studio 4.0 has no Sound switch here");
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "gen-sound-not-offered");
@@ -331,7 +331,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
   const silentResponse = await silentRead;
   const silent = await silentResponse.json() as { credits: number };
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Make · about ${silent.credits} cr`);
+  await expect(go).toHaveText(`Make · about ${silent.credits} cr, at most ${silent.credits * 3} cr`);
   if (!offered) {
     await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
     /* Asked for by hand, sound is refused by the price read and by admission alike, before anything is reserved or sent. */
@@ -355,7 +355,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
     await sound.click();
     const loud = await (await loudRead).json() as { credits: number };
     expect(loud.credits).toBeGreaterThanOrEqual(silent.credits);
-    await expect(go).toHaveText(`Make · about ${loud.credits} cr`);
+    await expect(go).toHaveText(`Make · about ${loud.credits} cr, at most ${loud.credits * 3} cr`);
     await go.click();
     await expect.poll(() => priced.length).toBe(1);
     expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS, generateAudio: true });
