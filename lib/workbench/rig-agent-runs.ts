@@ -7,6 +7,7 @@ import { DRAFT_RESOLUTION } from "../draftFinal";
 import { checkGenerationRequest, runCharges, RUN_LIMIT_REACHED } from "../generationRequests";
 import { platformDb, platformReady } from "../platform";
 import { fromTenths, jobBand, runLimitVerdict, runTally, toTenths, type RunSpend } from "../runLimit";
+import { cinemaPriceWords } from "../cinemaHold";
 import { requireTenant } from "../tenant";
 import { shotEngine } from "../workspace/engines";
 import { shotReferenceAssets, shotReferenceRole } from "../workspace/rig";
@@ -198,8 +199,10 @@ export async function limitProblem(run: Pick<RunRow, "id" | "capCredits">, quote
 async function creditsProblem(admission: PreparedAdmission): Promise<string | null> {
   if (admission.quote.unit !== "cr") return null;
   const state = await creditState();
-  if (!state || state.balance >= admission.quote.estimatedCredits) return null;
-  return `Not enough credits: the next render is about ${figure(admission.quote.estimatedCredits)} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
+  /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
+  const ceiling = admission.quote.ceilingCredits;
+  if (!state || state.balance >= (ceiling ?? admission.quote.estimatedCredits)) return null;
+  return `Not enough credits: the next render is ${ceiling != null ? `${cinemaPriceWords(admission.quote.estimatedCredits)},` : `about ${figure(admission.quote.estimatedCredits)}`} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
@@ -359,8 +362,11 @@ async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> 
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(step.quoteCredits)}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(step.quoteCredits)}. Render it, skip it, or stop.`
+  /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+  const ceiling = admission.quote.ceilingCredits;
+  const price = ceiling != null ? cinemaPriceWords(step.quoteCredits) : `about ${figure(step.quoteCredits)}`;
+  const why = run.mode !== "auto" ? `${title} is ready to render · ${price}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${price}. Render it, skip it, or stop.`
     : `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);

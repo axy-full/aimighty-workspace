@@ -26,6 +26,7 @@ import {
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
+import { cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 
 type Model = {
   id: string;
@@ -363,7 +364,8 @@ function TakeDialog({
         ratio,
         resolution,
         duration,
-        maxCredits: cost!,
+        /* The approval is what the take may charge: Cinema Studio's hold, its quote times its band (lib/cinemaHold.ts). */
+        maxCredits: heldCredits(cost!, model!.id),
         references,
         marketing,
         quoteFingerprint: quote?.fingerprint,
@@ -620,7 +622,10 @@ function TakeDialog({
                 ? "Recover submitted take"
                 : cost == null
                   ? "Loading estimate…"
-                  : quote?.key === quoteKey && quote.approximate
+                  /* Cinema Studio holds "about N cr, at most 3N cr", the whole of what Generate approves (lib/cinemaHold.ts). */
+                  : cinemaModel
+                    ? `Generate · ${cinemaPriceWords(cost)}`
+                    : quote?.key === quoteKey && quote.approximate
                     ? `Generate · about ${cost} cr`
                     : `Generate · ${cost} cr estimated`}
           </Button>

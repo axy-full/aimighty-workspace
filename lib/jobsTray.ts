@@ -25,6 +25,7 @@ import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-con
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
 import { KEY_CHANGED_LABEL, KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from "./sharedKeyTerms";
+import { overHoldMark } from "./cinemaHold";
 
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
@@ -190,6 +191,8 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "succeeded":
       return {
         ...base, stage: "complete", label: "Complete", tone: "green", settledAt: row.settledAt ?? null,
+        /* Its engine charged past the hold approved for it: kept and shown, charged the hold (lib/cinemaHold.ts). */
+        reason: overHoldMark(params),
         mediaUrl: row.storedUrl ? mediaOf(row.kind, row.id) : null, price: charged, action: "open", takeId,
       };
     case "failed":
