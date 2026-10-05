@@ -8,7 +8,7 @@ import { briefForGen, mergeHooks, chooseProduct, withTemplate } from "@/lib/shel
 import { CREATIVE_TEMPLATES, EMPTY_BRAND_KIT } from "@/lib/workbench/moleculr-creative";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import { applyReferenceAdAnalysis } from "@/lib/workbench/reference-ad-analysis";
-import { changeBrief, briefOf } from "../../business/own-kit";
+import { changeBrief, briefOf, useLatest } from "../../business/own-kit";
 import { approveBrand, approveProduct, brandHome, readBrandPage, readProductPage, siteUrl } from "./reads";
 import { openDesigner, openDialog, openPanel, patchSession, readSession, togglePicked, type PanelId } from "./ads-session";
 import { useRiggedEditor } from "./use-ads-editor";
@@ -24,11 +24,10 @@ export function useAdsActions() {
   const shell = useShell();
   const editor = useRiggedEditor(ctx.rig);
   const pid = ctx.project.id;
-  const latest = useRef(ctx);
-  latest.current = ctx;
+  const latest = useLatest(ctx);
   const reading = useRef<AbortController | null>(null);
 
-  const say = useCallback((text: string, undo?: { label: string; run: () => void }) => latest.current.toast(text, undo), []);
+  const say = useCallback((text: string, undo?: { label: string; run: () => void }) => latest.current.toast(text, undo), [latest]);
   const brief = () => briefOf(latest.current.rig.project ?? ctx.project);
 
   /** Free: read the product page and the brand's home page. Nothing from either is used until it is approved. */
@@ -59,7 +58,7 @@ export function useAdsActions() {
       brand: brand.status === "fulfilled" ? { url: home, status: "ready", result: brand.value } : { url: home, status: "failed", error: failed(brand) },
     });
     return null;
-  }, [editor, pid]);
+  }, [editor, latest, pid]);
 
   const tryAgain = useCallback((url: string) => { void readSite(url); }, [readSite]);
 
@@ -74,7 +73,7 @@ export function useAdsActions() {
     void latest.current.rig.save();
     say("Brand kit approved", { label: "The brand kit is back as it was", run: () => { changeBrief(editor, (b) => ({ ...b, brandKit: before })); } });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, pid, say]);
+  }, [editor, latest, pid, say]);
 
   const approveProductRead = useCallback(() => {
     const read = readSession(pid).product;
@@ -118,7 +117,7 @@ export function useAdsActions() {
     say(merged.added ? `${merged.added} ${merged.added === 1 ? "hook" : "hooks"} added${merged.skipped ? ` · ${merged.skipped} did not fit in twelve` : ""}` : "Those hooks are on the list already.",
       merged.added ? { label: "The hooks are back as they were", run: () => { changeBrief(editor, (b) => ({ ...b, hooks: before })); } } : undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, say]);
+  }, [editor, latest, say]);
 
   /** Picks the brief on Format (free), so the one Make receives is this one. */
   const chooseBrief = useCallback((templateId: string) => {
@@ -145,7 +144,7 @@ export function useAdsActions() {
     for (const ref of ready.references) sendReference(ref);
     shell.openMake(ready.type);
     return null;
-  }, [editor, pid, shell]);
+  }, [editor, latest, pid, shell]);
 
   const switchProduct = useCallback((id: string) => {
     const next = chooseProduct(brief(), id);

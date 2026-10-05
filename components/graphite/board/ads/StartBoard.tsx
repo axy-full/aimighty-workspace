@@ -26,7 +26,7 @@ function Start({ ctx }: { ctx: BoardCtx }) {
   const go = async () => { setProblem(await act.readSite(url)); };
   return (
     <div className="ab-start" data-testid="ads-start">
-      <form className="ab-start-box" onSubmit={(e) => { e.preventDefault(); void go(); }}>
+      <form className="ab-start-box" noValidate onSubmit={(e) => { e.preventDefault(); void go(); }}>
         <h2>What is the ad for?</h2>
         <p>Paste the product page. Particl reads the page and the brand&apos;s site, then asks you to review what it found.</p>
         <input className="ab-input" type="url" inputMode="url" aria-label="Product page" placeholder="https://your-product.com/page" value={url} maxLength={2000} onChange={(e) => setUrl(e.target.value)} disabled={reading} data-testid="ads-start-url" />

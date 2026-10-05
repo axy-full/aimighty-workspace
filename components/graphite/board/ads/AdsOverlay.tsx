@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AtomikRunDialog } from "@/components/workbench/AtomikRunDialog";
 import { useShell } from "@/lib/shell/state";
-import { boardCardId, wantsDesigner, type AdsCardId } from "@/lib/shell/ads-social";
+import { boardCardId, wantsDesigner } from "@/lib/shell/ads-social";
 import { hooksRequest, type OwnPage } from "@/lib/shell/business-own";
 import { referenceAdBinding, EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import { assertReferenceAnalysisSource, referenceAdAnalysisSchema, type ReferenceAdAnalysis } from "@/lib/workbench/reference-ad-analysis";

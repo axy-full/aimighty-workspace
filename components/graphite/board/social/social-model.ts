@@ -45,13 +45,13 @@ export function socialCards(src: BoardSource): BoardCard[] {
   const cards: BoardCard[] = [
     group(SOCIAL_GROUP.source, "source", "Source", list.length === 1 ? "a long video in" : `${list.length} videos`, 3, 0),
     ...list.map((s, i): BoardCard => ({ id: `social:source:${s.id}`, kind: "social-source", region: "source", order: 1 + i, group: SOCIAL_GROUP.source, state: "done", summary: `${s.name}${s.seconds ? ` · ${clock(s.seconds)}` : ""}`, data: s })),
-    group(SOCIAL_GROUP.clips, "clips", "Clips", "found clips, with a hook and captions", 1, 10),
+    group(SOCIAL_GROUP.clips, "clips", "Clips", "", 1, 10),
     off("social:clips", "clips", SOCIAL_GROUP.clips, 11, "Find clips"),
-    group(SOCIAL_GROUP.hooks, "hooks", "Hook review", "scored with reasons", 1, 20),
+    group(SOCIAL_GROUP.hooks, "hooks", "Hook review", "", 1, 20),
     off("social:hooks", "hooks", SOCIAL_GROUP.hooks, 21, "Hook review"),
     group(SOCIAL_GROUP.effects, "effects", "Effects", "quick tools, in Make", 1, 22),
     { id: "social:effects", kind: "social-effects", region: "effects", order: 23, group: SOCIAL_GROUP.effects, state: "empty", summary: "Motion transfer · Object swap", data: { sources: list.filter((s) => s.fits).length } satisfies EffectsData },
-    group(SOCIAL_GROUP.posts, "posts", "Posts", "every post is approved by a person", 2, 30),
+    group(SOCIAL_GROUP.posts, "posts", "Posts", "", 2, 30),
     off("social:narrated", "posts", SOCIAL_GROUP.posts, 31, "Narrated video"),
     off("social:posts", "posts", SOCIAL_GROUP.posts, 32, "Posts"),
   ];

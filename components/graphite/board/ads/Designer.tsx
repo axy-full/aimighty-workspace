@@ -39,7 +39,8 @@ export function Designer({ ctx, items, onClose }: { ctx: BoardCtx; items: readon
   const [previewError, setPreviewError] = useState("");
   const preview = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ pointer: number; id: string; x0: number; y0: number; x: number; y: number; w: number; h: number } | null>(null);
-  const selected = poster?.layers.find((l) => l.id === selectedId) ?? poster?.layers.at(-1) ?? null;
+  /* Opens on the headline: the first type layer, else the last layer. */
+  const selected = poster?.layers.find((l) => l.id === selectedId) ?? poster?.layers.find((l) => l.kind === "text") ?? poster?.layers.at(-1) ?? null;
   const kit = brief.brandKit;
 
   /* The poster the Designer opens on: the project's own, or a new one made now (a headline and a call to action, the brand's colour behind them). */
@@ -132,7 +133,8 @@ export function Designer({ ctx, items, onClose }: { ctx: BoardCtx; items: readon
       <header className="ab-designer-head">
         <span className="ab-designer-title"><strong>Poster · {poster.aspect}</strong><span>{size.width} × {size.height}{kit?.name ? ` · ${kit.name}` : ""}</span></span>
         <span className="ab-designer-actions">
-          <button type="button" className="ab-btn" onClick={onClose} data-testid="ads-designer-close">Close</button>
+          <span className="ab-panel-save" role="status" data-testid="ads-designer-saved">{editor.saveState}</span>
+          <button type="button" className="ab-btn" onClick={() => { void rig.save(); onClose(); }} data-testid="ads-designer-close">Close</button>
           <button type="button" className="ab-btn ab-btn--solid" disabled={Boolean(work.busy) || Boolean(previewError)} onClick={() => void exportPng(false)} data-testid="ads-designer-export">
             {work.busy === "export" ? "Rendering…" : <>Export PNG · <Price value={FREE} /></>}
           </button>

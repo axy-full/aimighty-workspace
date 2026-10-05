@@ -250,9 +250,9 @@ export function adsCards(src: BoardSource): BoardCard[] {
     id: `ads:result:${r.id}`, kind: "ads-result", region: "ads", order: 30 + i, group: ADS_GROUP.ads, state: "empty", data: r,
   }));
   cards.push({ id: "ads:ugc", kind: "ads-unavailable", region: "ads", order: 99, group: ADS_GROUP.ads, state: "empty", data: { title: "UGC with consent", line: "Not in Particl yet" } satisfies UnavailableData });
-  cards.push(group(ADS_GROUP.adapt, "adapt", "Adapt", "every size and language", 1, 40));
+  cards.push(group(ADS_GROUP.adapt, "adapt", "Adapt", "", 1, 40));
   cards.push({ id: "ads:adapt", kind: "ads-unavailable", region: "adapt", order: 41, group: ADS_GROUP.adapt, state: "empty", summary: "Not in Particl yet", data: { title: "Adapt", line: "Not in Particl yet" } satisfies UnavailableData });
-  cards.push(group(ADS_GROUP.deliver, "deliver", "Deliver", "specs and export", 1, 50));
+  cards.push(group(ADS_GROUP.deliver, "deliver", "Deliver", "", 1, 50));
   cards.push({ id: "ads:deliver", kind: "ads-unavailable", region: "deliver", order: 51, group: ADS_GROUP.deliver, state: "empty", summary: "Not in Particl yet", data: { title: "Deliver", line: "Not in Particl yet" } satisfies UnavailableData });
   return cards;
 }

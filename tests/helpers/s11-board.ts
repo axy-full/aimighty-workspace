@@ -35,3 +35,37 @@ export async function seedAds(page: Page, brief: Partial<MoleculrBrief> | null =
 }
 
 export const adsUrl = (id: string, extra = "") => `/suites?project=${id}&view=board&kind=ads${extra}`;
+
+/** The two free reads the Ads board makes, answered locally: a product page and the brand's home page. Nothing leaves the machine. */
+export async function mockReads(page: Page) {
+  const source = (url: string) => ({ requestedUrl: url, finalUrl: url, fetchedAt: "2026-10-05T10:00:00.000Z" });
+  const calls: string[] = [];
+  await page.route("**/api/workbench/moleculr/extract-product", async (route) => {
+    const { url } = route.request().postDataJSON() as { url: string };
+    calls.push(`product ${url}`);
+    await route.fulfill({ json: { product: { name: "Glass bottle", brand: "Clear Co", description: "Borosilicate glass, 750 ml.\nDishwasher safe." }, source: source(url), imageCandidates: [], evidence: [], warnings: [], requiresReview: true } });
+  });
+  await page.route("**/api/workbench/moleculr/extract-brand", async (route) => {
+    const { url } = route.request().postDataJSON() as { url: string };
+    calls.push(`brand ${url}`);
+    await route.fulfill({ json: { brand: { name: "Clear Co", description: "Glassware for water.", tagline: "Water, simply.", colors: ["#0A84FF", "#F5F5F7", "#FF9F0A"], fontFamilies: ["Inter"], tone: "Quiet, exact." }, source: source(url), logoCandidates: [], imageryCandidates: [], evidence: [], warnings: [], requiresReview: true } });
+  });
+  return calls;
+}
+
+/** Text the board draws must read: at least 12 px and at least 55 % white, except on a disabled control. */
+export async function faintText(page: Page, selector: string) {
+  return page.locator(selector).first().evaluate((root) => {
+    const out: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = (node.textContent ?? "").trim();
+      const el = node.parentElement;
+      if (!text || !el || !el.getClientRects().length || el.closest("textarea, :disabled")) continue;
+      const style = getComputedStyle(el);
+      const alpha = Number(style.color.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)?.[1] ?? 1) * Number(style.opacity);
+      if (Number.parseFloat(style.fontSize) < 12 || alpha < 0.55) out.push(`${style.fontSize} ${alpha.toFixed(2)}: “${text.slice(0, 30)}”`);
+    }
+    return out;
+  });
+}

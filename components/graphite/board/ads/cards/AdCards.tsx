@@ -74,7 +74,7 @@ export function ImageAdCard({ data }: CardProps<ImageAdData>) {
             <span className="ab-chips" role="group" aria-label="Size">{IMAGE_AD_RESOLUTIONS.map((r) => <button key={r} type="button" className="ab-chip" aria-pressed={resolution === r} onClick={() => setResolution(r)}>{SIZE_WORDS[r] ?? r}</button>)}</span>
           </span>
         ) : null}
-        <textarea className="ab-prompt nodrag nopan nowheel" aria-label="Prompt" rows={3} maxLength={IMAGE_AD_PROMPT_MAX} value={prompt} onChange={(e) => setEdited(e.target.value)} data-testid="ads-image-ad-prompt" />
+        <textarea className="ab-prompt nodrag nopan nowheel" aria-label="Prompt" rows={5} maxLength={IMAGE_AD_PROMPT_MAX} value={prompt} onChange={(e) => setEdited(e.target.value)} data-testid="ads-image-ad-prompt" />
         {reason && !failedEstimate ? <Note role="status">{reason}</Note> : null}
         {failedEstimate && request ? <Note tone="bad" role="alert">{reason} <button type="button" className="ab-link nodrag nopan" onClick={() => void take.quote(request, key)}>Try again</button></Note> : null}
         {run.phase === "failed" ? <Note tone="bad" role="alert">{run.error}</Note> : null}
