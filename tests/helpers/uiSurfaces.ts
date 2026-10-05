@@ -21,6 +21,8 @@ export type Surface = {
   name: string;
   /** True for navigation data: a label that is only "Generate" is the old Gen page there. */
   navigation: boolean;
+  /** ⌘K: Business and Viral as suite names and 01..07 stage numbers are banned too. */
+  commandK?: boolean;
   claims: (path: string) => boolean;
 };
 
@@ -42,7 +44,7 @@ export const SURFACES: Surface[] = [
     claims: (path) => path === "components/graphite/TabBar.tsx" || path.startsWith("components/graphite/mobile/") || path.startsWith("components/graphite/phone/"),
   },
   {
-    id: "command-k", name: "⌘K (the palette and its index)", navigation: true,
+    id: "command-k", name: "⌘K (the palette and its index)", navigation: true, commandK: true,
     claims: (path) => is(path, ["components/graphite/Palette.tsx", "lib/shell/palette.ts"]),
   },
   {
@@ -100,7 +102,7 @@ export function scanAll(files = scannedFiles(repoFiles())): Scan {
   const ratchet: Record<string, Hit[]> = {};
   for (const path of files) {
     const surface = surfaceOf(path);
-    const hits = bannedNamesIn(path, readFileSync(path, "utf8"), { navigation: surface?.navigation ?? false }).map((hit): Hit => ({ ...hit, path }));
+    const hits = bannedNamesIn(path, readFileSync(path, "utf8"), { navigation: surface?.navigation ?? false, commandK: surface?.commandK ?? false }).map((hit): Hit => ({ ...hit, path }));
     if (!hits.length) continue;
     if (surface) {
       strict[surface.id].push(...hits);

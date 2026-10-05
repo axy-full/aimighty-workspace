@@ -134,7 +134,7 @@ const GEN = "Gen";
 const GENERATE_LABEL_RE = /^\s*Generate\s*$/;
 
 /** Everything banned, for a string a person reads: the retired words and phrases, the same in capitals, and Gen as a place. */
-function bannedNames(text: string, navigation: boolean): string[] {
+function bannedNames(text: string, navigation: boolean, commandK: boolean): string[] {
   const words = oldNames(text);
   for (const m of text.matchAll(CAPS_RE)) {
     /* "RIG" in a string that says Topaz is Topaz's ASTRA; the allowance is the same as for the capitalised word. */
@@ -146,6 +146,11 @@ function bannedNames(text: string, navigation: boolean): string[] {
   for (const m of text.matchAll(GEN_RE)) if (!phrases.some(([from, to]) => m.index! >= from && m.index! < to)) words.push(GEN);
   /* Only where a string is a destination (navigation data), "Generate" alone is the old Gen page; as a verb on a button it is fine. */
   if (navigation && GENERATE_LABEL_RE.test(text)) words.push("Generate (label)");
+  /* ⌘K lists exactly what the design lists: no Business or Viral suite, and no 01..07 stage numbers on a row. */
+  if (commandK) {
+    for (const m of text.matchAll(/\b(Business|Viral)\b/g)) words.push(`${m[1]} (suite)`);
+    if (/^\s*0[1-9]\b/.test(text) || /^\{\}\s+\{\}$/.test(text.trim())) words.push("01-07 stage number");
+  }
   return words;
 }
 
@@ -168,7 +173,8 @@ export type BannedName = UiWord & { title: boolean };
  * Higgsfield, Gen as a place, Astra unless the same string says Topaz, the old suite phrases, and the
  * same words in capitals. `title` marks a hit inside a page title. `navigation` says the file is
  * navigation data (palette rows, tabs, the header), where a label that is only "Generate" is the old Gen page.
+ * `commandK` says the file is the ⌘K palette: Business and Viral as suite names and a "01" stage number on a row are banned there too.
  */
-export function bannedNamesIn(fileName: string, source: string, options: { navigation?: boolean } = {}): BannedName[] {
-  return walk(fileName, source, (text) => bannedNames(text, !!options.navigation), inPageTitle);
+export function bannedNamesIn(fileName: string, source: string, options: { navigation?: boolean; commandK?: boolean } = {}): BannedName[] {
+  return walk(fileName, source, (text) => bannedNames(text, !!options.navigation, !!options.commandK), inPageTitle);
 }

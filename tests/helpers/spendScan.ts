@@ -161,6 +161,8 @@ export type SpendSite = {
   path: string; routes: string[]; declarations: string[]; optedIn: boolean;
   /** For each route: the chain of declarations from this file's own to the string that names the route. */
   chains: Record<string, string[]>;
+  /** Elements with a press handler that reaches a paid declaration by name. A guide, not a verdict: verify each. */
+  candidates: { line: number; tag: string; attr: string; text: string }[];
 };
 export type SpendReport = {
   /** Component files on the paid path, with the routes they reach. */
@@ -220,6 +222,57 @@ export function scanSpend(files = sourceFiles(), read: (path: string) => string 
     }
   }
 
+  /** The names in a file that stand for something on the paid path, and the press handlers that use them. */
+  const candidatesOf = (mod: Mod): SpendSite["candidates"] => {
+    const paid = new Set<string>();
+    for (const decl of mod.tops.values()) {
+      for (const ref of decl.refs) {
+        const local = ref !== decl.name && mod.tops.get(ref);
+        if (local) { if (routes.get(key(mod.path, ref))!.size && !(local.data && !decl.called.has(ref))) paid.add(ref); continue; }
+        const imported = mod.imports.get(ref);
+        if (!imported?.from) continue;
+        const o = imported.name === "*" ? null : origin(imported.from, imported.name);
+        if (imported.name === "*" ? mods.get(imported.from)?.exports.size : o && routes.get(key(o.path, o.name))?.size) paid.add(ref);
+      }
+      if (decl.direct.size) paid.add(decl.name);
+    }
+    const sf = ts.createSourceFile(mod.path, read(mod.path), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const uses = (node: ts.Node): boolean => { let found = false; const walk = (n: ts.Node) => { if (found) return; if (ts.isIdentifier(n) && paid.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { found = true; return; } ts.forEachChild(n, walk); }; walk(node); return found; };
+    /* A nested function or constant that uses a paid name is itself one. */
+    for (let grew = true; grew;) {
+      grew = false;
+      const visit = (n: ts.Node) => {
+        if ((ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) || (ts.isFunctionDeclaration(n) && n.name && n.body)) {
+          const name = (n as ts.VariableDeclaration | ts.FunctionDeclaration).name!.getText(sf);
+          if (!paid.has(name) && uses(ts.isVariableDeclaration(n) ? n.initializer! : n.body!)) { paid.add(name); grew = true; }
+        }
+        ts.forEachChild(n, visit);
+      };
+      visit(sf);
+    }
+    const out: SpendSite["candidates"] = [];
+    const SKIP = /^on(Change|Input|Focus|Blur|Key\w*|Mouse\w*|Pointer\w*|Drag\w*|Drop|Scroll|Close|Cancel|Dismiss|Select|OpenChange|Toggle|Resize|Load|Error)$/;
+    const labelOf = (el: ts.JsxElement | ts.JsxSelfClosingElement) => {
+      const attrs = (ts.isJsxElement(el) ? el.openingElement : el).attributes.properties;
+      const aria = attrs.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && /^(aria-label|label|title)$/.test(a.name.getText(sf)));
+      const own = aria?.initializer && ts.isStringLiteral(aria.initializer) ? aria.initializer.text : "";
+      const kids = ts.isJsxElement(el) ? el.children.map((c) => (ts.isJsxText(c) ? c.text : ts.isJsxExpression(c) && c.expression ? (literalText(c.expression) ?? "") : "")).join(" ") : "";
+      return (own || kids).replace(/\s+/g, " ").trim().slice(0, 50);
+    };
+    const visit = (n: ts.Node) => {
+      if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n)) {
+        const opening = ts.isJsxElement(n) ? n.openingElement : n;
+        for (const a of opening.attributes.properties) {
+          if (!ts.isJsxAttribute(a) || !/^on[A-Z]/.test(a.name.getText(sf)) || SKIP.test(a.name.getText(sf)) || !a.initializer || !uses(a.initializer)) continue;
+          out.push({ line: sf.getLineAndCharacterOfPosition(opening.getStart(sf)).line + 1, tag: opening.tagName.getText(sf), attr: a.name.getText(sf), text: labelOf(n) });
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    return out;
+  };
+
   const sites: SpendSite[] = [];
   const labels: SpendReport["labels"] = [];
   for (const mod of [...mods.values()].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -240,7 +293,7 @@ export function scanSpend(files = sourceFiles(), read: (path: string) => string 
         chains[route] = chain;
       }
     }
-    if (reach.size) sites.push({ path: mod.path, routes: [...reach].sort(), declarations, optedIn: mod.optedIn, chains });
+    if (reach.size) sites.push({ path: mod.path, routes: [...reach].sort(), declarations, optedIn: mod.optedIn, chains, candidates: candidatesOf(mod) });
   }
   return { sites, labels };
 }
