@@ -1,5 +1,5 @@
 "use client";
-import { memo, type CSSProperties } from "react";
+import { memo, useState, type CSSProperties } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useBoardInternals } from "./BoardContext";
 
@@ -13,7 +13,8 @@ import { useBoardInternals } from "./BoardContext";
 export type BoardFlowNode = Node<Record<string, never>, "card">;
 
 function BoardNodeImpl({ id, selected, dragging }: NodeProps<BoardFlowNode>) {
-  const { placed, defs, ctx, watchers, atomik } = useBoardInternals();
+  const { placed, defs, ctx, watchers, atomik, takesDrops, dropOn, lit } = useBoardInternals();
+  const [over, setOver] = useState(false);
   const card = placed.byId.get(id);
   const box = placed.boxes.get(id);
   const def = card ? defs.get(card.kind) : undefined;
@@ -33,6 +34,11 @@ function BoardNodeImpl({ id, selected, dragging }: NodeProps<BoardFlowNode>) {
       data-selected={selected || undefined}
       data-dragging={dragging || undefined}
       data-watched={ring ? true : undefined}
+      data-drop={over || undefined}
+      data-lit={lit === id || undefined}
+      onDragOver={takesDrops(id) ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setOver(true); } : undefined}
+      onDragLeave={() => setOver(false)}
+      onDrop={takesDrops(id) ? (e) => { e.preventDefault(); setOver(false); dropOn(id, e.dataTransfer); } : undefined}
       style={{ width: box.w, height: box.h, ...(ring ? ({ "--bd-ring": ring } as CSSProperties) : {}) }}
     >
       {agent ? <span className="bd-tag" style={{ background: agent.color }}>Atomik · {agent.doing}</span>

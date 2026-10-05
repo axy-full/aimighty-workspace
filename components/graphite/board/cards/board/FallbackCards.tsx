@@ -1,5 +1,8 @@
 "use client";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { BOARD_TEXT_LIMITS } from "@/lib/workspace/rig-board";
+import { useBoardInternals } from "../../BoardContext";
 import type { GroupData } from "@/lib/board/types";
 import type { CardProps } from "../types";
 
@@ -35,7 +38,7 @@ export function NodeCard({ data }: CardProps<NodeCardData>) {
         </span>
       ) : null}
       <span className="bd-card-body">
-        <span className="bd-eyebrow">{data.kicker}</span>
+        {data.kicker ? <span className="bd-eyebrow">{data.kicker}</span> : null}
         <span className="bd-card-title">{data.title}</span>
         {data.text ? <span className="bd-card-text">{data.text}</span> : null}
         {data.line ? <span className="bd-card-line"><i aria-hidden="true" />{data.line}</span> : null}
@@ -44,19 +47,51 @@ export function NodeCard({ data }: CardProps<NodeCardData>) {
   );
 }
 
+/**
+ * Words edited on the card itself: it opens focused with the caret at the end; moving away or Enter (⌘/Ctrl-Enter
+ * in a note) keeps them, Esc leaves them as they were. They save themselves through the Rig's draft.
+ */
+function InPlace({ id, multiline, value, label }: { id: string; multiline: boolean; value: string; label: string }) {
+  const { finishEdit } = useBoardInternals();
+  const field = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const finish = (keep: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    finishEdit(id, keep ? field.current?.value ?? value : null);
+  };
+  const keys = (event: KeyboardEvent) => {
+    event.stopPropagation();
+    if (event.key === "Escape") { event.preventDefault(); finish(false); }
+    else if (event.key === "Enter" && (!multiline || event.metaKey || event.ctrlKey)) { event.preventDefault(); finish(true); }
+  };
+  return multiline
+    ? <textarea ref={field} className="bd-edit nodrag nopan nowheel" aria-label={label} defaultValue={value} maxLength={BOARD_TEXT_LIMITS.text} placeholder="Write a note" onBlur={() => finish(true)} onKeyDown={keys} />
+    : <input ref={field} className="bd-edit bd-edit--line nodrag nopan" aria-label={label} defaultValue={value} maxLength={BOARD_TEXT_LIMITS.title} onBlur={() => finish(true)} onKeyDown={keys} />;
+}
+
 export type NoteData = { title: string; text: string };
-export function NoteCard({ data }: CardProps<NoteData>) {
+export function NoteCard({ card, data }: CardProps<NoteData>) {
+  const { editing } = useBoardInternals();
   return (
     <article className="bd-card bd-note">
       <span className="bd-eyebrow">Note</span>
-      <span className="bd-note-text">{data.text || <span className="bd-quiet">Nothing written yet.</span>}</span>
+      {editing === card.id ? <InPlace id={card.id} multiline value={data.text} label="Note" />
+        : <span className="bd-note-text">{data.text || <span className="bd-quiet">Nothing written yet.</span>}</span>}
     </article>
   );
 }
 
 export type LabelData = { title: string };
-export function LabelCard({ data }: CardProps<LabelData>) {
-  return <div className="bd-label">{data.title}</div>;
+export function LabelCard({ card, data }: CardProps<LabelData>) {
+  const { editing } = useBoardInternals();
+  return <div className="bd-label">{editing === card.id ? <InPlace id={card.id} multiline={false} value={data.title} label="Text" /> : data.title}</div>;
 }
 
 /** The shared group frame (README § 3.1): a 14 px hairline frame, its label on the top border. */
