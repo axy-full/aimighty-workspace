@@ -36,6 +36,9 @@ import { ViralView } from "./viral/ViralView";
 import { ToolsView } from "./atomik/ToolsView";
 import { MemoryView } from "./atomik/MemoryView";
 import { SkillsView } from "./atomik/SkillsView";
+/* LOCAL STUB WIRING (stream 1 owns this file): the control room behind the switch. Never committed by stream 8. */
+import { ControlRoom } from "./control-room/ControlRoom";
+import { useNewInterface } from "@/lib/shell/new-interface";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
@@ -341,6 +344,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
      Moving to another page, project or selection gives it a fresh go. */
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
   const stageProbe = `stage:${shell.page.id}`;
+  const newInterface = useNewInterface();
+  const controlRoom = newInterface && shell.view === "suite" && shell.suite.id === "atomik" && (shell.page.id === "approvals" || shell.page.id === "runs") ? (shell.page.id as "approvals" | "runs") : null;
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
@@ -380,7 +385,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
               ) : (
                 <>
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
-                  {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
+                  {((shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio") || controlRoom ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
                     <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {projectsError && !project ? (
@@ -412,7 +417,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                       <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
                       <ViralView key={shell.page.id} scope={scope} project={project} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
+                    ) : controlRoom ? <ControlRoom page={controlRoom} project={project} />
+                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
                       {firstRunAbove}

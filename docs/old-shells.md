@@ -81,3 +81,12 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
+
+## `/suites` pages replaced behind the new interface
+
+With the new interface on (`lib/shell/new-interface.ts`), these pages render their replacement; with it off, customers keep the old page. Each old page is deleted in the switch-flip PR, with its components, sheets and tests, once no customer path uses it.
+
+| Old page (switch off) | Rendered by today | Replacement (switch on) | Not covered yet |
+|---|---|---|---|
+| `?suite=atomik&page=approvals` | `components/suites/AtomikSuite.tsx` (its approvals branch, per project) with `components/pipeline/PipelineRun.tsx` | Control room › Approvals: `components/graphite/control-room/` over `GET /api/control-room/approvals`, one queue across projects (held takes, Atomik's board builds and renders, a plan's next step) | Pipeline runs that need a decision are not in the new queue (lead decision 15). `AtomikSuite.tsx`, `atomik-suite.module.css` and `atomik-suite-data.ts` go only when Activity, Budget and Models are replaced too |
+| `?suite=atomik&page=runs` | `components/suites/AtomikSuite.tsx` (its runs branch, per project: pipeline runs) with `components/suites/SuiteAgentPanel.tsx`, `components/pipeline/PipelineBuilder.tsx`, `PipelineRun.tsx` | Control room › Activity: `components/graphite/control-room/ActivityView.tsx` over `GET /api/control-room/activity`, Atomik's threads and board runs with each step priced and settled, and what every project settled | Pipeline runs and Studio stage-agent runs are not listed (lead decision 15); building a new pipeline has no place in the new interface yet. `/pipelines` and `/rig/run/[runId]` point here once retired |
