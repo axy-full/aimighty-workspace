@@ -169,7 +169,7 @@
 .gx-mk-tile { position: relative; width: 96px; height: 96px; border-radius: 8px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
 .gx-mk-tile .gx-lazy, .gx-mk-tile img, .gx-mk-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gx-mk-wave { width: 100%; height: 100%; padding: 22px; fill: none; stroke: var(--gx-text-2); stroke-width: 1.6; stroke-linecap: round; }
-.gx-mk-tile-name { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 12px; font-weight: 500; color: var(--gx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.gx-mk-tile-name { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 12px; font-weight: 500; color: var(--gx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px var(--gx-on-media); }
 .gx .gx-mk-tile-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); font-size: 13px; line-height: 1; }
 .gx .gx-mk-add { width: 96px; height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 8px; border: 1px dashed var(--gx-dashed); background: transparent; color: var(--gx-text-2); font-size: 12px; }
 .gx .gx-mk-add > span { font-size: 18px; line-height: 1; }
