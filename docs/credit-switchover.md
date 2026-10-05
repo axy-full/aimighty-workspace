@@ -48,6 +48,17 @@ first read. Free actions keep working. Jobs already running finish and settle
 at the price they were approved at. Held takes stay held and are converted with
 the balances. The conversion ends the pause.
 
+**At a glance.** Each step says what you should see; send Claude what it
+asks for, privately, never in the repo.
+
+| Step | Where | You should see | Send Claude |
+|---|---|---|---|
+| 0 | Turso, Vercel, `/admin` → Workspaces and Top-ups, the console | backups; `CREDIT_USD` 0.10; /pricing still $0.80; every workspace's balance, credits granted, used, bought and given, jobs and running jobs; open pack requests | the cutover time, the two tables, the running total |
+| 1 | GitHub (merge), then the console | `creditUsd 0.1`, `ledgerUnitUsd 0.8`, `pausedSince`; the pause message on a paid button | the GET output |
+| 2 | the console (dry run) | one line per workspace, before and after in credits and dollars; `needsDecision`; `caps` | the tables and your decisions |
+| 3 | the console (convert) | `ledgerUnitAfter 0.1`, `waiting` empty; paid buttons work | the result |
+| 4 | `/admin`, `/statements`, `/pricing` | balances × $0.10 = the dry run's dollars | "checks done" |
+
 ---
 
 ## 0. Before you merge (read-only)
@@ -78,8 +89,9 @@ the balances. The conversion ends the pause.
    const q = await (await fetch("/api/admin/topups")).json();
    console.table(q.open.map((t) => ({ workspace: t.workspaceName, pack: t.label, credits: t.credits + t.bonus, usd: t.usd, asked: new Date(t.createdAt).toISOString(), by: t.requesterEmail })));
    ```
-   These are the reads behind `/admin` → Workspaces and the top-up queue; they
-   change nothing. Credits here are as recorded (two units mixed); the exact
+   These are the reads behind `/admin` → **Workspaces** (balance under KEYS,
+   jobs and "N running" under 30 DAYS) and `/admin` → **Top-ups**; they change
+   nothing. Credits here are as recorded (two units mixed); the exact
    per-workspace window, with dollars, comes from the dry run in step 2. No
    existing screen totals "since 3 October" before the merge: `jobs30d` covers
    30 days.
