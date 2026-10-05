@@ -267,6 +267,12 @@ Status on 4 October. Tracks run side by side where they don't share files. PRs m
 | P4b | Every model on its own provider's API; Vercel AI Gateway removed; a pinned, tested price list | none | Not started |
 | P4 | Docker under Coolify; self-hosted Inngest sized for 1,000 jobs with per-plan limits; tested at staging.particl.si | P2, P3 | Not started |
 | P5 | particl.si's DNS to the VPS; particl.app redirected in Cloudflare; cron moved; rollback ready; Blob retired after two weeks | P4 | Not started |
+
+P4 and P5 notes (5 October):
+- Staging shares the live database: no paid work there until the credit switchover is done on Vercel.
+- When cleaning Vercel's settings for the VPS, keep `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`: 3D blocking's Blender renders still run in Vercel Sandbox.
+- Before P5, rework every paid route that can run past Cloudflare's 125-second limit before its response starts (202 and finish in the background, stream, or cap the work).
+
 | P8 | Worker container; load test to 1,000 jobs; GlitchTip; Langfuse; legacy guard | P5 | Not started |
 
 ### Track B: Design system, shell and ease
