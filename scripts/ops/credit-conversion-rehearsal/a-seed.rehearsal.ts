@@ -44,7 +44,7 @@ test("seed a two-unit record", async () => {
   const job = async (ws: string, id: string, credits: number, unit: number, at: number, status = "succeeded", cost = 1) => {
     await p.execute({
       sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at,credit_usd,credit_margin)
-        VALUES(?,?,'video','byteplus','mock-seedance',?,?,?,1,?,?,?,1.5)`, args: [id, ws, status, cost, credits, at, at, unit] });
+        VALUES(?,?,'video','byteplus','mock-seedance',?,?,?,1,?,?,?,1)`, args: [id, ws, status, cost, credits, at, at, unit] });
     await billingTransaction(async (tx) => { await syncBillingLedger(tx, ws, at); }, at);
   };
   // Plain: welcome at $0.10 before the cutover, one job at $0.10.

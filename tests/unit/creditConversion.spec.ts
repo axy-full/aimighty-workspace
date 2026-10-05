@@ -65,7 +65,7 @@ async function job(ws: string, id: string, credits: number, unit: number | null,
   const p = await platform();
   await p.execute({
     sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at,credit_usd,credit_margin)
-      VALUES(?,?,'video','byteplus','fixture',?,1,?,1,?,?,?,1.5)`,
+      VALUES(?,?,'video','byteplus','fixture',?,1,?,1,?,?,?,1)`,
     args: [id, ws, status, credits, at, at, unit],
   });
   const { billingTransaction, syncBillingLedger } = await import("../../lib/billingLedger");
@@ -231,11 +231,11 @@ test("a real run converts per row, keeps every lot's kind and expiry, and resume
   const { runInTenant } = await import("../../lib/tenant");
   const { getWorkspace } = await import("../../lib/platform");
   const { meter } = await import("../../lib/meter");
-  // It settles in the unit it was approved in, counted once in the new one: $2 at margin 1.5 is $3.00,
-  // 4 credits at $0.80 ($3.20), booked as 32 credits at $0.10. Settling twice changes nothing.
+  // It settles in the unit it was approved in, counted once in the new one: 3 credits at $0.80 ($2.40)
+  // are booked as 24 credits at $0.10. Settling twice changes nothing.
   for (let i = 0; i < 2; i++)
     await runInTenant((await getWorkspace("ws_running"))!, () => meter({ id: "run_job", kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: 2 }));
-  expect((await balance("ws_running")).balance).toBe(800 - 32);
+  expect((await balance("ws_running")).balance).toBe(800 - 24);
   // Twice is once.
   const again = await convertAllCredits({ fromUsd: 0.80, toUsd: 0.10, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW, universe: ALL, decisions: { ws_plain: "goodwill" } });
   expect(again.results.filter((r) => r.status === "converted")).toEqual([]);
@@ -284,8 +284,11 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
   const figures = await convertTenantFigures(ws, plan);
   expect(figures.find((f) => f.what === "settings.shotCapCredits")).toMatchObject({ before: 25, after: 200, cap: { id: "settings:shotCapCredits", choice: "x8" } });
   expect(figures.filter((f) => f.what === "api_tokens.cap_credits").map((f) => [f.id, f.after, f.cap?.choice]).sort()).toEqual([["tok", 400, "x8"], ["tok_old", 50, "keep"]]);
-  // $0.50 at margin 1.5 is $0.75: 8 credits at $0.10, as Release will charge it.
-  expect(figures.find((f) => f.what === "generations.params.held.needs")).toMatchObject({ before: 1, after: 8 });
+  // Re-priced from its held dollars at $0.10 a credit, exactly as Release will charge it.
+  const { heldPriceNow } = await import("../../lib/creditTerms");
+  const released = heldPriceNow({ estUsd: 0.5 }, "video", "fixture");
+  expect(released).toBeGreaterThan(1);
+  expect(figures.find((f) => f.what === "generations.params.held.needs")).toMatchObject({ before: 1, after: released });
   // Run again: nothing more changes.
   expect(await convertTenantFigures(ws, plan)).toEqual([]);
   await runInTenant(ws, async () => {
@@ -366,10 +369,10 @@ test.describe("review fixes", () => {
     const { getWorkspace } = await import("../../lib/platform");
     const { meter } = await import("../../lib/meter");
     await runInTenant((await getWorkspace("ws_ra"))!, () => meter({ id: "ra_run", kind: "video", engine: "byteplus", model: "fixture", status: "succeeded", engineCostUsd: 2 }));
-    expect(Number((await (await platform()).execute(`SELECT billed_credits FROM meter_events WHERE id='ra_run'`)).rows[0].billed_credits)).toBe(32);
+    expect(Number((await (await platform()).execute(`SELECT billed_credits FROM meter_events WHERE id='ra_run'`)).rows[0].billed_credits)).toBe(24);
     await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: CUTOVER, endAt: END, dryRun: false, at: NOW + 1000, universe: ["ws_ra", "ws_rneeds"], decisions: { ws_rneeds: "apply" } });
     expect(await ledgerUnitTx(await platform())).toBe(0.1);
-    expect((await balance("ws_ra", NOW + 2000)).balance).toBe(800 - 32);
+    expect((await balance("ws_ra", NOW + 2000)).balance).toBe(800 - 24);
   });
 
   test("a run after completion converts nothing; a workspace made after the window is new, its welcome kept", async () => {

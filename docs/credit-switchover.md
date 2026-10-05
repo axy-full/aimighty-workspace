@@ -202,7 +202,7 @@ Paid work resumed at the end of step 4.
 |---|---|---|---|
 | `CREDIT_USD` | Vercel, one entry for Production and Preview | `0.10` | Step 3 |
 | `CREDIT_USD` | Coolify, before particl.si's DNS moves there (P4/P5) | `0.10`, and copy the **already converted** database | At the move, not today |
-| `SIGNUP_CREDITS`, `CREDIT_PACKS`, `CREDIT_MARGINS` | Vercel | not set, so the code defaults apply (250 welcome; §7A packs) | Nothing |
+| `SIGNUP_CREDITS`, `CREDIT_PACKS` | Vercel | not set, so the code defaults apply (250 welcome; §7A packs) | Nothing |
 | Platform layer overrides (welcome credits, plans) | `/admin` platform layer | kept as set (the default production cap is in the run's `caps` list); if welcome or plans were set during the $0.80 days, set them for $0.10 | After step 4 |
 | Requesters whose $0.80 pack requests were declined | email or message, outside the app (names and emails are in the dry run's `declinedTopups`) | tell them to ask again at US$0.10 | After step 6 |
 | Money taken off-platform | your records | none was taken at $0.80 prices (owner, 5 Oct); nothing to reconcile | — |
