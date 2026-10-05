@@ -26,6 +26,11 @@ import { AtomikGate } from "./AtomikGate";
 import { BusinessSuite } from "./business/BusinessSuite";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { MakePanel } from "./MakePanel";
+import dynamic from "next/dynamic";
+import { useNewInterface } from "@/lib/shell/new-interface";
+import { isBoardKind } from "@/lib/board/types";
+/* LOCAL WIRING, stream 3's worktree only (stream 1 wires the board for real): the board, lazily, so React Flow loads only there. */
+const BoardView = dynamic(() => import("./board/BoardView").then((m) => m.BoardView), { ssr: false });
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
@@ -82,6 +87,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const account = useAccount(initialAccount);
   /* A link to a take holds project resolution until it can open in a project of this person's (lib/shell/use-asset-link.ts). */
   const scopedFetch = useScopedFetch();
+  const newInterface = useNewInterface();
   const linkControl = useAssetLink({ scope, workspace: session.workspace, workspaces: session.workspaces, projectId: state.projectId, selectProject, fetch: scopedFetch });
   const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }), linkControl.hold);
   const linkView = useLinkView(linkControl, data);
@@ -352,12 +358,18 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           </div>
         ) : null}
         <Header account={account} project={project?.name ?? null} bar={bar} />
-        {bar ? null : <StageStrip />}
+        {bar || (shell.view === "board" && newInterface) ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
           <AtomikGate />
         </Boundary>
-        {shell.view === "crew" ? <><CrewStrip room={crew} />
+        {shell.view === "board" && newInterface ? (
+          <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="board" /></div>}>
+              <BoardView scope={scope} project={project} items={items} library={library} kind={(() => { const k = new URLSearchParams(window.location.search).get("kind"); return isBoardKind(k) ? k : null; })()} frame={new URLSearchParams(window.location.search).get("frame")} region={new URLSearchParams(window.location.search).get("region")} />
+            </Boundary>
+          </div>
+        ) : shell.view === "crew" ? <><CrewStrip room={crew} />
           <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
             <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
           </Boundary></> : shell.view === "workspace" ? (
