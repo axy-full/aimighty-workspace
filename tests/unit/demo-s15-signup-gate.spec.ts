@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import ts from "typescript";
+import * as siteModel from "../../lib/site/settings";
 import { INVITE_ONLY, DEFAULT_SITE, type SiteSettings } from "../../lib/site/settings";
 
 /**
@@ -52,7 +53,7 @@ function load(file: string, site: SiteSettings, calls: Calls, env: { configured?
       resumeWorkspace: async () => { calls.push("workspace.resume"); return { workspace: { id: "ws_new", name: "New", slug: "new" } }; },
       workspaceCreationReadiness: () => ({ canCreate: true }),
     },
-    "@/lib/site/settings": { INVITE_ONLY },
+    "@/lib/site/settings": siteModel,
     "@/lib/site/settings.server": { readSite: async () => { calls.push("site.read"); return site; } },
   };
   const compiled = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -73,7 +74,7 @@ test("closed (the default): a sign-up with no invitation code is refused before 
   const calls: Calls = [];
   const res = await load("app/api/auth/signup/route.ts", closed, calls, { configured: true }).POST!(post(form));
   expect(res.status).toBe(403);
-  expect((await res.json()).error).toBe(INVITE_ONLY);
+  expect(await res.json()).toEqual({ error: INVITE_ONLY, inviteOnly: true });
   expect(calls).toEqual(["site.read", "limit:signup-closed:source-1"]);
 });
 
@@ -122,6 +123,9 @@ test("closed: resending a self-serve verification and verifying a self-serve reg
   expect(resend.status).toBe(403);
   const verify = await load("app/api/auth/verify/route.ts", closed, calls, { configured: true }).POST!(new Request("http://localhost/api/auth/verify", { method: "POST", body: JSON.stringify({ token: "x".repeat(48) }) }));
   expect(verify.status).toBe(403);
+  /* The page reads the flag and offers Request access instead of an error (lead decision 41). */
+  expect(await verify.json()).toEqual({ error: INVITE_ONLY, inviteOnly: true });
+  expect(await resend.json()).toEqual({ error: INVITE_ONLY, inviteOnly: true });
   expect(calls.filter((c) => c.startsWith("registration."))).toEqual([]);
   /* Open, both run as before. */
   const openCalls: Calls = [];

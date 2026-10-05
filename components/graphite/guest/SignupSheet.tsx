@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { RequestAccessForm, inviteCredits, sentLine } from "./RequestAccess";
 
 type Invite = { state: "checking" } | { state: "ready"; email: string } | { state: "bad"; message: string };
 
@@ -26,12 +27,6 @@ export function SignupSheet({ invite, brief, welcomeCredits, onClose }: {
   const titleId = useId();
   const first = useRef<HTMLInputElement>(null);
   const [inv, setInv] = useState<Invite | null>(invite ? { state: "checking" } : null);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [make, setMake] = useState("");
-  const [company, setCompany] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState("");
   const [sent, setSent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,29 +49,7 @@ export function SignupSheet({ invite, brief, welcomeCredits, onClose }: {
   }, [onClose]);
 
   const withInvite = inv?.state === "ready";
-  const credits = welcomeCredits != null && welcomeCredits > 0 ? `Your first ${welcomeCredits.toLocaleString("en-US")} credits are on the house: the Invite plan, free, good for one production.` : "The Invite plan is free and good for one production.";
-
-  async function request(event: React.FormEvent) {
-    event.preventDefault();
-    if (busy) return;
-    if (!name.trim()) { setProblem("Tell us your name."); return; }
-    setBusy(true);
-    setProblem("");
-    try {
-      const res = await fetch("/api/access-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, make, brief, note: "From guest Home", company }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(j.error ?? "That didn't send. Try again in a moment.");
-      setSent(email.trim());
-    } catch (e) {
-      setProblem((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const credits = inviteCredits(welcomeCredits);
 
   const title = withInvite ? "Create your account" : sent ? "Request sent" : "Particl is invite-only for now.";
   const sub = withInvite ? "You have an invitation link." : sent ? `We’ll email a link to ${sent}.` : "Ask for access and we’ll send you a link.";
@@ -110,26 +83,9 @@ export function SignupSheet({ invite, brief, welcomeCredits, onClose }: {
             <p className="gx-su-note">{credits} Nothing is spent without your approval.</p>
           </>
         ) : sent ? (
-          <p className="gx-su-note" data-testid="signup-sent">When the link arrives, your brief is waiting on your first board in this browser. {credits} Nothing is spent without your approval.</p>
+          <p className="gx-su-note" data-testid="signup-sent">{sentLine(credits)}</p>
         ) : inv?.state === "checking" ? null : (
-          <form className="gx-su-form" onSubmit={request}>
-            <label className="gx-su-field">
-              <span className="gx-su-label">Name</span>
-              <input ref={first} className="gx-su-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="name" maxLength={120} data-testid="signup-name" />
-            </label>
-            <label className="gx-su-field">
-              <span className="gx-su-label">Email</span>
-              <input className="gx-su-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@studio.com" autoComplete="email" data-testid="signup-email" />
-            </label>
-            <label className="gx-su-field">
-              <span className="gx-su-label">What you make</span>
-              <input className="gx-su-input" value={make} onChange={(e) => setMake(e.target.value)} placeholder="Ad films, social clips, music videos…" maxLength={200} data-testid="signup-make" />
-            </label>
-            {/* Off-screen and out of the tab order: only a bot fills this (the access-request route's honeypot). */}
-            <input tabIndex={-1} autoComplete="off" aria-hidden="true" className="gx-su-trap" value={company} onChange={(e) => setCompany(e.target.value)} />
-            {problem ? <p className="gx-su-problem" role="alert">{problem}</p> : null}
-            <button type="submit" className="gx-primary gx-su-go" disabled={busy} data-testid="signup-request">{busy ? "Sending…" : "Request access"}</button>
-          </form>
+          <RequestAccessForm brief={brief} source="From guest Home" onSent={setSent} firstRef={first} />
         )}
         <div className="gx-su-foot">
           <span>Already have an account?</span>

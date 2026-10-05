@@ -56,8 +56,14 @@ const phone = (info: TestInfo) => /workbench-(360x640|390x844|844x390)/.test(inf
 async function floors(page: Page, info: TestInfo, where: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), `${where}: wider than the window`).toBe(false);
   expect(await smallText(page), `${where}: text under 12px`).toEqual([]);
-  /* The request form's honeypot is off-screen and aria-hidden, as the site's own form's is: not a target. */
-  if (phone(info)) expect((await smallTargets(page, ".gx-guest")).filter((t) => !t.startsWith("gx-su-trap")), `${where}: targets under 44×44`).toEqual([]);
+  /* The request form's honeypot is off-screen and aria-hidden, as the site's own form's is: not a target. The terms
+     box's target is its whole label row, at least 44 px (checked below), not the box drawn inside it. */
+  if (phone(info)) {
+    const scope = (await page.locator(".gx-guest").count()) ? ".gx-guest" : ".gx-signup-page";
+    expect((await smallTargets(page, scope)).filter((t) => !t.startsWith("gx-su-trap") && !t.startsWith("signup-terms")), `${where}: targets under 44×44`).toEqual([]);
+    const terms = page.locator(".gx-su-check");
+    if (await terms.count()) expect((await terms.boundingBox())!.height, `${where}: the terms row`).toBeGreaterThanOrEqual(43.5);
+  }
 }
 async function shot(page: Page, info: TestInfo, name: string) {
   if (!SHOTS) return;
@@ -195,17 +201,36 @@ test("an invitation link: the sheet's Create account, then the brief becomes the
   await page.getByTestId("signup-create").click();
   await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${code}`));
   await expect(page.getByTestId("signup-kept-brief")).toContainText("A 15-second fashion film");
-  await page.getByLabel("Your name").fill("Guest Tester");
-  await page.getByLabel("Workspace name").fill(`Guest ${Date.now()}`);
-  await page.locator('input[autocomplete="new-password"]').nth(0).fill("a local browser test passphrase 42");
-  await page.locator('input[autocomplete="new-password"]').nth(1).fill("a local browser test passphrase 42");
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create the workspace" }).click();
+  /* The invitation fills the email and the name: the form asks only for what is missing. */
+  await expect(page.getByTestId("signup-email")).toHaveValue(email);
+  await expect(page.getByTestId("signup-name")).toHaveCount(0);
+  await page.getByTestId("signup-workspace").fill(`Guest ${Date.now()}`);
+  await page.getByTestId("signup-password").fill("a local browser test passphrase 42");
+  await page.getByTestId("signup-confirm").fill("a local browser test passphrase 42");
+  await page.getByTestId("signup-terms").check();
+  await page.getByTestId("signup-submit").click();
   await page.waitForURL((url) => !url.pathname.startsWith("/signup"), { timeout: 60_000 });
   const projects = await page.request.get("/api/workbench/projects").then((r) => r.json());
   const names = JSON.stringify(projects);
   expect(names).toContain("A 15-second fashion film about quiet confidence");
   expect(await page.evaluate(() => localStorage.getItem("particl:guest-brief"))).toBeNull();
+});
+
+test("/signup with an invitation, on Graphite: the email filled in, only what is missing asked", async ({ page }, info) => {
+  await setSite({});
+  const email = `signup-page-${info.project.name.replace(/\W/g, "")}-${Date.now()}@example.test`;
+  const code = await invite(email);
+  await page.goto(`/signup?invite=${code}`);
+  await expect(page.getByTestId("signup-page")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await expect(page.getByTestId("signup-email")).toHaveValue(email);
+  await expect(page.getByTestId("signup-email")).toHaveAttribute("readonly", "");
+  await expect(page.getByTestId("signup-name")).toHaveCount(0);
+  await expect(page.getByTestId("signup-workspace")).toBeVisible();
+  /* Graphite only: no old sign-up sheets on the page. */
+  expect(await page.evaluate(() => [...document.querySelectorAll(".auth-card, .auth-page, .mk-access-form")].length)).toBe(0);
+  await floors(page, info, "/signup with an invitation");
+  await shot(page, info, "signup-invitation");
 });
 
 test("/signup without a link, while sign-up is by invitation, offers to ask for access", async ({ page }, info) => {
@@ -215,9 +240,18 @@ test("/signup without a link, while sign-up is by invitation, offers to ask for 
   await expect(page.getByText("Sign-up needs an invitation link.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Request access" })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
-  void info;
+  await floors(page, info, "/signup without a link");
+  await shot(page, info, "signup-request-access");
   const res = await page.request.post("/api/auth/signup", { data: { name: "X", email: "x@example.test", workspace: "X", password: "a long passphrase 42", accept: true } });
   expect(res.status()).toBe(403);
   expect((await res.json()).error).toBe("Sign-up needs an invitation link.");
+});
+
+test("a self-serve verification link after sign-up closed is refused and offers Request access", async ({ page }, info) => {
+  await setSite({});
+  await page.goto(`/signup?verify=${"v".repeat(48)}`);
+  await expect(page.getByTestId("signup-invite-only")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Particl is invite-only for now." })).toBeVisible();
+  await expect(page.getByTestId("request-access-form")).toBeVisible();
+  await floors(page, info, "a refused verification");
 });

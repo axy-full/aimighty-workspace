@@ -108,6 +108,18 @@ test("only a live workspace on this deployment can be named", async () => {
   await expect(site({ guestWorkspace: gamma.id })).rejects.toBeInstanceOf(SiteSettingsError);
 });
 
+test("the guest sample is never the house workspace", async () => {
+  const { SiteSettingsError } = await import("../../lib/site/settings.server");
+  const { platformDb } = await import("../../lib/platform");
+  const house = await workspace("house");
+  await platformDb().execute({ sql: `UPDATE workspaces SET legacy = 1 WHERE id = ?`, args: [house.id] });
+  try {
+    await expect(site({ guestWorkspace: house.id })).rejects.toBeInstanceOf(SiteSettingsError);
+  } finally {
+    await platformDb().execute({ sql: `UPDATE workspaces SET legacy = 0 WHERE id = ?`, args: [house.id] });
+  }
+});
+
 test("the site row never changes the platform layer (plans, caps, defaults)", async () => {
   const { platformLayerState } = await import("../../lib/platform");
   await site({ openSignup: true, guestHome: true, guestWorkspace: alpha.id });
