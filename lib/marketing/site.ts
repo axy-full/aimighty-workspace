@@ -31,7 +31,7 @@ const COUNT: Record<number, string> = { 8: "Eight", 9: "Nine", 10: "Ten", 11: "E
 /* In the order the header shows them; Settings is reached from the footer and the strip. */
 export const SITE_SUITES: SiteSuite[] = [
   { id: "studio", href: "/studio", tab: "Studio", tag: "01 Studio", name: "Studio",
-    blurb: `A film or an ad on one board. ${COUNT[STUDIO_PAGES.length] ?? STUDIO_PAGES.length} stages from brief to delivery.`,
+    blurb: `A film on one board. ${COUNT[STUDIO_PAGES.length] ?? STUDIO_PAGES.length} stages from brief to delivery.`,
     pages: STUDIO_PAGES },
   { id: "business", href: "/business", tab: "Ads", tag: "02 Ads", name: "Ads",
     blurb: "Product, brand and cast, then image ads that keep every reference.",

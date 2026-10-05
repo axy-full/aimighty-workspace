@@ -7,7 +7,7 @@ import styles from "./studio.module.css";
 
 export const metadata: Metadata = {
   title: "Studio",
-  description: "Particl Studio: a film or an ad on one board, ten stages from brief to delivery, each agentic step run by the agent you pick.",
+  description: "Particl Studio: a film on one board, ten stages from brief to delivery, each agentic step run by the agent you pick.",
 };
 
 /*
@@ -86,7 +86,7 @@ export default function StudioPage() {
     <SitePage active="studio">
       <SuiteHeader
         eyebrow="01 · Studio"
-        title="A film or an ad on one board."
+        title="A film on one board."
         lead="Ten stages from brief to delivery. Storyboard frames come before any video, and every stage reads and writes the same production, from the brief to the final cut."
         pages={STAGES.map((stage) => stage.title)}
         cta={<>

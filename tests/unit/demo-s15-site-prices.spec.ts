@@ -20,6 +20,7 @@ test("the rate card and packs are CLAUDE.md's, even while the ledger counts in a
     expect(rates.perCredit).toBe(0.1);
     expect(rates.rateCard.map((row) => row.credits)).toEqual(CARD);
     expect(rates.hero.credits).toBe(43);
+    expect(Object.values(rates.engines).map((engine) => `${engine.name} ${engine.short}`).join(" ")).not.toMatch(/astra/i);
     expect(rates.packs.map((pack) => [pack.usd, pack.credits, pack.bonus])).toEqual([
       [50, 500, 0], [200, 2000, 200], [500, 5000, 750], [2000, 20000, 4000],
     ]);

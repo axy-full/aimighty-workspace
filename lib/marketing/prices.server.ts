@@ -118,7 +118,8 @@ export function siteRates(): SiteRates {
         ...quote(GPT_IMAGE, gptLow, "Low to High"),
         basis: gptLow != null && gptHigh != null && gptHigh !== gptLow ? `to ${gptHigh} cr · Low to High` : "a still",
       },
-      [TOPAZ]: quote(TOPAZ, perSecond(t, TOPAZ, "4k", 5), "5 s · to 4K"),
+      /* The UI name (design README § 7): "Topaz upscale", never the model's retired "Astra". */
+      [TOPAZ]: { ...quote(TOPAZ, perSecond(t, TOPAZ, "4k", 5), "5 s · to 4K"), name: "Topaz upscale", short: "TOPAZ" },
     },
     hero,
   };
