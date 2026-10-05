@@ -126,8 +126,8 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        // A new paid start while the record counts in another price of a credit (lib/ledgerUnit.ts) does not start.
-        if (!row && e.status === "running" && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx)))
+        // A new paid start while the record (the platform's, or this workspace's own) counts in another price of a credit (lib/ledgerUnit.ts) does not start.
+        if (!row && e.status === "running" && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx, workspaceId)))
           throw new LedgerUnitPausedError();
         const ledger = await workspaceUnitTx(tx, workspaceId);
         /* A job first metered now is charged in the unit this workspace's record counts in, which is

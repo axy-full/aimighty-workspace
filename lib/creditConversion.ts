@@ -441,6 +441,19 @@ export async function convertWorkspaceCredits(
   const plan: Plan = { mode: o.mode, k, fromUsd: o.fromUsd, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null,
     endAt: Number(o.endAt) > 0 ? Number(o.endAt) : Infinity };
   const myCaps = capsFor(workspaceId, o.caps);
+  /* A reversal whose own-database half never finished left that database in the new unit: finish it
+     first, or converting again would multiply its figures a second time. */
+  if (!o.dryRun) {
+    const { row: prev } = await lastRowTx(platformDb(), workspaceId);
+    if (prev && prev.action === "reverse" && prev.tenant_applied_at == null) {
+      try { await finishTenant(workspaceId, prev, at); }
+      catch (error) {
+        return { id: null, workspaceId, status: "refused", action: "convert", mode: o.mode, fromUsd: o.fromUsd, toUsd: o.toUsd, before: null, after: null,
+          rows: {}, tenant: [], tenantDone: false, marks: await marksOf(workspaceId),
+          reason: `Its reversal is not finished in its own database yet: ${(error as Error).message}. Run it again.` };
+      }
+    }
+  }
   let result: CreditConversion;
   try {
     result = await billingTransaction(async (tx) => {
@@ -536,6 +549,15 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
   if (workspaceId === HOUSE_WORKSPACE_ID) return houseLine(workspaceId, "reverse", null, 0, 0);
   await conversionsReady();
   const at = o.at ?? Date.now();
+  const { row: pre } = await lastRowTx(platformDb(), workspaceId);
+  /* Reversed already, its own database's half not in (that database failed): running it again finishes it. */
+  if (pre && pre.action === "reverse" && pre.tenant_applied_at == null) {
+    const line: CreditConversion = { id: String(pre.id), workspaceId, status: "already", action: "reverse", mode: (pre.mode as ConversionMode) ?? null,
+      fromUsd: Number(pre.from_usd), toUsd: Number(pre.to_usd), before: null, after: null, rows: {}, tenant: [], tenantDone: false };
+    if (o.dryRun) return { ...line, reason: "Reversed; its own database's half is not finished yet. A real run finishes it." };
+    try { return { ...line, tenant: await finishTenant(workspaceId, pre, at), tenantDone: true, reason: "Reversed; its own database's half is finished now." }; }
+    catch (error) { return { ...line, reason: `The workspace's own figures are not reversed yet: ${(error as Error).message}. Run it again.` }; }
+  }
   let result: CreditConversion;
   try {
     result = await billingTransaction(async (tx) => {
@@ -787,7 +809,8 @@ type RunOptions = Options & {
  * The run the platform owner starts (app/api/admin/credit-unit). For real it is US$0.80 → US$0.10
  * only, after CREDIT_USD changed (which paused paid work), with a decision for every workspace the
  * dry run lists under needsDecision, all in one call. Once the ledger counts in the new price a
- * real run converts nothing more: it only finishes workspace halves that failed, or skips them.
+ * real run converts nothing new: it only finishes workspace halves that failed, or skips them, and
+ * converts again a workspace a reversal put back in the old price.
  */
 export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun && o.mode !== "per-row") throw new Error("A real run is per row (owner, 5 October 2026); uniform is a dry-run comparison only.");
@@ -799,7 +822,7 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   const at = o.at ?? Date.now();
   if (!o.dryRun && !samePrice(creditUsd(), o.toUsd))
     throw new Error(`CREDIT_USD is ${dollars(creditUsd())}: change it to ${dollars(o.toUsd)} and redeploy before converting.`);
-  const ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
+  let ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
   /* Default: when an instance first ran at the new price; after a reversal (which clears that), the
      window the reversed conversion used. */
   const recordedEnd = async () => {
@@ -818,18 +841,27 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
     for (const id of ids) results.push(await convertWorkspaceCredits(id, { ...o, endAt, dryRun, at, decision: o.decisions?.[id] ?? null }));
     return results;
   };
+  const finished: CreditConversion[] = [];
+  const tenantSkipped: string[] = [];
+  /* Workspaces a reversal put back in the old price after the ledger moved (one reversed on its own,
+     or a reversal that stopped half-way): converted again, and only they. */
+  let reconverting = false;
   if (!o.dryRun) {
-    /* Finished already: convert nothing more; finish or skip what failed. */
+    /* Finished already: convert nothing new; finish or skip what failed, and convert again what a reversal put back. */
     if (unitBefore != null && samePrice(unitBefore, o.toUsd)) {
-      const tenantSkipped: string[] = [];
       for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
-      const results: CreditConversion[] = [];
+      const back: string[] = [];
       for (const id of ids) {
+        if (id === HOUSE_WORKSPACE_ID) continue;
         const { row } = await lastRowTx(platformDb(), id);
-        if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) results.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
+        if (row && row.action === "reverse" && samePrice(Number(row.to_usd), o.fromUsd)) back.push(id);
+        else if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) finished.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
       }
-      return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [],
-        tenantSkipped, layer: null, results, totals: totals(results) };
+      if (!back.length)
+        return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [],
+          tenantSkipped, layer: null, results: finished, totals: totals(finished) };
+      ids = back;
+      reconverting = true;
     }
     if (endAt == null) throw new Error("No end to the old price's window: CREDIT_USD has not changed on any instance yet, and no endAt was given.");
     /* Every balance it lowers needs a decision before anything is written, so all convert in one call. */
@@ -837,11 +869,12 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
     const undecided = preview.filter((r) => (r.shortfall ?? 0) > 0 && !o.decisions?.[r.workspaceId]).map((r) => r.workspaceId);
     if (undecided.length) throw new Error(`Decide goodwill or apply for every workspace under needsDecision first: ${undecided.join(", ")}.`);
   }
-  const results = await pass(Boolean(o.dryRun))();
+  const results = [...finished, ...(await pass(Boolean(o.dryRun))())];
+  /* The platform layer too, unless one workspace was named: "already" where it stands, converted again where a reversal put it back. */
   const layer = o.workspaceId ? null : await convertLayer({ ...o, reverse: false, k }, at);
-  const tenantSkipped: string[] = [];
-  if (!o.dryRun) for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
-  const settled = o.dryRun ? { moved: false, waiting: [] as string[] } : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, o.universe);
+  if (!o.dryRun && !reconverting) for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
+  const settled = o.dryRun ? { moved: false, waiting: [] as string[] }
+    : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, reconverting ? ids : o.universe);
   return {
     ...base, dryRun: Boolean(o.dryRun), ledgerUnitAfter: await ledgerUnitNow(), waiting: settled.waiting,
     needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), declinedTopups: declinesOf(results),
@@ -849,6 +882,12 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   };
 }
 
+/**
+ * Reverse every workspace's last conversion (or one, by `workspaceId`). All or nothing across
+ * workspaces: a refusal anywhere reverses nobody. A full reversal moves the ledger back to the old
+ * price when every workspace is back in it. One workspace reversed on its own leaves the ledger
+ * where it is: that workspace alone pauses (lib/ledgerUnit.ts ledgerOpenTx) until converted again.
+ */
 export async function reverseAllCredits(o: Options & { workspaceId?: string | null; universe?: string[] }): Promise<ConversionRun> {
   const unitBefore = await ledgerUnitNow();
   const at = o.at ?? Date.now();
@@ -861,12 +900,12 @@ export async function reverseAllCredits(o: Options & { workspaceId?: string | nu
   if (live) for (const id of ids) results.push(await reverseWorkspaceCredits(id, { ...o, at }));
   else results.push(...check);
   const refused = results.filter((r) => r.status === "refused");
-  const first = results.find((r) => r.status === "reversed" || r.status === "planned");
+  const first = results.find((r) => r.status === "reversed" || r.status === "planned" || r.status === "already");
   const layer = o.workspaceId || refused.length ? null : await convertLayer({ ...o, reverse: true, fromUsd: 0, toUsd: 0, k: 1 }, at);
   let waiting: string[] = [];
   /* A workspace the conversion never touched (none was run on it: made during or after the pause) does not
      hold a reversal up: endAt 0 counts every such workspace as outside the window. */
-  if (!o.dryRun && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, 0, o.universe)).waiting;
+  if (!o.dryRun && !o.workspaceId && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, 0, o.universe)).waiting;
   return {
     dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null, endAt: null, firstOldPriceJobAt: null,
     fromUsd: first?.fromUsd ?? 0, toUsd: first?.toUsd ?? 0, factor: first ? first.fromUsd / first.toUsd : 1,

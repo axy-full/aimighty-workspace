@@ -500,3 +500,122 @@ test.describe("review fixes", () => {
     expect(await ledgerUnitTx(p)).toBe(0.1);
   });
 });
+
+/* ── Second review of #524 (5 October 2026): each defect, asserted fixed ──────────────────── */
+
+test.describe("second review fixes", () => {
+  const sync = async (ws: string, at: number) => {
+    const { billingTransaction, syncBillingLedger } = await import("../../lib/billingLedger");
+    await billingTransaction(async (tx) => { await syncBillingLedger(tx, ws, at); }, at);
+  };
+  const tenantOf = async (id: string) => {
+    const { getWorkspace } = await import("../../lib/platform");
+    return (await getWorkspace(id))!;
+  };
+  /** A workspace at particl.si today: 100 credits granted inside the $0.80 window ($80). */
+  const granted = async (id: string) => {
+    await addWorkspace(id);
+    await grant(id, `${id}_grant`, 100, "manual", AFTER);
+    await sync(id, AFTER);
+  };
+  const run = (body: Record<string, unknown>) => ({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row" as const, cutoverAt: CUTOVER, dryRun: false, by: "owner", ...body });
+  const shotCap = async (id: string) => {
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db } = await import("../../lib/db");
+    return runInTenant(await tenantOf(id), async () => String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0]?.value));
+  };
+  const saveShotCap = async (id: string, value: string, at: number) => {
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db, ready } = await import("../../lib/db");
+    await runInTenant(await tenantOf(id), async () => {
+      await ready();
+      await db().execute({ sql: `INSERT INTO settings(key,value,updated_by,updated_at) VALUES('shotCapCredits',?,'admin',?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, args: [value, at] });
+    });
+  };
+
+  test("H1: a workspace reversed on its own pauses alone, admits nothing, and converts again", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerOpenTx, ledgerUnitTx, LEDGER_UNIT_PAUSED } = await import("../../lib/ledgerUnit");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+    const { meter } = await import("../../lib/meter");
+    const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
+    process.env.CREDIT_USD = "0.80";
+    await setUnit(0.8);
+    const both = ["ws_s1a", "ws_s1b"];
+    for (const id of both) await granted(id);
+    process.env.CREDIT_USD = "0.10";
+    const p = await platform();
+    expect((await convertAllCredits(run({ endAt: END, at: NOW, universe: both }))).ledgerUnitAfter).toBe(0.1);
+    expect((await balance("ws_s1a")).balance).toBe(800);
+    // The owner reverses one workspace (to change its decision, say): the platform still counts in $0.10.
+    const rev = await reverseAllCredits({ dryRun: false, at: NOW + 1000, by: "owner", workspaceId: "ws_s1a" });
+    expect(rev.results.map((r) => r.status)).toEqual(["reversed"]);
+    expect(await ledgerUnitTx(p)).toBe(0.1);
+    expect((await balance("ws_s1a", NOW + 2000)).balance).toBe(100);
+    // That workspace alone is paused: its record counts in $0.80 credits again. The other one is open.
+    expect(await ledgerOpenTx(p, "ws_s1a")).toBe(false);
+    expect(await ledgerOpenTx(p, "ws_s1b")).toBe(true);
+    expect(rev.waiting).toEqual([]);
+    const job2 = { kind: "video" as const, engine: "byteplus", model: "fixture", status: "running" as const, engineCostUsd: 2 };
+    const refused = await runInTenant(await tenantOf("ws_s1a"), () => reserveGenerationSpend({ id: "s1a_job", ...job2 })).then(() => null, (e) => e);
+    expect(refused).toBeInstanceOf(SpendReservationError);
+    expect(refused.status).toBe(503);
+    expect(refused.message).toBe(LEDGER_UNIT_PAUSED);
+    const direct = await runInTenant(await tenantOf("ws_s1a"), () => meter({ id: "s1a_direct", kind: "image", engine: "fal", model: "fixture", status: "running", engineCostUsd: 0.1 }))
+      .then(() => null, (e) => e);
+    expect(direct?.message).toBe(LEDGER_UNIT_PAUSED);
+    expect((await p.execute(`SELECT id FROM meter_events WHERE workspace_id='ws_s1a'`)).rows).toHaveLength(0);
+    // Converting it again (the ledger already counts in $0.10) converts that workspace, and it opens.
+    const again = await convertAllCredits(run({ endAt: END, at: NOW + 5000, workspaceId: "ws_s1a" }));
+    expect(again.results.map((r) => [r.workspaceId, r.status])).toEqual([["ws_s1a", "converted"]]);
+    expect((await balance("ws_s1a", NOW + 6000)).balance).toBe(800);
+    expect(await ledgerOpenTx(p, "ws_s1a")).toBe(true);
+    // A job there now is charged at $0.10, the unit its record counts in.
+    await runInTenant(await tenantOf("ws_s1a"), () => reserveGenerationSpend({ id: "s1a_job2", ...job2 }));
+    const row = (await p.execute(`SELECT billed_credits,credit_usd FROM meter_events WHERE id='s1a_job2'`)).rows[0];
+    expect(Number(row.credit_usd)).toBe(0.1);
+    expect(Number(row.billed_credits)).toBe(creditsAtTerms(2, currentBillingTerms("video", "fixture")));
+  });
+
+  test("H1: a reversal whose own-database half failed is finished by running it again; converting again finishes it first", async () => {
+    const { convertAllCredits, reverseAllCredits } = await import("../../lib/creditConversion");
+    const { ledgerUnitTx } = await import("../../lib/ledgerUnit");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db } = await import("../../lib/db");
+    process.env.CREDIT_USD = "0.80";
+    await setUnit(0.8);
+    await granted("ws_s2");
+    await saveShotCap("ws_s2", "25", AFTER);
+    process.env.CREDIT_USD = "0.10";
+    const p = await platform();
+    const caps = { "ws_s2/settings:shotCapCredits": "x8" as const };
+    await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s2"], caps }));
+    expect(await shotCap("ws_s2")).toBe("200");
+    // Its own database refuses the reversal's write (an outage, simulated with a trigger).
+    const outage = async (on: boolean) => runInTenant(await tenantOf("ws_s2"), () =>
+      db().execute(on ? `CREATE TRIGGER s2_outage BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT,'simulated outage'); END` : `DROP TRIGGER s2_outage`));
+    await outage(true);
+    const failed = await reverseAllCredits({ dryRun: false, at: NOW + 1000, by: "owner", universe: ["ws_s2"] });
+    expect(failed.results[0]).toMatchObject({ status: "reversed", tenantDone: false });
+    expect(await shotCap("ws_s2")).toBe("200");
+    expect((await balance("ws_s2", NOW + 1500)).balance).toBe(100);
+    await outage(false);
+    // Running the reversal again finishes its own half; then the ledger is back at $0.80.
+    const finished = await reverseAllCredits({ dryRun: false, at: NOW + 2000, by: "owner", universe: ["ws_s2"] });
+    expect(finished.results[0]).toMatchObject({ status: "already", tenantDone: true });
+    expect(await shotCap("ws_s2")).toBe("25");
+    expect(await ledgerUnitTx(p)).toBe(0.8);
+    // Converted again, failed again: converting once more finishes the reversal's half before it multiplies.
+    await convertAllCredits(run({ endAt: END, at: NOW + 3000, universe: ["ws_s2"], caps }));
+    expect(await shotCap("ws_s2")).toBe("200");
+    await outage(true);
+    expect((await reverseAllCredits({ dryRun: false, at: NOW + 4000, by: "owner", universe: ["ws_s2"] })).results[0]).toMatchObject({ status: "reversed", tenantDone: false });
+    await outage(false);
+    const again = await convertAllCredits(run({ endAt: END, at: NOW + 6000, universe: ["ws_s2"], caps }));
+    expect(again.results.map((r) => [r.status, r.tenantDone])).toEqual([["converted", true]]);
+    expect(await shotCap("ws_s2")).toBe("200");
+    expect((await balance("ws_s2", NOW + 7000)).balance).toBe(800);
+  });
+});

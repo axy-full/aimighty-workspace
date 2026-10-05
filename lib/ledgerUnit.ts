@@ -13,10 +13,12 @@ import { creditUsd } from "./creditTerms";
  *
  * So the ledger keeps its unit, in one row of the platform database
  * (`billing_unit`), and admission refuses new paid jobs whenever
- * `creditUsd()` is not that unit. Nobody flips a switch: changing CREDIT_USD
- * pauses paid work, and the conversion, which writes the new unit in the same
- * write as the restated figures, resumes it. A reversal writes the old unit
- * back, which pauses paid work again until CREDIT_USD is put back too.
+ * `creditUsd()` is not that unit, or not the unit the workspace's own record
+ * counts in (its last conversion's target, lib/creditConversion.ts). Nobody
+ * flips a switch: changing CREDIT_USD pauses paid work, and the conversion,
+ * which writes the new unit in the same write as the restated figures,
+ * resumes it. A reversal puts a workspace back in the old unit, which pauses
+ * paid work there until it is converted again or CREDIT_USD is put back too.
  *
  * The row is seeded once, from `creditUsd()`, the first time the billing
  * tables are made (lib/billingLedger.ts billingReady). A deployment of this
@@ -107,10 +109,19 @@ export async function workspaceUnitTx(tx: Pick<Transaction, "execute">, workspac
   return ledgerUnitTx(tx);
 }
 
-/** Whether a paid job may be admitted now: the platform ledger counts in today's price of a credit. */
-export async function ledgerOpenTx(tx: Pick<Transaction, "execute">): Promise<boolean> {
+/**
+ * Whether a paid job may be admitted now: the platform ledger counts in today's price of a credit,
+ * and so does the workspace's own record. A workspace a reversal put back in the old price (one on
+ * its own, or the first ones of a reversal that stopped half-way) stays paused while the rest of
+ * the platform runs, until it is converted again: a job admitted there would be charged in credits
+ * its balance does not count in.
+ */
+export async function ledgerOpenTx(tx: Pick<Transaction, "execute">, workspaceId?: string | null): Promise<boolean> {
   const unit = await ledgerUnitTx(tx);
-  return unit == null || samePrice(unit, creditUsd());
+  if (unit != null && !samePrice(unit, creditUsd())) return false;
+  if (!workspaceId) return true;
+  const own = await workspaceUnitTx(tx, workspaceId);
+  return own == null || samePrice(own, creditUsd());
 }
 
 export async function setLedgerUnitTx(tx: Pick<Transaction, "execute">, unitUsd: number, by: string | null, at: number): Promise<void> {
