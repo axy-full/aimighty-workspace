@@ -303,3 +303,28 @@ test("the quick tools open over the new panel, and with the switch off Make is t
   expect(sends, "nothing is sent").toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("a press the server accepts: Make closes, the toast says rendering, and the board is told which card to light", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.setTimeout(180_000);
+  const { errors, sends } = await seed(page, { credits: 5000 });
+  /* The board's side is stream 3's; what it hears is the window event. */
+  await page.addInitScript(() => {
+    (window as unknown as { __made: unknown[] }).__made = [];
+    window.addEventListener("particl:board-made", (event) => (window as unknown as { __made: unknown[] }).__made.push((event as CustomEvent).detail));
+  });
+  await page.goto("/suites?make=video");
+  await say(page, "make shot 2 at golden hour");
+  const go = page.getByTestId("gen-generate");
+  await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 90_000 });
+  const price = ((await go.innerText()).match(/\d[\d,]* cr/) ?? [""])[0];
+  await go.click();
+  await expect(page.getByTestId("make-panel")).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.getByText(new RegExp(`${price} · rendering`)).first()).toBeVisible();
+  expect(sends.length, "one send, at the press").toBe(1);
+  const made = await page.evaluate(() => (window as unknown as { __made: { projectId: string; nodeId: string; name: string }[] }).__made);
+  expect(made).toHaveLength(1);
+  expect(made[0].projectId).toMatch(/^project-/);
+  expect(made[0].nodeId).toBeTruthy();
+  expect(errors).toEqual([]);
+});

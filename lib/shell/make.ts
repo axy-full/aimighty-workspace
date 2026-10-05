@@ -85,6 +85,26 @@ export function recentEntries<T extends RecentEntry>(entries: readonly T[], chip
   });
 }
 
+/**
+ * A result landing (README § 3.2, `make=made`; "Make frames" 9): Make files every take on a new shot node in the project's
+ * draft, so a result is on the board as a card already. When the server has accepted a press, Make closes, toasts, and tells
+ * the board, which glides to that card, lights it, and opens the Library on the take. The board's side is
+ * lib/board/made.ts (`useMadeOnBoard`); it hears this window event, so Make imports nothing of the board.
+ */
+export const MADE_EVENT = "particl:board-made";
+export type Made = { projectId: string; nodeId: string; name: string };
+
+/** What a press that was accepted tells the shell, as one sentence for the toast: "‹name› · 43 cr · rendering". */
+export function madeLine(name: string, priceText: string | null, takes = 1): string {
+  return [name, priceText, takes > 1 ? `${takes} takes` : null, "rendering"].filter(Boolean).join(" · ");
+}
+
+/** Tells a board on screen that a result was made for `projectId`, filed on `nodeId` (no board, no listener: nothing happens). */
+export function announceMade(made: Made): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<Made>(MADE_EVENT, { detail: made }));
+}
+
 /** The old Gen page's `mode=` (lib/genRoute.ts spells images in the plural). */
 const MODE_TYPE: Record<string, ComposerType> = { video: "video", images: "image", image: "image", audio: "audio" };
 

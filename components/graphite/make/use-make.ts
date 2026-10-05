@@ -5,8 +5,8 @@ import { dropToIds, readDrop } from "@/lib/drop";
 import { displayModelName } from "@/lib/models";
 import { isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
-import { inferType, isMakeTool, makeDest, makeType, typeNote } from "@/lib/shell/make";
-import { exact, shortByWords, type PriceValue } from "@/lib/shell/price-words";
+import { announceMade, inferType, isMakeTool, madeLine, makeDest, makeType, typeNote } from "@/lib/shell/make";
+import { exact, priceWords, shortByWords, type PriceValue } from "@/lib/shell/price-words";
 import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
@@ -17,7 +17,8 @@ import type { Project } from "@/lib/workbench/studio";
 import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
-import { useComposer } from "@/lib/workspace/use-composer";
+import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
+import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
 /**
@@ -68,7 +69,16 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const shell = useShell();
   const session = useSession();
   const [initialType] = useState<ComposerType>(() => makeType(shell.make) ?? shell.lastMake);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
+  const ws = useWorkspace();
+  /* A press the server accepted: Make closes, says so, and tells the board (lib/shell/make.ts › announceMade). One held for credits, or a batch with a take
+     not accepted, keeps Make open with its line instead: nothing has started. */
+  const sent = useCallback((made: ComposerSent) => {
+    if (made.held) return;
+    ws.toast(madeLine(made.name, priceWords(exact(made.credits)), made.takes));
+    announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
+    shell.closeMake();
+  }, [ws, shell]);
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   const tool = isMakeTool(shell.make) ? shell.make : null;

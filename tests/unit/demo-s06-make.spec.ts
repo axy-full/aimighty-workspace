@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAKE_PARAM, MAKE_SCREEN, RECENT_CHIPS, inferType, makeDest, readMake, recentEntries, typeNote, wantsChange } from "../../lib/shell/make";
+import { MADE_EVENT, MAKE_PARAM, announceMade, madeLine, MAKE_SCREEN, RECENT_CHIPS, inferType, makeDest, readMake, recentEntries, typeNote, wantsChange } from "../../lib/shell/make";
 
 /* Make with the new interface (design/particl-graphite/README.md § 3.2, "Make frames.dc.html"): Auto's type, the line
    that says where a result goes, `make=change`, and Recent's chips. */
@@ -64,4 +64,21 @@ test("Recent's chips are the master's: All, Takes, Unfiled, Filed", () => {
 test("Make's `make` param belongs to the shell, not to the screen registry: listed there, the shell would write it back over a type just picked", () => {
   expect(MAKE_SCREEN.id).toBe("make");
   expect(MAKE_SCREEN.params).not.toContain(MAKE_PARAM);
+});
+
+test("a result landing: one sentence for the toast, and a window event the board hears; with no window, nothing", () => {
+  expect(madeLine("Shot 2", "43 cr")).toBe("Shot 2 · 43 cr · rendering");
+  expect(madeLine("Shot 2", "86 cr", 2)).toBe("Shot 2 · 86 cr · 2 takes · rendering");
+  expect(madeLine("Shot 2", null)).toBe("Shot 2 · rendering");
+  expect(MADE_EVENT).toBe("particl:board-made");
+  expect(() => announceMade({ projectId: "p", nodeId: "n", name: "x" })).not.toThrow();
+  const heard: unknown[] = [];
+  const target = new EventTarget();
+  const was = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = target;
+  try {
+    target.addEventListener(MADE_EVENT, (event) => heard.push((event as CustomEvent).detail));
+    announceMade({ projectId: "p", nodeId: "n", name: "Shot 2" });
+  } finally { (globalThis as { window?: unknown }).window = was; }
+  expect(heard).toEqual([{ projectId: "p", nodeId: "n", name: "Shot 2" }]);
 });
