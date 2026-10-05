@@ -5,18 +5,18 @@ import sharp from "sharp";
 /**
  * Screenshots for the PR description: the routes that changed, at each
  * viewport, signed out, plus the composer sheet open. Written under
- * docs/phase-0/ so the description can point at them by path.
+ * screenshots/, which git ignores: pictures of screens go in the PR
+ * description, never in the repo.
  *
  * WRITTEN ONLY WHEN THE PICTURE ACTUALLY CHANGED.
  *
- * These are committed, because a PR that changes what a screen looks like
- * should carry the new screen. But Chromium does not rasterise the same page
+ * A file is rewritten only when its screen changed, so its date says when.
+ * But Chromium does not rasterise the same page
  * to the same bytes twice: measured on /welcome at 390x844, two runs minutes
  * apart differed in 448 pixels of 329,160 — 0.14% of the frame, none of them
  * by more than 3 levels out of 255, all of them on the anti-aliased edges of
  * the lockup's circles and wordmark. Invisible, and enough to rewrite the
- * file. Every suite run therefore dirtied the tree, so every PR carried
- * binary churn that had to be committed as noise or discarded by hand.
+ * file, so every run would have rewritten every picture.
  *
  * So a shot is compared against the one on disk and kept unless it moved
  * more than a rasteriser can move it. Two ways to be a real change, because
@@ -63,6 +63,8 @@ async function shoot(page: Page, file: string): Promise<void> {
   if (existsSync(file) && !(await movedForReal(readFileSync(file), shot))) return;
   writeFileSync(file, shot);
 }
+/** Git-ignored (.gitignore); never committed. */
+const OUT = "screenshots";
 const SHOTS: [string, string][] = [
   ["/welcome", "welcome"], ["/make/video", "make-video"], ["/make/images", "make-images"], ["/make/audio", "make-audio"], ["/library", "library"],
   ["/productions", "productions"], ["/studio/shot", "shot-builder"],
@@ -99,13 +101,13 @@ async function settle(page: Page) {
 
 test.describe("screens", () => {
   test("capture", async ({ page }, info) => {
-    mkdirSync("docs/phase-0", { recursive: true });
+    mkdirSync(OUT, { recursive: true });
     const vp = page.viewportSize()!;
     const tag = `${vp.width}x${vp.height}`;
     for (const [route, slug] of SHOTS) {
       await page.goto(route);
       await settle(page);
-      await shoot(page, `docs/phase-0/${slug}-${tag}.png`);
+      await shoot(page, `${OUT}/${slug}-${tag}.png`);
     }
     info.annotations.push({ type: "shots", description: `${SHOTS.length} screenshots at ${tag}` });
   });

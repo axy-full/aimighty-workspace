@@ -7,7 +7,7 @@
      · the Tailwind import, the alias :root and @theme (names over
        app/graphite.css, which holds every value);
      · base element rules, focus rings, scrollbars, ::selection;
-     · the v2 primitives' CSS (`ui-*`, the ring's `atomik-pulse` / `atomik-bar`);
+     · the shared primitives' CSS (`ui-*`, the ring's `atomik-pulse` / `atomik-bar`);
      · the primitives many routes share — chip, row/rows, ctl, card, btn-*,
        mono*, seg*, dot*, screen, h1, grouplabel, shell*, page*, subnav*,
        well*, take*, ws-*, grp-*, tile*, menu-*, tap44, reveal;
@@ -115,7 +115,7 @@
   --radius-pill: var(--gx-r-pill);
 }
 
-/* ── particl v2 primitives' CSS (design/particl-graphite/README.md §2–§3) ──────
+/* ── The shared primitives' CSS (design/particl-graphite/README.md §2–§3) ──────
    Namespaced `ui-` and `atomik-` so they coexist with the classes of the
    routes not yet replaced. Only what a utility cannot say lives here. */
 
@@ -990,7 +990,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .steam.is-head { padding: 8px 0; border-bottom: 1px solid var(--color-line); font: 500 10px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-dim); }
 
 /* ══════════════════════════════════════════════════════════════════════
-   MOBILE · below 1024px wide or 520px tall — from the mobile handoff.
+   MOBILE · below 1024px wide or 520px tall.
    Same tokens, copy and data; the layout becomes one column that scrolls
    as a document under a sticky header, with a tab bar at the bottom. The
    composer rail is a sheet opened from a docked bar; the wall is a strip

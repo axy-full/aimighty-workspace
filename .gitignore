@@ -52,6 +52,8 @@ vapid-keys-for-vercel.txt
 test-results/
 playwright-report/
 ci-results/
+# tests/screens.spec.ts output: screenshots go in a PR description, not the repo
+/screenshots/
 
 /public/vendor/pdfjs-*/
 
