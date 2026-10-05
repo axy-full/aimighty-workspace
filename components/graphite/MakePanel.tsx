@@ -110,6 +110,8 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   /** The project list failed to read: said here too, with Try again, and the draft stays editable. */
   projectsError?: string | null; onRetry?: () => void;
   workspaceName: string | null; onProject: (id: string) => void;
+  /** The workspace's credit balance (account.credits.balance), for "Short by N cr"; null while unknown. Passed by the shell; Make reads it. */
+  balance?: number | null;
   /** The Inspector's column is open on a take (one opened from Recent): Make sits beside it rather than over it. */
   beside?: boolean;
   /** The project's frame, so every card and skeleton on Recent holds it (the card contract, TakeTile.tsx). */

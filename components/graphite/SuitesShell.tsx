@@ -63,6 +63,8 @@ import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
 import { FaultAside, PanelFault } from "./PanelFault";
 import { FirstRun, type ProjectActions } from "./FirstRun";
+import { AtomikMount, PhoneMount, ScreenBody, SettingsBody, type ScreenContext } from "./screens";
+import { seededProject, type CreateSeed } from "@/lib/shell/create-project";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -231,6 +233,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* One keymap: ⌘K, ⌘J, ⌥M, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      /* A screen that handled the key (the board's own shortcuts, a panel's field) has said so: the shell's keymap leaves it. */
+      if (event.defaultPrevented) return;
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (mod && key === "k") { event.preventDefault(); shell.setPalette(!shell.palette); return; }
@@ -242,6 +246,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (shell.libOpen || shell.inspOpen) shell.closePanels();
+        /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
+        else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
         /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it. */
         else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) shell.closeMake();
         return;
@@ -299,6 +305,17 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     toast(`${created.name} is open`);
     return null;
   };
+  /* The same path with a seed's fields set (Home's templates, a brief): answers the new project's id, or why it could not be made. */
+  const createFromSeed = async (name: string, seed: CreateSeed = {}): Promise<{ id: string; productionId?: string | null } | { error: string }> => {
+    const created = seededProject(name, seed);
+    const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
+    const body = (await response?.json().catch(() => null)) as { error?: unknown; project?: { productionProjectId?: unknown }; productionProjectId?: unknown } | null;
+    if (!response?.ok) return { error: typeof body?.error === "string" ? body.error : "The project could not be created. Try again." };
+    pickProject(created.id);
+    toast(`${created.name} is open`);
+    const production = body?.project?.productionProjectId ?? body?.productionProjectId;
+    return { id: created.id, productionId: typeof production === "string" ? production : null };
+  };
   /* The workspace's starter production, seeded on first use and opened as this person's draft; a second press opens the same one. */
   const openStarter = async () => {
     const response = await fetch("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ action: "starter" }) }).catch(() => null);
@@ -308,6 +325,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     toast(`${typeof body.project.name === "string" ? body.project.name : "The starter production"} is open. Its takes are samples: nothing was generated or charged.`);
     return null;
   };
+  /* One way to make a project from a seed, whichever surface asks (Home, ⌘K): the shell's own, registered like its command path. */
+  useEffect(() => { shell.setCreateProject(createFromSeed); return () => shell.setCreateProject(null); });
   const projectActions: ProjectActions = { projects: data.projects, onPick: pickProject, onCreate: createProject, onStarter: openStarter };
   /* A Studio stage with no project open: while the list is still being read, say so; then the first-run card. */
   const noProject = (stage: string, lead: string) => data.status === "loading"
@@ -323,10 +342,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const aspect = tileAspect(project?.aspect);
 
   const overlay = !shell.wide;
-  const showLibrary = shell.view !== "workspace" && (shell.wide || shell.libOpen);
+  /* The new interface's screens (lib/shell/screens.ts): Home and the board fill the body under the header; the control room
+     keeps the project chip and the strip but not the Library, the Inspector or the page head. */
+  const fullScreen = shell.screen === "home" || shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
+  const controlRoom = shell.screen === "control-room";
+  const showLibrary = shell.view !== "workspace" && !controlRoom && (shell.wide || shell.libOpen);
   /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
   const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
-  const showInspector = shell.view !== "workspace" && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
+  const showInspector = shell.view !== "workspace" && !controlRoom && !fullScreen && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
   const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
   const Body = PAGE_BODIES[state.page];
   const projectHead = (
@@ -341,26 +364,38 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
      Moving to another page, project or selection gives it a fresh go. */
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
   const stageProbe = `stage:${shell.page.id}`;
+  const screenCtx: ScreenContext = { shell, scope, account, project, items, library, data, projectActions, now, onCreate: createFromSeed };
+  /* The new interface's chrome variables: how far right panels reach (Home and the other views pad by it), and the board's dock (Make sits beside it). */
+  const rootStyle = shell.newInterface ? ({ "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties) : undefined;
+  /* The phone's own screens replace the header, strip, body and tab bar (switch on and landed; lib/shell/screens.ts › phoneAt). */
+  const phoneOn = shell.phone.on;
+  const phonePage = shell.view === "workspace" ? { title: "Settings", body: shell.screen === "settings" ? <SettingsBody ctx={screenCtx} /> : <WorkspaceView account={account} /> } : null;
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
       <JobsTrayProvider>
-      <div className="gx" data-view={shell.view} data-suite={shell.suite.id} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
+      <div className="gx" data-interface={shell.newInterface ? "new" : "old"} data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
+        data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
+        {phoneOn ? <PhoneMount ctx={screenCtx} page={phonePage} /> : <>
         <Header account={account} project={project?.name ?? null} bar={bar} />
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
           <AtomikGate />
         </Boundary>
-        {shell.view === "crew" ? <><CrewStrip room={crew} />
+        {fullScreen ? (
+          <div className="gx-screen" data-testid="screen" data-screen={shell.screen}><ScreenBody screen={shell.screen!} ctx={screenCtx} /></div>
+        ) : shell.view === "crew" ? <><CrewStrip room={crew} />
           <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
             <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
-          </Boundary></> : shell.view === "workspace" ? (
+          </Boundary></> : shell.view === "workspace" && shell.screen === "settings" ? (
+          <SettingsBody ctx={screenCtx} />
+        ) : shell.view === "workspace" ? (
           <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
             <WorkspaceView account={account} />
           </Boundary>
@@ -380,12 +415,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
               ) : (
                 <>
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
-                  {(shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio" ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
+                  {((shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio") || controlRoom ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
                   <div className="gx-stage gx-scroll" data-testid="content">
                     <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {projectsError && !project ? (
                       /* With Make open the banner (and its one Try again) is Make's, where the draft waits. */
                       shell.make ? null : <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
+                    ) : controlRoom ? (
+                      <ScreenBody screen="control-room" ctx={screenCtx} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
@@ -437,13 +474,14 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
           </div>
         )}
+        </>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
         {shell.make ? (
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
@@ -455,6 +493,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         )}>
           <Palette items={items} onAsk={ask} />
         </Boundary>
+        {/* Atomik's panel (new interface, `&atomik=`): over whatever is on screen. */}
+        <AtomikMount ctx={screenCtx} />
         <div className="pxw gx-legacy" style={{ minHeight: 0, flex: "none" }}>
           {/* Closed, the composer shows nothing, so a failure there shows nothing either until it is opened — like Search and Atomik. */}
           <Boundary what="The composer" probe="composer" resetKey={state.composer ? "open" : "closed"} fallback={(fault) => !state.composer ? null : (
@@ -489,8 +529,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             </div>
           </div>
         ) : null}
-        <TabBar />
-        {state.toast ? (() => {
+        {phoneOn ? null : <TabBar />}
+        {!phoneOn && state.toast ? (() => {
           /* A confirmation with somewhere to go carries its Open (lib/shell/confirmations); one the undo stack can take back
              carries its Undo, the phone's ⌘Z (lib/shell/state › pushUndo), while that step is still the one ⌘Z would undo.
              A mouse over it, or keyboard focus on it, holds it on screen. A tap does not: on a phone it sits over the page's
