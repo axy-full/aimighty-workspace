@@ -416,7 +416,7 @@ Workspace rules are plain sentences a team writes ("our brand never shows logos 
 **Export selects**: zip of approved masters named `{project}_{shot}_{version}_{w}x{h}.{ext}` and a CSV shotlist (shot, take, version, engine, credits, prompt). The older selects route exports masters and CSV only. The September 13 workbench adds a separately validated CMX3600 EDL/source package at an explicitly selected frame rate.
 
 ### 2.7 Team on a phone
-The four things a producer does on a phone: see what rendered, compare and approve, see the burn-down, unlock a cap or top up. Each one tap from the make screen, tested at 360×640. Push notifications for take finished, cap at 80%, approval needed, balance low — per-user, per-workspace preferences. **The push service is server-side work and gates the iOS app**: device token registration per user per workspace, an APNs key, and triggers on those four events.
+The four things a producer does on a phone: see what rendered, compare and approve, see the burn-down, unlock a cap or top up. Each one tap from the make screen, tested at 360×640. Push notifications for take finished, cap at 80%, approval needed, balance low, and an Atomik run that needs you (a render to approve, a shot to decide) — per-user, per-workspace preferences. **The push service is server-side work and gates the iOS app**: device token registration per user per workspace, an APNs key, and triggers on those five events.
 
 ### 2.8 The board pipeline
 

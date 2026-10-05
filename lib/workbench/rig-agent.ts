@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { after } from "next/server";
 import { db, now } from "@/lib/db";
-import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
+import { EVENTS, RIG_AGENT_RESOLVED, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
 import { engineMock } from "@/lib/mock";
-import { getWorkspace, platformDb, platformReady } from "@/lib/platform";
+import { getWorkspace } from "@/lib/platform";
 import { withPipelineActor } from "@/lib/pipeline/actor";
 import { PipelineError } from "@/lib/pipeline/schema";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
@@ -20,16 +20,20 @@ import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
 import {
   ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
-  type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentRunView, type RigAgentState,
+  type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentRunView, type RigAgentState, type ShotChoice,
 } from "./rig-agent-plan";
 import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
 } from "./rig-agent-planner";
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
-import { advancePaidSteps, closeEndedSteps, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
+import { closeChargeIntent, PAID_TEXT_TIMEOUT_MS, releaseStepCharge, releaseTextCharge } from "./rig-agent-charges";
+import { parseAgent, type AgentChoice } from "@/lib/production/agent";
+import { nextFixNumber, personFix, roundSteps } from "./rig-agent-fixes";
+import { failedRound, whenNeedsYou } from "./rig-agent-moves";
+import { advancePaidSteps, checkSubject, closeEndedSteps, PAID_PURPOSES, stepTitle, STOPPED_UNSENT, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertLiveSteps, insertRun, insertSteps, latestRun, looseCharges, looseStepCharges, looseSteps, newRunId, nextRound, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
@@ -92,8 +96,12 @@ const agentAuthor = (runId: string) => `agent:${runId}`;
 
 const distinct = (items: string[]) => [...new Set(items)];
 
-/** The ledger's view of a run: every charge that named it (planning, renders), and the per-job line now. */
-export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null };
+/**
+ * The ledger's view of a run: every charge that named it (planning, renders, checks, fix notes), the per-job line
+ * now, and — while a shot waits for a person and the run has not been charged for writing a fix yet — what writing
+ * one may cost (lib/workbench/rig-agent-fix-steps.ts fixNoteEstimate).
+ */
+export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null; noteEstimate?: number | null };
 const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
 
 /** The planning turn's meter event: one per run. */
@@ -119,11 +127,60 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   };
   const mine = run.owner === viewer;
   const asking = run.state === "needs_you" || run.state === "running";
-  const paid: RigAgentPaidStepView[] = steps.filter((s) => s.purpose === "take" || s.purpose === "verify").map((s) => {
+  /* What a choice is likely to cost: what the shot's last render, fix or check was priced at. */
+  const lastQuote = (s: StepRow, purpose: StepRow["purpose"]) =>
+    [...steps].reverse().find((x) => x.nodeId === s.nodeId && x.purpose === purpose && x.quoteCredits != null)?.quoteCredits ?? null;
+  /* What writing another fix is likely to cost: the run's last charge for writing one, else the writer's own estimate. */
+  const lastNote = [...steps].reverse().map((s) => (s.purpose === "fix" && s.charge === "settled" && s.chargeId ? byId.get(s.chargeId) : undefined))
+    .find((row) => !!row && !row.running && row.credits > 0)?.credits ?? null;
+  const noteGuess = lastNote ?? ledger.noteEstimate ?? null;
+  /* Another fix is priced first, writing included: its figure is the shot's last fix render plus that writing (none without
+     it), both credit figures as quoted and charged, added in whole tenths. */
+  const choicePrices = (s: StepRow, choices: ShotChoice[]): Partial<Record<ShotChoice, number>> => {
+    const prices: Partial<Record<ShotChoice, number>> = {};
+    const fixRender = lastQuote(s, "fix");
+    const of = {
+      fix: fixRender != null && noteGuess != null ? fromTenths(toTenths(fixRender) + toTenths(noteGuess)) : null,
+      rerender: lastQuote(s, "take"), recheck: s.purpose === "verify" ? s.quoteCredits : null,
+    };
+    for (const choice of ["fix", "rerender", "recheck"] as const) if (choices.includes(choice) && of[choice] != null) prices[choice] = of[choice]!;
+    return prices;
+  };
+  /* A fix's note (Atomik writing its edit): its own charge, inside the run's limit. */
+  const noteOf = (s: StepRow): RigAgentPaidStepView["note"] => {
+    if (s.purpose !== "fix" || !s.chargeId || !s.charge) return null;
+    const row = byId.get(s.chargeId);
+    if (s.charge === "reserved") return { credits: row ? row.credits : null, settled: false };
+    return row && !row.running && row.credits > 0 ? { credits: row.credits, settled: true } : null;
+  };
+  const live = ACTIVE_STATES.includes(run.state);
+  const paid: RigAgentPaidStepView[] = steps.filter((s) => (PAID_PURPOSES as readonly string[]).includes(s.purpose)).map((s) => {
     const title = stepTitle(run, s);
-    if (s.purpose === "verify")
-      return { seq: s.seq, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
-        reason: RIG_AGENT_VERIFY ? s.reason : VERIFY_LATER, canRender: false, fingerprint: null };
+    const label = s.round == null ? (s.purpose === "verify" ? `Check · ${title}` : title) : s.label;
+    const open = s.state === "waiting" || s.state === "paused";
+    /* A shot that waits for a person (its check, or its fix, could not go on): the person who asked decides. */
+    const flagged = s.state === "paused" && s.pause === "check";
+    const choices = mine && flagged && live ? shotChoices(s, steps) : [];
+    const common = {
+      seq: s.seq, title, label, round: s.round, state: s.state, pause: s.state === "paused" ? s.pause : null, reason: s.reason,
+      resolution: s.resolution && s.resolvedAt ? { choice: s.resolution, at: s.resolvedAt } : null,
+      choices, prices: choicePrices(s, choices), fixNote: choices.includes("fix") ? noteGuess : null,
+      takeKind: s.request?.kind === "check" ? s.request.takeKind : s.request?.kind === "fix" ? s.request.take : null,
+    };
+    /* A check: its price (and what it holds), what it settled at, its verdict and scorecard, and the Verify card on the board. */
+    if (s.purpose === "verify") {
+      const request = s.request?.kind === "check" ? s.request : null;
+      const fingerprint = request && typeof request.body.sourceHash === "string" ? request.body.sourceHash : null;
+      return {
+        ...common, tool: "verify", quote: s.quoteCredits, worst: s.holdCredits ?? s.quoteCredits,
+        hold: s.holdCredits != null && s.quoteCredits != null && s.holdCredits > s.quoteCredits ? s.holdCredits : null,
+        charged: s.creditsSettled, outcome: s.outcome, charge: null, note: null,
+        verdict: s.verdict, scorecard: s.scorecard ? { line: s.scorecard.line, checks: s.scorecard.checks } : null, edit: null, card: request?.cardId ?? null,
+        /* Tapped at its price while it waits; once paused (the limit, the balance), approved again at that price or priced afresh. */
+        canRender: mine && asking && (s.state === "waiting" ? !!fingerprint : s.state === "paused" && !flagged),
+        fingerprint: open && !flagged ? fingerprint : null,
+      };
+    }
     const charge = s.jobId ? byId.get(s.jobId) : undefined;
     const ended = s.state === "done" || s.state === "failed";
     const charged = !ended ? null : charge ? (charge.running ? null : charge.credits) : s.creditsSettled;
@@ -131,18 +188,20 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     const ledger = s.state !== "failed" ? null
       : charge ? { credits: charge.credits, settled: !charge.running }
       : s.creditsSettled != null ? { credits: s.creditsSettled, settled: true } : null;
-    const open = s.state === "waiting" || s.state === "paused";
+    /* A fix is a render of its own: an edit of the failed take, tapped at its price like any render. */
     return {
-      seq: s.seq, tool: "render", title, state: s.state, quote: s.quoteCredits,
+      ...common, tool: s.purpose === "fix" ? "fix" : "render", quote: s.quoteCredits,
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
-      pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
-      canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
+      hold: null, charged, outcome, charge: ledger, verdict: null, scorecard: null, card: null,
+      edit: s.request?.kind === "fix" && s.request.prompt ? s.request.prompt : null,
+      note: noteOf(s),
+      canRender: mine && open && asking && !flagged, fingerprint: open && !flagged && s.admission ? s.admission.quote.fingerprint : null,
     };
   });
   return {
     id: run.id, state: run.state, reason: run.reason, goal: run.goal, mine,
     proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint, money) : null,
-    steps: steps.filter((s) => s.purpose !== "take" && s.purpose !== "verify").map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
+    steps: steps.filter((s) => !(PAID_PURPOSES as readonly string[]).includes(s.purpose)).map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
     built: { cards, wires },
     held,
     undo: run.undo,
@@ -154,19 +213,41 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   };
 }
 
+/**
+ * What the person who asked may do for a shot that waits for them: a flagged check — take it as it is,
+ * another fix (when a failed check has a targeted fix), render it again, check it again (when it has
+ * no verdict yet), or skip it; a check whose fix (or render again) the provider did not render — take
+ * the take as it is, that fix again, render it again, or skip it (nothing new to check); a fix that
+ * could not go on — another fix, render it again, take the take as it is, or skip it.
+ */
+function shotChoices(step: StepRow, steps: readonly StepRow[]): ShotChoice[] {
+  if (step.purpose === "verify") {
+    const subject = checkSubject(steps, step);
+    if (failedRound(subject)) return ["accept", ...(subject?.request?.kind === "fix" ? ["fix" as const] : []), "rerender", "skip"];
+    const kind = step.request?.kind === "check" ? step.request.takeKind : null;
+    const fixable = !!(step.verdict && step.scorecard && kind && personFix(step.scorecard.checks as Parameters<typeof personFix>[0], { kind }));
+    return ["accept", ...(fixable ? ["fix" as const] : []), "rerender", ...(step.verdict ? [] : ["recheck" as const]), "skip"];
+  }
+  return ["accept", ...(step.request?.kind === "fix" ? ["fix" as const] : []), "rerender", "skip"];
+}
+
 /** What the ledger holds for a run (read-only). A read that fails shows the run without it rather than failing the card. */
-async function ledgerOf(run: RunRow): Promise<RunLedger> {
-  const [charges, ceiling] = await Promise.all([
+async function ledgerOf(run: RunRow, steps: readonly StepRow[] = []): Promise<RunLedger> {
+  /* Only needed for the figure on "try another fix" before the run has been charged for writing any fix. */
+  const estimate = steps.some((s) => s.state === "paused" && s.pause === "check") && !steps.some((s) => s.purpose === "fix" && s.charge === "settled");
+  const [charges, ceiling, noteEstimate] = await Promise.all([
     run.capCredits == null ? Promise.resolve([]) : runCharges(run.id).catch(() => []),
     rigJobCeiling().catch(() => null),
+    estimate ? import("./rig-agent-fix-steps").then((m) => m.fixNoteEstimate(run)).catch(() => null) : Promise.resolve(null),
   ]);
-  return { charges, ceiling };
+  return { charges, ceiling, noteEstimate };
 }
 
 async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
   const run = await getRun(db(), runId);
   if (!run) throw new RigAgentError("That build is not on this production.", 404);
-  return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run));
+  const steps = await stepsOf(db(), runId);
+  return runView(run, steps, viewer, await ledgerOf(run, steps));
 }
 
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
@@ -185,7 +266,8 @@ export async function rigAgentState(productionId: string, viewer: string, draftI
   const ask = enabled && draftId && !busy ? await askTerms(productionId, draftId, viewer).catch(() => null) : null;
   if (!run) return { enabled, run: null, ask };
   await nudge(run).catch(() => {});
-  return { enabled, run: runView(run, await stepsOf(db(), run.id), viewer, await ledgerOf(run)), ask };
+  const steps = await stepsOf(db(), run.id);
+  return { enabled, run: runView(run, steps, viewer, await ledgerOf(run, steps)), ask };
 }
 
 async function askTerms(productionId: string, draftId: string, viewer: string): Promise<RigAgentAskTerms> {
@@ -230,7 +312,7 @@ export const MAX_RUN_LIMIT = 1_000_000;
  * for this run") and its mode: nothing in the run — the planning turn first —
  * spends beyond it, and in Ask mode every render waits for their tap.
  */
-export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode }): Promise<RigAgentRunView> {
+export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode; agent?: AgentChoice | null }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
   const mode: RigAgentMode = input.mode ?? "ask";
@@ -261,6 +343,8 @@ export async function askRigAgent(input: { productionId: string; draftId: string
     await insertRun(tx, {
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
       limit: { credits: input.limit, mode, jobCeiling },
+      /* The Production agent they had chosen: the run's checks are judged, and its fixes written, on it (as a Verify card's are). */
+      agent: input.agent ? parseAgent(JSON.stringify(input.agent)) : null,
     });
     return (await getRun(tx, id))!;
   });
@@ -314,12 +398,22 @@ export async function stopRigAgent(input: { productionId: string; runId: string;
   return viewOf(input.runId, input.userId);
 }
 
-/** Paid work not sent yet is let go: nothing was reserved for it, and nothing will be. */
+/** A step let go at a stop after it had already spent something (a check that ran): what it was charged stays on it. */
+export const STOPPED_AFTER_SPEND = "The run stopped before this went further.";
+
+/**
+ * Paid work not sent yet — renders, checks and fixes — is let go: nothing was reserved for it, and
+ * nothing will be. A step that already spent something (a check that ran and waits for a person, a
+ * fix writer's turn that settled) is let go too, keeping what it was charged, and says only that the
+ * run stopped.
+ */
 async function closePaidSteps(tx: Parameters<typeof setSteps>[0], runId: string, reason: string) {
+  const open = `run_id=? AND purpose IN (${PAID_PURPOSES.map(() => "?").join(",")}) AND state IN ('next','waiting','approved','paused')`;
   await tx.execute({
-    sql: "UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE run_id=? AND purpose='take' AND state IN ('next','waiting','approved','paused')",
-    args: [reason, now(), runId],
+    sql: `UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE ${open} AND (credits_settled IS NOT NULL OR charge='settled')`,
+    args: [STOPPED_AFTER_SPEND, now(), runId, ...PAID_PURPOSES],
   });
+  await tx.execute({ sql: `UPDATE rig_agent_steps SET state='skipped',reason=?,updated_at=? WHERE ${open}`, args: [reason, now(), runId, ...PAID_PURPOSES] });
 }
 
 async function stopRun(runId: string, reason: string) {
@@ -364,8 +458,16 @@ async function settleLooseWork(runId: string) {
 
 async function paidStepFor(runId: string, seq: number, tx: Parameters<typeof getStep>[0]): Promise<StepRow> {
   const step = await getStep(tx, runId, seq);
-  if (!step || step.purpose !== "take") throw new RigAgentError("That render is not in this run.", 404);
+  if (!step || !(PAID_PURPOSES as readonly string[]).includes(step.purpose)) throw new RigAgentError("That render is not in this run.", 404);
+  /* A shot that waits for a decision is decided (resolveRigAgentShot), not tapped. */
+  if (step.state === "paused" && step.pause === "check") throw new RigAgentError("That shot waits for your decision.", 409);
   return step;
+}
+
+/** The price a tap on a paid step approves: a render's or a fix's prepared quote, a check's priced source. */
+function priceFingerprint(step: StepRow): string | null {
+  if (step.purpose === "verify") return step.request?.kind === "check" && typeof step.request.body.sourceHash === "string" ? step.request.body.sourceHash : null;
+  return step.admission?.quote.fingerprint ?? null;
 }
 
 /**
@@ -387,22 +489,24 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
     if (fingerprint && step.approvedFingerprint === fingerprint && step.approvedBy === input.userId && !["waiting", "paused"].includes(step.state)) return false;
     if (run.state !== "needs_you" && run.state !== "running") throw new RigAgentError("This run is not waiting for a render.", 409);
     const at = now();
+    const priced = priceFingerprint(step);
     if (step.state === "waiting") {
-      if (!fingerprint || !step.admission || fingerprint !== step.admission.quote.fingerprint)
-        throw new RigAgentError("This render's price changed. Look at it again before approving it.", 409);
+      if (!fingerprint || !priced || fingerprint !== priced)
+        throw new RigAgentError("This price changed. Look at it again before approving it.", 409);
       await patchStep(tx, step.id, { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     } else if (step.state === "paused") {
-      const same = !!fingerprint && !!step.admission && fingerprint === step.admission.quote.fingerprint;
+      const same = !!fingerprint && !!priced && fingerprint === priced;
       const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint } : {};
-      /* Retry: its checks run again at the same price; Price again: it is priced afresh. */
-      await patchStep(tx, step.id, step.admission && step.pause !== "unpriced" && step.pause !== "record"
+      /* Retry: its checks run again at the same price; Price again: it is priced afresh (a fix keeps what was written for it). */
+      await patchStep(tx, step.id, priced && step.pause !== "unpriced" && step.pause !== "record"
         ? { state: "waiting", reason: null, pause: null, ...approval }
+        : step.purpose === "verify" ? { state: "next", request: null, quote_credits: null, hold_credits: null, reason: null, pause: null }
         : { state: "next", admission: null, quote_credits: null, reason: null, pause: null }, ["paused"]);
     } else throw new RigAgentError("That render is not waiting for you.", 409);
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);
     return true;
   });
-  if (moved) await dispatchRigAgent(found, `render-${input.seq}-${now()}`);
+  if (moved) await resumeRigAgent(found, `render-${input.seq}-${now()}`);
   return viewOf(found.id, input.userId);
 }
 
@@ -413,12 +517,14 @@ export async function skipRigAgentStep(input: { productionId: string; runId: str
   const moved = await workbenchTransaction(async (tx) => {
     const step = await paidStepFor(found.id, input.seq, tx);
     if (step.state === "skipped") return false;
-    if (!(await patchStep(tx, step.id, { state: "skipped", reason: "Skipped. Nothing was charged." }, ["next", "waiting", "approved", "paused"])))
+    /* A fix whose note was written was charged for that note, never for its render. */
+    const said = step.purpose === "fix" && step.charge === "settled" ? "Skipped before it rendered. Only its fix note was charged." : "Skipped. Nothing was charged.";
+    if (!(await patchStep(tx, step.id, { state: "skipped", reason: said }, ["next", "waiting", "approved", "paused"])))
       throw new RigAgentError("That render is already on its way.", 409);
     await patchRun(tx, found.id, { state: "running", reason: null, wake_at: now() }, ["needs_you"]);
     return true;
   });
-  if (moved && rigAgentEnabled()) await dispatchRigAgent(found, `skip-${input.seq}-${now()}`);
+  if (moved && rigAgentEnabled()) await resumeRigAgent(found, `skip-${input.seq}-${now()}`);
   return viewOf(found.id, input.userId);
 }
 
@@ -444,9 +550,144 @@ export async function raiseRigAgentLimit(input: { productionId: string; runId: s
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you"]);
     return true;
   });
-  if (moved) await dispatchRigAgent(found, `limit-${now()}`);
+  if (moved) await resumeRigAgent(found, `limit-${now()}`);
   return viewOf(found.id, input.userId);
 }
+
+/* ── A shot that waits for a person: they decide (plan §6 hand-off) ───── */
+
+/**
+ * Decide for a shot that waits (the person who asked): its check needs them — unsure, failed with no
+ * targeted fix, failed after its fixes, not finished, or a clip to check on the board — or its fix
+ * could not go on. The choices:
+ *  - accept: the take stays as it is, "accepted by <name> despite a failed check" — never verified;
+ *  - fix: another fix of the failed check, written and priced, then rendered only on a tap with its
+ *    price, inside the run's limit (no cap on how many a person asks for);
+ *  - rerender: the shot rendered again through the run, priced, inside its limit, then checked;
+ *  - recheck: its check run again (one that did not finish, or a clip just checked on the board);
+ *  - skip: left as it is; the take keeps its failed check.
+ * The run carries on. A lost reply to a decision that landed answers the same, and decides nothing twice.
+ */
+export async function resolveRigAgentShot(input: { productionId: string; runId: string; seq: number; choice: ShotChoice; userId: string; name?: string | null }): Promise<RigAgentRunView> {
+  const found = await runFor(input.productionId, input.runId);
+  if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can decide for its shots.", 403);
+  /* What spends needs the switch on; taking a take as it is, or skipping it, does not. */
+  if ((input.choice === "fix" || input.choice === "rerender" || input.choice === "recheck") && !rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
+  const name = (input.name ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "the person who asked";
+  const moved = await workbenchTransaction(async (tx) => {
+    const run = (await getRun(tx, found.id))!;
+    const step = await getStep(tx, found.id, input.seq);
+    if (!step || (step.purpose !== "verify" && step.purpose !== "fix") || !step.nodeId) throw new RigAgentError("That shot is not in this run.", 404);
+    /* The reply to a decision that landed was lost: the same answer. */
+    if (step.resolution === input.choice && step.resolvedBy === input.userId) return false;
+    if (step.state !== "paused" || step.pause !== "check") throw new RigAgentError("That shot is not waiting for you.", 409);
+    if (!ACTIVE_STATES.includes(run.state)) throw new RigAgentError("This run has ended. Ask again for a new one.", 409);
+    const at = now();
+    const decided = { resolution: input.choice, resolved_by: input.userId, resolved_at: at, pause: null };
+    const steps = await stepsOf(tx, run.id);
+    const title = stepTitle(run, step);
+    /* A check whose fix (or render again) the provider did not render: the take it keeps is the one its shot's last check found. */
+    const lost = step.purpose === "verify" ? checkSubject(steps, step) : null;
+    const unchecked = step.purpose === "verify" && !step.verdict && !failedRound(lost);
+    const verdict = step.purpose === "fix" ? "fail"
+      : failedRound(lost) ? [...steps].reverse().find((s) => s.purpose === "verify" && s.nodeId === step.nodeId && s.seq < step.seq && s.verdict)?.verdict ?? null
+      : step.verdict;
+    /* What the take was found to be, in words: never "verified". */
+    const kept = verdict === "fail" ? "failed" : verdict === "needs_you" ? "unsure" : null;
+    const fixPlan = (): Extract<NonNullable<StepRow["request"]>, { kind: "fix" }> | null => {
+      if (step.request?.kind === "fix") return { ...step.request, prompt: "" };
+      if (failedRound(lost)) return lost?.request?.kind === "fix" ? { ...lost.request, prompt: "" } : null;
+      const subject = checkSubject(steps, step);
+      const kind = step.request?.kind === "check" ? step.request.takeKind : null;
+      const chosen = step.scorecard && kind ? personFix(step.scorecard.checks as Parameters<typeof personFix>[0], { kind }) : null;
+      if (!chosen || !subject?.jobId || !kind) return null;
+      const master = step.scorecard?.masters?.find((m) => m.kind === chosen.fix.master) ?? null;
+      return { kind: "fix", check: chosen.fix.check, move: chosen.fix.move, prompt: "", master: master?.identity ?? null, masterTitle: master?.title ?? null, reasons: chosen.reasons, source: subject.jobId, take: kind };
+    };
+    switch (input.choice) {
+      case "accept":
+        await patchStep(tx, step.id, { ...decided, state: step.purpose === "verify" ? "done" : "skipped",
+          reason: kept ? `Accepted by ${name} despite ${kept === "failed" ? "a failed" : "an unsure"} check.` : `Accepted by ${name} without its check.` }, ["paused"]);
+        break;
+      case "skip":
+        await patchStep(tx, step.id, { ...decided, state: "skipped", reason: `Skipped by ${name}. The take keeps ${kept ? `its ${kept} check` : "no check"}.` }, ["paused"]);
+        break;
+      case "recheck":
+        if (step.purpose !== "verify" || step.verdict) throw new RigAgentError("This take's check is done. Accept it, fix it, render it again, or skip it.", 409);
+        if (!unchecked) throw new RigAgentError("Nothing new rendered for this shot, so there is nothing to check. Accept the take, render it again, or skip it.", 409);
+        await patchStep(tx, step.id, { ...decided, state: "next", reason: null }, ["paused"]);
+        break;
+      case "fix": {
+        const plan = fixPlan();
+        if (!plan) throw new RigAgentError("This take has no targeted fix. Accept it, render it again, or skip it.", 409);
+        await patchStep(tx, step.id, { ...decided, state: step.purpose === "verify" ? "done" : "skipped", reason: `${name} asked for another fix.` }, ["paused"]);
+        const [made] = await insertLiveSteps(tx, run.id, roundSteps(step.nodeId, title, await nextRound(tx, run.id, step.nodeId), { kind: "fix", fix: nextFixNumber(steps, step.nodeId) }), at);
+        await patchStep(tx, made.id, { request: plan }, ["next"]);
+        break;
+      }
+      case "rerender":
+        await patchStep(tx, step.id, { ...decided, state: step.purpose === "verify" ? "done" : "skipped", reason: `${name} asked to render it again.` }, ["paused"]);
+        await insertLiveSteps(tx, run.id, roundSteps(step.nodeId, title, await nextRound(tx, run.id, step.nodeId), { kind: "rerender" }), at);
+        break;
+    }
+    await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);
+    return true;
+  });
+  if (moved && rigAgentEnabled()) await resumeRigAgent(found, `resolve-${input.seq}-${now()}`);
+  return viewOf(found.id, input.userId);
+}
+
+/**
+ * A clip checked on the board (or any stored check of a take a run's check waits on): that check is
+ * read now, free, and the run carries on (lib/workbench/rig-agent-settled.ts rigCheckStored).
+ */
+export async function rigCheckLanded(runId: string, takeId: string): Promise<void> {
+  const run = await getRun(db(), runId);
+  if (!run || !ACTIVE_STATES.includes(run.state)) return;
+  const moved = await workbenchTransaction(async (tx) => {
+    const armed = await tx.execute({
+      sql: "UPDATE rig_agent_steps SET state='next',pause=NULL,reason=NULL,updated_at=? WHERE run_id=? AND purpose='verify' AND state='paused' AND pause='check' AND verdict IS NULL AND json_extract(request,'$.take')=?",
+      args: [now(), runId, takeId],
+    });
+    if (!armed.rowsAffected) return false;
+    await patchRun(tx, runId, { state: "running", reason: null, wake_at: now() }, ["needs_you", "running"]);
+    return true;
+  });
+  if (moved && rigAgentEnabled()) await resumeRigAgent(run, `checked-${now()}`);
+}
+
+/**
+ * Wakes a run a person (or a stored check) moved on. With Inngest, the run's function is waiting for
+ * rig/agent.resolved and hears it; otherwise the run is dispatched (the native worker, or this
+ * request). Its wake stays set, so the cron (or an open board's read) picks it up if neither does.
+ */
+async function resumeRigAgent(run: Pick<RunRow, "id" | "productionId">, phase: string) {
+  const { inngest, inngestConfigured } = await import("@/lib/inngest");
+  if (inngestConfigured()) {
+    await inngest.send({ name: RIG_AGENT_RESOLVED, data: { runId: run.id, workspaceId: requireTenant().id } }).catch(() => {});
+    return;
+  }
+  await dispatchRigAgent(run, phase);
+}
+
+/** How long one run waits before the person who asked is told again that it needs them. */
+export const NOTIFY_AGAIN_MS = 30 * 60_000;
+
+/**
+ * The run has started waiting for the person who asked: they are told on their phone (lib/push.ts,
+ * the "the run needs you" kind of lib/notifyPrefs.ts), at most once in NOTIFY_AGAIN_MS for one run —
+ * Ask mode waits for every render, and one notice covers a sitting.
+ */
+async function noticeNeedsYou(run: RunRow, reason: string): Promise<void> {
+  const at = now();
+  const claimed = await db().execute({ sql: "UPDATE rig_agent_runs SET notified_at=? WHERE id=? AND (notified_at IS NULL OR notified_at<?)", args: [at, run.id, at - NOTIFY_AGAIN_MS] });
+  if (!claimed.rowsAffected) return;
+  const { notify } = await import("@/lib/push");
+  await notify("runNeedsYou", [run.owner], {
+    title: "Atomik needs you", body: reason.slice(0, 140), url: `/suites?suite=studio&page=rig&project=${encodeURIComponent(run.draftId)}`,
+  });
+}
+whenNeedsYou(noticeNeedsYou);
 
 /**
  * Undo what the run built (anyone on the team): the inputs it wired into cards
@@ -632,9 +873,7 @@ async function settlePlanning(run: RunRow, price: PlannerPrice, ceilingUsd: numb
 
 /** The planning event's outcome is settled (billed, or released unbilled): nothing for a recovery drain to reconcile. */
 async function closePlanningIntent(runId: string) {
-  const [{ billingTransaction }, { resolveRecoveryJobTx }] = await Promise.all([import("@/lib/billingLedger"), import("@/lib/recovery")]);
-  const workspaceId = requireTenant().id;
-  await billingTransaction((tx) => resolveRecoveryJobTx(tx, workspaceId, planEventId(runId)));
+  await closeChargeIntent(planEventId(runId));
 }
 
 /**
@@ -644,15 +883,7 @@ async function closePlanningIntent(runId: string) {
  */
 async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner" | "planCharge">, costUsd: number | null) {
   if (run.planCharge !== "reserved") return;
-  await platformReady();
-  const id = planEventId(run.id);
-  const row = (await platformDb().execute({ sql: "SELECT kind,engine,model,status,engine_cost_usd FROM meter_events WHERE workspace_id=? AND id=?", args: [requireTenant().id, id] })).rows[0];
-  if (row && String(row.status) === "running")
-    await meter({
-      id, kind: "text", engine: String(row.engine), model: String(row.model), status: "failed", unbilled: true,
-      engineCostUsd: costUsd ?? Number(row.engine_cost_usd ?? 0), projectId: run.productionId, createdBy: run.owner,
-    }, { critical: true });
-  if (row) await closePlanningIntent(run.id);
+  await releaseTextCharge(planEventId(run.id), run, costUsd);
   await patchRun(db(), run.id, { plan_charge: "released" });
 }
 
@@ -708,6 +939,7 @@ async function buildRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<T
   return advancePaidSteps(run.id, {
     deadline, enabled: () => rigAgentEnabled(), offReason: RIG_AGENT_OFF, pausedWakeMs: PAUSED_WAKE_MS,
     renew: async () => { current = await renewRun(current, LEASE_MS); },
+    holdFor: async (ms) => { current = await renewRun(current, Math.max(LEASE_MS, ms)); },
   }, deps);
 }
 
@@ -783,9 +1015,10 @@ async function cancelQueued(runId: string) {
 
 /**
  * The cron's wake: runs in progress whose wake is due, within the deadline. Also releases a
- * planning charge a stopped or ended run still holds after the worker that reserved it died, and
- * closes what a stopped run could not close at the stop (closeEndedSteps: a request still being
- * accepted then, a take still rendering) — free reads, never a send.
+ * planning charge, or a step's own paid text, that a run still holds after the worker that
+ * reserved it died, and closes what a stopped run could not close at the stop (closeEndedSteps: a
+ * request still being accepted then, a take or a fix still rendering, a check still running) —
+ * free reads and releases, never a send.
  */
 export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt?: number } = {}): Promise<{ advanced: number; released: number; swept: number }> {
   const ids = await dueRuns(Math.min(options.limit ?? 2, 8));
@@ -802,6 +1035,20 @@ export async function drainRigAgentWakeups(options: { limit?: number; deadlineAt
     try {
       const run = await getRun(db(), id);
       if (run?.planCharge === "reserved" && run.state !== "planning") { await releasePlanning(run, null); released++; }
+    } finally {
+      await releaseRun(lease);
+    }
+  }
+  /* A step's own paid text (a fix writer's turn) a dead worker left reserved, in a run of any state: released, never sent again. */
+  const cutoff = now() - PAID_TEXT_TIMEOUT_MS - LEASE_MS;
+  for (const id of await looseStepCharges(4, cutoff)) {
+    const lease = await claimRun(id, LEASE_MS);
+    if (!lease) continue;
+    try {
+      const run = await getRun(db(), id);
+      if (!run) continue;
+      for (const step of await stepsOf(db(), id))
+        if (step.charge === "reserved" && step.updatedAt <= cutoff && (await releaseStepCharge(run, step, null))) released++;
     } finally {
       await releaseRun(lease);
     }

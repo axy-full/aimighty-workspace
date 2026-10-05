@@ -36,6 +36,17 @@ export function resolveAgent<T extends Model>(models: readonly T[], choice: Agen
   return { model, effort };
 }
 
+/**
+ * The judge of a Verify check, which has to see: the Production agent's own model when it can; else
+ * the newest of its family that can; else any that can. Its effort is the agent's only when it is
+ * the agent's own model. The same on a Verify card and in an Atomik run.
+ */
+export function verifyJudge<T extends Model & { vision?: boolean }>(models: readonly T[], choice: AgentChoice): { model: T | null; effort: string } {
+  const agent = resolveAgent(models, choice);
+  const model = agent.model?.vision ? agent.model : familyModels(models, choice.family).find((m) => m.vision) ?? models.find((m) => m.vision) ?? null;
+  return { model, effort: model && model.id === agent.model?.id ? agent.effort : "auto" };
+}
+
 export function parseAgent(raw: string | null): AgentChoice {
   try {
     const value = JSON.parse(raw ?? "null") as Partial<AgentChoice> | null;

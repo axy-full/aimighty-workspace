@@ -238,7 +238,8 @@ export class DryBoard {
 /* ── The plan, compiled into steps of canvas operations ───────────────── */
 
 export type CompiledCard = { key: string; kind: AgentKind; id: string; title: string };
-export type StepTool = "create" | "wire" | "tidy" | "render" | "verify" | "lock";
+/** `fix`: a fix of a take that failed its check, added while the run is live (never part of a compiled plan). */
+export type StepTool = "create" | "wire" | "tidy" | "render" | "verify" | "lock" | "fix";
 export type CompiledStep = {
   seq: number; tool: StepTool; purpose: "build" | "take" | "verify" | "lock"; label: string;
   /** The card a next step is about. */
@@ -411,18 +412,23 @@ export type RigAgentMoneyView = {
   planning: { state: "reserved" | "settled" | "released"; credits: number | null } | null;
 };
 
-/** A render (or the check of its take) after the build, as the run card shows it. */
+/** A render (or the check of its take, or a fix of a take that failed its check) after the build, as the run card shows it. */
 export type RigAgentPaidStepView = {
   seq: number;
-  tool: "render" | "verify";
+  tool: "render" | "verify" | "fix";
   title: string;
+  /** A step added live: its round on the shot (a fix, a render again, or the check of what that made). Null for the plan's own steps. */
+  round: number | null;
   state: RigAgentStepState;
   /** The approximate price before it runs ("about N cr"). */
   quote: number | null;
   /** The most it may settle at (its price times its band): what the run's limit keeps room for. */
   worst: number | null;
-  /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
-  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
+  /**
+   * Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, its record — or
+   * `check`: its take's check needs a person, and the run carries on with the other shots meanwhile.
+   */
+  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | "check" | null;
   /** What it was charged, once the ledger has settled it. */
   charged: number | null;
   /** For a take that failed: what the ledger shows the provider did with the charge. */
@@ -435,7 +441,43 @@ export type RigAgentPaidStepView = {
   canRender: boolean;
   /** The approval a tap gives: the price the card shows. */
   fingerprint: string | null;
+  /** What it is, in words: the shot, "Check · <shot>", "Fix 2 · <shot>", "Render again · <shot>". */
+  label: string;
+  /** A check: what its job holds while it runs, when that is more than its price. */
+  hold: number | null;
+  /** A check's verdict and scorecard, once it has them (never a vendor, a model or a cost). */
+  verdict: "pass" | "fail" | "needs_you" | null;
+  scorecard: { line: string; checks: { check: string; verdict: "pass" | "fail" | "unsure"; reasons: string[] }[] } | null;
+  /** A fix: the edit it renders, once written. */
+  edit: string | null;
+  /** A fix: its note (Atomik writing the edit), charged on its own inside the run's limit — while it is written, then what it settled at. */
+  note: { credits: number | null; settled: boolean } | null;
+  /** A check: the shot's Verify card on the board (a clip is checked there). */
+  card: string | null;
+  /** What a person decided for this shot, and when (who is said in `reason`). */
+  resolution: { choice: ShotChoice; at: number } | null;
+  /** A shot that waits for a person: what the person who asked may do now. */
+  choices: ShotChoice[];
+  /**
+   * What a choice that spends is likely to cost ("about N cr"): what the shot's last one was priced at, when it
+   * has one. A fix and a check are priced again before they run, and a fix always asks for a tap at its price.
+   */
+  prices: Partial<Record<ShotChoice, number>>;
+  /**
+   * With "try another fix": what writing it is likely to cost (the run's last charge for writing a fix, else the
+   * writer's own estimate). It is part of the fix's figure; when the shot has no fix render priced yet, it is the figure.
+   */
+  fixNote: number | null;
+  /** What the take is (a check's subject, or what a fix edits): a still or a clip. */
+  takeKind: "image" | "video" | null;
 };
+
+/**
+ * What a person may do for a shot whose check needs them (plan §6): take it as it is (never marked
+ * verified), try another fix (priced), render it again (priced, through the run), check it again, or skip it.
+ */
+export type ShotChoice = "accept" | "fix" | "rerender" | "recheck" | "skip";
+export const SHOT_CHOICES: readonly ShotChoice[] = ["accept", "fix", "rerender", "recheck", "skip"];
 export type RigAgentProposalView = {
   title: string; summary: string;
   groups: { kind: AgentKind; label: string; titles: string[] }[];
@@ -467,7 +509,7 @@ export { creditFigure };
 
 /**
  * The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next.
- * In Auto, the renders say how much one may cost without asking.
+ * In Auto, the renders and the checks say how much one may cost without asking; a fix always asks.
  */
 export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pick<RigAgentMoneyView, "mode" | "jobCeiling"> | null): RigAgentProposalView {
   const groups = AGENT_KINDS.map((kind) => ({ kind, label: AGENT_KIND_LABELS[kind], titles: plan.cards.filter((c) => c.kind === kind).map((c) => c.title) })).filter((g) => g.titles.length);
@@ -476,6 +518,11 @@ export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pi
     ...(renders ? [money?.mode === "auto"
       ? `Next: render ${plural(renders, "shot")} · priced; drafts up to about ${creditFigure(money.jobCeiling)} cr each run on their own`
       : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
+    /* Plan §6: each take is checked against its masters, and a failed check gets at most two targeted fixes (PR 11). */
+    ...(renders ? [money?.mode === "auto"
+      ? `Then each take is checked against its masters · priced; checks up to about ${creditFigure(money.jobCeiling)} cr run on their own`
+      : "Then each take is checked against its masters · priced, each one approved first",
+    "A failed check gets at most 2 fixes · each priced and approved first"] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];
   return { title: plan.title, summary: plan.summary, groups, cards: plan.cards.length, wires: plan.wires.length, tidy: plan.tidy, next, fingerprint };

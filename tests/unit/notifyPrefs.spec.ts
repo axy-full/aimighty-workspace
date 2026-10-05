@@ -14,11 +14,14 @@ test("a nudge reaches the people who asked for it, and an admin-only one never r
     { id: "owner", role: "owner" },
     { id: "admin", role: "admin", prefs: { capNear: false } },
     { id: "member", role: "member" },
-    { id: "quiet", role: "admin", prefs: { takeDone: false, capNear: false, approvalNeeded: false, balanceLow: false } },
+    { id: "quiet", role: "admin", prefs: { takeDone: false, capNear: false, approvalNeeded: false, balanceLow: false, runNeedsYou: false } },
   ];
   expect(wants("takeDone", people)).toEqual(["owner", "admin", "member"]);
   expect(wants("capNear", people)).toEqual(["owner"]);              // the admin opted out, the member is not asked
   expect(wants("balanceLow", people)).toEqual(["owner", "admin"]);  // admin-only, and the quiet one opted out
   expect(wants("approvalNeeded", people)).toEqual(["owner", "admin", "member"]);
+  /* An Atomik run that waits on the person who asked: anyone's, never admin-only. */
+  expect(wants("runNeedsYou", people)).toEqual(["owner", "admin", "member"]);
+  expect(NOTIFY_LABELS.runNeedsYou.adminOnly).toBeUndefined();
   expect(wants("takeDone", [])).toEqual([]);
 });

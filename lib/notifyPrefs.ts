@@ -1,24 +1,26 @@
 /**
  * What a person wants to be told about, per workspace (brief 2.7).
  *
- * Four things happen that someone might want on their phone: a take they
+ * Five things happen that someone might want on their phone: a take they
  * asked for finished, a production reached most of its cap, a take is
- * waiting on them, and the balance is running out. Each person chooses
+ * waiting on them, the balance is running out, and an Atomik run they asked
+ * for is waiting on them. Each person chooses
  * their own; the choice lives in the workspace, because the same person in
  * two workspaces is two different jobs. Pure — the store is elsewhere.
  */
-export type NotifyKind = "takeDone" | "capNear" | "approvalNeeded" | "balanceLow";
-export const NOTIFY_KINDS: NotifyKind[] = ["takeDone", "capNear", "approvalNeeded", "balanceLow"];
+export type NotifyKind = "takeDone" | "capNear" | "approvalNeeded" | "balanceLow" | "runNeedsYou";
+export const NOTIFY_KINDS: NotifyKind[] = ["takeDone", "capNear", "approvalNeeded", "balanceLow", "runNeedsYou"];
 
 export const NOTIFY_LABELS: Record<NotifyKind, { title: string; line: string; adminOnly?: boolean }> = {
   takeDone: { title: "A take you asked for finished", line: "Only your own — not everything the team renders." },
   capNear: { title: "A production nears its cap", line: "At the share of the cap set under Defaults & caps.", adminOnly: true },
   approvalNeeded: { title: "A take is waiting on you", line: "When someone picks a take for you to approve." },
   balanceLow: { title: "The balance is running out", line: "When renders start being held, and when credits arrive.", adminOnly: true },
+  runNeedsYou: { title: "An Atomik run needs you", line: "When a run you asked for waits on you: a render to approve, a shot to decide." },
 };
 
 /** Everything on, until someone says otherwise: a notification nobody asked for is worse than one nobody needed. */
-export const NOTIFY_DEFAULT: Record<NotifyKind, boolean> = { takeDone: true, capNear: true, approvalNeeded: true, balanceLow: true };
+export const NOTIFY_DEFAULT: Record<NotifyKind, boolean> = { takeDone: true, capNear: true, approvalNeeded: true, balanceLow: true, runNeedsYou: true };
 
 export function cleanPrefs(v: unknown): Record<NotifyKind, boolean> {
   const out = { ...NOTIFY_DEFAULT };

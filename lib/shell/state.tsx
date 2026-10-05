@@ -96,6 +96,10 @@ export function useShell(): Shell {
   if (!value) throw new Error("useShell must be used inside <ShellProvider>.");
   return value;
 }
+/** The shell, for a page body the older /workspace host also mounts (it has no ShellProvider): null there. */
+export function useShellIfMounted(): Shell | null {
+  return useContext(ShellContext);
+}
 
 type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; asset: string | null };
 function readParams(search: string): Params {

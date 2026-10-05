@@ -1,5 +1,5 @@
 import { inngest, EVENTS } from "./inngest";
-import { RIG_AGENT_STOPPED, RIG_RENDER_SETTLED } from "./dispatch";
+import { RIG_AGENT_RESOLVED, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED } from "./dispatch";
 import { withRecoveryJob } from "./recovery";
 import { continueRigAgent, rigAgentTick, type RigAgentEventData } from "./workbench/rig-agent";
 import {
@@ -146,9 +146,10 @@ export const SETTLE_MATCH = /^[A-Za-z0-9_-]{1,80}$/;
  * memoised step under the run's lease, and a step applied twice changes nothing
  * (its canvas op id; a render's saved request key). While a render is in
  * flight the function waits for its settlement (rig/render.settled, up to 20
- * minutes, then it looks again). One run at a time per production, two per
- * workspace; a stop cancels it at its next step. Past the step budget it
- * carries on in a fresh event, like development work.
+ * minutes, then it looks again), and while the run waits for a person it waits
+ * for their decision (rig/agent.resolved, up to seven days). One run at a time
+ * per production, two per workspace; a stop cancels it at its next step. Past
+ * the step budget it carries on in a fresh event, like development work.
  */
 export const rigAgent = inngest.createFunction(
   {
@@ -170,6 +171,11 @@ export const rigAgent = inngest.createFunction(
       if (tick.busy) { await step.sleep(`busy-${n}`, "5s"); continue; }
       if (tick.waitFor && SETTLE_MATCH.test(tick.waitFor.genId)) {
         await step.waitForEvent(`settled-${n}`, { event: RIG_RENDER_SETTLED, timeout: "20m", if: `async.data.genId == "${tick.waitFor.genId}"` });
+        continue;
+      }
+      /* Waiting for a person: their decision (rig/agent.resolved, this run's) wakes it, for up to seven days; the run's wake covers a miss. */
+      if (tick.state === "needs_you") {
+        await step.waitForEvent(`resolved-${n}`, { event: RIG_AGENT_RESOLVED, timeout: "7d", match: "data.runId" });
         continue;
       }
       if (!tick.more) return { runId: data.runId, state: tick.state };
