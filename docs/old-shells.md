@@ -31,7 +31,7 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 | **`app/(app)/` — library and productions** | | | | | |
 | `/library` | `app/(app)/library/page.tsx` → `components/workbench/ProjectLibraryPage.tsx`, `components/make/GenAssetLibrary.tsx`, `UnfiledWall.tsx` | none yet — the shell's Library is a panel of the open project with no URL; closest page is `/suites?project=<id>&page=takes`. Missing: cross-production lens, References, Unfiled, `all` / `view` params | No | `project-library-workbench`, `project-first-workbench`, `audit-other-ui-workbench`, `paid-action`, `suite-navigation-workbench`, `desktop` +2 more | `app/(app)/library/mobile.css`, `components/studio/projects-library.css` |
 | `/all` | `app/(app)/all/page.tsx` → `redirect()` | none yet (follows `/library`) | To `/library?all=1&view=unfiled` only | none | — |
-| `/productions` | `app/(app)/productions/page.tsx` (page is the component) | none yet — projects are a popover in the project head; no productions list, totals or caps page | No | `desktop`, `mobile`, `no-vendor-dollars-workbench` | `components/studio/projects-library.css` |
+| `/productions` | `app/(app)/productions/page.tsx` (page is the component) | with the new interface on, Home `/suites?view=home` (projects as cards). Missing: the productions list's totals and caps page | No | `desktop`, `mobile`, `no-vendor-dollars-workbench` | `components/studio/projects-library.css` |
 | `/productions/[prod]/[project]/media` | `…/media/page.tsx` → `components/production/ProductionHeader.tsx`, `MediaTile.tsx` | none yet — closest `/suites?project=<id>&page=takes`. Missing: production and project ids are not mapped to the draft `project` id | No | `no-vendor-dollars-workbench`, `legacy-pages-sideways-workbench` | — |
 | `/productions/[prod]/[project]/shots` | `…/shots/page.tsx` → `components/production/ProductionHeader.tsx` | none yet — closest `/suites?project=<id>&page=brief&sp=beats`. Missing: id mapping as above; move between productions | No | `audit-other-ui-workbench`, `remaining-paths-lost-reply-workbench`, `no-vendor-dollars-workbench` | — |
 | `/projects/[id]` | `app/(app)/projects/[id]/page.tsx` → `components/ProductionNav.tsx`, `Analytics.tsx` | none yet — no per-project cost overview | No | `projects-legacy-pages-workbench`, `legacy-pages-sideways-workbench`, `no-vendor-dollars-workbench` | — |
@@ -89,6 +89,14 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 - Four `/workbench` sheets are shared: `app/workbench/workbench.css`, `desk.css`, `graphite.css` and `editorial-graphite.css` reach `/suites` through `components/workspace/spec/tools/studio-css.ts`. `components/workspace/workspace.css` and `components/workspace/pages/assets.css` are shared the same way.
 - `WORKSPACE_TABS` in `lib/shell/ia.ts` still carries each tab's old `href` (`/settings`, `/team`, `/usage`, …). Those go when the routes do.
 - Specs that assert the old shell ask for it through `tests/helpers/legacyShell.ts`; the helper and its call sites go with the old shell.
+
+## Suites screens behind the new-interface switch
+
+Screens inside `/suites` that customers still see while the new interface is off, each with what replaces it when it is on. They stay until the switch is on for everyone, and are deleted in that PR.
+
+| Old screen (switch off) | Rendered by | Replacement (switch on) | Tests that go with it |
+|---|---|---|---|
+| Studio overview, `?suite=particl&page=brief&sp=stages` (the desktop's Home today; on a phone, the Studio stage grid) | `components/graphite/mobile/StudioHome.tsx`; `lib/shell/studio-home.ts` (`stageCards`, `upNext`, `recentTakes`, `runningTakes`, `startsEmpty`, `FIRST_RUN_STEPS`; Home uses `savedAt` and `recentProjects`, which move into `components/graphite/home/` first); the `.gx-home*`, `.gx-first*` and `.gx-recent*` rules in `components/graphite/shell.css` and `phone.css`. `components/graphite/FirstRun.tsx` stays while the stage pages use it | Desktop: Home `?view=home` (`components/graphite/home/HomeView.tsx`). Phone: the phone's Home and Record | `tests/unit/suitesStudioHome.spec.ts`, `tests/suites-phone-home-workbench.spec.ts`, and the Studio-home parts of `suites-shell-audit`, `suite-navigation`, `ui-floors-audit` and `hf-phone-chrome` |
 
 ## Before a route is retired
 
