@@ -4,7 +4,8 @@
  * 390 × 844: Sign up is the one filled button, Start and "Sign up to make this" are outlined, the dialog is 480 wide
  * and centred on both axes, the phone sheet rises from the bottom, every phone control is 44 px.
  */
-.gx-guest { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; background: var(--gx-root); }
+/* The site's root scrolls as a document (.gx.mk); Guest Home is an app screen, so it holds the window and scrolls inside. */
+.gx-guest { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; position: relative; background: var(--gx-root); }
 
 /* ── Header: Sign in (secondary) · Sign up (filled) ──────────────────── */
 .gx .gx-gh-header { gap: 14px; }
@@ -24,7 +25,7 @@
 .gx .gx-gh-start:hover { border-color: var(--gx-hover-border); }
 .gx .gx-gh-sample { max-width: 100%; }
 /* No media until the sample is made: an empty 21:9 cover, so the title sits above the fold. */
-.gx-hm-cover.gx-gh-cover { aspect-ratio: 21 / 9; background: var(--gx-track); }
+.gx-hm-cover.gx-gh-cover { aspect-ratio: 21 / 9; max-height: 300px; width: 100%; background: var(--gx-track); }
 
 /* ── The sample, read-only ───────────────────────────────────────────── */
 .gx-gs { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--gx-root); padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
@@ -81,9 +82,12 @@
 /* ── Narrow and phone ────────────────────────────────────────────────── */
 @media (max-width: 1023px) {
   .gx .gx-gh-search { display: none; }
+  /* Search folds away; Sign in and Sign up keep the right edge. */
+  .gx .gx-gh-signin { margin-left: auto; }
 }
 @media (max-width: 767px) {
-  .gx .gx-gh-header { gap: 8px; padding: 0 12px; }
+  /* The frame's phone header (P1, P2): a plain bar, not the signed-in shell's floating island. */
+  .gx .gx-gh-header { gap: 8px; padding: 0 12px; margin: 0; border: 0; border-bottom: 1px solid var(--gx-hair-strong); border-radius: 0; background: var(--gx-root); }
   .gx .gx-gh-seg, .gx .gx-gh-search, .gx-gh-header .gx-brand svg, .gx-gh-header .gx-brand-name, .gx-gh-mark { display: none; }
   .gx-gh-title { display: inline; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
   .gx-guest[data-view="sample"] .gx-gh-back { display: grid; place-items: center; width: 44px; height: 44px; margin-left: -10px; font-size: 24px; color: var(--gx-accent-text); }
