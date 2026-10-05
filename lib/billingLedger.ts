@@ -1,6 +1,7 @@
 import type { Transaction } from "@libsql/client";
 import { platformDb, platformReady } from "./platform";
 import { creditUsd, type CreditState } from "./creditTerms";
+import { LEDGER_UNIT_SCHEMA } from "./ledgerUnit";
 import type { PlanId } from "./plans";
 
 /** Platform-only credit bookkeeping. Provider requests never run inside these transactions. */
@@ -34,9 +35,15 @@ export async function billingReady(): Promise<void> {
         PRIMARY KEY(workspace_id,event_id,lot_id))`,
         `CREATE TABLE IF NOT EXISTS billing_refunds(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         source_id TEXT NOT NULL, credits REAL NOT NULL, created_at INTEGER NOT NULL)`,
+        LEDGER_UNIT_SCHEMA,
       ],
       "write",
     );
+    /* The unit the record counts in (lib/ledgerUnit.ts): seeded once, at the price this deployment runs at. */
+    await platformDb().execute({
+      sql: `INSERT OR IGNORE INTO billing_unit(id,unit_usd,updated_at,updated_by) VALUES(1,?,?,'boot')`,
+      args: [creditUsd(), Date.now()],
+    });
     for (const [table, columns] of Object.entries({
       billing_lots: [
         "clock_started_at INTEGER",

@@ -5,6 +5,8 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import type { Span } from "./concurrency";
 import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
+import { LedgerUnitPausedError, ledgerOpenTx, ledgerUnitTx, restateFactor } from "./ledgerUnit";
+import { isHouseWorkspace } from "./houseWorkspace";
 import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, type FailureKind, type ProviderOutcome } from "./providerOutcome";
 
 /**
@@ -124,11 +126,21 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        const terms = row ? recordedBillingTerms(row, String(row.kind), String(row.model)) : currentBillingTerms(e.kind, e.model);
+        // A new paid start while the record counts in another price of a credit (lib/ledgerUnit.ts) does not start.
+        if (!row && e.status === "running" && fundedByPlatform && !isHouseWorkspace({ id: workspaceId }) && !(await ledgerOpenTx(tx)))
+          throw new LedgerUnitPausedError();
+        const ledger = await ledgerUnitTx(tx);
+        /* A job first metered now is charged in the unit the record counts in, which is today's price
+           except in the minutes between a price change and its conversion (lib/ledgerUnit.ts). */
+        const terms = row ? recordedBillingTerms(row, String(row.kind), String(row.model))
+          : { ...currentBillingTerms(e.kind, e.model), ...(ledger != null ? { creditUsd: ledger } : {}) };
+        /* Settled at the price it was approved at, counted in the ledger's unit: a US$0.80 job that
+           settles after the record moved to US$0.10 is booked ×8 (lib/ledgerUnit.ts restateFactor). */
+        const restate = row ? restateFactor(terms.creditUsd, ledger) : 1;
         // Reconciliation of the same final cost cannot reprice an existing receipt.
         const billed = cost == null ? null : !fundedByPlatform || e.unbilled ? 0
           : row && row.status !== "running" && row.status === e.status && Number(row.engine_cost_usd) === cost
-            ? Number(row.billed_credits ?? 0) : creditsAtTerms(cost, terms);
+            ? Number(row.billed_credits ?? 0) : creditsAtTerms(cost, terms) * restate;
         await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
         await tx.execute({
         sql: `INSERT INTO meter_events
@@ -157,6 +169,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
       return;
     } catch (err) {
       lastErr = err;
+      if (err instanceof LedgerUnitPausedError) throw err;
     }
   }
   console.error(`meter: ${e.kind} ${e.id} (${e.status}) not written —`, (lastErr as Error)?.message);

@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-billing-terms-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -18,8 +19,8 @@ const workspace = (id: string): TenantWorkspace => ({
   storageQuotaBytes: null, deletedAt: null,
 });
 
-test.beforeEach(async () => { process.env.CREDIT_USD = "0.20"; });
-test.afterAll(() => { if (previousRate === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = previousRate; });
+test.beforeEach(async () => { process.env.CREDIT_USD = "0.20"; await alignLedgerUnit(); });
+test.afterAll(async () => { if (previousRate === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = previousRate; await alignLedgerUnit(); });
 test.beforeAll(async () => {
   const { platformReady, platformDb } = await import("../../lib/platform");
   await platformReady();
@@ -37,6 +38,7 @@ test("a reservation settles on its admitted terms after configuration changes", 
   const event = { id: "reserved", kind: "video" as const, engine: "byteplus", model: "fixture-engine", status: "running" as const, engineCostUsd: 0.4 };
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
   process.env.CREDIT_USD = "0.40";
+  await alignLedgerUnit();
   await runInTenant(workspace("studio_a"), () => reserveGenerationSpend(event));
   await runInTenant(workspace("studio_a"), () => meter({ ...event, status: "succeeded", engineCostUsd: 0.8 }));
   const row = (await platformDb().execute("SELECT * FROM meter_events WHERE id='reserved'")).rows[0];
