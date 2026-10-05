@@ -193,7 +193,7 @@ the ones marked **menu** are linked from the new account menu.
 | Sequence colour, Edit versions | old shell only |
 | Studio guide, redesign source download | old shell only |
 | Welcome / first-run flow, Explore sample | old shell; visitors are never switched |
-| Mobile handoff (phone header, stage pager, phone dock) | by design — phones stay on `/workbench` |
+| Phone layout (phone header, stage pager, phone dock) | by design — phones stay on `/workbench` |
 
 Closed as part of this change, because the new surface is now the default one:
 the account menu itself (settings, team, usage, workspace switch, create

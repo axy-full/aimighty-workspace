@@ -16,7 +16,7 @@ export type AdStill = { id: string; name: string; sourceId: string; origin: "upl
 /* ── Image ads ───────────────────────────────────────────────────────── */
 export const IMAGE_AD_RESOLUTIONS = ["1k", "2k", "4k"] as const;
 /**
- * The two image engines the account offers for ads (FINAL_SPEC §2.2): Marketing
+ * The two image engines the account offers for ads: Marketing
  * Studio Image, and the DTC Ads Engine (`ms_image`), whose entry requires a
  * style — the ad format, picked from `show_marketing_studio type=image_style`
  * — and takes a brand kit (must be completed), a quality tier, up to four
@@ -64,7 +64,7 @@ export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean;
 }
 /** The DTC Ads Engine (`dtc-ads generate`) is a CLI flow the connected account's tools do not carry (checked against its advertised toolset). */
 export const DTC_COPY = "DTC Ads runs on the account’s ms_image engine: a style (the ad format) is required and has no default; a completed brand kit folds its logo, colours, fonts and tone into the prompt; up to four products; 1–20 images per job, cost scaling with the batch and the quality tier.";
-/** The ad-formats section (FINAL_SPEC §2.2 › ad formats), on the account's template catalogue. */
+/** The ad-formats section, on the account's template catalogue. */
 export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 
 /* ── Setup ───────────────────────────────────────────────────────────── */

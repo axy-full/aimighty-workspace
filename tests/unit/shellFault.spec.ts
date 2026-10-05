@@ -123,13 +123,12 @@ test.describe("the ways back in", () => {
   });
 
   test("every header segment has a plain link that lands on it", () => {
+    /* The places the live header opens until their packages ship: the Studio overview, Studio, Make's panel, the Atomik suite. */
     expect(Object.fromEntries(HEADER_SEGMENT.map((s) => [s.id, segmentHref(s.id)]))).toEqual({
-      studio: "/suites",
-      gen: "/suites?make=video",
-      business: "/suites?suite=moleculr",
-      viral: "/suites?suite=subatomik",
+      home: "/suites?suite=particl&page=brief&sp=stages",
+      project: "/suites?suite=particl",
+      make: "/suites?make=video",
       atomik: "/suites?suite=atomik",
-      crew: "/suites?view=crew",
     });
   });
 

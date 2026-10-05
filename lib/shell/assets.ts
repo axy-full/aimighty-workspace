@@ -3,9 +3,8 @@ import type { CtxCapabilities, CtxCommand } from "./context-menu";
 import { recreateBlock, type GenPreset } from "./recipe";
 
 /**
- * Assets on every page (FINAL_SPEC §1 step 1, README › Interactions). Pure:
- * what each right-click command means for a given asset, what it is called,
- * why it cannot run, and what the toasts say — the prototype's words.
+ * Assets on every page. Pure: what each right-click command means for a
+ * given asset, what it is called, why it cannot run, and what the toasts say.
  *
  * An asset is one of two things, and the two are not symmetrical:
  * - an UPLOAD is a workspace original *filed* into this project. Deleting it

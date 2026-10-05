@@ -8,7 +8,7 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 import type { TakeStage, TakeStatus } from "@/lib/workspace/takes";
 
 /**
- * Viral = Genjutsu (FINAL_SPEC §1 step 3), on Particl's API key for every
+ * Viral = Genjutsu, on Particl's API key for every
  * workspace and every member. Pure: the two variants behind the Motion
  * Transfer and Object Swap pages, the well's rule (exactly one source video
  * of 4–30 s, then 1–8 ordered reference images: the API's own limits), what

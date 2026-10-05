@@ -1,11 +1,12 @@
 import DialogHost from "@/components/dialog";
 import UploadRecovery from "@/components/UploadRecovery";
 import SuitesApp from "@/components/graphite/SuitesApp";
-import { shellBootstrap } from "@/lib/shell/bootstrap.server";
-import { SessionProvider } from "@/lib/session";
 import { redirect } from "next/navigation";
+import { shellBootstrap } from "@/lib/shell/bootstrap.server";
+import { SHELL_PATH, redirectFor } from "@/lib/shell/ia";
 import { fromMakeLink } from "@/lib/shell/make";
 import { searchStringOf } from "@/lib/workspace/switchover";
+import { SessionProvider } from "@/lib/session";
 import "@/components/workspace/workspace.css";
 import "@/components/graphite/shell.css";
 import "@/components/graphite/crew/crew.css";
@@ -24,13 +25,20 @@ export const metadata = { title: "Particl" };
  * every old entry point lands on since 22 September 2026
  * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
  * the page bodies it mounts today are the existing ones, inside the new chrome.
+ * An old link in the design file's spelling is sent to the app's first
+ * (lib/shell/ia.ts › redirectFor; a 307, the server redirect()'s own).
  */
 export default async function Suites({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  /* The old Gen page is Make's panel now (lib/shell/make.ts): `?view=gen&mode=…` lands on the same address without them,
-     plus `make=<type>`; so do Viral's Motion Transfer and Object Swap (`?suite=subatomik&page=motion|swap`, `sp=…`), as
-     `make=motion|swap` over Studio. Before sign-in, so a visitor comes back to Make itself. Viral History stays a page. */
-  const moved = fromMakeLink(searchStringOf(await searchParams));
-  if (moved !== null) redirect(`/suites${moved ? `?${moved}` : ""}`);
+  /* Old links land in one 307, never a chain: the design file's spellings become the app's (lib/shell/ia.ts ›
+     redirectFor), then the old Gen page's address (`?view=gen&mode=…`) and Viral's Motion Transfer and Object Swap
+     (`?suite=subatomik&page=motion|swap`, `sp=…`) are Make's panel (lib/shell/make.ts › fromMakeLink): the same address
+     without them, plus `make=<type>` or `make=motion|swap` over Studio. Before sign-in, so a visitor comes back to Make
+     itself. Viral History stays a page. */
+  const asked = searchStringOf(await searchParams);
+  const spelled = redirectFor(SHELL_PATH, asked);
+  const moved = fromMakeLink(spelled === null ? asked : spelled.slice(SHELL_PATH.length));
+  const to = moved === null ? spelled : `${SHELL_PATH}${moved ? `?${moved}` : ""}`;
+  if (to) redirect(to);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
   return (
     <SessionProvider key={scope} value={session}>

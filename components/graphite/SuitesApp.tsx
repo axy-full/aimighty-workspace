@@ -6,6 +6,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
 import { RigProvider, RigSeams } from "@/components/workspace/rig/RigProvider";
 import { SHELL_PARAMS, ShellProvider, SUITES_PATH } from "@/lib/shell/state";
+import { normalize } from "@/lib/shell/ia";
 import { fromMakeLink } from "@/lib/shell/make";
 import { SuitesShell } from "./SuitesShell";
 
@@ -21,10 +22,11 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
      page (a statement's "← Statements"), window.location still holds the page
      being left while this first renders, and the link's view and tab were lost.
      Only the first value is used: the shell writes view, tab and sp itself,
-     and each of those writes updates useSearchParams too. */
+     and each of those writes updates useSearchParams too. An old link in the
+     design file's spelling is read in the app's (lib/shell/ia.ts › normalize). */
   const search = useSearchParams().toString();
-  /* An old Gen or Viral quick-tool address is Make's own (lib/shell/make.ts), for the state layer as for the shell. */
-  const [initialSearch] = useState(() => fromMakeLink(search) ?? search);
+  /* …and an old Gen or Viral quick-tool address is Make's own (lib/shell/make.ts), for the state layer as for the shell. */
+  const [initialSearch] = useState(() => { const spelled = normalize(search); return fromMakeLink(spelled) ?? spelled; });
   /* The same element every time, so a URL change re-renders this component
      alone and not every provider below it. */
   const tree = useMemo(() => (

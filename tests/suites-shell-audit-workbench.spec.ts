@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands
@@ -63,7 +63,7 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await page.getByTestId("make-close").click();
   await expect(page.getByTestId("gen-view")).toHaveCount(0);
   await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Gen" }).click();
+  await suites.getByRole("tab", { name: "Make" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).not.toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
@@ -115,8 +115,9 @@ test("Library › Tools: a Deliver row opens its tool; Business and Viral offer 
   await library.getByRole("button", { name: /^Master/ }).click();
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
 
-  /* Viral opens on Motion transfer, Make's quick tool, over the page: the Library shows what can be dragged into it. */
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Viral" }).click();
+  /* Viral left the header (option B); from ⌘K it opens on Motion transfer, Make's quick tool, over the page: the
+     Library shows what can be dragged into it. */
+  await goViaSearch(page, "viral", /Subatomik Viral Studio/);
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
   await expect(library.getByTestId("library-assets")).toBeVisible();
   /* Viral's page, History, offers Assets only too. */

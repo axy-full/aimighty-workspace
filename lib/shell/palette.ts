@@ -1,5 +1,5 @@
 import type { MakeTool } from "./make";
-import { ALL_SHELL_PAGES, CREW_PAGES, HEADER_SEGMENT, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
+import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
  * ⌘K (README › Navigation): Generate, suites, every page, Workspace, models,
@@ -19,14 +19,16 @@ export type PaletteRun =
 
 export type PaletteRow = { group: string; label: string; hint: string; run: PaletteRun };
 
-export const PALETTE_ROWS = 9;
+/** At most twelve rows, as the master lists (the last is always "Ask Atomik: …" once something is typed). */
+export const PALETTE_ROWS = 12;
 
 export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
   return [
     { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
     { group: "CREATE", label: "Motion transfer", hint: "Make · one source video and references", run: { type: "gen", tool: "motion" } },
     { group: "CREATE", label: "Object swap", hint: "Make · one element replaced", run: { type: "gen", tool: "swap" } },
-    ...HEADER_SEGMENT.filter((s) => s.id !== "gen" && s.id !== "crew").map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.title, run: { type: "suite", suite: s.id as ShellSuiteId } })),
+    /* The suites left the header (header option B); until their boards ship (S3, S4) and the control room (D1), ⌘K is how they are reached. */
+    ...SHELL_SUITES.map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.name, run: { type: "suite", suite: s.id } })),
     /* The phone's own Home and Studio grid have no desktop page to open. */
     ...ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
     ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),
