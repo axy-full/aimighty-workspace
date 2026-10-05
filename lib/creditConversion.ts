@@ -3,8 +3,9 @@ import { billingReady, billingTransaction, syncBillingLedger } from "./billingLe
 import { platformDb, platformReady, getWorkspace } from "./platform";
 import { creditRateUsd, creditUsd } from "./creditTerms";
 import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
-import { ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
-import { convertTenantFigures, type CapChoice, type TenantFigure } from "./creditConversionTenant";
+import { OLD_PRICE_EARLIEST, ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
+export { OLD_PRICE_EARLIEST };
+import { convertTenantFigures, tenantChangesSince, type CapChoice, type TenantFigure } from "./creditConversionTenant";
 
 /**
  * Restating the credit record in a new price of a credit.
@@ -128,6 +129,8 @@ export type CreditConversion = {
 
 export const TOPUP_DECLINED_NOTE = "Price changed; please ask again at US$0.10.";
 
+const TEST_WORD = /(^|[^a-z0-9])(test|fixture|e2e)([^a-z0-9]|$)/i;
+
 async function marksOf(workspaceId: string): Promise<WorkspaceMarks> {
   const r = (await platformDb().execute({
     sql: `SELECT w.name, w.internal_test, a.email FROM workspaces w LEFT JOIN accounts a ON a.id=w.owner_id WHERE w.id=?`, args: [workspaceId],
@@ -139,7 +142,8 @@ async function marksOf(workspaceId: string): Promise<WorkspaceMarks> {
     house: workspaceId === HOUSE_WORKSPACE_ID,
     internal: Number(r?.internal_test ?? 0) === 1,
     platformOwner: Boolean(owner && email === owner),
-    test: /@example\.(test|com)$/.test(email ?? "") || /test|fixture|e2e/i.test(name) || /test|fixture|e2e/i.test(workspaceId),
+    /* Whole words only: "Latest Media" or "Contest Films" is a customer, and `apply` on a test workspace takes its shortfall. */
+    test: /@example\.(test|com)$/.test(email ?? "") || TEST_WORD.test(name) || TEST_WORD.test(workspaceId),
     name, ownerEmail: email,
   };
 }
@@ -441,6 +445,19 @@ export async function convertWorkspaceCredits(
   const plan: Plan = { mode: o.mode, k, fromUsd: o.fromUsd, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null,
     endAt: Number(o.endAt) > 0 ? Number(o.endAt) : Infinity };
   const myCaps = capsFor(workspaceId, o.caps);
+  /* A reversal whose own-database half never finished left that database in the new unit: finish it
+     first, or converting again would multiply its figures a second time. */
+  if (!o.dryRun) {
+    const { row: prev } = await lastRowTx(platformDb(), workspaceId);
+    if (prev && prev.action === "reverse" && prev.tenant_applied_at == null) {
+      try { await finishTenant(workspaceId, prev, at); }
+      catch (error) {
+        return { id: null, workspaceId, status: "refused", action: "convert", mode: o.mode, fromUsd: o.fromUsd, toUsd: o.toUsd, before: null, after: null,
+          rows: {}, tenant: [], tenantDone: false, marks: await marksOf(workspaceId),
+          reason: `Its reversal is not finished in its own database yet: ${(error as Error).message}. Run it again.` };
+      }
+    }
+  }
   let result: CreditConversion;
   try {
     result = await billingTransaction(async (tx) => {
@@ -531,11 +548,44 @@ export async function convertWorkspaceCredits(
   return result;
 }
 
+/**
+ * What a person saved in the workspace's own database since its conversion (lib/creditConversionTenant.ts
+ * tenantChangesSince). Nothing to read where that half was skipped by the owner or the workspace's
+ * database is purged or gone; caps are compared only where the conversion's own half ran.
+ */
+async function tenantChangesOf(workspaceId: string, row: Record<string, unknown>): Promise<{ what: string; id: string; status: string; createdAt: number }[]> {
+  let recorded: TenantFigure[] | null = null;
+  try { recorded = row.tenant_applied_at == null ? null : (JSON.parse(String(row.tenant_json ?? "[]")) as TenantFigure[]); } catch { recorded = null; }
+  if (recorded?.some((f) => f.what === "skipped by the owner")) return [];
+  const ws = await getWorkspace(workspaceId);
+  const purged = (await platformDb().execute({ sql: `SELECT purged_at FROM workspaces WHERE id=?`, args: [workspaceId] })).rows[0]?.purged_at != null;
+  if (!ws || purged) return [];
+  return tenantChangesSince(ws, Number(row.created_at), recorded);
+}
+
 /** Undo a workspace's last conversion: its own row, the recorded factors inverted. */
 export async function reverseWorkspaceCredits(workspaceId: string, o: Options = {}): Promise<CreditConversion> {
   if (workspaceId === HOUSE_WORKSPACE_ID) return houseLine(workspaceId, "reverse", null, 0, 0);
   await conversionsReady();
   const at = o.at ?? Date.now();
+  const { row: pre } = await lastRowTx(platformDb(), workspaceId);
+  /* Reversed already, its own database's half not in (that database failed): running it again finishes it. */
+  if (pre && pre.action === "reverse" && pre.tenant_applied_at == null) {
+    const line: CreditConversion = { id: String(pre.id), workspaceId, status: "already", action: "reverse", mode: (pre.mode as ConversionMode) ?? null,
+      fromUsd: Number(pre.from_usd), toUsd: Number(pre.to_usd), before: null, after: null, rows: {}, tenant: [], tenantDone: false };
+    if (o.dryRun) return { ...line, reason: "Reversed; its own database's half is not finished yet. A real run finishes it." };
+    try { return { ...line, tenant: await finishTenant(workspaceId, pre, at), tenantDone: true, reason: "Reversed; its own database's half is finished now." }; }
+    catch (error) { return { ...line, reason: `The workspace's own figures are not reversed yet: ${(error as Error).message}. Run it again.` }; }
+  }
+  /* Read before the platform's write, as every workspace database is: what was saved there since the conversion. */
+  let tenantActivity: { what: string; id: string; status: string; createdAt: number }[] = [];
+  if (pre && pre.action === "convert") {
+    try { tenantActivity = await tenantChangesOf(workspaceId, pre); }
+    catch (error) {
+      return { id: null, workspaceId, status: "refused", action: "reverse", mode: null, fromUsd: Number(pre.to_usd), toUsd: Number(pre.from_usd), before: null, after: null,
+        rows: {}, tenant: [], tenantDone: true, reason: `Not reversed: its own database could not be read, so what was saved there since the conversion cannot be checked (${(error as Error).message}).` };
+    }
+  }
   let result: CreditConversion;
   try {
     result = await billingTransaction(async (tx) => {
@@ -554,10 +604,13 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
         ...(await tx.execute({ sql: `SELECT 'grant' AS what,id,kind AS status,created_at FROM credit_grants WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
         ...(await tx.execute({ sql: `SELECT 'lot' AS what,id,kind AS status,created_at FROM billing_lots WHERE workspace_id=? AND created_at>? AND id<>?`, args: [workspaceId, since, goodwill] })).rows,
       ].map((r) => ({ what: String(r.what), id: String(r.id), status: String(r.status), createdAt: Number(r.created_at) }));
+      /* Limits, caps, approvals and held takes saved in the workspace's own database since: in the new
+         unit too, and not among the rows the conversion recorded, so a reversal would leave them 8× too large. */
+      activity.push(...tenantActivity);
       if (activity.length)
         return { id: null, workspaceId, status: "refused" as const, action: "reverse" as const, mode: null, fromUsd, toUsd, before: null, after: null,
           rows: {}, tenant: [], tenantDone: true, activity,
-          reason: `Not reversed: ${activity.length} job(s) or grant(s) since the conversion, in the new price. A reversal is only safe before paid work resumes.` };
+          reason: `Not reversed: ${activity.length} job(s), grant(s) or saved figure(s) since the conversion, in the new price. A reversal is only safe before paid work resumes.` };
       const recorded = (await tx.execute({ sql: `SELECT tbl,row_key,factor FROM ${CONVERSION_ROWS_TABLE} WHERE conversion_id=?`, args: [String(last.id)] })).rows;
       const factors = recorded.map((r) => ({ tbl: String(r.tbl), key: String(r.row_key), factor: 1 / Number(r.factor) }));
       const before = await snapshotTx(tx, workspaceId, at, fromUsd);
@@ -709,6 +762,9 @@ export type ConversionRun = {
   /** Listed apart, no decision needed: balances whose dollars shown today fall because their credits
    *  were written at US$0.10 (what they read today is eight times what was paid or granted). */
   dollarsShownDrop: { workspaceId: string; name: string; usdShownToday: number; usdAfter: number; marks: WorkspaceMarks | undefined }[];
+  /** Listed apart, no decision needed: balances already below zero before the conversion (a debt
+   *  carried from before), the same dollars owed after, counted in more credits. */
+  debts: { workspaceId: string; name: string; balanceBefore: number; balanceAfter: number; usdBefore: number; usdAfter: number; marks: WorkspaceMarks | undefined }[];
   /** Pack requests open at the old price: declined (dry run: to be declined), with the note they get,
    *  and who asked, for the owner to contact. The app emails nobody. */
   declinedTopups: (DeclinedTopup & { workspaceId: string; workspaceName: string; note: string })[];
@@ -734,6 +790,10 @@ const declinesOf = (results: CreditConversion[]): ConversionRun["declinedTopups"
 const dropsOf = (results: CreditConversion[]): ConversionRun["dollarsShownDrop"] =>
   results.filter((r) => !(r.shortfall ?? 0) && r.before && r.after && r.after.balanceUsd < r.before.balanceUsd - 0.005 && r.status !== "already")
     .map((r) => ({ workspaceId: r.workspaceId, name: r.marks?.name ?? r.workspaceId, usdShownToday: r.before!.balanceUsd, usdAfter: r.after!.balanceUsd, marks: r.marks }));
+const debtsOf = (results: CreditConversion[]): ConversionRun["debts"] =>
+  results.filter((r) => !(r.shortfall ?? 0) && r.before && r.after && r.before.balance < 0 && r.status !== "already")
+    .map((r) => ({ workspaceId: r.workspaceId, name: r.marks?.name ?? r.workspaceId, balanceBefore: r.before!.balance, balanceAfter: r.after!.balance,
+      usdBefore: r.before!.balanceUsd, usdAfter: r.after!.balanceUsd, marks: r.marks }));
 function capsOf(results: CreditConversion[], layer: LayerLine | null, fromUsd: number, toUsd: number): CapLine[] {
   const line = (workspaceId: string, workspaceName: string, f: TenantFigure): CapLine => ({
     capId: f.cap!.id === PLATFORM_CAP_ID ? PLATFORM_CAP_ID : `${workspaceId}/${f.cap!.id}`, workspaceId, workspaceName, what: f.what,
@@ -772,7 +832,8 @@ async function skipTenantHalf(workspaceId: string, at: number): Promise<boolean>
 type RunOptions = Options & {
   fromUsd: number; toUsd: number; mode: ConversionMode; cutoverAt?: number | null; workspaceId?: string | null;
   decisions?: Record<string, ShortfallDecision>;
-  /** End of the old price's window; default: when an instance first ran at the new price (billing_unit.paused_since). */
+  /** End of the old price's window; default: the window a conversion already recorded, else when an
+   *  instance first ran at the new price (billing_unit.paused_since). */
   endAt?: number | null;
   caps?: Record<string, CapChoice>;
   /** Workspaces whose own database half to mark skipped (it is gone or unreachable). */
@@ -787,7 +848,8 @@ type RunOptions = Options & {
  * The run the platform owner starts (app/api/admin/credit-unit). For real it is US$0.80 → US$0.10
  * only, after CREDIT_USD changed (which paused paid work), with a decision for every workspace the
  * dry run lists under needsDecision, all in one call. Once the ledger counts in the new price a
- * real run converts nothing more: it only finishes workspace halves that failed, or skips them.
+ * real run converts nothing new: it only finishes workspace halves that failed, or skips them, and
+ * converts again a workspace a reversal put back in the old price.
  */
 export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   if (!o.dryRun && o.mode !== "per-row") throw new Error("A real run is per row (owner, 5 October 2026); uniform is a dry-run comparison only.");
@@ -799,37 +861,49 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
   const at = o.at ?? Date.now();
   if (!o.dryRun && !samePrice(creditUsd(), o.toUsd))
     throw new Error(`CREDIT_USD is ${dollars(creditUsd())}: change it to ${dollars(o.toUsd)} and redeploy before converting.`);
-  const ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
-  /* Default: when an instance first ran at the new price; after a reversal (which clears that), the
-     window the reversed conversion used. */
-  const recordedEnd = async () => {
-    const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
-    return Number(r?.e) > 0 ? Number(r!.e) : null;
-  };
+  let ids = o.workspaceId ? [o.workspaceId] : o.universe ?? (await allWorkspaceIds());
   await conversionsReady();
-  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : (await pausedSinceNow()) ?? (await recordedEnd());
+  /* The window a conversion already used, when one ran: kept for every later run (a reversal and a
+     cold start since may have written a later pausedSince, and rows from that pause were never at the
+     old price). Otherwise, when an instance first ran at the new price. */
+  const recorded = await recordedEnd();
+  const endAt = Number(o.endAt) > 0 ? Number(o.endAt) : recorded ?? (await pausedSinceNow());
   const firstOld = (await platformDb().execute({ sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE ROUND(credit_usd*1000000)=ROUND(?*1000000)`, args: [o.fromUsd] })).rows[0];
+  const firstOldPriceJobAt = firstOld?.t == null ? null : Number(firstOld.t);
+  if (!o.dryRun) {
+    checkWindow(o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt, firstOldPriceJobAt, at);
+    if (!(Number(o.endAt) > 0) && recorded != null) await checkRecordedWindowHolds(o.fromUsd);
+  }
   const base = {
     action: "convert" as const, mode: o.mode, cutoverAt: o.mode === "per-row" ? Number(o.cutoverAt) : null, endAt,
-    firstOldPriceJobAt: firstOld?.t == null ? null : Number(firstOld.t), fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
+    firstOldPriceJobAt, fromUsd: o.fromUsd, toUsd: o.toUsd, factor: k, ledgerUnitBefore: unitBefore,
   };
   const pass = (dryRun: boolean) => async () => {
     const results: CreditConversion[] = [];
     for (const id of ids) results.push(await convertWorkspaceCredits(id, { ...o, endAt, dryRun, at, decision: o.decisions?.[id] ?? null }));
     return results;
   };
+  const finished: CreditConversion[] = [];
+  const tenantSkipped: string[] = [];
+  /* Workspaces a reversal put back in the old price after the ledger moved (one reversed on its own,
+     or a reversal that stopped half-way): converted again, and only they. */
+  let reconverting = false;
   if (!o.dryRun) {
-    /* Finished already: convert nothing more; finish or skip what failed. */
+    /* Finished already: convert nothing new; finish or skip what failed, and convert again what a reversal put back. */
     if (unitBefore != null && samePrice(unitBefore, o.toUsd)) {
-      const tenantSkipped: string[] = [];
       for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
-      const results: CreditConversion[] = [];
+      const back: string[] = [];
       for (const id of ids) {
+        if (id === HOUSE_WORKSPACE_ID) continue;
         const { row } = await lastRowTx(platformDb(), id);
-        if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) results.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
+        if (row && row.action === "reverse" && samePrice(Number(row.to_usd), o.fromUsd)) back.push(id);
+        else if (row && row.tenant_applied_at == null && samePrice(Number(row.to_usd), o.toUsd)) finished.push(await convertWorkspaceCredits(id, { ...o, endAt, at }));
       }
-      return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [],
-        tenantSkipped, layer: null, results, totals: totals(results) };
+      if (!back.length)
+        return { ...base, dryRun: false, ledgerUnitAfter: unitBefore, waiting: [], needsDecision: [], dollarsShownDrop: [], debts: [], declinedTopups: [], caps: [],
+          tenantSkipped, layer: null, results: finished, totals: totals(finished) };
+      ids = back;
+      reconverting = true;
     }
     if (endAt == null) throw new Error("No end to the old price's window: CREDIT_USD has not changed on any instance yet, and no endAt was given.");
     /* Every balance it lowers needs a decision before anything is written, so all convert in one call. */
@@ -837,18 +911,62 @@ export async function convertAllCredits(o: RunOptions): Promise<ConversionRun> {
     const undecided = preview.filter((r) => (r.shortfall ?? 0) > 0 && !o.decisions?.[r.workspaceId]).map((r) => r.workspaceId);
     if (undecided.length) throw new Error(`Decide goodwill or apply for every workspace under needsDecision first: ${undecided.join(", ")}.`);
   }
-  const results = await pass(Boolean(o.dryRun))();
+  const results = [...finished, ...(await pass(Boolean(o.dryRun))())];
+  /* The platform layer too, unless one workspace was named: "already" where it stands, converted again where a reversal put it back. */
   const layer = o.workspaceId ? null : await convertLayer({ ...o, reverse: false, k }, at);
-  const tenantSkipped: string[] = [];
-  if (!o.dryRun) for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
-  const settled = o.dryRun ? { moved: false, waiting: [] as string[] } : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, o.universe);
+  if (!o.dryRun && !reconverting) for (const id of o.skipTenant ?? []) if (await skipTenantHalf(id, at)) tenantSkipped.push(id);
+  const settled = o.dryRun ? { moved: false, waiting: [] as string[] }
+    : await settleLedgerUnit(o.toUsd, o.by ?? null, at, endAt!, reconverting ? ids : o.universe);
   return {
     ...base, dryRun: Boolean(o.dryRun), ledgerUnitAfter: await ledgerUnitNow(), waiting: settled.waiting,
-    needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), declinedTopups: declinesOf(results),
+    needsDecision: decisionsOf(results), dollarsShownDrop: dropsOf(results), debts: debtsOf(results), declinedTopups: declinesOf(results),
     caps: capsOf(results, layer, o.fromUsd, o.toUsd), tenantSkipped, layer, results, totals: totals(results),
   };
 }
 
+/** The window a conversion recorded (the latest, if several ran), or null before any ran. */
+async function recordedEnd(): Promise<number | null> {
+  const r = (await platformDb().execute(`SELECT MAX(end_at) AS e FROM ${CONVERSIONS_TABLE} WHERE action='convert'`).catch(() => null))?.rows[0];
+  return Number(r?.e) > 0 ? Number(r!.e) : null;
+}
+
+/** A real run's window must be one the record can have: begun after the old price was set, closed after it began, not in the future, and not after the first job approved at the old price. */
+function checkWindow(cutoverAt: number | null, endAt: number | null, firstOldPriceJobAt: number | null, at: number): void {
+  const iso = (t: number) => new Date(t).toISOString();
+  if (cutoverAt != null) {
+    if (!(cutoverAt >= OLD_PRICE_EARLIEST) || cutoverAt > at)
+      throw new Error(`cutoverAt ${Number.isFinite(cutoverAt) ? iso(cutoverAt) : String(cutoverAt)} is not when the price moved: it is after ${iso(OLD_PRICE_EARLIEST)} and before now, in ms or ISO with Z.`);
+    if (firstOldPriceJobAt != null && cutoverAt > firstOldPriceJobAt)
+      throw new Error(`cutoverAt ${iso(cutoverAt)} is after the first job approved at the old price (${iso(firstOldPriceJobAt)}): the price had moved by then. Use an earlier time.`);
+    if (endAt != null && !(endAt > cutoverAt))
+      throw new Error(`endAt ${iso(endAt)} is not after cutoverAt ${iso(cutoverAt)}.`);
+  }
+  if (endAt != null && endAt > at) throw new Error(`endAt ${iso(endAt)} is in the future.`);
+}
+
+/**
+ * The recorded window ends when particl.si first ran at the new price. It describes the record only
+ * if the old price never ran again afterwards: after a reversal and CREDIT_USD set back to the old
+ * price, rows were written at it later still, outside that window. A paid job at the old price
+ * after the last reversal shows it; then the default window is refused, and the owner asks for help.
+ */
+async function checkRecordedWindowHolds(fromUsd: number): Promise<void> {
+  const last = (await platformDb().execute({ sql: `SELECT MAX(created_at) AS t FROM ${CONVERSIONS_TABLE} WHERE action='reverse' AND workspace_id<>?`, args: [PLATFORM_LAYER_ID] })).rows[0];
+  if (!(Number(last?.t) > 0)) return;
+  const ran = (await platformDb().execute({
+    sql: `SELECT MIN(created_at) AS t FROM meter_events WHERE paid_by_platform=1 AND workspace_id<>? AND ROUND(credit_usd*1000000)=ROUND(?*1000000) AND created_at>?`,
+    args: [HOUSE_WORKSPACE_ID, fromUsd, Number(last!.t)],
+  })).rows[0];
+  if (Number(ran?.t) > 0)
+    throw new Error(`particl.si ran at ${dollars(fromUsd)} again after the reversal (a paid job on ${new Date(Number(ran!.t)).toISOString()}): the window the first conversion recorded no longer covers the record. Stop and ask Claude; do not give endAt to force it.`);
+}
+
+/**
+ * Reverse every workspace's last conversion (or one, by `workspaceId`). All or nothing across
+ * workspaces: a refusal anywhere reverses nobody. A full reversal moves the ledger back to the old
+ * price when every workspace is back in it. One workspace reversed on its own leaves the ledger
+ * where it is: that workspace alone pauses (lib/ledgerUnit.ts ledgerOpenTx) until converted again.
+ */
 export async function reverseAllCredits(o: Options & { workspaceId?: string | null; universe?: string[] }): Promise<ConversionRun> {
   const unitBefore = await ledgerUnitNow();
   const at = o.at ?? Date.now();
@@ -861,33 +979,37 @@ export async function reverseAllCredits(o: Options & { workspaceId?: string | nu
   if (live) for (const id of ids) results.push(await reverseWorkspaceCredits(id, { ...o, at }));
   else results.push(...check);
   const refused = results.filter((r) => r.status === "refused");
-  const first = results.find((r) => r.status === "reversed" || r.status === "planned");
+  const first = results.find((r) => r.status === "reversed" || r.status === "planned" || r.status === "already");
   const layer = o.workspaceId || refused.length ? null : await convertLayer({ ...o, reverse: true, fromUsd: 0, toUsd: 0, k: 1 }, at);
   let waiting: string[] = [];
   /* A workspace the conversion never touched (none was run on it: made during or after the pause) does not
      hold a reversal up: endAt 0 counts every such workspace as outside the window. */
-  if (!o.dryRun && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, 0, o.universe)).waiting;
+  if (!o.dryRun && !o.workspaceId && first && !refused.length) waiting = (await settleLedgerUnit(first.toUsd, o.by ?? null, at, 0, o.universe)).waiting;
   return {
     dryRun: Boolean(o.dryRun), action: "reverse", mode: first?.mode ?? null, cutoverAt: null, endAt: null, firstOldPriceJobAt: null,
     fromUsd: first?.fromUsd ?? 0, toUsd: first?.toUsd ?? 0, factor: first ? first.fromUsd / first.toUsd : 1,
     ledgerUnitBefore: unitBefore, ledgerUnitAfter: await ledgerUnitNow(), waiting: refused.length ? refused.map((r) => r.workspaceId) : waiting,
-    needsDecision: [], dollarsShownDrop: [], declinedTopups: [], caps: [], tenantSkipped: [], layer, results, totals: totals(results),
+    needsDecision: [], dollarsShownDrop: [], debts: [], declinedTopups: [], caps: [], tenantSkipped: [], layer, results, totals: totals(results),
   };
 }
 
 /**
  * The day this workspace's credits began to be counted at `unitUsd`: the real run of its last
  * conversion to that price, when that conversion still stands (not reversed). Null on any
- * deployment where none has run, so the statement line it feeds appears only where it is true.
+ * deployment where none has run, so the statement line it feeds appears only where it is true;
+ * null too for a range (`rangeEnd`, exclusive) that ended before the old price began, whose
+ * credits were never restated.
  */
-export async function convertedToUnitAt(workspaceId: string, unitUsd: number): Promise<number | null> {
+export async function convertedToUnitAt(workspaceId: string, unitUsd: number, rangeEnd?: number): Promise<number | null> {
   try {
     const rs = await platformDb().execute({
-      sql: `SELECT action,to_usd,created_at FROM ${CONVERSIONS_TABLE} WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      sql: `SELECT action,to_usd,created_at,cutover_at FROM ${CONVERSIONS_TABLE} WHERE workspace_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
       args: [workspaceId],
     });
     const r = rs.rows[0];
-    return r && r.action === "convert" && samePrice(Number(r.to_usd), unitUsd) ? Number(r.created_at) : null;
+    if (!(r && r.action === "convert" && samePrice(Number(r.to_usd), unitUsd))) return null;
+    if (rangeEnd != null && r.cutover_at != null && rangeEnd <= Number(r.cutover_at)) return null;
+    return Number(r.created_at);
   } catch {
     return null; // no conversions table on this deployment: nothing was converted
   }

@@ -404,15 +404,20 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
     const prior = own.rows[0];
-    /* A price of a credit the record does not count in yet (lib/ledgerUnit.ts): no NEW job is reserved
-       until the conversion restates the record. A job already reserved keeps its reservation and terms. */
-    if (!prior && paid && creditsApply(ws) && !(await ledgerOpenTx(tx))) throw new SpendReservationError(LEDGER_UNIT_PAUSED, 503);
+    /* A price of a credit the record (the platform's, or this workspace's own) does not count in yet
+       (lib/ledgerUnit.ts): no NEW job is reserved until the conversion restates the record. A job
+       already reserved keeps its reservation and terms. */
+    if (!prior && paid && creditsApply(ws) && !(await ledgerOpenTx(tx, ws.id))) throw new SpendReservationError(LEDGER_UNIT_PAUSED, 503);
     if (prior && (Boolean(prior.paid_by_platform) !== paid || prior.engine !== event.engine || prior.kind !== event.kind || prior.model !== event.model))
       throw new SpendReservationError("This job's funding or engine changed. Request a new quote.", 409, true);
-    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model) : currentBillingTerms(event.kind, event.model);
-    /* A job approved at another price of a credit (one reserved at US$0.80 before the record moved to
+    /* A new job is priced in the unit this workspace's record counts in, as meter() charges one first
+       metered at settlement; admitted, that is today's price. */
+    const unit = await workspaceUnitTx(tx, ws.id);
+    const terms = prior ? recordedBillingTerms(prior, event.kind, event.model)
+      : { ...currentBillingTerms(event.kind, event.model), ...(unit != null ? { creditUsd: unit } : {}) };
+    /* A job approved at a higher price of a credit (one reserved at US$0.80 before the record moved to
        US$0.10, lib/creditConversion.ts) keeps its terms and is counted in the ledger's unit: ×8. */
-    const restate = prior ? restateFactor(terms.creditUsd, await workspaceUnitTx(tx, ws.id)) : 1;
+    const restate = prior ? restateFactor(terms.creditUsd, unit) : 1;
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
     const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });

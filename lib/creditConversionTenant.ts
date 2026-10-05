@@ -133,6 +133,40 @@ const ROWS_SCHEMA = [
     PRIMARY KEY(conversion_id, tbl, row_key))`,
 ];
 
+/** A cap a person saved, as it stands now, and how to write it back. */
+type CapNow = { capId: string; what: string; id: string; value: number; table: string;
+  round: (n: number) => number; write: (c: Exec, value: number) => Promise<unknown> };
+
+/** Every saved cap in this workspace's database: the shot cap setting, then each table's. */
+async function capsNow(c: Exec): Promise<CapNow[]> {
+  const out: CapNow[] = [];
+  if (await tableExists(c, "settings")) {
+    for (const r of (await c.execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows) {
+      const n = num(r.value);
+      if (n == null) continue;
+      out.push({ capId: "settings:shotCapCredits", what: "settings.shotCapCredits", id: "shotCapCredits", value: n, table: "settings",
+        round: (x) => Math.round(x * 1e6) / 1e6,
+        write: (cx, v) => cx.execute({ sql: `UPDATE settings SET value=? WHERE key='shotCapCredits'`, args: [String(v)] }) });
+    }
+  }
+  for (const cap of CAPS) {
+    if (!(await tableExists(c, cap.table))) continue;
+    if (cap.col && !(await columnsOf(c, cap.table)).has(cap.col)) continue;
+    const value = cap.col ? cap.col : `json_extract(body,'$.${cap.json}')`;
+    const rs = await c.execute(`SELECT ${cap.key} AS k, ${value} AS v FROM ${cap.table} WHERE ${value} IS NOT NULL${cap.where ? ` AND ${cap.where}` : ""}`);
+    for (const r of rs.rows) {
+      const n = num(r.v);
+      if (n == null) continue;
+      const key = String(r.k);
+      out.push({ capId: `${cap.table}:${key}`, what: `${cap.table}.${cap.col ?? `body.${cap.json}`}`, id: key, value: n, table: cap.table, round: (x) => x,
+        write: (cx, v) => cx.execute(cap.col
+          ? { sql: `UPDATE ${cap.table} SET ${cap.col}=? WHERE ${cap.key}=?`, args: [v, key] }
+          : { sql: `UPDATE ${cap.table} SET body=json_set(body,'$.${cap.json}',?) WHERE ${cap.key}=?`, args: [v, key] }) });
+    }
+  }
+  return out;
+}
+
 async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
   const figures: TenantFigure[] = [];
   const record = async (tbl: string, key: string, factor: number) => {
@@ -157,38 +191,13 @@ async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
     const choice: CapChoice = plan.caps?.[capId] === "x8" ? "x8" : "keep";
     return { f: choice === "x8" ? (plan.factor ?? 1) : 1, choice };
   };
-  if (await tableExists(c, "settings")) {
-    const rs = await c.execute(`SELECT value FROM settings WHERE key='shotCapCredits'`);
-    for (const r of rs.rows) {
-      const n = num(r.value);
-      if (n == null) continue;
-      const { f, choice } = capFactor("settings:shotCapCredits");
-      const after = Math.round(n * f * 1e6) / 1e6;
-      figures.push({ what: "settings.shotCapCredits", id: "shotCapCredits", before: n, after, cap: { id: "settings:shotCapCredits", choice } });
-      if (f === 1) continue;
-      if (!plan.dryRun) await c.execute({ sql: `UPDATE settings SET value=? WHERE key='shotCapCredits'`, args: [String(after)] });
-      await record("settings", "shotCapCredits", f);
-    }
-  }
-  for (const cap of CAPS) {
-    if (!(await tableExists(c, cap.table))) continue;
-    if (cap.col && !(await columnsOf(c, cap.table)).has(cap.col)) continue;
-    const value = cap.col ? cap.col : `json_extract(body,'$.${cap.json}')`;
-    const rs = await c.execute(`SELECT ${cap.key} AS k, ${value} AS v${cap.json ? ", body" : ""} FROM ${cap.table} WHERE ${value} IS NOT NULL${cap.where ? ` AND ${cap.where}` : ""}`);
-    for (const r of rs.rows) {
-      const n = num(r.v);
-      if (n == null) continue;
-      const key = String(r.k);
-      const capId = `${cap.table}:${key}`;
-      const { f, choice } = capFactor(capId);
-      figures.push({ what: `${cap.table}.${cap.col ?? `body.${cap.json}`}`, id: key, before: n, after: n * f, cap: { id: capId, choice } });
-      if (f === 1) continue;
-      if (!plan.dryRun)
-        await c.execute(cap.col
-          ? { sql: `UPDATE ${cap.table} SET ${cap.col}=? WHERE ${cap.key}=?`, args: [n * f, key] }
-          : { sql: `UPDATE ${cap.table} SET body=json_set(body,'$.${cap.json}',?) WHERE ${cap.key}=?`, args: [n * f, key] });
-      await record(cap.table, key, f);
-    }
+  for (const cap of await capsNow(c)) {
+    const { f, choice } = capFactor(cap.capId);
+    const after = cap.round(cap.value * f);
+    figures.push({ what: cap.what, id: cap.id, before: cap.value, after, cap: { id: cap.capId, choice } });
+    if (f === 1) continue;
+    if (!plan.dryRun) await cap.write(c, after);
+    await record(cap.table, cap.id, f);
   }
 
   for (const spec of SPECS) {
@@ -264,6 +273,51 @@ async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
     }
   }
   return figures;
+}
+
+/** Something a person saved in the workspace's own database after a conversion, in the new unit. */
+export type TenantChange = { what: string; id: string; status: string; createdAt: number };
+
+/**
+ * What changed in this workspace's own database since a conversion (`since`, its time), for a
+ * reversal to refuse: a reversal divides only what that conversion multiplied, so a figure a
+ * person saved afterwards, in the new unit, would be read in the old one. Caps are compared with
+ * what the conversion left (`recorded`, its own figures; null when its half never ran); the rest
+ * is found by time: an Atomik run's limit approved, an Atomik step or a pipeline attempt made or
+ * approved, a take held.
+ */
+export async function tenantChangesSince(ws: TenantWorkspace, since: number, recorded: TenantFigure[] | null): Promise<TenantChange[]> {
+  return runInTenant(ws, async () => {
+    await ready();
+    const c: Exec = db();
+    const out: TenantChange[] = [];
+    if (recorded) {
+      const left = new Map(recorded.filter((f) => f.cap).map((f) => [f.cap!.id, Number(f.after)]));
+      for (const cap of await capsNow(c)) {
+        const was = left.get(cap.capId);
+        if (was == null || !Number.isFinite(was) || Math.abs(was - cap.value) > 1e-6)
+          out.push({ what: "cap", id: cap.capId, status: was == null ? `saved since: ${cap.value} cr` : `${was} cr changed to ${cap.value} cr`, createdAt: 0 });
+      }
+    }
+    /* Made or approved after the conversion, by whichever of these times the table has. */
+    const found = async (what: string, table: string, times: string[]) => {
+      if (!(await tableExists(c, table))) return;
+      const have = await columnsOf(c, table);
+      const use = times.filter((x) => have.has(x));
+      if (!use.length || !have.has("state")) return;
+      const t = use.length > 1 ? `MAX(${use.map((x) => `COALESCE(${x},0)`).join(",")})` : use[0];
+      const rs = await c.execute({ sql: `SELECT id, state, ${t} AS t FROM ${table} WHERE ${use.map((x) => `${x}>?`).join(" OR ")}`, args: use.map(() => since) });
+      for (const r of rs.rows) out.push({ what, id: String(r.id), status: String(r.state ?? ""), createdAt: Number(r.t) });
+    };
+    await found("Atomik run limit", "rig_agent_runs", ["created_at", "approved_at"]);
+    await found("Atomik step", "rig_agent_steps", ["created_at", "approved_at"]);
+    await found("pipeline attempt", "pipeline_attempts", ["created_at"]);
+    if (await tableExists(c, "generations")) {
+      const rs = await c.execute({ sql: `SELECT id, status, created_at AS t FROM generations WHERE status='held' AND created_at>?`, args: [since] });
+      for (const r of rs.rows) out.push({ what: "held take", id: String(r.id), status: "held", createdAt: Number(r.t) });
+    }
+    return out;
+  });
 }
 
 /**
