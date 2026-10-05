@@ -106,7 +106,7 @@ async function noBadges(page: Page) {
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  for (const suite of ["business", "viral"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  for (const tab of await page.locator("[data-suite-tab]").all()) expect(await tab.getAttribute("aria-describedby")).toBeNull();
   await closeSuitesMenu(page);
 }
 

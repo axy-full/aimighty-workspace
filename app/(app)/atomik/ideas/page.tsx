@@ -4,7 +4,7 @@ import {usePaidAction,type PaidAction} from "@/lib/usePaidAction";
 import { setAtomikRail } from "@/lib/atomikRail";
 
 /**
- * Atomik · Ideas — from the pipeline handoff.
+ * Atomik · Ideas.
  *
  * A logline, a tone, a few references. Pin the ones worth a brief. When
  * one becomes a production it keeps its card, and the card keeps pointing

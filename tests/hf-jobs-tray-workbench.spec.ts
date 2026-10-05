@@ -224,7 +224,10 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   await expect(rows.nth(4).getByTestId("jobs-reason")).toHaveText("Refused by the content filter");
   /* Release carries the figure it approves. */
   await expect(rows.getByTestId("jobs-action")).toHaveText(["Release · 43 cr", "Recreate", "Open in Takes", "Recreate"]);
-  await expect(rows.nth(5).locator(".gx-jobs-thumb img")).toBeVisible();
+  /* The master's row leads with a dot in the job's tone (it replaced the 52px thumbnail): pulsing blue only while it renders. */
+  await expect(rows.getByTestId("jobs-dot")).toHaveCount(7);
+  await expect(rows.nth(1)).toHaveAttribute("data-moving", "");
+  await expect(rows.nth(5)).not.toHaveAttribute("data-moving", /.*/);
   await expect(rows.nth(6)).toHaveAttribute("data-tone", "idle");
   expect(errors).toEqual([]);
 

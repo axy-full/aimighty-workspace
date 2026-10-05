@@ -1,4 +1,4 @@
-/* Viral = Genjutsu (FINAL_SPEC §1 step 3; components/graphite/viral). Graphite tokens; scoped under .vr. The row itself
+/* Viral = Genjutsu (components/graphite/viral). Graphite tokens; scoped under .vr. The row itself
    (.vr-job, .vr-job-name) is in components/graphite/shell.css › Shared primitives: ResumedJobs.tsx draws it in Gen and
    Business too. */
 .vr .gx-gen-card { max-width: 560px; }

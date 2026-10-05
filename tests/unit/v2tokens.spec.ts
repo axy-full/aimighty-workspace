@@ -7,7 +7,7 @@ import { join } from "node:path";
  * design/particl-graphite/README.md § Design tokens. Every older name
  * (`--graphite-*`, and the `--color-*` utilities in globals.css) is an alias
  * of it with no value of its own. globals.css is flat and dark: no blur, no
- * gradient, no light theme. The v2 primitives still paint by token and set
+ * gradient, no light theme. The shared primitives still paint by token and set
  * nothing under 11px.
  */
 const root = join(__dirname, "../..");
@@ -219,7 +219,7 @@ test("Graphite radii and selection preserve primitive typography and motion", ()
   expect(css).toMatch(/\.ui-sheet-scrim\s*\{\s*background:\s*var\(--gx-scrim\);/);
 });
 
-/** Every file the v2 primitives are made of. */
+/** Every file the shared primitives are made of. */
 function v2Sources(): { file: string; text: string }[] {
   const files = [
     ...readdirSync(join(root, "components/ui")).map((f) => `components/ui/${f}`),

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { parseCharacters } from "../../lib/higgsfield-consumer/characters";
 
-/** FINAL_SPEC §4 › Soul ID: the account's trained characters, bounded and text-only, wherever the reply nests them. */
+/** Soul ID: the account's trained characters, bounded and text-only, wherever the reply nests them. */
 test("characters are read by soul_id or id, typed and statused only from the known words, and never from junk", () => {
   const reply = { characters: [
     { soul_id: "soul_9f2a", name: "Mira / character study", type: "soul_2", status: "ready", preview_url: "https://cdn.example/mira.jpg" },
@@ -25,7 +25,7 @@ test("characters are read by soul_id or id, typed and statused only from the kno
 
 import { parseCharacterCreate, parsePlan, soulBuildBlock, SOUL_BUILD_STILLS } from "../../lib/higgsfield-consumer/soul-build";
 
-/** Cast › Build identity on the connected account (FINAL_SPEC §3 › Soul ID): the plan gate, the block reasons, the reply parser. */
+/** Cast › Build identity on the connected account: the plan gate, the block reasons, the reply parser. */
 test("the plan gate reads the account's plan under any of its spellings and calls free-tier names unpaid", () => {
   expect(parsePlan({ current_plan: "Pro" })).toEqual({ plan: "Pro", paid: true });
   expect(parsePlan({ plan: { name: "Creator" } })).toEqual({ plan: "Creator", paid: true });

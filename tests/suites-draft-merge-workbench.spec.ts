@@ -1290,7 +1290,7 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
       /* Make is a panel now: leaving it is closing it (Studio stays under it). */
       await page.getByTestId("make-close").click();
       await expect(page.getByTestId("gen-view")).toHaveCount(0, { timeout: 30_000 });
-      await page.locator("[data-suite-tab=gen]").click();
+      await page.locator("[data-suite-tab=make]").click();
       await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
       await press(false);
     } else await press(leave === "reloads");

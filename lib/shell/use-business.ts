@@ -7,7 +7,7 @@ import { ADS_MODEL, IMAGE_ADS_MODEL, SETUP_TYPES, type SetupItem, type SetupType
 import { useConnectedCapability } from "./use-connected-capability";
 
 /**
- * What the Business pages read before they can compose (FINAL_SPEC §2):
+ * What the Business pages read before they can compose:
  * whether the connected account is connected (the shell's one shared answer,
  * lib/shell/use-connected-capability — a member is known from the session and
  * nothing is read for them), the live catalogue entries for Marketing Studio

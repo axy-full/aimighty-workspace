@@ -134,15 +134,21 @@ export const SHELL_SUITES: ShellSuite[] = [
   ]), ["skills", "memory", "saved-skills"]),
 ];
 
-/** Header segment order: Studio | Gen | Business | Viral | Atomik | Crew. Gen and Crew are views, not suites. */
-export const HEADER_SEGMENT: { id: ShellSuiteId | "gen" | "crew"; label: string; title: string }[] = [
-  { id: "studio", label: "Studio", title: "Particl Production Studio" },
-  { id: "gen", label: "Gen", title: "Generate" },
-  { id: "business", label: "Business", title: "Moleculr Business Suite" },
-  { id: "viral", label: "Viral", title: "Subatomik Viral Studio · Genjutsu" },
-  { id: "atomik", label: "Atomik", title: "Atomik Agent" },
-  /* Crew is a module with its own tables and pages, not a production suite (CREW_ADDENDUM.md). */
-  { id: "crew", label: "Crew", title: "Crew" },
+/**
+ * Header option B (design/particl-graphite/README.md § 1): Home · <the current project> · Make · Atomik.
+ * Studio, Ads and Social become templates picked on Home, so no suite is a header destination. Until the
+ * packages that build the new screens ship, each segment opens today's page for it (Header.tsx):
+ * Home the Studio overview (Home of its own is U1), the project its current Studio page (the board is S3),
+ * Make today's Gen (the panel is D0 PR 5) and Atomik today's Atomik suite (the control room is D1).
+ * The suites above stay as the bridge: their pages are reached from ⌘K and the page strip until S3, S4 and D1.
+ */
+export type HeaderSegmentId = "home" | "project" | "make" | "atomik";
+export const HEADER_SEGMENT: { id: HeaderSegmentId; label: string; title: string }[] = [
+  { id: "home", label: "Home", title: "Home · what needs you" },
+  /* The live header shows the open project's name here, with its swatch; "Project" is what a page without one says. */
+  { id: "project", label: "Project", title: "The current project" },
+  { id: "make", label: "Make", title: "Make" },
+  { id: "atomik", label: "Atomik", title: "Atomik" },
 ];
 
 export const WORKSPACE_TABS: { id: WorkspaceTabId; label: string; href: string }[] = [
@@ -211,3 +217,173 @@ export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: stri
 export function isCrewPage(value: unknown): value is CrewPageId {
   return CREW_PAGES.some((p) => p.id === value);
 }
+
+/* ── Old links → new (README § 1.2) ─────────────────────────────────────────
+   Every old page and deep link either lands somewhere new (OLD_TO_NEW) or is
+   still served by its old page until the package that replaces it ships
+   (PENDING). A row moves from PENDING to OLD_TO_NEW in the PR that ships its
+   replacement, never before: no link is sent to a screen that does not exist.
+   The only rows live today are normalisations: the design file's spellings of
+   a page (`?suite=studio&page=beats`) rewritten to the app's (`?suite=particl&page=brief&sp=beats`),
+   so a link copied from the handoff opens the page it names. They are applied
+   on the server before the shell renders (app/suites/page.tsx) and again on the
+   client as the shell lands (lib/shell/state.tsx). Every other param rides along. */
+
+/** The package that ships a row's replacement: D0 PRs 3 and 5, Home (U1), the Studio board (S3), the Ads and Social boards and Crew review (S4), the control room and Settings (D1). */
+export type Ships = "D0-3" | "D0-5" | "U1" | "S3" | "S4" | "D1";
+
+export type OldToNew = { from: string; to: string; ships: Ships };
+export type Pending = {
+  /** A `/suites` search (`?…`) or an old route (`/path`, as docs/old-shells.md lists it). */
+  from: string;
+  /** What README § 1.2 (or docs/old-shells.md) says it becomes. */
+  becomes: string;
+  ships: Ships;
+};
+
+/** The path the shell serves; old links are rewritten only there. */
+export const SHELL_PATH = "/suites";
+
+/** The design file's suite names, its own aliases, and former spellings, to the state layer's ids (lib/workspace/pages.ts › SUITE_ALIASES agrees). */
+const SUITE_SPELLING: Readonly<Record<string, Suite>> = {
+  studio: "particl", business: "moleculr", ads: "moleculr", viral: "subatomik", social: "subatomik", subatomic: "subatomik", agent: "atomik",
+};
+/** Design page ids that are shell pages over another backing page: [backing page, shell page]. Anything else the app reads as it is. */
+const DESIGN_PAGES: Readonly<Partial<Record<Suite, Readonly<Record<string, readonly [PageId, string]>>>>> = {
+  particl: { stages: ["brief", "stages"], beats: ["brief", "beats"], env: ["boards", "environment"], environment: ["boards", "environment"] },
+  moleculr: Object.fromEntries(shellSuite("business").pages.map((p) => [p.id, ["marketing", p.id] as const])),
+  atomik: { memory: ["agent", "memory"], "saved-skills": ["agent", "saved-skills"] },
+};
+/** The design file's view names for today's views. */
+const VIEW_SPELLING: Readonly<Record<string, ShellView>> = { make: "gen" };
+/** Params the design file sets that no screen reads any more: the Library and Inspector columns are not toggled by URL. */
+const DROPPED_PARAMS = ["lib", "insp"] as const;
+const WORKSPACE_TAB_IDS: readonly string[] = ["general", "people", "credits", "usage", "dashboard", "engines", "security"] satisfies WorkspaceTabId[];
+
+function rewrite(search: string): { q: URLSearchParams; changed: boolean } {
+  const q = new URLSearchParams(search);
+  let changed = false;
+  const set = (key: string, value: string) => { if (q.getAll(key).length !== 1 || q.get(key) !== value) { q.set(key, value); changed = true; } };
+  const drop = (key: string) => { if (q.has(key)) { q.delete(key); changed = true; } };
+
+  for (const key of DROPPED_PARAMS) drop(key);
+  /* `&palette=1` opens ⌘K; the shell's word for it is `find=1`. */
+  if (q.get("palette") === "1") { drop("palette"); set("find", "1"); }
+
+  const view = q.get("view");
+  if (view && Object.hasOwn(VIEW_SPELLING, view)) set("view", VIEW_SPELLING[view]);
+  /* Crew's page is `cp`; the design file says `crew`. */
+  if (q.get("view") === "crew" && q.has("crew")) {
+    const page = q.get("crew");
+    drop("crew");
+    if (isCrewPage(page)) set("cp", page);
+  }
+  /* Workspace's section is `tab`. The design file says `ws`, which the shell keeps for the workspace a link was copied in
+     (lib/shell/asset-link.ts): only an old section name on the Workspace view, with no take linked, is a section. */
+  const ws = q.get("ws");
+  if (q.get("view") === "workspace" && ws && WORKSPACE_TAB_IDS.includes(ws) && !q.has("asset")) { drop("ws"); set("tab", ws); }
+
+  const raw = q.get("suite");
+  const suite = raw && Object.hasOwn(SUITE_SPELLING, raw) ? SUITE_SPELLING[raw] : raw;
+  if (raw && suite !== raw) set("suite", suite!);
+  const page = q.get("page");
+  const pages = suite ? DESIGN_PAGES[suite as Suite] : undefined;
+  if (page && pages && Object.hasOwn(pages, page)) {
+    const [backing, shellId] = pages[page];
+    set("page", backing);
+    set("sp", shellId);
+  }
+  return { q, changed };
+}
+
+/** A `/suites` search with the design file's spellings rewritten to the app's; every other param kept. Idempotent. */
+export function normalize(search: string): string {
+  const { q } = rewrite(search);
+  const text = q.toString();
+  return text ? `?${text}` : "";
+}
+
+/** Where an old link on `pathname` goes instead, or null when it is served where it is. Never a chain: the target needs no redirect. */
+export function redirectFor(pathname: string, search: string): string | null {
+  if (pathname !== SHELL_PATH) return null;
+  const { q, changed } = rewrite(search);
+  if (!changed) return null;
+  const text = q.toString();
+  return SHELL_PATH + (text ? `?${text}` : "");
+}
+
+const N = (from: string, to: string): OldToNew => ({ from, to, ships: "D0-3" });
+/** The rows live today (README § 1.2, design form → app form). `normalize(from)` is `to` for each; tests/unit/shellRedirects.spec.ts holds it to that. */
+export const OLD_TO_NEW: readonly OldToNew[] = [
+  N("?suite=studio&page=stages", "?suite=particl&page=brief&sp=stages"),
+  N("?suite=studio&page=brief", "?suite=particl&page=brief"),
+  N("?suite=studio&page=beats", "?suite=particl&page=brief&sp=beats"),
+  N("?suite=studio&page=boards", "?suite=particl&page=boards"),
+  N("?suite=studio&page=env", "?suite=particl&page=boards&sp=environment"),
+  N("?suite=studio&page=environment", "?suite=particl&page=boards&sp=environment"),
+  ...["cast", "astra", "rig", "takes", "edit", "deliver"].map((p) => N(`?suite=studio&page=${p}`, `?suite=particl&page=${p}`)),
+  N("?suite=studio&page=rig&rig=list", "?suite=particl&page=rig&rig=list"),
+  N("?suite=studio&page=beats&beats=graph", "?suite=particl&page=brief&beats=graph&sp=beats"),
+  ...["dtc", "setup", "brand", "product", "reference", "format", "hooks", "design"].map((p) => N(`?suite=business&page=${p}`, `?suite=moleculr&page=marketing&sp=${p}`)),
+  ...["motion", "swap", "history"].map((p) => N(`?suite=viral&page=${p}`, `?suite=subatomik&page=${p}`)),
+  ...["memory", "saved-skills"].map((p) => N(`?suite=atomik&page=${p}`, `?suite=atomik&page=agent&sp=${p}`)),
+  ...["room", "members", "sessions"].map((p) => N(`?view=crew&crew=${p}`, `?view=crew&cp=${p}`)),
+  ...WORKSPACE_TAB_IDS.map((t) => N(`?view=workspace&ws=${t}`, `?view=workspace&tab=${t}`)),
+  /* The master's own aliases (docs/handoff-diff.md § 2): Ads and Social are Business and Viral, Make is Gen. */
+  N("?suite=ads", "?suite=moleculr"),
+  N("?suite=social", "?suite=subatomik"),
+  N("?view=make", "?view=gen"),
+  /* No-ops: the Library and Inspector are not toggled by URL; ⌘K opens with `find`. */
+  N("?lib=0", ""),
+  N("?lib=assets", ""),
+  N("?insp=0", ""),
+  N("?palette=1", "?find=1"),
+];
+
+const P = (ships: Ships, becomes: string, ...from: string[]): Pending[] => from.map((f) => ({ from: f, becomes, ships }));
+/**
+ * Old links still served by their old page, each with the package that retires it (README § 1.2 in the app's
+ * form, and every route in docs/old-shells.md). Old routes are retired in D1, once every replacement exists.
+ */
+export const PENDING: readonly Pending[] = [
+  ...P("U1", "Home `?view=home` (projects as cards)", "?suite=particl&page=brief&sp=stages"),
+  ...P("S3", "Studio board › Brief `frame=d`; questions `frame=b`", "?suite=particl&page=brief"),
+  ...P("S3", "Studio board › Storyboard; the shot list is the board's List view", "?suite=particl&page=brief&sp=beats"),
+  ...P("S3", "The board itself", "?suite=particl&page=brief&sp=beats&beats=graph"),
+  ...P("S3", "Studio board › Storyboard `frame=d`; Looks `frame=c`", "?suite=particl&page=boards"),
+  ...P("S3", "Studio board › Cast region (Cast, Environment and Elements cards) `frame=h`", "?suite=particl&page=boards&sp=environment"),
+  ...P("S3", "Studio board › Cast `frame=h`", "?suite=particl&page=cast"),
+  ...P("S3", "3D blocking, a tool on a shot card (Inspector › Advanced)", "?suite=particl&page=astra"),
+  ...P("S3", "The board itself `?view=board` and its List view", "?suite=particl&page=rig", "?suite=particl&page=rig&rig=list"),
+  ...P("S3", "Shots region, Review mode, Make › Recent", "?suite=particl&page=takes"),
+  ...P("S3", "Cut region `frame=i`", "?suite=particl&page=edit"),
+  ...P("S3", "Deliver card `frame=i`", "?suite=particl&page=deliver"),
+  /* D0 PR 5a ships Make's panel: these links land on it now (lib/shell/make.ts › fromGenLink, applied after redirectFor in
+     app/suites/page.tsx and lib/shell/state.tsx). The rows move to OLD_TO_NEW once this table learns Make's addresses. */
+  ...P("D0-5", "Make panel `make=1 | image | audio`; the model sheet is Change on the engine line; edit and upscale are card actions",
+    "?view=gen", "?view=gen&mode=video", "?view=gen&mode=images", "?view=gen&mode=audio", "?view=gen&task=edit", "?view=gen&task=upscale", "?view=gen&sheet=1"),
+  ...P("S4", "Ads board `kind=ads&frame=2` (image ad group)", "?suite=moleculr&page=marketing&sp=dtc"),
+  ...P("S4", "Ads board `frame=1` cards", ...["setup", "brand", "product", "reference"].map((p) => `?suite=moleculr&page=marketing&sp=${p}`)),
+  ...P("S4", "Ads board `frame=2` (Hooks card, Format briefs card)", ...["format", "hooks"].map((p) => `?suite=moleculr&page=marketing&sp=${p}`)),
+  ...P("S4", "Ads board `frame=3` (the poster Designer)", "?suite=moleculr&page=marketing&sp=design"),
+  ...P("S4", "Make › Motion transfer / Object swap; Social board Effects card", "?suite=subatomik&page=motion", "?suite=subatomik&page=swap"),
+  ...P("S4", "Make › Recent and the board's History drawer", "?suite=subatomik&page=history"),
+  ...P("S4", "Crew review inside a board `frame=m`; sessions in the Project record `frame=n`", "?view=crew&cp=room", "?view=crew&cp=members", "?view=crew&cp=sessions"),
+  ...P("D1", "Atomik's panel (`&atomik=1` on any screen); the plan card on the board", "?suite=atomik&page=agent"),
+  ...P("D1", "Control room › Activity (same URL)", "?suite=atomik&page=runs"),
+  ...P("D1", "Control room › Approvals (same URL)", "?suite=atomik&page=approvals"),
+  ...P("D1", "Settings › Spending rules `?view=workspace&ws=rules`", "?suite=atomik&page=budget"),
+  ...P("D1", "Settings › Advanced › Models", "?suite=atomik&page=models"),
+  ...P("D1", "Settings › Connections and Advanced › Tools", "?suite=atomik&page=skills"),
+  ...P("D1", "Control room › Memory, Skills (same URLs)", "?suite=atomik&page=agent&sp=memory", "?suite=atomik&page=agent&sp=saved-skills"),
+  ...P("D1", "Settings in five sections: Team, Plan & credits, Spending rules, Connections, Advanced; Dashboard → Activity",
+    ...WORKSPACE_TAB_IDS.map((t) => `?view=workspace&tab=${t}`)),
+  ...P("U1", "⌘K with Atomik's commands (go to, make, approve under N cr)", "?find=1"),
+  /* docs/old-shells.md: the older shells' routes, retired in D1. */
+  ...P("D1", "Its /suites page (docs/old-shells.md)",
+    "/workspace", "/workbench", "/workbench/movie", "/", "/atomik", "/subatomik", "/subatomic", "/generate", "/images", "/audio", "/make/[kind]", "/studio/shot",
+    "/library", "/all", "/productions", "/productions/[prod]/[project]/media", "/productions/[prod]/[project]/shots", "/projects/[id]", "/projects/[id]/canvas",
+    "/canvas/[id]", "/projects/[id]/rig/elements", "/rig/canvas/[boardId]", "/rig/recipes/[projectId]", "/rig/run/[runId]", "/pipelines", "/takes/[id]", "/shots/[id]",
+    "/elements/[id]", "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots", "/settings", "/team", "/usage", "/dashboard", "/statements/[month]",
+    "/connect", "/admin", "/platform", "/report", "/policy", "/privacy", "/terms"),
+];

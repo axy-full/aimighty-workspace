@@ -1,11 +1,13 @@
-/* Graphite's Projects/Library proportions, retaining the live grouped
-   deliverables, filters and reference board used by these legacy routes. */
+/* /productions and /library: the projects list and the project library, with
+   their grouped deliverables, filters and reference board. Colours and type are
+   app/graphite.css tokens. Deleted when Home and the Studio board's Library
+   drawer replace these routes (docs/old-shells.md). */
 .legacy-projects,
 .legacy-library {
   min-width: 0;
-  background: var(--graphite-panel);
-  color: var(--graphite-ink);
-  font: 400 13px/1.4 var(--gx-font);
+  background: var(--gx-panel);
+  color: var(--gx-text);
+  font: 400 var(--gx-fs-meta)/1.4 var(--gx-font);
 }
 
 .legacy-projects-toolbar,
@@ -27,7 +29,7 @@
 
 .legacy-projects-toolbar h1,
 .legacy-library-heading > span:first-child {
-  font-size: 26px;
+  font-size: var(--gx-fs-h1);
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -.025em;
@@ -78,19 +80,19 @@
 .legacy-library-card {
   min-width: 0;
   border-radius: 8px;
-  border-color: var(--graphite-line);
-  background: var(--graphite-card);
+  border-color: var(--gx-card-border);
+  background: var(--gx-card);
 }
 
 .legacy-deliverable:hover {
-  border-color: var(--graphite-edge);
+  border-color: var(--gx-dashed);
 }
 
 .legacy-deliverable-media,
 .legacy-library-media {
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  background-color: var(--graphite-control);
+  background-color: var(--gx-input);
 }
 
 .legacy-deliverable-info {
@@ -100,23 +102,23 @@
 
 .legacy-deliverable-info .font-semibold,
 .legacy-library-card .font-semibold {
-  font-size: 13px;
+  font-size: var(--gx-fs-meta);
   line-height: 1.4;
 }
 
 .legacy-deliverable-grid > button {
   min-height: 156px;
   border-radius: 8px;
-  border-color: var(--graphite-edge);
-  background: var(--graphite-card);
-  font-size: 12px;
+  border-color: var(--gx-dashed);
+  background: var(--gx-card);
+  font-size: var(--gx-fs-eyebrow);
 }
 
 .legacy-projects [role="group"],
 .legacy-library [role="group"] {
   border: 0;
   border-radius: 6px;
-  background: var(--graphite-segment);
+  background: var(--gx-track);
   padding: 3px;
   gap: 2px;
 }
@@ -126,7 +128,7 @@
   min-height: 30px;
   padding: 6px 12px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--gx-fs-eyebrow);
 }
 
 .legacy-projects-actions > button,
@@ -136,7 +138,7 @@
   min-height: 34px;
   padding: 8px 13px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--gx-fs-eyebrow);
   gap: 8px;
 }
 
@@ -183,19 +185,19 @@
   width: 220px;
   height: 34px;
   border-radius: 6px;
-  background: var(--graphite-control);
-  border-color: var(--graphite-line);
+  background: var(--gx-input);
+  border-color: var(--gx-card-border);
 }
 
 .legacy-library-search:focus-within {
-  outline: 2px solid var(--graphite-accent);
+  outline: 2px solid var(--gx-accent);
   outline-offset: 2px;
 }
 
 .legacy-library-layout {
   width: 100%;
   min-width: 0;
-  border-top: 1px solid var(--graphite-line);
+  border-top: 1px solid var(--gx-card-border);
 }
 
 .legacy-library-split {
@@ -224,7 +226,7 @@
 }
 
 .legacy-library-card.bg-card-raised {
-  background: var(--graphite-control);
+  background: var(--gx-input);
 }
 
 .legacy-library-unfiled {
@@ -232,7 +234,7 @@
 }
 
 .legacy-reference-board {
-  background-color: var(--graphite-panel);
+  background-color: var(--gx-panel);
 }
 
 .legacy-reference-board button.rounded-pill,
@@ -272,7 +274,7 @@
   .legacy-library-split > .legacy-reference-board {
     min-height: 520px;
     border-left: 0;
-    border-top: 1px solid var(--graphite-line);
+    border-top: 1px solid var(--gx-card-border);
   }
   .legacy-projects-toolbar {
     align-items: start;
@@ -291,12 +293,12 @@
   }
   .legacy-projects-phone h1,
   .legacy-library-phone h1 {
-    font-size: 26px;
+    font-size: var(--gx-fs-h1);
     line-height: 1.2;
     letter-spacing: -.025em;
   }
   .legacy-project-group-phone {
-    border: 1px solid var(--graphite-line);
+    border: 1px solid var(--gx-card-border);
     border-radius: 8px;
     padding-block: 14px;
   }
@@ -326,7 +328,7 @@
 /* The collective library shares Gen's media browser and authenticated sources. */
 .collective-assets {
   height: 100%;
-  background: var(--graphite-panel);
+  background: var(--gx-panel);
 }
 .collective-assets-header {
   display: grid;
@@ -341,27 +343,27 @@
 }
 .collective-assets-header h1 {
   margin: 0 0 6px;
-  font-size: 26px;
+  font-size: var(--gx-fs-h1);
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -.025em;
 }
-.collective-assets-header p { margin: 0; color: var(--graphite-muted); font-size: 12px; }
+.collective-assets-header p { margin: 0; color: var(--gx-text-half); font-size: var(--gx-fs-eyebrow); }
 .collective-assets-header > [role="group"] {
   grid-column: 1 / -1;
   justify-self: start;
   max-width: 100%;
-  background: var(--graphite-segment);
+  background: var(--gx-track);
   border: 0;
   border-radius: 6px;
   padding: 3px;
   gap: 2px;
 }
-.collective-assets-header > [role="group"] > button { min-height: 32px; padding: 6px 13px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
-.collective-assets-search { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--graphite-line); border-radius: 6px; background: var(--graphite-control); }
-.collective-assets-search > span { color: var(--graphite-muted); font-size: 12px; }
-.collective-assets-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--graphite-ink); padding-block: 8px; outline: none; font-size: 12px; }
-.collective-assets-search:focus-within { outline: 2px solid var(--graphite-accent); outline-offset: 2px; }
+.collective-assets-header > [role="group"] > button { min-height: 32px; padding: 6px 13px; border-radius: 4px; font-size: var(--gx-fs-eyebrow); white-space: nowrap; }
+.collective-assets-search { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--gx-card-border); border-radius: 6px; background: var(--gx-input); }
+.collective-assets-search > span { color: var(--gx-text-half); font-size: var(--gx-fs-eyebrow); }
+.collective-assets-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--gx-text); padding-block: 8px; outline: none; font-size: var(--gx-fs-eyebrow); }
+.collective-assets-search:focus-within { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .collective-assets-body { flex: 1; min-height: 0; overflow: auto; padding: 0 max(32px, calc((100% - 1296px) / 2)) 40px; }
 .collective-assets-body [data-library-grid] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .collective-assets .legacy-library-toolbar { padding-top: 0; }
@@ -373,17 +375,17 @@
   .collective-assets-header > [role="group"] { justify-self: stretch; }
   .collective-assets-header > [role="group"] > button { flex: 1; min-width: 0; min-height: 44px; padding: 6px 9px; font-size: 11px; }
   .collective-assets-search { min-height: 44px; }
-  .collective-assets-search input { font-size: 16px; }
+  .collective-assets-search input { font-size: var(--gx-fs-h2); }
   .collective-assets-body { padding: 0 16px 32px; }
   .collective-assets-body [data-library-grid] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .collective-assets .legacy-library-phone { padding-top: 0; }
 }
 @media (max-width: 899px) {
-  .collective-assets-search input { font-size: 16px; }
+  .collective-assets-search input { font-size: var(--gx-fs-h2); }
 }
 @media (pointer: coarse) {
   .collective-assets-header > [role="group"] > button,
   .collective-assets-search { min-height: 44px; }
 }
 
-.collective-assets-note { margin:0; padding:10px 16px; color:var(--graphite-muted); font-size:11px; line-height:1.5; border-bottom:1px solid var(--graphite-line); }
+.collective-assets-note { margin:0; padding:10px 16px; color:var(--gx-text-half); font-size:11px; line-height:var(--gx-lh-doc); border-bottom:1px solid var(--gx-card-border); }

@@ -7,7 +7,7 @@ import type { LibraryEntry } from "../../lib/workspace/library";
 const take = (id: string, kind: "GEN" | "UPLOAD" = "GEN"): LibraryEntry =>
   ({ take: { id, sourceId: id, kind, name: id, version: "v1", meta: "", credits: null, usd: null, status: "review", sha256: null, createdAt: 0 }, asset: {} as LibraryEntry["asset"], url: null, media: null });
 
-/** Particl Mobile.dc.html › STUDIO HOME: one card per stage (ten with Beats and Environment, owner 23–24 September), every line from the project. */
+/** Studio home: one card per stage (ten with Beats and Environment, owner 23–24 September), every line from the project. */
 test("the home is a Studio page outside the strip; the cards are the stages in order", () => {
   const home = shellSuite("studio").pages.find((p) => p.id === "home");
   expect(home).toMatchObject({ own: true, phoneOnly: true, n: "" });

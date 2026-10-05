@@ -14,14 +14,14 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
     case "tag": return <svg {...p}><path d="M3 12l9-9h9v9l-9 9z" /><circle cx="16" cy="8" r="1.4" fill={color ?? "currentColor"} stroke="none" /></svg>;
     case "bolt": return <svg {...p}><path d="M13 2L5 14h6l-1 8 9-13h-6z" /></svg>;
     case "atom": return <svg {...p}><circle cx="12" cy="12" r="1.6" fill={color ?? "currentColor"} stroke="none" /><ellipse cx="12" cy="12" rx="9" ry="3.6" /><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(60 12 12)" /><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(120 12 12)" /></svg>;
-    /* Three agents around a chair (FINAL_SPEC §6 › Crew). */
+    /* Three agents around a chair (Crew). */
     case "crew": return <svg {...p}><rect x="9" y="9" width="6" height="6" rx="1.5" /><circle cx="12" cy="3.5" r="1.8" /><circle cx="4.5" cy="17.5" r="1.8" /><circle cx="19.5" cy="17.5" r="1.8" /><path d="M12 5.5v3M6 16l3-2.2M18 16l-3-2.2" /></svg>;
     case "wrench": return <svg {...p}><path d="M14.5 6.5a4 4 0 0 0 4.9 4.9L21 13l-8 8-3-3 8-8-1.6-1.6z" /><path d="M3 5l4 4M4 4l3 1" /></svg>;
     case "stack": return <svg {...p}><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 13l9 5 9-5M3 17l9 5 9-5" /></svg>;
     case "chev": return <svg {...p}><path d="M9 6l6 6-6 6" /></svg>;
     /* The phone's Inspector toggle in the page head. */
     case "info": return <svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.01" /></svg>;
-    /* The phone's Home and Suites tabs (Particl Mobile iOS 27.dc.html › tab bar). */
+    /* The phone's Home and Suites tabs (the tab bar). */
     case "home": return <svg {...p}><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></svg>;
     case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.8" /><rect x="14" y="3" width="7" height="7" rx="1.8" /><rect x="3" y="14" width="7" height="7" rx="1.8" /><rect x="14" y="14" width="7" height="7" rx="1.8" /></svg>;
     /* The owner's key: what runs only on the workspace owner's connected account (idea 19). */
@@ -37,6 +37,15 @@ export const SUITE_LOOK: Record<string, { color: string; glyph: GlyphName }> = {
   viral: { color: "#FF453A", glyph: "bolt" },
   atomik: { color: "#30D158", glyph: "atom" },
   crew: { color: "#BF5AF2", glyph: "crew" },
+};
+/**
+ * The header segment (header option B): a glyph per destination, and the suite dot only where the segment is a
+ * suite's (Atomik). The project segment carries the project's swatch instead (posterOf).
+ */
+export const SEGMENT_LOOK: Record<"home" | "make" | "atomik", { glyph: GlyphName; color: string | null }> = {
+  home: { glyph: "home", color: null },
+  make: { glyph: "spark", color: null },
+  atomik: { glyph: SUITE_LOOK.atomik.glyph, color: SUITE_LOOK.atomik.color },
 };
 /** Library › Tools department colours cycle in this order. */
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
