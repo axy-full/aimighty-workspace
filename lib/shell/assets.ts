@@ -32,11 +32,7 @@ export function referenceRole(media: AssetRef["media"]): "Image" | "Video" | nul
 }
 
 /** What the commands are called for an asset — the prototype's labels. */
-export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Recreate", delete: "Move to trash" };
-/** The menu's labels for one asset: an upload is taken out of the project, not trashed (it stays in All assets). */
-export function assetLabels(origin: AssetRef["origin"] | null): Partial<Record<CtxCommand, string>> {
-  return origin === "upload" ? { ...ASSET_LABEL, delete: "Remove from project" } : ASSET_LABEL;
-}
+export const ASSET_LABEL: Partial<Record<CtxCommand, string>> = { retry: "Recreate" };
 
 /**
  * Which commands this build carries out for an asset, and why the others
