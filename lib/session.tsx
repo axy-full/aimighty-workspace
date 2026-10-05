@@ -27,6 +27,8 @@ export type SessionWorkspace = {
   id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean;
   /** Who runs the connected account, by display name, for a member's owner-run surfaces — never the address; null for the owner. */
   ownerName?: string | null;
+  /** The per-workspace "new interface" switch (lib/shell/new-interface.ts): one boolean, set by the Suites shell's bootstrap only. Absent reads as off. */
+  newInterface?: boolean;
 };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
 /* No `margins`. It used to be here, beside `creditUsd`, where any customer
