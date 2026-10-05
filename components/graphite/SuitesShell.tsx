@@ -366,7 +366,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         {shell.view === "board" && newInterface ? (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
             <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="board" /></div>}>
-              <BoardView scope={scope} project={project} items={items} library={library} kind={(() => { const k = new URLSearchParams(window.location.search).get("kind"); return isBoardKind(k) ? k : "studio"; })()} frame={new URLSearchParams(window.location.search).get("frame")} />
+              <BoardView scope={scope} project={project} items={items} library={library} kind={(() => { const k = new URLSearchParams(window.location.search).get("kind"); return isBoardKind(k) ? k : null; })()} frame={new URLSearchParams(window.location.search).get("frame")} region={new URLSearchParams(window.location.search).get("region")} />
             </Boundary>
           </div>
         ) : shell.view === "crew" ? <><CrewStrip room={crew} />

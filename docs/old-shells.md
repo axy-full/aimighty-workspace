@@ -82,14 +82,12 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
 
-## The new interface (switch on)
+## Suites screens behind the new-interface switch
 
-With a workspace's "new interface" switch on, these `/suites` pages are replaced by the board (`design/particl-graphite/README.md` § 1.2). Customers with the switch off still use them, so they stay until the switch-flip PR, which deletes the components and tests in each row.
+Old screens that customers still use while the switch is off. Each is deleted in the switch-flip PR, with its sheets and tests, once nothing else imports it.
 
-| Old page (switch off) | Rendered by today | Replaced by (switch on) | Tests that go at the flip |
+| Old screen | Files | Replaced by (switch on) | Notes |
 |---|---|---|---|
-| `?suite=studio&page=brief` (Brief & Script) | `components/graphite/production/BriefStage.tsx` (with its `ScriptPanel` and `DevelopmentPanel` mounts) | Studio board › Brief: the brief document card (frame d) | `suites-brief-writer-workbench`; the Brief parts of `hf-first-run-workbench` and `suites-draft-merge-workbench` |
-| `?suite=studio&page=beats` (Beats & Shots), `&beats=graph` | `components/graphite/production/BeatsStage.tsx`, `BeatGraph.tsx`, `lib/production/beat-graph.ts` | The board's List view: the shot list, edited in place (frame d, Board/List); the graph becomes the board itself | `suites-beats-workbench`, `suites-beats-import-graph-workbench` |
-| `?suite=studio&page=boards` (Storyboards) | `components/graphite/production/StoryboardStage.tsx` | Studio board › Storyboard: one frame per shot (frame d) | `suites-storyboards-workbench`, `suites-storyboards-batch-workbench`; the Storyboards parts of `suites-vendor-images-workbench` |
-
-Shared with the pages above, and deleted with the last of them: `components/graphite/production/AgentAction.tsx`, `AgentBar.tsx`, `use-agent-runs.ts`, `use-agent-attachments.tsx`, `use-stage-facts.ts`, `agent-price.ts`. Kept, because the board uses them: `lib/production/use-stage-quotes.ts` and `frameRequest` in `lib/production/boards.ts`.
+| Studio › Rig (`?suite=particl&page=rig`, `&rig=list`) | `components/workspace/rig/RigPage.tsx`, `RigGraph.tsx`, `RigBoard.tsx`, `RigList.tsx`, `TeamPresence.tsx`; the graph and list parts of `rig.css` | The board, `?view=board` (`components/graphite/board/BoardView.tsx`) and its List view (`&list=1`) | `RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are the board's data layer and stay. `RigImport.tsx` stays until the board shows an import. `RigAgentCard.tsx` and the Rig Inspectors go with their replacements (the docked Atomik panel; the board's Inspector). |
+| Studio › Rig's own library | `components/graphite/production/RigExtras.tsx` (`RigLibrary`) | The board's Library drawer (`components/graphite/board/drawers/Drawers.tsx`) | A file dropped on a shot becomes its reference on both. |
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` | The board | Still imported by `components/workbench/Studio.tsx` (the `/workbench` row above). |

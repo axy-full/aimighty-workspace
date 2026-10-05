@@ -349,6 +349,8 @@ export const projectSchema = z.object({
     .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
+  /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
+  boardKind: z.enum(["studio", "ads", "social"]).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),

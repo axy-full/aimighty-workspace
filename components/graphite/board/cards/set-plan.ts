@@ -1,36 +1,8 @@
-import { BRIEF_DOC_WIDTH, briefDocHeight } from "./doc/model";
-import { DocCard, ShotList } from "./doc/DocCards";
-import { derivePlanCards, type DocData, type FrameData } from "./plan/derive";
-import { FrameCard } from "./storyboard/FrameCard";
-import { frameTileHeight } from "./storyboard/FrameTile";
-import { defineCard, type CardSet } from "./types";
+import type { CardSet } from "./types";
 
 /*
- * Board cards 1 (design/particl-graphite/README.md § 3.1 b–e): the brief and shot list, the storyboard, and
- * — as their PRs land — the questions, the looks and the plan. Each kind replaces the board set's plain
- * fallback of the same kind; the Storyboard group uses the shared `group` frame.
+ * Stream 4's cards (Board cards 1): questions, doc, looks, storyboard, plan.
+ * A stub seeded by stream 3 (lead decision 26): it puts no card on the board.
+ * Owned by stream 4 from its first PR, which replaces this file.
  */
-
-/** A storyboard frame's width on the board (the master's 340). */
-const FRAME_WIDTH = 340;
-
-export const planCards: CardSet = {
-  id: "plan",
-  defs: [
-    defineCard<DocData>({
-      kind: "doc",
-      size: (data) => ({
-        w: BRIEF_DOC_WIDTH,
-        h: data.variant === "brief" ? briefDocHeight(data.doc) : briefDocHeight({ title: data.title, brief: data.text, look: "", footer: "" }),
-      }),
-      Card: DocCard,
-    }),
-    defineCard<FrameData>({
-      kind: "frame",
-      size: (_data, at) => ({ w: FRAME_WIDTH, h: frameTileHeight(FRAME_WIDTH, at.aspect) }),
-      Card: FrameCard,
-    }),
-  ],
-  derive: derivePlanCards,
-  List: ShotList,
-};
+export const planCards: CardSet = { id: "plan", defs: [], derive: () => [] };

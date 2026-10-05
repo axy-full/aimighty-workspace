@@ -18,6 +18,14 @@ export type BoardInternals = {
   /** The card Atomik is working on, and what it is doing. */
   atomik: { card: string; doing: string; color: string } | null;
   seams: BoardSeams;
+  /** The free card whose words are being edited on the board (a note's text, a label's line), and how they are kept. */
+  editing: string | null;
+  finishEdit: (id: string, value: string | null) => void;
+  /** Whether a card takes drops (its definition has `accepts`), and a drop on it (a Library file's id as text/plain). */
+  takesDrops: (cardId: string) => boolean;
+  dropOn: (cardId: string, data: DataTransfer) => void;
+  /** A card just made in Make, lit for a moment (README § 3.2 `made`). */
+  lit: string | null;
 };
 
 /**
