@@ -44,3 +44,8 @@ test("seam f: the control room reads Settings' section ids from lib/shell/settin
   expect(approvals).toContain("useSpendingRules");
   expect(read("components/graphite/settings/rules/spending.ts")).not.toContain("LOCAL STUB");
 });
+
+test("every stream that has a built screen has landed it: Home, the board, Ads, Social, Make, Atomik, the control room, Settings and the phone", async () => {
+  const { SCREENS, isLanded } = await import("../../lib/shell/screens");
+  for (const screen of SCREENS) expect(isLanded(screen.id), screen.id).toBe(true);
+});
