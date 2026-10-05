@@ -57,7 +57,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   const toggle = page.getByTestId("make-advanced-toggle");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByTestId("make-more")).toHaveCount(0);
-  for (const id of ["enhance", "gen-takes", "gen-draft-toggle", "gen-film"]) await expect(page.getByTestId(id)).toHaveCount(0);
+  for (const id of ["enhance", "gen-takes", "gen-film"]) await expect(page.getByTestId(id)).toHaveCount(0);
   await expect(panel.getByRole("group", { name: "Resolution" })).toHaveCount(0);
   /* One Advanced, and the price stays where the person can see it. */
   await expect(panel.getByTestId("make-advanced-toggle")).toHaveCount(1);
@@ -71,7 +71,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   await expect(panel.getByRole("group", { name: "Resolution" })).toBeVisible();
   await expect(page.getByTestId("enhance")).toBeVisible();
   await expect(page.getByTestId("gen-takes")).toBeVisible();
-  await expect(page.getByTestId("gen-draft-toggle")).toBeVisible();
+  await expect(page.getByTestId("gen-film")).toBeVisible();
   /* A price is never inside the fold: the engine line and Make still carry it. */
   await expect(page.getByTestId("make-engine-price")).toBeVisible();
   await expect(page.getByTestId("gen-generate")).toContainText("cr");
@@ -99,11 +99,11 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
   expect(reads.some((q) => q.get("resolution") === "1080p")).toBe(true);
   /* Two takes: Make carries both. Folded, the summary names what the fold holds, and the price still shows. */
   await page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true }).click();
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${(PRICE + 10) * 2} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`, { timeout: 30_000 });
   await toggle.click();
   await expect(page.getByTestId("make-more")).toHaveCount(0);
   await expect(page.getByTestId("make-advanced-notes")).toHaveText("2 takes");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${(PRICE + 10) * 2} cr`);
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`);
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE + 10} cr`);
   expect(errors).toEqual([]);
 });

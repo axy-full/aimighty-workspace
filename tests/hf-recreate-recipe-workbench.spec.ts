@@ -532,7 +532,6 @@ test("from a page's Library, the card lands where it can be read, clear of the s
   await library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_harbour']").click({ button: "right" });
   await page.getByTestId("context-menu").getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await openAdvanced(page);
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
   await expect(page.getByTestId("gen-recipe-setup")).toContainText("Close-up · Push in");
   if (PORTRAIT.includes(info.project.name)) await landsClear(page);
