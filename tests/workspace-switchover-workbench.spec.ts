@@ -148,6 +148,13 @@ test("a selection and any other query param survive the switch", async ({ page }
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
   await expect(page.getByTestId("make-title")).toHaveText("Object swap");
+  /* …and it is still on the address once Studio has written its own page into it (lib/workspace/navigation.ts › CARRIED_PARAMS),
+     and after Make closes over that page. */
+  await expect(page).toHaveURL(/[?&]page=brief(&|$)/);
+  await expect(page).toHaveURL(/[?&]account=particl(&|$)/);
+  await page.getByTestId("make-close").click();
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+  await expect(page).toHaveURL(/[?&]account=particl(&|$)/);
 });
 
 test("the back button leaves the redirect alone instead of bouncing", async ({ page }, info) => {

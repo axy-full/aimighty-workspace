@@ -13,6 +13,7 @@ import { validAssetId } from "@/lib/preview";
 import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, withAsset, withoutLink, type AssetLink, type SelectReason } from "./asset-link";
 import { useConnectedCollector } from "./use-connected-collector";
 import { IMPORT_PARAM } from "@/lib/workspace/rig-import";
+import { CARRIED_PARAMS } from "@/lib/workspace/navigation";
 import type { ComposerType } from "@/lib/workspace/composer";
 import { MAKE_PARAM, fromMakeLink, isMakeTool, makeType, readMake, viralTool, type MakeTab } from "./make";
 import { sendGenPreset } from "./gen-preset";
@@ -34,7 +35,8 @@ import type { GenPreset } from "./recipe";
  * them across its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM] as const;
+/* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
