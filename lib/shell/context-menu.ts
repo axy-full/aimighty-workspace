@@ -27,7 +27,7 @@ export type CtxCommand =
 
 export type CtxItem =
   | { sep: true }
-  | { sep?: false; command: CtxCommand; label: string; key?: string; danger?: boolean; disabled?: boolean; reason?: string; /** What the command costs, after its label ("Recreate · 43 cr"). */ price?: string; /** The price's hover: its dollar value. */ hover?: string };
+  | { sep?: false; command: CtxCommand; label: string; key?: string; danger?: boolean; disabled?: boolean; reason?: string; /** What the command costs, after its label ("Recreate · 43 cr"). */ price?: string; /** The price's hover: its dollar value. */ hover?: string; /** Set on a command that spends: priced once its figure is known, else unpriced and disabled (README § 5). */ spend?: "priced" | "unpriced" };
 
 /**
  * What a command that spends costs, read from the server's own quote (lib/shell/recreate-price.ts): still being read, ready with
@@ -84,8 +84,8 @@ export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
     const priced = caps.price?.[entry.command];
     if (caps.can[entry.command]) {
       if (!priced) return entry;
-      if (priced.state === "ready") return { ...entry, price: priced.text, ...(priced.hover ? { hover: priced.hover } : {}) };
-      return priced.state === "reading" ? { ...entry, disabled: true, reason: "Reading the price…" } : { ...entry, disabled: true, reason: priced.reason };
+      if (priced.state === "ready") return { ...entry, spend: "priced", price: priced.text, ...(priced.hover ? { hover: priced.hover } : {}) };
+      return priced.state === "reading" ? { ...entry, spend: "unpriced", disabled: true, reason: "Reading the price…" } : { ...entry, spend: "unpriced", disabled: true, reason: priced.reason };
     }
     return { ...entry, disabled: true, reason: caps.why[entry.command] ?? "Not available for this selection." };
   });
