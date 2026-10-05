@@ -350,8 +350,10 @@ function tenantFactorAt(p: Plan): (ts: number | null) => number {
 async function finishTenant(workspaceId: string, row: Record<string, unknown>, at: number): Promise<TenantFigure[]> {
   if (row.tenant_applied_at != null) return JSON.parse(String(row.tenant_json ?? "[]")) as TenantFigure[];
   const ws = await getWorkspace(workspaceId);
+  /* A purged workspace has no database left to restate. */
+  const purged = (await platformDb().execute({ sql: `SELECT purged_at FROM workspaces WHERE id=?`, args: [workspaceId] })).rows[0]?.purged_at != null;
   const plan: Plan = { mode: (row.mode as ConversionMode) ?? "uniform", k: Number(row.from_usd) / Number(row.to_usd), fromUsd: Number(row.from_usd), cutoverAt: row.cutover_at == null ? null : Number(row.cutover_at) };
-  const figures = ws
+  const figures = ws && !purged
     ? await convertTenantFigures(ws, { factorAt: tenantFactorAt(plan), conversionId: String(row.id), dryRun: false, reverses: row.reverses == null ? null : String(row.reverses) })
     : [];
   await platformDb().execute({
@@ -446,7 +448,12 @@ export async function convertWorkspaceCredits(
   result.marks = await marksOf(workspaceId);
   if (!o.dryRun && (result.status === "converted" || result.status === "already")) {
     const { row } = await lastRowTx(platformDb(), workspaceId);
-    if (row) { result.tenant = await finishTenant(workspaceId, row, at); result.tenantDone = true; }
+    if (row) {
+      /* The workspace's own half can fail on its own (its database unreachable): recorded as not done,
+         which keeps paid work paused (settleLedgerUnit) until the run is repeated and finishes it. */
+      try { result.tenant = await finishTenant(workspaceId, row, at); result.tenantDone = true; }
+      catch (error) { result.tenantDone = false; result.reason = `The workspace's own figures are not converted yet: ${(error as Error).message}. Run it again.`; }
+    }
   }
   return result;
 }
@@ -488,7 +495,12 @@ export async function reverseWorkspaceCredits(workspaceId: string, o: Options = 
   }
   if (!o.dryRun && result.status === "reversed") {
     const { row } = await lastRowTx(platformDb(), workspaceId);
-    if (row) { result.tenant = await finishTenant(workspaceId, row, at); result.tenantDone = true; }
+    if (row) {
+      /* The workspace's own half can fail on its own (its database unreachable): recorded as not done,
+         which keeps paid work paused (settleLedgerUnit) until the run is repeated and finishes it. */
+      try { result.tenant = await finishTenant(workspaceId, row, at); result.tenantDone = true; }
+      catch (error) { result.tenantDone = false; result.reason = `The workspace's own figures are not converted yet: ${(error as Error).message}. Run it again.`; }
+    }
   }
   return result;
 }
