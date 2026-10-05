@@ -70,7 +70,7 @@ the balances. The conversion ends the pause.
    ```js
    const d = await (await fetch("/api/admin/invites")).json();
    console.table(d.workspaces.filter((w) => !w.deletedAt).map((w) => ({
-     name: w.name, id: w.id, owner: w.owner?.email, house: Boolean(w.legacy),
+     name: w.name, id: w.id, owner: w.owner?.email, house: Boolean(w.house),
      balance: w.credits?.balance, granted: w.credits?.granted, used: w.credits?.used,
      bought: w.grants?.paid, given: w.grants?.free,
      jobs30d: w.spend30?.jobs ?? 0, running: w.spend30?.running ?? 0,
