@@ -137,7 +137,7 @@ export const OWNER_RUNS: Record<OwnerRunSurface, OwnerRun> = {
   cast: {
     eyebrow: "Cast · Identity",
     line: "Identity builds here ran on a connected account.",
-    alternative: { type: "image", what: "Reference stills in Gen, on Studio image engines", action: "Open Gen · Images" },
+    alternative: { type: "image", what: "Reference stills in Make, on Studio image engines", action: "Open Make · Images" },
   },
   workflows: {
     eyebrow: "Connected workflows",

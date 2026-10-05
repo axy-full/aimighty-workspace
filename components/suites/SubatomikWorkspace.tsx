@@ -161,7 +161,7 @@ export default function SubatomikWorkspace({
   /** The connected-account form's quote input, when these pages ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
   onConnectedInput?: (input: ConsumerGenjutsuInput | null) => void;
 } = {}) {
-  usePageTitle(embedded ? null : "Subatomik Viral Studio");
+  usePageTitle(embedded ? null : "Social");
   const session = useSession(),
     query = useSearchParams(),
     captured = useSuiteProject();

@@ -202,14 +202,14 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   const result = page.getByTestId("history-result");
   await expect(result).toHaveCount(1, { timeout: 30_000 });
   await expect(result).toContainText("Motion Transfer · 720p");
-  for (const action of ["Recreate", "Compare", "Send to Edit"]) await expect(result.getByRole("button", { name: action })).toBeEnabled();
+  for (const action of ["Open in Make", "Compare", "Send to Edit"]) await expect(result.getByRole("button", { name: action })).toBeEnabled();
   await expect(result.getByTestId("history-take-download")).toHaveAttribute("href", /\?download=1$/);
   await result.getByRole("button", { name: "Compare" }).click();
   const compare = page.getByRole("dialog", { name: "Compare" });
   await expect(compare.locator("video")).toHaveCount(2);
   await compare.getByRole("button", { name: "Close" }).click();
   /* Recreate brings the same inputs back, priced again before anything runs. */
-  await result.getByRole("button", { name: "Recreate" }).click();
+  await result.getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");

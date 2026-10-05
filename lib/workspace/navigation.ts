@@ -260,7 +260,7 @@ export function generateAvailability(
   state: Pick<AppState, "page" | "selKind" | "selId" | "lists">,
   connected: boolean,
 ): Availability {
-  if (state.page !== "rig") return { enabled: false, reason: "Generate works on a shot in Rig." };
+  if (state.page !== "rig") return { enabled: false, reason: "Make works on a shot on the Board." };
   const shots = state.lists.shots;
   if (shots !== null && shots.length === 0) return { enabled: false, reason: "Add a shot before generating." };
   if (state.selKind !== "shot" || !state.selId || (shots !== null && !shots.some((s) => s.id === state.selId)))

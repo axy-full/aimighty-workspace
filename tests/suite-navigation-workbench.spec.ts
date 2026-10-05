@@ -90,11 +90,11 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
     rooms.getByRole("link", { name: "Library", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   const dock = page.getByRole("navigation", {
-    name: "Particl Production Studio pages",
+    name: "Studio pages",
     exact: true,
   });
   await expect(
-    dock.getByRole("link", { name: "Rig", exact: true }),
+    dock.getByRole("link", { name: "Board", exact: true }),
   ).toHaveAttribute("href", suiteHref("particl", project.id, "canvas"));
   for (const suite of SUITES)
     await expect(
@@ -245,7 +245,7 @@ test("billing retains scoped suite navigation while checkout stays unavailable",
       .getByRole("link", { name: "Make", exact: true }),
   ).toHaveAttribute("href", "/generate?project=remembered-billing-draft");
   await expect(
-    page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true }),
+    page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Ads", exact: true }),
   ).toHaveAttribute("href", suiteHref("moleculr", "remembered-billing-draft"));
   await page.keyboard.press("Escape");
   expect(

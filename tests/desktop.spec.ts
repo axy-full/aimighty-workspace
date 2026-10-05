@@ -220,7 +220,7 @@ test("four nav items, a balance, and Usage / Settings only behind the avatar", a
   await settle(page);
   const header = page.locator("header").first();
   const nav = header.getByRole("navigation", { name: "Sections" });
-  await expect(nav.getByRole("link")).toHaveText(["Make", "Projects", "Rig", "Library"]);
+  await expect(nav.getByRole("link")).toHaveText(["Make", "Projects", "Board", "Library"]);
   await expect(nav.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
   // Usage and Settings are not in the nav…
   await expect(nav.getByRole("link", { name: /usage|settings/i })).toHaveCount(0);

@@ -1,5 +1,5 @@
 /**
- * The four items (design/particl-graphite/README.md §1): Make · Productions · Rig
+ * The four items (design/particl-graphite/README.md §1): Make · Productions · Board
  * · Library. Usage and Settings live in the account menu, and nowhere else.
  *
  * Each item's destination is its v2 route once that step has landed (§0);
@@ -9,7 +9,7 @@
  * replaces them, so the nav is right on every screen, old or new.
  */
 export type NavItem = {
-  label: "Make" | "Projects" | "Rig" | "Library";
+  label: "Make" | "Projects" | "Board" | "Library";
   /** Where the item goes. `production` is the current production's id, if there is one. */
   href: (ctx: { production: string | null }) => string;
   match: (path: string) => boolean;
@@ -29,7 +29,7 @@ export const NAV: readonly NavItem[] = [
     match: (p) => starts(p, "/projects", "/productions", "/shots", "/takes", "/canvas", "/dashboard") && !p.includes("/rig"),
   },
   {
-    label: "Rig",
+    label: "Board",
     href: ({ production }) => (production ? `/rig/canvas/new?project=${encodeURIComponent(production)}` : "/productions"),
     match: (p) => starts(p, "/rig", "/elements") || p.includes("/rig"),
   },
@@ -40,7 +40,7 @@ export const NAV: readonly NavItem[] = [
   },
 ];
 
-/** The phone's dock (design/particl-graphite/README.md, board M1): `Make · PRODS · Rig · Library` — the four nav items, Productions written short. */
+/** The phone's dock (design/particl-graphite/README.md, board M1): `Make · PRODS · Board · Library` — the four nav items, Productions written short. */
 export const DOCK: readonly { label: NavItem["label"]; short: string; href: NavItem["href"]; match: (path: string) => boolean }[] = NAV.map((n) => ({
   label: n.label, short: n.label, href: n.href, match: n.match,
 }));
