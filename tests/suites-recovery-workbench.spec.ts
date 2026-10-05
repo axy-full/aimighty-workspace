@@ -116,7 +116,7 @@ test("the Rig's own library pages on with Load more, from the same store as the 
 
 test("Recreate on a music take opens Gen on Audio with its prompt; a dialogue says where it is made", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?view=gen", { generations: [...takes, ...sounds] });
+  const { errors } = await open(page, "/suites?make=recent", { generations: [...takes, ...sounds] });
   const gen = page.getByTestId("gen-view");
   const menu = page.getByTestId("context-menu");
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_talk']").click({ button: "right" });
@@ -134,7 +134,7 @@ test("Recreate on a music take opens Gen on Audio with its prompt; a dialogue sa
 
 test("Recreate refills Gen while Gen is open, with that take's own inputs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?view=gen");
+  const { errors } = await open(page, "/suites?make=recent");
   const gen = page.getByTestId("gen-view");
   await expect(gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_harbour']")).toBeVisible();
   const menu = page.getByTestId("context-menu");
@@ -142,7 +142,8 @@ test("Recreate refills Gen while Gen is open, with that take's own inputs", asyn
   await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("harbour at dawn");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Harbour at dawn");
-  /* Again, from the same open Gen: the composer changes at once. */
+  /* Again, from the same open Make (its Recent tab): the composer changes at once. */
+  await page.getByTestId("make-tab-recent").click();
   await gen.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_alley']").click({ button: "right" });
   await menu.getByRole("menuitem", { name: "Recreate" }).click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("Neon alley in the rain");

@@ -218,7 +218,8 @@ test("a draft that could not be read says Try again, never Retry (Deliver's tool
   let down = true;
   await page.route(/\/api\/workbench\/projects\?id=/, (route) => (down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
   await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Studio" }).click();
+  /* The project's segment opens its Studio pages (header option B). */
+  await page.getByRole("tablist", { name: "Suites" }).locator('[data-suite-tab="project"]').click();
   await closeSuitesMenu(page);
   const strip = page.getByRole("navigation", { name: "Pages" });
   for (const [tab, alert] of [[/Deliver/, "[data-testid='stage-work'] [role='alert']"], [/Edit & Sound/, ".pxw-edit [role='alert']"]] as const) {

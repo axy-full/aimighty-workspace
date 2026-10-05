@@ -81,6 +81,7 @@ function Room({ project, room, scope, projectsError, onRetry }: { project: Proje
       /* The solution becomes Gen's prompt, whether Gen is open yet or not: it is handed over in memory (lib/shell/gen-preset),
          with nothing stored or copied that the browser could refuse, so the toast can say it is there. */
       sendGenPreset({ prompt: routed.prompt ?? "", note: "Crew · solution" });
+      /* Crew is a view of its own: Make opens over it. */
       confirm(CONFIRM.crewGen(), { go: true });
       return;
     }

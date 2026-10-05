@@ -18,6 +18,7 @@ import {
   goHome,
   switchSuite,
   toSearch,
+  withKept,
   withLibFilter,
   withLists,
   WORKSPACE_PATH,
@@ -120,14 +121,7 @@ const DEFAULT_TARGET: UrlTarget = { path: WORKSPACE_PATH, keep: [] };
 
 function writeUrl(state: AppState, mode: "push" | "replace", target: UrlTarget = DEFAULT_TARGET) {
   if (typeof window === "undefined") return;
-  let search = toSearch(state);
-  if (target.keep.length) {
-    const next = new URLSearchParams(search);
-    const current = new URLSearchParams(window.location.search);
-    for (const key of target.keep) { const v = current.get(key); if (v != null) next.set(key, v); }
-    const text = next.toString();
-    search = text ? "?" + text : "";
-  }
+  const search = withKept(toSearch(state), window.location.search, target.keep);
   if (window.location.pathname === target.path && window.location.search === search) return;
   const url = target.path + search + window.location.hash;
   if (mode === "push") window.history.pushState(null, "", url);

@@ -249,7 +249,7 @@ test("Prompt attach keeps the files that arrived when one fails, and the compose
     return route.fallback();
   });
 
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   await page.getByTestId("gen-attach-file").setInputFiles([
     { name: "look.png", mimeType: "image/png", buffer: await png("#2b6a4a") },
