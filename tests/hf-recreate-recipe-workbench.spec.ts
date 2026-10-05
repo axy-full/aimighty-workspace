@@ -159,7 +159,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   const inspector = await inspect(page, "gen_harbour");
   await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled();
   await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Make.");
 
   /* The words as typed, the model, and each setting, applied in the open composer. */
   const card = page.getByTestId("gen-recipe");
@@ -351,7 +351,7 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
 
   let inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-settings-only").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Make.");
   const card = page.getByTestId("gen-recipe");
   await expect(card).toHaveAttribute("data-settings-only", "true");
   await expect(card).toContainText("Settings from");

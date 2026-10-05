@@ -47,7 +47,7 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Make.");
   /* No Open: Gen is where it landed (lib/shell/confirmations). */
   await expect(page.getByTestId("toast-open")).toHaveCount(0);
   /* Already in Gen, the Inspector's overlay closes by itself so the composer is what is seen. */

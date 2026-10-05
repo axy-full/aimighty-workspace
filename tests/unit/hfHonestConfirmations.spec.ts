@@ -88,7 +88,7 @@ test("a Crew solution becomes a shot named by its words before the dash, cut at 
 test("Crew › → Rig says Rig and opens that shot; it never claims a Storyboards frame", () => {
   const rig = CONFIRM.crewRig("Cut on the drop", "node-abc");
   expect(rig.text).toBe("Added to the Board · Cut on the drop");
-  expect(rig.text).not.toMatch(/board|frame/i);
+  expect(rig.text).not.toMatch(/storyboard|frame/i);
   expect(rig.open).toEqual({ to: "page", suite: "studio", page: "rig", select: { kind: "shot", id: "node-abc" } });
   expect(CONFIRM.crewRig("Cut on the drop").open).toEqual({ to: "page", suite: "studio", page: "rig" });
   /* Open in Gen: Gen fills its prompt, so nothing is said about pasting or copying. */
@@ -145,10 +145,10 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(CONFIRM.castTaken(capped).text).toBe("The agent added 1 entry to Cast · 2 left out · the list is full");
 });
 
-test("Recreate's toasts say what reached Gen, in one line, naming Gen, where they land", () => {
+test("Recreate's toasts say what reached Make, in one line, naming Make, where they land", () => {
   /* Recreate goes to Gen (lib/shell/use-asset-actions › useRecreate), so its toast carries no Open; Gen shows the recipe, and its Generate button the price. */
-  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
-  expect(SAY.settingsOnly("Fox")).toBe("Fox’s model and settings are in Gen.");
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Make.");
+  expect(SAY.settingsOnly("Fox")).toBe("Fox’s model and settings are in Make.");
   for (const text of [SAY.recreate("Fox"), SAY.settingsOnly("Fox")]) {
     expect(text).toContain(destinationName({ to: "gen" }));
     expect(text).not.toMatch(/seed|quoted|price/i);
