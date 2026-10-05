@@ -38,12 +38,11 @@ const TOKEN: TenantToken = { id: "tok_1", name: "a token", scope: "render", capU
 
 type Handler = (req: Request) => Promise<Response>;
 type Route = { GET: Handler; POST: Handler };
-function routeFor(ws: TenantWorkspace, who: { user: TenantUser | null; token?: TenantToken }): Route {
+async function routeFor(ws: TenantWorkspace, who: { user: TenantUser | null; token?: TenantToken }): Promise<Route> {
+  const auth = await import("../../lib/auth");
+  const { runInTenant } = await import("../../lib/tenant");
   return loadRouteModule<Route>("app/api/demo/sample/route.ts", {
-    "@/lib/auth": {
-      ...require("../../lib/auth"),
-      withTenant: (fn: Handler) => (req: Request) => import("../../lib/tenant").then(({ runInTenant }) => runInTenant(ws, () => fn(req), who)),
-    },
+    "@/lib/auth": { ...auth, withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), who) },
   });
 }
 const scopeOf = (ws: TenantWorkspace, user: TenantUser) => `particl-active-${ws.id}-${user.id}`;
@@ -95,20 +94,20 @@ test("the owner builds through the route; a member, a token and a wrong scope or
   await (await import("../../lib/tenant")).runInTenant(ws, async () => {
     const made = await finishedProduction(OWNER.id);
     const before = await counts(db());
-    const asMember = routeFor(ws, { user: MEMBER });
+    const asMember = await routeFor(ws, { user: MEMBER });
     expect((await post(asMember, ws, MEMBER, { action: "mark", draftId: made.draftId })).status).toBe(403);
-    const asToken = routeFor(ws, { user: OWNER, token: TOKEN });
+    const asToken = await routeFor(ws, { user: OWNER, token: TOKEN });
     const refused = await post(asToken, ws, OWNER, { action: "mark", draftId: made.draftId });
     expect(refused.status).toBe(403);
     expect((await post(asToken, ws, OWNER, { action: "undo" })).status).toBe(403);
     expect((await post(asToken, ws, OWNER, { action: "open" })).status).toBe(403);
-    const asOwner = routeFor(ws, { user: OWNER });
+    const asOwner = await routeFor(ws, { user: OWNER });
     expect((await post(asOwner, ws, OWNER, { action: "mark", draftId: made.draftId }, { "X-Workbench-Scope": "particl-active-other-u" })).status).toBe(409);
     expect((await post(asOwner, ws, OWNER, { action: "mark", draftId: made.draftId }, { Origin: "https://evil.test" })).status).toBe(403);
     expect((await post(asOwner, ws, OWNER, { action: "nonsense" })).status).toBe(400);
     expect(diff(before, await counts(db()))).toEqual({});
     /* Signed out: no user in the store. */
-    const anon = routeFor(ws, { user: null });
+    const anon = await routeFor(ws, { user: null });
     expect((await post(anon, ws, OWNER, { action: "mark", draftId: made.draftId })).status).toBe(401);
     expect((await get(anon)).status).toBe(401);
 
@@ -123,9 +122,9 @@ test("GET answers any member in the workspace with the sample's board, and nothi
   const ws = workspace();
   await (await import("../../lib/tenant")).runInTenant(ws, async () => {
     const made = await finishedProduction(OWNER.id);
-    const asMember = routeFor(ws, { user: MEMBER });
+    const asMember = await routeFor(ws, { user: MEMBER });
     expect(await (await get(asMember)).json()).toEqual({ board: null });
-    await post(routeFor(ws, { user: OWNER }), ws, OWNER, { action: "mark", draftId: made.draftId });
+    await post(await routeFor(ws, { user: OWNER }), ws, OWNER, { action: "mark", draftId: made.draftId });
     const res = await get(asMember);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const { board } = await res.json();
@@ -133,7 +132,7 @@ test("GET answers any member in the workspace with the sample's board, and nothi
     expect(board.line).toBe("Sample production · nothing here spends credits");
     expect(board.cast.map((c: { line: string }) => c.line)).toEqual(["Lead · ivory suit, short dark bob"]);
     /* A token may read it too: reading spends nothing. */
-    expect((await get(routeFor(ws, { user: MEMBER, token: { ...TOKEN, scope: "read" } }))).status).toBe(200);
+    expect((await get(await routeFor(ws, { user: MEMBER, token: { ...TOKEN, scope: "read" } }))).status).toBe(200);
   });
 });
 
@@ -143,8 +142,8 @@ test("a member opens their own copy: the owner's draft in the same workspace, it
   const { platformDb } = await import("../../lib/platform");
   await (await import("../../lib/tenant")).runInTenant(ws, async () => {
     const made = await finishedProduction(OWNER.id);
-    await post(routeFor(ws, { user: OWNER }), ws, OWNER, { action: "mark", draftId: made.draftId });
-    const asMember = routeFor(ws, { user: MEMBER });
+    await post(await routeFor(ws, { user: OWNER }), ws, OWNER, { action: "mark", draftId: made.draftId });
+    const asMember = await routeFor(ws, { user: MEMBER });
     const platformBefore = await counts(platformDb()), tenantBefore = await counts(db());
 
     const first = await (await post(asMember, ws, MEMBER, { action: "open" })).json();
@@ -160,11 +159,12 @@ test("a member opens their own copy: the owner's draft in the same workspace, it
     expect(again).toMatchObject({ created: false, revision: first.revision });
     expect(again.project.id).toBe(first.project.id);
     const other = person("u_other");
-    const theirs = await (await post(routeFor(ws, { user: other }), ws, other, { action: "open" })).json();
+    const theirs = await (await post(await routeFor(ws, { user: other }), ws, other, { action: "open" })).json();
     expect(theirs.project.id).not.toBe(first.project.id);
     /* Racing presses make one copy. */
     const racer = person("u_racer");
-    const racing = await Promise.all([1, 2, 3].map(() => post(routeFor(ws, { user: racer }), ws, racer, { action: "open" }).then((r) => r.json())));
+    const asRacer = await routeFor(ws, { user: racer });
+    const racing = await Promise.all([1, 2, 3].map(() => post(asRacer, ws, racer, { action: "open" }).then((r) => r.json())));
     expect(new Set(racing.map((r) => r.project.id)).size).toBe(1);
 
     /* Copies are drafts and their shot mappings, and nothing else: no take, no ledger row, no meter event. */
@@ -182,7 +182,7 @@ test("opening needs a sample, and a fresh mark gives fresh copies; the copy of a
   const ws = workspace();
   await (await import("../../lib/tenant")).runInTenant(ws, async () => {
     const made = await finishedProduction(OWNER.id);
-    const asOwner = routeFor(ws, { user: OWNER }), asMember = routeFor(ws, { user: MEMBER });
+    const asOwner = await routeFor(ws, { user: OWNER }), asMember = await routeFor(ws, { user: MEMBER });
     expect((await post(asMember, ws, MEMBER, { action: "open" })).status).toBe(404);
     await post(asOwner, ws, OWNER, { action: "mark", draftId: made.draftId });
     const first = (await (await post(asMember, ws, MEMBER, { action: "open" })).json()).project.id;
