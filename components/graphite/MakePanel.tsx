@@ -11,7 +11,12 @@ import { DEFAULT_ENHANCER, ENHANCER_LABEL, isRawPrompt, type EnhanceMode } from 
 import { displayModelName } from "@/lib/models";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
 import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
-import { useReferenceInbox } from "@/lib/shell/reference-inbox";
+import { sendReference, useReferenceInbox } from "@/lib/shell/reference-inbox";
+import { SAY, referenceRole } from "@/lib/shell/assets";
+import { useRecreate } from "@/lib/shell/use-asset-actions";
+import { buttonFigure, figureWords, makeFigure, type MakeFigure } from "@/lib/shell/make-price";
+import { RECENT_CHIPS, askAgain, againAsk, canAgain, recentEmpty, recentEntries, recentMeta, type AgainPrice, type RecentChip } from "@/lib/shell/make-recent";
+import { MakeFigureView, useFigureTitle } from "./MakeFigure";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
@@ -50,9 +55,6 @@ const PLACEHOLDER: Record<ComposerType, string> = {
 };
 /* What the model sheet lists: engines on this workspace's credits (API-key and direct engines only). */
 const CATALOGUE = "Studio engines";
-const FILTERS = ["All", "Images", "Video", "Audio"] as const;
-type Filter = (typeof FILTERS)[number];
-const FILTER_KIND: Record<Filter, ReturnType<typeof entryKind> | "all"> = { All: "all", Images: "image", Video: "video", Audio: "audio" };
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${job.model.name} take`;
 /** A sound Cinema Studio can take as a reference: a WAV uploaded to this workspace (the provider documents WAV; generated sounds are MP3). */
@@ -87,6 +89,64 @@ type RecipeCard = {
 };
 
 /**
+ * What sits under a Recent card's name ("Make frames" 4): the engine by its whole name and what it was made at, the figure it
+ * settled at ("Nano Banana 2 · 1 cr"), then Again with the live price of running it again and Use as reference. Again puts the
+ * recipe back in Make to be priced there; it is the price of that run, read from the server for the take's own settings, and
+ * pressing it spends nothing (Make's button does). A failed take's Again is Retry, the paid re-render.
+ */
+function RecentFoot({ entry, models, aspect, fetcher, prices, onAgain, onReference }: {
+  entry: LibraryEntry; models: readonly ComposerModel[]; aspect: string | null;
+  fetcher: (url: string, init?: RequestInit) => Promise<Response>;
+  prices: { current: Map<string, Promise<AgainPrice | null>> };
+  onAgain: (entry: LibraryEntry) => void; onReference: (entry: LibraryEntry) => void;
+}) {
+  const ask = useMemo(() => againAsk(entry, models, aspect), [entry, models, aspect]);
+  const askKey = ask?.key ?? null;
+  const [answer, setAnswer] = useState<{ key: string; price: AgainPrice | null } | null>(null);
+  useEffect(() => {
+    if (!ask) return;
+    let live = true;
+    let pending = prices.current.get(ask.key);
+    if (!pending) {
+      const asked = ask;
+      const made = askAgain(asked, fetcher).catch(() => null);
+      pending = made;
+      prices.current.set(asked.key, made);
+      /* A read that came back with no figure is asked again next time, not remembered as "no price". */
+      void made.then((value) => { if (value === null && prices.current.get(asked.key) === made) prices.current.delete(asked.key); });
+    }
+    void pending.then((price) => { if (live) setAnswer({ key: ask.key, price }); });
+    return () => { live = false; };
+    // The key names every input the read prices.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askKey, fetcher, prices]);
+  const price = answer && answer.key === askKey ? answer.price : null;
+  const again = price ? makeFigure(price.credits, price.approximate) : null;
+  const againTitle = useFigureTitle(again);
+  const settled = entry.take.credits;
+  const shown = settled != null && settled > 0 ? makeFigure(settled) : null;
+  const referable = referenceRole(entry.media) !== null;
+  const rerun = canAgain(entry);
+  const word = entry.take.status === "failed" ? "Retry" : "Again";
+  return (
+    <>
+      <span className="gx-make-card-line" data-testid="make-take-meta">{recentMeta(entry)}{shown ? <> · <MakeFigureView figure={shown} /></> : null}</span>
+      {rerun || referable ? (
+        <span className="gx-make-card-actions">
+          {rerun ? (
+            <button type="button" className="gx-hbtn" onClick={() => onAgain(entry)} title={againTitle} data-testid="make-again" data-priced={again ? "" : undefined}
+              aria-label={again ? `${word} · ${figureWords(again)}` : word}>
+              {word}{again ? <> · <MakeFigureView figure={again} /></> : null}
+            </button>
+          ) : null}
+          {referable ? <button type="button" className="gx-hbtn" onClick={() => onReference(entry)} data-testid="make-use-reference">Use as reference</button> : null}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Make (design/particl-graphite/README.md § 3.2): a 440 px panel over any
  * screen — full width on a phone — that was the Gen page. Its Make tab is the
  * composer the handoff draws (type, words, references, the engine line with
@@ -114,7 +174,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const opened = shell.make && shell.make !== "recent" ? shell.make : shell.lastMake;
   const [initialType] = useState(opened);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make" });
-  const { state, model, offered, settings, blocked: waiting, buttonLabel, buttonParts, submitting } = composer;
+  const { state, model, offered, settings, blocked: waiting, buttonParts, submitting } = composer;
   /* Make's own words for an empty prompt; every other reason is the composer's. */
   const blocked = waiting === EMPTY_PROMPT ? "Say what to make." : waiting;
   const recentTab = shell.make === "recent";
@@ -151,6 +211,9 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
     else if (state.type !== was.type) follow.current.setMake(state.type);
   }, [asked, state.type]);
   const scopedFetch = useScopedFetch(scope);
+  /* What an Again costs, asked of the server once per recipe while this panel is open (Recent's cards read it; nothing here quotes a send). */
+  const againPrices = useRef(new Map<string, Promise<AgainPrice | null>>());
+  const recreate = useRecreate();
   const [sheet, setSheet] = useState(false);
   /* What this browser remembers for the sheet (recent picks), read fresh each time it opens. */
   const [memory, setMemory] = useState<PickerMemory>(EMPTY_MEMORY);
@@ -168,7 +231,11 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
     [composer.project?.aspect, state.picks, state.references, state.seconds, draftTakes]);
   const priceKey = rateQuery(priceAt);
   const [sheetRates, setSheetRates] = useState<SheetRates | null>(null);
-  const wantsRates = sheet && needsPricedRead(offered, priceAt);
+  /* A sound or a piece of music is priced by its length, not its words: before any are typed its price is the rate list's, read
+     here once (the same read the sheet makes), so the button and the engine line carry a price from the start. Speech is priced by
+     its words and shows none until there are some. */
+  const idleSound = state.type === "audio" && !state.prompt.trim() && (model?.audioTask === "sound" || model?.audioTask === "music");
+  const wantsRates = (sheet && needsPricedRead(offered, priceAt)) || idleSound;
   const ratesKey = sheetRates?.key ?? null;
   useEffect(() => {
     if (!wantsRates || ratesKey === priceKey) return;
@@ -183,9 +250,12 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const rates = sheetRates?.key === priceKey ? sheetRates : null;
   const readingRates = wantsRates && !rates;
   const priceOf = (m: ComposerModel) => rowPrice(m, null, priceAt, rates, readingRates);
+  const takesCount = settings.draft ? 1 : Math.max(1, state.count);
+  const idleRate = idleSound && rates ? (model?.audioTask === "sound" ? rates.audio?.sound : rates.audio?.music) ?? null : null;
+  const idleOne = idleRate && (idleRate.seconds == null || idleRate.seconds === composer.seconds) ? idleRate.credits : null;
   const [wellError, setWellError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
-  const [filter, setFilter] = useState<Filter>("All");
+  const [filter, setFilter] = useState<RecentChip>("All");
   const anchored = state.references.some((r) => r.kind === "video") || (state.type === "video" && state.references.length > 0);
   const enhancer = useEnhancer({
     prompt: state.prompt, mode: state.type as EnhanceMode, model: model?.id ?? null,
@@ -346,6 +416,17 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   /* The Library's `+`, a right-click or a drop on any page lands here as a reference. */
   const inbox = useCallback((letter: { id: string }) => { void drop(letter.id); }, [drop]);
   useReferenceInbox(inbox);
+  /* Recent's "Use as reference": the same letter the Library's + sends, so the composer takes it as it takes a drop. Sound takes none,
+     so from Audio it comes back to Video first (the references are what the person asked for). */
+  const addAsReference = (entry: LibraryEntry) => {
+    const role = referenceRole(entry.media);
+    if (!role) { ws.toast("References are images and videos."); return; }
+    const type = state.type === "audio" ? "video" : state.type;
+    if (type !== state.type) dispatchType(type);
+    sendReference({ id: entry.take.id, name: entry.take.name });
+    setMake(type);
+    ws.toast(SAY.referenced(entry.take.name, role));
+  };
 
   /* A recreated take is not sent half-read: while its references are still being read, the composer holds a
      recipe without them, and a price for that is not the take's price. A citation of a reference that is gone
@@ -385,11 +466,10 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   /* A batch still being followed is drawn from the composer (below) until it is over; its takes are not drawn twice. */
   const liveBatches = composer.batches;
   const liveIds = useMemo(() => new Set(liveBatches.map((batch) => batch.id)), [liveBatches]);
-  /* By what the take is, not what rendered: a failed still is still under Images. */
-  const results = useMemo(() => {
-    const kind = FILTER_KIND[filter];
-    return items.filter((entry) => entry.take.kind === "GEN" && (kind === "all" || entryKind(entry) === kind) && !liveIds.has(String(entryBatch(entry)?.batchId ?? "")));
-  }, [items, filter, liveIds]);
+  /* Recent's chips: All (takes and uploads), Takes, Unfiled (a take on no shot), Filed (on a shot). */
+  const results = useMemo(
+    () => recentEntries(items, filter).filter((entry) => !liveIds.has(String(entryBatch(entry)?.batchId ?? ""))),
+    [items, filter, liveIds]);
   /* Takes 2–4 of one Generate sit together as one strip, in take order; a draft and its final as another (lib/variations.ts). */
   const cells = useMemo(() => groupTakes(results, entryBatch, entryDraft), [results]);
   const byGeneration = useMemo(() => new Map(items.map((entry) => [entry.take.sourceId, entry])), [items]);
@@ -447,6 +527,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const tile = (entry: LibraryEntry, label?: string) => (
     <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />} key={entry.take.id}>
       <TakeTile entry={entry} variant="grid" label={label} selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh}
+        meta={<RecentFoot entry={entry} models={composer.models} aspect={composer.project?.aspect ?? null} fetcher={scopedFetch} prices={againPrices} onAgain={recreate} onReference={addAsReference} />}
         onOpen={() => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); }} />
     </Boundary>
   );
@@ -540,7 +621,16 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
     ? [model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : model?.durations?.length ? `${settings.duration} s` : null]
     : state.type === "image" ? [settings.ratio, settings.resolution]
     : [settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter(Boolean) as string[];
-  const enginePrice = composer.credits != null ? `${composer.quote?.approximate ? "about " : ""}${composer.credits.toLocaleString("en-US")} cr` : null;
+  /* Every paid control carries the server's figure: the engine line one take's (the composer's live quote; a sound's rate before
+     any words), the button what its press approves (every take). Hovering either shows the dollars. */
+  const engineFigure: MakeFigure | null = composer.credits != null ? makeFigure(composer.credits, composer.quote?.approximate) : makeFigure(idleOne);
+  const buttonFig: MakeFigure | null = buttonFigure(composer.quote, composer.quoteKey, takesCount) ?? makeFigure(idleOne != null ? idleOne * takesCount : null);
+  const buttonTitle = useFigureTitle(buttonFig);
+  const engineTitle = useFigureTitle(engineFigure);
+  const buttonWords = figureWords(buttonFig);
+  const buttonName = buttonWords ? `${buttonParts.action} · ${buttonWords}` : buttonParts.action;
+  /* What every row's figure is at: the composer's own size and length for one take, so a row is never read at a size it does not name. */
+  const sheetBasis = [...engineSpec, takesCount > 1 ? "each take" : "one take"].join(" · ");
   const banner = projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null;
   const compose = mode === "edit" ? (
     <div className="gx-make-compose">
@@ -595,7 +685,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{model?.label ?? "Choose an engine"}</span>
           {engineSpec.map((part) => <span key={part} className="gx-make-engine-part">{part}</span>)}
-          {enginePrice ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price">{enginePrice}</span> : null}
+          {engineFigure ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price" title={engineTitle}><MakeFigureView figure={engineFigure} /></span> : null}
         </span>
         <span className="gx-make-change">Change</span>
       </button>
@@ -609,11 +699,12 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         {/* What it does, then what it costs: the price is its own run of text, so a narrow button (or a wide font)
             moves it whole onto a second line and never cuts it. The button is named by the whole label. */}
         <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(block) || submitting} aria-describedby={block ? "gx-gen-blocked" : undefined} onClick={generate} data-testid="gen-generate"
-          aria-label={submitting ? "Submitting…" : recipeWait ? "Make" : buttonLabel} data-priced={!submitting && !recipeWait && buttonParts.price ? "" : undefined}>
+          aria-label={submitting ? "Submitting…" : recipeWait ? "Make" : buttonName} title={!submitting && !recipeWait ? buttonTitle : undefined}
+          data-priced={!submitting && !recipeWait && buttonFig ? "" : undefined}>
           {submitting ? "Submitting…" : recipeWait ? "Make" : (
             <>
               <span className="gx-go-act">{buttonParts.action}</span>
-              {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
+              {buttonFig ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span><MakeFigureView figure={buttonFig} /></span> : null}
             </>
           )}
         </button>
@@ -742,14 +833,14 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
   const recentView = (
     <section className="gx-gen-results gx-make-recent" aria-label="Results" ref={resultsRef}>
       {banner}
-      <div className="gx-chips" role="group" aria-label="Result kind">
-        {FILTERS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
+      <div className="gx-chips" role="group" aria-label="Show" data-testid="make-recent-chips">
+        {RECENT_CHIPS.map((f) => <button key={f} type="button" className="gx-chip" aria-pressed={filter === f} onClick={() => setFilter(f)} data-testid={`make-recent-${f.toLowerCase()}`}>{f}</button>)}
       </div>
       {view.banner ? <LoadBanner banner={view.banner} onRetry={library.refresh} testId="gen-results-error" /> : null}
       {/* The composer keeps its prompt when the results throw; one bad take costs only its own tile. */}
       <Boundary what="Results" probe="gen-results" resetKey={`${filter}:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen-results" />}>
       <VirtualItems
-        className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ minColumnWidth: 180 }} gap={12} estimateRowHeight={190} scroll="ancestor"
+        className="gx-gen-grid" items={cells} getKey={(cell: TakeCell<LibraryEntry>) => (cell.kind === "one" ? cell.take.take.id : cell.kind === "draft" ? `draft:${cell.draftId}` : `batch:${cell.batchId}`)} layout={{ columns: 1 }} gap={12} estimateRowHeight={330} scroll="ancestor"
         before={<>
         {running ? (
           <div className="gx-asset gx-tile" data-testid="gen-running" data-face="live" data-done={running.tone === "green" || running.tone === "red"}>
@@ -806,7 +897,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
         )}
       />
       {!running && !pickedUp.length && !results.length && !liveBatches.length && view.empty ? <p className="gx-empty" data-testid="gen-results-empty">{project ? "Nothing generated in this project yet. What you make lands here, in Takes, and in Library › Assets." : "Open a project, or generate — the composer files a first project for you."}</p> : null}
-      {!running && !pickedUp.length && !results.length && !liveBatches.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">No {filter === "Images" ? "images" : filter === "Video" ? "video" : "audio"} generated in this project yet.</p> : null}
+      {!running && !pickedUp.length && !results.length && !liveBatches.length && made && !view.skeletons ? <p className="gx-empty" data-testid="gen-results-empty">{recentEmpty(filter)}</p> : null}
       </Boundary>
     </section>
   );
@@ -835,7 +926,7 @@ export function MakePanel({ scope, project, items, library, projects = "ready", 
       {sheet ? createPortal(
         <div className="gx-veil gx-veil--make" onClick={closeSheet} data-beside={beside ? "" : undefined} data-testid="model-sheet-veil">
           <ModelSheet label={`${TYPE_TAB[state.type]} models`} catalogue={CATALOGUE}
-            offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf}
+            offered={offered} recent={recent} selectedId={model?.id ?? null} priceOf={priceOf} basis={sheetBasis}
             loading={blocked === READING_MODELS}
             empty={!offered.length && blocked ? blocked : "No Studio engine is connected for this output."}
             /* The engine list itself is missing (a failed read): read it again. */

@@ -338,7 +338,9 @@ export function useComposer(options: {
     ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
-  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready");
+  /* A still or a clip is priced by its settings, not its words, so the price is read before anything is typed (Make shows it on the
+     button and the engine line from the start). Sound is priced by its words (speech), so it waits for them. */
+  const blockedForQuote = !open || !model || (Boolean(audioBody) && !state.prompt.trim()) || (options.projects != null && options.projects !== "ready");
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
