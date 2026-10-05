@@ -123,7 +123,7 @@ export type Shell = {
   /** Home: `?view=home`, or today's Studio overview. */
   goHome: () => void;
   /** The board: `?view=board`, with the kind, a region, the List view or a start. */
-  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string }) => void;
+  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
   goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
   /** Opens Atomik's panel (or "how"), with the words handed over; today's Atomik Agent page when the panel has not landed. */
@@ -416,12 +416,14 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     navigate("?view=home");
   }, [goSuite, navigate]);
 
-  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string } = {}) => {
+  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean } = {}) => {
     const q = new URLSearchParams({ view: "board" });
     if (opts.kind) q.set("kind", opts.kind);
     if (opts.region) q.set("region", opts.region);
     if (opts.list) q.set("list", "1");
     if (opts.start) q.set("start", opts.start);
+    /* Atomik's panel opens with the board in the same move: a second write right after this one would read the address as it was before it. */
+    if (opts.atomik && onRef.current && isLanded("atomik")) q.set("atomik", "1");
     navigate(`?${q}`);
   }, [navigate]);
 

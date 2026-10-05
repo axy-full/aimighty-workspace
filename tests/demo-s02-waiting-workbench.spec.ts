@@ -140,7 +140,10 @@ test("Start makes the project, checks the figure for it, and asks Atomik once wi
   expect(asks).toHaveLength(1);
   expect(asks[0]).toMatchObject({ action: "agent.plan", projectId: project.id, limit: figure, mode: "ask", goal: "A lighthouse keeper's last night. Wind on the glass. · 16:9 · 30 s" });
   expect(String(asks[0].productionId)).not.toBe("");
-  await expect(page.getByTestId("home-brief")).toHaveValue("");
+  /* The board replaces Home on screen, with Atomik's panel docked beside it (one move, never back on Home). */
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  expect(new URL(page.url()).searchParams.get("view")).toBe("board");
+  expect(new URL(page.url()).searchParams.get("atomik")).toBe("1");
 });
 
 test("a higher figure for the new project is shown for another press, never spent; the next press asks at it", async ({ page }, info) => {

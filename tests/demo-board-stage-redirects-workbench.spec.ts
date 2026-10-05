@@ -51,7 +51,7 @@ async function seed(page: Page, on = false) {
   page.on("pageerror", (error) => problems.push(error.message));
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && (path === "/api/generate" || path.startsWith("/api/generate/"))) paid.push(path);
+    if (request.method() === "POST" && (path === "/api/generate" || (path.startsWith("/api/generate/") && !path.endsWith("/quote")))) paid.push(path);
   });
   return { project, problems, paid };
 }

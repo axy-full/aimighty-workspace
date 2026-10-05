@@ -170,7 +170,9 @@ test("a template makes the project at once with what the box holds, then opens t
   await expect(page).toHaveURL(new RegExp(`project=${project.id}`));
   await expect(page).toHaveURL(BOARD.ads);
   await expect(page.getByTestId("toast")).toContainText("A kettle on a stove is open");
-  /* The box is empty again, chips back to their defaults. */
+  /* The board is up (it replaces Home on screen); back on Home the box is empty again, chips back to their defaults. */
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  await openHome(page);
   await expect(page.getByTestId("home-brief")).toHaveValue("");
   await expect(page.locator('[data-testid="home-aspect"][aria-pressed="true"]')).toHaveText("16:9");
 });
@@ -189,7 +191,7 @@ test("the same template pressed again with an empty box reopens the project it m
   const film = await sent;
   expect(film).toMatchObject({ name: "Untitled film", aspect: "16:9", deliverables: "15 s", boardKind: "studio" });
   await expect(page).toHaveURL(BOARD.studio);
-  await expect(page.locator(`[data-project="${film.id}"]`)).toBeVisible();
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   await page.goto(HOME);
   await expect(page.locator(`[data-project="${film.id}"]`)).toBeVisible();
   await page.getByTestId("home-template-film").click();

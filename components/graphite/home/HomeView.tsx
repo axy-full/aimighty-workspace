@@ -163,8 +163,8 @@ export function HomeView({ scope, projects, status, error, onRetry, onPick, onCr
       const asked = await askAtomik(fetcher, { productionId: production.productionId, draftId: project.id, goal, limit: figure, requestId: crypto.randomUUID() });
       if ("error" in asked) { setStarted(project); setStartProblem(asked.error); return; }
       forget();
-      nav.openBoard("studio");
-      nav.openAtomik();
+      /* One move: the board with Atomik's panel docked beside it (two writes in a row would leave the second reading the address as it was). */
+      nav.openBoard("studio", undefined, true);
     } finally {
       busy.current = false;
       setPending(null);
