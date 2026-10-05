@@ -135,7 +135,7 @@
 /* ── Make with the new interface switched on (components/graphite/make/*; README § 3.2, "Make frames.dc.html").
    The aside keeps `.gx-make` above (its place, its width, the phone's full width) and adds `.gx-mk`. Sizes are the
    master's: words at 17 px in a 10 px box, 96 px reference tiles, a 14 px engine line with Change, a 36 px Make. ── */
-.gx .gx-make.gx-mk { right: var(--gx-dock-right, 0px); }
+.gx .gx-make.gx-mk { right: var(--board-dock, 0px); }
 .gx .gx-make.gx-mk[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
 .gx-mk-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
 .gx-mk-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }

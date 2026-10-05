@@ -30,7 +30,7 @@ export type MakeProps = {
  * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8):
  * a 440 px panel over any screen, full width on a phone. Its head is the title, Make | Recent and Close; its body is
  * the composer as the handoff draws it (Compose), Recent, or a quick tool. Left of whatever is docked at the right
- * edge (`--gx-dock-right`, set by a docked panel), and beside the Inspector's column when that is open.
+ * edge (`--board-dock`, set by the shell from the board's dock), and beside the Inspector's column when that is open.
  * The logic is useMake's, which the phone's simple Make shares.
  */
 export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null, balance, onBoard, listOpen = false }: MakeProps) {
