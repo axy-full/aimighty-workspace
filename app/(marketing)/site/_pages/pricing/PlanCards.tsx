@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { usd } from "@/lib/marketing/format";
-import { ACCESS_HREF } from "@/lib/marketing/links";
+import { ACCESS_HREF, SIGN_UP_HREF } from "@/lib/marketing/links";
 import s from "./pricing.module.css";
 
 /** One plan card, already worded on the server (planLines, PLAN_AUDIENCE). */
@@ -59,8 +59,8 @@ export default function PlanCards({ plans, discountPercent, children }: {
               <ul className={s.lines}>
                 {plan.lines.map((line) => <Line key={line} text={line} />)}
               </ul>
-              <a href={ACCESS_HREF} className={`mk-btn ${s.cta} ${hl ? "gx-primary" : "mk-btn--secondary"}`}>
-                {plan.id === "production" ? "Talk to us" : "Request access"}
+              <a href={plan.id === "production" ? ACCESS_HREF : SIGN_UP_HREF} className={`mk-btn ${s.cta} ${hl ? "gx-primary" : "mk-btn--secondary"}`}>
+                {plan.id === "production" ? "Talk to us" : "Sign up"}
               </a>
             </div>
           );

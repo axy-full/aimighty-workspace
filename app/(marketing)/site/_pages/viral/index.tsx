@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import SitePage from "@/components/marketing/SitePage";
 import { Cols, Fact, Grid, Section, SuiteHeader, Tile, Window } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { SIGN_UP_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Viral Studio",
+  title: "Social",
   description: "Recast motion and swap elements in footage you own: one 4–30 s source, ordered references, 480p to 1080p.",
 };
 
@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 const DIRECTIONS = ["Style", "Wardrobe", "Setting", "Product", "Recast"];
 
 const TILES: { tag: string; name: string; body: string }[] = [
-  { tag: "01 Motion Transfer", name: "Recast the motion",
+  { tag: "01 Motion transfer", name: "Recast the motion",
     body: `Take the motion from a source video and recast it with your own cast, location and product. Anything you do not describe stays exactly as filmed. Five creative directions to start from: ${DIRECTIONS.join(", ")}.` },
-  { tag: "02 Object Swap", name: "Swap one element",
+  { tag: "02 Object swap", name: "Swap one element",
     body: "A product, a garment, an object. Name what to replace; motion, lighting and framing stay as filmed." },
   { tag: "03 Sources", name: "Your own originals",
     body: "Nothing is fetched from a URL at generation time and nothing is re-encoded on the way in. Header bytes are read; pixels are never touched. Pull the start or end frame as a PNG." },
@@ -40,20 +40,20 @@ export default function ViralPage() {
   return (
     <SitePage active="viral">
       <SuiteHeader
-        eyebrow="04 · Subatomik Viral Studio"
+        eyebrow="03 · Social"
         title="Recast motion and swap elements in footage you own."
         lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 30 seconds, ordered references, 480p to 1080p."
         pages={viral.pages}
         cta={(
           <>
-            <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-            <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+            <a href={SIGN_UP_HREF} className="mk-btn gx-primary">Sign up</a>
+            <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
           </>
         )}
       />
 
       {/* The suite header already draws the hairline above this section. */}
-      <Section id="viral-studio" panel label="Viral Studio" style={{ borderTop: 0 }}>
+      <Section id="viral-studio" panel label="Social" style={{ borderTop: 0 }}>
         <Cols col={420} style={{ gap: "clamp(32px, 5vw, 72px)" }}>
           <Grid col={200}>
             {TILES.map(({ tag, name, body }) => (
@@ -61,7 +61,7 @@ export default function ViralPage() {
             ))}
           </Grid>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <Window path="particl.app / viral / history" src={shot("viral-history")} alt="Viral, History" width={924} height={540} />
+            <Window path="particl.app / social / history" src={shot("viral-history")} alt="Social, History" width={924} height={540} />
             <Grid col={140} style={{ gap: 10 }}>
               {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
             </Grid>

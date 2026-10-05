@@ -13,9 +13,9 @@ const COMPOSER_TILES: [string, string, string][] = [
   ["04 Settings", "Clamped to the engine", "Aspect, resolution, length by the second, audio on or off, one to four takes."],
   ["05 Results", "Progress rings", "Running jobs as rings, then finished takes, filtered All · Images · Video · Audio."],
   ["Edit", "Edit a finished clip", "A take or an upload, up to 8 image references and an edit direction."],
-  ["Finish", "Upscale in place", "Astra 2 for video and Topaz for stills. The original is kept; the upscale is a new take with its lineage."],
+  ["Finish", "Upscale in place", "Topaz upscale for video and stills. The original is kept; the upscale is a new take with its lineage."],
   ["Recover", "Nothing lost on reload", "Drafts, interrupted requests and lost responses come back as “Recover …”. Reusing a take loads its prompt; it never starts a job by itself."],
-  ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool in every suite is a preset that opens it pre-configured."],
+  ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool on every board is a preset that opens it pre-configured."],
 ];
 
 export default async function GenHome() {
@@ -33,23 +33,23 @@ export default async function GenHome() {
 
   return (
     <SitePage active="gen">
-      <section className="mk-hero" aria-label="Gen">
+      <section className="mk-hero" aria-label="Make">
         {/* eslint-disable-next-line @next/next/no-img-element -- the campaign still, full bleed */}
         <img className="mk-hero-img" src="/campaign/hero.webp" alt="" width={1672} height={941} fetchPriority="high" />
         <div className="mk-hero-shade" aria-hidden="true" />
         <div className="mk-hero-in">
-          <div className="mk-eyebrow">Gen · Video · Images · Audio</div>
+          <div className="mk-eyebrow">Make · Video · Images · Audio</div>
           <h1 className="mk-h1 mk-hero-title">The studio&rsquo;s own room for making shots.</h1>
-          <p className="mk-hero-lead">Five suites in one shell: Gen, the Production Studio, the Business Suite, the Viral Studio and the Atomik agent. Seedance, Kling and Nano Banana behind them.</p>
+          <p className="mk-hero-lead">One board per production. Set the look first, see every price on the button, and a person approves the spend. Seedance, Kling and Nano Banana behind it.</p>
           <HeroPrompt model={hero.id} label={hero.name} short={hero.short} />
         </div>
       </section>
 
-      <Section id="gen-composer" label="Gen composer">
-        <Head eyebrow="Gen · one composer" title="One composer for video, images and audio."
-          lead="Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
+      <Section id="gen-composer" label="Make">
+        <Head eyebrow="Make · one composer" title="One composer for video, images and audio."
+          lead="Every tool on every board is a preset that opens Make pre-configured; there is never a second interface." />
         <Cols col={420}>
-          <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Gen composer" width={924} height={540} />
+          <Window path="particl.app / make" src={shot("gen-composer-blank")} alt="Make, the composer" width={924} height={540} />
           <Grid col={220}>
             <Stat figure="4–30 s" name="Length by the second" body="Any whole second a video engine accepts. Ratio, resolution and audio clamp when you switch engines." />
             <Stat figure="SHA-256" name="References stay byte-identical" body="No resize, no re-encode, no metadata stripping. The rail shows ✓ BYTE-IDENTICAL when the hash matches." />

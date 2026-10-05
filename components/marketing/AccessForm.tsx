@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Dot } from "./ui";
 
 /**
- * The site's request-access form: the same endpoint and honeypot as the app's
+ * The site's invitation request: the same endpoint and honeypot as the app's
  * dialog (components/RequestAccess.tsx), inline instead of in a dialog. The
  * server keeps the request even when its email fails to send, so "Noted"
  * is true as soon as it answers ok.
@@ -53,8 +53,8 @@ export default function AccessForm() {
       {/* Off-screen and out of the tab order: only a bot fills this. */}
       <input tabIndex={-1} autoComplete="off" aria-hidden="true" className="mk-trap"
         value={company} onChange={(e) => setCompany(e.target.value)} />
-      <button type="submit" className="mk-btn gx-primary" disabled={busy}>
-        {busy ? "Sending…" : "Request access"}
+      <button type="submit" className="mk-btn mk-btn--secondary" disabled={busy}>
+        {busy ? "Sending…" : "Ask for an invitation"}
       </button>
       {error && <p className="mk-error" role="alert" style={{ flexBasis: "100%" }}>{error}</p>}
     </form>

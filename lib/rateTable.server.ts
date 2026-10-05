@@ -16,9 +16,11 @@ import type { RateTable, ModelRates, Unit } from "./rateTable";
  * Unrounded on purpose: rounding belongs at the end, once, on the total a
  * person is about to be charged. Rounding each rate first would overcharge a
  * three-second clip and undercharge a thirty-second one.
+ *
+ * `per` is the price of a credit, today's by default. Only the public site
+ * passes one: it states the published rate card (lib/marketing/prices.server.ts).
  */
-export function buildRateTable(unit: Unit): RateTable {
-  const per = creditUsd();
+export function buildRateTable(unit: Unit, per: number = creditUsd()): RateTable {
   const table = margins();
   const models: Record<string, ModelRates> = {};
 

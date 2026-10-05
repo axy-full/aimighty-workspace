@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AtomikMark } from "@/components/AtomikMark";
 import SitePage, { sitePrices } from "@/components/marketing/SitePage";
 import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
+import { SIGN_UP_HREF, SITE_SUITES } from "@/lib/marketing/site";
 import styles from "./atomik.module.css";
 
 export const metadata: Metadata = {
@@ -24,18 +24,16 @@ const AGENT_CHIPS = ["≤ 8 actions", "editable nodes", "≤ 6 visuals", "links 
    sits under the body, beside the one sentence it qualifies. */
 const TILES: { tag: string; name: string; body: string; badge?: string; gated?: string }[] = [
   { tag: "01 Agent", name: "Agent",
-    body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Its actions land on Rig as editable nodes." },
-  { tag: "Crew · 7 departments", name: "Crew",
+    body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Its actions land on the board as editable nodes." },
+  { tag: "Crew review · 7 departments", name: "Crew review",
     body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions." },
-  { tag: "02 Runs", name: "Runs",
+  { tag: "02 Activity", name: "Activity",
     body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place and its approved attempts, and recovery never re-dispatches." },
   { tag: "03 Recipes", name: "Recipes",
     body: "Every saved run keeps its plan: same stages, same inputs, same engines." },
-  { tag: "04 Builds", name: "Builds", badge: "Not yet runnable",
-    body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in. There is no build service yet." },
-  { tag: "05 Tools", name: "Tools & connections",
+  { tag: "04 Connections", name: "Connections",
     body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
-  { tag: "06 Models", name: "Models",
+  { tag: "05 Models", name: "Models",
     body: "Claude, OpenAI and Grok planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
 ];
 
@@ -73,8 +71,8 @@ export default async function AtomikPage() {
         lead="Describe the outcome; the agent plans it against this project and waits for you."
         pages={SITE_SUITES.find((s) => s.id === "atomik")!.pages}
         cta={<>
-          <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-          <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+          <a href={SIGN_UP_HREF} className="mk-btn gx-primary">Sign up</a>
+          <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
         </>}
       />
 
@@ -82,12 +80,12 @@ export default async function AtomikPage() {
         <Cols col={400} className={styles.agentCols}>
           <div className={styles.copy}>
             <Head eyebrow="01 · Agent" title="Describe the outcome. Approve each step."
-              lead="The agent reads the brief, script, direction and shot list, plus the references you select: uploaded text, images, and three sampled frames per video, six visuals at most. PDFs, audio and links count as descriptions only, and no URL is ever fetched. Its actions go to Rig as editable nodes." />
+              lead="The agent reads the brief, script, direction and shot list, plus the references you select: uploaded text, images, and three sampled frames per video, six visuals at most. PDFs, audio and links count as descriptions only, and no URL is ever fetched. Its actions go to the board as editable nodes." />
             <Chips items={AGENT_CHIPS} />
           </div>
 
           <figure className={styles.convo} aria-label="A sample request and the plan it returns">
-            <p className={styles.bubble}>Draft the opening of Dune Studies: script from the brief, six boards, four identity renders and one hero take.</p>
+            <p className={styles.bubble}>Draft the opening: script from the brief, six boards, four identity renders and one hero take.</p>
             <div className={styles.plan}>
               <div className={styles.planHead}>
                 <span className={styles.ring}><AtomikMark size={16} /></span>

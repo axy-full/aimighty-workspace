@@ -13,7 +13,7 @@ export function planLines(plan: PlanDef, inviteCredits: number): string[] {
     ? `${count(inviteCredits)} credits once`
     : `${count(plan.includedCredits)} credits a month`;
   const extra: Record<string, string[]> = {
-    invite: ["Every suite and engine"],
+    invite: ["Studio, Ads, Social and every engine"],
     studio: ["Review links", "Exports", "Post tools"],
     agency: ["Review links", "Exports and post tools", "Monthly statements"],
     production: ["Everything in Agency", "Workspace admin and audit", "Setup hours"],
