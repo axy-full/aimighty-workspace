@@ -235,7 +235,7 @@ for (const race of ["the Rig's save lands second", "the stage's save lands secon
 
     /* Settled, and back in the Rig: its note is there and nothing older is put back. */
     await page.waitForTimeout(2500);
-    await strip(page, /Rig$/).click();
+    await strip(page, /Board$/).click();
     await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
     await controls(page);
     await expect(directionNote(page)).toHaveValue(NOTE);
@@ -305,7 +305,7 @@ for (const gate of ["the cut's save lands first", "the Rig's save lands first"] 
     expect({ note: noteOf(settled.nodes.find((n) => n.id === "n1")), shots: settled.shots.length, linked: settled.nodes.find((n) => n.id === "n1")!.linked.length }).toEqual({ note: NOTE, shots: 1, linked: 1 });
     expect(repeated(ids(settled.nodes))).toEqual([]);
     expect(repeated(ids(settled.assets))).toEqual([]);
-    await strip(page, /Rig$/).click();
+    await strip(page, /Board$/).click();
     await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
     await controls(page);
     await expect(directionNote(page)).toHaveValue(NOTE);
@@ -2332,7 +2332,7 @@ test("back on the Rig after another page of this tab saved the draft: the Rig sh
   await expect.poll(async () => (await read()).project.production?.cast?.entries[0]?.description, { timeout: 30_000 }).toBe(DESCRIPTION);
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 30_000 });
   const sent = saves.length;
-  await strip(page, /Rig$/).click();
+  await strip(page, /Board$/).click();
   /* Mara's description is one of the Rig's briefs at once: read, not waited for from a save of the Rig's own. */
   await expect(page.getByTestId("rig-library-Briefs")).toHaveText("Briefs · 2", { timeout: 15_000 });
   expect(saves.length, "the Rig sent nothing to catch up").toBe(sent);

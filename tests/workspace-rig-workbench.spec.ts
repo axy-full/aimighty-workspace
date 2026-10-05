@@ -108,7 +108,7 @@ test("shot list, selection, edits that persist and a live estimate", async ({ pa
   await page.goto(rigUrl(project.id));
 
   /* The list renders from the saved draft, in draft order, with derived status. */
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.getByTestId("rig-list").locator(".pxw-rig-row")).toHaveCount(3);
   await expect(page.locator(".pxw-rig-row .pxw-rig-name")).toHaveText(["Opening wide", "The encounter", "Departure"]);
   await expect(page.locator(".pxw-rig-row .pxw-rig-num")).toHaveText(["01", "02", "03"]);
@@ -244,8 +244,8 @@ test("Generate re-quotes, dispatches a mocked render, files a take, and still wo
   const tabs = page.getByRole("navigation", { name: "Pages" });
   await tabs.getByRole("button", { name: /Takes/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await tabs.getByRole("button", { name: /Rig/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await tabs.getByRole("button", { name: /Board/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · / })).toBeEnabled();
   await page.locator("body").press("g");
   await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 30_000 }).toBe(2);

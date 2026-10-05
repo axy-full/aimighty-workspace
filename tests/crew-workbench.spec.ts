@@ -33,7 +33,7 @@ test("Crew review opens by its address, under the project; a round streams in at
   const suites = page.getByRole("tablist", { name: "Suites" });
   /* Crew left the header (option B) and ⌘K: its address opens it, and the project's segment stays lit over it. */
   await goCrewReview(page);
-  await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
+  await expect(page.getByTestId("suite-mark")).toHaveText("CREW REVIEW");
   await openSuitesMenu(page);
   await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Dune Studies", "Make", "Atomik"]);
   await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");

@@ -227,7 +227,7 @@ test("plans without their page's data are not runnable and say why", async ({ pa
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const mock = await setup(page);
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=rig");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Atomik/ }).click();
   const panel = page.getByTestId("atomik-panel");
   await expect(panel).toBeVisible();
@@ -247,7 +247,7 @@ test("plans without their page's data are not runnable and say why", async ({ pa
   await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Boards data");
   /* Astra without a saved scene: its own reason. */
   await page.keyboard.press("Escape");
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Astra/ }).click();
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /3D blocking/ }).click();
   await page.getByTestId("run-chip").click();
   await expect(page.getByTestId("atomik-reason")).toHaveText("Not runnable yet — save the scene in Astra first.");
   expect(mock.paidRequests).toEqual([]);

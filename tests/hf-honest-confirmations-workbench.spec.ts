@@ -83,7 +83,7 @@ async function roomWithSolutions(page: Page, overRig = false) {
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
   if (overRig) {
     await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
-    await expect(page.getByTestId("page-title")).toHaveText("Rig");
+    await expect(page.getByTestId("page-title")).toHaveText("Board");
     await expect(page.getByTestId("rig-list")).toBeVisible();
     /* Crew is reached from ⌘K (header option B). */
     await goCrewReview(page);
@@ -191,7 +191,7 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   expect(saved.nodes.find((n) => n.id === reply.nodeId)).toMatchObject({ title: "Cut on the drop", type: "scene" });
 
   await open.click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(toast).toHaveCount(0);
   await expect.poll(() => new URL(page.url()).searchParams.get("sel")).toBe(`shot:${reply.nodeId}`);
   /* The Rig read the saved draft again: the shot is listed, and it is the one selected. */
@@ -289,7 +289,7 @@ test("Crew › Open Rig on a phone whose page head stands taller: the shot still
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await stopped(page, row);
@@ -336,7 +336,7 @@ test("Crew › → Rig over the Rig page: the Rig reads the new shot when it is 
   const reply = await (await routed).json() as { nodeId: string };
   await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toContainText("Cut on the drop");
   await expect(row).toHaveAttribute("aria-pressed", "true");
@@ -361,7 +361,7 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
   const reply = await (await routed).json() as { nodeId: string };
   await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const rows = page.locator(".pxw-rig-row");
   await expect(rows, "the Rig has not read the new shot yet").toHaveCount(0);
   expect(reads, "the Rig is reading the saved draft again").toBeGreaterThan(0);
