@@ -18,7 +18,8 @@ credits, rows from after it are $0.80 credits.
 - rows from inside the $0.80 window are ×8. The window is `[cutoverAt, endAt)`:
   `endAt` is when an instance first ran at $0.10 (recorded on its own as
   `pausedSince`), so a sign-up or grant during the pause, or after, is never ×8;
-- a job is restated by the price it was reserved at (`meter_events.credit_usd`), a pack by its own dollars;
+- a job is restated by the price it was reserved at (`meter_events.credit_usd`), a pack by its own dollars.
+  A job reserved at $0.10 before the cutover keeps its credits, even if it settles after the merge;
 - **caps** (shot cap, production and project caps, API token ceilings, the
   platform's default production cap) carry no time they were set, so none is
   guessed: the dry run lists each, in credits and in dollars at both prices, and
@@ -34,6 +35,8 @@ converted until you decide `goodwill` or `apply` for it.
 paused for a few minutes while we update pricing. Nothing has been charged."
 Free actions keep working. Jobs already running finish and settle at the price
 they were approved at. Held takes stay held and are converted with the balances.
+A workspace that a reversal puts back in $0.80 credits stays paused on its own
+until it is converted again.
 
 ---
 
@@ -49,7 +52,13 @@ they were approved at. Held takes stay held and are converted with the balances.
    Deployments, the 3 October redeploy of `a381ee67`, "Ready" time, or
    `vercel ls --prod`. Use it as an ISO time, for example `2026-10-03T14:39:00Z`,
    to the minute or better.
-3. **Optional, but best: a full rehearsal on a copy.** Point a Preview's
+3. **Check that `CREDIT_USD` still reads 0.80** for Production (Vercel →
+   particlstudio → Settings → Environment Variables). The merge must build at
+   $0.80: on its first start, #524 records the price it runs at as the ledger's
+   unit. Merged after the variable was changed to 0.10, with no job ever charged
+   at $0.80, it would record $0.10 and convert nothing.
+   *Check:* the entry reads 0.80. If it reads 0.10, **stop** and ask Claude.
+4. **Optional, but best: a full rehearsal on a copy.** Point a Preview's
    database variables at the Turso copies and follow "Preview test" in PR #524's
    description. This runs the real conversion on a copy, with the real data.
 
@@ -62,8 +71,8 @@ Merge it. Production builds at `CREDIT_USD` = 0.80, and the ledger records
   ```js
   await (await fetch("/api/admin/credit-unit")).json()
   ```
-  It must show `creditUsd: 0.8` and `ledgerUnitUsd: 0.8`. If `ledgerUnitUsd`
-  is anything else, **stop**: roll back (below) and ask Claude.
+  It must show `creditUsd: 0.8`, `ledgerUnitUsd: 0.8` and `pausedSince: null`.
+  If `ledgerUnitUsd` is anything else, **stop**: roll back (below) and ask Claude.
 - particl.si looks and charges exactly as before.
 - *Roll back:* Vercel → Instant Rollback to the previous deployment. Nothing
   else changed.
@@ -94,6 +103,9 @@ Read it:
   with "Price changed; please ask again at US$0.10." Nobody is emailed.
 - **`firstOldPriceJobAt`:** the first job on record approved at $0.80. It should
   sit just after your `cutoverAt`; if it is earlier, recheck the time.
+- **`debts`:** listed apart, no decision needed. Balances already below zero
+  before the conversion: they owe the same dollars after, counted in more
+  credits.
 - **`dollarsShownDrop`:** listed apart, no decision needed. Workspaces whose
   balance reads fewer dollars after, because their credits were written at
   $0.10 and particl.si has shown them at $0.80 since 3 October. The "after" is
@@ -110,6 +122,10 @@ Read it:
   `internal`, `house`) so you can tell them apart.
 - **`comparison.uniform`:** what a flat ×8 would have given. Reference only;
   a real run is always per row.
+
+The dry run writes no balances. It does create the conversion's own record
+tables, and it runs each workspace database's pending migrations (the same ones
+any page in that workspace would run).
 
 *Roll back:* nothing to roll back.
 
@@ -131,6 +147,10 @@ From the moment that build is live, paid work is paused on its own.
 - The same entry targets Preview. Previews also run at 0.10 from their next
   build, and a preview whose database was seeded at 0.80 shows the pause until
   converted.
+- For a minute or two, instances of the previous build can finish requests
+  already under way and admit them at $0.80. Those jobs are converted by their
+  own price, so the figures stay exact, but the pause is not absolute: keep
+  steps 3 to 5 in one short sitting.
 - *Roll back:* set `CREDIT_USD` back to `0.80` and redeploy. Paid work resumes,
   and nothing was converted.
 
@@ -156,23 +176,44 @@ await (await fetch("/api/admin/credit-unit", {
 - `decisions` must cover **every** workspace under `needsDecision`, or the
   request is refused and nothing at all is written. Run the dry run again just
   before, so the list is current.
-- `endAt` defaults to `pausedSince`; give it only to override.
+- `endAt` defaults to `pausedSince` or, once a conversion has run, to the
+  window it recorded; give it only to override.
+- A real run refuses a window the record cannot have: `cutoverAt` before
+  2 October 15:33 UTC (when `CREDIT_USD` = 0.80 was set), in the future, or after
+  `firstOldPriceJobAt`; an `endAt` not after `cutoverAt`, or in the future.
 - A workspace half that failed (for example, its database was unreachable) is
   recorded, listed under `waiting`, and keeps paid work paused. Sending the
   same request again finishes it; converting twice converts once. If a
   workspace's own database is gone for good, add `skipTenant: ["<workspaceId>"]`
-  and it is marked skipped. A deleted workspace never holds the platform up.
-- Once the ledger counts in $0.10, a real run converts nothing more; it only
-  finishes or skips failed halves.
+  and it is marked skipped. A skipped half is never converted later: that
+  workspace's caps and limits stay as they were, the stricter side. A deleted
+  workspace never holds the platform up.
+- Once the ledger counts in $0.10, a real run converts nothing new: it only
+  finishes or skips failed halves, and converts again a workspace that a
+  reversal put back (see Roll back).
 - *Check:* the response lists no `waiting` and no failures, and
   `GET /api/admin/credit-unit` shows `ledgerUnitUsd: 0.1`.
-- *Roll back:* `{ action: "reverse", dryRun: false }` restores every number
-  exactly, **only before paid work resumes**: once any workspace has a job,
-  grant or running job written after the conversion, the reversal is refused for
-  everyone and lists them. After that, the backup is the way back. It takes back goodwill grants (anything already spent from one stays
-  as debt) and leaves declined requests declined. The ledger goes back to 0.80,
-  which pauses paid work again. Then either convert again, or set `CREDIT_USD`
-  back to 0.80 and redeploy. Last resort: restore the step 0 backup.
+- *Roll back:* `{ action: "reverse", dryRun: false }` gives back the exact
+  numbers, **only before paid work resumes**. It is refused for everyone, and
+  lists why, once any workspace has a job, grant or running job written after
+  its conversion, or anything saved since in its own database: a cap, an Atomik
+  run limit or step, a pipeline attempt, a held take. A workspace whose own
+  database cannot be read refuses it too. After that, the backup is the way back.
+  - A reversal takes back goodwill grants (anything already spent from one stays
+    as debt) and leaves declined requests declined.
+  - The ledger goes back to 0.80, which pauses paid work again. Then either:
+    - convert again with the same request, with no `endAt` (it reuses the window
+      the first conversion recorded); or
+    - set `CREDIT_USD` back to 0.80 and redeploy. Once particl.si takes paid work
+      at $0.80 again, the recorded window no longer covers the record, and a
+      later conversion refuses to use it: ask Claude before converting.
+  - If a workspace's own half fails during a reversal, it is listed: send the
+    reversal again to finish it.
+  - **One workspace**, with `workspaceId` (to change its decision, say): only
+    that workspace goes back to $0.80 credits, and it alone is paused until you
+    convert it again with the same `workspaceId` and its decision. Everyone else
+    keeps working.
+  - Last resort: restore the step 0 backup.
 
 ## 5. Check a sample of balances in dollars
 
