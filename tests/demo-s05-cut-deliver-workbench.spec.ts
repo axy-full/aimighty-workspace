@@ -32,6 +32,10 @@ async function seed(page: Page) {
     ...newProject("Cut fixture"),
     brief: "A short film about a morning market opening.",
     nodes: [node("node-shot0001", "Opening wide"), node("node-shot0002", "The first stall"), node("node-shot0003", "Close on hands")],
+  };
+  /* The server refuses a project that names a take it does not hold, and no engine runs here: the two clips of the
+     edit's sequence are put into the draft as the browser reads it, which is all the board and the editor read. */
+  const sequence = {
     assets: [clip("clip-a1", "tk-s1", "Opening wide"), clip("clip-a2", "tk-s2", "The first stall")],
     shots: [
       { id: "cut-1", name: "Opening wide", assetId: "clip-a1", duration: 120, sourceIn: 0, note: "" },
@@ -46,6 +50,15 @@ async function seed(page: Page) {
     expect(mapped.ok(), await mapped.text()).toBe(true);
     shotIds.push(((await mapped.json()) as { shotId: string }).shotId);
   }
+  await page.route(/\/api\/workbench\/projects\?id=/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    try {
+      const response = await route.fetch();
+      const body = await response.json() as { project?: Record<string, unknown> };
+      if (body.project) Object.assign(body.project, sequence);
+      await route.fulfill({ response, json: body });
+    } catch { /* the test ended while this read was in flight */ }
+  });
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
   const generations: Gen[] = [
     take("tk-s1", shotIds[0], { reviewState: "approved", approvedBy: "Tester", approvedAt: Date.now() - 500_000 }),
@@ -101,16 +114,22 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   expect(paid).toEqual([]);
 });
 
-test("Open Edit & Sound opens the existing editor over the board, and Close brings the board back; Render master opens the on-device renderer", async ({ page }) => {
+test("Open Edit & Sound opens the existing editor over the board, and Close brings the board back; Render master opens the on-device renderer", async ({ page }, info) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
+  /* The rail glides the board to the Cut region (.35 s), clear of the tool pill. */
+  await page.locator('[data-region="cut"]').click();
+  await page.waitForTimeout(700);
 
   await page.getByTestId("cut-open-edit").click();
   const edit = page.getByTestId("edit-sound");
   await expect(edit).toBeVisible();
   await expect(edit.getByTestId("assembly")).toBeVisible();
+  mkdirSync(SHOTS, { recursive: true });
+  const size = info.project.name.replace("workbench-", "");
+  await page.screenshot({ path: `${SHOTS}/edit-sound-${size}.png` });
   await page.getByTestId("edit-sound-close").click();
   await expect(edit).toHaveCount(0);
   await page.getByTestId("cut-open-edit").click();
@@ -123,6 +142,7 @@ test("Open Edit & Sound opens the existing editor over the board, and Close brin
   const insp = page.getByTestId("board-inspector");
   await expect(insp.getByTestId("insp-deliver")).toBeVisible();
   await expect(insp.getByTestId("insp-render")).toContainText("Final movie");
+  await page.screenshot({ path: `${SHOTS}/deliver-inspector-${size}.png` });
   await insp.getByTestId("insp-advanced").click();
   await expect(insp.getByTestId("insp-export-edl")).toBeEnabled();
   await expect(insp.getByTestId("insp-export-package")).toBeEnabled();
