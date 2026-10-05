@@ -27,6 +27,7 @@ async function route(quote: Record<string, unknown>): Promise<Record<string, Han
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/db": { db: () => { throw new Error("A quote reads no rows here."); } },
     "@/lib/credits": await import("../../lib/credits"),
+    "@/lib/ledgerUnit": await import("../../lib/ledgerUnit"),
     "@/lib/requestBody": await import("../../lib/requestBody"),
     "@/lib/recovery": { reserveRecoveryContinuation: async () => () => {} },
     "@/lib/mock": await import("../../lib/mock"),

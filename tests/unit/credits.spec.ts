@@ -34,27 +34,11 @@ test("every engine is on the launch multiplier, and it is 1.5", () => {
   ]) expect(marginFor(engine, DEFAULT_MARGINS), engine).toBe(1.5);
 });
 
-test("the §7A rate card is what the code actually charges", () => {
-  /* The card is published. If these disagree, one of them is lying to a
-     customer, and it was the card for four days. */
-  const card: [string, number, number][] = [
-    ["Standard panel (Nano Banana fast)", 0.04, 1],
-    ["Keyframe still (Nano Banana Pro)", 0.15, 3],
-    ["Wan 2.6 draft, 5s", 0.25, 4],
-    ["Kling 3.0 Standard, 5s", 0.50, 8],
-    ["Kling 3.0 Pro, 5s, audio", 1.68, 26],
-    ["Seedance 2.5, 5s, 720p", 1.60, 24],
-    ["Seedance 2.5, 5s, 1080p", 2.86, 43],
-    ["Veo 3.1, 5s, audio", 2.00, 30],
-    ["Topaz upscale, 5s", 0.40, 6],
-    ["VO line (ElevenLabs)", 0.03, 1],
-    ["Identity training", 2.00, 30],
-    ["Prompt enhancement", 0.01, 1],
-  ];
-  for (const [what, cost, sells] of card) {
-    expect(billCreditsWith(cost, DEFAULT_MARGINS["*"], 0.1), what).toBe(sells);
-  }
-});
+/* The published card (CLAUDE.md § Pricing) is proved through the real quote
+   path, at the default price of a credit, in tests/unit/demo-13c-rate-card.spec.ts.
+   The table that stood here was the pre-10-September card (Wan 2.6, Veo 3.1,
+   Kling Standard at 8 cr, training at 30 cr) and no longer described anything
+   the code charges. */
 
 test("batches multiply before they round", () => {
   const unit = 0.134;
