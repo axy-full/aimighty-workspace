@@ -1,15 +1,22 @@
 "use client";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
 import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
 import "@/components/commercial/commercial.css";
+import "@/components/graphite/shell.css";
+import "@/components/marketing/marketing.css";
+import AccessForm from "@/components/marketing/AccessForm";
+import { decodeGuestBrief, guestBriefRaw, subscribeGuestBrief } from "@/lib/guest/brief";
+import { makeFirstBoardFromGuestBrief } from "@/lib/guest/first-board";
 
 type SignupAvailability = {
   email?: string;
   name?: string;
   open: boolean;
+  /** Sign-up is by invitation link only (the platform owner's /admin setting, lead decision 36). */
+  inviteOnly?: boolean;
   reason?: string;
   error?: string;
 };
@@ -48,6 +55,8 @@ function Signup() {
     [sent, setSent] = useState(false),
     [notice, setNotice] = useState(""),
     [needsSignIn, setNeedsSignIn] = useState(false);
+  /* What this person typed on guest Home, kept in this browser: it becomes their first board (lead decision 39). */
+  const keptBrief = decodeGuestBrief(useSyncExternalStore(subscribeGuestBrief, guestBriefRaw, () => null))?.text.trim() ?? "";
   const verification = useRef<{
     token: string;
     promise: Promise<Record<string, unknown>>;
@@ -72,8 +81,9 @@ function Signup() {
           }),
         };
       verification.current.promise
-        .then((data) => {
+        .then(async (data) => {
           if (!active) return;
+          if (data.workspace) await makeFirstBoardFromGuestBrief();
           const destination =
             typeof data.next === "string" && data.next.startsWith("/billing")
               ? data.next
@@ -159,6 +169,7 @@ function Signup() {
         setPassword("");
         setConfirm("");
       } else {
+        if (data.workspace) await makeFirstBoardFromGuestBrief();
         router.push(
           typeof data.next === "string" &&
             data.next.startsWith("/") &&
@@ -242,6 +253,20 @@ function Signup() {
         </div>
       </AuthCard>
     );
+  if (!code && available?.inviteOnly)
+    return (
+      <AuthCard
+        title="Sign up"
+        sub="Sign-up needs an invitation link. Ask for access and we’ll send you one."
+      >
+        <div className="mk gx-signup-ask" data-testid="signup-invite-only">
+          <AccessForm />
+        </div>
+        <p className="auth-status">
+          Already have an account? <Link href={login}>Sign in</Link>
+        </p>
+      </AuthCard>
+    );
   return (
     <AuthCard
       title="Create your studio workspace"
@@ -272,6 +297,12 @@ function Signup() {
             "New accounts are not available yet. Please return when account registration opens."}
         </p>
       )}
+      {code && keptBrief ? (
+        <div className="auth-status" data-testid="signup-kept-brief">
+          <strong>Your brief · kept for your first board</strong>
+          <span style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{keptBrief}</span>
+        </div>
+      ) : null}
       <form onSubmit={submit}>
         <Field label="Your name">
           <input

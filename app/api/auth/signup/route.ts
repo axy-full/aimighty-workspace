@@ -14,7 +14,10 @@ import {
   accountJson,
   AccountError,
   sameOriginProblem,
+  takeAccountLimit,
 } from "@/lib/accountDb";
+import { INVITE_ONLY } from "@/lib/site/settings";
+import { readSite } from "@/lib/site/settings.server";
 import {
   beginSignup,
   deliverSignupVerification,
@@ -33,6 +36,14 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
     const body = await accountJson(req);
+    const code = String(body.code ?? "").trim();
+    /* Sign-up is by invitation link unless the platform owner opened it in /admin (lead decision 36): checked
+       before anything else, so a fully configured environment still can't open it. Refusals are counted per
+       source so the route can't be leaned on. */
+    if (!code && !(await readSite()).openSignup) {
+      await takeAccountLimit("signup-closed:" + sourceKey(req), 30, 3600_000);
+      throw new AccountError(INVITE_ONLY, 403);
+    }
     if (!policyAccepted(body))
       throw new AccountError(
         "Read the content policy and terms, and tick the box.",
@@ -45,7 +56,6 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       planId: String(body.planId ?? ""),
       cadence: String(body.cadence ?? ""),
     };
-    const code = String(body.code ?? "").trim();
     if (code) {
       const readiness = workspaceCreationReadiness();
       if (!readiness.canCreate) throw new AccountError(readiness.reason!, 503);
@@ -123,10 +133,16 @@ export const POST = recoveryRoute(async function POST(req: Request) {
 });
 export const GET = recoveryRoute(async function GET(req: Request) {
   const code = new URL(req.url).searchParams.get("code");
-  if (!code)
-    return Response.json(signupReadiness(), {
-      headers: { "Cache-Control": "no-store" },
-    });
+  if (!code) {
+    const readiness = signupReadiness();
+    const closed = !(await readSite()).openSignup;
+    return Response.json(
+      closed
+        ? { ...readiness, open: false, inviteOnly: true, reason: INVITE_ONLY }
+        : readiness,
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   await platformReady();
   const inv = (
     await platformDb().execute({
