@@ -109,6 +109,11 @@ test("one wording and one band: about N cr, at most 3N cr, for Cinema Studio alo
   expect(cinemaPriceWords(31)).toBe("about 31 cr, at most 93 cr");
   expect(cinemaPriceWords(1234)).toBe("about 1,234 cr, at most 3,702 cr");
   expect(cinemaPriceParts(31)).toEqual(["about 31 cr,", "at most 93 cr"]);
+  /* The hover: its dollars at the public price of a credit, and nothing without a rate to say it at. */
+  const { cinemaPriceDollars } = await import("../../lib/cinemaHold");
+  expect(cinemaPriceDollars(31, 0.1)).toBe("about US$3.10, at most US$9.30 (US$0.10 a credit)");
+  expect(cinemaPriceDollars(31, 0)).toBeNull();
+  expect(cinemaPriceDollars(31, null)).toBeNull();
   /* A total that mixes held takes with others (a plan's) says its own ceiling. */
   expect(cinemaPriceWords(93, 120)).toBe("about 93 cr, at most 120 cr");
   expect(OVER_HOLD_MARK).toBe("The engine charged more than you approved; nothing above that was charged.");

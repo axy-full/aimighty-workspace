@@ -68,3 +68,14 @@ export const HOLD_NEEDS_A_PERSON = "Only a person signed in to Particl approves 
 export function overHoldMark(params: Record<string, unknown> | null | undefined): string | null {
   return params?.overHold === true ? OVER_HOLD_MARK : null;
 }
+
+/**
+ * The hover on a Cinema Studio price: its dollars at the public price of a credit (`perCredit`, the session's rate
+ * table, from CREDIT_USD), "about US$3.10, at most US$9.30 (US$0.10 a credit)". Null without a rate to say it at.
+ */
+export function cinemaPriceDollars(credits: number, perCredit: number | null | undefined): string | null {
+  if (!(typeof perCredit === "number" && Number.isFinite(perCredit) && perCredit > 0) || !Number.isFinite(credits)) return null;
+  const usd = (n: number) => `US$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const ceiling = fromTenths(toTenths(credits) * STATED_CHARGE_BAND);
+  return `about ${usd(credits * perCredit)}, at most ${usd(ceiling * perCredit)} (${usd(perCredit)} a credit)`;
+}

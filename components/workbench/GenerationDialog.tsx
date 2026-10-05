@@ -26,7 +26,8 @@ import {
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
-import { cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
+import { cinemaPriceDollars, cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
+import { useSession } from "@/lib/session";
 
 type Model = {
   id: string;
@@ -177,6 +178,7 @@ function TakeDialog({
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   /* Cinema Studio 4.0 also takes the node's sounds as references (WAV uploads; the server checks each). */
   const cinemaModel = kind === "video" && model != null && isCinemaStudioModel(model.id);
+  const { rates: sessionRates } = useSession();
   /* Its Sound switch, where this workspace is offered it (once its sound is priced, or in the house workspace). */
   const soundModel = cinemaModel && model?.sound === true;
   const boundRefs = useMemo(() => target.refs
@@ -609,6 +611,8 @@ function TakeDialog({
           </p>
           <Button
             className="btn primary"
+            /* Hovering a Cinema Studio price shows its dollars at the public price of a credit (CLAUDE.md rule 14). */
+            title={cinemaModel && cost != null && !busy && !pending ? cinemaPriceDollars(cost, sessionRates.unit === "cr" ? sessionRates.creditUsd : null) ?? undefined : undefined}
             disabled={
               busy ||
               !!initial.error ||

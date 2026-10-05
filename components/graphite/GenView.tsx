@@ -15,7 +15,9 @@ import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
-import { AUDIO_SECONDS, COMPOSER_TYPES, READING_MODELS, TAKES_MAX, draftOffered, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { AUDIO_SECONDS, COMPOSER_TYPES, READING_MODELS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
+import { cinemaPriceDollars } from "@/lib/cinemaHold";
+import { useSession } from "@/lib/session";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
 import { SeedanceEditHost } from "./tools/SeedanceEditHost";
@@ -101,6 +103,10 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
   const ws = useWorkspace();
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType: "video", compose: composeForSend });
   const { state, model, offered, settings, blocked, buttonLabel, buttonParts, submitting } = composer;
+  /* Hovering a Cinema Studio price shows its dollars at the public price of a credit (CLAUDE.md rule 14). */
+  const { rates: sessionRates } = useSession();
+  const heldTotal = composer.quote?.approximate ? shownTotal(composer.quote, composer.quoteKey, settings.draft ? 1 : Math.max(1, state.count)) : null;
+  const priceTitle = heldTotal != null && sessionRates.unit === "cr" ? cinemaPriceDollars(heldTotal, sessionRates.creditUsd) ?? undefined : undefined;
   /* Cinema Studio 4.0 on this workspace's credits: its own documented controls under Direction (sent as its parameters,
      never written into the words) and WAV sound references in the well. */
   const cinemaModel = model != null && isCinemaStudioModel(model.id);
@@ -676,7 +682,7 @@ export function GenView({ scope, project, items, library, projects = "ready", wo
             {submitting ? "Submitting…" : recipeWait ? "Generate" : (
               <>
                 <span className="gx-go-act">{buttonParts.action}</span>
-                {buttonParts.price ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
+                {buttonParts.price ? <span className="gx-go-price" title={priceTitle}><span className="gx-go-sep">{" · "}</span>{buttonParts.price}</span> : null}
               </>
             )}
           </button>
