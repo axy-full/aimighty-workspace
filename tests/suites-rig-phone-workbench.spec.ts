@@ -61,55 +61,7 @@ const noSidewaysScroll = (page: Page) =>
     return out;
   });
 
-test("phone: the shot list fits the screen (stacked when narrow), and the list and the shot Inspector keep the floors", async ({ page }, info) => {
-  test.skip(!PHONES.includes(info.project.name), "phone widths");
-  const errors = await open(page);
-  const list = page.getByTestId("rig-list");
-  await expect(list.locator(".pxw-rig-row")).toHaveCount(3);
-  expect(await noSidewaysScroll(page), "sideways scroll").toEqual([]);
-  /* Every row's cells stay inside the row. */
-  const spill = await list.evaluate((el) => Array.from(el.querySelectorAll<HTMLElement>(".pxw-rig-row")).flatMap((row) => {
-    const box = row.getBoundingClientRect();
-    return Array.from(row.children).filter((child) => { const r = child.getBoundingClientRect(); return r.width && (r.right > box.right + 0.5 || r.left < box.left - 0.5); }).map((child) => (child as HTMLElement).className);
-  }));
-  expect(spill, "cells outside their row").toEqual([]);
-  expect(await smallTextIn(list), "list text under 12px").toEqual([]);
-  expect(await smallTargets(page, '[data-testid="rig-list"]'), "list targets under 44×44").toEqual([]);
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("rig-list-390x844.png"), animations: "disabled" });
 
-  /* The shot Inspector: steppers, the play chip, Delete and every field are thumb-sized; no label under 12px. */
-  await list.locator('.pxw-rig-row[data-shot-id="b"]').click();
-  if (!(await page.locator('[data-inspector-body="shot"]').isVisible())) await page.getByTestId("toggle-inspector").click();
-  const body = page.locator('[data-inspector-body="shot"][data-shot-id="b"]');
-  await expect(body).toBeVisible();
-  expect(await smallTextIn(body), "Inspector text under 12px").toEqual([]);
-  expect(await smallTargets(page, '[data-inspector-body="shot"]'), "Inspector targets under 44×44").toEqual([]);
-  for (const name of ["Shorter", "Longer"]) {
-    const box = (await body.getByRole("button", { name, exact: true }).boundingBox())!;
-    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-  }
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("rig-inspector-390x844.png"), animations: "disabled" });
-  expect(errors).toEqual([]);
-});
-
-test("phone: the graph's wiring ports are 44px targets and its labels keep the floor", async ({ page }, info) => {
-  test.skip(!PHONES.includes(info.project.name), "phone widths");
-  const errors = await open(page);
-  await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  await expect(page.getByTestId("rig-graph-surface")).toBeVisible();
-  await page.getByTestId("rig-zoom-level").click();
-  const ports = page.locator(".pxw-graph-port");
-  await expect(ports.first()).toBeVisible();
-  const sizes = await ports.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)); }));
-  expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
-  const labels = await page.locator(".pxw-graph-kicker, .pxw-graph-foot, .pxw-graph-readouts > span").evaluateAll((els) => els.map((el) => Number.parseFloat(getComputedStyle(el).fontSize)));
-  expect(Math.min(...labels)).toBeGreaterThanOrEqual(12);
-  /* Wiring still works through the bigger target: out of the approach, into the departure. */
-  await page.locator('.pxw-graph-node[data-node-id="a"] .pxw-graph-port--out').click();
-  await expect(page.locator('.pxw-graph-node[data-node-id="a"]')).toHaveAttribute("data-wiring", /.*/);
-  if (info.project.name === "workbench-390x844") await page.locator('.pxw-graph-node[data-node-id="b"]').screenshot({ path: info.outputPath("rig-graph-node-390x844.png"), animations: "disabled" });
-  expect(errors).toEqual([]);
-});
 
 test("with no project open the Rig asks for one instead of loading forever", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one desktop");

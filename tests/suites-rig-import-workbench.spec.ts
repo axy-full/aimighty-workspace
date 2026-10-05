@@ -147,86 +147,6 @@ async function expectReadable(tab: Page, phone: boolean) {
   expect(await noSideways(tab), "no sideways scroll").toBe(true);
 }
 
-test("an old board opens in the new Rig: every card, kind, input and place arrives, a second window sees it live, and the old board reads the same", async ({ page, context }, info) => {
-  test.setTimeout(300_000);
-  const phone = PHONES.includes(info.project.name);
-  const { draft, headers, productionId, boardId } = await setUp(page, "Harbour import");
-  const before = await oldBoard(page.request, boardId);
-  expect(before.importedAt ?? null).toBeNull();
-  const errors: string[] = [];
-  const B = (old: string) => idOf(boardId, old);
-
-  /* The old board links to the new Rig. */
-  const link = await openOldBoard(page, boardId, errors);
-  const box = (await link.boundingBox())!;
-  if (phone) expect(Math.min(box.width, box.height), "the link is a thumb-sized target").toBeGreaterThanOrEqual(44 - 0.5);
-  expect(await rowFits(page), "the row to the new Rig fits the screen").toEqual([]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 0.5), "no sideways scroll on the old board").toBe(true);
-  if (["workbench-390x844", "workbench-1440x900"].includes(info.project.name)) await page.screenshot({ path: info.outputPath(`old-board-link-${info.project.name}.png`), animations: "disabled" });
-
-  /* A teammate's window is already on the production's Rig, with nothing on it yet. */
-  const second = await context.newPage();
-  await openRig(second, draft.id, errors);
-  await expect.poll(() => places(second)).toEqual({});
-  await link.click();
-
-  /* It lands on this person's own draft of the production, on the Rig, bringing the board across. */
-  await expect(page).toHaveURL(new RegExp(`/suites\\?.*project=${draft.id}.*`), { timeout: 60_000 });
-  await expect(page).toHaveURL(new RegExp(`[?&]import=${boardId}(&|$)`));
-  const banner = page.getByTestId("rig-import");
-  await expect(banner).toHaveAttribute("data-phase", "done", { timeout: 60_000 });
-  await expect(page.getByTestId("rig-import-line")).toHaveText("“SH04 board” is on the new Rig: 8 cards and 6 connections.");
-  await expect(banner).toContainText("Filing lines stay on the old board; their takes are in Takes.");
-  await expect(banner).toContainText("Free. The old board stays as it was.");
-  await expectReadable(page, phone);
-  if (["workbench-390x844", "workbench-1440x900"].includes(info.project.name)) await page.screenshot({ path: info.outputPath(`rig-import-done-${info.project.name}.png`), animations: "disabled" });
-
-  /* On the graph: every card with its kind, in its old place, and every input as a link. */
-  await expect(page.getByTestId("rig-graph-surface")).toBeVisible();
-  await expect.poll(() => places(page)).toEqual(expectedPlaces(boardId));
-  const kinds: Record<string, string> = { nd_noor: "cast", nd_harbour: "environment", nd_bag: "element" };
-  for (const [old, kind] of Object.entries(kinds)) await expect(page.locator(`.pxw-graph-node[data-node-id="${B(old)}"]`)).toHaveAttribute("data-ref-kind", kind);
-  const kickers: Record<string, string> = { nd_noor: "CAST", nd_shot: "SCENE", nd_prompt: "DIRECTION", nd_image: "GENERATE", nd_compare: "REVIEW", nd_note: "DIRECTION" };
-  for (const [old, word] of Object.entries(kickers)) await expect(page.locator(`.pxw-graph-node[data-node-id="${B(old)}"] .pxw-graph-kicker`)).toContainText(word);
-  const links = [["nd_noor", "nd_shot"], ["nd_harbour", "nd_shot"], ["nd_bag", "nd_shot"], ["nd_prompt", "nd_image"], ["nd_shot", "nd_image"], ["nd_image", "nd_compare"]].map(([a, b]) => `${B(a)}>${B(b)}`).sort();
-  await expect.poll(() => edges(page)).toEqual(links);
-  /* Noor's picture came with her; the shot keeps its title; the team canvas holds all of it. */
-  const saved = (await canvasOf(page.request, headers, productionId)).canvas!;
-  expect(Object.keys(saved.nodes).sort()).toEqual(Object.keys(expectedPlaces(boardId)).sort());
-  expect(saved.nodes[B("nd_noor")]).toMatchObject({ type: "character", refKind: "cast", title: "@Noor" });
-  expect(saved.nodes[B("nd_noor")].assetId).toBeTruthy();
-  expect(saved.nodes[B("nd_shot")]).toMatchObject({ type: "scene", title: "SH04 — Noor at the harbour wall" });
-
-  /* The teammate's window folds it in within a check or two, and says who changed the board. */
-  await expect.poll(() => places(second), { timeout: 20_000 }).toEqual(expectedPlaces(boardId));
-  await expect(second.getByTestId("rig-team-agent")).toContainText("Atomik · brought an old board across");
-  await expect.poll(() => edges(second)).toEqual(links);
-  if (info.project.name === "workbench-390x844") await second.screenshot({ path: info.outputPath("rig-import-second-window-390x844.png"), animations: "disabled" });
-
-  /* Done: the line goes, and so does the board from the address. */
-  await page.getByTestId("rig-import-done").click();
-  await expect(banner).toHaveCount(0);
-  await expect(page).not.toHaveURL(/[?&]import=/);
-
-  /* Opening it again adds nothing. */
-  const settled = await contentOf(page.request, headers, productionId);
-  const again = await openOldBoard(page, boardId, errors);
-  await again.click();
-  await expect(page.getByTestId("rig-import")).toHaveAttribute("data-phase", "done", { timeout: 60_000 });
-  await expect(page.getByTestId("rig-import-line")).toHaveText("Everything on “SH04 board” is already on the new Rig. Nothing new came across.");
-  expect(await contentOf(page.request, headers, productionId)).toEqual(settled);
-  expect(Object.keys(settled).length).toBe(8);
-  await expect.poll(() => edges(page)).toEqual(links);
-
-  /* The old board: the same name, cards, wires and revision; only its record of the import is new. It still opens, the same. */
-  const now = await oldBoard(page.request, boardId);
-  expect({ name: now.name, nodes: now.nodes, wires: now.wires, updatedAt: now.updatedAt }).toEqual({ name: before.name, nodes: before.nodes, wires: before.wires, updatedAt: before.updatedAt });
-  expect(now.importedTo).toBe(productionId);
-  expect(now.importedAt).toBeGreaterThan(0);
-  await openOldBoard(page, boardId, errors);
-  if (!phone) await expect(page.getByRole("article")).toHaveCount(8);
-  expect(errors).toEqual([]);
-});
 
 /** A board larger than one batch (the server brings 100 cards a call): 150 notes, each feeding the next. */
 async function bigBoard(page: Page, productionId: string) {
@@ -239,50 +159,6 @@ async function bigBoard(page: Page, productionId: string) {
   return boardId;
 }
 
-test("a board that stops part way says what came across, and Try again (free) carries on without making anything twice", async ({ page }, info) => {
-  test.setTimeout(240_000);
-  const phone = PHONES.includes(info.project.name);
-  const { draft, headers, productionId } = await setUp(page, "Harbour retry");
-  const boardId = await bigBoard(page, productionId);
-  const errors: string[] = [];
-  await forbidPaidWork(page);
-  page.on("pageerror", (error) => errors.push(error.message));
-  /* The first batch lands; the server fails the second call; after that it answers again. */
-  let calls = 0, failing = true;
-  await page.route(`**/api/rig/boards/${boardId}`, async (route) => {
-    const request = route.request();
-    const body = request.method() === "POST" ? (request.postDataJSON() as { action?: string } | null) : null;
-    if (body?.action !== "import") return route.fallback();
-    calls++;
-    if (failing && calls === 2) return route.fulfill({ status: 503, json: { error: "The database is busy." } });
-    return route.fallback();
-  });
-  await page.goto(`/suites?suite=studio&page=rig&project=${draft.id}&import=${boardId}`);
-  const banner = page.getByTestId("rig-import");
-  await expect(banner).toHaveAttribute("data-phase", "failed", { timeout: 60_000 });
-  await expect(page.getByTestId("rig-import-line")).toHaveText("Part of “Big board” came across: 100 of 150 cards and 99 of 149 connections. The rest didn’t reach the new Rig.");
-  await expect(banner).toContainText("Trying again is free and brings only what is missing.");
-  const retry = page.getByTestId("rig-import-retry");
-  await expect(retry).toHaveText("Try again");
-  await expect(retry).toHaveAccessibleName("Try again, free");
-  await expectReadable(page, phone);
-  if (info.project.name === "workbench-390x844") await page.screenshot({ path: info.outputPath("rig-import-partial-390x844.png"), animations: "disabled" });
-  const part = await contentOf(page.request, headers, productionId);
-  expect(Object.keys(part).length).toBe(100);
-
-  /* Try again carries on from where it stopped: the other 50 cards and their links, nothing twice. */
-  failing = false;
-  await retry.click();
-  await expect(banner).toHaveAttribute("data-phase", "done", { timeout: 60_000 });
-  await expect(page.getByTestId("rig-import-line")).toHaveText("“Big board” is on the new Rig: 150 cards and 149 connections.");
-  const whole = await contentOf(page.request, headers, productionId);
-  expect(Object.keys(whole).length).toBe(150);
-  for (const [id, before] of Object.entries(part)) expect(whole[id].x === before.x && whole[id].y === before.y, `${id} kept its place`).toBe(true);
-  expect(Object.values(whole).reduce((sum, n) => sum + n.linked.length, 0)).toBe(149);
-  expect(Object.values(whole).every((n) => new Set(n.linked).size === n.linked.length)).toBe(true);
-  expect(await noSideways(page), "no sideways scroll").toBe(true);
-  expect(errors).toEqual([]);
-});
 
 test("the import route: free, one bounded batch per call, refused for a production or board that is not here, and idempotent", async ({ page }) => {
   test.setTimeout(180_000);

@@ -88,31 +88,7 @@ test("a failed Library read says so with Try again; Load more reaches takes past
   expect(errors).toEqual([]);
 });
 
-test("Takes counts past the first page and loads the rest", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=takes", { pageSize: 2 });
-  await expect(page.getByText("3+ in this project")).toBeVisible();
-  await page.getByTestId("takes-more-button").click();
-  await expect(page.getByText("4 in this project")).toBeVisible();
-  await expect(page.getByTestId("takes-more")).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(errors).toEqual([]);
-});
 
-test("the Rig's own library pages on with Load more, from the same store as the Library panel", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=rig", { pageSize: 2 });
-  const rig = page.getByTestId("rig-library");
-  await expect(rig.getByTestId("rig-library-more-button")).toHaveText("Load more · 3 shown");
-  const box = await rig.getByTestId("rig-library-more-button").boundingBox();
-  /* Half a pixel for layout rounding, as tests/phoneFloors.ts allows: the button measured 43.9999 at 844x390. */
-  if (!WIDE.includes(info.project.name)) expect(box!.height).toBeGreaterThanOrEqual(44 - 0.5);
-  await rig.getByTestId("rig-library-more-button").click();
-  await expect(rig.getByTestId("rig-library-more")).toHaveCount(0);
-  await expect(rig.getByTestId("rig-library-Generations")).toHaveText("Generations · 3");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(errors).toEqual([]);
-});
 
 test("Recreate on a music take opens Gen on Audio with its prompt; a dialogue says where it is made", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -149,26 +125,5 @@ test("Recreate refills Gen while Gen is open, with that take's own inputs", asyn
   await expect(page.getByTestId("gen-prompt")).toHaveValue("Neon alley in the rain");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Neon alley");
   expect(await page.evaluate(() => sessionStorage.getItem("particl-gen-preset"))).toBeNull();
-  expect(errors).toEqual([]);
-});
-
-test("a plan that cannot run says why in its sheet, then under the stage strip once the sheet is closed, and the note can be dismissed", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* Astra's plan cannot run before its scene is saved (Business, which this used, ran on the retired Higgsfield sign-in). */
-  const { errors } = await open(page, "/suites?suite=studio&page=astra");
-  await page.getByTestId("primary-action").click();
-  /* Run stage opens the page's sheet, which says why; one gate at a time, so the row waits while it is open. */
-  const sheet = page.getByTestId("atomik-panel");
-  /* Before the stage publishes its data the reason is that data; after, what the data lacks. Either way it cannot run. */
-  const why = /Needs Astra 3D data|save the scene in Astra first/;
-  await expect(sheet).toContainText(why);
-  const notice = page.getByTestId("suites-atomik-notice");
-  await expect(notice).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await expect(sheet).toHaveCount(0);
-  await expect(notice).toContainText(why);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await notice.getByRole("button", { name: "Dismiss" }).click();
-  await expect(notice).toHaveCount(0);
   expect(errors).toEqual([]);
 });

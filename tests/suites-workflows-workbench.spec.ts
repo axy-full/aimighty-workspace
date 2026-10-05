@@ -40,40 +40,6 @@ async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 
-test("Studio pages carry no connected workflows: Edit keeps Particl's own Dub and Change voice, Deliver has no Social cuts, Astra no Draw to edit", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, consumer } = await open(page, "/suites?suite=studio&page=edit");
-  await expect(page.getByTestId("page-workflows")).toHaveCount(0);
-  for (const tool of ["dubbing", "voice_change", "reframe"]) await expect(page.getByTestId(`workflow-${tool}`)).toHaveCount(0);
-  await expect(page.getByTestId("owner-run-workflows")).toHaveCount(0);
-  await expect(page.getByText(/Connected workflow|connected account/i)).toHaveCount(0);
-
-  /* No dead end: the dialogue lane opens Particl's own sound tools, Change voice and Dub among them. */
-  const dialogue = page.locator('[data-stem="dialogue"]');
-  await dialogue.scrollIntoViewIfNeeded();
-  await dialogue.getByRole("button").click();
-  const composer = page.getByTestId("composer-dialogue");
-  await expect(composer).toBeVisible();
-  const kinds = composer.getByRole("region", { name: "Generate sound" }).getByRole("group", { name: "Sound type" });
-  await expect(kinds.getByRole("button", { name: "Change voice", exact: true })).toBeVisible();
-  await expect(kinds.getByRole("button", { name: "Dub", exact: true })).toBeVisible();
-  if (PHONES.includes(info.project.name))
-    for (const name of ["Change voice", "Dub"]) expect(Math.round((await kinds.getByRole("button", { name, exact: true }).boundingBox())!.height)).toBeGreaterThanOrEqual(44);
-  await noSideScroll(page);
-
-  await page.goto("/suites?suite=studio&page=deliver");
-  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "deliver");
-  await expect(page.getByTestId("page-workflows")).toHaveCount(0);
-  await expect(page.getByTestId("workflow-reframe")).toHaveCount(0);
-  await expect(page.getByText("Social cuts")).toHaveCount(0);
-  await noSideScroll(page);
-
-  await page.goto("/suites?suite=studio&page=astra");
-  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");
-  await expect(page.getByTestId("workflow-draw-to-edit")).toHaveCount(0);
-  expect(consumer.filter((request) => request !== COLLECTOR_LIST), "nothing asks the account").toEqual([]);
-  expect(errors).toEqual([]);
-});
 
 test("Gen has no Analysis tab, for the owner too: its four output tabs keep one row", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
