@@ -16,3 +16,13 @@ test("seam b: the phone's own screens never share the page with the desktop's Ma
   expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeGreaterThan(0);
   expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeLessThan(shell.indexOf("shell.make && !phoneOn"));
 });
+
+test("seam c: ⌘K's ask seam opens Atomik's panel with the words when the new interface is on, and the old Agent page otherwise", () => {
+  const ask = shell.slice(shell.indexOf("const ask = (text: string) => {"), shell.indexOf("const openProjectId"));
+  expect(ask).toContain('shell.newInterface && isLanded("atomik")');
+  expect(ask).toContain('shell.openAtomik("panel", text)');
+  /* The old path stays for the switch off. */
+  expect(ask).toContain('shell.goSuite("atomik", "agent")');
+  expect(ask.indexOf("shell.openAtomik")).toBeLessThan(ask.indexOf("prefillAgentRequest"));
+  expect(shell).toContain("<Palette items={items} onAsk={ask} project={project} />");
+});

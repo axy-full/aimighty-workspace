@@ -64,6 +64,7 @@ import { throwIfArmed } from "@/lib/shell/fault";
 import { FaultAside, PanelFault } from "./PanelFault";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { AtomikMount, PhoneMount, ScreenBody, SettingsBody, type ScreenContext } from "./screens";
+import { isLanded } from "@/lib/shell/screens";
 import { seededProject, type CreateSeed } from "@/lib/shell/create-project";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
@@ -283,6 +284,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* ⌘K › "Ask Atomik: …": the words land in the Agent's request box (still to be read and planned), not lost on the way.
      With no project open yet they wait in this tab and land as soon as one resolves. */
   const ask = (text: string) => {
+    /* The new interface: the words open Atomik's panel (`&atomik=1&q=…`), which takes them from there. */
+    if (shell.newInterface && isLanded("atomik")) { shell.openAtomik("panel", text); return; }
     if (project) prefillAgentRequest(session.requestScope, "atomik", project.id, text);
     else if (holdAgentRequest(session.requestScope, text) && data.status !== "loading") toast("Your request goes into Agent once a project is open.");
     shell.goSuite("atomik", "agent");
@@ -491,7 +494,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             </div>
           </div>
         )}>
-          <Palette items={items} onAsk={ask} />
+          <Palette items={items} onAsk={ask} project={project} />
         </Boundary>
         {/* Atomik's panel (new interface, `&atomik=`): over whatever is on screen. */}
         {!phoneOn ? <AtomikMount ctx={screenCtx} /> : null}
