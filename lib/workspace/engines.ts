@@ -1,4 +1,5 @@
 import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, displayModelName, isOffered, retiredLabel, type ModelDef } from "../models";
+import { IDENTITY_RENDER_NAME, PRODUCT_IMAGE_NAME } from "../uiNames";
 
 /**
  * Engines as the Rig names and constrains them.
@@ -35,9 +36,9 @@ const FIXED: Record<string, EngineLabel> = {
   /* Connected-account surfaces keep neutral names (rule 2 in lib/vendorNames.ts). */
   "higgsfield-genjutsu-motion-transfer": { short: "Transfer", long: "Motion transfer" },
   "higgsfield-genjutsu-object-swap": { short: "Swap", long: "Object swap" },
-  "higgsfield/marketing-studio-image": { short: "Marketing", long: "Marketing image" },
+  "higgsfield/marketing-studio-image": { short: "Marketing", long: PRODUCT_IMAGE_NAME },
   marketing_studio_video: { short: "Marketing", long: "Marketing video" },
-  "hf-soul-character": { short: "Identity", long: "Identity render" },
+  "hf-soul-character": { short: "Identity", long: IDENTITY_RENDER_NAME },
   /* Rendered from Cast, on the platform's key (the long name comes from displayModelName). */
   "hf-soul-standard": { short: "Identity", long: "Identity still · Standard" },
   "hf-soul-2": { short: "Identity", long: "Identity still · 2" },

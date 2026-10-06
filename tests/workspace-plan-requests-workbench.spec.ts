@@ -229,7 +229,7 @@ test("Marketing Studio's plan prices the variants the page holds, and dispatches
   const project = campaignProject();
   const state = await fixture(page, project);
   await page.goto(url(project.id, "moleculr", "marketing"));
-  await expect(page.getByTestId("page-title")).toHaveText("Marketing Studio");
+  await expect(page.getByTestId("page-title")).toHaveText("Product image");
   await expect(page.locator('[data-tool-body="marketing"]')).toBeVisible({ timeout: 30_000 });
 
   await openAtomik(page);
@@ -274,10 +274,10 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   await page.goto(url(project.id, "moleculr", "marketing"));
   await page.locator('.pxw-spec-card[data-card="Variants"]').click();
   await expect(page.getByTestId("marketing-plan-gaps")).toContainText(
-    "Quiet mornings: no engine accepted yet — configure its generation in Marketing Studio once.",
+    "Quiet mornings: no engine accepted yet — configure its generation in Product image once.",
   );
   await openAtomik(page);
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Marketing Studio data");
+  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Product image data");
   await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);

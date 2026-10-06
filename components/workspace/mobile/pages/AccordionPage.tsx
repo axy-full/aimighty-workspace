@@ -30,7 +30,7 @@ export function AccordionPage({ page, project: shellProject, scope }: MobilePage
   const sections = useMemo(() => marketingSections(project), [project]);
   const [open, setOpen] = useState<string | null>(sections[0]?.id ?? null);
 
-  if (!shellProject) return <p className="pxm-empty pxm-pad-x">Open a project to see its marketing studio.</p>;
+  if (!shellProject) return <p className="pxm-empty pxm-pad-x">Open a project to see its ads.</p>;
   return (
     <div className="pxm-pad-x pxm-pad-top" data-template="accordion" data-testid="mobile-accordion">
       <p className="pxm-lede pxm-rows-intro">{mobileRowIntro(page)}</p>

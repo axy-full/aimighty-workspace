@@ -294,7 +294,7 @@ test("a draft is one take at its button's price: takes set before Draft first do
   await page.getByTestId("gen-prompt").fill(WORDS);
   const pill = page.getByTestId("workspace-credits");
   const go = page.getByTestId("gen-generate");
-  await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
+  await page.getByTestId("gen-takes-2").click();
   await expect(go).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
   await expect(pill).toHaveAttribute("data-low", "true");
   /* Draft first: one take, at one take's price, and that is the last quote the pill measures the balance against. */

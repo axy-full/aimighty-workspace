@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { BOARD_TEXT_LIMITS } from "@/lib/workspace/rig-board";
 import { useBoardInternals } from "../../BoardContext";
@@ -25,9 +25,16 @@ export type NodeCardData = {
   preview: Preview | null;
   /** The media well's height in px; 0: a text card. */
   well: number;
+  /** A video or audio original a card can be transcribed from (gap screens, Transcribe): its stored id, by origin. */
+  source?: { genId?: string; uploadId?: string; media: "video" | "audio" };
 };
 
 export function NodeCard({ data }: CardProps<NodeCardData>) {
+  return <NodeCardShell data={data} />;
+}
+
+/** The plain node card, with room under it for a card action (a media card's Transcribe). */
+export function NodeCardShell({ data, children }: { data: NodeCardData; children?: ReactNode }) {
   return (
     <article className="bd-card bd-node-card" data-tone={data.tone}>
       {data.well ? (
@@ -42,6 +49,7 @@ export function NodeCard({ data }: CardProps<NodeCardData>) {
         <span className="bd-card-title">{data.title}</span>
         {data.text ? <span className="bd-card-text">{data.text}</span> : null}
         {data.line ? <span className="bd-card-line"><i aria-hidden="true" />{data.line}</span> : null}
+        {children}
       </span>
     </article>
   );

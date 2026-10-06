@@ -37,6 +37,7 @@ import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
 import { HoverCluster } from "./HoverCluster";
 import { BoardInspector } from "./inspector";
+import { GapOverlays } from "./GapOverlays";
 import { BOARD_MODULES, useKindExtra } from "./kinds";
 import { placeBoard } from "./layout-cards";
 import { Rail, type BoardDrawer } from "./Rail";
@@ -544,6 +545,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
         <BoardAgentDock ctx={ctx} open={dockOpen} onOpenChange={setDockOpen} />
         <BoardInspector ctx={ctx} card={primary} def={primary ? registry.defs.get(primary.kind) ?? null : null} right={dockWidth} onClose={() => select(null)} />
         <BoardReview ctx={ctx} />
+        <GapOverlays ctx={ctx} />
         {board.Overlay ? <board.Overlay ctx={ctx} /> : null}
       </div>
     </BoardInternalsProvider>

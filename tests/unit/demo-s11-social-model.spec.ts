@@ -16,20 +16,20 @@ const video = (id: string, seconds: number | null, origin: "upload" | "generatio
 });
 const src = (library: LibraryEntry[]): BoardSource => ({ kind: "social", project: newProject("Fixture"), shots: [], jobs: [], library, masters: new Set(), agent: null, now: 0 });
 
-test("a quick tool takes one source of 4 to 30 seconds", () => {
-  expect([3.9, 4, 30, 30.1, null].map(fitsQuickTool)).toEqual([false, true, true, false, false]);
+test("a quick tool takes one source of 4 to 8 seconds", () => {
+  expect([3.9, 4, 8, 8.1, null].map(fitsQuickTool)).toEqual([false, true, true, false, false]);
   expect([null, 9, 70].map(clock)).toEqual(["", "0:09", "1:10"]);
 });
 
 test("sources are the project's videos, uploads and Particl's own takes, but not the transform results", () => {
-  const list = sources([video("a", 10), video("b", 45), video("c", 12, "generation", "higgsfield/kling-3.0-standard")]);
+  const list = sources([video("a", 6), video("b", 45), video("c", 7, "generation", "higgsfield/kling-3.0-standard")]);
   expect(list.map((s) => [s.id, s.fits, s.origin])).toEqual([["upload:a", true, "upload"], ["upload:b", false, "upload"], ["generation:c", true, "generation"]]);
-  expect(list[0].media).toMatchObject({ sourceId: "a", kind: "video", seconds: 10 });
+  expect(list[0].media).toMatchObject({ sourceId: "a", kind: "video", seconds: 6 });
 });
 
 test("an empty Library draws nothing (the board shows its source box); a source draws every section, the unbuilt ones honestly", () => {
   expect(socialCards(src([]))).toEqual([]);
-  const cards = socialCards(src([video("a", 10)]));
+  const cards = socialCards(src([video("a", 6)]));
   expect(cards.map((c) => c.id)).toEqual([
     SOCIAL_GROUP.source, "social:source:upload:a", SOCIAL_GROUP.clips, "social:clips", SOCIAL_GROUP.hooks, "social:hooks", SOCIAL_GROUP.effects, "social:effects", SOCIAL_GROUP.posts, "social:narrated", "social:posts",
   ]);
@@ -41,11 +41,11 @@ test("an empty Library draws nothing (the board shows its source box); a source 
 
 test("the rail: Source is done, Effects names its two tools, everything else is not built", () => {
   const registry = buildRegistry(socialBoard.sets);
-  const placed = placeBoard(registry.derive(src([video("a", 10)])), registry.defs, socialBoard.bands, "16:9");
+  const placed = placeBoard(registry.derive(src([video("a", 6)])), registry.defs, socialBoard.bands, "16:9");
   expect(placed.cards.length).toBe(11);
   const status = railStatus(socialBoard.rail, placed.cards);
   expect([...status.keys()]).toEqual(["source", "clips", "hooks", "effects", "posts"]);
-  expect(status.get("source")).toMatchObject({ state: "done", summary: "a.mp4 · 0:10" });
+  expect(status.get("source")).toMatchObject({ state: "done", summary: "a.mp4 · 0:06" });
   expect(status.get("effects")!.summary).toBe("Motion transfer · Object swap");
   expect(status.get("clips")).toMatchObject({ state: "empty", summary: "Not in Particl yet" });
   expect(status.get("posts")!.summary).toBe("Not in Particl yet");

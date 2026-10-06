@@ -344,13 +344,16 @@ test("phone Home: each waiting item at its own price as the button, approved alo
   await expect(short.getByTestId("phone-row-approve")).toHaveCount(0);
   const step = rows.filter({ hasText: "Plan the shots" });
   await expect(step).toContainText("step 1 of 3");
-  /* A plan's step is approved with its plan's Continue: whatever the phone draws on its row, pressing it sends nothing. */
-  if (await step.getByTestId("phone-row-approve").count()) {
-    await step.getByTestId("phone-row-approve").click();
-    await expect(page.getByTestId("toast")).toBeVisible();
-    expect(others, "pressing a plan's step sent something").toEqual([]);
-    expect(releases, "pressing a plan's step released a take").toEqual([]);
-  }
+  /* A plan's step is approved with its plan's Continue, as on the desktop: its row says Open (no price button that refuses),
+     and Open shows the plan in Atomik's sheet. Nothing is sent. */
+  await expect(step.getByTestId("phone-row-approve")).toHaveCount(0);
+  await expect(step.getByTestId("phone-row-open")).toHaveText("Open");
+  await step.getByTestId("phone-row-open").click();
+  await expect(page.getByTestId("phone-atomik")).toBeVisible();
+  expect(others, "opening a plan's step sent something").toEqual([]);
+  expect(releases, "opening a plan's step released a take").toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("phone-atomik")).toHaveCount(0);
   /* The card counts what waits in it. */
   await expect(page.getByTestId("phone-project").filter({ hasText: "Kitchen at dawn" })).toContainText("2 approvals waiting");
   expect(await smallTargets(page, ".ph-app"), "targets under 44×44").toEqual([]);

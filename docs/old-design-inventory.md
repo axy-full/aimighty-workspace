@@ -276,7 +276,7 @@ The redirect pages (`/images`, `/audio`, `/make/[kind]`, `/all`, `/canvas/[id]`,
 
 | Pages (query form) | Component | Replacement | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| ~~Studio: Brief, Beats, Storyboards, Environment, Cast, Astra 3D, Rig, Takes, Edit & Sound, Deliver~~ (`page=brief`, `sp=beats`, `page=boards`, `sp=environment`, `page=cast`, `astra`, `rig`, `takes`, `edit`, `deliver`) | `production/{Brief,Beats,Storyboard,Environment,Cast,Edit}Stage`, `BeatGraph`, `AstraOutputs`, `StageView`, the Rig library | the board's regions (table in `lib/shell/stage-redirects.ts`) | **DELETED by the board PR, 6 Oct** (owner decision 42): every address redirects to its region, for every workspace. Left in the repo on purpose, unmounted: `TranscribePanel` (no board card yet), `spec/tools/AstraTool` and `astra-blender/*` (3D blocking has no card yet), `RigPage` and friends (the old `/workspace` shell still mounts them) | done |
+| ~~Studio: Brief, Beats, Storyboards, Environment, Cast, Astra 3D, Rig, Takes, Edit & Sound, Deliver~~ (`page=brief`, `sp=beats`, `page=boards`, `sp=environment`, `page=cast`, `astra`, `rig`, `takes`, `edit`, `deliver`) | `production/{Brief,Beats,Storyboard,Environment,Cast,Edit}Stage`, `BeatGraph`, `AstraOutputs`, `StageView`, the Rig library | the board's regions (table in `lib/shell/stage-redirects.ts`) | **DELETED by the board PR, 6 Oct** (owner decision 42): every address redirects to its region, for every workspace. Left in the repo on purpose, unmounted: `spec/tools/AstraTool` and `astra-blender/*` (3D blocking has no card yet), `RigPage` and friends (the old `/workspace` shell still mounts them) | done |
 | Studio overview and the phone's "Where to?" (`sp=stages`, `sp=home`) | `mobile/StudioHome`, `mobile/SuiteHome` | Home; phone Home and Record | streams 2 and 10 | Thu 8 Oct |
 | Business, 8 pages (`suite=business`) | `business/*`, `suites/MoleculrWorkspace` | Ads board | stream 11 | Thu 8 Oct |
 | Viral, 3 pages (`suite=viral`) | `viral/ViralView`, `suites/SubatomikWorkspace` | Make quick tools; Social board; Make > Recent | streams 6 and 11 | Thu 8 Oct |
@@ -395,7 +395,6 @@ Replacement: Cast, Shots, Cut, Deliver (stream 5). Deleting: stream 5 (cards 2).
 |---|---|---|---|---|
 | `components/graphite/production/CastIdentities.tsx` | component | `components/graphite/board/inspector/CastBody.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/production/TimelineCut.tsx` | component | `components/workspace/pages/EditPage.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/production/TranscribePanel.tsx` | component | none (unmounted since the board PR: Transcribe, a priced action, has no board card yet; `lib/workbench/transcription-request.ts` and `tests/unit/transcriptionRecovery.spec.ts` stay with it) | stream 5 (cards 2): give it a card, or the owner decides to drop it | Thu 8 Oct |
 
 #### S_TAKES: old take tiles and Inspector (9)
 

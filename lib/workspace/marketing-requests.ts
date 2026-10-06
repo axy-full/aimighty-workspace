@@ -79,10 +79,10 @@ export function marketingVariantRequests(
     const settings = variant.generation;
     const model = settings?.modelId ? models.find((item) => item.id === settings.modelId) ?? null : null;
     if (!settings || !model || model.kind !== variant.kind)
-      return refuse("no engine accepted yet — configure its generation in Marketing Studio once");
+      return refuse("no engine accepted yet — configure its generation in Product image once");
     if (!settings.ratio || !model.ratios.includes(settings.ratio)) return refuse("its ratio is not one this engine accepts");
     if (!settings.resolution || !model.resolutions.includes(settings.resolution))
-      return refuse("no resolution accepted yet — configure its generation in Marketing Studio once");
+      return refuse("no resolution accepted yet — configure its generation in Product image once");
     /* A video engine renders for a listed number of seconds; a marketing image engine has none. */
     const duration = settings.duration;
     if (!model.marketing && (duration === undefined || !model.durations.includes(duration)))

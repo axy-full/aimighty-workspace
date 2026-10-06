@@ -115,7 +115,7 @@ export default function MarketingTool({
     [change],
   );
 
-  if (editor.status !== "ready" || !live) return <DraftGate editor={editor} label="Marketing Studio" />;
+  if (editor.status !== "ready" || !live) return <DraftGate editor={editor} label="Product image" />;
   return (
     <div className="pxw-tool pxw-tool--marketing" data-tool-body="marketing">
       <DraftStatus editor={editor}>

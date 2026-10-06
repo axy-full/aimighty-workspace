@@ -164,11 +164,11 @@ test("the workspace Marketing page hosts the real four sections, not a link out"
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const state = await fixture(page);
   await page.goto(url);
-  await expect(page.getByTestId("page-title")).toHaveText("Marketing Studio");
+  await expect(page.getByTestId("page-title")).toHaveText("Product image");
   const tool = page.locator('[data-tool-body="marketing"]');
   await expect(tool).toBeVisible({ timeout: 30_000 });
   /* Marketing Studio itself: its own section nav and its seven sections. */
-  await expect(tool.getByRole("navigation", { name: "Marketing Studio sections", exact: true })).toBeVisible();
+  await expect(tool.getByRole("navigation", { name: "Ads sections", exact: true })).toBeVisible();
   for (const id of ["product", "brand", "cast", "format", "variants", "design", "publish"])
     await expect(tool.locator(`#${id}`)).toHaveCount(1);
   /* The page's tool control opens the matching section rather than leaving the page. */

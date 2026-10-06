@@ -485,10 +485,6 @@ test("phone Home: a workspace with no projects says nothing waits and draws no c
 
 test("phone Home: a projects list that fails to read says so, in the server's words, with Try again", async ({ page }, info) => {
   test.skip(!isCompact(info), "desktop widths: 'a workspace with no projects shows the box… Try again' above");
-  /* Product gap found by this twin, not an owner question: components/graphite/phone/HomeScreen.tsx draws no read failure for the
-     projects list (PhoneApp receives data.status and data.error but passes them only to Make), so a failed read looks like an empty
-     workspace. The fix is one row there (phone-projects-error, a Try again calling data.retry); until it lands this stays fixme. */
-  test.fixme(true, "product gap: the phone's Home shows no failure for a projects list that cannot be read (HomeScreen.tsx); needs phone-projects-error with Try again");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
