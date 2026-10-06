@@ -5,7 +5,7 @@ import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInWithNewInterface } from "./helpers/newInterface";
-import { smallTargets } from "./phoneFloors";
+import { dimLabels, smallTargets } from "./phoneFloors";
 
 /**
  * Control room › Approvals (Atomik frame g) with the new interface on: one
@@ -18,6 +18,16 @@ import { smallTargets } from "./phoneFloors";
 const PAGE = "/suites?suite=atomik&page=approvals";
 const SHOTS = join(tmpdir(), "claude-s08-shots");
 const SHOT_SIZES = ["workbench-1440x900", "workbench-390x844"];
+
+/**
+ * The viewports where the shell mounts the phone app (lib/shell/use-compact.ts: narrower than 768 px, or a touch screen no taller than
+ * 500 px, so 844x390 is a phone). On a phone the control room's Approvals page is Home's "Needs you" queue (the same queue, the same
+ * routes: lib/control-room/queue.ts, approve.ts), each wait with its price as the button. The phone has no "Approve in one go", no
+ * decided ledger and no spending-rules panel; every phone row approves alone. The phone twins at the end of this file hold the same
+ * money assertions on the phone's own rows.
+ */
+const COMPACT = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
 
 async function shoot(page: Page, project: string, name: string) {
   if (!SHOT_SIZES.includes(project)) return;
@@ -79,6 +89,7 @@ async function seedHeld(page: Page): Promise<{ id: string }> {
 }
 
 test("a held take in this workspace is approved through its own route at the price shown, and nothing else is sent", async ({ page }, info) => {
+  test.skip(isCompact(info), "on a phone the Approvals page is Home's Needs you queue: the twin 'phone Home: a held take in this workspace…' below (same seed, same route, same price)");
   test.setTimeout(180_000);
   const { id } = await seedHeld(page);
   const queue = await page.request.get("/api/control-room/approvals").then((r) => r.json());
@@ -99,7 +110,7 @@ test("a held take in this workspace is approved through its own route at the pri
   await expect(row.getByTestId("approval-approve")).toHaveText(new RegExp(`^Approve · ${credits.toLocaleString("en-US")} cr$`));
   /* The button that spends carries the marker and the very price it shows (docs/ui-checks.md). */
   await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend", "priced");
-  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend-price", /^(up to )?[\\d.,]+ cr$/);
+  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend-price", /^(up to )?[\d.,]+ cr$/);
   await expect(row).toContainText("It starts when credits arrive; nothing is spent until then");
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "approvals-real");
@@ -146,6 +157,7 @@ const FIXTURE = {
 };
 
 test("every kind of wait reads as the code has it; one tap approves only the listed items, one at a time, and stops at the first refusal", async ({ page }, info) => {
+  test.skip(isCompact(info), "the phone has no batch approve, ledger or rules panel; how each kind of wait reads on its rows is the twin 'phone Home: every kind of wait…' below, and every phone row approves alone through its own route");
   test.setTimeout(180_000);
   await signInWithNewInterface(page.request);
   await page.route("**/api/control-room/approvals", (route) => route.fulfill({ json: FIXTURE }));
@@ -207,4 +219,78 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
   /* A higher figure lists what it leaves out for an admin. */
   await batch.getByTestId("batch-under").fill("50");
   await expect(batch.getByTestId("batch-admin-out")).toContainText("Hero take");
+});
+
+
+/* ── The phone: Approvals is Home's Needs you queue (components/graphite/phone/HomeScreen.tsx) ───────────────────────────────────── */
+
+test("phone Home: a held take in this workspace is approved through its own route at the price shown, and nothing else is sent", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths: 'a held take in this workspace…' above, on the Approvals page");
+  test.setTimeout(180_000);
+  const { id } = await seedHeld(page);
+  const queue = await page.request.get("/api/control-room/approvals").then((r) => r.json());
+  const item = queue.items.find((i: { id: string }) => i.id === `held:${id}`);
+  expect(item?.price?.kind).toBe("exact");
+  const credits: number = item.price.credits;
+
+  const sent: { url: string; body: unknown }[] = [];
+  const others: string[] = [];
+  page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/(generate|workbench\/team-canvas|pipelines|atomik)/.test(r.url())) others.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+  await page.route(`**/api/jobs/${id}/release`, async (route: Route) => {
+    sent.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    await route.fulfill({ json: { released: true, id } });
+  });
+  await page.goto("/suites?view=home");
+  await expect(page.getByTestId("phone-home")).toBeVisible();
+  /* A fresh workspace holds only the one take just seeded. */
+  const row = page.getByTestId("phone-approval-row");
+  await expect(row).toHaveCount(1);
+  const approve = row.getByTestId("phone-row-approve");
+  await expect(approve).toHaveText(`${credits.toLocaleString("en-US")} cr`);
+  await expect(approve.locator("[data-price]")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
+  await expect(row).toContainText("It starts when credits arrive; nothing is spent until then");
+  expect(await smallTargets(page, ".ph-app"), "targets under 44×44").toEqual([]);
+  expect(await dimLabels(page, ".ph-app"), "labels under the floor").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "horizontal overflow").toBeLessThanOrEqual(0);
+  await shoot(page, info.project.name, "approvals-phone-real");
+
+  await approve.click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].body).toEqual({ credits });
+  expect(others).toEqual([]);
+});
+
+test("phone Home: every kind of wait reads as the code has it, each priced row alone, and nothing is sent by reading", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths: 'every kind of wait reads as the code has it…' above, on the Approvals page");
+  test.setTimeout(180_000);
+  await signInWithNewInterface(page.request);
+  await page.route("**/api/control-room/approvals", (route) => route.fulfill({ json: FIXTURE }));
+  const sent: string[] = [];
+  page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/(jobs|generate|workbench\/team-canvas|pipelines|atomik)/.test(r.url())) sent.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+  await page.goto("/suites?view=home");
+  await expect(page.getByTestId("phone-home")).toBeVisible();
+  const rows = page.getByTestId("phone-approval-row");
+  await expect(rows).toHaveCount(FIXTURE.items.length);
+  const row = (title: string) => rows.filter({ hasText: title });
+
+  /* Each price in the shared words: "N cr", "up to N cr", "free". */
+  await expect(row("Keyframe retake").getByTestId("phone-row-approve")).toHaveText("3 cr");
+  await expect(row("Dialogue line").getByTestId("phone-row-approve")).toHaveText("up to 1 cr");
+  await expect(row("Three shots on the board").getByTestId("phone-row-plan")).toHaveText("free");
+  /* Over the rule: no button, and who may press it. */
+  await expect(row("Hero take")).toContainText("Needs an admin");
+  await expect(row("Hero take").getByRole("button")).toHaveCount(0);
+  /* The sample spends nothing: its price is shown, never pressable. */
+  await expect(row("Sample take")).toContainText("Sample production · nothing here spends credits");
+  await expect(row("Sample take").getByRole("button")).toBeDisabled();
+  /* A short balance: by how much, and no way to approve it. */
+  await expect(row("Long take")).toContainText("Short by 3 cr");
+  await expect(row("Long take").getByTestId("phone-row-approve")).toHaveCount(0);
+  /* A plan's step names its place in the plan. */
+  await expect(row("Plan three takes")).toContainText("step 1 of 3");
+  expect(await smallTargets(page, ".ph-app"), "targets under 44×44").toEqual([]);
+  expect(await dimLabels(page, ".ph-app"), "labels under the floor").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "horizontal overflow").toBeLessThanOrEqual(0);
+  await shoot(page, info.project.name, "approvals-phone-kinds");
+  expect(sent, "reading the queue sent something").toEqual([]);
 });

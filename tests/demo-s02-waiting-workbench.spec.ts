@@ -6,7 +6,7 @@ import { createClient } from "@libsql/client";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
-import { smallTargets, smallText } from "./phoneFloors";
+import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
 import type { QueueItem } from "../lib/control-room/queue";
 
@@ -22,8 +22,15 @@ mkdirSync(S02_SHOTS, { recursive: true });
  */
 const HOME = process.env.S02_HOME_URL || "/suites?view=home";
 const DESKTOP = "workbench-1440x900";
-const PHONE = "workbench-390x844";
 const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+/**
+ * The viewports where the shell mounts the phone app (lib/shell/use-compact.ts: narrower than 768 px, or a touch screen no taller than
+ * 500 px, so 844x390 is a phone). The phone's Home has no box and no Start: it is "Needs you" (each wait with its price as the button),
+ * then "Projects" (README § 3.6, SOW § 2.8). Its waiting rows are `phone-row-approve`, held by 'phone Home: …' at the end of this file.
+ */
+const COMPACT = COARSE;
+const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
+const NO_START_ON_A_PHONE = "the phone's Home has no box and no Start (Needs you, then Projects); Atomik's price on a phone is the sheet's 'Ask · up to N cr' (batch F2's twin in demo-s10-phone-make-workbench, 'a request: Ask · up to N cr…'), and its waiting rows are the phone twin 'phone Home: …' at the end of this file";
 
 async function account(page: Page) {
   const signed = await signInWithNewInterface(page.request);
@@ -76,6 +83,7 @@ async function newBoardFigure(page: Page, headers: Record<string, string>): Prom
 }
 
 test("Start shows Atomik's thinking at the server's figure, the dollars on hover, and the box keeps its place in the layout", async ({ page }, info) => {
+  test.skip(isCompact(info), NO_START_ON_A_PHONE);
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await quietTray(page);
@@ -90,7 +98,6 @@ test("Start shows Atomik's thinking at the server's figure, the dollars on hover
   await expect(start).toBeEnabled();
   await expect(page.getByTestId("home-waiting")).toHaveCount(0);
   expect(await smallText(page, ".gx-header, .gx-toast"), "text under 12px").toEqual([]);
-  if (COARSE.includes(info.project.name)) expect(await smallTargets(page, ".gx-hm"), "targets under 44×44").toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -115,7 +122,8 @@ test("the figure is read without a session token: an API token is refused, and r
 });
 
 test("Start makes the project, checks the figure for it, and asks Atomik once with that limit, in Ask", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_START_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await quietTray(page);
@@ -184,7 +192,8 @@ test("a higher figure for the new project is shown for another press, never spen
 });
 
 test("with Atomik off for the workspace, Home says so and Start can't be pressed", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_START_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   await account(page);
   await forbidPaidWork(page);
   await quietTray(page);
@@ -198,6 +207,7 @@ test("with Atomik off for the workspace, Home says so and Start can't be pressed
 });
 
 test("Waiting for you: each item at its own price, approved alone through its own route; admin, short and plan steps say so", async ({ page }, info) => {
+  test.skip(isCompact(info), "the phone's waiting rows have the price as the button and no 'Approve ·' label, no Open: the twin 'phone Home: each waiting item…' below, and demo-s10-phone-workbench 'phone Home: what needs you first…' and 'a single item approves from Home…'");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await quietTray(page);
@@ -238,12 +248,11 @@ test("Waiting for you: each item at its own price, approved alone through its ow
   await expect(step.getByTestId("home-waiting-approve")).toHaveCount(0);
   /* The card counts what waits in it. */
   await expect(page.locator(`[data-project="${mine.id}"]`).getByTestId("home-project-needs")).toHaveText("2 approvals waiting");
-  if (COARSE.includes(info.project.name)) expect(await smallTargets(page, ".gx-hm"), "targets under 44×44").toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.getByTestId("home-waiting").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${S02_SHOTS}/home-waiting-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
 
-  if (![DESKTOP, PHONE].includes(info.project.name)) return;
+  if (info.project.name !== DESKTOP) return;
   await held.getByTestId("home-waiting-approve").click();
   await expect(held).toHaveCount(0);
   expect(releases).toHaveLength(1);
@@ -284,4 +293,77 @@ test("more than five waiting: five rows and All approvals", async ({ page }, inf
   await expect(page.getByTestId("home-waiting-all")).toHaveText("All approvals · 7");
   await page.getByTestId("home-waiting-all").click();
   await expect(page).toHaveURL(/page=approvals/);
+});
+
+
+/* ── The phone's Home: the same waiting items, drawn by the phone app (components/graphite/phone/HomeScreen.tsx) ─────────────────── */
+
+test("phone Home: each waiting item at its own price as the button, approved alone through its own route; admin, short and plan steps say so", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths: 'Waiting for you: each item at its own price…' above");
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await quietTray(page);
+  const mine = await saveProject(page, headers, "Kitchen at dawn");
+  let items: QueueItem[] = [
+    item({ id: "held:gen_held_1", title: "Keyframe · retake", project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
+    item({ id: "board-render:r1:2", title: "Shot 2 · render", source: "board-render", where: "Board", price: { kind: "up-to", credits: 43 }, needsAdmin: true, canApprove: false, why: "An admin has to press this one.",
+      approve: { kind: "board-render", productionId: "prod-k", runId: "rar_" + "a".repeat(24), seq: 2, fingerprint: "b".repeat(64) }, decline: null, open: { kind: "board", productionId: "prod-k", draftId: mine.id },
+      project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
+    item({ id: "held:gen_held_2", title: "Hero take · retake", price: { kind: "exact", credits: 43 }, shortBy: 12, approve: { kind: "release", genId: "gen_held_2", credits: 43 } }),
+    item({ id: "thread:s1", title: "Plan the shots", source: "thread", where: "Atomik", price: { kind: "up-to", credits: 9 }, step: { n: 1, of: 3 }, approve: { kind: "thread", chatId: "c1", stepId: "s1", productionId: null }, decline: null, open: { kind: "thread", chatId: "c1", productionId: null } }),
+  ];
+  await queue(page, () => items);
+  const releases: { url: string; body: unknown }[] = [];
+  await page.route(/\/api\/jobs\/[^/]+\/release$/, (route) => {
+    releases.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    items = items.filter((i) => i.id !== "held:gen_held_1");
+    return route.fulfill({ json: { ok: true } });
+  });
+  /* Nothing else that could spend or approve is sent: no render, no board approval, no Atomik step. */
+  const others: string[] = [];
+  page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/(generate|workbench\/team-canvas|pipelines|atomik)/.test(r.url())) others.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(HOME);
+  await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 60_000 });
+
+  const rows = page.getByTestId("phone-approval-row");
+  await expect(rows).toHaveCount(4);
+  const held = rows.filter({ hasText: "Keyframe · retake" });
+  await expect(held).toContainText(/Kitchen at dawn · Make · \d\d:\d\d/);
+  await expect(held.getByTestId("phone-row-approve")).toHaveText("3 cr");
+  await expect(held.getByTestId("phone-row-approve").locator("[data-price]")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
+  const admin = rows.filter({ hasText: "Shot 2 · render" });
+  await expect(admin).toContainText("Needs an admin");
+  await expect(admin.getByRole("button")).toHaveCount(0);
+  const short = rows.filter({ hasText: "Hero take · retake" });
+  await expect(short).toContainText("Short by 12 cr");
+  await expect(short.getByTestId("phone-row-topup")).toHaveText("Top up");
+  await expect(short.getByTestId("phone-row-approve")).toHaveCount(0);
+  const step = rows.filter({ hasText: "Plan the shots" });
+  await expect(step).toContainText("step 1 of 3");
+  /* A plan's step is approved with its plan's Continue: whatever the phone draws on its row, pressing it sends nothing. */
+  if (await step.getByTestId("phone-row-approve").count()) {
+    await step.getByTestId("phone-row-approve").click();
+    await expect(page.getByTestId("toast")).toBeVisible();
+    expect(others, "pressing a plan's step sent something").toEqual([]);
+    expect(releases, "pressing a plan's step released a take").toEqual([]);
+  }
+  /* The card counts what waits in it. */
+  await expect(page.getByTestId("phone-project").filter({ hasText: "Kitchen at dawn" })).toContainText("2 approvals waiting");
+  expect(await smallTargets(page, ".ph-app"), "targets under 44×44").toEqual([]);
+  expect(await dimLabels(page, ".ph-app"), "labels under the floor").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: `${S02_SHOTS}/phone-home-waiting-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
+
+  await held.getByTestId("phone-row-approve").click();
+  await expect.poll(() => releases.length).toBe(1);
+  expect(releases[0].url).toMatch(/\/api\/jobs\/gen_held_1\/release$/);
+  expect(releases[0].body).toEqual({ credits: 3 });
+  await expect(page.getByTestId("toast")).toContainText("Keyframe · retake approved · 3 cr held");
+  await expect(rows.filter({ hasText: "Keyframe · retake" })).toHaveCount(0);
+  await expect(page.getByTestId("phone-project").filter({ hasText: "Kitchen at dawn" })).toContainText("1 approval waiting");
+  expect(releases).toHaveLength(1);
+  expect(others).toEqual([]);
+  expect(errors).toEqual([]);
 });
