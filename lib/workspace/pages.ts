@@ -80,7 +80,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
   subatomik: [
     page("subatomik", "motion", "Motion Transfer", "Motion Transfer", lead("motion")),
     page("subatomik", "swap", "Object Swap", "Object Swap", lead("swap")),
-    page("subatomik", "shorts", "Shorts", "Shorts", "Restyle one video into a set of short clips; one quote covers the whole set."),
+    /* Shorts ran only on a signed-in Higgsfield account: off for Release 1 (lib/higgsfield-consumer/retired.ts); its id resolves to no page. */
     page("subatomik", "sources", "Sources", "Sources", lead("sources")),
     page("subatomik", "compare", "Compare", "Compare", lead("compare")),
     page("subatomik", "history", "History", "History", lead("history")),

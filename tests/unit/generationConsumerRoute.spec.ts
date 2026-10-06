@@ -60,7 +60,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/jobs": { ConsumerJobError },
     /* The standalone guard runs inside the quote service (tests/unit/generationConsumerService.spec.ts); the route maps its refusal. */
     "@/lib/higgsfield-consumer/marketing-records": { ConsumerSetupError: records.ConsumerSetupError },
-    "@/lib/higgsfield-consumer/retired": retired,
+    /* The handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...retired, signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/video-contract": { ConsumerVideoError },
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },

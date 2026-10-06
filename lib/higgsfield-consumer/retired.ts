@@ -1,14 +1,13 @@
 /**
- * The Higgsfield sign-in is retired. No Particl feature may need a sign-in to
- * a Higgsfield account; Particl works with the Higgsfield API key and with
+ * The Higgsfield sign-in is off. No Particl feature may need a sign-in to a
+ * Higgsfield account; Particl works with the Higgsfield API key and with
  * offerings that need no sign-in.
  *
- * Nothing new starts on the connected account: every request that would
- * price, start or build work there, or read its catalogue, presets, voices,
- * recipes or diagnostics, answers 410 with one plain message. What stays is
- * what history and the jobs already running need: status reads and saved-job
- * lists (so a running job is still collected and filed), the credit history,
- * setting a stuck job aside, and Disconnect, which revokes Particl's access.
+ * Nothing starts, prices, reads or collects on the connected account: every
+ * route that would (new work since R1; for Release 1 also the status reads,
+ * saved-job lists and the credit history) answers 410 with one plain message,
+ * through `signInOff` below. The old sign-in return address lands on Settings.
+ * A grant already stored stays where it is, unused.
  *
  * Pure (no imports), so the shell shows the same words the routes answer.
  */
@@ -18,6 +17,25 @@ export const SIGN_IN_RETIRED = true as boolean;
 export const SIGN_IN_RETIRED_CODE = "retired";
 /** The one sentence every refusal and every retired surface says. */
 export const SIGN_IN_RETIRED_MESSAGE = "The connected account is no longer used. Past results stay in your Library.";
+
+/**
+ * Release 1: no Particl feature needs a Higgsfield sign-in, so nothing uses a
+ * stored grant either. A route wrapped in `signInOff` answers 410 for every
+ * method, before auth, a body read or any service. The heartbeat's collection
+ * stage (app/api/cron/sync) and the shell's collector
+ * (lib/shell/use-connected-collector.ts) are off on the same switch. No row is
+ * changed or deleted.
+ */
+export const SIGN_IN_OFF = true as boolean;
+
+/**
+ * A route handler switched off with the sign-in. The handler it wraps stays in
+ * its file, unreachable, so it can be read and removed in its own change.
+ */
+export function signInOff(kept: unknown): (request?: Request) => Promise<Response> {
+  if (!SIGN_IN_OFF && typeof kept === "function") return kept as (request?: Request) => Promise<Response>;
+  return async () => retiredResponse();
+}
 
 /** The answer to any request for new work on the connected account. */
 export function retiredResponse(): Response {
