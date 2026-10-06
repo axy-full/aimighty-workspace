@@ -24,6 +24,7 @@ import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import type { ProviderFailureRow, ProviderFailureSummary } from "@/lib/meter";
 import { billingAmount, failureCopy } from "@/lib/errors";
 import { SharedKeyCard } from "@/components/SharedKeyCard";
+import { SiteSettingsCard } from "@/components/SiteSettingsCard";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -132,13 +133,15 @@ export default function AdminPage() {
               </div>
             </section>
 
+            <SiteSettingsCard workspaces={data.workspaces.filter((w) => !w.deletedAt && !w.legacy).map((w) => ({ id: w.id, name: w.name }))} />
+
             <section className="scard">
               <div className="scard-h"><span>Asked to be let in</span><span>People who asked for an invite. Invite them, or mark the request handled.</span></div>
               <div className="flex flex-col">
                 {data.requests.map((r) => (
                   <div key={r.id} className="steam !grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_180px]">
                     <span className="flex flex-col gap-0.5"><span className="font-medium">{r.name || r.email}</span><span className="text-[12px] text-lead">{r.email} · {timeAgo(r.createdAt)}</span></span>
-                    <span className="text-lead">{r.note || "—"}</span>
+                    <span className="text-lead whitespace-pre-line">{r.note || "—"}</span>
                     <span className="flex justify-end gap-2">
                       <button type="button" className="btn-secondary !h-8 !text-[12px]" onClick={() => invite({ email: r.email, name: r.name, requestId: r.id })} disabled={busy || !data.ready}>Invite</button>
                       <button type="button" className="ak-act is-muted" onClick={() => handled(r.id)}>HANDLED</button>
