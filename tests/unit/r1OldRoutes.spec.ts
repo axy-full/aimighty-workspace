@@ -224,11 +224,14 @@ test("no loading boundary sits beside a redirecting page: the redirect is the re
     expect(existsSync(file.replace(/page\.tsx$/, "loading.tsx")), file).toBe(false);
 });
 
-test("/workbench still draws the Studio for one account only: a signed-in account with no workspace", () => {
+test("nothing draws the old Studio: /workbench only redirects, and a signed-in account with no workspace is told so by the shell", () => {
   const page = readFileSync("app/workbench/page.tsx", "utf8");
-  expect(page).toContain("await enterSuites('/workbench',await searchParams,ctx);");
-  const server = readFileSync("lib/shell/old-routes.server.ts", "utf8");
-  expect(server).toContain("if (ctx && !ctx.workspace) return;");
-  /* /suites sends that account to /workbench, so sending it back would loop. */
-  expect(readFileSync("lib/signIn.ts", "utf8")).toContain("`/workbench${search ? `?${search}` : \"\"}`");
+  expect(page).toContain('followOldRoute("/workbench", await searchParams)');
+  expect(page).not.toMatch(/Studio|from "@\/components/);
+  /* /suites does not send that account anywhere, so there is no loop to guard. */
+  const boot = readFileSync("lib/shell/bootstrap.server.ts", "utf8");
+  expect(boot).toContain("none: true");
+  expect(boot).not.toContain("/workbench");
+  expect(readFileSync("lib/signIn.ts", "utf8")).not.toContain("/workbench");
+  expect(readFileSync("app/suites/page.tsx", "utf8")).toContain('if ("none" in boot) return <NoWorkspace');
 });

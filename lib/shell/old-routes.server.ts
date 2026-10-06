@@ -56,13 +56,3 @@ export async function followOldRoute(pathname: string, params: RawSearch = {}): 
   if (found.permanent) permanentRedirect(to);
   redirect(to);
 }
-
-/**
- * /workbench is also where an account with NO workspace belongs: /suites sends exactly that account here
- * (lib/signIn.ts › shellEntryRedirect), so redirecting it back would loop. It returns only for that account; the caller
- * has read the session already. Everyone else is redirected.
- */
-export async function enterSuites(pathname: string, params: RawSearch, ctx: Context | null): Promise<void> {
-  if (ctx && !ctx.workspace) return;
-  await followOldRoute(pathname, params);
-}

@@ -1,6 +1,7 @@
 import DialogHost from "@/components/dialog";
 import UploadRecovery from "@/components/UploadRecovery";
 import SuitesApp from "@/components/graphite/SuitesApp";
+import { NoWorkspace } from "@/components/graphite/NoWorkspace";
 import { redirect } from "next/navigation";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SHELL_PATH, redirectFor } from "@/lib/shell/ia";
@@ -40,7 +41,10 @@ export default async function Suites({ searchParams }: { searchParams: Promise<R
   const moved = fromMakeLink(spelled === null ? asked : spelled.slice(SHELL_PATH.length));
   const to = moved === null ? spelled : `${SHELL_PATH}${moved ? `?${moved}` : ""}`;
   if (to) redirect(to);
-  const { scope, session, initialAccount } = await shellBootstrap(searchParams);
+  const boot = await shellBootstrap(searchParams);
+  /* Signed in, in no workspace: a plain screen that says so (it used to be sent to the old /workbench). */
+  if ("none" in boot) return <NoWorkspace scope={boot.scope} email={boot.email} />;
+  const { scope, session, initialAccount } = boot;
   /* The screen registry (lib/shell/screens.ts): an old address opens its screen, and a bare landing opens Home. One more 307,
      only when something moves, and only now: the session is read first. */
   const routed = route(asked);

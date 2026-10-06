@@ -291,12 +291,10 @@ test("signing in comes back to the page and its query, not to a bare path", () =
   expect(signInHrefFor(null, "a=1")).toBe("/login");
 });
 
-test("a signed-out Suites link signs in and returns to its suite and page; no workspace goes to /workbench with the whole query", () => {
+test("a signed-out Suites link signs in and returns to its suite and page", () => {
   const query = "suite=atomik&page=runs&project=p1";
-  expect(shellEntryRedirect("/suites", query, false)).toBe(`/login?next=${encodeURIComponent(`/suites?${query}`)}`);
-  expect(shellEntryRedirect("/workspace", "", false)).toBe(`/login?next=${encodeURIComponent("/workspace")}`);
-  expect(shellEntryRedirect("/suites", query, true)).toBe(`/workbench?${query}`);
-  expect(shellEntryRedirect("/suites", "", true)).toBe("/workbench");
+  expect(shellEntryRedirect("/suites", query)).toBe(`/login?next=${encodeURIComponent(`/suites?${query}`)}`);
+  expect(shellEntryRedirect("/suites", "")).toBe(`/login?next=${encodeURIComponent("/suites")}`);
 });
 
 test("an old entry point always has a /suites address, and no way back to the old shell is left", () => {

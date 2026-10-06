@@ -1,5 +1,6 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaid, noHorizontalOverflow } from "./helpers/appPagesAudit";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
@@ -204,6 +205,77 @@ test("signed out, the public pages work and an old app address asks for sign-in 
       await visitor.goto(from);
       await expect(visitor, from).toHaveURL(`/login?next=${encodeURIComponent(next)}`);
     }
+  } finally {
+    await visitor.close();
+  }
+});
+
+const PASSWORD = "a local browser test passphrase 42";
+
+test("a signed-in account with no workspace is told so by the shell: no old Studio, no redirect loop, and it can sign out", async ({ page }, info) => {
+  only(info);
+  test.setTimeout(300_000);
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  /* A verified account that belongs to no workspace (the way tests/management-scope.spec.ts leaves one). */
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await db.batch([
+      { sql: "DELETE FROM memberships WHERE account_id=?", args: [me.id] },
+      { sql: "UPDATE p_sessions SET workspace_id=NULL WHERE account_id=?", args: [me.id] },
+    ], "write");
+  } finally {
+    db.close();
+  }
+  /* Every entry, old and new, ends on the same plain screen in one /suites address (nothing bounces back to /workbench). */
+  for (const from of ["/suites", "/suites?view=home", "/workbench", "/workbench?stage=cast", "/", "/workspace", "/generate", "/settings"]) {
+    await page.goto(from);
+    await expect(page, from).toHaveURL(/\/suites(\?|$)/);
+    await expect(page.getByTestId("no-workspace-title"), from).toHaveText("You’re not in a workspace yet");
+  }
+  const create = page.getByTestId("no-workspace-create");
+  await expect(create).toHaveAttribute("href", "/billing?new=1");
+  for (const control of [create, page.getByTestId("no-workspace-sign-out")]) {
+    const box = (await control.boundingBox())!;
+    if ((page.viewportSize()?.width ?? 1440) < 768) expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  await noHorizontalOverflow(page);
+  await page.screenshot({ path: info.outputPath("no-workspace.png") });
+  await page.getByTestId("no-workspace-sign-out").click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect((await page.request.get("/api/me")).status()).toBe(401);
+});
+
+test("sign-in follows a next that is a path on this site and nothing else", async ({ page, browser }, info) => {
+  only(info);
+  test.setTimeout(300_000);
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  await page.request.post("/api/auth/logout", { data: {} });
+  const here = new URL(info.project.use.baseURL ?? process.env.PW_BASE_URL ?? "http://localhost:4551").origin;
+  for (const next of ["https://evil.test/x", "//evil.test", "/\\evil.test", "/.//evil.test", "javascript:alert(1)", "/a/..//evil.test"]) {
+    const visitor = await browser.newPage();
+    try {
+      await visitor.goto(`/login?next=${encodeURIComponent(next)}`);
+      await visitor.getByLabel("EMAIL", { exact: true }).fill(me.email);
+      await visitor.getByLabel("PASSWORD", { exact: true }).fill(PASSWORD);
+      await visitor.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect.poll(() => new URL(visitor.url()).pathname, { message: next }).not.toBe("/login");
+      expect(new URL(visitor.url()).origin, next).toBe(here);
+      expect(visitor.url(), next).not.toContain("evil.test");
+      await visitor.context().clearCookies();
+    } finally {
+      await visitor.close();
+    }
+  }
+  /* A path on this site is followed. */
+  const visitor = await browser.newPage();
+  try {
+    await visitor.goto(`/login?next=${encodeURIComponent("/suites?make=video&view=home")}`);
+    await visitor.getByLabel("EMAIL", { exact: true }).fill(me.email);
+    await visitor.getByLabel("PASSWORD", { exact: true }).fill(PASSWORD);
+    await visitor.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(visitor).toHaveURL(/\/suites\?(?=.*make=video)/);
   } finally {
     await visitor.close();
   }
