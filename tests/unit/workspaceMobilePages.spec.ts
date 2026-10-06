@@ -53,7 +53,8 @@ import type { PageId } from "../../lib/workspace/types";
 
 test("every page has a template, and the six of 05-mobile are the ones used", () => {
   for (const page of ALL_PAGES) expect(MOBILE_TEMPLATES[page.id], page.id).toBeTruthy();
-  expect(Object.keys(MOBILE_TEMPLATES).sort()).toEqual(ALL_PAGES.map((p) => p.id).sort());
+  /* `shorts` is off in Release 1 (it needs a sign-in): it has no page, and its template stays only because the page ids still name it. */
+  expect(Object.keys(MOBILE_TEMPLATES).filter((id) => id !== "shorts").sort()).toEqual(ALL_PAGES.map((p) => p.id).sort());
   const used = new Set<MobileTemplate>(Object.values(MOBILE_TEMPLATES));
   expect([...used].sort()).toEqual(["accordion", "cards", "edit", "form", "rows", "shots"]);
   /* 05-mobile's own assignment, page by page. */
