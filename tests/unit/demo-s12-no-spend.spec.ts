@@ -133,7 +133,7 @@ test("by a shot alone, by a shot under the sample that names another project, an
       expect(refused.status, who).toBe(409);
       expect((await refused.json()).error).toBe(SAMPLE_LINE);
       const mixed = await route("generation", service, actor).POST(request("generation", video({ projectId: "other", shotId: "shot_film" }), "request-mixed"));
-      expect(mixed.status).toBeGreaterThanOrEqual(400);
+      expect([mixed.status, (await mixed.json()).error]).toEqual([409, SAMPLE_LINE]);
       const audio = await route("audio", service, actor).POST(request("audio", sound({ shotId: "shot_film" }), "request-audio-shot"));
       expect(audio.status).toBe(409);
       expect((await audio.json()).error).toBe(SAMPLE_LINE);
