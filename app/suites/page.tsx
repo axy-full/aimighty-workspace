@@ -6,7 +6,7 @@ import { shellBootstrap } from "@/lib/shell/bootstrap.server";
 import { SHELL_PATH, redirectFor } from "@/lib/shell/ia";
 import { fromMakeLink } from "@/lib/shell/make";
 import { route, sameSearch } from "@/lib/shell/screens";
-import { searchStringOf } from "@/lib/workspace/switchover";
+import { searchStringOf } from "@/lib/shell/raw-search";
 import { SessionProvider } from "@/lib/session";
 import "@/components/workspace/workspace.css";
 import "@/components/graphite/shell.css";
@@ -24,7 +24,7 @@ export const metadata = { title: "Particl" };
 /**
  * The Particl Suites shell (design/particl-graphite/README.md) — the surface
  * every old entry point lands on since 22 September 2026
- * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
+ * (lib/shell/ia.ts › SHELL_PATH). workspace.css rides along because
  * the page bodies it mounts today are the existing ones, inside the new chrome.
  * An old link in the design file's spelling is sent to the app's first
  * (lib/shell/ia.ts › redirectFor; a 307, the server redirect()'s own).

@@ -1,14 +1,11 @@
-import { redirect } from "next/navigation";
-import { suiteHref } from "@/lib/suites";
-import { redirectToSuites, type RawSearch } from "@/lib/workspace/switchover.server";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-export default async function Page({ searchParams }: { searchParams: Promise<RawSearch> }) {
-  const params = await searchParams;
-  /* Shorts ran only on a signed-in Higgsfield account: off for Release 1 (lib/higgsfield-consumer/retired.ts).
-     Its old address lands on the suite's first page, for the same project. */
-  if (params.page === "shorts") {
-    const project = typeof params.project === "string" ? params.project : undefined;
-    redirect(suiteHref("subatomik", project));
-  }
-  redirectToSuites("/subatomik", params);
+/**
+ * The old Social page: Motion transfer and Object swap are Make's quick tools, History is the Social board's drawer.
+ * (Shorts ran only on a signed-in Higgsfield account and is off for Release 1; its address opens Motion transfer.)
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/subatomik", await searchParams);
 }

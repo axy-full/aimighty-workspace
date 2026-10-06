@@ -7,7 +7,7 @@ import { buildRateTable } from "@/lib/rateTable.server";
 import { runInTenant } from "@/lib/tenant";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
-import { searchStringOf } from "@/lib/workspace/switchover";
+import { searchStringOf } from "@/lib/shell/raw-search";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a

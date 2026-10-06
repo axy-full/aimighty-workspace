@@ -1,5 +1,5 @@
 import Studio from '@/components/workbench/Studio';
-import {enterSuites,type RawSearch} from '@/lib/workspace/switchover.server';
+import {enterSuites,type RawSearch} from '@/lib/shell/old-routes.server';
 import {redirect} from 'next/navigation';
 import {currentContext} from '@/lib/auth';
 import {creditStateFor} from '@/lib/credits';

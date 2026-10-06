@@ -1,6 +1,10 @@
-import { redirectToSuites, type RawSearch } from "@/lib/workspace/switchover.server";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-/** The old app home. Visitors never reach it without app params (proxy.ts shows them the public site). */
-export default async function Home({ searchParams }: { searchParams: Promise<RawSearch> }) {
-  redirectToSuites("/", await searchParams);
+/**
+ * The old app home: the Suites shell is Home.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/", await searchParams);
 }
