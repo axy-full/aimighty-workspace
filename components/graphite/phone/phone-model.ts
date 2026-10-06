@@ -21,10 +21,10 @@ export type PhoneScreen = (typeof PHONE_SCREENS)[number];
 export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const;
 
 /**
- * The screens this build draws. The rest arrive in their own PRs (plan approval, Change with words and the
- * take states, the Record, Make and the Atomik sheet); until then their addresses open Home.
+ * The screens this build draws: all eight of the design's. An address for one this build does not draw opens Home,
+ * never an empty screen.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "record", "make", "atomik"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 

@@ -6,11 +6,12 @@ import { useEffect, useRef, type ReactNode } from "react";
  * Atomik sheet, Make's engine list). Esc and a press on the scrim close it; focus moves into it and back
  * out to what opened it. Flat Graphite: an opaque fill and a hairline, no blur.
  */
-export function PhoneSheet({ title, onClose, children, testId, footer }: { title: string; onClose: () => void; children: ReactNode; testId?: string; footer?: ReactNode }) {
+export function PhoneSheet({ title, onClose, children, testId, footer, focusField = false }: { title: string; onClose: () => void; children: ReactNode; testId?: string; footer?: ReactNode; /** Focus the sheet's box rather than its first button (a sheet whose job is typing). */ focusField?: boolean }) {
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLElement>("textarea, input, button")?.focus({ preventScroll: true });
+    const field = focusField ? panel.current?.querySelector<HTMLElement>("textarea, input") : null;
+    (field ?? panel.current?.querySelector<HTMLElement>("textarea, input, button"))?.focus({ preventScroll: true });
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("keydown", key); before?.focus?.({ preventScroll: true }); };

@@ -6,6 +6,8 @@ import { useApprovals } from "@/lib/control-room/use-approvals";
 import { moving } from "@/lib/jobsTray";
 import { isMakeTool } from "@/lib/shell/make";
 import { useShell } from "@/lib/shell/state";
+import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { useWorkspace } from "@/lib/workspace/state";
 import { useJobsTray } from "@/lib/shell/use-jobs-tray";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
@@ -18,6 +20,7 @@ import { PlanScreen } from "./PlanScreen";
 import { RecordScreen } from "./RecordScreen";
 import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
+import { StatesScreen } from "./StatesScreen";
 import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
@@ -54,7 +57,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
@@ -71,6 +74,7 @@ const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "P
  */
 export function PhoneApp({ scope, account, data, project, items, projectActions, page = null }: PhoneAppProps) {
   const shell = useShell();
+  const { toast } = useWorkspace();
   const [route, go] = useRoute();
   const online = useOnline();
   const judgements = useQueuedJudgements(scope);
@@ -117,20 +121,29 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   const sheet = !page && route.screen === "atomik";
   /* Under the Atomik sheet the screen it was opened from still shows. */
   const screen = page ? null : sheet ? under : route.screen;
+  /* The bar stays on every phone screen but the full-screen review and plan approval (SOW § 2); Change with words keeps it under its sheet. */
   const tabs = screen !== "review" && screen !== "plan";
-  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" ? "home" : null;
+  /* States is Home's own (the master lights Home there). */
+  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
+  const inReview = screen === "review" || screen === "fix";
 
   return (
     <div className="ph-app" data-framed={route.framed || undefined} data-screen={screen ?? "page"} data-online={online ? undefined : "off"} data-testid="phone-app">
-      {screen === "review" ? (
+      {/* Change with words keeps the review under its sheet, under a header with a way back (frame D). */}
+      {screen === "fix" ? <PhoneHeader title="Review" account={account} onBack={() => go({ screen: "review" })} onTopUp={topUp} /> : null}
+      {inReview ? (
         <ReviewScreen scope={scope} project={project} items={items} online={online} startTake={route.take}
+          fixOpen={screen === "fix"} onFix={(take) => go({ screen: "fix", take })} onFixClose={() => go({ screen: "review" })}
+          onFixed={(line) => { toast(line); void refreshProjectLibrary(scope, project?.id ?? ""); go({ screen: "home" }); }}
           onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
       ) : (
         <>
-          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
+          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
           {screen === "make" && !page ? (
             <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
               projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
+          ) : screen === "states" ? (
+            <StatesScreen scope={scope} project={project} items={items} online={online} now={now} balance={account?.credits?.balance ?? null} onTopUp={topUp} onQueue={judgements.add} />
           ) : screen === "plan" ? (
             <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
               onChange={() => openAtomik("Change the plan: ")} />

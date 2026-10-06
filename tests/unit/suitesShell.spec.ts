@@ -15,7 +15,7 @@ test("the header segment is option B: Home · the project · Make · Atomik", ()
 });
 
 test("every suite has the README's pages, numbered in order, with its group gaps; Studio has Home only (the stage pages are the board's regions)", () => {
-  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
+  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly && !p.stripHidden).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
   const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.id === "home");
   expect(home).toMatchObject({ id: "home", n: "", own: true, phoneOnly: true });
   /* The ten Studio stage pages are deleted: Studio keeps the overview and the phone's Home, both Home's, neither a stage. */
@@ -25,8 +25,17 @@ test("every suite has the README's pages, numbered in order, with its group gaps
     business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
     /* Motion Transfer and Object Swap are Make's quick tools (lib/shell/make.ts); History stays a page. */
     viral: ["01 History"],
-    atomik: ["01 Agent", "|02 Activity", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
+    /* The control room's own four tabs, in the design's order (Atomik frames g–j), unnumbered; Agent, Budget, Models and Tools are not tabs. */
+    atomik: [" Approvals", " Activity", " Skills", " Memory"],
   });
+});
+
+test("Atomik's strip is the control room's four tabs and nothing else; the retired pages still resolve, so their addresses can redirect", () => {
+  const atomik = SHELL_SUITES.find((s) => s.id === "atomik")!;
+  expect(atomik.pages.filter((p) => !p.stripHidden).map((p) => p.id)).toEqual(["approvals", "runs", "saved-skills", "memory"]);
+  expect(atomik.pages.filter((p) => !p.stripHidden).every((p) => p.n === "")).toBe(true);
+  for (const id of ["agent", "budget", "models", "skills"]) expect(shellPage("atomik", id), id).toMatchObject({ stripHidden: true });
+  expect(firstShellPage("atomik").id).toBe("approvals");
 });
 
 test("Atomik › Memory is the shell's own page on Agent's backing page, told apart by the hint", () => {
@@ -36,7 +45,7 @@ test("Atomik › Memory is the shell's own page on Agent's backing page, told ap
 });
 
 test("Atomik › Skills is the shell's own page beside Memory, on Agent's backing page; `skills` still means Tools & connections", () => {
-  expect(shellPage("atomik", "saved-skills")).toMatchObject({ n: "08", label: "Skills", title: "Skills", own: true, legacy: { suite: "atomik", page: "agent" } });
+  expect(shellPage("atomik", "saved-skills")).toMatchObject({ n: "", label: "Skills", title: "Skills", own: true, legacy: { suite: "atomik", page: "agent" } });
   expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");

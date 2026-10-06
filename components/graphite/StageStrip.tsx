@@ -15,7 +15,7 @@ export function StageStrip() {
      (idea 19), so a member is shown no tabs there. A strip drawn again on the same page (back from Gen) is
      observed again too. */
   /* Studio has no stage pages any more (the board is the whole production): its overview and the phone's Home have no strip. */
-  const hidden = shell.view !== "suite" || shell.suite.id === "studio" || Boolean(shell.page.phoneOnly) || (!owner && isOwnerRunSuite(shell.suite.id));
+  const hidden = shell.view !== "suite" || shell.suite.id === "studio" || Boolean(shell.page.phoneOnly) || Boolean(shell.page.stripHidden) || (!owner && isOwnerRunSuite(shell.suite.id));
   useEffect(() => {
     const strip = nav.current;
     if (!strip) return;
@@ -39,11 +39,11 @@ export function StageStrip() {
   if (hidden) return null;
   return (
     <nav className="gx-strip gx-scroll" aria-label="Pages" data-row="strip" ref={nav}>
-      {shell.suite.pages.filter((p) => !p.phoneOnly).map((p) => (
+      {shell.suite.pages.filter((p) => !p.phoneOnly && !p.stripHidden).map((p) => (
         <Fragment key={p.id}>
           {p.gapBefore ? <span className="gx-strip-gap" aria-hidden="true" data-testid="strip-gap" /> : null}
           <button type="button" className="gx-tab" aria-current={p.id === shell.page.id ? "page" : undefined} title={p.title} onClick={() => shell.goSuite(shell.suite.id, p.id)}>
-            <span className="gx-tab-n">{p.n}</span>
+            {p.n ? <span className="gx-tab-n">{p.n}</span> : null}
             <span>{p.label}</span>
           </button>
         </Fragment>
