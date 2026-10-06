@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsOf } from "@/lib/spend";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countsByDraft, sortQueue, type QueueItem } from "@/lib/control-room/queue";
 import type { ApprovalsState } from "@/lib/control-room/use-approvals";
@@ -122,7 +123,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan }: { item: 
   );
   else if (!online) action = <button type="button" className="ph-btn" disabled>{NEEDS_CONNECTION}</button>;
   else action = (
-    <button type="button" className="ph-btn ph-btn--hot ph-btn--price" disabled={busy} onClick={() => void approve()} data-testid="phone-row-approve">
+    <button type="button" className="ph-btn ph-btn--hot ph-btn--price" disabled={busy} aria-busy={busy || undefined} onClick={() => void approve()} data-testid="phone-row-approve" {...spendAttrsOf(item.price)}>
       {item.price ? <Price value={item.price} /> : "Approve"}
     </button>
   );

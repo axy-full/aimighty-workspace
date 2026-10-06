@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { Price } from "@/components/graphite/Price";
 import { SeedanceEditHost } from "@/components/graphite/tools/SeedanceEditHost";
@@ -17,6 +17,7 @@ import {
 import { useJudge } from "../cards/take/use-judge";
 import { useTakeNotes } from "../cards/take/use-take-notes";
 import { advancedRows, downloadHref, editQuoteBody, paidCredits } from "./inspector-model";
+import { onChangeAsked, takeChange } from "./change-intent";
 
 /*
  * Frame k: the Inspector on a take. Preview, the engine line and what it was charged, the prompt with Copy, its
@@ -38,6 +39,14 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
   const [editing, setEditing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const v: ShotVersion | null = row.versions.find((x) => x.genId === pickedId) ?? row.shown;
+  /* "Change with words" pressed on the card (change-intent.ts): a clip opens here in Seedance Edit; a still opens Make from its own press. */
+  const shownGen = v?.genId ?? null;
+  const shownMedia = v?.media ?? null;
+  useEffect(() => {
+    const look = () => { if (shownGen && shownMedia === "video" && takeChange(shownGen)) setEditing(true); };
+    look();
+    return onChangeAsked(look);
+  }, [shownGen, shownMedia]);
   const checked = ctx.project.nodes.some(isVerifyCard);
   const { list } = useVerifications(ctx.scope, checked ? ctx.project.id : null);
   const notes = useTakeNotes(ctx.scope, row.versions.map((x) => x.genId));

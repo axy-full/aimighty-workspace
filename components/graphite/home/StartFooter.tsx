@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsOf } from "@/lib/spend";
 import { Price, usePriceTitle } from "../Price";
 import { upTo } from "@/lib/shell/price-words";
 import type { Thinking } from "./use-thinking-price";
@@ -33,7 +34,7 @@ export function StartFooter({ thinking, figure, busy, disabled, onStart, onRetry
         {retry ? <button type="button" className="gx-hm-link gx-hm-retry" onClick={onRetry} data-testid="home-thinking-retry">Try again</button> : null}
       </span>
       <button type="button" className="gx-hm-start" onClick={onStart} disabled={disabled || busy || !price} aria-busy={busy || undefined}
-        title={title ?? undefined} data-testid="home-start">
+        title={title ?? undefined} data-testid="home-start" {...spendAttrsOf(price)}>
         {busy ? "Starting…" : price ? <span>Start · <Price value={price} /></span> : "Start"}
       </button>
       {problem ? <p className="gx-hm-problem gx-hm-foot-problem" role="alert" data-testid="home-start-problem">{problem}</p> : null}

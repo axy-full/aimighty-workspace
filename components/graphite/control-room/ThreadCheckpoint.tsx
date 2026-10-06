@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsOf } from "@/lib/spend";
 import { useEffect } from "react";
 import type { Step } from "@/lib/atomik";
 import { ProjectProvider, useProject } from "@/lib/projectContext";
@@ -61,7 +62,7 @@ function Ready({ checkpoint }: { checkpoint: Step }) {
     <div className="cr-checkpoint" role="group" aria-label="Checkpoint" data-testid="approval-checkpoint">
       <p className="cr-text">Next: {checkpoint.title} on {a.engineLabel(checkpoint.model)}. Continue approves this step at the price shown; nothing else runs.</p>
       <div className="cr-row-actions">
-        <button type="button" className="cr-btn cr-btn--approve" disabled={!price || a.busy} title={dollars} data-testid="approval-continue"
+        <button type="button" className="cr-btn cr-btn--approve" disabled={!price || a.busy} aria-busy={a.busy || undefined} title={dollars} data-testid="approval-continue" {...spendAttrsOf(price)}
           onClick={() => void a.approve(checkpoint).finally(approvalsChanged)}>
           {a.busy ? "Starting…" : price ? <>Continue · <Price value={price} /></> : "Pricing…"}
         </button>
