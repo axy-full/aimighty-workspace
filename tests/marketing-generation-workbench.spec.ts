@@ -475,7 +475,7 @@ test("a 2.5 build adds extra-high and max, reads about N cr on Generate, and sen
   await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&stage=canvas"));
   const dialog = await openNode(page);
   await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
-  const build = dialog.getByLabel("Marketing Studio build"), quality = dialog.getByLabel("Product image quality");
+  const build = dialog.getByLabel("Product image build"), quality = dialog.getByLabel("Product image quality");
   await expect(build).toHaveValue("alpha");
   await expect(quality.locator("option")).toHaveText(["Low", "Medium", "High"]);
   await build.selectOption("flare");

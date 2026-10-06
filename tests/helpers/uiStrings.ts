@@ -7,7 +7,7 @@ import ts from "typescript";
  * /api/higgsfield, soul_id) are never counted.
  */
 export const OLD_WORDS = [
-  ["Mole", "culr"], ["Sub", "atomik"], ["R", "ig"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["As", "tra"],
+  ["Mole", "culr"], ["Sub", "atomik"], ["R", "ig"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["Per", "sona"], ["As", "tra"],
 ].map((parts) => parts.join(""));
 
 /**
@@ -16,7 +16,7 @@ export const OLD_WORDS = [
  */
 export const OLD_PHRASES = [
   ["Five", " suites"], ["Four", " suites"], ["Production", " Studio"], ["Business", " Suite"], ["Viral", " Studio"],
-  ["Opens", " in Gen"], ["Open", " in Gen"],
+  ["Opens", " in Gen"], ["Open", " in Gen"], ["Marketing", " Studio"], ["marketing", " studio"],
 ].map((parts) => parts.join(""));
 
 const WORD_RE = new RegExp(`\\b(${OLD_WORDS.join("|")})(?:s|'s|’s)?\\b|\\b(${OLD_PHRASES.join("|")})\\b`, "g");

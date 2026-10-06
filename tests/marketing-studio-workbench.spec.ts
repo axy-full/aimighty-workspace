@@ -149,7 +149,7 @@ async function fixture(page: Page, rejectSave = false) {
     await legacyShell(page, "/workbench?project=marketing-flow&atomik=marketing&stage=brief"),
   );
   const panel = page.getByRole("region", {
-    name: "Marketing Studio",
+    name: "Product image",
     exact: true,
   });
   await expect(panel).toBeVisible();
@@ -206,7 +206,7 @@ test("campaign brief → context → quote → recovered result → export and e
     panel.getByLabel("Creative direction", { exact: false }),
   ).toHaveValue("Write in English. Focus on the emotional hook.");
   await panel.getByRole("button", { name: "Review campaign estimate" }).click();
-  const dialog = page.getByRole("dialog", { name: "Run Marketing Studio" });
+  const dialog = page.getByRole("dialog", { name: "Run Product image" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Atomik request depth").selectOption("Deep");
   await expect(
@@ -304,7 +304,7 @@ test("an unsaved campaign conflict cannot request an estimate or submit work", a
       .first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("dialog", { name: "Run Marketing Studio" }),
+    page.getByRole("dialog", { name: "Run Product image" }),
   ).not.toBeVisible();
   expect(state.quotes).toHaveLength(0);
   expect(state.submissions).toHaveLength(0);
