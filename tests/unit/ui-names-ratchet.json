@@ -285,11 +285,6 @@
       "until": "2026-10-06",
       "by": "orphan sweep"
     },
-    "lib/statements.ts": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/studio.ts": {
       "count": 1,
       "until": "2026-10-08",
@@ -297,11 +292,6 @@
     },
     "lib/submitVideo.ts": {
       "count": 4,
-      "until": "2026-10-08",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/usageLedger.ts": {
-      "count": 1,
       "until": "2026-10-08",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },

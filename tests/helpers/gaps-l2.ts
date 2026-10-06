@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import sharp from "sharp";
 import { expect, type Page, type Route } from "@playwright/test";
 import { newProject, type Project } from "../../lib/workbench/studio";
 
@@ -13,6 +14,16 @@ export const SHOTS = process.env.L2_SHOTS || "/private/tmp/claude-l2-shots";
 export const FINGERPRINT = "c".repeat(64);
 export const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 export const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
+
+/** A real upload through /api/uploads (a small still), so a project may name it; returns its id. */
+export async function uploadStill(page: Page, workspaceId: string, name: string, color = "#3a5a7a"): Promise<string> {
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const headers = { "X-Workbench-Scope": `particl-active-${workspaceId}-${me.id}` };
+  const buffer = await sharp({ create: { width: 640, height: 360, channels: 3, background: color } }).png().toBuffer();
+  const made = await page.request.post("/api/uploads", { headers, multipart: { file: { name, mimeType: "image/png", buffer } } });
+  expect(made.ok(), await made.text()).toBe(true);
+  return ((await made.json()) as { id: string }).id;
+}
 
 /** Write a project through /api/workbench/projects and open it on the board. Returns what the spec needs. */
 export async function seedBoard(page: Page, workspaceId: string, build: (base: Project) => Project) {

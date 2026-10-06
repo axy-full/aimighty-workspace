@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { everySpendButtonPriced, floors, noBannedNames, shoot, signedInWarm, watchErrors } from "./helpers/r1-gaps";
-import { FINGERPRINT, SHOTS, desktop, emptyLibrary, json, seedBoard, stills, watchPaid } from "./helpers/gaps-l2";
+import { FINGERPRINT, SHOTS, desktop, emptyLibrary, json, seedBoard, stills, uploadStill, watchPaid } from "./helpers/gaps-l2";
 import type { Asset, CanvasNode, Project } from "../lib/workbench/studio";
 
 /*
@@ -11,27 +11,33 @@ import type { Asset, CanvasNode, Project } from "../lib/workbench/studio";
  * "Nothing billed" is said only when the job's own settled figure is 0. The paid POST is answered by the spec (nothing is generated).
  * The canvas is the desktop's: phone widths open the project's Record (phone specs own them), so they skip with that reason.
  */
-const image = (id: string, name: string, extra: Partial<Asset> = {}): Asset => ({ id, uploadId: `up-${id}`, name, kind: "image", category: "Cast", url: `/api/uploads/up-${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], mime: "image/webp", ...extra });
+const image = (id: string, name: string, extra: Partial<Asset> = {}): Asset => ({ id, uploadId: `up-${id}`, name, kind: "image", category: "Cast", url: `/api/uploads/up-${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], mime: "image/png", ...extra });
 const ref = (id: string, title: string, type: CanvasNode["type"], assetId: string, refKind: CanvasNode["refKind"]): CanvasNode => ({ id, title, type, x: 0, y: 0, width: 308, linked: [], assetId, refKind } as CanvasNode);
 
-const build = (p: Project): Project => ({
+const build = (ids: Record<string, string>) => (p: Project): Project => ({
   ...p,
-  assets: [image("lead", "Lead.webp"), image("sphere", "Mirror sphere.webp"), image("ridge", "Dune ridge.webp")],
+  assets: [image("lead", "Lead.webp", { uploadId: ids.lead, url: `/api/uploads/${ids.lead}` }), image("sphere", "Mirror sphere.webp", { uploadId: ids.sphere, url: `/api/uploads/${ids.sphere}` }), image("ridge", "Dune ridge.webp", { uploadId: ids.ridge, url: `/api/uploads/${ids.ridge}` })],
   nodes: [ref("node-lead", "Lead", "character", "lead", "cast"), ref("node-sphere", "Mirror sphere", "element", "sphere", "element"), ref("node-ridge", "Dune ridge", "element", "ridge", "environment")],
 });
+
+const uploads = async (page: Page, workspaceId: string) => ({ lead: await uploadStill(page, workspaceId, "Lead.png"), sphere: await uploadStill(page, workspaceId, "Sphere.png"), ridge: await uploadStill(page, workspaceId, "Ridge.png") });
 
 async function open(page: Page, price = 4) {
   const workspaceId = await signedInWarm(page, "Cutout Tester");
   const errors = watchErrors(page);
-  const { project } = await seedBoard(page, workspaceId, build);
+  const ids = await uploads(page, workspaceId);
+  const { project } = await seedBoard(page, workspaceId, build(ids));
   await emptyLibrary(page);
-  await stills(page, { "**/api/uploads/up-*": "campaign/character.webp", "**/api/media/gen_cut*": "campaign/hero.webp" });
+  await stills(page, { "**/api/media/gen_cut*": "campaign/hero.webp" });
   /* The server's price is answered here so the spec holds a figure; the paid POST is answered below, never by a provider. */
   await page.route("**/api/generate/quote", (route) => json(route, { estimatedCredits: price, price, unit: "cr", fingerprint: FINGERPRINT }));
   const paid = watchPaid(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
   await expect(page.getByTestId("board")).toBeVisible();
-  return { paid, errors, project };
+  /* The rail glides the board to the Cast region (.35 s), clear of the minimap. */
+  await page.locator('[data-region="cast"]').click();
+  await page.waitForTimeout(700);
+  return { paid, errors, project, ids };
 }
 const lead = (page: Page) => page.getByTestId("cast-card").filter({ hasText: "Lead" }).first();
 
@@ -50,15 +56,13 @@ test("Cut-out shows its price before it runs, on a person and a thing but not a 
   await noBannedNames(page, '[data-testid="board"]');
   await floors(page, '[data-testid="board"]', false);
   mkdirSync(SHOTS, { recursive: true });
-  await page.locator('[data-region="cast"]').click();
-  await page.waitForTimeout(700);
   await shoot(page, info.project.name, "l2-cutout-price");
   expect(errors).toEqual([]);
 });
 
 test("a person's press sends the price shown; it runs on the card, lands as a new version, and the toggle shows before and after", async ({ page }, info) => {
   test.skip(!desktop(page), "the canvas is the desktop's; phone widths open the project's Record");
-  const { paid } = await open(page);
+  const { paid, ids } = await open(page);
   let polls = 0;
   const bodies: Record<string, unknown>[] = [];
   await page.route("**/api/generate", (route) => {
@@ -70,19 +74,17 @@ test("a person's press sends the price shown; it runs on the card, lands as a ne
   await lead(page).getByTestId("cutout-go").click();
   await expect(lead(page).getByTestId("cutout-running")).toBeVisible();
   await expect(lead(page).getByTestId("cutout-running")).toContainText("Cutting out the background");
-  await page.locator('[data-region="cast"]').click();
-  await page.waitForTimeout(700);
   await shoot(page, info.project.name, "l2-cutout-running");
   await expect(lead(page).getByTestId("cutout-done")).toBeVisible({ timeout: 30_000 });
   expect(paid).toEqual(["/api/generate"]);
-  expect(bodies[0]).toMatchObject({ maxCredits: 4, model: { id: expect.any(String) }, references: [{ uploadId: "up-lead" }] });
+  expect(bodies[0]).toMatchObject({ maxCredits: 4, model: expect.any(String), references: [{ uploadId: ids.lead }] });
   await expect(lead(page).getByTestId("cutout-done")).toContainText("Cut-out · v2 · background removed");
   await expect(lead(page).getByTestId("cutout-after")).toHaveAttribute("aria-pressed", "true");
-  await expect(lead(page).locator(".gx-cast-well")).toHaveAttribute("data-transparent", "");
+  await expect(lead(page).locator(".gx-cast-well")).toHaveAttribute("data-transparent", "true");
   await shoot(page, info.project.name, "l2-cutout-after");
   await lead(page).getByTestId("cutout-before").click();
   await expect(lead(page).getByTestId("cutout-before")).toHaveAttribute("aria-pressed", "true");
-  await expect(lead(page).locator(".gx-cast-well")).not.toHaveAttribute("data-transparent", "");
+  await expect(lead(page).locator(".gx-cast-well")).not.toHaveAttribute("data-transparent", "true");
   await shoot(page, info.project.name, "l2-cutout-before");
   await everySpendButtonPriced(page);
 });
@@ -97,20 +99,20 @@ test("a failed cut-out says Nothing billed only when its settled figure is 0, an
   await expect(action).toContainText("Nothing billed", { timeout: 30_000 });
   await expect(action.getByTestId("cutout-go")).toHaveText("Retry · 4 cr");
   await expect(action.getByTestId("cutout-go")).toHaveAttribute("data-spend", "priced");
-  await page.locator('[data-region="cast"]').click();
-  await page.waitForTimeout(700);
   await shoot(page, info.project.name, "l2-cutout-failed");
 });
 
 test("a price that cannot be read says Try again, and the button stays off", async ({ page }) => {
   test.skip(!desktop(page), "the canvas is the desktop's; phone widths open the project's Record");
   const workspaceId = await signedInWarm(page, "Cutout Quote");
-  const { project } = await seedBoard(page, workspaceId, build);
+  const { project } = await seedBoard(page, workspaceId, build(await uploads(page, workspaceId)));
   await emptyLibrary(page);
-  await stills(page, { "**/api/uploads/up-*": "campaign/character.webp" });
   await page.route("**/api/generate/quote", (route) => json(route, { error: "No confirmed price for this setting yet." }, 422));
   const paid = watchPaid(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
+  await expect(page.getByTestId("board")).toBeVisible();
+  await page.locator('[data-region="cast"]').click();
+  await page.waitForTimeout(700);
   const go = lead(page).getByTestId("cutout-go");
   await expect(go).toBeDisabled();
   await expect(go).toHaveAttribute("data-spend", "unpriced");

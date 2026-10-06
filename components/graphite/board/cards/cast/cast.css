@@ -28,20 +28,20 @@
 
 /* Cut-out on a card with a still (gap screens): the state line, then its buttons. Tokens only. */
 .gx-cast-well[data-transparent] { background: repeating-conic-gradient(var(--gx-card) 0% 25%, var(--gx-input-hover) 0% 50%) 50% / 16px 16px; }
-.gx-cut { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
-.gx-cut-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.gx-cut-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
-.gx-cut-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
-.gx-cut-state[data-tone="done"] { color: var(--gx-done-text); }
-.gx-cut-state[data-tone="done"] i { background: var(--gx-done); }
-.gx-cut-state[data-tone="failed"] { color: var(--gx-waiting-text); }
-.gx-cut-state[data-tone="failed"] i { background: var(--gx-waiting); }
-.gx-cut-go[data-primary][data-spend="priced"]:not(:disabled) { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
-.gx-cut-go[data-primary][data-spend="priced"]:hover:not(:disabled) { background: var(--gx-accent-hover); }
-.gx-cut-chip[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
-.gx-cut-why { font-size: 13px; color: var(--gx-text-2); }
-.gx-cut-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
-.gx-cut-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-cut-slide 1.4s var(--gx-ease) infinite; }
-@keyframes gx-cut-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-@media (prefers-reduced-motion: reduce) { .gx-cut-bar > span { animation: none; width: 100%; opacity: .5; } }
-@media (max-width: 767px) { .gx-cut .gx-cast-btn { min-height: 44px; } }
+.gx-co { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.gx-co-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-co-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
+.gx-co-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.gx-co-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-co-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-co-state[data-tone="failed"] { color: var(--gx-waiting-text); }
+.gx-co-state[data-tone="failed"] i { background: var(--gx-waiting); }
+.gx-co-go[data-primary][data-spend="priced"]:not(:disabled) { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.gx-co-go[data-primary][data-spend="priced"]:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-co-chip[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
+.gx-co-why { font-size: 13px; color: var(--gx-text-2); }
+.gx-co-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.gx-co-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-co-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-co-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-co-bar > span { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px) { .gx-co .gx-cast-btn { min-height: 44px; } }

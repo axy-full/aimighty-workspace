@@ -68,19 +68,19 @@ export function CutoutAction({ ctx, nodeId, view, showing, onShow, primary = fal
 
   if (run?.phase === "running") {
     return (
-      <div className="gx-cut" data-testid="cutout-running" data-phase="running">
-        <span className="gx-cut-state" role="status"><i aria-hidden="true" />{run.held ? "Waiting for a render slot" : "Cutting out the background"}</span>
-        <span className="gx-cut-bar" role="progressbar" aria-label="Cutting out" data-indeterminate=""><span /></span>
+      <div className="gx-co" data-testid="cutout-running" data-phase="running">
+        <span className="gx-co-state" role="status"><i aria-hidden="true" />{run.held ? "Waiting for a render slot" : "Cutting out the background"}</span>
+        <span className="gx-co-bar" role="progressbar" aria-label="Cutting out" data-indeterminate=""><span /></span>
       </div>
     );
   }
   if (view.done) {
     return (
-      <div className="gx-cut" data-testid="cutout-done" data-phase="done">
-        <span className="gx-cut-state" data-tone="done"><i aria-hidden="true" />Cut-out · v2 · background removed</span>
-        <div className="gx-cut-row" role="group" aria-label="Before and after">
+      <div className="gx-co" data-testid="cutout-done" data-phase="done">
+        <span className="gx-co-state" data-tone="done"><i aria-hidden="true" />Cut-out · v2 · background removed</span>
+        <div className="gx-co-row" role="group" aria-label="Before and after">
           {(["before", "after"] as const).map((which) => (
-            <button key={which} type="button" className="gx-cast-btn gx-cut-chip nodrag nopan" aria-pressed={showing === which}
+            <button key={which} type="button" className="gx-cast-btn gx-co-chip nodrag nopan" aria-pressed={showing === which}
               onClick={(e) => { e.stopPropagation(); onShow(which); }} onDoubleClick={(e) => e.stopPropagation()} data-testid={`cutout-${which}`}>
               {which === "before" ? "Before" : "After"}
             </button>
@@ -94,10 +94,10 @@ export function CutoutAction({ ctx, nodeId, view, showing, onShow, primary = fal
   const billed = failed ? (failed.settled === 0 ? "Nothing billed" : failed.settled != null ? `${failed.settled} cr settled` : "Its charge, if any, is in Activity") : null;
   const label = failed ? "Retry" : "Cut-out";
   return (
-    <div className="gx-cut" data-testid="cutout-action" data-phase={failed ? "failed" : "idle"}>
-      {failed ? <span className="gx-cut-state" data-tone="failed" role="status"><i aria-hidden="true" />{failed.reason} · {billed}</span> : null}
-      <div className="gx-cut-row">
-        <button type="button" className="gx-cast-btn gx-cut-go nodrag nopan" title={title ?? blocked ?? undefined} aria-busy={busy || undefined} data-primary={primary || undefined}
+    <div className="gx-co" data-testid="cutout-action" data-phase={failed ? "failed" : "idle"}>
+      {failed ? <span className="gx-co-state" data-tone="failed" role="status"><i aria-hidden="true" />{failed.reason} · {billed}</span> : null}
+      <div className="gx-co-row">
+        <button type="button" className="gx-cast-btn gx-co-go nodrag nopan" title={title ?? blocked ?? undefined} aria-busy={busy || undefined} data-primary={primary || undefined}
           {...spendAttrsOf(price)} disabled={Boolean(blocked) || busy || !price}
           onClick={(e) => { e.stopPropagation(); void press(); }} onDoubleClick={(e) => e.stopPropagation()} data-testid="cutout-go">
           {words ? `${label} · ${words}` : label}
@@ -106,7 +106,7 @@ export function CutoutAction({ ctx, nodeId, view, showing, onShow, primary = fal
           <button type="button" className="gx-cast-btn nodrag nopan" onClick={(e) => { e.stopPropagation(); setQuote(null); setRound((n) => n + 1); }} data-testid="cutout-try-again">Try again</button>
         ) : null}
       </div>
-      {problem ? <span className="gx-cut-why" role="alert">{problem}</span> : current?.error ? <span className="gx-cut-why" role="status">The price could not be read.</span> : null}
+      {problem ? <span className="gx-co-why" role="alert">{problem}</span> : current?.error ? <span className="gx-co-why" role="status">The price could not be read.</span> : null}
     </div>
   );
 }

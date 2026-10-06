@@ -15,7 +15,7 @@ import { compare, expired, growth, lowered, onMain, past, readJson, shapeProblem
  * every string a person can read, in app/, components/ and lib/, and fails on any banned name:
  *
  *   Moleculr, Subatomik, Rig, Genjutsu, Soul, Higgsfield, "Gen" as the name of a place (and "Generate" as a
- *   navigation label), "Astra" unless the same string says Topaz, the old suite phrases, and the same words in capitals.
+ *   navigation label), "Astra" unless it stands right after "Topaz" ("Topaz Astra 2"; GPT-6 Astra is banned), the old suite phrases, and the same words in capitals.
  *
  * Exempt: code identifiers, comments, tests, design/particl-graphite/, docs/handoff-diff.md and
  * docs/handover-2026-10-05.md. Never read as UI: imports, comparisons, case labels, property keys, types, className/id/href/data-*.
@@ -93,6 +93,13 @@ test("the matcher leaves code alone: identifiers, comments, comparisons, keys, i
   expect(names(`const m = "Topaz ${ASTRA} 2";`)).toEqual([]);
   expect(names(`const m = "${ASTRA} 3D";`)).toEqual([ASTRA]);
   expect(names(`const m = "Choose a video for ${ASTRA} upscale";`)).toEqual([ASTRA]);
+  /* The allowance is only the two words together: GPT-6 and the old 3D tool's name are banned even in a string that says Topaz. */
+  expect(names(`const m = "Topaz ${ASTRA}";`)).toEqual([]);
+  expect(names(`const m = "GPT-6 ${ASTRA}";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Topaz upscale or GPT-6 ${ASTRA}";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Build with ${ASTRA} in Topaz";`)).toEqual([ASTRA]);
+  expect(names(`const m = "${ASTRA} render";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Topaz ${ASTRA} 2 and ${ASTRA} 3D";`)).toEqual([ASTRA]);
 });
 
 /* ---------------------------------------------------------------------------------------------- */
