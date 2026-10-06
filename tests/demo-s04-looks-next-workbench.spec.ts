@@ -108,12 +108,15 @@ const glide = async (page: Page, rail: string) => { await page.getByTestId("boar
 test("four looks, a tick to pick one (free); the pick names the group, saves itself and survives a reload", async ({ page }, info) => {
   const { project, scope, headers, paid } = await seed(page, { looks: true });
   await page.goto(`/suites?project=${project.id}&view=board`);
-  await expect(page.getByTestId("board")).toBeVisible();
   if (!desktop(page)) {
+    /* Phone widths: the board's address opens the project's Record (stream 10), not the canvas; here only the floors that hold at every width. */
+    await expect(page.getByTestId("phone-record")).toBeVisible();
+    await expect(page.locator(".react-flow")).toHaveCount(0);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
     expect(paid).toEqual([]);
     return;
   }
+  await expect(page.getByTestId("board")).toBeVisible();
   const group = page.locator('[data-card-id="group:looks"]');
   await expect(group).toContainText("Looks");
   await expect(group).toContainText("pick one, or tell Atomik what to change");
@@ -151,12 +154,15 @@ test("four looks, a tick to pick one (free); the pick names the group, saves its
 test("Where to next? appears once every shot is approved: three cards that open Make or Crew, sending nothing", async ({ page }, info) => {
   const withTakes = await seed(page, { takes: true });
   await page.goto(`/suites?project=${withTakes.project.id}&view=board`);
-  await expect(page.getByTestId("board")).toBeVisible();
   if (!desktop(page)) {
+    /* Phone widths: the board's address opens the project's Record (stream 10), not the canvas; here only the floors that hold at every width. */
+    await expect(page.getByTestId("phone-record")).toBeVisible();
+    await expect(page.locator(".react-flow")).toHaveCount(0);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
     expect(withTakes.paid).toEqual([]);
     return;
   }
+  await expect(page.getByTestId("board")).toBeVisible();
   const group = page.locator('[data-card-id="group:next"]');
   await expect(group).toContainText("Where to next?");
   const cards = page.locator('[data-card-kind="next"]');
@@ -172,9 +178,10 @@ test("Where to next? appears once every shot is approved: three cards that open 
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOTS}/where-to-next-${info.project.name.replace("workbench-", "")}.png` });
 
-  /* Crew review opens the existing Crew room; back on the board, the stills card opens Make's image panel. */
+  /* Crew review opens the Crew review panel on the board (the old `view=crew` address is `view=board&frame=m`); back, the stills card opens Make's image panel. */
   await cards.nth(2).getByTestId("board-next-crew").click();
-  await expect(page).toHaveURL(/view=crew/);
+  await expect(page).toHaveURL(/view=board.*frame=m/);
+  await expect(page.getByTestId("crew-review")).toBeVisible();
   await page.goBack();
   await expect(page.locator('[data-card-kind="next"]')).toHaveCount(3);
   await page.mouse.move(700, 400);

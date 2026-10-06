@@ -34,6 +34,14 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   const frame = shell.params.frame ?? null;
   const [tab, setTab] = useState<"atomik" | "record">(frame === "n" ? "record" : "atomik");
   const [crew, setCrew] = useState(frame === "m");
+  /* The panel stays mounted while the address moves: the board's own "Crew review of the cut" card (and an old Crew link
+     followed from inside the board) lands on frame m (or n) after the panel has been drawn, and must open that view too. */
+  const [seenFrame, setSeenFrame] = useState(frame);
+  if (frame !== seenFrame) {
+    setSeenFrame(frame);
+    if (frame === "m") { setTab("atomik"); setCrew(true); }
+    else if (frame === "n") setTab("record");
+  }
   const box = useRef<HTMLTextAreaElement>(null);
   /* ctx.askAtomik(words): the panel with these words in its box, never sent. */
   const fill = useCallback((text?: string) => { if (text) setWords(text); box.current?.focus(); }, []);
