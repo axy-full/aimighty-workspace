@@ -474,7 +474,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
 
   /* The primary keeps its price whole, under its action. */
   const primary = page.getByTestId("primary-action");
-  await expect(primary).toHaveText("Generate · 18 cr");
+  await expect(primary).toHaveText("Make · 18 cr");
   const [act, price] = await Promise.all([primary.locator(".gx-go-act").boundingBox(), primary.locator(".gx-go-price").boundingBox()]);
   expect(price!.y).toBeGreaterThan(act!.y + act!.height - 1);
 
@@ -557,7 +557,11 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
   const seen: Record<string, Record<string, number[] | null>> = {};
   for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?suite=studio&page=rig&make=video"]] as const) {
     await open(page, path);
+<<<<<<< HEAD
     if (id !== "takes") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
+=======
+    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Make · 18 cr");
+>>>>>>> d0/pr3b-overlays
     if (id === "gen") await expect(page.getByTestId("gen-view")).toBeVisible();
     await settle(page);
     seen[id] = await desktopChrome(page);
