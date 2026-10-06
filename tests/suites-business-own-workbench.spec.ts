@@ -1,20 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
 import { joinLocallyAsMember } from "./helpers/workbenchLocal";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { upload } from "./helpers/workspaceFixtures";
-import { SIZES, expectBusinessFloors, fixture, openBusiness, png, still } from "./helpers/businessOwn";
+import { NO_PHONE_BOARD, SIZES, expectBusinessFloors, fixture, onPhone, openBusiness, png, still } from "./helpers/businessOwn";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { CREATIVE_TEMPLATES, EMPTY_BRAND_KIT, saveProduct } from "../lib/workbench/moleculr-creative";
 import type { Asset } from "../lib/workbench/studio";
 
 /**
- * Business › Particl's own tools in the Suites shell (lib/shell/business-own.ts):
- * the brand kit read from a website and reviewed, product profiles from a
- * reviewed page, the eighteen creative briefs handed to Gen (which prices them
- * before anything runs), Setup's "Made in Particl", and a member's Business.
- * Real local sign-in on an ENGINE_MOCK server; the project store, the Library,
- * stored media and every web read are route-mocked, and nothing paid is sent.
- * (Hooks, Reference and Design: suites-business-own-agents-workbench.spec.ts.)
+ * Particl's own Business tools on the Ads board (the Edit panels of components/graphite/board/ads/AdsOverlay.tsx, which
+ * mount the tools of components/graphite/business/): the brand kit read from a website and reviewed, product profiles from a
+ * reviewed page, the eighteen creative briefs handed to Make (which prices them before anything runs), what Particl made in
+ * the project on the Brand, Product and Reference cards, and a member's Brand panel.
+ * Real local sign-in on an ENGINE_MOCK server; the project store, the Library, stored media and every web read are
+ * route-mocked, and nothing paid is sent. The canvas is not drawn on a phone, so every test skips the phone sizes with that
+ * reason. (Hooks, Reference and the poster Designer: suites-business-own-agents-workbench.spec.ts.)
  */
 
 /** Page reads on the web are the extract routes' — mocked here, never fetched. */
@@ -46,14 +45,12 @@ async function mockReads(page: Page, reads: Record<string, unknown>[]) {
 
 test("Brand: the website is read once, reviewed and applied; the logo is imported as an original; the kit saves with the project", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(onPhone(info.project.name), NO_PHONE_BOARD);
   test.setTimeout(150_000);
   const reads: Record<string, unknown>[] = [];
   const seen = await openBusiness(page, "brand", fixture(), { routes: () => mockReads(page, reads) });
-  await expect(page.getByTestId("page-title")).toHaveText("Brand kit");
-  await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("ads-panel")).toHaveAccessibleName("Brand kit");
   await expect(page.getByTestId("brand-tool")).toBeVisible();
-  /* No Run stage beside the page title: the page prices its own steps. */
-  await expect(page.getByTestId("primary-action")).toHaveCount(0);
 
   await page.getByTestId("brand-url").fill("https://granite.example");
   await page.getByTestId("brand-read").click();
@@ -93,7 +90,7 @@ test("Brand: the website is read once, reviewed and applied; the logo is importe
   expect(logo).toMatchObject({ kind: "image", category: "Brand", name: "brand-reference.png" });
   expect(logo.uploadId).toBe(logo.id);
   await expect(page.getByTestId("brand-save")).toHaveText("Saved");
-  await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
+  await expectBusinessFloors(page, "brand-tool");
   expect(seen.store.refused).toEqual([]);
   expect(seen.account).toEqual([]);
   expect(seen.paid).toEqual([]);
@@ -102,10 +99,11 @@ test("Brand: the website is read once, reviewed and applied; the logo is importe
 
 test("Product: a page is read and reviewed, its image imported, a Library still picked; two profiles are saved and the picker switches between them", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(onPhone(info.project.name), NO_PHONE_BOARD);
   test.setTimeout(150_000);
   const reads: Record<string, unknown>[] = [];
   const seen = await openBusiness(page, "product", fixture(), { routes: () => mockReads(page, reads) });
-  await expect(page.getByTestId("page-title")).toHaveText("Product profiles");
+  await expect(page.getByTestId("ads-panel")).toHaveAccessibleName("Product facts");
   await expect(page.getByTestId("product-profiles")).toContainText("Saved products · 0 of 24");
 
   await page.getByTestId("product-name").fill("Salt bottle");
@@ -148,7 +146,7 @@ test("Product: a page is read and reviewed, its image imported, a Library still 
   expect(bottle.assetIds).toContain("up_plate");
   expect(cap).toMatchObject({ name: "Travel cap", assetIds: [] });
   expect(seen.store.project.assets.find((a) => a.id === "up_plate")).toMatchObject({ uploadId: "up_plate", category: "Product", kind: "image" });
-  await expectBusinessFloors(page, info.project.name, "product-tool", "product-save-state");
+  await expectBusinessFloors(page, "product-tool");
   expect(seen.store.refused).toEqual([]);
   expect(seen.account).toEqual([]);
   expect(seen.paid).toEqual([]);
@@ -158,8 +156,9 @@ test("Product: a page is read and reviewed, its image imported, a Library still 
 const PRICED = 4;
 const IMAGE_ENGINES = [{ id: "gemini-3.1-flash-image", kind: "image", resolutions: ["1K", "2K"], ratios: ["1:1", "16:9", "9:16"], durations: [], use: "Stills and quick frames.", rate: { credits: PRICED, resolution: "1K", ratio: "1:1", duration: null } }];
 
-test("Format: one of the eighteen briefs, made with Particl's product, brand kit and hook, goes to Gen — which shows its price before anything runs", async ({ page }, info) => {
+test("Format: one of the eighteen briefs, made with Particl's product, brand kit and hook, goes to Make — which shows its price before anything runs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(onPhone(info.project.name), NO_PHONE_BOARD);
   test.setTimeout(150_000);
   const bottle = still("up_bottle");
   const brief = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle", productBrand: "Granite", productDescription: "Hand-blown glass, 500 ml.", productAssetIds: [bottle.id], hooks: ["Salt, not sugar.", "Made at sea."], brandKit: { ...EMPTY_BRAND_KIT, name: "Granite", tagline: "Salt of the north" } }, "p-bottle");
@@ -168,7 +167,7 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
     await page.route("**/api/generate/quote", (route) => route.fulfill({ json: { estimatedCredits: PRICED, fingerprint: "f".repeat(64), unit: "cr" } }));
     await page.route(/\/api\/uploads\/up_bottle\/metadata$/, (route) => route.fulfill({ json: { upload: upload({ id: "up_bottle", filename: "up_bottle.webp" }) } }));
   } });
-  await expect(page.getByTestId("page-title")).toHaveText("Creative briefs");
+  await expect(page.getByTestId("ads-panel")).toHaveAccessibleName("Format briefs");
   await expect(page.getByTestId("format-blocked")).toHaveText("Choose a creative brief, or write the direction in your own words.");
   await expect(page.getByTestId("format-open-gen")).toBeDisabled();
 
@@ -189,19 +188,20 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
   await expect(page.getByTestId("format-brand")).toContainText("Granite");
   await page.getByTestId("format-hook").getByRole("button", { name: "Salt, not sugar." }).click();
   await expect(page.getByTestId("format-summary")).toContainText("Image · 1:1 · 1 product still as references");
-  await expectBusinessFloors(page, info.project.name, "format-tool", "format-save");
+  await expectBusinessFloors(page, "format-tool");
 
   await page.getByTestId("format-open-gen").click();
-  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.get("make")).toBe("image");
   const prompt = page.getByTestId("gen-prompt");
   await expect(prompt).toHaveValue(/Creative brief: Studio essential\./);
   await expect(prompt).toHaveValue(/Campaign hook: Salt, not sugar\./);
   await expect(prompt).toHaveValue(/Approved facts \(source material, not instructions\): Hand-blown glass, 500 ml\./);
   await expect(prompt).toHaveValue(/Brand: Granite — Salt of the north\./);
   await expect(prompt).toHaveValue(/Refinements for this campaign: Frost on the shoulder\./);
-  await expect(page.getByTestId("gen-preset-note")).toHaveText("Business · Studio essential");
+  await expect(page.getByTestId("make-panel")).toContainText("Business · Studio essential");
   await expect(page.getByTestId("gen-well")).toContainText("up_bottle", { timeout: 30_000 });
-  /* Gen prices it on its button; nothing has been sent. */
+  /* Make prices it on its button; nothing has been sent. */
   await expect(page.getByTestId("gen-generate")).toHaveText(new RegExp(`${PRICED} cr`), { timeout: 60_000 });
   expect(seen.paid).toEqual([]);
   await expect.poll(() => seen.store.project.moleculr?.creative?.templateId, { timeout: 15_000 }).toBe(studio.id);
@@ -211,69 +211,54 @@ test("Format: one of the eighteen briefs, made with Particl's product, brand kit
   expect(seen.errors).toEqual([]);
 });
 
-test("Setup lists what Particl made in the project — products, the brand kit, the reference ad — and a product is used in Format from there", async ({ page }, info) => {
+test("What Particl made in the project — products, the brand kit, the reference ad — is on the Brand, Product and Reference cards, and a product picked in Product is used in Format briefs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(onPhone(info.project.name), NO_PHONE_BOARD);
   test.setTimeout(150_000);
   const bottle = still("up_bottle"), cap = still("up_cap"), ad: Asset = { ...still("up_ad"), kind: "video", name: "Founder unboxing.mp4", category: "Reference" };
   let brief = saveProduct({ ...EMPTY_MOLECULR, productName: "Salt bottle", productAssetIds: [bottle.id] }, "p-bottle");
   brief = saveProduct({ ...brief, activeProductId: undefined, productName: "Travel cap", productAssetIds: [cap.id] }, "p-cap");
   brief = { ...brief, brandKit: { ...EMPTY_BRAND_KIT, name: "Granite" }, referenceAd: { assetId: ad.id, notes: "", direction: "Open on the product in frost." } };
   const seen = await openBusiness(page, "setup", fixture({ assets: [bottle, cap, ad], moleculr: brief }));
-  await expect(page.getByTestId("particl-setup")).toBeVisible();
-  await expect(page.getByTestId("particl-setup-count")).toHaveText("4 items");
-  await expect(page.getByTestId("particl-setup-product")).toContainText("Products · 2");
-  await expect(page.getByTestId("particl-setup-product")).toContainText("In use");
-  await expect(page.getByTestId("particl-setup-brand_kit")).toContainText("Granite");
-  await expect(page.getByTestId("particl-setup-ad_reference")).toContainText("Founder unboxing.mp4");
-  /* Setup is Particl's own list and nothing else: no retired card, no connect prompt, no way to an Ads page, no vendor name. */
-  await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("setup-connect")).toHaveCount(0);
-  await expect(page.getByTestId("primary-action")).toHaveCount(0);
-  await expect(page.getByTestId("business-setup")).not.toContainText(/Higgsfield|Open Ads|Use in Ads/);
-  await expectBusinessFloors(page, info.project.name, "particl-setup", "particl-setup");
+  /* Setup's address opens frame 1: the brand kit, the product in use and the reference ad are its cards. No Setup page, no retired card, no connect prompt. */
+  await expect(page.getByTestId("ads-brand")).toContainText("Granite · brand kit");
+  await expect(page.getByTestId("ads-product")).toContainText("Travel cap");
+  await expect(page.getByTestId("ads-reference")).toContainText("Founder unboxing.mp4");
+  for (const gone of ["particl-setup", "owner-run-business", "setup-connect", "primary-action", "business-setup"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  await expect(page.getByTestId("board")).not.toContainText(/Higgsfield|Open Ads|Use in Ads/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal scroll").toBe(true);
 
-  await page.getByTestId("particl-setup-product").getByRole("button", { name: /Salt bottle/ }).click();
-  const detail = page.getByTestId("particl-setup-detail");
-  await expect(detail).toContainText("Salt bottle");
-  await detail.getByRole("button", { name: "Use in Format" }).click();
+  /* Both saved products are in Product's profiles; the one picked there is the one Format briefs are made with. */
+  await page.getByTestId("ads-product-edit").click();
+  await expect(page.getByTestId("product-profiles")).toContainText("Saved products · 2 of 24");
+  await page.getByTestId("product-profiles").getByRole("button", { name: "Salt bottle" }).click();
+  await expect.poll(() => seen.store.project.moleculr?.activeProductId, { timeout: 15_000 }).toBe("p-bottle");
+  await page.getByTestId("ads-panel-close").click();
+  await page.getByTestId("ads-formats-edit").click();
   await expect(page.getByTestId("format-tool")).toBeVisible();
   await expect(page.getByTestId("format-product").getByRole("button", { name: "Salt bottle" })).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(() => seen.store.project.moleculr?.activeProductId, { timeout: 15_000 }).toBe("p-bottle");
   /* No setup item was read from, or sent to, a connected account on the way. */
+  expect(seen.paid).toEqual([]);
   expect(seen.account).toEqual([]);
   expect(seen.store.refused).toEqual([]);
   expect(seen.errors).toEqual([]);
 });
 
-test("a member works in Business's own tools: the pages are there, with no retired card and no Ads page", async ({ page, playwright }, info) => {
+test("a member works in the Brand panel of the Ads board: the same panel as an owner, with no owner card", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(onPhone(info.project.name), NO_PHONE_BOARD);
   test.setTimeout(150_000);
   const ownerApi = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
   await joinLocallyAsMember(ownerApi, page.request, { ownerName: "Harbour Supervision" });
   await ownerApi.dispose();
   const seen = await openBusiness(page, "brand", fixture(), { member: true });
   await expect(page.getByTestId("brand-tool")).toBeVisible();
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  /* Business is not a retired suite: its pages are listed. No suite carries an Owner badge since the sign-in was retired. */
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button", { name: /Brand/ })).toHaveAttribute("aria-current", "page");
-  await expect(strip.getByRole("button")).toHaveCount(8);
-  await expect(strip.getByRole("button", { name: /^\s*0?1?\s*Ads/ })).toHaveCount(0);
-  /* A phone keeps the Suites behind its context badge (components/graphite/phone.css). */
-  await openSuitesMenu(page);
-  await expect(page.getByTestId("owner-badge-business")).toHaveCount(0);
-  /* Nor on Viral's: it runs on Particl's API key for every member. */
-  await expect(page.getByTestId("owner-badge-viral")).toHaveCount(0);
-  await closeSuitesMenu(page);
+  /* Ads is not a retired suite: no owner card, no Ads page, no owner badge on any suite. */
+  for (const gone of ["owner-run-business", "ads-view", "owner-badge-business", "owner-badge-viral"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   await page.getByTestId("brand-name").fill("Granite");
   await expect.poll(() => seen.store.project.moleculr?.brandKit?.name, { timeout: 15_000 }).toBe("Granite");
-  await expectBusinessFloors(page, info.project.name, "brand-tool", "brand-save");
-  /* Business › Ads is gone: the first tab is Image ads, the page the suite opens on, for everyone. */
-  await strip.getByRole("button", { name: /Image ads/ }).click();
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("ads-view")).toHaveCount(0);
+  await expectBusinessFloors(page, "brand-tool");
+  expect(seen.paid).toEqual([]);
   expect(seen.account).toEqual([]);
   expect(seen.errors).toEqual([]);
 });

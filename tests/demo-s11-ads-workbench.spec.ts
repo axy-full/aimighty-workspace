@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { PHONES } from "./helpers/businessOwn";
 import { SHOTS, adsUrl, desktop, faintText, grey, mockReads, seedAds } from "./helpers/s11-board";
 
 /*
@@ -169,20 +170,28 @@ test("the poster Designer opens from frame 3, edits layers, exports a PNG free, 
   expect(paid).toEqual([]);
 });
 
-test("at every size the Ads and Social boards open without errors and without scrolling the page sideways", async ({ page }) => {
+test("at every size the Ads and Social boards open without errors and without scrolling the page sideways; a phone opens the Record", async ({ page }, info) => {
   const errors: string[] = [];
+  const compact = PHONES.includes(info.project.name);
   page.on("pageerror", (error) => errors.push(error.message));
+  const open = async (address: string, name: string) => {
+    await page.goto(address);
+    if (compact) {
+      /* A phone draws no canvas: the board's address opens that project's Record (tests/demo-s10-phone-record-workbench.spec.ts). Nothing on it spends. */
+      await expect(page.getByTestId("phone-record"), name).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("board"), name).toHaveCount(0);
+      await expect(page.locator("[data-spend]"), name).toHaveCount(0);
+    } else await expect(page.getByTestId("board"), name).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${name}: no horizontal page scroll`).toBeLessThanOrEqual(1);
+  };
   const ads = await seedAds(page);
-  await page.goto(adsUrl(ads.project.id, "&frame=1"));
-  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-  await page.waitForTimeout(1500);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
+  await open(adsUrl(ads.project.id, "&frame=1"), "Ads");
   const social = await seedAds(page, null, "social");
-  await page.goto(`/suites?project=${social.project.id}&view=board&kind=social`);
-  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-  await page.waitForTimeout(1500);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
-  /* A narrow screen draws no canvas card of its own here: the phone's record is stream 10's. Nothing it shows may be a price made up. */
+  await open(`/suites?project=${social.project.id}&view=board&kind=social`, "Social");
+  /* Nothing a board shows may be a price made up, and nothing was sent by opening it. */
+  expect(ads.paid).toEqual([]);
+  expect(social.paid).toEqual([]);
   expect(errors).toEqual([]);
   await shot(page, "ads-social-sizes");
 });
