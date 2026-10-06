@@ -19,10 +19,11 @@ import { openDesigner } from "../ads-session";
 import { posterFor } from "../designer-model";
 import { Actions, Btn, Meta, Note, Title, Well } from "./common";
 import { uid } from "@/lib/workbench/studio";
+import { PRODUCT_IMAGE_NAME } from "@/lib/uiNames";
 
 /* Frame 2 of the Ads board: the group "Ads": the image-ad card (Marketing Studio Image 2.0 Alpha), results, and what is not built. */
 
-const ENGINE = `Marketing Studio Image · ${imageAdBuild("alpha").label}`;
+const ENGINE = `${PRODUCT_IMAGE_NAME} · ${imageAdBuild("alpha").label}`;
 const SIZE_WORDS: Record<string, string> = { "1k": "1K", "2k": "2K", "4k": "4K" };
 
 /** One branded still from the product image, on Particl's Higgsfield API key: the estimate on the button, then one send at that figure. */

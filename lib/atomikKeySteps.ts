@@ -2,6 +2,7 @@ import { GENJUTSU_LABELS, GENJUTSU_LIMITS, GENJUTSU_MODELS, genjutsuVariantForMo
 import { MARKETING_IMAGE_MODEL_ID } from "./models";
 import { MARKETING_BUILDS, marketingQualities, type MarketingBuild, type MarketingQuality } from "./workbench/moleculr";
 import type { StepRef } from "./attachments";
+import { PRODUCT_IMAGE_NAME } from "./uiNames";
 
 /**
  * Atomik's library steps: the API-key engines that work from a project's own
@@ -42,7 +43,7 @@ export const isKeyStep = (step: { model?: unknown } | null | undefined): boolean
 export function keyStepLabel(model: string): string | null {
   const variant = genjutsuVariantForModel(model);
   if (variant) return GENJUTSU_LABELS[variant];
-  return model === MARKETING_IMAGE_MODEL_ID ? "Marketing Studio Image" : null;
+  return model === MARKETING_IMAGE_MODEL_ID ? PRODUCT_IMAGE_NAME : null;
 }
 
 /** One item of the project's Library as the planner is shown it. */

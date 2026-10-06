@@ -313,7 +313,7 @@ test("Marketing edits require a new mapped live quote and a lost acknowledgement
   await dialog
     .getByLabel("Generation direction")
     .fill("Revised product campaign direction");
-  await dialog.getByLabel("Marketing image quality").selectOption("medium");
+  await dialog.getByLabel("Product image quality").selectOption("medium");
   await expect(
     dialog.getByRole("button", {
       name: "Generate · 3 cr estimated",
@@ -346,7 +346,7 @@ test("Marketing edits require a new mapped live quote and a lost acknowledgement
   await expect(dialog.getByLabel("Generation direction")).toHaveValue(
     "Revised product campaign direction",
   );
-  await expect(dialog.getByLabel("Marketing image quality")).toBeDisabled();
+  await expect(dialog.getByLabel("Product image quality")).toBeDisabled();
   await dialog
     .getByRole("button", { name: "Recover submitted take", exact: true })
     .click();
@@ -372,7 +372,7 @@ test("Moleculr restores accepted prompt and 4k marketing settings after lost ack
   await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
   await dialog.getByLabel("Generation size").selectOption("4k");
   await dialog.getByLabel("Generation aspect").selectOption("3:4");
-  await dialog.getByLabel("Marketing image quality").selectOption("medium");
+  await dialog.getByLabel("Product image quality").selectOption("medium");
   const acceptedPrompt = "Accepted campaign direction: sculpted light and exact original packaging.";
   await dialog.getByLabel("Generation direction").fill(acceptedPrompt);
   await expect(dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true })).toBeEnabled();
@@ -388,8 +388,8 @@ test("Moleculr restores accepted prompt and 4k marketing settings after lost ack
   dialog = await openVariant();
   await expect(dialog.getByLabel("Generation direction")).toHaveValue(acceptedPrompt);
   await expect(dialog.getByLabel("Generation size")).toHaveValue("4k");
-  await expect(dialog.getByLabel("Marketing image quality")).toHaveValue("medium");
-  await expect(dialog.getByLabel("Marketing image quality")).toBeDisabled();
+  await expect(dialog.getByLabel("Product image quality")).toHaveValue("medium");
+  await expect(dialog.getByLabel("Product image quality")).toBeDisabled();
   expect(f.submissions).toHaveLength(1);
   await dialog.getByRole("button", { name: "Recover submitted take", exact: true }).click();
   await expect(dialog).not.toBeVisible();
@@ -406,8 +406,8 @@ test("Moleculr restores accepted prompt and 4k marketing settings after lost ack
   await expect(dialog.getByLabel("Generation direction")).toHaveValue(acceptedPrompt);
   await expect(dialog.getByLabel("Generation size")).toHaveValue("4k");
   await expect(dialog.getByLabel("Generation aspect")).toHaveValue("3:4");
-  await expect(dialog.getByLabel("Marketing image quality")).toHaveValue("medium");
-  await expect(dialog.getByLabel("Marketing image quality")).toBeEnabled();
+  await expect(dialog.getByLabel("Product image quality")).toHaveValue("medium");
+  await expect(dialog.getByLabel("Product image quality")).toBeEnabled();
   await expect(dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true })).toBeEnabled();
   expect(f.quotes.at(-1)?.body).toMatchObject({ prompt: acceptedPrompt, model: modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } });
   expect(f.submissions).toHaveLength(1);
@@ -475,7 +475,7 @@ test("a 2.5 build adds extra-high and max, reads about N cr on Generate, and sen
   await page.goto(await legacyShell(page, "/workbench?project=marketing-generation&stage=canvas"));
   const dialog = await openNode(page);
   await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
-  const build = dialog.getByLabel("Marketing Studio build"), quality = dialog.getByLabel("Marketing image quality");
+  const build = dialog.getByLabel("Marketing Studio build"), quality = dialog.getByLabel("Product image quality");
   await expect(build).toHaveValue("alpha");
   await expect(quality.locator("option")).toHaveText(["Low", "Medium", "High"]);
   await build.selectOption("flare");

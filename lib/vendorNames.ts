@@ -1,3 +1,5 @@
+import { IDENTITY_RENDER_NAME } from "./uiNames";
+
 /**
  * The product's naming rule, in one place.
  *
@@ -98,7 +100,7 @@ export function providerDisplayName(id: string): string {
  */
 const FAMILY_RENAMES: [RegExp, string][] = [
   [/\bSoul[\s-]+ID\b/gi, "Identity"],
-  [/\bSoul[\s-]+Character\b/gi, "Identity render"],
+  [/\bSoul[\s-]+Character\b/gi, IDENTITY_RENDER_NAME],
   [/\bHiggsfield\s+Soul\b/gi, "Persona"],
   [/\bSoul(?=\s+(?:\d|Cinema|Cast|Location|v\d))/gi, "Persona"],
   [/\bNano\s+Banana\b/gi, "Image"],

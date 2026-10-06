@@ -27,6 +27,7 @@ import {
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
+import { PRODUCT_IMAGE_NAME } from '@/lib/uiNames';
 
 type Model = {
   id: string;
@@ -487,7 +488,7 @@ function TakeDialog({
             }}>
               {MARKETING_BUILDS.map(build => <option key={build.id} value={build.id}>{build.label}</option>)}
             </select></label>
-            <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
+            <label className="field-label">Image quality<select aria-label={`${PRODUCT_IMAGE_NAME} quality`} value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
               {marketingQualities(marketing.variant).map(quality => <option key={quality.id} value={quality.id}>{quality.label}</option>)}
             </select></label>
             <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Marketing Studio · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
