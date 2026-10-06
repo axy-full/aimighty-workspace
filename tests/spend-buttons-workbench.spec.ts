@@ -42,6 +42,7 @@ type Probe = {
 const D0 = { until: "2026-10-08", by: "D0 #512/#514 (Make: every paid button shows its price)" };
 const BOARD = { until: "2026-10-08", by: "the board PR deletes this screen" };
 const PROBES: Probe[] = [
+  { name: "Make panel", path: "/suites?make=1", minSpend: 1, strict: true, allowedUnmarked: 0, ...D0 },
   { name: "Gen (Make once #512 lands)", path: "/suites?view=gen", minSpend: 1, strict: true, allowedUnmarked: 1, ...D0 },
   { name: "Studio · Brief", path: "/suites?suite=studio&sp=brief", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
   { name: "Studio · Boards", path: "/suites?suite=studio&sp=boards", minSpend: 0, strict: false, allowedUnmarked: 0, ...BOARD },
@@ -82,7 +83,7 @@ function read(page: Page): Promise<Found> {
     const figureRe = new RegExp(figure.source, figure.flags);
     const verbRe = new RegExp(verb.source, verb.flags);
     const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden"; };
-    const name = (el: Element) => `${el.getAttribute("data-testid") ?? ""} "${(el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60)}"`.trim();
+    const name = (el: Element) => `${el.getAttribute("data-testid") ?? ""} "${(el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60)}" <${el.tagName.toLowerCase()}${el.getAttribute("role") ? ` role=${el.getAttribute("role")}` : ""} in ${el.closest("header,nav,[role=tablist],aside")?.tagName.toLowerCase() ?? "page"}.${el.closest("header,nav,[role=tablist],aside")?.className ?? ""}>`.trim();
     const marked = Array.from(document.querySelectorAll("[data-spend]")).filter(visible);
     const noPrice = marked.filter((el) => {
       const text = `${el.textContent ?? ""} ${el.getAttribute("aria-label") ?? ""}`;
@@ -92,6 +93,8 @@ function read(page: Page): Promise<Found> {
     }).map(name);
     const unmarked = Array.from(document.querySelectorAll("button, [role=button]")).filter(visible).filter((el) => {
       if (el.closest("[data-spend]")) return false;
+      /* A tab switches what is shown ("Make" | "Recent"); it never starts anything. */
+      if (el.getAttribute("role") === "tab") return false;
       const label = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim();
       return verbRe.test(label);
     }).map(name);

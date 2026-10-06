@@ -94,6 +94,7 @@ test("Start shows Atomik's thinking at the server's figure, the dollars on hover
   await expect(page.getByTestId("home-thinking")).toHaveText(`Atomik’s thinking may cost up to ${figure} cr`);
   const start = page.getByTestId("home-start");
   await expect(start).toHaveText(`Start · up to ${figure} cr`);
+  await expect(start).toHaveAttribute("data-spend-price", `up to ${figure} cr`);
   await expect(start).toHaveAttribute("title", /^up to \$\d+\.\d\d$/);
   await expect(start).toBeEnabled();
   await expect(page.getByTestId("home-waiting")).toHaveCount(0);
@@ -237,6 +238,7 @@ test("Waiting for you: each item at its own price, approved alone through its ow
   await expect(held).toContainText("Keyframe · retake");
   await expect(held).toContainText(/Kitchen at dawn · Make · \d\d:\d\d/);
   await expect(held.getByTestId("home-waiting-approve")).toHaveText("Approve · 3 cr");
+  await expect(held.getByTestId("home-waiting-approve")).toHaveAttribute("data-spend-price", "3 cr");
   await expect(held.getByTestId("home-waiting-approve")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
   await expect(page.locator('[data-item="board-render:r1:2"]').getByTestId("home-waiting-why")).toHaveText("Needs an admin");
   await expect(page.locator('[data-item="board-render:r1:2"]').getByTestId("home-waiting-approve")).toHaveCount(0);

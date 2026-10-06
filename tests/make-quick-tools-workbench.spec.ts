@@ -85,7 +85,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-tab", "video");
   const row = page.getByTestId("make-quick-tools");
-  await expect(row.getByRole("button")).toHaveText(["Motion transfer", "Object swap"]);
+  await expect(row.getByRole("button")).toHaveText(["Motion transfer", "Object swap", "Upscale"]);
   await floors(page, info.project.name, "make-quick-tools");
   if (SHOTS && SHOT_SIZES[info.project.name]) {
     mkdirSync(SHOTS, { recursive: true });

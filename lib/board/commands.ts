@@ -11,6 +11,8 @@ export type BoardCommand =
   | { name: "tidy" }
   | { name: "fit" }
   | { name: "list" | "board" }
+  /** The rail's Library drawer (the board's own Library: the project's files, draggable onto a shot). */
+  | { name: "library" }
   | { name: "glide"; to: RegionId };
 
 type Handler = (command: BoardCommand) => boolean;

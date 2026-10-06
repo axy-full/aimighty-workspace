@@ -58,11 +58,9 @@ test("a file added on the board lands in the Library drawer, the filters keep it
   expect(paid).toEqual([]);
 });
 
-/* C1 (release/1 CI triage): a Library file dragged onto a shot does nothing. BoardView.dropOn needs the card kind's
-   `accepts`; Stream 5's `takeDef` (components/graphite/board/cards/take/TakeCard.tsx) replaced Stream 3's shot card and
-   has none. The fix is in TakeCard.tsx, which is batch F5's; the assertion stays exactly as it was, and is switched back
-   on (remove the fixme) in the push that gives `takeDef` its `accepts`. */
-test.fixme("a file from the Library dragged onto a shot becomes that shot's reference, and the board says so", async ({ page }) => {
+/* A Library file dropped on a shot is its reference: BoardView.dropOn needs the card kind's `accepts`, which the shot cards
+   (take/TakeCard.tsx) carry through components/graphite/board/cards/accepts.ts (tests/unit/r1-f5-shot-drop.spec.ts). */
+test("a file from the Library dragged onto a shot becomes that shot's reference, and the board says so", async ({ page }) => {
   test.skip(!desktop(page), "the canvas is desktop only");
   const { project, paid } = await seedBoard(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
