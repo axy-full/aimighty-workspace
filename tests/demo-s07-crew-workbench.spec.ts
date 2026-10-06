@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { seedBoard, desktop } from "./helpers/s03-board";
@@ -10,7 +12,7 @@ import { smallTextIn } from "./helpers/s07Floors";
  * up to N cr" is the round's own quote and its approval; what comes back are the room's solutions, to dismiss, add to
  * the brief (free) or open in Make (which shows its own price). Nothing is made here. Neutral names only. Desktop only.
  */
-const SHOTS = process.env.S07_SHOTS || "/private/tmp/claude-s07-shots";
+const SHOTS = process.env.S07_SHOTS || join(tmpdir(), "claude-s07-shots");
 const shot = async (page: Page, name: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });

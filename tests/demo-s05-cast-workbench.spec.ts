@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -9,7 +11,7 @@ import { newProject, type CanvasNode } from "../lib/workbench/studio";
  * the training consent that exists is read from the identities list, Render a still hands its words to Make (which
  * prices it), and nothing paid is ever sent. Neutral names only.
  */
-const SHOTS = process.env.S05_SHOTS || "/private/tmp/claude-s05-shots";
+const SHOTS = process.env.S05_SHOTS || join(tmpdir(), "claude-s05-shots");
 
 const shotNode = (id: string, title: string, boardShotId: string): CanvasNode =>
   ({ id, title, type: "scene", x: 0, y: 0, width: 344, linked: [], boardShotId }) as CanvasNode;

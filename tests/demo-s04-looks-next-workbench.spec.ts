@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { createClient } from "@libsql/client";
@@ -12,7 +14,7 @@ import type { BeatSheet } from "../lib/production/beats";
  * answered in the browser), three cards offer a next make: each opens Make or Crew, where the price is shown and a
  * person presses. Nothing paid is ever sent. Neutral names only.
  */
-const SHOTS = process.env.S04_SHOTS || "/private/tmp/claude-s04-shots";
+const SHOTS = process.env.S04_SHOTS || join(tmpdir(), "claude-s04-shots");
 const PNG = readFileSync("public/icon-192.png");
 const SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const NOW = new Date().toISOString();

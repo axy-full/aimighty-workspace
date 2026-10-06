@@ -1,12 +1,17 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork, generation, mockMedia } from "./helpers/workspaceFixtures";
 import { screenplayPdf } from "./helpers/screenplayPdf";
 import { smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
+
+const S02_SHOTS = process.env.S02_SHOTS || join(tmpdir(), "claude-s02-shots");
+mkdirSync(S02_SHOTS, { recursive: true });
 
 /**
  * Home (design/particl-graphite/README.md § 1.1; the master's `?view=home`): "What are we making?", the
@@ -145,9 +150,9 @@ test("Home as drawn: the box, its chips, the templates and the projects, every l
   expect(last.bottom).toBeLessThanOrEqual(last.view);
   expect(errors).toEqual([]);
   const size = info.project.name.replace("workbench-", "");
-  await page.screenshot({ path: `/private/tmp/claude-s02-shots/home-${size}-end.png`, animations: "disabled" });
+  await page.screenshot({ path: `${S02_SHOTS}/home-${size}-end.png`, animations: "disabled" });
   await page.evaluate(() => { document.querySelector<HTMLElement>(".gx-hm")!.scrollTop = 0; });
-  await page.screenshot({ path: `/private/tmp/claude-s02-shots/home-${size}.png`, animations: "disabled" });
+  await page.screenshot({ path: `${S02_SHOTS}/home-${size}.png`, animations: "disabled" });
 });
 
 test("a template makes the project at once with what the box holds, then opens the board of its kind", async ({ page }, info) => {
@@ -250,7 +255,7 @@ test("Attach a brief reads a PDF or a text file on this device into the box; any
   await page.locator('[data-testid="home-aspect"][data-value="9:16"]').click();
   await expect(page.locator('[data-testid="home-aspect"][aria-pressed="true"]')).toHaveText("9:16");
   await expect(page.getByTestId("home-brief")).toHaveValue(/^Typed first\./);
-  await page.screenshot({ path: `/private/tmp/claude-s02-shots/home-${info.project.name.replace("workbench-", "")}-brief.png`, animations: "disabled" });
+  await page.screenshot({ path: `${S02_SHOTS}/home-${info.project.name.replace("workbench-", "")}-brief.png`, animations: "disabled" });
 
   await page.getByTestId("home-brief-file").getByRole("button", { name: "Remove brief.txt" }).click();
   await page.getByTestId("home-brief").fill("");

@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
@@ -14,7 +16,7 @@ import { smallTargets } from "./phoneFloors";
  */
 
 const PAGE = "/suites?suite=atomik&page=approvals";
-const SHOTS = "/private/tmp/claude-s08-shots";
+const SHOTS = join(tmpdir(), "claude-s08-shots");
 const SHOT_SIZES = ["workbench-1440x900", "workbench-390x844"];
 
 async function shoot(page: Page, project: string, name: string) {

@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -9,7 +11,7 @@ import { newProject, type Asset, type CanvasNode } from "../lib/workbench/studio
  * says "2 approved takes · 0:10", the delivery checks read pending until the cut is complete, loudness is not
  * measured and offers no button, and Open Edit & Sound opens the existing editor over the board. Nothing paid is sent.
  */
-const SHOTS = process.env.S05_SHOTS || "/private/tmp/claude-s05-shots";
+const SHOTS = process.env.S05_SHOTS || join(tmpdir(), "claude-s05-shots");
 const PNG = readFileSync("public/icon-192.png");
 
 const node = (id: string, title: string): CanvasNode => ({ id, title, type: "scene", x: 0, y: 0, width: 344, linked: [] }) as CanvasNode;

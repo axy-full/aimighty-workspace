@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -12,7 +14,7 @@ import { smallTargets } from "./phoneFloors";
  */
 
 const PAGE = "/suites?suite=atomik&page=saved-skills";
-const SHOTS = "/private/tmp/claude-s08-shots";
+const SHOTS = join(tmpdir(), "claude-s08-shots");
 const SHOT_SIZES = ["workbench-1440x900", "workbench-390x844"];
 
 async function floors(page: Page, phone: boolean) {

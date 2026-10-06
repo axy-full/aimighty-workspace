@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { seedBoard, desktop } from "./helpers/s03-board";
@@ -10,7 +12,7 @@ import { smallTextIn } from "./helpers/s07Floors";
  * the thinking as an approval priced → settled and the proposal as an open decision, and the spend against the budget
  * ("no budget" until one is set). Nothing is approved or spent here. Neutral names only. Desktop only (phones: stream 10).
  */
-const SHOTS = process.env.S07_SHOTS || "/private/tmp/claude-s07-shots";
+const SHOTS = process.env.S07_SHOTS || join(tmpdir(), "claude-s07-shots");
 const shot = async (page: Page, name: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });

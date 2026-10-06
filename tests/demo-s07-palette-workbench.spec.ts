@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -14,7 +16,7 @@ import type { ApprovalsReply, QueueItem } from "../lib/control-room/queue";
  * one button sends each item through that item's own route, in order, stopping at the first refusal. No paid work is
  * sent anywhere (forbidPaidWork). Neutral names only.
  */
-const SHOTS = process.env.S07_SHOTS || "/private/tmp/claude-s07-shots";
+const SHOTS = process.env.S07_SHOTS || join(tmpdir(), "claude-s07-shots");
 const shot = async (page: Page, name: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });

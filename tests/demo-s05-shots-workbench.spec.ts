@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -10,7 +12,7 @@ import { newProject, type CanvasNode } from "../lib/workbench/studio";
  * review trail (PATCH /api/jobs/:id) and a take note (POST /api/notes), both answered in the browser too, and the
  * spec holds that nothing paid is ever sent. Neutral names only.
  */
-const SHOTS = process.env.S05_SHOTS || "/private/tmp/claude-s05-shots";
+const SHOTS = process.env.S05_SHOTS || join(tmpdir(), "claude-s05-shots");
 const PNG = readFileSync("public/icon-192.png");
 
 const node = (id: string, title: string, extra: Partial<CanvasNode> = {}): CanvasNode =>

@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
@@ -11,7 +13,7 @@ import type { BeatSheet } from "../lib/production/beats";
  * nothing; Approve is the run's own approval by the person who asked, which builds (free); each render then waits
  * for its own tap at its own price, and the spec never takes it. Neutral names only.
  */
-const SHOTS = process.env.S04_SHOTS || "/private/tmp/claude-s04-shots";
+const SHOTS = process.env.S04_SHOTS || join(tmpdir(), "claude-s04-shots");
 const SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 const beats = (): BeatSheet => ({

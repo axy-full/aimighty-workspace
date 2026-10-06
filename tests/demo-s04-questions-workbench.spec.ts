@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
@@ -11,7 +13,7 @@ import type { BeatSheet } from "../lib/production/beats";
  * server showed, on the local ENGINE_MOCK=1 server: nothing is sent before the press, then exactly one request per
  * look and one per frame, each at its shown price.
  */
-const SHOTS = process.env.S04_SHOTS || "/private/tmp/claude-s04-shots";
+const SHOTS = process.env.S04_SHOTS || join(tmpdir(), "claude-s04-shots");
 const SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 const beats = (): BeatSheet => ({

@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
@@ -6,6 +9,9 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
 import type { QueueItem } from "../lib/control-room/queue";
+
+const S02_SHOTS = process.env.S02_SHOTS || join(tmpdir(), "claude-s02-shots");
+mkdirSync(S02_SHOTS, { recursive: true });
 
 /**
  * Home's money (design/particl-graphite/README.md § 1.1, § 4, § 5): Start · up to N cr with Atomik's
@@ -235,7 +241,7 @@ test("Waiting for you: each item at its own price, approved alone through its ow
   if (COARSE.includes(info.project.name)) expect(await smallTargets(page, ".gx-hm"), "targets under 44×44").toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.getByTestId("home-waiting").scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `/private/tmp/claude-s02-shots/home-waiting-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
+  await page.screenshot({ path: `${S02_SHOTS}/home-waiting-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
 
   if (![DESKTOP, PHONE].includes(info.project.name)) return;
   await held.getByTestId("home-waiting-approve").click();

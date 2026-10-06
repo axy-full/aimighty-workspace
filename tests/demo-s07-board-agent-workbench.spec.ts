@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { seedBoard, desktop } from "./helpers/s03-board";
@@ -11,7 +13,7 @@ import { smallTextIn } from "./helpers/s07Floors";
  * after a thinking-only ask the renders wait on the run's limit (Raise), and a render is never pressed here. Neutral
  * names only. The canvas is desktop only (phones open the project's Record, stream 10).
  */
-const SHOTS = process.env.S07_SHOTS || "/private/tmp/claude-s07-shots";
+const SHOTS = process.env.S07_SHOTS || join(tmpdir(), "claude-s07-shots");
 const shot = async (page: Page, name: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });
