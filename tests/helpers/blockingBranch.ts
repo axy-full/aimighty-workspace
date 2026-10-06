@@ -2,7 +2,8 @@
  * The guard for the 3D blocking branch-copy check (tests/unit/blocking-branch-copy.spec.ts): it may only ever run against a copy the
  * owner made for it, never against the production database. Pure, so its own rules are tested (tests/unit/blocking-schema.spec.ts).
  *
- *  - the URL must carry the owner's branch marker, `3d-blocking-test`, in its host or path (a file: copy names it in its file name);
+ *  - the URL must carry the owner's branch marker, `3d-blocking-test`: in its HOST for a remote database (a marker only in the path of a
+ *    production host does not count), or in its file name for a local file: copy;
  *  - it must not be any database the environment names as the live one (TURSO_DATABASE_URL, DATABASE_URL,
  *    PLATFORM_DATABASE_URL, WORKSPACE_DATABASE_URL, or a comma-separated BLOCKING_PRODUCTION_NAMES the owner adds);
  *  - it must not look like a production name (a host or path with "prod" in it);
@@ -16,12 +17,19 @@ const LIVE_URL_VARS = ["TURSO_DATABASE_URL", "DATABASE_URL", "PLATFORM_DATABASE_
 function hostAndPath(url: string): string {
   try { const u = new URL(url); return `${u.host}${u.pathname}`.toLowerCase(); } catch { return url.toLowerCase(); }
 }
+/** Where the marker must be: the host of a remote URL; the path of a local file: copy (it has no host). An address that cannot be read counts as a whole. */
+function markerPlace(url: string): string {
+  try {
+    const u = new URL(url);
+    return (u.protocol === "file:" ? u.pathname : u.host).toLowerCase();
+  } catch { return url.toLowerCase(); }
+}
 
 /** Why this URL may not be used, in words, or null when it is a branch copy the check may read. */
 export function branchCopyProblem(url: string | undefined, env: Env = process.env): string | null {
   if (!url) return "Set BLOCKING_BRANCH_DB_URL to the branch copy.";
   const where = hostAndPath(url);
-  if (!where.includes(BRANCH_MARKER)) return `This is not a branch copy: its host or path does not contain "${BRANCH_MARKER}". Nothing was read.`;
+  if (!markerPlace(url).includes(BRANCH_MARKER)) return `This is not a branch copy: ${/^file:/i.test(url.trim()) ? "its file name" : "its host"} does not contain "${BRANCH_MARKER}". Nothing was read.`;
   const live = [...LIVE_URL_VARS.map((name) => env[name]), ...(env.BLOCKING_PRODUCTION_NAMES ?? "").split(",")]
     .map((value) => (value ?? "").trim()).filter(Boolean);
   for (const name of live) if (url.trim() === name || hostAndPath(name) === where) return "This URL is the live database. Nothing was read.";

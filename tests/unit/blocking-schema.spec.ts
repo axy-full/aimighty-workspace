@@ -56,6 +56,11 @@ test("the branch-copy guard: only a copy that carries the owner's marker, never 
   expect(branchCopyProblem(`file:/private/tmp/${BRANCH_MARKER}.db`, {})).toBeNull();
   expect(branchCopyProblem(undefined, {})).toMatch(/Set BLOCKING_BRANCH_DB_URL/);
   expect(branchCopyProblem("libsql://some-database-someorg.turso.io", {})).toMatch(/not a branch copy/);
+  /* The marker must be in the host of a remote database: a path or a query carrying it on another host does not count. */
+  expect(branchCopyProblem(`libsql://some-database-someorg.turso.io/${BRANCH_MARKER}`, {})).toMatch(/not a branch copy/);
+  expect(branchCopyProblem(`https://some-database-someorg.turso.io/x?name=${BRANCH_MARKER}`, {})).toMatch(/not a branch copy/);
+  expect(branchCopyProblem(`libsql://user:${BRANCH_MARKER}@some-database-someorg.turso.io`, {})).toMatch(/not a branch copy/);
+  expect(branchCopyProblem(`https://${BRANCH_MARKER}-someorg.turso.io/anything`, {})).toBeNull();
   expect(branchCopyProblem(url, { TURSO_DATABASE_URL: url })).toMatch(/live database/);
   expect(branchCopyProblem(url, { BLOCKING_PRODUCTION_NAMES: `x, ${url}` })).toMatch(/live database/);
   expect(branchCopyProblem(`libsql://prod-${BRANCH_MARKER}.turso.io`, {})).toMatch(/production/);
