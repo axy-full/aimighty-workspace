@@ -110,7 +110,7 @@ test("an automatic Library retry keeps the same failure banner until its read su
   await expect(banner.getByRole("button", { name: "Trying…" })).toBeDisabled();
   /* Trying… is the read's status, not a spent control: undimmed, it keeps the #7C7C84 label floor. */
   expect(await banner.getByRole("button", { name: "Trying…" }).evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  await expect(page.getByRole("region", { name: "Results" }).getByTestId("take-skeleton")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Recent" }).getByTestId("take-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("gen-results-empty")).toHaveCount(0);
   if (info.project.name.includes("360x640") || info.project.name.includes("390x844") || info.project.name.includes("844x390")) {
     expect(await smallTargets(page, '[data-testid="gen-results-error"]')).toEqual([]);

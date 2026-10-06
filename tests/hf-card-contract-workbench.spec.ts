@@ -105,7 +105,7 @@ async function shot(page: Page, info: TestInfo, name: string, focus?: Locator) {
 test("Gen › Results: skeletons while reading, a failed read with Try again, a status on every take, Refresh, and takes that settle", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, state, hold } = await open(page, "/suites?make=recent", "fail");
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
 
   /* A failed read is a banner, never "nothing generated". */
   const banner = page.getByTestId("gen-results-error");
@@ -213,8 +213,9 @@ test("a project list that will not load says so once, with one Try again, and Tr
   await page.goto("/suites?make=recent");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are not answering right now.");
-  await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
-  /* One way back, in the banner: the head names the state, it does not repeat the button. */
+  /* No project is open behind the failed list: the header's project segment keeps its own neutral word (the banner carries the reason). */
+  await expect(projectName(page)).toHaveText("Project");
+  /* One way back, in the banner: nothing else repeats the button. */
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(1);
   /* Not "Open a project": nothing is known about the projects yet. */
   await expect(page.getByTestId("gen-results-empty")).toHaveCount(0);
@@ -225,7 +226,7 @@ test("a project list that will not load says so once, with one Try again, and Tr
   await banner.getByRole("button", { name: "Try again" }).click();
   await expect(projectName(page)).toHaveText("Harbour takes");
   await expect(banner).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Results" }).getByTestId("take-tile")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Recent" }).getByTestId("take-tile")).toHaveCount(8);
   expect(errors).toEqual([]);
 });
 
@@ -233,7 +234,7 @@ test("a failed Load more stays at the list's end; a re-read that fails with card
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
   const { errors, state } = await open(page, "/suites?make=recent", "ok", { pageSize: 5 });
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
   await expect(results.getByTestId("take-tile")).toHaveCount(5);
   const library = page.getByTestId("library");
   /* Gen's Library has no Tools tab: it is the assets list itself. */
@@ -292,7 +293,7 @@ test("long names and long messages stay inside their cards and banners", async (
     generation({ id: "gen_long_ok", title: `${name} (take two)`, kind: "image", creditsBilled: 1, projectId: "prod-cards", createdAt: BASE - 1, updatedAt: BASE - 1 }),
   ];
   const { errors, state } = await open(page, "/suites?make=recent", "ok", { rows });
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
   await expect(results.getByTestId("take-tile")).toHaveCount(2);
   const card = results.getByTestId("take-tile").first();
   await expect(card.getByTestId("take-reason")).toContainText("This reference is too large");

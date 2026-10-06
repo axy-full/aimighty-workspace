@@ -82,7 +82,7 @@ async function noSideScroll(page: Page) {
 test("Gen › Results: a failed take's charge is said only from a receipt, whole, and clears the tab bar", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?make=recent");
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
   await expect(results.getByTestId("take-tile")).toHaveCount(CASES.length);
   await expectCards(results);
   /* The screen reader hears the take and its status, not a claim about its charge. */
