@@ -39,19 +39,37 @@ const money = (plan: PlanInput, over: Partial<Parameters<typeof planMoneyState>[
 
 /* ── Short ─────────────────────────────────────────────────────────────── */
 
-test("short: the plan's 93 cr against a 40 cr balance is short by 53 cr; Approve waits and Top up is offered beside it", () => {
-  const plan = input({ balance: 40 });
+/** The plan gate (plan approval, lib/workbench/plan-approval.ts): built, each render priced by the run, the server's quote waiting. */
+const atGate = (prices: [number, number, number], asks: number[] = [], over: Partial<RigAgentPaidStepView>[] = []) => {
+  const listed = prices.filter((_, i) => !asks.includes(i + 1));
+  const total = listed.reduce((a, b) => a + b, 0);
+  return run({
+    state: "needs_you", proposal: null, reason: "Shot 1 is ready to render.",
+    paid: prices.map((q, i) => step(i + 1, `Shot ${i + 1}`, { state: "waiting", quote: q, worst: q, canRender: true, fingerprint: FP, ...(over[i] ?? {}) })),
+    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: "d".repeat(64), covered: prices.map((_, i) => i + 1).filter((n) => !asks.includes(n)), asks }, blocked: null, approval: null },
+  });
+};
+
+test("short, at the plan gate: the server's 93 cr against a 40 cr balance is short by 53 cr; Approve · 93 cr waits and Top up is offered beside it", () => {
+  const plan = input({ run: atGate([43, 43, 7]), balance: 40 });
   const model = planModel(plan)!;
   expect(model.total).toEqual({ kind: "exact", credits: 93 });
   /* Approve waits: it is blocked with the short line, never pressed through. */
-  expect(model.primary).toMatchObject({ kind: "approve", blocked: "Top up, then approve. Nothing is spent until you do." });
+  expect(model.primary).toMatchObject({ kind: "plan", label: "Approve · 93 cr", blocked: "Top up, then approve. Nothing is spent until you do." });
   expect(money(plan)).toEqual({ kind: "short", line: "Short by 53 cr", topUp: "Top up · 500 cr · $50" });
   /* The pack words come from the platform's list; with none read, plain "Top up". */
   expect(money(plan, { topUp: "Top up" })).toMatchObject({ topUp: "Top up" });
   /* Enough: no money state; exactly the total is enough. */
-  expect(money(input({ balance: 93 }))).toBeNull();
-  /* Short wins over every other state at the gate: the balance is checked before anything starts. */
-  expect(money(input({ balance: 40, estimates: { ...quoted, 1: { credits: 86, approximate: false } }, rule: { rule: "cap", cap: 50, admin: false } }), { shotCap: 50 })).toMatchObject({ kind: "short", line: "Short by 96 cr" });
+  expect(money(input({ run: atGate([43, 43, 7]), balance: 93 }))).toBeNull();
+  /* Before the gate (Build · free) the card adds nothing up, so there is nothing to be short of. */
+  expect(money(input({ balance: 40 }))).toBeNull();
+});
+
+test("a step needs an admin, at the plan gate: it asks on its own; the plan's own button is Approve the rest · 50 cr (the server's total without it)", () => {
+  const plan = input({ run: atGate([86, 43, 7], [1], [{ state: "paused", pause: "admin" }]), rule: { rule: "cap", cap: 50, admin: false } });
+  const model = planModel(plan)!;
+  expect(model.primary).toMatchObject({ kind: "plan", label: "Approve the rest · 50 cr" });
+  expect(money(plan, { shotCap: 50 })).toMatchObject({ kind: "admin", line: "Shot 1 is over 50 cr a shot · needs an admin", seqs: [1], restLine: "The rest: 2 shots · 50 cr" });
 });
 
 /* ── A step needs an admin ─────────────────────────────────────────────── */

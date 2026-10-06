@@ -20,7 +20,7 @@ const SEED = "dreamina-seedance-2-5-260628", KLING = "fal-ai/kling-video/v3/stan
 const FP = "c".repeat(64);
 const RUN = "rar_000000000000000000000004";
 
-type Step = { seq: number; title: string; state?: string; quote?: number | null; outcome?: string | null; charge?: { credits: number; settled: boolean } | null; canRender?: boolean; fingerprint?: string | null };
+type Step = { seq: number; title: string; state?: string; quote?: number | null; outcome?: string | null; charge?: { credits: number; settled: boolean } | null; canRender?: boolean; fingerprint?: string | null; pause?: string | null };
 const step = (s: Step) => ({
   tool: "render", state: "next", quote: null, worst: null, pause: null, charged: null, outcome: null, charge: null, reason: null, canRender: false, fingerprint: null, ...s,
 });
@@ -32,6 +32,15 @@ const runOf = (state: string, paid: ReturnType<typeof step>[], over: Record<stri
   paid, at: Date.now(), ...over,
 });
 const proposalSteps = () => [step({ seq: 1, title: "Shot 1" }), step({ seq: 2, title: "Shot 2" }), step({ seq: 3, title: "Shot 3" })];
+/** The plan gate (plan approval): built, each render priced by the run, the server's quote waiting for the one approval. `asks`: renders outside it (an admin's). */
+const gateRun = (prices: [number, number, number], asks: number[] = [], over: Partial<Step>[] = []) => {
+  const total = prices.filter((_, i) => !asks.includes(i + 1)).reduce((a, b) => a + b, 0);
+  return runOf("needs_you", prices.map((q, i) => step({ seq: i + 1, title: `Shot ${i + 1}`, state: "waiting", quote: q, canRender: true, fingerprint: FP, ...(over[i] ?? {}) })), {
+    reason: "Shot 1 is ready to render.",
+    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: PLAN_FP, covered: prices.map((_, i) => i + 1).filter((n) => !asks.includes(n)), asks }, blocked: null, approval: null },
+  });
+};
+const PLAN_FP = "d".repeat(64);
 
 const shot = (id: string, title: string, engine: string, x: number, durationS = 5): CanvasNode => ({
   id, title, type: "scene", x, y: 100, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", engine, durationS, ratio: "16:9", resolution: "1080p", text: `${title}: a quiet wide frame.`,
@@ -133,19 +142,21 @@ test("short: Approve waits, Top up beside it opens Settings › Plan & credits, 
   /* The design's 40 cr: a fresh workspace's sign-up credits brought down to 40 on this local fixture database. */
   const before = (await (await page.request.get("/api/workspaces/topups")).json() as { credits?: { balance?: number } }).credits?.balance ?? 0;
   if (before !== 40) await grant(workspace.id, 40 - before);
-  const seeded = await board(page, page.request, workspace.id, runOf("awaiting_approval", proposalSteps()));
+  const seeded = await board(page, page.request, workspace.id, gateRun([43, 43, 7]));
   if (!desktop(page)) return phoneFloors(page, seeded.project, seeded);
   await page.goto(`/suites?project=${seeded.project.id}&view=board`);
   const card = plan(page);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.getByTestId("board-plan-line")).toContainText("93 cr for the 3 shots");
+  await expect(card).toContainText("Make 3 shots · 93 cr · at most 186 cr");
   /* The header's balance is the one the card counts: 40 cr, short by 53. */
   await expect.poll(() => headerBalance(page)).toBe("40 cr");
   const balance = 40;
   await expect(card.getByTestId("board-plan-money")).toHaveText(`Short by ${93 - balance} cr`);
   await expect(card).toHaveAttribute("data-money", "short");
+  /* The plan's own button, the server's total, waits. */
+  await expect(card.getByTestId("board-plan-primary")).toHaveText("Approve · 93 cr");
   await expect(card.getByTestId("board-plan-primary")).toBeDisabled();
-  await expect(card.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
+  await expect(card.getByTestId("board-plan-primary")).toHaveAttribute("data-spend-price", "93 cr");
   const topUp = card.getByTestId("board-plan-topup");
   /* The platform's smallest pack, read from the server (the local deployment sells the Starter pack). */
   await expect(topUp).toHaveText(/^Top up · [\d,]+ cr · \$[\d.,]+$/);
@@ -167,7 +178,8 @@ test("a step needs an admin: Shot 1 at 86 cr is over the 50 cr per-shot cap; a m
   const ownerMe = await (await owner.get("/api/me")).json() as { id: string };
   const rule = await owner.patch("/api/settings", { headers: { "X-Workbench-Scope": `particl-active-${workspace.id}-${ownerMe.id}` }, data: { approvalRule: "cap", shotCapCredits: "50" } });
   expect(rule.ok(), await rule.text()).toBe(true);
-  const seeded = await board(page, page.request, workspace.id, runOf("awaiting_approval", proposalSteps()), { shot1Seconds: 10 });
+  /* Shot 1 as a 10 s shot at 86 cr, paused for an admin: it asks on its own, outside the plan's one approval. */
+  const seeded = await board(page, page.request, workspace.id, gateRun([86, 43, 7], [1], [{ state: "paused", pause: "admin" }]), { shot1Seconds: 10 });
   await page.route("**/api/workbench/ask-admin", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ asked: 1, line: "Asked. The owner and admins were told; nothing was spent." }) }));
   if (!desktop(page)) { await phoneFloors(page, seeded.project, seeded); await owner.dispose(); return; }
   await page.goto(`/suites?project=${seeded.project.id}&view=board`);
@@ -175,11 +187,10 @@ test("a step needs an admin: Shot 1 at 86 cr is over the 50 cr per-shot cap; a m
   await expect(card).toHaveAttribute("data-money", "admin", { timeout: 20_000 });
   await expect(card.getByTestId("board-plan-money")).toHaveText("Shot 1 is over 50 cr a shot · needs an admin");
   await expect(card.getByTestId("board-plan-rest")).toHaveText("The rest: 2 shots · 50 cr");
-  await expect(card.getByTestId("board-plan-line")).toContainText("136 cr for the 3 shots");
-  /* On release/1 Approve is the run's approval and each render asks at its price: it carries no figure (#555 adds it). */
-  await expect(card.getByTestId("board-plan-primary")).toHaveText("Approve the rest");
-  await expect(card.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
-  await card.getByTestId("board-plan-toggle").click();
+  /* The plan's one approval leaves the admin's step out: the server's total for the rest. */
+  await expect(card).toContainText("Make 3 shots · 50 cr · at most 100 cr");
+  await expect(card.getByTestId("board-plan-primary")).toHaveText("Approve the rest · 50 cr");
+  await expect(card.getByTestId("board-plan-primary")).toHaveAttribute("data-spend-price", "50 cr");
   await expect(card.getByTestId("board-plan-admin")).toHaveText("Needs an admin · over 50 cr on a shot");
   expect(await smallText(page)).toEqual([]);
   await shoot(page, "money-admin", info.project.name);
@@ -188,7 +199,7 @@ test("a step needs an admin: Shot 1 at 86 cr is over the 50 cr per-shot cap; a m
   expect(seeded.asks).toEqual([{ about: "step", productionId: seeded.productionId, runId: RUN, seq: 1 }]);
   await card.getByTestId("board-plan-primary").click();
   await expect.poll(() => seeded.posts.length).toBe(1);
-  expect(seeded.posts[0]).toMatchObject({ action: "agent.approve", runId: RUN, fingerprint: FP });
+  expect(seeded.posts[0]).toMatchObject({ action: "agent.approvePlan", runId: RUN, fingerprint: PLAN_FP });
   expect(seeded.paid).toEqual([]);
   await owner.dispose();
 });
@@ -203,7 +214,8 @@ test("engine unavailable: the server's reason; Move Shot 3 to Seedance 2.5 at it
   await expect(card).toHaveAttribute("data-money", "unavailable", { timeout: 20_000 });
   await expect(card.getByTestId("board-plan-money")).toHaveText("Shot 3 can't render · no key on this workspace");
   await expect(card.getByTestId("board-plan-rest")).toHaveText("The rest: 2 shots · 86 cr");
-  await expect(card.getByTestId("board-plan-primary")).toHaveText("Approve 2 shots");
+  /* Before the build the plan's own button builds, free; the shots are approved once, at the plan gate. */
+  await expect(card.getByTestId("board-plan-primary")).toHaveText("Build · free");
   const move = card.getByTestId("board-plan-move");
   await expect(move).toHaveText("Move Shot 3 to Seedance 2.5 · 43 cr");
   await expect(move).toHaveAttribute("title", /^\$[\d.]+$/);
@@ -212,7 +224,6 @@ test("engine unavailable: the server's reason; Move Shot 3 to Seedance 2.5 at it
   await move.click();
   /* Moved on the board: Shot 3 is priced on its new engine and the plan has no unavailable step. */
   await expect(card).not.toHaveAttribute("data-money", /.*/, { timeout: 15_000 });
-  await expect(card.getByTestId("board-plan-line")).toContainText("129 cr for the 3 shots");
   expect(seeded.posts).toEqual([]);
   expect(seeded.paid).toEqual([]);
 });

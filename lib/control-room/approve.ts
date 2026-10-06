@@ -9,6 +9,7 @@ import { batchable, pressable, type QueueItem } from "./queue";
  *
  *  - a held take:   POST /api/jobs/:id/release {credits}   (lib/held.ts)
  *  - a board build: POST /api/workbench/team-canvas {action:"agent.approve", fingerprint}
+ *  - a board plan:  POST /api/workbench/team-canvas {action:"agent.approvePlan", fingerprint} (approved once, at its total)
  *  - a board render: POST /api/workbench/team-canvas {action:"agent.render", seq, fingerprint}
  *  - a plan's step: its own Continue, at its live price (ThreadCheckpoint); never from here.
  *
@@ -56,6 +57,8 @@ export async function approveItem(item: QueueItem, fetcher: Fetcher): Promise<Pr
     case "release":
       return send(fetcher, `/api/jobs/${encodeURIComponent(ref.genId)}/release`, json({ credits: ref.credits }), "This take could not be released. Nothing was charged.");
     case "board-approve":
+      if (ref.plan)
+        return send(fetcher, "/api/workbench/team-canvas", json({ action: "agent.approvePlan", productionId: ref.productionId, runId: ref.runId, fingerprint: ref.fingerprint }), "This plan could not be approved. Nothing was charged.");
       return send(fetcher, "/api/workbench/team-canvas", json({ action: "agent.approve", productionId: ref.productionId, runId: ref.runId, fingerprint: ref.fingerprint }), "This build could not be approved.");
     case "board-render":
       return send(fetcher, "/api/workbench/team-canvas", json({ action: "agent.render", productionId: ref.productionId, runId: ref.runId, seq: ref.seq, fingerprint: ref.fingerprint }), "This render could not be approved.");

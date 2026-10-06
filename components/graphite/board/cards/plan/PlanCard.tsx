@@ -14,10 +14,11 @@ import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, useTo
 import "./plan.css";
 
 /**
- * The plan card (design/particl-graphite/README.md § 3.1 e; lead decision 27): what the plan makes and what each
- * step costs, the fix allowance as information, the balance after, admin marks, and Hold · Change · Approve. Approve
- * is the run's own approval by the person who asked; each render then asks at its own price, and the card says so.
- * After approval it stays while the run works, showing each step and the one tap it waits for.
+ * The plan card (design/particl-graphite/README.md § 3.1 e; CLAUDE.md rule 14): what the plan makes and what each
+ * step costs, the balance after, admin marks, and Hold · Change · the primary. Before the build the primary is
+ * Build · free; at the plan gate it is the price, "Approve · 93 cr", under "Make 3 shots · 93 cr · at most 186 cr":
+ * one approval by the person who asked covers the listed renders and up to two fixes per shot, within that ceiling.
+ * After approval it stays while the run works, showing each step, what the plan has used, and any render that asks.
  */
 export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   /* The sample has no run to act on: every control is disabled with the sample's own line. */
@@ -38,6 +39,8 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   if (!model) return null;
   const proposal = model.phase === "proposal";
   const lines = [proposal ? model.totalLine : null, fixLine(model), proposal && money?.kind !== "short" ? balanceLine(model) : null].filter(Boolean).join(" · ");
+  /* At the plan gate the steps are shown at once: they are what the one approval covers. */
+  const gate = model.primary?.kind === "plan" && model.runId !== "sample";
   const short = model.balance?.short != null && proposal && !money;
   const paused = money?.kind === "paused" ? money : null;
   const acting = money && money.kind !== "failed" && !(proposal && plan.held);
@@ -76,10 +79,10 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
       {model.modeLine ? <div className="gx-plan-mode">{model.modeLine}</div> : null}
       {model.note && model.primary?.kind !== "render" ? <div className="gx-plan-why">{model.note}</div> : null}
       {model.steps.length ? (
-        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal} onClick={() => setPlanStepsOpen(runId, !open)} data-testid="board-plan-toggle"
-          hidden={!proposal}>{open ? "Hide the steps" : `Show the ${model.steps.length} ${model.steps.length === 1 ? "step" : "steps"}`}</button>
+        <button type="button" className="gx-plan-toggle nodrag" aria-expanded={open || !proposal || gate} onClick={() => setPlanStepsOpen(runId, !open)} data-testid="board-plan-toggle"
+          hidden={!proposal || gate}>{open ? "Hide the steps" : `Show the ${model.steps.length} ${model.steps.length === 1 ? "step" : "steps"}`}</button>
       ) : null}
-      {(open || !proposal) && model.steps.length ? <Steps model={model} /> : null}
+      {(open || !proposal || gate) && model.steps.length ? <Steps model={model} /> : null}
     </article>
   );
 }
@@ -88,7 +91,7 @@ function PrimaryButton({ primary, busy, onPress }: { primary: PlanPrimary; busy:
   const title = usePriceTitle(primary.kind === "raise" ? null : primary.price);
   return (
     <button type="button" className="gx-plan-primary nodrag" title={title ?? undefined} disabled={busy || Boolean(primary.blocked)} aria-busy={busy || undefined} onClick={onPress} data-testid="board-plan-primary"
-      {...(primary.kind === "render" && primary.price ? spendAttrsOf(primary.price) : {})}>
+      {...((primary.kind === "render" || primary.kind === "plan") && primary.price ? spendAttrsOf(primary.price) : {})}>
       {busy ? "Sending…" : primary.label}
     </button>
   );
@@ -104,6 +107,7 @@ export function Steps({ model }: { model: PlanModel }) {
             <span>{s.title}</span>{s.meta ? <span className="gx-plan-step-meta"> · {s.meta}</span> : null}
             {model.phase !== "proposal" ? <span className="gx-plan-step-status">{s.status}</span> : null}
             {s.unavailable ? <span className="gx-plan-step-flag">{s.unavailable}</span> : null}
+            {s.asksAlone ? <span className="gx-plan-step-flag" data-testid="board-plan-asks">{s.asksAlone}</span> : null}
             {s.needsAdmin ? <span className="gx-plan-step-flag" data-testid="board-plan-admin">{model.adminLine}</span> : null}
           </span>
           {s.state === "failed" && s.status === "Failed · nothing billed" ? <span className="gx-plan-step-later">nothing billed</span>

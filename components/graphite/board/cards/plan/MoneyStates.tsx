@@ -154,12 +154,18 @@ export function MoneyActions({ state, ctx, run, primary, busy, readOnly, onPrima
     } finally { setStopping(false); window.dispatchEvent(new Event(AGENT_CHANGED)); }
   };
   const approveBlocked = busy || blocked || Boolean(primary?.blocked);
+  /* The plan's own button (lib/workbench/plan-approval.ts through the plan model): Build · free before the build, and at the
+     plan gate the server's total, "Approve · 93 cr" or "Approve the rest · 50 cr" with an admin's step left out. The money
+     states never word it themselves once the model has; they only place it. */
+  const plan = primary && (primary.kind === "approve" || primary.kind === "plan") ? primary : null;
+  const planAttrs = plan?.kind === "plan" ? spendAttrsOf(plan.price) : {};
+  const planTitle = usePriceTitle(plan?.kind === "plan" ? plan.price : null);
 
   if (state.kind === "short") {
     return (
       <>
         <button type="button" className="gx-plan-primary nodrag" onClick={() => shell.goWorkspace("credits")} data-testid="board-plan-topup">{state.topUp}</button>
-        {primary ? <button type="button" className="gx-plan-btn nodrag" disabled aria-disabled="true" title={primary.blocked ?? undefined} data-testid="board-plan-primary">{primary.label}</button> : null}
+        {primary ? <button type="button" className="gx-plan-btn nodrag" disabled aria-disabled="true" title={primary.blocked ?? undefined} data-testid="board-plan-primary" {...planAttrs}>{primary.label}</button> : null}
       </>
     );
   }
@@ -167,14 +173,14 @@ export function MoneyActions({ state, ctx, run, primary, busy, readOnly, onPrima
     return (
       <>
         <button type="button" className="gx-plan-primary nodrag" disabled={asking || blocked} aria-busy={asking || undefined} onClick={() => void ask(state.seqs[0])} data-testid="board-plan-ask-admin">{asking ? "Asking…" : "Ask an admin"}</button>
-        {primary?.kind === "approve" ? <button type="button" className="gx-plan-btn nodrag" disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary">{busy ? "Sending…" : state.approveLabel}</button> : null}
+        {plan ? <button type="button" className="gx-plan-btn nodrag" title={planTitle ?? undefined} disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary" {...planAttrs}>{busy ? "Sending…" : plan.label}</button> : null}
       </>
     );
   }
   if (state.kind === "unavailable") {
     return (
       <>
-        {primary?.kind === "approve" ? <button type="button" className="gx-plan-primary nodrag" disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary">{busy ? "Sending…" : state.approveLabel}</button> : null}
+        {plan ? <button type="button" className="gx-plan-primary nodrag" title={planTitle ?? undefined} disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary" {...planAttrs}>{busy ? "Sending…" : plan.label}</button> : null}
         {state.move && move?.nodeId ? (
           <button type="button" className="gx-plan-btn nodrag" title={moveTitle ?? undefined} disabled={blocked}
             onClick={() => { const nodeId = move.nodeId!; const said = ctx.rig.patchShot(nodeId, { engine: state.move!.engine }); ctx.toast(said ?? `${state.move!.label.replace(/^Move /, "Moved ").replace(/ · .*$/, "")}. The plan is priced again.`); window.dispatchEvent(new Event(AGENT_CHANGED)); }}
