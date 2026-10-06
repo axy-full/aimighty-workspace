@@ -5,21 +5,21 @@ import type { ScreenModule } from "./screens";
 /**
  * Make (design/particl-graphite/README.md § 1.1, § 3.2): a panel over any
  * screen, addressed by `make=` on the shell's own URL. `video`, `image` and
- * `audio` are its type; `recent` is its Recent tab; `motion` and `swap` are
- * its quick tools (Motion transfer, Object swap); `1` is "the last type".
+ * `audio` are its type; `recent` is its Recent tab; `motion`, `swap` and `upscale` are
+ * its quick tools (Motion transfer, Object swap, Upscale); `1` is "the last type".
  * `change` opens it on the last type with the engine list open (the new
  * interface draws that list; today's panel opens on the type). `fill` and
  * `made` are states of the panel, never addresses.
  */
-export type MakeTool = "motion" | "swap";
+export type MakeTool = "motion" | "swap" | "upscale";
 export type MakeTab = ComposerType | "recent" | MakeTool;
 export const MAKE_PARAM = "make";
 /** `make=change`: Make on the last type, its engine list open (README § 3.2). */
 export const MAKE_CHANGE = "change";
-const TABS: readonly MakeTab[] = ["video", "image", "audio", "recent", "motion", "swap"];
+const TABS: readonly MakeTab[] = ["video", "image", "audio", "recent", "motion", "swap", "upscale"];
 
 export const isMakeTab = (value: unknown): value is MakeTab => TABS.includes(value as MakeTab);
-export const isMakeTool = (value: unknown): value is MakeTool => value === "motion" || value === "swap";
+export const isMakeTool = (value: unknown): value is MakeTool => value === "motion" || value === "swap" || value === "upscale";
 /** The composer's type a tab names, or null for Recent and the quick tools. */
 export const makeType = (tab: MakeTab | null | undefined): ComposerType | null => (tab && tab !== "recent" && !isMakeTool(tab) ? tab : null);
 

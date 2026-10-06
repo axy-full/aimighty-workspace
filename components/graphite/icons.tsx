@@ -2,7 +2,7 @@
  * The prototype's glyphs (Particl Suites.dc.html › ic), as React. Stroke
  * icons at 1.8, 24-unit box; the suite glyphs carry their suite's colour.
  */
-export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key" | "video" | "swap" | "doc";
+export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key" | "video" | "swap" | "upscale" | "doc";
 
 export function Glyph({ name, size = 16, color, className }: { name: GlyphName; size?: number; color?: string; className?: string }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color ?? "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, className, "aria-hidden": true, style: { display: "block" as const } };
@@ -29,6 +29,7 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
     /* The owner's key: what runs only on the workspace owner's connected account (idea 19). */
     /* Make's quick tools (the master's Motion transfer and Object swap glyphs, on this 24-unit box). */
     case "video": return <svg {...p}><path d="M3 6h12v12H3zM15 10.5l6-3v9l-6-3" /></svg>;
+    case "upscale": return <svg {...p}><path d="M4.5 19.5V14M4.5 19.5H10M19.5 4.5V10M19.5 4.5H14M4.5 19.5l5.5-5.5M19.5 4.5L14 10" /></svg>;
     case "swap": return <svg {...p}><path d="M4.5 9h12l-3-3M19.5 15h-12l3 3" /></svg>;
     case "key": return <svg {...p}><circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8L20 3M16.5 6.5l2.5 2.5M14 9l2 2" /></svg>;
   }

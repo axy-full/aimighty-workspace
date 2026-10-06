@@ -283,3 +283,12 @@
 .gx-sheet-basis { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--gx-hair); font-size: 13px; color: var(--gx-text-2); }
 /* Recent is one card a row (the strips and drafts in it keep their own columns inside the row). */
 .gx-gen-grid.gx-make-cards { grid-template-columns: minmax(0, 1fr); }
+
+/* Make › Upscale (components/graphite/make/UpscaleTool.tsx): the source, the target and the model, then the line with the quote. */
+.up-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.up-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; min-width: 0; }
+.up-select { width: 100%; min-height: 36px; min-width: 0; text-overflow: ellipsis; }
+.up-model { min-height: 32px; display: inline-flex; align-items: center; font-size: 14px; color: var(--gx-text); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .up-select, .gx .up-row > .gx-hbtn, .gx .up-field .gx-seg-btn { min-height: 44px; }
+}

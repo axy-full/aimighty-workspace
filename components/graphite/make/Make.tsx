@@ -6,6 +6,7 @@ import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
 import { LoadBanner } from "../TakeTile";
 import { ViralTool, toolName } from "../viral/ViralView";
 import { Compose } from "./Compose";
+import { UPSCALE_NAME, UpscaleTool } from "./UpscaleTool";
 import { Recent } from "./Recent";
 import { useMake } from "./use-make";
 
@@ -39,7 +40,7 @@ export function Make({ scope, project, items, library, projects = "ready", proje
   const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: onBoard ?? shell.view === "board", listOpen });
   const panel = useRef<HTMLElement>(null);
   useMakeTop(panel);
-  const title = make.tool ? toolName(make.tool) : "Make";
+  const title = make.tool === "upscale" ? UPSCALE_NAME : make.tool ? toolName(make.tool) : "Make";
   const tab = make.tool ?? (make.recent ? "recent" : make.state.type);
   return (
     <aside ref={panel} className="gx-make gx-mk" aria-label={title} data-testid="make-panel" data-ui="new" data-tab={tab}
@@ -57,7 +58,8 @@ export function Make({ scope, project, items, library, projects = "ready", proje
       </div>
       <div className="gx-mk-body gx-scroll" data-testid="gen-view">
         {projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null}
-        {make.tool ? <ViralTool key={make.tool} scope={scope} page={make.tool} project={project} items={items} />
+        {make.tool === "upscale" ? <UpscaleTool key="upscale" scope={scope} project={project} items={items} />
+          : make.tool ? <ViralTool key={make.tool} scope={scope} page={make.tool} project={project} items={items} />
           : make.recent ? <Recent project={project} items={items} library={library} projects={projects} make={make} />
           : <Compose make={make} scope={scope} />}
       </div>
