@@ -110,6 +110,23 @@ export function frameRequest(project: Project, boards: Boards, frame: BoardFrame
   };
 }
 
+/** What a line drawing of a frame asks the still engine for: its own picture redrawn as outlines, nothing else changed. */
+export const LINE_DRAWING_WORDS = "Redraw the reference image as a clean black line drawing on a plain white background: confident outlines only, no shading, no colour, no grey tone, no text, no borders. Keep its composition, camera angle, framing and the position, pose and direction of everything in it exactly.";
+
+/**
+ * The request a frame's line drawing sends: the existing still path (the board's own image model, the project's ratio), with the
+ * frame's current picture as its one reference. It is a new take of the same frame, kept in the `bw-sketch` look, so v1 stays as it was.
+ * Null when the project has no production id yet or the picture is not a stored take.
+ */
+export function lineDrawingRequest(project: Project, boards: Boards, frame: BoardFrame, sourceGenId: string): GenerationBodyInput | null {
+  if (!project.productionProjectId || !sourceGenId) return null;
+  return {
+    prompt: `${frame.prompt.trim()}\n\n${LINE_DRAWING_WORDS}`.slice(0, 10_000), kind: "image", model: { id: boards.model },
+    mapping: { shotId: "", productionProjectId: project.productionProjectId }, ...stillShape(getModel(boards.model), project.aspect), duration: 5,
+    references: [{ genId: sourceGenId, role: "reference_image" }], firstFrameAssetId: "",
+  };
+}
+
 /**
  * Deletes a line drawing (owner, 23 September): the drawing leaves the
  * project — its asset, any bin that lists it, and the beat it was on (with the

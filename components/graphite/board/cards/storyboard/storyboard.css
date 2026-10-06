@@ -43,3 +43,24 @@
 .gx-draw-btn:disabled { opacity: .45; cursor: default; }
 .gx-draw-why { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
 @media (max-width: 767px) { .gx-draw-btn { min-height: 44px; } }
+
+/* Line drawings on a frame (gap screens): the action under the shot's line; tokens only. */
+.gx-ln { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.gx-ln-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-ln-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
+.gx-ln-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.gx-ln-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-ln-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-ln-btn { height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-ln-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-ln-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-ln-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-ln-btn[data-primary]:not(:disabled) { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.gx-ln-btn[data-primary]:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-ln-chip[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
+.gx-ln-why { font-size: 13px; color: var(--gx-text-2); }
+.gx-ln-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.gx-ln-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-ln-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-ln-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-ln-bar > span { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px) { .gx-ln-btn { min-height: 44px; } }
