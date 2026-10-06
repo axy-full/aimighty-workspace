@@ -197,7 +197,7 @@ test("a refused Approve (short, or the plan changed) never says Approved: the sc
     await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve · 93 cr", { timeout: 20_000 });
     await page.getByTestId("phone-plan-primary").click();
     await expect.poll(() => posts.length).toBe(1);
-    await expect(page.getByRole("alert")).toContainText(refuse.error);
+    await expect(page.locator(".ph-plan-why[role=alert]")).toContainText(refuse.error);
     await expect(page.getByTestId("phone-plan")).toBeVisible();
     await page.waitForTimeout(1500);
     await expect(page.getByText(/Approved ·/)).toHaveCount(0);
