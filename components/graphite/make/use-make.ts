@@ -5,6 +5,7 @@ import { dropToIds, readDrop } from "@/lib/drop";
 import { displayModelName } from "@/lib/models";
 import { isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
+import { clearDraft, loadDraft, saveDraft } from "@/lib/draft";
 import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import { announceMade, inferType, isMakeTool, madeLine, makeDest, makeType, typeNote } from "@/lib/shell/make";
 import { exact, priceWords, shortByWords, type PriceValue } from "@/lib/shell/price-words";
@@ -69,22 +70,41 @@ const INFER_AFTER_MS = 350;
 export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false }: MakeInput) {
   const shell = useShell();
   const session = useSession();
+  /* The words survive leaving Make (lib/draft.ts): closing the panel, a reload or Try again on a failed tile unmounts it, and a person
+     does not retype a paragraph for that. Kept per person and workspace, cleared only when a render is accepted. */
+  const surface = `make:${scope}`;
   const [initialType] = useState<ComposerType>(() => makeType(shell.make) ?? shell.lastMake);
   const ws = useWorkspace();
   /* A press the server accepted: Make closes, says so, and tells the board (lib/shell/make.ts › announceMade). One held for credits, or a batch with a take
      not accepted, keeps Make open with its line instead: nothing has started. */
   const sent = useCallback((made: ComposerSent) => {
     if (made.held) return;
+    clearDraft(surface);
     ws.toast(madeLine(made.name, priceWords(exact(made.credits)), made.takes));
     /* The composer filed the take on a shot node in the saved draft: the board's own copy reads it again, so the card Make
        tells the board about is there to glide to (the Rig only catches up on arriving at a page, and Make is a panel over it). */
     announceDraftWritten(made.projectId);
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
-  }, [ws, shell]);
+  }, [ws, shell, surface]);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
+  /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
+  const { signedIn } = session;
+  const kept = useRef<string | null>(null);
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!signedIn || restoredFor.current === surface) return;
+    restoredFor.current = surface;
+    const words = loadDraft(surface, signedIn);
+    if (words && !kept.current) dispatch({ type: "prompt", value: words });
+  }, [surface, signedIn, dispatch]);
+  useEffect(() => {
+    /* The first pass only notes what the box held; what is written is what the person changes it to. */
+    if (kept.current !== null && kept.current !== state.prompt) saveDraft(surface, state.prompt);
+    kept.current = state.prompt;
+  }, [surface, state.prompt]);
   const tool = isMakeTool(shell.make) ? shell.make : null;
   const recent = shell.make === "recent";
 

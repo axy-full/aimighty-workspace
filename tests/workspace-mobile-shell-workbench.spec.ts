@@ -130,7 +130,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
 
   /* 12 — deep links: a page URL lands on that page, `level=suite` on the list. */
   await page.goto("/workspace?project=" + primary.id + "&suite=subatomik&page=motion");
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Motion transfer");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Motion Transfer");
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&level=suite");
   await expect(page.locator('[data-screen="suite"]')).toBeVisible();
   await expect(page.getByTestId("mobile-stage-count")).toBeVisible();

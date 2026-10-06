@@ -286,18 +286,19 @@ test("phones: a Library overlay that throws still closes, and its card meets the
   expect(errors).toEqual([]);
 });
 
-test("Gen: one bad take costs its tile, a failing results grid keeps the composer and its prompt", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+test("Make: one bad take costs its tile, a failing Recent keeps the composer and its prompt", async ({ page }, info) => {
+  /* A phone draws its own simple Make (phone-make-*), which has no Recent tab and so no results to fail; its words surviving a reload are r1-f5-make-words-workbench's phone test. */
+  test.skip(!DESKTOP.includes(info.project.name), "the phone's own Make has no Recent tab (its words: r1-f5-make-words-workbench)");
   const errors = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(page.locator('[data-suite-tab="project"]')).toContainText("Coastal light study");
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("a fox crossing a frozen harbour");
   /* Make's results are its Recent tab; the composer keeps its words across the switch. */
   const recent = () => page.getByTestId("make-tab-recent").click();
   const compose = () => page.getByTestId("make-tab-make").click();
   await recent();
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
   await expect(results.getByText("Wide on the water")).toBeVisible();
 
   /* One take throws: its tile keeps its place, the others render. */
@@ -314,6 +315,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await tile.getByRole("button", { name: /Wide on the water could not be shown/ }).click();
   await expect(results.getByTestId("take-fault")).toHaveCount(0);
   await compose();
+  await expect(prompt, "the words are still there after Make, Recent, Make").toHaveValue("a fox crossing a frozen harbour");
   await prompt.focus();
   /* The tab's words are drawn again: the caret goes back to their end, where a person carries on typing. */
   await prompt.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
@@ -324,19 +326,18 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await recent();
   await expect(results.getByTestId("take-fault")).toHaveCount(1);
 
-  /* The whole grid throws: the card replaces the grid, the composer and the prompt stay. */
-  await arm(page, ["gen-results"]);
+  /* The whole grid throws: its card replaces the grid, the composer and the prompt stay. */
+  await arm(page, ["make-recent"]);
   await results.getByRole("button", { name: "All", exact: true }).click();
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="gen-results"]');
-  await expect(fault).toContainText("Results stopped");
+  const fault = results.getByRole("button", { name: /Recent could not be shown/ });
+  await expect(fault).toBeVisible();
   await settled(page);
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="gen-results"]'), "targets under 44×44").toEqual([]);
   await arm(page, []);
-  await fault.getByTestId("fault-retry").click();
+  await fault.click();
   await expect(fault).toHaveCount(0);
-  await arm(page, ["gen-results"]);
+  await arm(page, ["make-recent"]);
   await results.getByRole("button", { name: "Takes", exact: true }).click();
-  await expect(fault).toContainText("Results stopped");
+  await expect(fault).toBeVisible();
   await compose();
   await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
   await expect(page.getByTestId("gen-generate")).toBeVisible();

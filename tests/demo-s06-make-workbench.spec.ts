@@ -107,7 +107,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await expect(page.getByTestId("make-add-reference")).toHaveText("+Add");
   await expect(page.getByTestId("gen-model")).toHaveText("Change");
   await expect(page.getByTestId("make-dest")).toHaveText(`To ${name} · Library`);
-  await expect(page.getByTestId("make-quick-tools").getByRole("button")).toHaveText(["Motion transfer", "Object swap"]);
+  await expect(page.getByTestId("make-quick-tools").getByRole("button")).toHaveText(["Motion transfer", "Object swap", "Upscale"]);
   /* Make waits with the words' reason: dimmed, and pressing it says why. */
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveAttribute("aria-disabled", "true");

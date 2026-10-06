@@ -10,12 +10,13 @@ import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
 import { Price, usePriceTitle } from "../Price";
 import { toolName } from "../viral/ViralView";
+import { UPSCALE_NAME } from "./UpscaleTool";
 import { EngineList } from "./EngineList";
 import type { MakeModel, MakePrice } from "./use-make";
 
 const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: "Video" }, { type: "image", label: "Image" }, { type: "audio", label: "Audio" }];
-/* The quick tools under Make (the master's row). Upscale joins them in a later PR. */
-const QUICK_TOOLS: { tool: MakeTool; glyph: GlyphName }[] = [{ tool: "motion", glyph: "video" }, { tool: "swap", glyph: "swap" }];
+/* The quick tools under Make (the master's row): Motion transfer, Object swap, Upscale. */
+const QUICK_TOOLS: { tool: MakeTool; glyph: GlyphName }[] = [{ tool: "motion", glyph: "video" }, { tool: "swap", glyph: "swap" }, { tool: "upscale", glyph: "upscale" }];
 const SAY_WHAT = "Say what to make.";
 
 /** A price as Make shows it: through Price, or Cinema Studio's own approximate words. */
@@ -150,7 +151,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
         <div className="gx-mk-tools-row">
           {QUICK_TOOLS.map(({ tool, glyph }) => (
             <button key={tool} type="button" className="gx-mk-tool" onClick={() => shell.setMake(tool)} data-testid={`make-tool-${tool}`}>
-              <Glyph name={glyph} size={16} /><span>{toolName(tool)}</span>
+              <Glyph name={glyph} size={16} /><span>{tool === "upscale" ? UPSCALE_NAME : toolName(tool)}</span>
             </button>
           ))}
         </div>

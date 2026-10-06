@@ -398,6 +398,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "list": setList(true); return true;
       case "board": setList(false); return true;
       case "glide": glide(command.to); return true;
+      case "library": setDrawer("library"); return true;
     }
   });
 
