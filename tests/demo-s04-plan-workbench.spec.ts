@@ -69,13 +69,14 @@ test("the plan sits in the Storyboard group's open slot; Hold calls nothing; Bui
   await expect.poll(async () => (await agent()).agent.run?.state, { timeout: 30_000 }).toBe("awaiting_approval");
 
   await page.goto(`/suites?project=${project.id}&view=board`);
-  await expect(page.getByTestId("board")).toBeVisible();
   if (!desktop(page)) {
-    /* Phone widths: the canvas is the desktop's (stream 10 draws the phone); here only the floors that hold at every width. */
+    /* Phone widths: the phone app opens instead of the canvas (the phone's plan screen is demo-s10-phone-plan); here only the floors that hold at every width. */
+    await expect(page.getByTestId("phone-app")).toBeVisible();
     expect(await overflow(page)).toBeLessThanOrEqual(0);
     expect(paid).toEqual([]);
     return;
   }
+  await expect(page.getByTestId("board")).toBeVisible();
   const slot = page.locator('[data-card-id="plan:run"]');
   const plan = slot.getByTestId("board-plan");
   await expect(plan).toBeVisible({ timeout: 20_000 });
