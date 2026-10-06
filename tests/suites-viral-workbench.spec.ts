@@ -198,7 +198,7 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   /* History lists it from the Library, with its next steps: a member reaches it from the tool like anyone else. */
   await page.getByTestId("viral-open-history").click();
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
   const result = page.getByTestId("history-result");
   await expect(result).toHaveCount(1, { timeout: 30_000 });
   await expect(result).toContainText("Motion Transfer · 720p");

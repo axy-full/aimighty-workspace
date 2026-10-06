@@ -135,9 +135,9 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object");
   await floors(page, info.project.name);
 
-  /* History is still Viral's page, and its way back to a tool is Make. */
+  /* History is the Social board's History drawer, and its way back to a tool is Make. */
   await page.goto("/suites?suite=subatomik&page=history&sp=history");
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId("history-empty")).toBeVisible();
   await page.getByTestId("history-empty").getByRole("button", { name: "Motion Transfer" }).click();
@@ -145,7 +145,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   /* From the tool, Open History closes Make and goes there. */
   await page.getByTestId("viral-recent").getByRole("button", { name: "Open History" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
 
   expect(sends, "nothing is sent").toEqual([]);
   expect(errors).toEqual([]);

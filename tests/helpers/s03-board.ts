@@ -1,9 +1,11 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { signInWithNewInterface } from "./newInterface";
 import { newProject, type CanvasNode } from "../../lib/workbench/studio";
 
 /* Stream 3's browser specs share this: a signed-in local workspace with the new interface on and a production with today's canvas nodes. Neutral names only. */
-export const SHOTS = process.env.S03_SHOTS || "/private/tmp/claude-s03-shots";
+export const SHOTS = process.env.S03_SHOTS || join(tmpdir(), "claude-s03-shots");
 
 export const node = (id: string, type: CanvasNode["type"], title: string, extra: Partial<CanvasNode> = {}): CanvasNode =>
   ({ id, title, type, x: 0, y: 0, width: 254, linked: [], ...extra });
@@ -34,7 +36,7 @@ export async function seedBoard(page: Page, more: CanvasNode[] = []) {
   const paid: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && (path === "/api/generate" || path.startsWith("/api/generate/"))) paid.push(path);
+    if (request.method() === "POST" && (path === "/api/generate" || (path.startsWith("/api/generate/") && !path.endsWith("/quote")))) paid.push(path);
   });
   return { project, paid, productionId: productionId ?? null, headers: { "X-Workbench-Scope": scope } };
 }

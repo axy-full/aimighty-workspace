@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { signInWithNewInterface } from "./newInterface";
 import { EMPTY_MOLECULR, type MoleculrBrief } from "../../lib/workbench/moleculr";
@@ -6,7 +8,7 @@ import { newProject } from "../../lib/workbench/studio";
 import { grey } from "./s03-board";
 
 /* Stream 11's browser specs share this: a signed-in local workspace with the new interface on, and a project whose draft holds (or lacks) a Business brief. Neutral names only; nothing paid is sent. */
-export const SHOTS = process.env.S11_SHOTS || "/private/tmp/claude-s11-shots";
+export const SHOTS = process.env.S11_SHOTS || join(tmpdir(), "claude-s11-shots");
 export const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
 export { grey };
 
