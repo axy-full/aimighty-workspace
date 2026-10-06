@@ -267,6 +267,16 @@ Status on 4 October. Tracks run side by side where they don't share files. PRs m
 | P4b | Every model on its own provider's API; Vercel AI Gateway removed; a pinned, tested price list | none | Not started |
 | P4 | Docker under Coolify; self-hosted Inngest sized for 1,000 jobs with per-plan limits; tested at staging.particl.si | P2, P3 | Not started |
 | P5 | particl.si's DNS to the VPS; particl.app redirected in Cloudflare; cron moved; rollback ready; Blob retired after two weeks | P4 | Not started |
+
+Payments package (card checkout, wired at the very end, as its own package):
+- Stripe (or another provider) is connected last. Until then packs stay requests approved in /admin (`lib/payments.ts` is `manual`).
+- The credits a payment grants always come from `CREDIT_USD`: credits = amount paid ÷ `CREDIT_USD` (for example $50 → 500 cr at $0.10). Never a number typed into Stripe's products or metadata, and never a figure written in the code.
+
+P4 and P5 notes (5 October):
+- Staging shares the live database: no paid work there until the credit switchover is done on Vercel.
+- When cleaning Vercel's settings for the VPS, keep `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`: 3D blocking's Blender renders still run in Vercel Sandbox.
+- Before P5, rework every paid route that can run past Cloudflare's 125-second limit before its response starts (202 and finish in the background, stream, or cap the work).
+
 | P8 | Worker container; load test to 1,000 jobs; GlitchTip; Langfuse; legacy guard | P5 | Not started |
 
 P4/P5 checklist, the price of a credit (owner, 5 October 2026): CREDIT_USD=0.10 must be set on Coolify before particl.si's DNS moves, and the database copied there must be the already-converted one. The conversion (`POST /api/admin/credit-unit`, `lib/creditConversion.ts`) runs once, on Vercel, before the move; a ledger whose unit differs from CREDIT_USD pauses paid work (`lib/ledgerUnit.ts`).
