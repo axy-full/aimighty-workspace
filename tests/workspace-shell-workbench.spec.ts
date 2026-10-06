@@ -92,7 +92,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
     await expect(page.getByTestId("project-title")).toHaveText(primary.name);
     await assertNoClipping(page);
     /* Rig carries the widest header: the view segmented and Generate. */
-    await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Board/ }).click();
+    await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Board$/ }).click();
     await expect(page.getByTestId("page-title")).toHaveText("Board");
     await assertNoClipping(page);
   }
@@ -101,14 +101,14 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=brief");
   const tabs = page.getByRole("navigation", { name: "Pages" });
   await expect(tabs.getByRole("button")).toHaveCount(9); // eight stages + ✦ Atomik
-  await tabs.getByRole("button", { name: /Board/ }).click();
+  await tabs.getByRole("button", { name: /Board$/ }).click();
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   await expect(page).toHaveURL(/[?&]project=ws-shell-a(&|$)/);
   /* No shots are loaded in this view yet: Generate is disabled and says why. */
   /* The top bar's Generate (the global composer) is always live; the page's own
      Generate needs a shot, so it is disabled and says why. */
   await expect(page.getByTestId("topbar-generate")).toBeEnabled();
-  await expect(page.getByTestId("studio-row").getByRole("button", { name: "Generate" })).toBeDisabled();
+  await expect(page.getByTestId("studio-row").getByRole("button", { name: "Make" })).toBeDisabled();
   await expect(page.locator("#pxw-action-reason")).toBeVisible();
   await tabs.getByRole("button", { name: /Takes/ }).click();
   await expect(page).toHaveURL(/[?&]page=takes(&|$)/);
@@ -166,7 +166,7 @@ test("desktop shell: layout rules, navigation, URL, keyboard and label contrast"
   await page.getByRole("group", { name: "Suites" }).getByRole("button", { name: "Agent" }).click();
   await expect(page.locator(".pxw-feature")).toHaveCount(9);
   await page.locator('.pxw-feature[data-feature="generate"]').click();
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("page-title")).toHaveText("Make");
   await expect(page).toHaveURL(/[?&]suite=atomik&page=generate(&|$)/);
   await page.goto("/workspace?project=" + primary.id + "&suite=particl&page=rig");
   await expect(page.getByTestId("page-title")).toHaveText("Board");

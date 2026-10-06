@@ -220,7 +220,7 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   /* One FILLED primary with its cost inline: the live quote for the selected
      shot, on the button, exactly as the desktop's Generate carries it. */
   const primary = page.getByTestId("mobile-primary");
-  await expect(primary).toContainText("Generate");
+  await expect(primary).toContainText("Make");
   await expect(primary).toContainText(/\d+ cr/);
   await expect(primary).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.getByTestId("mobile-action-reason")).toHaveCount(0);
@@ -236,7 +236,7 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   await expect(primary).not.toContainText("cr");
   await expect(page.getByTestId("mobile-action-reason")).toContainText(/engine/i);
   /* The derived sub is the desktop's: counted, never stored. */
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
   await expect(page.locator(".pxm-page-sub")).toHaveText("4 shots · 1 approved");
   await floors(page, "shot list");
 
