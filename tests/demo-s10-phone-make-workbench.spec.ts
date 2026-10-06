@@ -69,6 +69,7 @@ test("Make: the words, the type, the engine line with Change, References with Ad
   /* Empty, Make waits; pressing it says why and sends nothing. */
   const go = page.getByTestId("phone-make-go");
   await expect(go).toHaveAttribute("aria-disabled", "true");
+  await expect(go).toHaveAttribute("data-spend", "unpriced");
   await go.dispatchEvent("click");
   await expect(page.getByTestId("phone-make-blocked")).toHaveText("Say what to make.");
   await floors(page, "Make, empty");
@@ -108,6 +109,7 @@ test("Make sends once, at the price on its button", async ({ page }, info) => {
   await page.getByTestId("phone-make-prompt").fill("a fox crosses a frozen harbour at dusk");
   const go = page.getByTestId("phone-make-go");
   await expect(go).toHaveText(/^Make · [\d.,]+ cr$/, { timeout: 90_000 });
+  await expect(go).toHaveAttribute("data-spend", "priced");
   const price = Number((await go.innerText()).replace(/[^\d.]/g, ""));
   await go.click();
   await expect.poll(() => seen.generates.length, { timeout: 30_000 }).toBe(1);
