@@ -939,3 +939,34 @@ test("a take's settlement records its step and wakes the run; while a render is 
     expect(nudged).toBeGreaterThan(Date.now());
   });
 });
+
+test("Auto stops to ask at the share of the production's budget (80 % unless set): the render that reaches it waits for a person's tap, with the budget in words; it never lets anything through", async () => {
+  await inRun("auto-budget", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    const { creditUsd, marginFor } = await import("../../lib/creditTerms");
+    /* Every shot is 10 cr; the production's budget is 25 cr, so the pause is at 20 cr (80 %, rounded down). */
+    const ten = (10 * creditUsd()) / marginFor("mock");
+    expect(await credits(ten)).toBe(10);
+    await db().execute("UPDATE projects SET cap_credits=25 WHERE id='prod-1'");
+    const r = renders(ws, () => ten);
+    const deps = await depsFor(ws, r);
+    const runId = await approvedRun(deps, { limit: 5000, mode: "auto", shots: 3 });
+    /* Shot 1: 0 + 10 is under the pause: Auto sends it without a tap. */
+    expect((await agent.advanceRigAgentRun(runId, deps)).state).toBe("running");
+    expect(r.calls).toHaveLength(1);
+    await settleTake((await renderRows())[0].id, "succeeded", ten);
+    /* Shot 2: 10 + 10 reaches 20: it waits for a person, and nothing is sent. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const run = await view();
+    /* Used counts everything the production was billed, Atomik's planning turn too (10 cr of shot 1 and the thinking). */
+    expect(run.reason).toMatch(/^Paused at 80 % of the budget: 1\d of 25 cr used\. Continue or stop\. 02 — The turn is next · about 10 cr\.$/);
+    expect(run.paid[2]).toMatchObject({ state: "waiting", canRender: true, quote: 10 });
+    expect(r.calls).toHaveLength(1);
+    /* The person continues: the tap is theirs, at its price, and it goes. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[2].seq, fingerprint: run.paid[2].fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(2);
+    /* The pause is the gate's ask only: an Auto run with no budget is untouched (the test above), and Ask always asks. */
+  }, 20_000);
+});
