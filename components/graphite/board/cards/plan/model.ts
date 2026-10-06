@@ -301,6 +301,8 @@ export function planCardHeight(run: Pick<RigAgentRunView, "state" | "paid" | "re
   if (run.reason && !proposal) height += 10 + lines(run.reason.length) * 21;
   if (proposal) height += 10 + 21 * 2 + 10 + 18;
   if (takes && (unfolded || !proposal)) height += takes * 64 + 36;
+  /* A money state (./money-state.ts): its line and the rest's line at the gate; the budget's bar and three rows when paused. */
+  if (takes) height += proposal ? 52 : run.state === "needs_you" ? 10 + 21 + 14 + 3 * 36 : 0;
   return Math.ceil(height / 4) * 4;
 }
 

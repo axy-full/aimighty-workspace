@@ -9,6 +9,8 @@ import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
+import { planMoneyState } from "./money-state";
+import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
 
 /**
@@ -25,19 +27,30 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const open = data.open;
   const model = data.sample ?? plan.model;
   const runId = data.run?.id ?? "sample";
+  /* The money states (./money-state.ts): read only what the state at hand needs. The sample has none. */
+  const live = Boolean(data.run) && !data.sample;
+  const topUp = useTopUpLabel(ctx.scope, live && model?.phase === "proposal" && model.balance?.short != null);
+  const budget = usePlanBudget(ctx.scope, ctx.productionId, live && model?.phase === "needs-you");
+  const move = useMoveOffer(ctx, live ? data.run : null, live ? model : null);
+  const money = live && model ? planMoneyState({ model, admin: plan.admin, shotCap: plan.rule?.rule === "cap" ? plan.rule.cap : null, budget, topUp, move }) : null;
   /* The Inspector shows the same steps from this model: the server is asked for each price once. */
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
   const proposal = model.phase === "proposal";
   const lines = [proposal ? model.totalLine : null, fixLine(model), proposal ? balanceLine(model) : null].filter(Boolean).join(" · ");
-  const short = model.balance?.short != null && proposal;
+  const short = model.balance?.short != null && proposal && !money;
+  const paused = money?.kind === "paused" ? money : null;
+  const acting = money && money.kind !== "failed" && !(proposal && plan.held);
   return (
-    <article className="gx-plan" data-phase={model.phase} data-testid="board-plan" aria-label={model.title}>
+    <article className="gx-plan" data-phase={model.phase} data-money={money?.kind} data-testid="board-plan" aria-label={paused?.title ?? model.title}>
       <div className="gx-plan-head">
-        <div className="gx-plan-title">{model.title}</div>
-        {lines ? <div className="gx-plan-line" data-testid="board-plan-line">{lines}</div> : null}
+        <div className="gx-plan-title">{paused?.title ?? model.title}</div>
+        {paused ? <div className="gx-plan-line" data-testid="board-plan-line">{paused.sub}</div>
+          : lines ? <div className="gx-plan-line" data-testid="board-plan-line">{lines}</div> : null}
         {proposal && plan.held ? <div className="gx-plan-line" role="status">On hold · nothing spent</div> : null}
       </div>
+      {paused ? <PausedBody state={paused} /> : money ? <MoneyLine state={money} /> : null}
+      {money && (money.kind === "admin" || money.kind === "unavailable") && money.restLine ? <div className="gx-plan-why" data-testid="board-plan-rest">{money.restLine}</div> : null}
       {short ? (
         <div className="gx-plan-short" role="status">
           <span>{balanceLine(model)} · Top up, then approve. Nothing is spent until you do.</span>
@@ -53,7 +66,10 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
               onClick={() => { ctx.askAtomik("Change the plan: "); ctx.toast("Tell Atomik what to change; the plan is re-priced before approval"); }} data-testid="board-plan-change">Change</button>
           </>
         ) : null}
-        {model.primary && !(proposal && plan.held) ? <PrimaryButton primary={model.primary} busy={plan.busy} onPress={() => void plan.act(model.primary!)} /> : null}
+        {acting ? (
+          <MoneyActions state={money!} ctx={ctx} run={data.run} primary={model.primary} busy={plan.busy} readOnly={readOnly} move={move}
+            onPrimary={() => { if (model.primary) void plan.act(model.primary); }} />
+        ) : model.primary && !(proposal && plan.held) ? <PrimaryButton primary={model.primary} busy={plan.busy} onPress={() => void plan.act(model.primary!)} /> : null}
       </div>
       {model.primary?.blocked && !short ? <div className="gx-plan-why" role="status">{model.primary.blocked}</div> : null}
       {plan.problem ? <div className="gx-plan-why gx-plan-problem" role="alert">{plan.problem}</div> : null}

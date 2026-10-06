@@ -28,6 +28,11 @@ export const DEFAULTS = {
   capWarnPct: "80",
   /** What happens at the cap: the producer unlocks, rendering stops, or a warning only. */
   atCap: "producer",
+  /**
+   * The budget every production follows when it has no cap of its own, in credits; blank is none (lib/caps.ts
+   * projectCap). An admin sets it in Settings › Spending rules; a production's own cap wins over it.
+   */
+  productionBudgetCredits: "",
   /** The engine a new composer opens on, per kind; blank inherits the platform's default. */
   defaultVideoModel: "",
   defaultImageModel: "",

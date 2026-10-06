@@ -42,8 +42,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  /* The cap, in the workspace's unit, and the unlock past it: an admin's alone. */
+  /* The cap, in the workspace's unit, and the unlock past it: an admin's alone, and a person's: an API or MCP token
+     (even one an admin made) never sets a budget or unlocks one (CLAUDE.md rule 14: spend limits are people-only). */
   if ("capCredits" in body || "capUsd" in body || "capUnlocked" in body) {
+    if (got.token) return NextResponse.json({ error: "A production's cap is set by a person, signed in. API tokens cannot change it." }, { status: 403 });
     if (got.user.role !== "admin") return NextResponse.json({ error: "An admin sets a production's cap." }, { status: 403 });
     if ("capCredits" in body) {
       const n = body.capCredits == null || body.capCredits === "" ? null : Math.round(Number(body.capCredits));

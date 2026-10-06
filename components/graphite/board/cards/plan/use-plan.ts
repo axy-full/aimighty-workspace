@@ -45,6 +45,10 @@ export type PlanState = {
   held: boolean;
   setHeld: (held: boolean) => void;
   act: (primary: PlanPrimary) => Promise<void>;
+  /** The workspace's approval rule as read (null until read): the money states name its per-shot cap. */
+  rule: { rule: ApprovalRule; cap: number } | null;
+  /** The viewer is the owner or an admin. */
+  admin: boolean;
 };
 
 export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: string | null): PlanState {
@@ -120,5 +124,5 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
     }
   }, [run, busy, post]);
 
-  return { model, busy, problem, held, setHeld, act };
+  return { model, busy, problem, held, setHeld, act, rule, admin };
 }

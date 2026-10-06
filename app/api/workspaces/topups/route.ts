@@ -11,6 +11,8 @@ import { sendMail, mailConfigured, inviteOrigin } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
+const TOKEN_REFUSED = "Credits are asked for by a person, signed in. API tokens cannot top up.";
+
 /** The top-up screen's data: balance, packs, what is waiting, what came in. */
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
@@ -23,7 +25,8 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     applies,
     provider: paymentProvider(),
-    canRequest: applies && got.user.role === "admin",
+    /* A person's (CLAUDE.md rule 14: topping up is people-only); an API or MCP token reads, never requests. */
+    canRequest: applies && got.user.role === "admin" && !got.token,
     openLimit: OPEN_LIMIT,
     /* The unit the packs were priced at, stated alongside them. `credits` also
        carries it, but only when the billing read succeeded — and the top-up
@@ -43,6 +46,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const ws = requireTenant();
+  /* Topping up is a person's (CLAUDE.md rule 14): an API or MCP token, even one an admin made, never asks for credits. */
+  if (got.token) return NextResponse.json({ error: TOKEN_REFUSED }, { status: 403 });
   if (!creditsApply(ws)) return NextResponse.json({ error: "The house workspace is never billed in credits; there is nothing to top up." }, { status: 400 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin asks for credits." }, { status: 403 });
   /* A provider this deployment cannot check out through takes no request: nothing is left waiting on the desk. */
@@ -77,6 +82,7 @@ export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const ws = requireTenant();
+  if (got.token) return NextResponse.json({ error: TOKEN_REFUSED }, { status: 403 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin withdraws a request." }, { status: 403 });
   const id = new URL(req.url).searchParams.get("id") ?? "";
   const ok = await cancelTopup(id, ws.id);
