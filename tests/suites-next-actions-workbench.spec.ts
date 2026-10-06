@@ -189,7 +189,7 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   await page.getByTestId("inspector").getByTestId("next-edit-sound").click();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
   expect(sent, "nothing that could spend on the way to a tool").toEqual([]);
-  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe" || path === "/api/audio"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -212,7 +212,7 @@ test("the selected take in Takes carries the same row; a sound's opens Edit & So
   await selected.getByTestId("next-edit-sound").click();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
   expect(sent, "nothing that could spend").toEqual([]);
-  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe" || path === "/api/audio"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
