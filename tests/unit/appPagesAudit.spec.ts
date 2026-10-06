@@ -13,7 +13,7 @@ import { boardUrlFor } from "../../lib/rigCanvasUrl";
 import { ADDABLE_KINDS, KINDS, isRunnable } from "../../components/rig/nodes";
 import { clearComposeHandoff, generateHrefFor, handoffFits, handoffKey, handoffPrompt, HANDOFF_TTL_MS, readComposeHandoff, writeComposeHandoff } from "../../lib/composeHandoff";
 import { shellEntryRedirect, signInHrefFor } from "../../lib/signIn";
-import { serverSwitchTarget, workspaceUrlFor } from "../../lib/workspace/switchover";
+import { workspaceUrlFor } from "../../lib/workspace/switchover";
 import { PRIVATE_PATHS, PUBLIC_PATHS, publicPageMetadata, siteOrigin } from "../../lib/site";
 import { NEUTRAL_ICON, reviewMetadata } from "../../lib/reviewMetadata";
 import robots from "../../app/robots";
@@ -299,13 +299,13 @@ test("a signed-out Suites link signs in and returns to its suite and page; no wo
   expect(shellEntryRedirect("/suites", "", true)).toBe("/workbench");
 });
 
-test("the server switches a person with a workspace at once, and leaves visitors and shell= URLs to the gate", () => {
+test("an old entry point always has a /suites address, and no way back to the old shell is left", () => {
   const target = workspaceUrlFor("/workbench", "project=p1&stage=brief");
   expect(target).toBeTruthy();
-  expect(serverSwitchTarget(target, "project=p1&stage=brief", true)).toBe(target);
-  expect(serverSwitchTarget(target, "project=p1&stage=brief", false)).toBeNull();
-  expect(serverSwitchTarget(target, "project=p1&shell=new", true)).toBeNull();
-  expect(serverSwitchTarget(null, "", true)).toBeNull();
+  expect(target!.startsWith("/suites?")).toBe(true);
+  /* The old escape params ride along as plain params now: they choose nothing. */
+  expect(workspaceUrlFor("/workbench", "project=p1&shell=legacy")).toContain("/suites?");
+  expect(workspaceUrlFor("/workbench", "project=p1&new=1")).toContain("/suites?");
 });
 
 /* ── Public metadata ─────────────────────────────────────────────────────── */

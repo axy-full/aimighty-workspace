@@ -135,7 +135,7 @@ test("no feature needs a Higgsfield sign-in: every account route refuses, and no
   await noSideScroll(page, "/usage");
 
   /* Shorts is no page: its old addresses open the suite's first page. */
-  await page.goto(`/subatomik?project=${encodeURIComponent(project.id)}&page=shorts&shell=legacy`);
+  await page.goto(`/subatomik?project=${encodeURIComponent(project.id)}&page=shorts`);
   await expect.poll(() => new URL(page.url()).searchParams.get("page")).not.toBe("shorts");
   await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
 

@@ -1,12 +1,6 @@
-import SuiteHome from "@/components/suites/SuiteHome";
-import SwitchoverGate from "@/components/switchover/SwitchoverGate";
-import { switchNowOrGate, type RawSearch } from "@/lib/workspace/switchover.server";
+import { redirectToSuites, type RawSearch } from "@/lib/workspace/switchover.server";
 
+/** The old app home. Visitors never reach it without app params (proxy.ts shows them the public site). */
 export default async function Home({ searchParams }: { searchParams: Promise<RawSearch> }) {
-  const { target, search } = await switchNowOrGate("/", await searchParams);
-  return (
-    <SwitchoverGate target={target} search={search}>
-      <SuiteHome />
-    </SwitchoverGate>
-  );
+  redirectToSuites("/", await searchParams);
 }

@@ -1,22 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { PAGES as LEGACY_PAGES, MOLECULR_SECTIONS, PARTICL_STAGE_ALIASES } from "../../lib/suites";
 import { ALL_PAGES, PAGE_ALIASES, resolvePageId } from "../../lib/workspace/pages";
-import {
-  LEGACY_ONLY_PARAMS,
-  LEGACY_SHELL,
-  legacyPageId,
-  legacyShellHref,
-  legacyShellRequested,
-  NEW_SHELL,
-  SHELL_PARAM,
-  switchedRoute,
-  withLegacyShell,
-  WORKSPACE_IS_DEFAULT,
-  workspaceUrlFor,
-  searchStringOf,
-  shellCookieScript,
-  SHELL_COOKIE,
-} from "../../lib/workspace/switchover";
+import { switchedRoute, workspaceUrlFor, searchStringOf } from "../../lib/workspace/switchover";
 
 
 const at = (pathname: string, search = "") => {
@@ -24,10 +9,6 @@ const at = (pathname: string, search = "") => {
   if (!url) throw new Error(`No workspace URL for ${pathname}?${search}`);
   return new URL(url, "https://particl.test");
 };
-
-test("the default is on, so the mapping is live", () => {
-  expect(WORKSPACE_IS_DEFAULT).toBe(true);
-});
 
 test("every old Particl stage, including its retired aliases, opens the page that holds its work", () => {
   const expected: Record<string, string> = {
@@ -115,87 +96,14 @@ test("paths outside the four entry points are never switched", () => {
     expect(workspaceUrlFor(path, "")).toBeNull();
 });
 
-test("a legacy-only param keeps the old shell, because the new one has no equivalent yet", () => {
-  for (const param of LEGACY_ONLY_PARAMS)
-    expect(workspaceUrlFor("/workbench", `project=p1&${param}=1`)).toBeNull();
-  expect(workspaceUrlFor("/workbench", "project=p1&atomik=marketing")).toBeNull();
-  expect(workspaceUrlFor("/workbench", "view=workspace")).toBeNull();
-});
-
-test("the escape hatch wins over the default, and can be cancelled", () => {
-  expect(workspaceUrlFor("/workbench", `stage=canvas&${SHELL_PARAM}=${LEGACY_SHELL}`)).toBeNull();
-  expect(legacyShellRequested(`${SHELL_PARAM}=${LEGACY_SHELL}`, null)).toBe(true);
-  /* The remembered choice, so the old shell's own links do not bounce back out. */
-  expect(legacyShellRequested("", LEGACY_SHELL)).toBe(true);
-  /* …and an explicit ?shell=new overrides the cookie. */
-  expect(legacyShellRequested(`${SHELL_PARAM}=${NEW_SHELL}`, LEGACY_SHELL)).toBe(false);
-  expect(legacyShellRequested("", null)).toBe(false);
-  expect(workspaceUrlFor("/workbench", `stage=canvas&${SHELL_PARAM}=${NEW_SHELL}`)).not.toBeNull();
-  /* enabled:false is the flag off — the old shell, everywhere. */
-  expect(workspaceUrlFor("/workbench", "stage=canvas", { enabled: false })).toBeNull();
-});
-
-test("the way back translates every workspace page to a legacy route that exists", () => {
-  for (const page of ALL_PAGES) {
-    const legacy = legacyPageId(page.suite, page.id);
-    expect(LEGACY_PAGES[page.suite as "particl"].some((item) => item.id === legacy)).toBe(true);
-    const href = legacyShellHref({ suite: page.suite, page: page.id, projectId: "p1", view: "studio" });
-    const url = new URL(href, "https://particl.test");
-    expect(url.searchParams.get(SHELL_PARAM)).toBe(LEGACY_SHELL);
-    expect(url.searchParams.get("project")).toBe("p1");
-    expect(["/workbench", "/atomik", "/subatomik"]).toContain(url.pathname);
-  }
-});
-
-test("the way back round-trips the pages both surfaces share", () => {
-  const shared: [string, string][] = [
-    ["particl", "boards"], ["particl", "cast"], ["particl", "astra"], ["particl", "rig"],
-    ["particl", "takes"], ["particl", "deliver"], ["particl", "brief"], ["particl", "edit"],
-    ["atomik", "runs"], ["atomik", "generate"], ["atomik", "recipes"], ["atomik", "approvals"],
-    ["atomik", "budget"], ["atomik", "models"],
-    ["subatomik", "motion"], ["subatomik", "swap"],
-    ["moleculr", "marketing"],
-  ];
-  for (const [suite, page] of shared) {
-    const back = new URL(legacyShellHref({ suite: suite as "particl", page: page as "brief", projectId: "p1", view: "studio" }), "https://particl.test");
-    const forward = at(back.pathname, back.search.replace(/^\?/, "").replace(`${SHELL_PARAM}=${LEGACY_SHELL}`, ""));
-    expect(forward.searchParams.get("suite")).toBe(suite);
-    expect(forward.searchParams.get("page")).toBe(page);
-  }
-});
-
-test("a page the old shell never had falls back to its suite's first legacy page", () => {
-  for (const [suite, page] of [["atomik", "agent"], ["atomik", "builds"], ["atomik", "skills"], ["subatomik", "sources"], ["subatomik", "compare"], ["subatomik", "history"]] as const)
-    expect(legacyPageId(suite, page)).toBe(LEGACY_PAGES[suite][0].id);
-});
-
-test("home's way back is the old suite home, and withLegacyShell keeps a hash last", () => {
-  const url = new URL(legacyShellHref({ suite: "particl", page: "brief", projectId: "p1", view: "home" }), "https://particl.test");
-  expect(url.pathname).toBe("/");
-  expect(url.searchParams.get(SHELL_PARAM)).toBe(LEGACY_SHELL);
-  expect(withLegacyShell("/workbench?project=p1&suite=moleculr&page=marketing#brand"))
-    .toBe(`/workbench?project=p1&suite=moleculr&page=marketing&${SHELL_PARAM}=${LEGACY_SHELL}#brand`);
-  expect(withLegacyShell("/workbench")).toBe(`/workbench?${SHELL_PARAM}=${LEGACY_SHELL}`);
+test("the old escapes are gone: no param keeps the old shell, and every old param rides along", () => {
+  for (const param of ["new", "atomik", "view", "shell"])
+    expect(workspaceUrlFor("/workbench", `project=p1&${param}=1`)).toContain(`${param}=1`);
+  expect(workspaceUrlFor("/workbench", "project=p1&shell=legacy")).toMatch(/^\/suites\?/);
+  expect(workspaceUrlFor("/workbench", "view=workspace")).toMatch(/^\/suites\?/);
 });
 
 test("searchStringOf keeps repeated params and drops the ones Next did not send", () => {
   expect(searchStringOf({ project: "p1", stage: "canvas" })).toBe("project=p1&stage=canvas");
   expect(searchStringOf({ tag: ["a", "b"], missing: undefined })).toBe("tag=a&tag=b");
-});
-
-test("the shell choice is written by a script with no URL text in it, or not at all", () => {
-  const set = shellCookieScript(`${SHELL_PARAM}=${LEGACY_SHELL}`);
-  expect(set).toContain(`${SHELL_COOKIE}=${LEGACY_SHELL}`);
-  expect(set).toContain("path=/");
-  expect(set).toContain("samesite=lax");
-  const clear = shellCookieScript(`${SHELL_PARAM}=${NEW_SHELL}`);
-  expect(clear).toContain(`${SHELL_COOKIE}=;`);
-  expect(clear).toContain("max-age=0");
-  /* Nothing else asks for a cookie, and nothing from the URL reaches the
-     script: an injected value neither runs nor appears in it. */
-  expect(shellCookieScript("")).toBeNull();
-  expect(shellCookieScript("project=p1&stage=canvas")).toBeNull();
-  const hostile = `${SHELL_PARAM}=${encodeURIComponent('legacy"; alert(1); x="')}`;
-  expect(shellCookieScript(hostile)).toBeNull();
-  for (const script of [set, clear]) expect(script).not.toContain("alert");
 });

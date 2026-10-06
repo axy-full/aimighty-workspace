@@ -376,7 +376,6 @@
 .pxw .pxw-account-item:hover { background: var(--pxw-control-hover); color: var(--pxw-primary); }
 .pxw .pxw-account-item:disabled { color: var(--pxw-label-floor); background: none; }
 .pxw .pxw-account-item[aria-current="true"] { background: var(--pxw-selected-chip); color: var(--pxw-primary); }
-.pxw .pxw-account-item--legacy { border: 1px solid var(--pxw-control-border); }
 .pxw .pxw-account-error { margin: 0 8px 6px; font-size: 11.5px; color: var(--pxw-amber-ink); }
 
 /* A suspended workspace says so on this surface too. */
