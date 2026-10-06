@@ -2,7 +2,7 @@
 
 Amendment of 4 October 2026, written for Claude Code. Read it in full before any work, then `CLAUDE.md`.
 
-It amends `docs/particl-sow.md`. Where the two disagree, this file wins until the first PR (§9.1) folds it in. The owner keeps a planning copy, "Particl: scope of work…", in a Claude doc with a Scope tab and a Runbook tab; package names here (D0, U1, S1, A1, E1…) match it, and the Runbook holds a ready prompt for each package.
+It amends `docs/particl-sow-v1.md`. Where the two disagree, this file wins until the first PR (§9.1) folds it in. The owner keeps a planning copy, "Particl: scope of work…", in a Claude doc with a Scope tab and a Runbook tab; package names here (D0, U1, S1, A1, E1…) match it, and the Runbook holds a ready prompt for each package.
 
 ---
 
@@ -319,7 +319,7 @@ P6a (React Flow) is done inside S3. P6c (LangGraph) is done inside S2. C1 is S1 
 | A2 | The 15 workflows as Particl skills, each quoted as one run | E1 to E9 | Not started |
 | A3 | Folded: S2's agent with each suite's tools, delivered through S2 and S4 | none | Folded |
 | A4 | Skills over MCP: list, quote and run a skill, approval first | A2 | Not started |
-| Review | `docs/particl-sow.md` and this file updated to what shipped | everything | Not started |
+| Review | `docs/particl-sow-v1.md` and this file updated to what shipped | everything | Not started |
 
 ### Sequence
 
@@ -349,7 +349,7 @@ The owner's estimate for two people: the full scope by 26 February 2027.
 
 ## 9. Working rules for Claude Code
 
-1. **First PR, docs only:** fold this amendment into `docs/particl-sow.md`; add ground rules 11 to 17 to `CLAUDE.md` after rule 10; keep this file as `docs/particl-sow-2026-10-04.md` for the record.
+1. **First PR, docs only:** fold this amendment into `docs/particl-sow-v1.md`; add ground rules 11 to 17 to `CLAUDE.md` after rule 10; keep this file as `docs/particl-sow-2026-10-04.md` for the record.
 2. **Plan first** for every package. The owner reviews the plan before any code.
 3. **One branch per PR**, off main, in its own worktree. Never push to main. Never merge. One concern per PR, small.
 4. **Every UI PR:** Playwright at 360×640, 390×844, 844×390, 1440×900 and 1920×1080 with no horizontal overflow; the five-minute test (rule 17) once U1's first PR has landed it; screenshots beside the handoff. The owner checks the Vercel preview before merging, because main deploys straight to particl.si.
@@ -357,7 +357,7 @@ The owner's estimate for two people: the full scope by 26 February 2027.
 6. **Tenant isolation** on every query, storage path and signed URL (rule 2).
 7. **Secrets** only in Vercel and Coolify settings; never in code, logs, model prompts or chat. Never rotate `KEYRING_SECRET` without a re-encryption script.
 8. **Agentic first** (rule 11): a feature's registry tool and its agent test land before or with its button.
-9. **Keep the SOW true:** update `docs/particl-sow.md` when a change makes it wrong.
+9. **Keep the SOW true:** update `docs/particl-sow-v1.md` when a change makes it wrong.
 10. **One model per package**, as the Runbook's prompt for it says: Fable at high effort for D0, A1 and S2; Opus at high effort for S1, S3, S4, U1, P6b and the platform packages; opusplan at medium for the engine packages, D1, C2, A2 and A4. Whatever the package, a plan that changes the approval path, a price function, sign-in or tenant separation is written at high effort on Opus or Fable, and the owner reviews it before any code.
 
 ---
