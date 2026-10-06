@@ -5,7 +5,7 @@ import { usePlanRun } from "../board/cards/plan/use-run";
 import { balanceLine, type PlanModel, type PlanPrimary } from "../board/cards/plan/model";
 import type { BoardCtx } from "../board/cards/types";
 import { Price, usePriceTitle } from "../Price";
-import { creditsText } from "@/lib/shell/price-words";
+import { creditsText, priceWords } from "@/lib/shell/price-words";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Project } from "@/lib/workbench/studio";
 import { NEEDS_CONNECTION } from "./HomeScreen";
@@ -16,9 +16,9 @@ import { NEEDS_CONNECTION } from "./HomeScreen";
  * and Approve · Change · Hold pinned under it.
  *
  * It reads the plan card's own model and actions (components/graphite/board/cards/plan, stream 4), so the board and
- * the phone show the same steps at the same prices and press the same existing, person-only route: Approve is the
- * run's own approval by the person who asked (`agent.approve`, first `agent.limit` when the limit is short), and each
- * render then asks at its own price (lead decision 27). Nothing here approves or prices anything itself.
+ * the phone show the same steps at the same prices and press the same existing, person-only route: before the build,
+ * Build · free (`agent.approve`); at the plan gate the button is the server's total, Approve · N cr
+ * (`agent.approvePlan`), which approves the plan once (CLAUDE.md rule 14). Nothing here approves or prices anything itself.
  *
  *  - Approve waits while the balance is short, with "Short by N cr" and Top up beside it (Settings › Plan & credits).
  *  - Change hands the plan to Atomik's sheet with "Change the plan: "; it is re-priced before it can be approved.
@@ -43,12 +43,15 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
   const ctx = { scope, project, productionId: project?.productionProjectId ?? null } as unknown as BoardCtx;
   const plan = usePlan(ctx, project ? run : null, online ? null : NEEDS_CONNECTION);
   const model = plan.model;
-  const pressed = useRef(false);
-  /* Approving moves the run past its proposal: say so once, and go Home where its first render waits. */
+  const pressed = useRef<"approve" | "plan" | false>(false);
+  /* Approving moves the run past its proposal (or its plan gate): say so once, and go Home. */
   useEffect(() => {
     if (pressed.current && model && model.phase !== "proposal") {
+      const kind = pressed.current;
       pressed.current = false;
-      toast(`${model.title} approved · each shot asks at its price`);
+      toast(kind === "plan" && model.ceiling != null && model.total
+        ? `Approved · ${priceWords(model.total)}, at most ${creditsText(model.ceiling)} with fixes`
+        : "Building the board · free");
       onHome();
     }
   }, [model, toast, onHome]);
@@ -107,7 +110,7 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
           </div>
         ) : null}
         {approve ? (
-          <Primary primary={approve} busy={plan.busy} online={online} onPress={() => { pressed.current = approve.kind === "approve"; void plan.act(approve); }} />
+          <Primary primary={approve} busy={plan.busy} online={online} onPress={() => { pressed.current = approve.kind === "approve" || approve.kind === "plan" ? approve.kind : false; void plan.act(approve); }} />
         ) : null}
         {approve?.blocked && !short && approve.blocked !== NEEDS_CONNECTION ? <p className="ph-row-line ph-plan-why" role="status">{approve.blocked}</p> : null}
         {plan.problem ? <p className="ph-row-line ph-row-line--warn ph-plan-why" role="alert">{plan.problem}</p> : null}
@@ -122,13 +125,13 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
   );
 }
 
-/** "Fixes if needed · up to 2 per shot … at most N cr": the allowance is information, never part of the Total. */
+/** "Fixes if needed · up to 2 per shot … at most N cr": the most the plan may spend with fixes (2 × the Total); after approval, what it has used. */
 function Allowance({ model }: { model: PlanModel }) {
-  if (model.fixAllowance == null) return null;
+  if (model.ceiling == null) return null;
   return (
     <div className="ph-plan-line" data-testid="phone-plan-fixes">
-      <span>Fixes if needed · up to 2 per shot</span>
-      <span className="ph-plan-mono">at most {creditsText(model.fixAllowance)}</span>
+      <span>{model.used != null ? `Used · fixes up to 2 per shot` : "With fixes · up to 2 per shot"}</span>
+      <span className="ph-plan-mono">{model.used != null ? `${creditsText(model.used)} of ${creditsText(model.ceiling)}` : `at most ${creditsText(model.ceiling)}`}</span>
     </div>
   );
 }

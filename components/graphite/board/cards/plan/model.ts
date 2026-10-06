@@ -4,17 +4,19 @@ import { STATED_CHARGE_BAND, ceilTenths, fromTenths, toTenths } from "@/lib/runL
 import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@/lib/workbench/rig-agent-plan";
 
 /*
- * The plan card (design/particl-graphite/README.md § 3.1 e, § 4, § 5), as the code does it today
- * (lead decision 27): the plan is Atomik's durable run on the board (lib/workbench/rig-agent*.ts).
+ * The plan card (design/particl-graphite/README.md § 3.1 e, § 4, § 5; CLAUDE.md rule 14: a plan is approved once).
+ * The plan is Atomik's durable run on the board (lib/workbench/rig-agent*.ts):
  *
- *  - Approve is the run's own approval, given by the person who asked: `agent.approve` on the
- *    proposal as shown (its fingerprint), and first `agent.limit` when the run's approved limit is
- *    short of what the plan's renders may cost.
- *  - Then each render asks at its own price (Ask, the default), or, in Auto, a draft priced at or
- *    under the per-job line runs without a tap (lib/workbench/rig-agent-limits.ts). The card says so.
- *  - The fix allowance is information only: 2 × the plan's take prices, never added to the total.
- *  - Every price is the server's: the run's own pricing of a step, or a pre-quote of the exact
- *    request it will price. Words come from lib/shell/price-words.ts only.
+ *  - Before the build: "Make 3 shots" and Build · free (`agent.approve` on the proposal as shown). Building places
+ *    cards and wires and spends nothing; shots that are not on the board yet cannot be priced.
+ *  - The plan gate, after the build: the server has priced every render the plan names on the exact request it will
+ *    send. "Make 3 shots · 93 cr · at most 186 cr", and the button is the price: Approve · 93 cr
+ *    (`agent.approvePlan` with the server's quote fingerprint). That one approval covers the listed renders at those
+ *    prices and up to two fixes per shot, within the ceiling (2 × the total). The server enforces it, not this card.
+ *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved, one over
+ *    the per-job line) asks at its own price, as does everything in Auto that is not a cheap draft.
+ *  - Every price is the server's: the plan's quote, the run's own pricing of a step, or (before the build) a
+ *    pre-quote of the exact request it will price. Words come from lib/shell/price-words.ts only.
  *
  * Pure: the phone's plan screen (stream 10) reads the same model.
  */
@@ -38,6 +40,8 @@ export type PlanStep = {
   unavailable: string | null;
   /** Over the workspace's per-shot rule: a member can't render it; an admin can. */
   needsAdmin: boolean;
+  /** Priced, but outside the plan's one approval: it asks at its own price ("Asks on its own · over 200 cr"). */
+  asksAlone: string | null;
   state: RigAgentStepState;
   /** Where it is, in a few words. */
   status: string;
@@ -48,8 +52,10 @@ export type PlanStep = {
 };
 
 export type PlanPrimary =
-  /** The proposal: approve it (raising the run's limit first when `raiseTo` is set). */
+  /** The proposal: build it (free). `raiseTo` is never set by this card any more: the plan's approval sets the limit. */
   | { kind: "approve"; label: string; price: PriceValue | null; raiseTo: number | null; fingerprint: string; blocked: string | null }
+  /** The plan gate: approve the plan once at the server's total (its quote fingerprint). */
+  | { kind: "plan"; label: string; price: PriceValue; fingerprint: string; blocked: string | null }
   /** A render that waits for its tap, at its price; or a paused one to try again or price again. */
   | { kind: "render"; label: string; price: PriceValue | null; seq: number; fingerprint: string | null; blocked: string | null }
   /** A render paused at the run's limit: raise it (the person who asked). */
@@ -61,10 +67,12 @@ export type PlanModel = {
   /** "Make 3 shots" before approval; "Making 3 shots" after. */
   title: string;
   steps: PlanStep[];
-  /** Every take's price added up; null while one has none. Never includes the fix allowance or the thinking. */
+  /** The renders' total: the server's plan quote at the gate, else every take's price added up; null while one has none. Never the thinking. */
   total: PriceValue | null;
-  /** 2 × the takes' prices (credits): information only, never added to the total. */
-  fixAllowance: number | null;
+  /** The most the plan may spend, fixes included: 2 × the total (credits). At the gate and after, the server's figure. */
+  ceiling: number | null;
+  /** After the plan's approval: what it has used of the ceiling (credits). */
+  used: number | null;
   /** The balance now, after the total, and how short it is. */
   balance: { now: number; after: number | null; short: number | null } | null;
   /** "93 cr for the 3 shots": what the renders come to, as information (not what Approve spends). */
@@ -101,7 +109,6 @@ export type PlanInput = {
   readOnly: string | null;
 };
 
-const TAKE_STATES_ENDED: readonly RigAgentStepState[] = ["done", "failed", "skipped"];
 const STATUS: Record<RigAgentStepState, string> = {
   proposed: "Planned", queued: "Planned", next: "Up next", waiting: "Ready", approved: "Approved · going next", sending: "Sending",
   rendering: "Rendering", done: "Rendered", failed: "Failed", paused: "Needs you", skipped: "Not rendered",
@@ -110,6 +117,9 @@ const STATUS: Record<RigAgentStepState, string> = {
 export const SWITCHED_OFF = "Atomik's board building is switched off right now.";
 export const NOT_MINE = "Only the person who asked approves this plan.";
 export const SHORT_LINE = "Top up, then approve. Nothing is spent until you do.";
+
+/** The most a plan may spend, fixes included, as a multiple of its renders' total (lib/workbench/plan-approval.ts). */
+export const PLAN_CEILING_MULTIPLE = 2;
 
 /** A price the server quoted for a request: exact, or up to its band when it settles on what the provider states. */
 export function estimatePrice(estimate: { credits: number; approximate: boolean }): PriceValue | null {
@@ -150,9 +160,11 @@ function thinkingLine(run: RigAgentRunView): string | null {
   return planning.state === "settled" ? `Thinking · ${words} · billed when Atomik planned it` : `Thinking · ${words} · while Atomik plans`;
 }
 
-function modeLine(run: RigAgentRunView): string | null {
+function modeLine(run: RigAgentRunView, gate: boolean): string | null {
   const money = run.money;
   if (!money) return null;
+  if (run.plan?.approval?.open) return "Inside the approved plan nothing asks again; anything outside it asks at its price.";
+  if (gate || (run.state === "awaiting_approval" && money.mode !== "auto")) return "One approval covers the shots and up to 2 fixes each; anything else asks.";
   if (money.mode === "auto") {
     const line = priceWords(upTo(money.jobCeiling));
     return line ? `Drafts ${line} each render without asking; anything else asks.` : "Drafts under the per-render line run without asking; anything else asks.";
@@ -166,6 +178,8 @@ function ruleLine(rule: PlanInput["rule"]): string | null {
 }
 
 export function phaseOf(run: RigAgentRunView): PlanPhase {
+  /* The plan gate: the build is done and the server's quote waits for the one approval. */
+  if (run.state === "needs_you" && run.plan?.quote && !run.plan.approval) return "proposal";
   switch (run.state) {
     case "planning": return "planning";
     case "awaiting_approval": return "proposal";
@@ -180,6 +194,8 @@ export function planModel(input: PlanInput): PlanModel | null {
   const run = input.run;
   if (!run) return null;
   const phase = phaseOf(run);
+  const plan = run.plan ?? null;
+  const gate = phase === "proposal" && run.state !== "awaiting_approval" && plan?.quote ? plan.quote : null;
   const takes = run.paid.filter((p) => p.tool === "render");
   const steps: PlanStep[] = takes.map((p) => {
     const estimate = input.estimates?.[p.seq];
@@ -198,41 +214,42 @@ export function planModel(input: PlanInput): PlanModel | null {
       seq: p.seq, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
       unavailable: unavailable ? `Unavailable · ${unavailable}` : null,
       needsAdmin: overCap || (p.state === "paused" && p.pause === "admin"),
+      asksAlone: gate?.asks.includes(p.seq) ? "Asks on its own · over the per-render line" : null,
       state: p.state, status, reason: p.reason, canRender: p.canRender, fingerprint: p.fingerprint,
     };
   });
 
-  const counted = steps.filter((s) => s.state !== "skipped" && !s.unavailable);
-  const total = !steps.length ? FREE : counted.length && counted.every((s) => s.price) ? priceSum(counted.map((s) => s.price)) : null;
+  const counted = steps.filter((s) => s.state !== "skipped" && !s.unavailable && !s.asksAlone);
+  const approval = plan?.approval ?? null;
+  /* At the gate the total is the server's quote, never this card's sum; after approval, the approved total. */
+  const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total) : exact(gate.total))
+    : approval ? exact(approval.total)
+    : !steps.length ? FREE : counted.length && counted.every((s) => s.price) ? priceSum(counted.map((s) => s.price)) : null;
   const totalCredits = total ? ceilingOf(total) : null;
-  /* 2 × the takes' prices (lead decision 28): stills are left out, and it is never part of the total. */
   const takesCounted = counted.filter((s) => s.kind === "take");
-  const fixAllowance = total && takesCounted.length
-    ? fromTenths(2 * takesCounted.reduce((sum, s) => sum + toTenths(ceilingOf(s.price!)), 0))
-    : null;
+  const ceiling = gate ? gate.ceiling : approval ? approval.ceiling
+    : total && total.kind !== "free" && counted.length ? fromTenths(PLAN_CEILING_MULTIPLE * toTenths(ceilingOf(total))) : null;
   const balance = input.balance == null ? null : {
     now: input.balance,
     after: totalCredits == null ? null : Math.round((input.balance - totalCredits) * 10) / 10,
     short: shortBy(input.balance, total),
   };
 
-  /* What the run's limit still has to hold: every take not yet sent, at its worst case, past what the limit leaves. */
   const money = run.money;
-  const waitingSteps = steps.filter((s) => !TAKE_STATES_ENDED.includes(s.state) && !["sending", "rendering"].includes(s.state));
-  const waitingWorst = waitingSteps.every((s) => s.price && !s.unavailable)
-    ? waitingSteps.reduce((sum, s) => sum + toTenths(ceilingOf(s.price!)), 0) : null;
-  const raiseTo = money && waitingWorst != null && waitingWorst > toTenths(money.left)
-    ? Math.ceil(fromTenths(toTenths(money.limit) + waitingWorst - toTenths(money.left)))
-    : null;
 
   const offBlock = input.readOnly ?? (!input.enabled ? SWITCHED_OFF : !run.mine ? NOT_MINE : null);
   let primary: PlanPrimary | null = null;
-  if (phase === "proposal" && run.proposal) {
-    /* Approving builds (free) and, when the limit is short, sets it; each render still asks at its own price (decision 27). So the button
-       carries no figure of the renders: they are on the lines above it, as information. */
+  if (gate) {
+    /* The plan gate: the button is the price, the server's total. One approval; the server holds it to the ceiling. */
     primary = {
-      kind: "approve", label: total?.kind === "free" ? "Approve · free" : "Approve", price: null, raiseTo, fingerprint: run.proposal.fingerprint,
+      kind: "plan", label: `Approve · ${priceWords(total!)}`, price: total!, fingerprint: gate.fingerprint,
       blocked: offBlock ?? (balance?.short != null ? SHORT_LINE : null),
+    };
+  } else if (phase === "proposal" && run.proposal) {
+    /* Building is free and approves no spending: the renders are priced once their shots are on the board, then approved once. */
+    primary = {
+      kind: "approve", label: total?.kind === "free" ? "Approve · free" : "Build · free", price: null, raiseTo: null, fingerprint: run.proposal.fingerprint,
+      blocked: offBlock,
     };
   } else if (phase === "needs-you") {
     const open = steps.find((s) => s.state === "waiting" || s.state === "paused");
@@ -253,10 +270,12 @@ export function planModel(input: PlanInput): PlanModel | null {
     }
   }
 
+  const shots = planTitle(steps.length, phase);
+  const title = gate && total && ceiling != null ? `${shots} · ${priceWords(total)} · at most ${creditsText(ceiling)}` : shots;
   return {
-    runId: run.id, phase, title: planTitle(steps.length, phase) || run.proposal?.title || "", steps, total, fixAllowance, balance,
-    totalLine: totalLineOf(total, takesCounted.length),
-    thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run) : null, ruleLine: ruleLine(input.rule),
+    runId: run.id, phase, title: title || run.proposal?.title || "", steps, total, ceiling, used: approval ? approval.used : null, balance,
+    totalLine: gate ? null : totalLineOf(total, takesCounted.length),
+    thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run, Boolean(gate)) : null, ruleLine: ruleLine(input.rule),
     adminLine: input.rule?.rule === "cap" ? `Needs an admin · over ${creditsText(input.rule.cap)} on a shot` : "Needs an admin", primary,
     note: phase === "needs-you" || phase === "paused" || phase === "ended" ? run.reason : null,
     mine: run.mine,
@@ -268,9 +287,11 @@ export function totalLineOf(total: PriceValue | null, takes: number): string | n
   return total && total.kind !== "free" && takes ? `${priceWords(total)} for ${takes === 1 ? "the shot" : `the ${takes} shots`}` : null;
 }
 
-/** "Fixes if needed: up to 2 per shot, at most 186 cr" — the allowance as information; null without one. */
-export function fixLine(model: Pick<PlanModel, "fixAllowance">): string | null {
-  return model.fixAllowance == null ? null : `Fixes if needed: up to 2 per shot, at most ${creditsText(model.fixAllowance)}`;
+/** "Fixes if needed: up to 2 per shot, within 186 cr"; after approval "41 of 186 cr used". Null without a ceiling. */
+export function fixLine(model: Pick<PlanModel, "ceiling" | "used">): string | null {
+  if (model.ceiling == null) return null;
+  if (model.used != null) return `${creditsText(model.used)} of ${creditsText(model.ceiling)} used · fixes up to 2 per shot`;
+  return `Fixes if needed: up to 2 per shot, within ${creditsText(model.ceiling)}`;
 }
 
 /** "1,907 cr left after", or "Short by 26 cr"; null when the balance is unknown. */

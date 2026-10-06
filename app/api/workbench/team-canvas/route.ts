@@ -14,7 +14,7 @@ import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
-  approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
+  approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
   newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
 
@@ -130,6 +130,9 @@ const actionSchema = z.discriminatedUnion("action", [
   runAction("agent.render").extend({ seq: SEQ, fingerprint: FINGERPRINT.optional() }),
   runAction("agent.skip").extend({ seq: SEQ }),
   runAction("agent.limit").extend({ limit: LIMIT }),
+  /* The plan approved once at the server's quote (its fingerprint), and a fix drawn under that approval. */
+  runAction("agent.approvePlan").extend({ fingerprint: FINGERPRINT }),
+  runAction("agent.fix").extend({ seq: SEQ }),
 ]);
 
 /**
@@ -145,7 +148,9 @@ const actionSchema = z.discriminatedUnion("action", [
  *    board with the limit approved for the run (Atomik proposes the cards and
  *    wires; its planning is metered into that limit), approve the proposal as
  *    shown or set it aside, render a paid step at the price shown, skip one, or
- *    raise the limit (only the person who asked); stop a run or undo a build
+ *    raise the limit (only the person who asked); approve the plan once at the
+ *    server's quote, or draw a fix under that approval (only the person who
+ *    asked, a signed-in session: tokens are refused); stop a run or undo a build
  *    (anyone on the team). What a run spends is spent by its worker, inside
  *    the approved limit. Each answers Atomik's run card.
  */
@@ -174,6 +179,8 @@ export const POST = withTenant(async (req: Request) => {
       : action.action === "agent.render" ? await renderRigAgentStep({ productionId, runId: action.runId, seq: action.seq, fingerprint: action.fingerprint ?? null, userId })
       : action.action === "agent.skip" ? await skipRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : action.action === "agent.limit" ? await raiseRigAgentLimit({ productionId, runId: action.runId, limit: action.limit, userId })
+      : action.action === "agent.approvePlan" ? await approveRigAgentPlan({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
+      : action.action === "agent.fix" ? await fixRigAgentShot({ productionId, runId: action.runId, seq: action.seq, userId })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
     return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }

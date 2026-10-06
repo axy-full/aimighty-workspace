@@ -435,6 +435,31 @@ export type RigAgentPaidStepView = {
   canRender: boolean;
   /** The approval a tap gives: the price the card shows. */
   fingerprint: string | null;
+  /** A fix: the step of the shot it renders again under the plan's approval. */
+  fixOf?: number | null;
+  /** Covered by the plan's one approval (no tap of its own). */
+  inPlan?: boolean;
+};
+
+/**
+ * The plan's one approval (lib/workbench/plan-approval.ts), as the plan card shows it: before it, the server's
+ * quote (T and the most the plan may spend, 2T); after it, who approved, what is used and the fixes drawn.
+ */
+export type RigAgentPlanView = {
+  /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[] } | null;
+  /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
+  blocked: string | null;
+  approval: {
+    mine: boolean; at: number; expiresAt: number; total: number; ceiling: number;
+    /** What the plan's renders and fixes have used of the ceiling: settled at their final charge (after any refund), plus holds. */
+    used: number;
+    /** Fixes drawn, by the shot's step. */
+    fixes: Record<string, number>;
+    maxFixes: number;
+    open: boolean;
+    closedReason: string | null;
+  } | null;
 };
 export type RigAgentProposalView = {
   title: string; summary: string;
@@ -460,6 +485,8 @@ export type RigAgentRunView = {
   money: RigAgentMoneyView | null;
   /** The renders after the build, and the checks of their takes. */
   paid: RigAgentPaidStepView[];
+  /** The plan's one approval: its quote before, its record after. Null for a run with no renders. */
+  plan?: RigAgentPlanView | null;
   at: number;
 };
 

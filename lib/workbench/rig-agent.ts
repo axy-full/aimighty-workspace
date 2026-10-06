@@ -9,7 +9,7 @@ import { PipelineError } from "@/lib/pipeline/schema";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { requireTenant, runInTenant, type TenantWorkspace } from "@/lib/tenant";
 import { catalog, type CatalogModel } from "@/lib/catalog";
-import { quotedCredits } from "@/lib/credits";
+import { creditState, quotedCredits } from "@/lib/credits";
 import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
@@ -20,8 +20,12 @@ import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
 import {
   ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
-  type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentRunView, type RigAgentState,
+  type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
 } from "./rig-agent-plan";
+import {
+  closePlanApproval, fixRoom, approvalClosed, insertPlanApproval, isPersonApprover, planApprovalOf, planQuote, recordFix,
+  MAX_FIXES_PER_SHOT, PEOPLE_ONLY, THIRD_FIX, type PlanApprovalRow, type QuoteInputStep,
+} from "./plan-approval";
 import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
@@ -29,7 +33,7 @@ import {
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
@@ -100,7 +104,45 @@ const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
 /** The planning turn's meter event: one per run. */
 export const planEventId = (runId: string) => `rigplan_${runId.replace(/^rar_/, "")}`;
 
-export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER): RigAgentRunView {
+/** A render step as the plan's quote reads it. */
+function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
+  return {
+    seq: s.seq, nodeId: s.nodeId, title: stepTitle(run, s), state: s.state, fixOf: s.fixOf, pause: s.pause, reason: s.reason,
+    quote: s.admission ? s.quoteCredits : null,
+    worst: s.admission && s.quoteCredits != null ? fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)) : null,
+    fingerprint: s.admission ? s.admission.quote.fingerprint : null,
+  };
+}
+
+/** The plan's one approval as the card shows it: the server's quote before it, its record after. */
+function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger, approval: PlanApprovalRow | null, jobLine: number): RigAgentPlanView | null {
+  const takes = steps.filter((s) => s.purpose === "take");
+  if (!takes.length) return null;
+  if (approval) {
+    const used = runTally(ledger.charges.filter((c) => c.id !== planEventId(run.id)));
+    const closed = approvalClosed(approval, now());
+    return {
+      quote: null, blocked: null,
+      approval: {
+        mine: approval.approvedBy === viewer, at: approval.approvedAt, expiresAt: approval.expiresAt,
+        total: fromTenths(approval.totalTenths), ceiling: fromTenths(approval.ceilingTenths),
+        used: fromTenths(used.settledTenths + used.heldTenths),
+        fixes: Object.fromEntries(Object.entries(approval.fixes).map(([shot, list]) => [shot, list.length])), maxFixes: MAX_FIXES_PER_SHOT,
+        open: !closed, closedReason: closed,
+      },
+    };
+  }
+  /* Only once the build is done and the run is at its renders: before that, shots may not exist to price. */
+  if (!["running", "needs_you", "paused"].includes(run.state)) return { quote: null, blocked: null, approval: null };
+  const quote = planQuote(takes.map((s) => quoteStep(run, s)), jobLine);
+  if (!quote.ready) return { quote: null, blocked: takes.some((s) => s.state === "waiting" || s.state === "paused") ? quote.reason : null, approval: null };
+  return {
+    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq) },
+    blocked: null, approval: null,
+  };
+}
+
+export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
   const done = steps.filter((s) => s.state === "done" && s.purpose === "build");
   const outcomes = (step: StepRow): OpOutcome[] => step.result ?? [];
   const cards = done.filter((s) => s.tool === "create").flatMap(outcomes).filter((o) => o.kind === "create" && !o.held).reduce((n, o) => n + o.nodeIds.length, 0);
@@ -121,7 +163,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   const mine = run.owner === viewer;
   const asking = run.state === "needs_you" || run.state === "running";
   const paid: RigAgentPaidStepView[] = steps.filter((s) => s.purpose === "take" || s.purpose === "verify").map((s) => {
-    const title = stepTitle(run, s);
+    const title = s.fixOf != null ? `Fix · ${stepTitle(run, s)}` : stepTitle(run, s);
     if (s.purpose === "verify")
       return { seq: s.seq, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
         reason: RIG_AGENT_VERIFY ? s.reason : VERIFY_LATER, canRender: false, fingerprint: null };
@@ -138,8 +180,10 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
       pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
       canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
+      fixOf: s.fixOf, inPlan: !!s.approvalId,
     };
   });
+  const jobLine = effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0);
   return {
     id: run.id, state: run.state, reason: run.reason, goal: run.goal, mine,
     proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint, money) : null,
@@ -151,6 +195,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     credits: money?.spent ?? 0,
     money,
     paid,
+    plan: planView(run, steps, viewer, ledger, approval, jobLine),
     at: run.updatedAt,
   };
 }
@@ -167,7 +212,7 @@ async function ledgerOf(run: RunRow): Promise<RunLedger> {
 async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
   const run = await getRun(db(), runId);
   if (!run) throw new RigAgentError("That build is not on this production.", 404);
-  return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run));
+  return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run), await planApprovalOf(db(), runId));
 }
 
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
@@ -186,7 +231,7 @@ export async function rigAgentState(productionId: string, viewer: string, draftI
   const ask = enabled && draftId && !busy ? await askTerms(productionId, draftId, viewer).catch(() => null) : null;
   if (!run) return { enabled, run: null, ask };
   await nudge(run).catch(() => {});
-  return { enabled, run: runView(run, await stepsOf(db(), run.id), viewer, await ledgerOf(run)), ask };
+  return { enabled, run: runView(run, await stepsOf(db(), run.id), viewer, await ledgerOf(run), await planApprovalOf(db(), run.id)), ask };
 }
 
 async function askTerms(productionId: string, draftId: string, viewer: string): Promise<RigAgentAskTerms> {
@@ -346,6 +391,8 @@ async function stopRun(runId: string, reason: string) {
     if (stopped) {
       await setSteps(tx, runId, "queued", "skipped"); await setSteps(tx, runId, "proposed", "skipped");
       await closePaidSteps(tx, runId, STOPPED_UNSENT);
+      /* Nothing more is drawn on the plan's approval: renders already sent settle at what they cost. */
+      await closePlanApproval(tx, runId, "Stopped: nothing more is spent under this plan.", now());
     }
     return stopped;
   });
@@ -467,6 +514,96 @@ export async function raiseRigAgentLimit(input: { productionId: string; runId: s
 }
 
 /**
+ * Approve the plan once (CLAUDE.md rule 14): the person who asked approves every render the plan lists, each at
+ * the server's price shown (the quote's fingerprint), plus at most two fixes per shot, up to the plan's ceiling
+ * (lib/workbench/plan-approval.ts). Refused for anyone but that person, and for any agent, MCP caller or token.
+ * The balance is checked against the total first ("Short by N cr"). The run's limit becomes what it already used
+ * plus the ceiling, so the reservation enforces the total under its write lock; renders paused at the old limit
+ * or the balance are checked again. A lost reply answers the same, and approves nothing twice.
+ */
+export async function approveRigAgentPlan(input: { productionId: string; runId: string; fingerprint: string; userId: string }): Promise<RigAgentRunView> {
+  if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
+  if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
+  const found = await runFor(input.productionId, input.runId);
+  if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can approve it.", 403);
+  await rigAgentReady();
+  const line = effectiveJobCeiling(found.perJobCap, await rigJobCeiling());
+  const [credits, charges] = await Promise.all([creditState(), runCharges(found.id)]);
+  const moved = await workbenchTransaction(async (tx) => {
+    const run = (await getRun(tx, found.id))!;
+    const existing = await planApprovalOf(tx, run.id);
+    if (existing) {
+      if (existing.approvedBy === input.userId && existing.fingerprint === input.fingerprint) return false;
+      throw new RigAgentError("This plan was already approved once. Anything more asks at its own price.", 409);
+    }
+    if (run.state !== "needs_you" && run.state !== "running") throw new RigAgentError("This plan is not waiting for approval.", 409);
+    const quote = planQuote((await stepsOf(tx, run.id)).filter((s) => s.purpose === "take").map((s) => quoteStep(run, s)), line);
+    if (!quote.ready) throw new RigAgentError(quote.reason, 409);
+    if (quote.fingerprint !== input.fingerprint) throw new RigAgentError("The plan's prices changed. Look at it again before approving.", 409);
+    /* The balance against the plan's total, before it starts (rule 14); every hold checks it again. */
+    if (credits && toTenths(credits.balance) < quote.totalTenths)
+      throw new RigAgentError(`Short by ${creditFigure(fromTenths(quote.totalTenths - toTenths(credits.balance)))} cr. Top up, then approve. Nothing is spent until you do.`, 402);
+    const tally = runTally(charges);
+    const limit = fromTenths(tally.settledTenths + tally.worstTenths + quote.ceilingTenths);
+    const at = now();
+    await insertPlanApproval(tx, { runId: run.id, productionId: run.productionId, approvedBy: input.userId, at, quote, limitCredits: limit });
+    const record: LimitRecord = { credits: limit, mode: run.mode, jobCeiling: run.perJobCap ?? 0, by: input.userId, at };
+    await patchRun(tx, run.id, { cap_credits: limit, limits: [...run.limits, record] });
+    await tx.execute({ sql: "UPDATE rig_agent_steps SET state='waiting',pause=NULL,reason=NULL,updated_at=? WHERE run_id=? AND purpose='take' AND state='paused' AND pause IN ('limit','credits')", args: [at, run.id] });
+    await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);
+    return true;
+  });
+  if (moved) await dispatchRigAgent(found, `plan-${now()}`);
+  return viewOf(found.id, input.userId);
+}
+
+/**
+ * A fix under the plan's approval (the person who asked; owner decision 3): one more render of a shot whose take
+ * is back, drawn from the approval with no price question. At most two per shot; a third is refused and asks at
+ * its own price elsewhere. The fix is priced when its turn comes and runs without a tap only when it costs no more
+ * than its shot was approved at; the run's limit (the plan's ceiling) is enforced at the hold. Pressing again
+ * while a fix of that shot is still on its way answers the same.
+ */
+export async function fixRigAgentShot(input: { productionId: string; runId: string; seq: number; userId: string }): Promise<RigAgentRunView> {
+  if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
+  if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
+  const found = await runFor(input.productionId, input.runId);
+  if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can fix its shots.", 403);
+  await rigAgentReady();
+  const moved = await workbenchTransaction(async (tx) => {
+    const approval = await planApprovalOf(tx, found.id);
+    if (!approval) throw new RigAgentError("Fixes come with an approved plan. Approve the plan first.", 409);
+    const closed = approvalClosed(approval, now());
+    if (closed) throw new RigAgentError(closed, 409);
+    const step = await paidStepFor(found.id, input.seq, tx);
+    const shotSeq = step.fixOf ?? step.seq;
+    const room = fixRoom(approval, shotSeq);
+    if (!room.listed) throw new RigAgentError("That shot is not in the approved plan.", 409);
+    const steps = await stepsOf(tx, found.id);
+    const ofShot = steps.filter((s) => s.purpose === "take" && (s.seq === shotSeq || s.fixOf === shotSeq));
+    /* A fix of this shot still on its way: the same answer (a lost reply, a second press). */
+    if (ofShot.some((s) => s.fixOf === shotSeq && !["done", "failed", "skipped"].includes(s.state))) return false;
+    if (!room.left) throw new RigAgentError(THIRD_FIX, 409);
+    const latest = ofShot.at(-1)!;
+    if (latest.state !== "done" && latest.state !== "failed") throw new RigAgentError("A shot is fixed once its take is back.", 409);
+    const run = (await getRun(tx, found.id))!;
+    if (!["running", "needs_you", "done"].includes(run.state)) throw new RigAgentError("This run has ended. Ask again for a new plan.", 409);
+    const seq = Math.max(...steps.map((s) => s.seq)) + 1;
+    const at = now();
+    await insertFixStep(tx, run.id, { seq, nodeId: latest.nodeId!, label: `Fix ${stepTitle(run, latest)}`, fixOf: shotSeq, at });
+    await recordFix(tx, approval.id, shotSeq, seq, approval.fixes);
+    try {
+      await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at, finished_at: null }, ["running", "needs_you", "done"]);
+    } catch {
+      throw new RigAgentError("Another build is under way on this production. Stop it, or wait for it to finish.", 409);
+    }
+    return true;
+  });
+  if (moved) await dispatchRigAgent(found, `fix-${input.seq}-${now()}`);
+  return viewOf(found.id, input.userId);
+}
+
+/**
  * Undo what the run built (anyone on the team): the inputs it wired into cards
  * it did not make come out, and its own cards are taken off, softly. A card a
  * teammate has changed or still uses stays, with the reason. Free. A build in
@@ -497,6 +634,7 @@ export async function undoRigAgent(input: { productionId: string; runId: string;
       reasons = distinct(result.outcomes.map((o) => o.held).filter((h): h is string => !!h));
     }
     await patchRun(db(), run.id, { undone_at: now(), undone_by: input.userId, undo: { removed, kept, reasons } });
+    await closePlanApproval(db(), run.id, "Undone: nothing more is spent under this plan.", now());
   } finally {
     await releaseRun(lease);
   }
