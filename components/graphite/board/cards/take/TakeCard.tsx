@@ -1,9 +1,17 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { ReleaseTake } from "@/components/graphite/ReleaseTake";
+import { Price } from "@/components/graphite/Price";
 import { useVerifications } from "@/components/workspace/rig/use-verifications";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
+import { SAY, referenceRole } from "@/lib/shell/assets";
+import { upTo } from "@/lib/shell/price-words";
+import { sendReference } from "@/lib/shell/reference-inbox";
+import { useStageQuotes } from "@/lib/production/use-stage-quotes";
+import { askChange } from "../../inspector/change-intent";
+import { editQuoteBody } from "../../inspector/inspector-model";
+import { RejectPanel } from "./RejectPanel";
 import { isVerifyCard } from "@/lib/workbench/verify";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { takeChip } from "@/lib/workspace/takes";
@@ -12,10 +20,10 @@ import { shotReferenceDrop } from "../accepts";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
 import type { TakeCardData } from "./shots-derive";
 import {
-  ESTIMATE_CAP, estimateWords, rejectReasonProblem, inFlight, judgeable, needsReview, renderEstimate, verifyNote,
+  ESTIMATE_CAP, estimateWords, inFlight, judgeable, needsReview, renderEstimate, verifyNote,
   type ShotTakes, type ShotVersion,
 } from "./take-model";
-import { REJECT_REASON_MAX, useJudge } from "./use-judge";
+import { useJudge } from "./use-judge";
 import "./take.css";
 
 /*
@@ -139,41 +147,37 @@ function VersionChips({ row, current, onPick }: { row: ShotTakes; current: ShotV
   );
 }
 
-function ReasonField({ text, setText, onSubmit, onCancel, hint }: { text: string; setText: (t: string) => void; onSubmit: () => void; onCancel: () => void; hint: string | null }) {
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus(); }, []);
-  return (
-    <form className="gx-take-reason nodrag nopan" onSubmit={(e) => { e.preventDefault(); onSubmit(); }} onClick={(e) => e.stopPropagation()}>
-      <input ref={input} className="gx-take-input" value={text} maxLength={REJECT_REASON_MAX} onChange={(e) => setText(e.target.value)} placeholder={hint ?? "Why reject it?"} aria-label="Reason for rejecting"
-        aria-invalid={hint ? true : undefined} title={hint ?? undefined} data-hint={hint ? "" : undefined}
-        onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onCancel(); } }} data-testid="take-reason" />
-    {hint && text ? <span className="gx-take-hint" role="alert" data-testid="take-reason-hint">{hint}</span> : null}
-    </form>
-  );
-}
-
 export function ReviewTakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
   const judge = useJudge(ctx.scope, ctx.project.id, ctx.toast);
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
-  const [reason, setReasonText] = useState("");
-  const [hint, setHint] = useState<string | null>(null);
-  const setReason = (t: string) => { setReasonText(t); setHint(null); };
   const current = row.versions.find((v) => v.genId === pickedId) ?? row.shown;
   const checked = ctx.project.nodes.some(isVerifyCard);
   const { list } = useVerifications(ctx.scope, checked ? ctx.project.id : null);
   const note = useMemo(() => (current ? verifyNote(list, current.id) : null), [list, current]);
+  /* Change with words on a clip: the free quote Seedance Edit's panel asks, read while the take waits (nothing is sent). */
+  const editBody = current ? editQuoteBody(current, ctx.project.productionProjectId) : null;
+  const editQuote = useStageQuotes(ctx.scope, editBody && !ctx.offline && judgeable(current!) ? { edit: { body: editBody } } : {}).quotes.edit;
+  const editPrice = upTo(editQuote?.credits);
   if (!current) return null;
   const open = judgeable(current) && !ctx.offline;
-  const cancel = () => { setRejecting(false); setReason(""); };
-  const confirm = () => {
-    const problem = rejectReasonProblem(reason);
-    if (problem) { setHint(problem); return; }
-    setPickedId(current.genId); void judge.reject(row, current, reason).then((ok) => { if (ok) cancel(); });
+  const role = referenceRole(current.media === "image" || current.media === "video" ? current.media : null);
+  const cancel = () => setRejecting(false);
+  const reject = (reason: string) => { setPickedId(current.genId); void judge.reject(row, current, reason).then((ok) => { if (ok) cancel(); }); };
+  const change = () => {
+    setPickedId(current.genId);
+    if (current.media === "video") { askChange(current.genId); ctx.openInspector(`take-review:${row.nodeId}`); return; }
+    ctx.openMake("image");
+  };
+  const referenceIt = () => {
+    if (!role) return;
+    sendReference({ id: current.id, name: current.entry.take.name });
+    ctx.openMake(current.media === "video" ? "video" : "image");
+    ctx.toast(SAY.referenced(current.entry.take.name, role));
   };
   return (
-    <article className="gx-take gx-take--review" style={{ "--gx-take-well": `${wellHeight(560, ctx.project.aspect)}px` } as CSSProperties} data-status={current.status} data-dim={current.status === "changes" || undefined} aria-label={`${row.title} · ${current.label}`} data-testid="take-review">
+    <article className="gx-take gx-take--review" data-rejecting={rejecting || undefined} style={{ "--gx-take-well": `${wellHeight(560, ctx.project.aspect)}px` } as CSSProperties} data-status={current.status} data-dim={current.status === "changes" || undefined} aria-label={`${row.title} · ${current.label}`} data-testid="take-review">
       <div className="gx-take-media">
         <Picture version={current} frame={row.frame} name={row.title} />
         <VersionChips row={row} current={current} onPick={(v) => { setPickedId(v.genId); cancel(); }} />
@@ -185,20 +189,31 @@ export function ReviewTakeCard({ data, ctx }: CardProps<TakeCardData>) {
             <div className="gx-take-title">{`Shot ${row.index} · ${row.name} · ${current.label}`}</div>
             <div className="gx-take-engine">{current.engine}</div>
           </div>
-          <div className="gx-take-acts">
-            {/* Pressed once it asks for the reason; pressed again (or Enter in the field) it rejects. */}
-            <Btn className={rejecting ? "gx-take-btn--danger" : undefined} onClick={(e) => { e.stopPropagation(); if (rejecting) confirm(); else setRejecting(true); }}
-              disabled={!open || current.status === "changes" || Boolean(judge.busy)} aria-expanded={rejecting}
-              title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-reject">{current.status === "changes" ? "Rejected" : "Reject"}</Btn>
-            <Btn className="gx-take-btn--approve" onClick={(e) => { e.stopPropagation(); setPickedId(current.genId); void judge.approve(row, current); }} disabled={!open || current.status === "approved" || Boolean(judge.busy)}
-              title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-approve">{current.status === "approved" ? "Approved" : "Approve"}</Btn>
-          </div>
+          {rejecting ? null : (
+            <div className="gx-take-acts">
+              <Btn onClick={(e) => { e.stopPropagation(); setRejecting(true); }} disabled={!open || current.status === "changes" || Boolean(judge.busy)} aria-expanded={false}
+                title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-reject">{current.status === "changes" ? "Rejected" : "Reject"}</Btn>
+              <Btn className="gx-take-btn--approve" onClick={(e) => { e.stopPropagation(); setPickedId(current.genId); void judge.approve(row, current); }} disabled={!open || current.status === "approved" || Boolean(judge.busy)}
+                title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-approve">{current.status === "approved" ? "Approved" : "Approve"}</Btn>
+            </div>
+          )}
         </div>
         {rejecting ? (
-          <ReasonField text={reason} setText={setReason} onCancel={cancel} onSubmit={confirm} hint={hint} />
-        ) : note ? (
-          <div className="gx-take-note" data-testid="take-note"><span className="gx-take-spark" aria-hidden="true">✦</span><span>{note.text}</span></div>
-        ) : <div className="gx-take-note" aria-hidden="true" />}
+          <RejectPanel busy={Boolean(judge.busy)} onReject={reject} onCancel={cancel} />
+        ) : (
+          <>
+            {note ? <div className="gx-take-note" data-testid="take-note"><span className="gx-take-spark" aria-hidden="true">✦</span><span>{note.text}</span></div> : <div className="gx-take-note" aria-hidden="true" />}
+            <div className="gx-take-more">
+              {judgeable(current) && current.entry.asset.origin === "generation" ? (
+                <Btn onClick={(e) => { e.stopPropagation(); change(); }} disabled={ctx.offline} title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-change-words">
+                  Change with words{editPrice ? <> · <Price value={editPrice} testId="take-change-price" /></> : null}
+                </Btn>
+              ) : null}
+              {role && judgeable(current) ? <Btn onClick={(e) => { e.stopPropagation(); referenceIt(); }} data-testid="take-use-ref">Use as reference</Btn> : null}
+              <Btn onClick={(e) => { e.stopPropagation(); ctx.glide({ card: `versions:${row.nodeId}` }); }} data-testid="take-versions-go">Versions</Btn>
+            </div>
+          </>
+        )}
       </div>
     </article>
   );
@@ -217,6 +232,8 @@ export function wellHeight(width: number, aspect: string): number {
 /** Name, time line and padding under the picture (8 + 20 + 35 + 10). */
 const FOOT = 73;
 const STATUS = 40;
+/** The row under the note: Change with words, Use as reference, Versions (8 gap + 28 button). */
+const MORE = 36;
 
 export const takeDef = defineCard<TakeCardData>({
   kind: "take",
@@ -233,7 +250,7 @@ export const takeDef = defineCard<TakeCardData>({
 export const reviewTakeDef = defineCard<TakeCardData>({
   kind: "take-review",
   /* Title, engine line and buttons (12 + 42 + 10), the note line (21) and the bottom padding (14). */
-  size: (_data, at) => ({ w: 560, h: wellHeight(560, at.aspect) + 99 }),
+  size: (_data, at) => ({ w: 560, h: wellHeight(560, at.aspect) + 99 + MORE }),
   Card: ReviewTakeCard,
   onOpen: (card: BoardCard<TakeCardData>, ctx: BoardCtx) => {
     const v = card.data.row.shown;

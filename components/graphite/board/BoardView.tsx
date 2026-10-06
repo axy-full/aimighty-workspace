@@ -18,6 +18,7 @@ import { isBoardKind, type BoardBox, type BoardKind, type BoardPoint, type Board
 import { readBoardView, saveBoardView } from "@/lib/board/view";
 import { useMadeOnBoard } from "@/lib/board/made";
 import { rigUndoSink } from "@/lib/shell/rig-commands";
+import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
@@ -210,8 +211,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }, [measureInView, projectId, scope]);
 
   /* ── Edits a person makes on the board: each one draft edit, free, with ⌘Z ── */
-  const undoable = useCallback((label: string, undo: () => void) => {
-    if (project) rigUndoSink()?.({ label, projectId: project.id, undo });
+  const undoable = useCallback((label: string, undo: () => void, say?: string) => {
+    if (project) rigUndoSink()?.({ label, projectId: project.id, undo, ...(say ? { say } : {}) });
   }, [project]);
   const onFreeMoved = useCallback((moves: FreeMove[]) => {
     const current = rig.project;
@@ -435,7 +436,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     openReview: (takeId?: string) => seams.call("review", takeId),
     askAtomik: (words: string) => seams.call("atomik", words),
     openMake: (type) => shell.openMake(type),
-    toast: (text, undo) => { if (undo) undoable(undo.label, undo.run); ws.toast(text); },
+    /* A step a person can take back is said with its Undo (the shell's toast, top right), and ⌘Z does the same. */
+    toast: (text, undo) => { if (undo) undoable(undo.label, undo.run, withUndoHint(text)); else ws.toast(text); },
     rig,
   } : null), [gate.exploreOnly, gate.readOnly, glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
 

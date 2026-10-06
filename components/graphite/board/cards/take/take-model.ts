@@ -395,6 +395,13 @@ export const hhmm = (at: number) => {
 export const REJECT_REASON_MIN = 3;
 export const REJECT_REASON_MAX = 500;
 export const REJECT_REASON_HINT = "Say why you are rejecting it.";
+/** The reasons a person can tap instead of typing (the frame's chips); they are general words, never a name. */
+export const REJECT_CHIPS = ["Off the brief", "Wrong framing", "Motion looks wrong", "Look or face drifted", "Artifacts"] as const;
+/** The words recorded for the tapped reasons and the free line: the chips in the order drawn, then the line, one line. */
+export function rejectReasonOf(picked: readonly string[], free: string): string {
+  const chips = REJECT_CHIPS.filter((c) => picked.includes(c));
+  return cleanRejectReason([...chips, free].filter((part) => part.trim()).join("; "));
+}
 /** The reason as it is recorded: one line, trimmed. */
 export const cleanRejectReason = (text: string) => text.replace(/\s+/g, " ").trim();
 /** Why this reason cannot be sent, or null: a reject needs one line of 3 to 500 characters. */

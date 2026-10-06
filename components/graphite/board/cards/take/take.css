@@ -68,3 +68,19 @@
 .gx-take-input[data-hint]::placeholder { color: var(--gx-waiting-text); }
 .gx-take-input[data-hint] { border-color: color-mix(in srgb, var(--gx-waiting) 50%, transparent); }
 .gx-take-hint { flex: none; font-size: 13px; color: var(--gx-waiting-text); white-space: nowrap; }
+
+/* Gaps B, takes: the take that waits is judged in one place. Approve is the card's one filled button; Reject asks why. */
+.gx-take--review .gx-take-btn--approve { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); }
+.gx-take--review .gx-take-btn--approve:disabled { opacity: 0.55; }
+.gx-take-more { display: flex; flex-wrap: wrap; gap: 8px; }
+.gx-take--review[data-rejecting] .gx-take-media { height: calc(var(--gx-take-well) - 110px); }
+.gx-take-ask { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--gx-hair-soft); padding-top: 10px; }
+.gx-take-ask-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--gx-text-2); }
+.gx-take-ask-said { color: var(--gx-text); text-align: right; }
+.gx-take-ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-take-ask-chip { border-radius: var(--gx-r-pill); }
+.gx-take-ask-chip[aria-pressed="true"] { border-color: var(--gx-accent); color: var(--gx-accent-text); background: var(--gx-tint); }
+.gx-take-ask-go { display: flex; gap: 8px; }
+.gx-take-btn--go { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.gx-take-btn--go:disabled { opacity: 0.55; }
+.gx-take-ask .gx-take-input { flex: none; height: 32px; }
