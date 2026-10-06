@@ -135,7 +135,7 @@ export async function currentUser(): Promise<User | null> {
 
 /* ── API tokens ────────────────────────────────────────────────────────── */
 
-export type TokenScope = "read" | "render";
+export type TokenScope = "read" | "render" | "prepare";
 export type Caller = { user: User; token?: TenantToken };
 
 /**
@@ -202,7 +202,8 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
       workspace: ws, user,
       token: {
         id: String(row.tid), name: String(row.tname),
-        scope: row.scope === "read" ? "read" : "render",
+        /* An unknown scope is never read as "render": only the word itself grants spending. */
+        scope: row.scope === "render" ? "render" : row.scope === "prepare" ? "prepare" : "read",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
         capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },
@@ -225,7 +226,7 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean } = {}) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean; /** The one kind of write a `prepare` token may make: preparing a job for a person to approve. */ preparedJobs?: boolean } = {}) {
   return recoveryRoute(async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
@@ -235,6 +236,8 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     }
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
+      /* A prepare token writes nothing but a prepared job (and speaks MCP over POST): every other write is refused here, before any handler runs. */
+      if(store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.readOnlyPostTransport||options.preparedJobs)))return Response.json({error:'This token prepares jobs; a person approves each in Particl.'},{status:403});
       const origin=req.headers.get('origin');
       if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
     }
@@ -322,7 +325,9 @@ export async function requireRender(): Promise<
   if (got.token && got.token.scope !== "render") {
     return {
       response: Response.json(
-        { error: `The token "${got.token.name}" is read-only — it can list and fetch renders, but not start one.` },
+        { error: got.token.scope === "prepare"
+          ? `The token "${got.token.name}" prepares jobs; a person approves each in Particl. It can't start one.`
+          : `The token "${got.token.name}" is read-only — it can list and fetch renders, but not start one.` },
         { status: 403 }
       ),
     };

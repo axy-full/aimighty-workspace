@@ -7,6 +7,7 @@ import { billCredits } from "@/lib/creditTerms";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 import { trainApprovalProblem } from "@/lib/identityTraining";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
 
@@ -38,6 +39,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* `consent: true` below is recorded as the person's consent (consent_by): people only, never a token or an agent. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
