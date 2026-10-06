@@ -37,14 +37,16 @@ export const downloadHref = (genId: string) => `/api/media/${encodeURIComponent(
  * the clip's own sound kept), so the price on "Change with words" is the one the panel then shows. Asking is free;
  * the words are the panel's to collect, so the quote carries a stand-in.
  */
-export function editQuoteBody(v: Pick<ShotVersion, "genId" | "media" | "entry">, productionProjectId: string | null | undefined): Record<string, unknown> | null {
+export function editQuoteBody(v: Pick<ShotVersion, "genId" | "media" | "entry">, productionProjectId: string | null | undefined, words?: string): Record<string, unknown> | null {
   if (v.media !== "video" || v.entry.asset.origin !== "generation") return null;
+  /* The phone's Change with words quotes (and sends) the person's own words; the Inspector's price stands in with one. */
+  const said = words?.trim() || "change";
   return {
     projectId: productionProjectId ?? null,
     model: "dreamina-seedance-2-5-260628",
     task: "edit",
-    prompt: "Edit @Video1: change",
-    rawPrompt: "change",
+    prompt: `Edit @Video1: ${said}`,
+    rawPrompt: said,
     sourceGenId: v.genId,
     resolution: "720p",
     generateAudio: true,

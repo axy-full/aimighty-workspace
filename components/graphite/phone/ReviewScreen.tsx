@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { creditsText } from "@/lib/shell/price-words";
+import { creditsText, exact, upTo } from "@/lib/shell/price-words";
+import { useShell } from "@/lib/shell/state";
+import { Price } from "../Price";
+import { FixSheet } from "./FixSheet";
+import { NEEDS_CONNECTION } from "./HomeScreen";
+import { fixBody, useFixQuote } from "./use-fix";
 import { reviewProjectTake, type LibraryEntry } from "@/lib/workspace/library";
 import type { ReviewState } from "@/lib/workspace/takes";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -23,19 +28,29 @@ const generationOf = (entry: LibraryEntry) => (entry.asset.origin === "generatio
  * desktop's review makes; nothing paid is ever sent from here. Every judgement has Undo, which writes the
  * take's previous mark back. With no connection the judgement waits in this phone and is sent when it is back.
  *
- * Not drawn here yet: Atomik's note (the take's Verify verdict, stream 5) and Change with words (its own PR).
+ * Change with words (frame D, `screen=fix`) opens a sheet over it: the existing Seedance Edit route, at the server's
+ * price for the words, never before a person presses "Make the fix". On a still it opens Make with the take as the
+ * reference, as the desktop Inspector does. Not drawn here yet: Atomik's note (the take's Verify verdict, stream 5).
  */
-export function ReviewScreen({ scope, project, items, online, startTake, onQueue, onDone }: {
+export function ReviewScreen({ scope, project, items, online, startTake, fixOpen = false, onFix = () => undefined, onFixClose = () => undefined, onFixed = () => undefined, onQueue, onDone }: {
   scope: string;
   project: Project | null;
   items: readonly LibraryEntry[];
   online: boolean;
   /** The take to open on (`take=`, a generation id). */
   startTake: string | null;
+  /** `screen=fix`: the Change with words sheet is open over this take. */
+  fixOpen?: boolean;
+  /** Opens the sheet on the take shown (its generation id, for the address). */
+  onFix?: (take: string) => void;
+  onFixClose?: () => void;
+  /** A fix was sent: the toast's words. */
+  onFixed?: (line: string) => void;
   onQueue: (judgement: QueuedJudgement) => void;
   onDone: () => void;
 }) {
   const { toast } = useWorkspace();
+  const shell = useShell();
   /* What was waiting when the review opened, in order: judged takes leave the queue but keep their place here.
      Takes that arrive later join the end. (State adjusted while rendering, React's pattern for a prop change.) */
   const [order, setOrder] = useState<string[]>([]);
@@ -61,6 +76,10 @@ export function ReviewScreen({ scope, project, items, online, startTake, onQueue
   const [chosen, setChosen] = useState<{ take: string; version: string } | null>(null);
   const shown = (chosen && chosen.take === current?.take.id ? versions.find((v) => v.take.id === chosen.version) : null) ?? current;
 
+  /* A clip's Change with words shows its price on the button, from the same free quote the sheet asks (stand-in words until it is open). */
+  const clip = shown && shown.media === "video" && generationOf(shown) ? shown : null;
+  const changeQuote = useFixQuote(scope, online && clip ? fixBody(clip, project?.productionProjectId, "") : null);
+  const changePrice = changeQuote.state === "ready" ? (changeQuote.quote.approximate ? upTo(changeQuote.quote.estimatedCredits) : exact(changeQuote.quote.estimatedCredits)) : null;
   const [drag, setDrag] = useState<{ x: number; y: number; dx: number } | null>(null);
   const [hint, setHint] = useState<Judgement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -166,9 +185,24 @@ export function ReviewScreen({ scope, project, items, online, startTake, onQueue
           <button type="button" className="ph-btn" onClick={() => void judge("changes")} disabled={Boolean(hint)} data-testid="phone-reject">← Reject</button>
           <button type="button" className="ph-btn ph-btn--done" onClick={() => void judge("approved")} disabled={Boolean(hint)} data-testid="phone-approve">Approve →</button>
         </div>
-        <button type="button" className="ph-btn" onClick={onDone} data-testid="phone-review-done">Done</button>
+        <div className="ph-pair">
+          {clip ? (
+            <button type="button" className="ph-btn ph-btn--hot ph-btn--wrap" disabled={!online || Boolean(hint)} onClick={() => onFix(gen.id)} data-testid="phone-change">
+              {!online ? <span>Change with words · {NEEDS_CONNECTION}</span> : <span>Change with words{changePrice ? <> · <Price value={changePrice} /></> : null}</span>}
+            </button>
+          ) : (
+            <button type="button" className="ph-btn ph-btn--hot ph-btn--wrap" disabled={Boolean(hint) || !online || shown.media !== "image"}
+              onClick={() => shell.openMake({ prompt: "", type: "image", note: `Change with words · ${takeTitle(shown)}`, references: [{ origin: "generation", id: gen.id, kind: "image" }] })} data-testid="phone-change">
+              {!online ? <span>Change with words · {NEEDS_CONNECTION}</span> : "Change with words"}
+            </button>
+          )}
+          <button type="button" className="ph-btn" onClick={onDone} data-testid="phone-review-done">Done</button>
+        </div>
         <p className="ph-hint-line">Swipe right to approve, left to reject. Swiping only judges; it never spends.</p>
       </div>
+      {fixOpen && clip && project ? (
+        <FixSheet scope={scope} project={project} entry={clip} title={takeTitle(clip)} versions={versions.length} online={online} onClose={onFixClose} onMade={onFixed} />
+      ) : null}
     </div>
   );
 }
