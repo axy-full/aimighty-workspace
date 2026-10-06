@@ -220,7 +220,7 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   /* One FILLED primary with its cost inline: the live quote for the selected
      shot, on the button, exactly as the desktop's Generate carries it. */
   const primary = page.getByTestId("mobile-primary");
-  await expect(primary).toContainText("Make");
+  await expect(primary).toContainText("Generate");
   await expect(primary).toContainText(/\d+ cr/);
   await expect(primary).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.getByTestId("mobile-action-reason")).toHaveCount(0);
