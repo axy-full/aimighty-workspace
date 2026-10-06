@@ -1,6 +1,6 @@
 "use client";
 import { spendAttrsOf } from "@/lib/spend";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { countsByDraft, sortQueue, type QueueItem } from "@/lib/control-room/queue";
 import type { ApprovalsState } from "@/lib/control-room/use-approvals";
 import { moving, type TrayJob } from "@/lib/jobsTray";
@@ -41,7 +41,7 @@ const when = (at: number, now: number) => {
  * Projects are stream 2's project cards (components/graphite/home/use-project-cards.ts): the same lines as the
  * desktop Home, counted from the same queue.
  */
-export function HomeScreen({ scope, approvals, projects, project, items, online, now, onReview, onPlan, onProject, onTopUp }: {
+export function HomeScreen({ scope, approvals, projects, project, items, online, now, onReview, onPlan, onProject, onTopUp, start = null }: {
   scope: string;
   approvals: ApprovalsState;
   projects: readonly ProjectSummary[];
@@ -54,6 +54,8 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
   onPlan: (item: QueueItem) => void;
   onProject: (id: string) => void;
   onTopUp: () => void;
+  /** "What are we making?" (StartBrief): under Needs you, above the projects. */
+  start?: ReactNode;
 }) {
   const tray = useJobsTray();
   const queue = useMemo(() => sortQueue(approvals.items), [approvals.items]);
@@ -84,6 +86,7 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
         ) : null}
         {loading ? <p className="ph-quiet" role="status">Reading what needs you…</p> : !total && !approvals.error ? <p className="ph-quiet" data-testid="phone-nothing">Nothing waiting</p> : null}
       </section>
+      {start}
       <section className="ph-section" aria-label="Projects">
         <Eyebrow>Projects</Eyebrow>
         <div className="ph-projects">

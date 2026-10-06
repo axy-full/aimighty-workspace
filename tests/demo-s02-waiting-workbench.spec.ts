@@ -25,12 +25,12 @@ const DESKTOP = "workbench-1440x900";
 const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 /**
  * The viewports where the shell mounts the phone app (lib/shell/use-compact.ts: narrower than 768 px, or a touch screen no taller than
- * 500 px, so 844x390 is a phone). The phone's Home has no box and no Start: it is "Needs you" (each wait with its price as the button),
+ * 500 px, so 844x390 is a phone). The phone's Home has the box and Start too, held by r1-phone-start-workbench (the same hook, the same price): below, "Needs you" (each wait with its price as the button),
  * then "Projects" (README § 3.6, SOW § 2.8). Its waiting rows are `phone-row-approve`, held by 'phone Home: …' at the end of this file.
  */
 const COMPACT = COARSE;
 const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
-const NO_START_ON_A_PHONE = "the phone's Home has no box and no Start (Needs you, then Projects); Atomik's price on a phone is the sheet's 'Ask · up to N cr' (batch F2's twin in demo-s10-phone-make-workbench, 'a request: Ask · up to N cr…'), and its waiting rows are the phone twin 'phone Home: …' at the end of this file";
+const NO_START_ON_A_PHONE = "the phone's Home has its own twin of these, r1-phone-start-workbench (the same hook and the same price); Atomik's price on a phone is the sheet's 'Ask · up to N cr' (batch F2's twin in demo-s10-phone-make-workbench, 'a request: Ask · up to N cr…'), and its waiting rows are the phone twin 'phone Home: …' at the end of this file";
 
 async function account(page: Page) {
   const signed = await signInWithNewInterface(page.request);

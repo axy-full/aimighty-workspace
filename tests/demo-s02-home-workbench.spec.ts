@@ -26,12 +26,13 @@ const DESKTOP = "workbench-1440x900";
 const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 /**
  * The viewports where the shell mounts the phone app instead of the desktop Home (lib/shell/use-compact.ts: narrower than 768 px, or a
- * touch screen no taller than 500 px, so 844x390 is a phone). The phone's Home is "Needs you", then "Projects" (README § 3.6, SOW § 2.8):
- * it draws no box, no chips, no templates, no "+ New project", no "Show all". Tests of those skip there and say what covers the phone.
+ * touch screen no taller than 500 px, so 844x390 is a phone). The phone's Home is "Needs you", the box and templates (not drawn
+ * for a signed-in phone; built from the signed-out frame P1), then "Projects" (README § 3.6, § 3.7): it has no "+ New project" and no "Show all".
+ * Tests of those skip there and say what covers the phone.
  */
 const COMPACT = COARSE;
 const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
-const NO_BOX_ON_A_PHONE = "the phone's Home has no box, chips, templates or New project (it is Needs you, then Projects); what it does draw is held by 'phone Home as drawn' below and demo-s10-phone-workbench 'phone Home: what needs you first…'";
+const NO_BOX_ON_A_PHONE = "the phone's Home has the box and templates under Needs you, held by r1-phone-start-workbench (no New project card); what else it draws is held by 'phone Home as drawn' below and demo-s10-phone-workbench 'phone Home: what needs you first…'";
 
 /** A fresh local workspace. On Studio unless asked: the Invite plan holds one project (lib/plans.ts), and most tests need several. */
 async function account(page: Page, plan: "studio" | "invite" = "studio") {

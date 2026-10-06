@@ -13,6 +13,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import type { ProjectActions } from "../FirstRun";
+import type { CreateFromSeed, OpenBoard } from "../home/use-home-start";
 import { PhoneHeader, PhoneTabs, PhoneToast, type PhoneTab } from "./PhoneChrome";
 import { HomeScreen } from "./HomeScreen";
 import { ReviewScreen } from "./ReviewScreen";
@@ -22,6 +23,7 @@ import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
 import { StatesScreen } from "./StatesScreen";
 import { LargerScreen } from "./LargerScreen";
+import { StartBrief } from "./StartBrief";
 import { DRAWN_SCREENS, LARGER_TITLES, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
@@ -34,6 +36,8 @@ export type PhoneAppProps = {
   items: LibraryEntry[];
   library: ProjectLibrary;
   projectActions: ProjectActions;
+  /** Today's create path with a seed's fields set (SuitesShell › createFromSeed): what Home's templates and Start use, here too. */
+  onCreate: CreateFromSeed;
   /**
    * The shell's own page for an address the phone has no screen for (Settings, an old page): drawn under the
    * phone's header with a back to Home (DECISIONS 11). Null on the phone's own screens.
@@ -73,7 +77,7 @@ const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "P
  * their phone screens land; the Record and plan approval follow in their own PRs (phone-model.ts ›
  * DRAWN_SCREENS).
  */
-export function PhoneApp({ scope, account, data, project, items, projectActions, page = null }: PhoneAppProps) {
+export function PhoneApp({ scope, account, data, project, items, projectActions, onCreate, page = null }: PhoneAppProps) {
   const shell = useShell();
   const { toast } = useWorkspace();
   const [route, go] = useRoute();
@@ -129,6 +133,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   /* States is Home's own (the master lights Home there). */
   const active: PhoneTab | null = page || larger ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
   const inReview = screen === "review" || screen === "fix";
+  /* A project is open (made on Home, or reused): the board is its Record on a phone. */
+  const opened: OpenBoard = () => go({ screen: "record" });
 
   return (
     <div className="ph-app" data-framed={route.framed || undefined} data-screen={screen ?? "page"} data-online={online ? undefined : "off"} data-testid="phone-app">
@@ -161,7 +167,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
                 onReview={() => go({ screen: "review" })}
                 onPlan={openPlan}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
-                onTopUp={topUp} />
+                onTopUp={topUp}
+                start={<StartBrief scope={scope} projects={data.projects} online={online} onPick={projectActions.onPick} onCreate={onCreate} onOpened={opened} />} />
             )}
           </main>
           )}
