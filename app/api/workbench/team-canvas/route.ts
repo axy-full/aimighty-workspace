@@ -13,6 +13,7 @@ import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import {
   approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, retryRigAgentStep, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
   newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
@@ -156,6 +157,9 @@ const actionSchema = z.discriminatedUnion("action", [
  *    (anyone on the team). What a run spends is spent by its worker, inside
  *    the approved limit. Each answers Atomik's run card.
  */
+/** The board agent's actions that can lead to a paid call (a planning turn, a render, a raised limit). */
+const SPENDING_AGENT_ACTIONS = new Set(["agent.plan", "agent.approve", "agent.render", "agent.limit", "agent.approvePlan", "agent.fix", "agent.retry"]);
+
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
   if (who.response) return who.response;
@@ -172,6 +176,9 @@ export const POST = withTenant(async (req: Request) => {
       const count = (kind: string) => result.outcomes.filter((o) => o.kind === kind).flatMap((o) => o.nodeIds).length;
       return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
     }
+    /* The sample workspace spends nothing: Atomik on its boards plans, approves, renders and retries nothing.
+       Declining, stopping, skipping and undoing stay free. */
+    if (SPENDING_AGENT_ACTIONS.has(action.action)) { const off = await sampleWorkspaceOff(); if (off) return off; }
     const { productionId } = action;
     const run =
       action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode })

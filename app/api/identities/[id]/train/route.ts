@@ -9,6 +9,7 @@ import { currentTenant } from "@/lib/tenant";
 import { trainApprovalProblem } from "@/lib/identityTraining";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -38,6 +39,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* The sample workspace spends nothing: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));

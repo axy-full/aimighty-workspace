@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest, type GenerationRequest } from "@/lib/generationRequests";
 import { transcribe } from "@/lib/transcription";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 /* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/generationRequests.ts): raise both together. */
@@ -26,5 +27,8 @@ export const POST = withTenant(async function POST(req: Request) {
     const reply = await transcribe(body, got.user.id, { claim });
     return NextResponse.json(reply.body, { status: reply.status, headers: { "Cache-Control": "no-store" } });
   };
-  return body?.quoteOnly === true ? perform() : withGenerationRequest(req, got.user.id, perform);
+  if (body?.quoteOnly === true) return perform();
+  /* The sample workspace spends nothing, with a project or without: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
+  return withGenerationRequest(req, got.user.id, perform);
 });

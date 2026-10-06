@@ -5,6 +5,7 @@ import { quoteRound, roomRate } from "@/lib/crew/round";
 import { CrewError, createSession, listMembers, listMessages, listSessions, readSession } from "@/lib/crew/store";
 import { xaiConnected, xaiModel } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,8 @@ export const POST = withTenant(async (req: Request) => {
   if (caller.response) return caller.response;
   try {
     const body = await req.json().catch(() => ({}));
+    /* The sample workspace has no Crew review: its rounds would spend. A quote still answers. */
+    if (body.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
     const project = await crewProject(caller.userId, body.projectId);
     const goal = cleanGoal(body.goal), context = cleanContext(body.context);
     if (body.quoteOnly === true) {

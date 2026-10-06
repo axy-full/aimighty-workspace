@@ -43,7 +43,7 @@ import { requireTenant } from "@/lib/tenant";
 import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
-import { sampleSpendRefusal } from "@/lib/demo/spend-guard.server";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 
 import type {
   AdmissionActor,
@@ -225,10 +225,10 @@ export async function executeAudioAdmission(
       { status: 404 },
     );
   }
-  /* The sample production spends nothing: refused before anything is held or reserved. A quote (no request claim) still answers. */
+  /* The sample workspace spends nothing, filed or not: refused before anything is held or reserved. A quote (no request claim) still answers. */
   if (options.requestClaim && !quoteOnly) {
-    const sample = await sampleSpendRefusal(projectId, shotId);
-    if (sample) return admissionReply({ error: sample }, { status: 409 });
+    const sample = await sampleWorkspaceRefusal();
+    if (sample) return admissionReply({ error: sample, charged: 0 }, { status: 409 });
   }
 
   let modelId = SFX_MODEL;

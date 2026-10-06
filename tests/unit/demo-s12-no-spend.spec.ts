@@ -8,13 +8,15 @@ import type { AdmissionActor } from "../../lib/admissionTypes";
 import { SAMPLE_LINE, SAMPLE_SETTING_KEY } from "../../lib/demo/sample";
 
 /**
- * S12.4 (money path, for the owner's review): nothing paid is reachable on the sample production.
+ * S12.4 (money path, for the owner's review): nothing paid is reachable on the sample production, and since the
+ * owner's switch of 6 Oct nothing paid is reachable anywhere in the sample workspace (the one that holds the mark).
  *
- * A job filed under the production the workspace marked as the sample is refused by the server, whoever asks (a
- * person, Atomik's `agent:` identity, a render token) and by whichever door: the generate and audio routes, the
- * pipeline's own admission, and the reservation every platform-paid job passes (so a door that skips admission still
- * stops there). Nothing is held, reserved, written or dispatched. A quote still answers, a production that is not the
- * sample is untouched, another workspace is untouched, and an undone mark spends as before.
+ * A job in the sample workspace is refused by the server, whoever asks (a person, Atomik's `agent:` identity, a render
+ * token), by whichever door (the generate and audio routes, the pipeline's own admission, and the reservation every
+ * platform-paid job passes, so a door that skips admission still stops there) and whatever production it is filed
+ * under, the sample's, another, or none. Nothing is held, reserved, written or dispatched. A quote still answers,
+ * another workspace is untouched, and an undone mark spends as before. Every other paid door:
+ * tests/unit/demo-s12-sample-workspace-off.spec.ts.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "demo-s12-no-spend-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -108,17 +110,22 @@ const still = (extra: Record<string, unknown>) => ({ model: "gemini-3.1-flash-im
 let n = 0;
 const name = (what: string) => `no-spend-${what}-${++n}`;
 
-test("a render, a still and a sound filed under the sample are refused with its line; the same on another production are accepted", async () => {
+test("a render, a still and a sound in the sample workspace are refused with its line, on the sample, on another production and unfiled; another workspace accepts them", async () => {
   await scope(name("doors"), { sample: true }, async (service) => {
     let key = 0;
+    for (const [kind, make] of [["generation", video], ["generation", still], ["audio", sound]] as const)
+      for (const filed of [{ projectId: "film" }, { projectId: "other" }, {}]) {
+        const refused = await route(kind, service, OWNER).POST(request(kind, make(filed), `request-sample-ws-${key++}`));
+        expect(refused.status).toBe(409);
+        expect((await refused.json()).error).toBe(SAMPLE_LINE);
+      }
+    /* Nothing was written, reserved or sent. */
+    expect({ rows: (await rows()).length, meters: (await meters()).length, sent: dispatched.length }).toEqual({ rows: 0, meters: 0, sent: 0 });
+  });
+  await scope(name("doors-elsewhere"), {}, async (service) => {
+    let key = 0;
     for (const [kind, make] of [["generation", video], ["generation", still], ["audio", sound]] as const) {
-      const before = { rows: (await rows()).length, meters: (await meters()).length, sent: dispatched.length };
-      const refused = await route(kind, service, OWNER).POST(request(kind, make({ projectId: "film" }), `request-film-${key++}`));
-      expect(refused.status).toBe(409);
-      expect((await refused.json()).error).toBe(SAMPLE_LINE);
-      /* Nothing was written, reserved or sent. */
-      expect({ rows: (await rows()).length, meters: (await meters()).length, sent: dispatched.length }).toEqual(before);
-      const accepted = await route(kind, service, OWNER).POST(request(kind, make({ projectId: "other" }), `request-other-${key++}`));
+      const accepted = await route(kind, service, OWNER).POST(request(kind, make({ projectId: "film" }), `request-elsewhere-${key++}`));
       expect(accepted.status, await accepted.clone().text()).toBeLessThan(300);
     }
     expect(dispatched).toHaveLength(3);
@@ -168,8 +175,14 @@ test("with no credits a render on the sample is refused, never parked as held to
     expect(refused.status).toBe(409);
     expect((await refused.json()).error).toBe(SAMPLE_LINE);
     expect(await rows()).toHaveLength(0);
-    /* Another production, same wallet: parked as held, as before (nothing here changed that). */
-    const parked = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "other" }), "request-no-credits-other"));
+    /* Another production in the sample workspace: refused the same, never parked. */
+    const other = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "other" }), "request-no-credits-other"));
+    expect([other.status, (await other.json()).error]).toEqual([409, SAMPLE_LINE]);
+    expect(await rows()).toHaveLength(0);
+  });
+  /* Another workspace, no credits: parked as held, as before (nothing here changed that). */
+  await scope(name("held-elsewhere"), { credits: 0 }, async (service) => {
+    const parked = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-no-credits-elsewhere"));
     expect(parked.status).toBe(202);
     expect((await rows()).map((r) => r.status)).toEqual(["held"]);
   });
@@ -183,19 +196,24 @@ test("the reservation itself refuses the sample, for any caller that skips admis
       ["by-project", { projectId: "film" }, {}],
       ["request-by-shot", { shotId: "shot_film" }, {}],
       ["by-option", {}, { projectId: "film" }],
+      ["another-production", { projectId: "other" }, {}],
+      ["unfiled", {}, {}],
     ] as const) {
       const error = await reserveGenerationSpend(event(id, extra), opts).then(() => null, (e) => e);
       expect(error, id).toBeInstanceOf(SpendReservationError);
       expect(error).toMatchObject({ status: 409, message: SAMPLE_LINE, perJob: true });
     }
     expect(await meters()).toHaveLength(0);
-    /* Another production reserves. */
-    await reserveGenerationSpend(event("elsewhere", { projectId: "other" }));
+  });
+  /* Another workspace reserves. */
+  await scope(name("reserve-elsewhere"), {}, async () => {
+    const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+    await reserveGenerationSpend({ id: "elsewhere", kind: "text" as const, engine: "vercel", model: "m", status: "running" as const, engineCostUsd: 0.01, createdBy: "owner", projectId: "film" });
     expect((await meters()).map((m) => String(m.id))).toEqual(["elsewhere"]);
   });
 });
 
-test("nothing is refused where there is no sample: none marked, the mark undone, another workspace's mark, a job with no production", async () => {
+test("nothing is refused where there is no sample: none marked, the mark undone, another workspace's mark; a job with no production in the sample workspace is refused", async () => {
   await scope(name("none"), {}, async (service) => {
     const ok = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-no-mark"));
     expect(ok.status).toBeLessThan(300);
@@ -211,20 +229,20 @@ test("nothing is refused where there is no sample: none marked, the mark undone,
     expect(ok.status).toBeLessThan(300);
   });
   await scope(name("request-unfiled"), { sample: true }, async (service) => {
-    const ok = await route("generation", service, OWNER).POST(request("generation", video({}), "request-unfiled"));
-    expect(ok.status).toBeLessThan(300);
+    const refused = await route("generation", service, OWNER).POST(request("generation", video({}), "request-unfiled"));
+    expect([refused.status, (await refused.json()).error]).toEqual([409, SAMPLE_LINE]);
+    expect(await rows()).toHaveLength(0);
   });
 });
 
 test("a mark that is present but cannot be read fails closed: never read as no sample", async () => {
-  const { sampleSpendRefusal } = await import("../../lib/demo/spend-guard.server");
+  const { sampleWorkspaceRefusal } = await import("../../lib/demo/spend-guard.server");
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   const event = (id: string, extra: Record<string, unknown>) => ({ id, kind: "text" as const, engine: "vercel", model: "m", status: "running" as const, engineCostUsd: 0.01, createdBy: "owner", ...extra });
   /* Unreadable, or naming no production: nobody can tell which production is the sample, so no paid job is admitted, filed or not. */
   for (const raw of ["{not json", "null", "[]", "\"film\"", JSON.stringify({ version: 1 }), JSON.stringify({ version: 1, projectId: 7, draftOwner: "owner", draftId: "d1" })])
     await scope(name("unreadable"), { rawMark: raw }, async (service) => {
-      for (const [projectId, shotId] of [["film", null], ["other", null], [null, "shot_other"], [null, null]] as const)
-        expect(await sampleSpendRefusal(projectId, shotId), `${raw} ${projectId} ${shotId}`).toBe(SAMPLE_LINE);
+      expect(await sampleWorkspaceRefusal(), raw).toBe(SAMPLE_LINE);
       for (const projectId of ["film", "other"]) {
         const refused = await route("generation", service, OWNER).POST(request("generation", video({ projectId }), `request-unreadable-${projectId}`));
         expect(refused.status, raw).toBe(409);
@@ -237,24 +255,23 @@ test("a mark that is present but cannot be read fails closed: never read as no s
       expect(await meters()).toHaveLength(0);
       expect(dispatched).toEqual([]);
     });
-  /* The wrong shape (another version, fields missing) that still names its production: that production is the sample. */
+  /* The wrong shape (another version, fields missing) that still names its production: the workspace is the sample workspace. */
   for (const mark of [
     { version: 2, projectId: "film", name: "Film", draftOwner: "owner", draftId: "d1", markedBy: "owner", markedAt: 1 },
     { version: 1, projectId: "film" },
   ])
     await scope(name("misshapen"), { rawMark: JSON.stringify(mark) }, async (service) => {
-      expect(await sampleSpendRefusal("film")).toBe(SAMPLE_LINE);
-      expect(await sampleSpendRefusal(null, "shot_film")).toBe(SAMPLE_LINE);
+      expect(await sampleWorkspaceRefusal()).toBe(SAMPLE_LINE);
       const refused = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-misshapen"));
       expect(refused.status).toBe(409);
       expect((await refused.json()).error).toBe(SAMPLE_LINE);
       expect(await rows()).toHaveLength(0);
       const other = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "other" }), "request-misshapen-other"));
-      expect(other.status, await other.clone().text()).toBeLessThan(300);
+      expect([other.status, (await other.json()).error]).toEqual([409, SAMPLE_LINE]);
     });
   /* An undone mark, whatever else its shape, is no sample: it spends as before. */
   await scope(name("misshapen-hidden"), { rawMark: JSON.stringify({ version: 2, projectId: "film", hiddenAt: 5 }) }, async (service) => {
-    expect(await sampleSpendRefusal("film")).toBeNull();
+    expect(await sampleWorkspaceRefusal()).toBeNull();
     const ok = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-misshapen-hidden"));
     expect(ok.status).toBeLessThan(300);
   });
@@ -303,7 +320,8 @@ test("Transcribe on the sample is refused as a conflict (409) in the sample's wo
   })) as typeof fetch;
   try {
     const outcome = await sendTranscription({ scope: "particl-active-ws_unit-owner", slot: "transcribe-sample", body: { sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 3 }, credits: 3, storage, locks: null });
-    expect(outcome).toEqual({ state: "released", reason: SAMPLE_LINE, failed: true });
+    /* release/1 carries the server's `charged` through: nothing was billed. */
+    expect(outcome).toEqual({ state: "released", reason: SAMPLE_LINE, failed: true, charged: 0 });
   } finally { globalThis.fetch = original; }
   /* The server's own words carry no top-up and no new price. */
   expect(answer!.body).not.toMatch(/top.?up/i);
@@ -321,8 +339,16 @@ test("Transcribe on the sample is refused in the sample's words before the balan
       expect(JSON.parse(text), what).not.toHaveProperty("estimatedCredits");
       expect(calls.n).toBe(0);
       expect(await meters()).toHaveLength(0);
-      /* The same press on another production is answered as before: short of credits, or the new price to approve. */
-      const { reply: other } = await transcribeOnSample({ sourceUploadId: "up_line", projectId: "other", diarize: true, maxCredits }, `request-transcribe-${what}-other`);
+      /* Another production, or none, in the sample workspace: refused the same. */
+      for (const projectId of ["other", undefined]) {
+        const { reply: other } = await transcribeOnSample({ sourceUploadId: "up_line", projectId, diarize: true, maxCredits }, `request-transcribe-${what}-${projectId ?? "unfiled"}`);
+        expect(JSON.parse(await other.text()), `${what} ${projectId}`).toEqual({ error: SAMPLE_LINE, charged: 0 });
+      }
+    });
+  /* The same press in another workspace is answered as before: short of credits, or the new price to approve. */
+  for (const [what, credits, maxCredits] of [["no-credits", 0, 100000], ["moved-price", 10000, 0]] as const)
+    await scope(name(`transcribe-${what}-elsewhere`), { credits }, async () => {
+      const { reply: other } = await transcribeOnSample({ sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits }, `request-transcribe-${what}-elsewhere`);
       expect(other.status, what).toBe(what === "no-credits" ? 402 : 409);
       expect(JSON.parse(await other.text()).error, what).not.toBe(SAMPLE_LINE);
     });

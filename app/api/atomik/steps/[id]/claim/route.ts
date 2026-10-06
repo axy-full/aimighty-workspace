@@ -3,6 +3,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { ARCHIVED_NOTE, threadArchived } from "@/lib/atomikThreads";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* The sample workspace spends nothing: no step is taken there. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await ctx.params;
 
   /* A step planned on the connected account is never claimed: nothing here

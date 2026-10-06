@@ -6,6 +6,7 @@ import { quoteRound, roomRate, runRound, type RoundEvent } from "@/lib/crew/roun
 import { CrewError, claimRound, listMembers, listMessages, readSession, releaseRound } from "@/lib/crew/store";
 import { xaiConnected } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -32,6 +33,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req, true);
   if (caller.response) return caller.response;
+  /* The sample workspace spends nothing: answered before the round is claimed or reserved. A quote still answers. */
+  if ((await req.clone().json().catch(() => ({})))?.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
   try {
     const session = await readSession(caller.userId, (await params).id);
     if (!session) throw new CrewError("That room is not in this workspace.", 404);
