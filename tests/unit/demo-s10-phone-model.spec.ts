@@ -34,10 +34,13 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?screen=nonsense").asked).toBe("home");
 });
 
-test("a screen not in this build opens Home, never an empty screen", () => {
-  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "home", "make", "plan", "record", "review"]);
-  for (const screen of ["fix", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe("home");
-  /* Nobody is shown the phone until the PR that completes its set flips this. */
+test("every one of the design's eight phone screens is drawn; an address that is not one opens Home, never an empty screen", () => {
+  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "fix", "home", "make", "plan", "record", "review", "states"]);
+  for (const screen of ["fix", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
+  expect(readPhone("?screen=nonsense").screen).toBe("home");
+  /* Change with words keeps the take it was opened on. */
+  expect(phoneSearch("?screen=review&take=gen_1", { screen: "fix" })).toBe("?screen=fix&take=gen_1");
+  expect(phoneSearch("?screen=fix&take=gen_1", { screen: "review", take: "gen_1" })).toBe("?screen=review&take=gen_1");
   expect(PHONE_SCREEN).toMatchObject({ id: "phone", landed: true, params: PHONE_PARAMS });
 });
 
