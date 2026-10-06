@@ -100,7 +100,7 @@ What the stage pages did that the board does not draw yet (each was a page-only 
 | Brief & Script | the script writer and its redraft, the Final Draft and PDF import, the script editor | `components/workbench/ScriptPanel.tsx`, `DevelopmentPanel.tsx`, `lib/production/notes.ts`, the screenplay readers in `lib/` |
 | Beats & Shots | the breakdown that writes the beat sheet from a script; the beat node graph | `lib/production/beats.ts` (the board edits the same sheet) |
 | Storyboards | line drawings, frame prompts and revisions | `lib/production/boards.ts` |
-| Takes | Transcribe (a priced action) and the Takes desk's own filters | `components/graphite/production/TranscribePanel.tsx`, `lib/workbench/transcription-request.ts` (unmounted) |
+| Takes | the Takes desk's own filters. Transcribe is on the board now: the Transcribe action on a video or audio reference card and on Social's source card, with its transcript panel (`components/graphite/board/transcribe/`) | `lib/workbench/transcription-request.ts` (the board's `use-transcribe.ts` sends through it) |
 | Cast and Environment | the Soul render of a character, plates chosen and added on a place | `lib/production/cast-render.ts`, `CastIdentities.tsx` (the cast card's Inspector hosts Build identity) |
 | Astra 3D | 3D blocking: no card hosts the tool | `components/astra-blender/*`, `components/workspace/spec/tools/AstraTool.tsx` (unmounted) |
 | Rig | the cut-out (priced), card lock and history on the old canvas, the Rig's own agent wiring | `components/workspace/rig/*` (the old `/workspace` shell still mounts the Rig page; the board reads `RigProvider` and the `lib/workspace/rig-*` models) |
