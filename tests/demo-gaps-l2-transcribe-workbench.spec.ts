@@ -127,3 +127,43 @@ test("a failed transcription says Nothing billed only when the server says it ch
   await expect(action.getByTestId("transcribe-why")).toContainText("held for review");
   await expect(action).not.toContainText("Nothing billed");
 });
+
+test("the script a transcript replaces is kept as an earlier script: after the Undo toast has gone it is restored from the Brief, free, and the transcript is kept too", async ({ page }, info) => {
+  test.skip(!desktop(page), "the canvas is the desktop's; phone widths open the project's Record");
+  const { paid, project, scope } = await open(page);
+  const scriptNow = async () => {
+    const r = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
+    return ((await r.json()) as { project: { script?: string; scriptVersions?: { text: string; note: string }[] } }).project;
+  };
+  await card(page).getByTestId("transcribe-go").click();
+  await card(page).getByTestId("transcribe-done").waitFor({ timeout: 30_000 });
+  await card(page).getByTestId("transcribe-open").click();
+  await page.getByTestId("transcript-script").click();
+  await expect(page.getByText(/The transcript is the script now/)).toBeVisible();
+  await expect.poll(async () => (await scriptNow()).script ?? "", { timeout: 15_000 }).toContain("Not tonight");
+  expect((await scriptNow()).scriptVersions?.map((v) => [v.text, v.note])).toEqual([["EXT. DUNES - DAY\n\nA first draft.", "Replaced by a transcript"]]);
+  /* The toast is allowed to expire: Undo is no longer the way back. */
+  await expect(page.getByText(/The transcript is the script now/)).toHaveCount(0, { timeout: 30_000 });
+  await page.getByTestId("transcript-close").click();
+  await page.locator('[data-region="brief"]').click();
+  await page.waitForTimeout(700);
+  await page.locator('[data-card-id="doc:brief"]').click();
+  const inspector = page.getByTestId("insp-brief");
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByTestId("insp-script-state")).toContainText("Script ·");
+  await inspector.getByTestId("earlier-scripts-toggle").click();
+  await expect(inspector.getByTestId("earlier-script")).toHaveCount(1);
+  await expect(inspector.getByTestId("earlier-script")).toContainText("A first draft.");
+  const restore = inspector.getByTestId("earlier-script-restore");
+  await expect(restore).toHaveText("Restore · free");
+  mkdirSync(SHOTS, { recursive: true });
+  await shoot(page, info.project.name, "l2-earlier-scripts");
+  await restore.click();
+  await expect.poll(async () => (await scriptNow()).script ?? "", { timeout: 15_000 }).toBe("EXT. DUNES - DAY\n\nA first draft.");
+  /* The transcript script is kept as a version too, and the restored one has left the list. */
+  const after = await scriptNow();
+  expect(after.scriptVersions).toHaveLength(1);
+  expect(after.scriptVersions![0].text).toContain("Not tonight");
+  expect(after.scriptVersions![0].note).toBe("Before restoring an earlier script");
+  expect(paid).toEqual(["/api/audio/transcribe"]);
+});

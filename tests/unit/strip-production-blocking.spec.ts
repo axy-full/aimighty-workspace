@@ -35,8 +35,8 @@ test("a dry run reads and counts, names the database host and no secret, creates
   try {
     const dry = f.run();
     expect(dry.status).toBe(0);
-    expect(dry.stdout).toContain("Database host: a local file");
-    expect(dry.stdout).toContain("DRY RUN (nothing written): 3 projects read, 1 hold production.blocking (2 entries), 0 unreadable");
+    expect(dry.stdout).toContain("Database host: a local file. Field: blocking");
+    expect(dry.stdout).toContain("DRY RUN (nothing written): 3 projects read, 1 hold the field (2 entries), 0 unreadable");
     expect(dry.stdout + dry.stderr).not.toMatch(/Secret|secret-token|copy\.db/);
     expect(await f.tables()).toEqual(["workbench_projects"]);
     expect(await f.revision("a")).toBe(4);
@@ -53,7 +53,7 @@ test("the write copies each value into the archive first, removes only the field
   try {
     const done = f.run("--apply", "--owner-said-yes");
     expect(done.status).toBe(0);
-    expect(done.stdout).toContain("APPLIED: 3 projects read, 1 hold production.blocking (2 entries), 0 unreadable, 1 copied to workbench_blocking_archive, 1 rewritten without it, 0 changed meanwhile and left");
+    expect(done.stdout).toContain("APPLIED: 3 projects read, 1 hold the field (2 entries), 0 unreadable, 1 copied to workbench_blocking_archive, 1 rewritten without it, 0 changed meanwhile and left");
     /* The archive is the only new table; the value is in it. */
     expect(await f.tables()).toEqual(["sqlite_sequence", "workbench_blocking_archive", "workbench_projects"]);
     const archive = (await f.db.execute("SELECT project_key, revision_before, blocking_json, restored_at FROM workbench_blocking_archive")).rows;
@@ -63,11 +63,11 @@ test("the write copies each value into the archive first, removes only the field
     expect(await f.revision("a")).toBe(5);
     expect([await f.revision("b"), await f.revision("c")]).toEqual([4, 4]);
     expect(Number((await f.db.execute("SELECT count(*) AS n FROM workbench_projects")).rows[0].n)).toBe(3);
-    expect(f.run().stdout).toContain("0 hold production.blocking");
+    expect(f.run().stdout).toContain("0 hold the field");
 
     /* Restore: dry by default, then both flags put the value back; the archive row is kept and marked. */
     const dry = f.run("--restore");
-    expect(dry.stdout).toContain("Database host: a local file");
+    expect(dry.stdout).toContain("Database host: a local file. Field: blocking");
     expect(dry.stdout).toContain("DRY RUN (nothing written): 1 archived values waiting, 1 can be put back (2 entries), 0 left");
     expect((await f.body("a")).production.blocking).toBeUndefined();
     expect(f.run("--restore", "--apply").status).toBe(2);
@@ -92,6 +92,28 @@ test("a restore never overwrites what a person has made since: a project that ho
     expect((await f.body("a")).production.blocking).toEqual({ "node-9": { scene: "newer" } });
     await f.db.execute("DELETE FROM workbench_projects WHERE key = 'a'");
     expect(f.run("--restore").stdout).toContain("1 left");
+  } finally { f.clean(); }
+});
+
+test("--field=scriptVersions does the same for the earlier scripts, and never touches production.blocking; an unknown field reads nothing", async () => {
+  const f = await fixture();
+  try {
+    const versions = [{ id: "s1", text: "Old script", at: "2026-10-06T10:00:00.000Z", note: "n" }];
+    const a = await f.body("a");
+    await f.db.execute({ sql: "UPDATE workbench_projects SET body = ? WHERE key = 'b'", args: [JSON.stringify({ id: "b", name: "Secret title B", scriptVersions: versions, production: { beats: { scenes: [] } } })] });
+    expect(f.run("--field=scriptVersions").stdout).toContain("Field: scriptVersions");
+    expect(f.run("--field=scriptVersions").stdout).toContain("DRY RUN (nothing written): 3 projects read, 1 hold the field (1 entries)");
+    const done = f.run("--field=scriptVersions", "--apply", "--owner-said-yes");
+    expect(done.stdout).toContain("1 copied to workbench_blocking_archive, 1 rewritten without it");
+    expect(await f.body("b")).toEqual({ id: "b", name: "Secret title B", production: { beats: { scenes: [] } } });
+    expect(await f.body("a")).toEqual(a);
+    expect((await f.db.execute("SELECT field FROM workbench_blocking_archive")).rows.map((r) => r.field)).toEqual(["scriptVersions"]);
+    /* A restore of one field leaves the other field's archive alone. */
+    expect(f.run("--restore").stdout).toContain("0 archived values waiting");
+    const back = f.run("--field=scriptVersions", "--restore", "--apply", "--owner-said-yes");
+    expect(back.stdout).toContain("1 restored");
+    expect((await f.body("b")).scriptVersions).toEqual(versions);
+    expect(f.run("--field=nothing").status).toBe(2);
   } finally { f.clean(); }
 });
 

@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { withScript } from "@/lib/production/script-versions";
 import { MAX_SCRIPT_CHARS } from "@/lib/workbench/screenplay";
+import { EarlierScripts } from "../EarlierScripts";
 import { typingIn } from "../review/review-model";
 import type { BoardCtx } from "../cards/types";
 import { clock, readSaved, scriptFrom, speakerName, srtFrom, stamp, subscribeSaved, writeSaved, type SavedTranscript } from "./transcript-model";
@@ -38,12 +40,13 @@ function Panel({ ctx, slot, name }: { ctx: BoardCtx; slot: string; name: string 
   const useAsScript = () => {
     if (!script.trim()) { ctx.toast("There are no words in this transcript to use."); return; }
     if (script.length > MAX_SCRIPT_CHARS) { ctx.toast("This transcript is longer than a script can be."); return; }
-    const before = ctx.project.script ?? "";
-    const refused = ctx.rig.apply((p) => ({ ...p, script }));
+    const before = { script: ctx.project.script ?? "", versions: ctx.project.scriptVersions };
+    /* The script it replaces is kept as an earlier script (owner decision 11), so it is there after the Undo has gone. */
+    const refused = ctx.rig.apply((p) => withScript(p, script, "Replaced by a transcript"));
     if (refused) { ctx.toast(refused); return; }
     void ctx.rig.save();
-    ctx.toast(before.trim() ? "The transcript is the script now. The earlier script is kept under Undo." : "The transcript is the script now.", {
-      label: "Undo", run: () => { ctx.rig.apply((p) => ({ ...p, script: before })); void ctx.rig.save(); },
+    ctx.toast(before.script.trim() ? "The transcript is the script now. The earlier script is kept under Earlier scripts, and under Undo." : "The transcript is the script now.", {
+      label: "Undo", run: () => { ctx.rig.apply((p) => ({ ...p, script: before.script, scriptVersions: before.versions })); void ctx.rig.save(); },
     });
   };
   const download = () => {
@@ -71,6 +74,7 @@ function Panel({ ctx, slot, name }: { ctx: BoardCtx; slot: string; name: string 
         ))}
         {!saved.lines.length ? <li className="gx-tp-line"><span className="gx-tp-text">No speech was found in this source.</span></li> : null}
       </ol>
+      <div className="gx-tp-earlier"><EarlierScripts ctx={ctx} /></div>
       <div className="gx-tp-foot">
         <button type="button" className="gx-tp-btn" onClick={() => void navigator.clipboard?.writeText(script)} data-testid="transcript-copy">Copy text</button>
         <button type="button" className="gx-tp-btn" onClick={download} data-testid="transcript-srt">Download subtitles (.srt)</button>
