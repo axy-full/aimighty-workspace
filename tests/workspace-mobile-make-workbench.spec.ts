@@ -402,7 +402,7 @@ test("the Inspector sheet is the desktop Inspector, and an edit made in it persi
 
   const rigLink = pageUrl(project.id, "particl", "rig", "shot:rig-b");
   await page.goto(rigLink);
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
 
   /* The Library sheet first, from the dock. */
   await page.locator('[data-tab="library"]').click();
