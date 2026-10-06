@@ -32,8 +32,8 @@ export const SIGN_IN_OFF = true as boolean;
  * A route handler switched off with the sign-in. The handler it wraps stays in
  * its file, unreachable, so it can be read and removed in its own change.
  */
-export function signInOff(kept: unknown): (request?: Request) => Promise<Response> {
-  if (!SIGN_IN_OFF && typeof kept === "function") return kept as (request?: Request) => Promise<Response>;
+export function signInOff(kept: unknown): (request: Request) => Promise<Response> {
+  if (!SIGN_IN_OFF && typeof kept === "function") return kept as (request: Request) => Promise<Response>;
   return async () => retiredResponse();
 }
 

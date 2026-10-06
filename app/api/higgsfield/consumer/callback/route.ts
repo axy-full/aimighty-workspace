@@ -9,11 +9,12 @@ const SIGN_IN_RETURN_PATH = "/suites?view=workspace&tab=connections";
  * carries (a code, a state, an error), nothing is read, exchanged or stored:
  * the browser simply lands on Settings › Connections, with no message.
  */
-export function GET(request: Request) {
+export function GET() {
   return new Response(null, {
     status: 303,
     headers: {
-      Location: new URL(SIGN_IN_RETURN_PATH, request.url).toString(),
+      /* Relative, so the browser stays on the origin it came back to (and keeps its session there). */
+      Location: SIGN_IN_RETURN_PATH,
       "Cache-Control": "private, no-store",
       "Referrer-Policy": "no-referrer",
     },

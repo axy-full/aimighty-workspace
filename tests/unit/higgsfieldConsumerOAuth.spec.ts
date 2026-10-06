@@ -1195,7 +1195,7 @@ test("the old sign-in return address lands on Settings › Connections with no m
   for (const query of ["?code=authorization-code&state=anything&iss=x", "?error=access_denied&state=x", ""]) {
     const response = await loaded.exports.GET(new Request(`https://particl.example/api/higgsfield/consumer/callback${query}`));
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("https://particl.example/suites?view=workspace&tab=connections");
+    expect(response.headers.get("Location")).toBe("/suites?view=workspace&tab=connections");
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(await response.text()).toBe("");

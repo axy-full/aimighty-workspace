@@ -69,81 +69,23 @@ async function fixture(page: Page, options: { initialError?: boolean; truncated?
     release() { release?.(); },
   };
 }
-const activityTab = (page: Page) => page.getByRole("button", { name: "My connected-account activity", exact: true });
-const activityPanel = (page: Page) => page.getByRole("region", { name: "My connected-account activity", exact: true });
-const standardSpend = (page: Page) => page.locator(".management-stat").filter({ hasText: "Credits used · all time" });
+/**
+ * /usage with the Higgsfield sign-in off for Release 1 (lib/higgsfield-consumer/retired.ts › SIGN_IN_OFF):
+ * no tab for the connected account's own credits, and its activity is never read. The workspace's own
+ * views are unchanged.
+ */
+const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 
-test("The connected account quote commitments load only on demand and stay separate from recorded Particl charges", async ({ page }, info) => {
+test("/usage has no connected-account tab and never reads the connected account's activity", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const state = await fixture(page);
   await page.goto("/usage");
-  await expect(standardSpend(page)).toContainText("123 cr");
-  await expect(activityTab(page)).toBeVisible();
+  await expect(page.locator('[aria-label="Usage views"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /connected-account/i })).toHaveCount(0);
+  await expect(page.getByText(/connected credits|connected-account activity/i)).toHaveCount(0);
   expect(state.consumer).toEqual([]);
-  await activityTab(page).click();
-  const panel = activityPanel(page);
-  await expect(panel.getByText("Approved quote commitments for your own account in this workspace.", { exact: true })).toBeVisible();
-  for (const [label, credits, jobs] of [["Completed", 150, 2], ["Pending", 75, 1], ["Uncertain", 225, 3], ["Failed", 300, 4]] as const) {
-    const stat = panel.locator(".management-stat").filter({ has: page.getByText(label, { exact: true }) });
-    await expect(stat).toContainText(`${credits} connected credits`);
-    await expect(stat).toContainText(`${jobs} jobs`);
-  }
-  await expect(panel).toContainText(/not an invoice|not a provider invoice/i);
-  await expect(panel).toContainText(/live balance/i);
-  await expect(panel.getByText("Bottle campaign", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Bottle campaign", exact: true })).toHaveAttribute("href", "/workbench?project=bottle-campaign&suite=moleculr&page=marketing#variants");
-  await expect(panel.getByText("Deleted or unavailable project", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("link", { name: /deleted/i })).toHaveCount(0);
-  await expect(standardSpend(page)).toHaveCount(0);
-  // Next development Strict Mode may replay a mount's read-only effect.
-  const mountedReads = state.activityReads;
-  expect(mountedReads).toBeGreaterThanOrEqual(1);
-  expect(mountedReads).toBeLessThanOrEqual(2);
-  await panel.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath("higgsfield-consumer-activity.png") });
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Activity ledger", exact: true })).toBeVisible();
-  await expect(panel).toHaveCount(0);
-  await expect(standardSpend(page)).toContainText("123 cr");
-  expect(state.activityReads).toBe(mountedReads);
-  expect(state.consumer.every(call => call.method === "GET" && call.path === "/api/higgsfield/consumer/activity")).toBe(true);
-  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
-});
-
-test("activity errors need an explicit retry and never trigger provider discovery or generation", async ({ page }) => {
-  const state = await fixture(page, { initialError: true });
-  await page.goto("/usage");
-  await activityTab(page).click();
-  await expect(activityPanel(page).getByRole("alert")).toContainText("Saved the connected account activity is temporarily unavailable.");
-  const failedReads = state.activityReads;
-  expect(failedReads).toBeGreaterThanOrEqual(1);
-  expect(failedReads).toBeLessThanOrEqual(2);
-  state.setError(false);
-  await page.getByRole("button", { name: "Retry activity", exact: true }).click();
-  await expect(activityPanel(page).getByText("Bottle campaign", { exact: true })).toBeVisible();
-  expect(state.activityReads).toBe(failedReads + 1);
-  await expect(activityPanel(page).getByRole("alert")).toHaveCount(0);
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
-  await expect(standardSpend(page)).toContainText("123 cr");
-  expect(state.consumer.every(call => call.method === "GET" && call.path === "/api/higgsfield/consumer/activity")).toBe(true);
-  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
-});
-
-test("leaving activity ignores an in-flight response and reopens with a new scoped read", async ({ page }) => {
-  const state = await fixture(page, { truncated: true });
-  state.hold();
-  await page.goto("/usage");
-  await activityTab(page).click();
-  await expect.poll(() => state.activityReads).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
-  state.release();
-  await expect(page.getByRole("heading", { name: "Activity ledger", exact: true })).toBeVisible();
-  await expect(activityPanel(page)).toHaveCount(0);
-  const previousReads = state.activityReads;
-  await activityTab(page).click();
-  await expect(activityPanel(page).getByText("Bottle campaign", { exact: true })).toBeVisible();
-  await expect(activityPanel(page)).toContainText(/100/);
-  expect(state.activityReads).toBeGreaterThan(previousReads);
-  expect(state.activityReads).toBeLessThanOrEqual(previousReads + 2);
-  expect(state.consumer.every(call => call.method === "GET" && call.path === "/api/higgsfield/consumer/activity")).toBe(true);
-  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+  expect(state.external).toEqual([]);
+  expect(state.errors).toEqual([]);
 });

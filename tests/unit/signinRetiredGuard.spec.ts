@@ -194,7 +194,7 @@ test("the old sign-in return address imports nothing and lands on Settings › C
   const request = new Request(`https://particl.example/api/higgsfield/consumer/callback?code=c&state=s`);
   const response = await loaded.handlers.GET(request);
   expect(response.status).toBe(303);
-  expect(response.headers.get("Location")).toBe("https://particl.example/suites?view=workspace&tab=connections");
+  expect(response.headers.get("Location")).toBe("/suites?view=workspace&tab=connections");
   expect(loaded.touched).toEqual([]);
 });
 
