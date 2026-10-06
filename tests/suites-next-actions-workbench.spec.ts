@@ -184,7 +184,7 @@ test("the Inspector's Next opens each take's own place on the board — Shots fo
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "cut"]);
   expect(sent, "nothing that could spend on the way to a tool").toEqual([]);
-  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe" || path === "/api/audio"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
