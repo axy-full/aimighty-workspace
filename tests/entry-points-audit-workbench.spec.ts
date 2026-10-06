@@ -44,17 +44,18 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   expect(hop?.redirectedFrom()).toBeNull();
   await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/suites\?view=home/);
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=home)/);
 });
 
-test("Suites Workspace › Engines links Settings › Connections; the platform desk is for the platform owner only", async ({ page }, info) => {
+test("Settings › Connections makes the tokens the old tokens page made; the platform desk is for the platform owner only", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "Links, once.");
   await signInLocally(page.request);
-  await page.goto("/suites?view=workspace&tab=engines");
-  const connect = page.getByTestId("workspace-connect-link");
-  await expect(connect).toHaveAttribute("href", "/suites?view=workspace&tab=connections");
-  await expect(connect).toContainText("No tokens yet");
-  await page.getByRole("tab", { name: "General" }).click();
+  /* /connect is Settings › Connections now. */
+  await page.goto("/connect");
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=workspace)(?=.*tab=connections)/);
+  await expect(page.getByTestId("settings-tokens")).toBeVisible();
+  await expect(page.getByTestId("settings-tokens-empty")).toBeVisible();
+  await expect(page.getByTestId("settings-token-make")).toBeVisible();
   await expect(page.getByTestId("platform-desk")).toHaveCount(0);
 });
 

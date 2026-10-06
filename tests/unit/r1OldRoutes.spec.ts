@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { PAGES as LEGACY_PAGES, MOLECULR_SECTIONS, PARTICL_STAGE_ALIASES } from "../../lib/suites";
 import { redirectFor } from "../../lib/shell/ia";
 import { fromMakeLink } from "../../lib/shell/make";
@@ -65,6 +65,17 @@ const ROWS: [string, string, string][] = [
   ["/team", "", "/suites?view=workspace&tab=team"],
   ["/usage", "", "/suites?view=workspace&tab=credits&open=usage"],
   ["/connect", "", "/suites?view=workspace&tab=connections"],
+  /* The owner's evening decision (6 October): the rows the audit left open are redirected too. */
+  ["/projects/pj1", "", "/suites?view=workspace&tab=rules"],
+  ["/atomik/ideas", "", "/suites?view=board&region=brief"],
+  ["/atomik/treatment", "", "/suites?view=board&region=brief"],
+  ["/atomik/breakdown", "", "/suites?view=board&region=brief"],
+  ["/atomik/shots", "", "/suites?view=board&region=brief"],
+  ["/studio/shot", "", "/suites?make=video&view=home"],
+  ["/studio/shot", "project=p1&shot=s1&production=x", "/suites?project=p1&make=video&view=home"],
+  ["/workbench/movie", "", "/suites?view=board&region=deliver"],
+  ["/workbench/movie", "snapshot=tok_1", "/suites?view=board&region=deliver"],
+  ["/workbench/movie", "project=p1&snapshot=tok_1", "/suites?project=p1&view=board&region=deliver"],
 ];
 
 test("each old address goes to the exact new address it names", () => {
@@ -91,6 +102,11 @@ const LOOKUPS: [string, string, { kind: string; id: string }, string, string][] 
   ["/rig/canvas/brd1", "", { kind: "board", id: "brd1" }, "/suites?project=w1&view=board", "/suites?view=home"],
   ["/rig/canvas/new", "project=pj1", { kind: "production-project", id: "pj1" }, "/suites?project=w1&view=board", "/suites?view=home"],
   ["/rig/recipes/pj1", "", { kind: "production-project", id: "pj1" }, "/suites?project=w1&view=board", "/suites?view=home"],
+  ["/takes/gen_1", "", { kind: "take", id: "gen_1" }, "/suites?project=w1&view=board&region=shots&asset=generation%3Agen_1", "/suites?view=board&region=shots&asset=generation%3Agen_1"],
+  ["/shots/sh_1", "", { kind: "shot", id: "sh_1" }, "/suites?project=w1&view=board&region=shots", "/suites?view=board&region=shots"],
+  ["/elements/el_1", "", { kind: "element", id: "el_1" }, "/suites?project=w1&view=board&region=cast", "/suites?view=board&region=cast"],
+  ["/atomik/ideas", "project=pj1", { kind: "production-project", id: "pj1" }, "/suites?project=w1&view=board&region=brief", "/suites?view=board&region=brief"],
+  ["/atomik/treatment", "project=pj1", { kind: "production-project", id: "pj1" }, "/suites?project=w1&view=board&region=brief", "/suites?view=board&region=brief"],
 ];
 
 test("an address that names a production project or a board looks the Studio project up, and falls back to Home", () => {
@@ -104,8 +120,12 @@ test("an address that names a production project or a board looks the Studio pro
       expect(new URLSearchParams(route(query)).toString(), `${pathname}: ${target} is final`).toBe(new URLSearchParams(query).toString());
     }
   }
-  /* The routes with a fixed address look nothing up. */
-  for (const [pathname, search] of ROWS) expect(planOldRoute(pathname, search)!.lookup, pathname).toBeNull();
+  /* The routes with a fixed address look nothing up (a bare /atomik/ideas names no project, so its lookup has no id). */
+  for (const [pathname, search] of ROWS) {
+    const lookup = planOldRoute(pathname, search)!.lookup;
+    if (pathname.startsWith("/atomik/")) expect(lookup?.id, pathname).toBe("");
+    else expect(lookup, pathname).toBeNull();
+  }
 });
 
 test("every old Studio stage and its aliases opens the board's region that took its job", () => {
@@ -144,10 +164,9 @@ test("the old escapes are dropped, the rest of the query rides along, and no Hom
   expect(new URL(go("/workbench", "sel=take:t_1"), "https://particl.test").searchParams.has("sel")).toBe(false);
 });
 
-test("what stays where it is: no redirect for a KEEP or owner-to-decide route, a public page or an auth page", () => {
+test("what stays where it is: the admin and platform desks, the printable statement, the report form, the legal, auth and review pages, the public site", () => {
   const stays = [
-    "/workbench/movie", "/projects/pj1", "/takes/t1", "/shots/s1", "/elements/e1", "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown",
-    "/atomik/shots", "/studio/shot", "/statements/2026-10", "/admin", "/platform", "/report", "/policy", "/privacy", "/terms", "/billing",
+    "/statements/2026-10", "/admin", "/platform", "/report", "/policy", "/privacy", "/terms", "/billing",
     "/pricing", "/login", "/signup", "/reset", "/reset/tok", "/invite/abc", "/setup", "/welcome", "/account/security", "/review/tok", "/suites",
     "/studio", "/business", "/viral", "/site", "/site/atomik", "/management/engines",
   ];
@@ -166,6 +185,9 @@ const PAGE_OF: Record<string, string> = {
   "app/(app)/library/page.tsx": "/library", "app/(app)/all/page.tsx": "/all", "app/(app)/productions/page.tsx": "/productions",
   "app/(app)/pipelines/page.tsx": "/pipelines", "app/(app)/dashboard/page.tsx": "/dashboard", "app/(app)/settings/page.tsx": "/settings",
   "app/(app)/team/page.tsx": "/team", "app/(app)/usage/page.tsx": "/usage", "app/(app)/connect/page.tsx": "/connect",
+  "app/(app)/atomik/ideas/page.tsx": "/atomik/ideas", "app/(app)/atomik/treatment/page.tsx": "/atomik/treatment",
+  "app/(app)/atomik/breakdown/page.tsx": "/atomik/breakdown", "app/(app)/atomik/shots/page.tsx": "/atomik/shots",
+  "app/(app)/studio/shot/page.tsx": "/studio/shot", "app/workbench/movie/page.tsx": "/workbench/movie",
 };
 const DYNAMIC: Record<string, string> = {
   "app/(app)/make/[kind]/page.tsx": "`/make/${kind}`",
@@ -177,6 +199,10 @@ const DYNAMIC: Record<string, string> = {
   "app/(app)/rig/canvas/[boardId]/page.tsx": "`/rig/canvas/${boardId}`",
   "app/(app)/rig/recipes/[projectId]/page.tsx": "`/rig/recipes/${projectId}`",
   "app/(app)/rig/run/[runId]/page.tsx": "`/rig/run/${runId}`",
+  "app/(app)/projects/[id]/page.tsx": "`/projects/${id}`",
+  "app/(app)/takes/[id]/page.tsx": "`/takes/${id}`",
+  "app/(app)/shots/[id]/page.tsx": "`/shots/${id}`",
+  "app/(app)/elements/[id]/page.tsx": "`/elements/${id}`",
 };
 
 test("each old page file only redirects: it draws nothing and names the address it carries out", () => {
@@ -191,6 +217,11 @@ test("each old page file only redirects: it draws nothing and names the address 
     expect(source, file).toContain(`followOldRoute(${expr}, await searchParams)`);
     expect(source, file).not.toMatch(/from "@\/components/);
   }
+});
+
+test("no loading boundary sits beside a redirecting page: the redirect is the response itself (307), not a client step", () => {
+  for (const file of [...Object.keys(PAGE_OF), ...Object.keys(DYNAMIC)])
+    expect(existsSync(file.replace(/page\.tsx$/, "loading.tsx")), file).toBe(false);
 });
 
 test("/workbench still draws the Studio for one account only: a signed-in account with no workspace", () => {

@@ -1,6 +1,9 @@
 import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { currentContext, type Context } from "@/lib/auth";
 import { getBoard } from "@/lib/boards";
+import { getElement } from "@/lib/elements";
+import { getGeneration } from "@/lib/jobs";
+import { getShot } from "@/lib/shots";
 import { db } from "@/lib/db";
 import { runInTenant } from "@/lib/tenant";
 import { workbenchReady } from "@/lib/workbench/records";
@@ -31,8 +34,15 @@ async function resolve(found: OldRoutePlan): Promise<string | null> {
   const ctx = await currentContext();
   if (!ctx?.workspace) return null;
   if (found.lookup.kind === "production-project") return studioProjectFor(ctx, found.lookup.id);
-  const board = await runInTenant(ctx.workspace, () => getBoard(found.lookup!.id), { user: ctx.user }).catch(() => null);
-  return board ? studioProjectFor(ctx, board.projectId) : null;
+  /* Everything else names a row whose production project is on it. */
+  const { kind, id } = found.lookup;
+  const owner = await runInTenant(ctx.workspace, async () => {
+    if (kind === "board") return (await getBoard(id))?.projectId ?? null;
+    if (kind === "take") return (await getGeneration(id))?.projectId ?? null;
+    if (kind === "shot") return (await getShot(id))?.projectId ?? null;
+    return (await getElement(id))?.projectId ?? null;
+  }, { user: ctx.user }).catch(() => null);
+  return owner ? studioProjectFor(ctx, owner) : null;
 }
 
 /**

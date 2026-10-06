@@ -12,10 +12,12 @@ import { route } from "./screens";
  * Every target is FINAL: it is run through the shell's own screen pipeline (lib/shell/screens.ts › route), the same one
  * `/suites` applies, so an old link lands in one redirect and `/suites` has nothing left to move.
  *
- * What stays where it is (never redirected here): /workbench/movie (the Deliver card does not take its `?snapshot=` hand-off
- * yet), /projects/[id] (the project's spend and cap), /takes, /shots, /elements, /atomik/ideas|treatment|breakdown|shots
- * (saved drafts), /studio/shot, /statements, /admin, /platform, /report, the legal, auth and review pages, and /site/*.
- * Each is the owner's to decide (docs/old-shells.md).
+ * Owner, 6 October evening: no old page survives Release 1. The rows the audit left as KEEP or "owner to confirm"
+ * (/projects/[id], /takes, /shots, /elements, /atomik/ideas|treatment|breakdown|shots, /studio/shot, /workbench/movie) are
+ * redirected too, 307 so the owner can still move them; only the page goes, never its data.
+ *
+ * What stays where it is (never redirected here): /statements, /admin, /platform, /report, the legal, auth and account
+ * pages (/login, /signup, /reset, /invite, /setup, /welcome, /account/security, /billing, /pricing), the review pages and /site/*.
  */
 
 export const SHELL_PATH = "/suites";
@@ -29,7 +31,7 @@ export type OldRoutePlan = {
    */
   permanent: boolean;
   /** A production-side id the old address names, to turn into the Studio project the shell opens. Null for none. */
-  lookup: { kind: "production-project"; id: string } | { kind: "board"; id: string } | null;
+  lookup: { kind: "production-project" | "board" | "take" | "shot" | "element"; id: string } | null;
   /** The address, given the Studio project the lookup found (null when it found none, or there was nothing to look up). */
   to: (project: string | null) => string;
 };
@@ -179,6 +181,26 @@ export function planOldRoute(pathname: string, search = ""): OldRoutePlan | null
     /* `/rig/canvas/new?project=<production project>` is the old "open the board of this project". */
     return plan("rig-canvas", (p) => boardOf(p), c === "new" ? { kind: "production-project", id: from.get("project") ?? "" } : { kind: "board", id: c });
   if (n === 3 && a === "rig" && b === "recipes") return plan("rig-recipes", (p) => boardOf(p), { kind: "production-project", id: c });
+
+  /* Spend and cap: Settings > Spending rules lists every project with its cap. */
+  if (n === 2 && a === "projects") return fixed("project-spend", "view=workspace&tab=rules");
+
+  /* A take, a shot or an element by id: the board's Shots (or Cast) region on its project; a take also opens in the Inspector. */
+  const onBoard = (region: string, extra: Record<string, string> = {}) => (p: string | null) =>
+    settle(new URLSearchParams({ ...(p ? { project: p } : {}), view: "board", region, ...extra }));
+  if (n === 2 && a === "takes") return plan("take", onBoard("shots", { asset: `generation:${b}` }), { kind: "take", id: b });
+  if (n === 2 && a === "shots") return plan("shot", onBoard("shots"), { kind: "shot", id: b });
+  if (n === 2 && a === "elements") return plan("element", onBoard("cast"), { kind: "element", id: b });
+
+  /* The older Atomik planning pages: the board's Brief region (saved drafts stay in the database). */
+  if (n === 2 && a === "atomik" && (b === "ideas" || b === "treatment" || b === "breakdown" || b === "shots"))
+    return plan(`atomik-${b}`, onBoard("brief"), { kind: "production-project", id: from.get("project") ?? "" });
+
+  /* The shot builder is Make; the movie export page is the Deliver card. The project, when the address named one, is kept. */
+  const withProject = (build: (project: string | null) => string) => (): string => build(from.get("project"));
+  if (n === 2 && a === "studio" && b === "shot")
+    return plan("studio-shot", withProject((p) => settle(new URLSearchParams({ ...(p ? { project: p } : {}), make: "video" }))));
+  if (n === 2 && a === "workbench" && b === "movie") return plan("movie", withProject((p) => onBoard("deliver")(p)));
 
   /* Runs and the dashboard: Control room › Activity. */
   if (n === 3 && a === "rig" && b === "run") return fixed("rig-run", "suite=atomik&page=runs");
