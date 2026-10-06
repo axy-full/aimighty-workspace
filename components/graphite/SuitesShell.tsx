@@ -378,7 +378,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        {phoneOn ? <PhoneMount ctx={screenCtx} page={phonePage} /> : <>
+        {phoneOn ? (linkCard ? (
+          /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
+          <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
+        ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : <>
         <Header account={account} project={project?.name ?? null} bar={bar} />
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}

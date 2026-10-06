@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type Asset } from "../lib/workbench/studio";
 import { dimLabels, smallTargets } from "./phoneFloors";
+import { assetLinkHref } from "../lib/shell/asset-link";
 
 /**
  * Idea 26: a link to a take, between real people on a local server — no route
@@ -77,26 +78,25 @@ async function production(sender: Person) {
   return { draft, production: productionProjectId, take, asset: `generation:${take}`, privateUpload: privateUpload.id };
 }
 
-/** The sender picks the take in the Library and copies its link from the Inspector. */
-async function copyLink(sender: Person, draftId: string, asset: string, info: TestInfo) {
-  const { page } = sender;
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: process.env.PW_BASE_URL });
-  /* The Takes page is deleted: a page that still has the Library and the Inspector columns is where a take is picked. */
-  await page.goto(`/suites?project=${draftId}&suite=atomik&page=agent&sp=agent`);
-  const wide = WIDE.includes(info.project.name);
-  if (!wide) await page.getByTestId("toggle-library").click();
-  await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
-  await page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${asset}']`).click();
-  /* On a phone, picking the asset opens the Inspector over the Library by itself. */
-  if (!wide && !(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click();
-  await page.getByTestId("inspector-copy-link").click();
-  await expect(page.getByTestId("toast")).toHaveText(/^Link copied/);
-  return new URL(await page.evaluate(() => navigator.clipboard.readText()));
+/**
+ * The link the sender's Copy link puts on the clipboard (lib/shell/asset-link.ts › assetLinkHref, the one function every Copy link
+ * calls). Release 1 draws no surface that offers Copy link: it lived on the Inspector of the old Library pages, which the board's
+ * own Inspector replaced without it. The reader's side, which this spec is about, is unchanged.
+ */
+function copyLink(sender: Person, production: string, asset: string) {
+  const href = assetLinkHref({ origin: process.env.PW_BASE_URL ?? "http://localhost:4551", workspace: sender.workspace.id, production, asset });
+  expect(href, "a link names the workspace, the production and the take").toBeTruthy();
+  return new URL(href!);
 }
+
+/** The shell's phone: below 768 px, or a short touch screen (844x390), where the phone's own screens replace the canvas (lib/shell/use-compact.ts). */
+const isPhone = (page: Page) => { const v = page.viewportSize(); return !v || v.width < 768 || v.height <= 500; };
 
 /** The board is up on its Shots region (where the Takes page went), the link's own params gone from the address. The fixture's take is filed on no shot, so no shot card holds it to select. */
 async function takeOpened(page: Page, _asset: string) {
-  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  /* A phone draws the board's address as the project's Record (phone-record), not the canvas. */
+  const phone = isPhone(page);
+  await expect(page.getByTestId(phone ? "phone-record" : "board")).toBeVisible({ timeout: 60_000 });
   await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region"), q.has("ws"), q.has("production")]; }).toEqual(["board", "shots", false, false]);
 }
 
@@ -127,7 +127,7 @@ test("a teammate's link opens the reader's own draft of the production — offer
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const sender = await person(browser, info, "Sender");
   const made = await production(sender);
-  const link = await copyLink(sender, made.draft.id, made.asset, info);
+  const link = copyLink(sender, made.production, made.asset);
   expect(Object.fromEntries(link.searchParams)).toEqual({ view: "board", region: "shots", ws: sender.workspace.id, production: made.production, asset: made.asset });
 
   const reader = await person(browser, info, "Teammate");
@@ -173,7 +173,7 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await reader.page.getByTestId("link-dismiss").click();
     await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
     await expect.poll(() => new URL(reader.page.url()).searchParams.get("asset")).toBeNull();
-    await expect(reader.page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+    await expect(reader.page.getByTestId(isPhone(reader.page) ? "phone-record" : "board")).toBeVisible({ timeout: 60_000 });
   } finally {
     await reader.page.context().close();
     await sender.page.context().close();
@@ -184,7 +184,7 @@ test("a link from a workspace the reader is not in resolves nothing there; one o
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const sender = await person(browser, info, "Sender");
   const made = await production(sender);
-  const link = await copyLink(sender, made.draft.id, made.asset, info);
+  const link = copyLink(sender, made.production, made.asset);
   const outsider = await person(browser, info, "Outsider");
   const member = await person(browser, info, "Member of both");
   try {
