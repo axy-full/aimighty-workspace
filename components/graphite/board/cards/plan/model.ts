@@ -214,7 +214,9 @@ export function planModel(input: PlanInput): PlanModel | null {
       seq: p.seq, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
       unavailable: unavailable ? `Unavailable · ${unavailable}` : null,
       needsAdmin: overCap || (p.state === "paused" && p.pause === "admin"),
-      asksAlone: gate?.asks.includes(p.seq) ? "Asks on its own · over the per-render line" : null,
+      /* Outside the plan's one approval, with its own price (owner decision L5): it needs an admin, or it is over the per-render line. */
+      asksAlone: !gate?.asks.includes(p.seq) ? null
+        : p.state === "paused" && p.pause === "admin" ? "Asks on its own · needs an admin" : "Asks on its own · over the per-render line",
       state: p.state, status, reason: p.reason, canRender: p.canRender, fingerprint: p.fingerprint,
     };
   });
@@ -242,7 +244,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   if (gate) {
     /* The plan gate: the button is the price, the server's total. One approval; the server holds it to the ceiling. */
     primary = {
-      kind: "plan", label: `Approve · ${priceWords(total!)}`, price: total!, fingerprint: gate.fingerprint,
+      kind: "plan", label: `${gate.asks.length ? "Approve the rest" : "Approve"} · ${priceWords(total!)}`, price: total!, fingerprint: gate.fingerprint,
       blocked: offBlock ?? (balance?.short != null ? SHORT_LINE : null),
     };
   } else if (phase === "proposal" && run.proposal) {
@@ -252,7 +254,8 @@ export function planModel(input: PlanInput): PlanModel | null {
       blocked: offBlock,
     };
   } else if (phase === "needs-you") {
-    const open = steps.find((s) => s.state === "waiting" || s.state === "paused");
+    /* A render that needs an admin waits in the queue on its own; the card's tap is for the person's own renders. */
+    const open = steps.find((s) => s.state === "waiting" || (s.state === "paused" && takes.find((p) => p.seq === s.seq)?.pause !== "admin"));
     const paused = open ? takes.find((p) => p.seq === open.seq) : undefined;
     if (open && paused?.state === "paused" && paused.pause === "limit" && money) {
       const worst = open.price ? toTenths(ceilingOf(open.price)) : null;

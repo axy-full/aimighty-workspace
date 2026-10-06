@@ -31,7 +31,7 @@ import {
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
 } from "./rig-agent-planner";
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
-import { advancePaidSteps, closeEndedSteps, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
+import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
   activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
@@ -108,8 +108,9 @@ export const planEventId = (runId: string) => `rigplan_${runId.replace(/^rar_/, 
 function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
   return {
     seq: s.seq, nodeId: s.nodeId, title: stepTitle(run, s), state: s.state, fixOf: s.fixOf, pause: s.pause, reason: s.reason,
-    quote: s.admission ? s.quoteCredits : null,
-    worst: s.admission && s.quoteCredits != null ? fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)) : null,
+    /* A render that needs an admin carries its own price with no admission: shown, never in the plan's total. */
+    quote: s.quoteCredits,
+    worst: s.quoteCredits != null ? fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)) : null,
     fingerprint: s.admission ? s.admission.quote.fingerprint : null,
   };
 }
@@ -562,6 +563,61 @@ export async function approveRigAgentPlan(input: { productionId: string; runId: 
   return viewOf(found.id, input.userId);
 }
 
+/** What the ledger says of a failed render: confirmed not billed, charged, or not known yet. */
+async function failedOutcome(runId: string, step: StepRow): Promise<"not_billed" | "charged" | "unknown"> {
+  const charge = step.jobId ? (await runCharges(runId)).find((c) => c.id === step.jobId) : undefined;
+  if (charge) return charge.running ? "unknown" : toTenths(charge.credits) === 0 ? "not_billed" : "charged";
+  return step.outcome ?? "unknown";
+}
+
+export const RETRY_CHARGED = "This render was charged, so another one is a fix under the plan, or asks at its price.";
+export const RETRY_UNKNOWN = "What this render was charged isn't known yet. Try again once it is.";
+
+/**
+ * Retry a render that failed with nothing billed (owner decision L4; CLAUDE.md rule 14): free, under the same
+ * approval, at the same price. The step goes back to wait for its turn with its approval kept; when its turn comes
+ * it is priced again from the board, and only the very price approved goes (a moved price asks). A new attempt is a
+ * new request key. It is not a fix: the plan's fix count is unchanged, and it draws only the room its own price
+ * already had (the failed attempt was charged nothing). A failure that was charged is not retried here.
+ */
+export async function retryRigAgentStep(input: { productionId: string; runId: string; seq: number; userId: string }): Promise<RigAgentRunView> {
+  if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
+  if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
+  const found = await runFor(input.productionId, input.runId);
+  if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can retry its renders.", 403);
+  await rigAgentReady();
+  const before = await paidStepFor(found.id, input.seq, db());
+  if (before.state !== "failed") throw new RigAgentError("Only a render that failed is retried.", 409);
+  const outcome = await failedOutcome(found.id, before);
+  if (outcome === "charged") throw new RigAgentError(RETRY_CHARGED, 409);
+  if (outcome === "unknown") throw new RigAgentError(RETRY_UNKNOWN, 409);
+  const moved = await workbenchTransaction(async (tx) => {
+    const step = await paidStepFor(found.id, input.seq, tx);
+    if (step.state !== "failed" || step.jobId !== before.jobId) return false;
+    if (!step.admission || !step.approvedFingerprint) throw new RigAgentError("This render has no approval to retry under. Render it at its price.", 409);
+    if (step.approvalId) {
+      const approval = await planApprovalOf(tx, found.id);
+      const closed = !approval || approval.id !== step.approvalId ? "This plan's approval is no longer open." : approvalClosed(approval, now());
+      if (closed) throw new RigAgentError(closed, 409);
+    }
+    if (step.attempt >= MAX_SEND_ATTEMPTS) throw new RigAgentError(`This render was tried ${MAX_SEND_ATTEMPTS} times. Render it again at its price.`, 409);
+    const at = now();
+    await patchStep(tx, step.id, {
+      state: "waiting", job_id: null, request_key: null, credits_reserved: null, credits_settled: null, settled_at: null, outcome: null, reason: null, pause: null,
+    }, ["failed"]);
+    const run = (await getRun(tx, found.id))!;
+    if (!["running", "needs_you", "done"].includes(run.state)) throw new RigAgentError("This run has ended. Ask again for a new plan.", 409);
+    try {
+      await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at, finished_at: null }, ["running", "needs_you", "done"]);
+    } catch {
+      throw new RigAgentError("Another build is under way on this production. Stop it, or wait for it to finish.", 409);
+    }
+    return true;
+  });
+  if (moved) await dispatchRigAgent(found, `retry-${input.seq}-${now()}`);
+  return viewOf(found.id, input.userId);
+}
+
 /**
  * A fix under the plan's approval (the person who asked; owner decision 3): one more render of a shot whose take
  * is back, drawn from the approval with no price question. At most two per shot; a third is refused and asks at
@@ -575,6 +631,15 @@ export async function fixRigAgentShot(input: { productionId: string; runId: stri
   const found = await runFor(input.productionId, input.runId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can fix its shots.", 403);
   await rigAgentReady();
+  /* A shot whose latest render failed with nothing billed is retried free, not fixed (owner decision L4). */
+  {
+    const all = await stepsOf(db(), found.id);
+    const pressed = all.find((x) => x.seq === input.seq && x.purpose === "take");
+    const shotSeq = pressed?.fixOf ?? pressed?.seq;
+    const latest = all.filter((x) => x.purpose === "take" && (x.seq === shotSeq || x.fixOf === shotSeq)).at(-1);
+    if (latest?.state === "failed" && (await failedOutcome(found.id, latest)) === "not_billed")
+      return retryRigAgentStep({ ...input, seq: latest.seq });
+  }
   const moved = await workbenchTransaction(async (tx) => {
     const approval = await planApprovalOf(tx, found.id);
     if (!approval) throw new RigAgentError("Fixes come with an approved plan. Approve the plan first.", 409);

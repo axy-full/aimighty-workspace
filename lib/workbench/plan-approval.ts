@@ -73,8 +73,8 @@ export type PlanQuote =
     ready: true;
     /** The renders one approval covers. */
     steps: PlanStepQuote[];
-    /** Renders that are priced but ask on their own (above the per-job line). */
-    asks: { seq: number; title: string; worst: number }[];
+    /** Renders that ask on their own: above the per-job line, or needing an admin (with their own price, when known). */
+    asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[];
     totalTenths: number;
     ceilingTenths: number;
     total: number;
@@ -99,15 +99,17 @@ export function planQuote(steps: readonly QuoteInputStep[], jobLine: number): Pl
   const open = steps.filter((s) => s.fixOf == null && OPEN.includes(s.state));
   if (!open.length) return { ready: false, reason: "Nothing in this plan is waiting to render." };
   const listed: PlanStepQuote[] = [];
-  const asks: { seq: number; title: string; worst: number }[] = [];
+  const asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[] = [];
   let approximate = false;
   for (const s of open) {
+    /* One that needs an admin asks on its own and holds up nothing else (owner decision L5): never in T, never in the plan's room. */
+    if (s.state === "paused" && s.pause === "admin") { asks.push({ seq: s.seq, title: s.title, worst: s.worst, why: "admin" }); continue; }
     const priced = s.quote != null && s.worst != null && !!s.fingerprint && !!s.nodeId && (s.state === "waiting" || (s.state === "paused" && KEEPS_PRICE.includes(s.pause ?? "")));
     if (!priced) {
       return { ready: false, reason: s.state === "paused" && s.reason ? `${s.title}: ${s.reason}` : `${s.title} is not priced yet.` };
     }
     if (toTenths(s.worst!) > toTenths(s.quote!)) approximate = true;
-    if (toTenths(s.worst!) > toTenths(jobLine)) { asks.push({ seq: s.seq, title: s.title, worst: s.worst! }); continue; }
+    if (toTenths(s.worst!) > toTenths(jobLine)) { asks.push({ seq: s.seq, title: s.title, worst: s.worst!, why: "line" }); continue; }
     listed.push({ seq: s.seq, nodeId: s.nodeId!, title: s.title, quote: s.quote!, worst: s.worst!, fingerprint: s.fingerprint! });
   }
   if (!listed.length) return { ready: false, reason: `Every render here is over the ${creditFigure(jobLine)} cr a render may cost inside a plan, so each asks on its own.` };

@@ -94,7 +94,8 @@ test("the plan gate: the title and the button are the server's figures, Make 3 s
   /* An approximate engine: up to. A render over the per-job line asks on its own and is marked. */
   const approx = planModel(base({ run: gate({ plan: { quote: { total: 179, ceiling: 358, approximate: true, fingerprint: GATE_FP, covered: [1, 3], asks: [5] }, blocked: null, approval: null } }) }))!;
   expect(approx.title).toBe("Make 3 shots · up to 179 cr · at most 358 cr");
-  expect(approx.primary).toMatchObject({ kind: "plan", label: "Approve · up to 179 cr" });
+  /* A render that asks on its own leaves "the rest" for the one approval. */
+  expect(approx.primary).toMatchObject({ kind: "plan", label: "Approve the rest · up to 179 cr" });
   expect(approx.steps.map((s) => s.asksAlone)).toEqual([null, null, "Asks on its own · over the per-render line"]);
 });
 

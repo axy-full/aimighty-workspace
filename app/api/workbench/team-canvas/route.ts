@@ -14,7 +14,7 @@ import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
-  approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
+  approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, retryRigAgentStep, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
   newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
 
@@ -133,6 +133,8 @@ const actionSchema = z.discriminatedUnion("action", [
   /* The plan approved once at the server's quote (its fingerprint), and a fix drawn under that approval. */
   runAction("agent.approvePlan").extend({ fingerprint: FINGERPRINT }),
   runAction("agent.fix").extend({ seq: SEQ }),
+  /* A render that failed with nothing billed, again under the same approval at the same price (not a fix). */
+  runAction("agent.retry").extend({ seq: SEQ }),
 ]);
 
 /**
@@ -181,6 +183,7 @@ export const POST = withTenant(async (req: Request) => {
       : action.action === "agent.limit" ? await raiseRigAgentLimit({ productionId, runId: action.runId, limit: action.limit, userId })
       : action.action === "agent.approvePlan" ? await approveRigAgentPlan({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
       : action.action === "agent.fix" ? await fixRigAgentShot({ productionId, runId: action.runId, seq: action.seq, userId })
+      : action.action === "agent.retry" ? await retryRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
     return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }

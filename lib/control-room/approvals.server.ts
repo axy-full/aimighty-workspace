@@ -165,7 +165,8 @@ export function renderPrice(step: RigAgentPaidStepView, inCredits: boolean): Que
 async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
   if (!(await rigAgentExists())) return { items: [], productions: [] };
   const ids = (await db().execute({
-    sql: "SELECT id FROM rig_agent_runs WHERE state IN ('awaiting_approval','needs_you') ORDER BY created_at LIMIT ?",
+    /* A running run is read too: under a plan's approval a render that needs an admin waits here while the rest renders. */
+    sql: "SELECT id FROM rig_agent_runs WHERE state IN ('awaiting_approval','needs_you','running') ORDER BY created_at LIMIT ?",
     args: [SOURCE_LIMIT],
   })).rows.map((r) => String((r as Row).id));
   const enabled = rigAgentEnabled();
@@ -227,6 +228,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     }
     for (const step of view.paid) {
       if (step.tool !== "render" || (step.state !== "waiting" && step.state !== "paused")) continue;
+      if (run.state === "running" && !(step.state === "paused" && step.pause === "admin")) continue;
       const price = renderPrice(step, ctx.inCredits);
       const credits = price && price.kind !== "free" ? price.credits : null;
       const gate = capGate(credits, ctx.cap, ctx.admin);

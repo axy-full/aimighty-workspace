@@ -28,7 +28,9 @@ process.env.ENGINE_MOCK = "1";
 delete process.env.LIVEBLOCKS_SECRET_KEY;
 
 const OWNER = "ana", TEAMMATE = "bo";
-const userOf = (id: string) => ({ id, email: `${id}@example.invalid`, name: id === OWNER ? "Ana" : "Bo", role: "admin" as const, owner: id === OWNER, disabled: false, createdAt: 0, lastSeen: null });
+/** People whose workspace role is member (the rest are admins). */
+const MEMBERS = new Set<string>();
+const userOf = (id: string) => ({ id, email: `${id}@example.invalid`, name: id === OWNER ? "Ana" : "Bo", role: (MEMBERS.has(id) ? "member" : "admin") as "admin", owner: id === OWNER, disabled: false, createdAt: 0, lastSeen: null });
 const actorOf = (id: string): AdmissionActor => ({ user: userOf(id) });
 const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 let requests = 0;
@@ -72,7 +74,8 @@ async function inRun<T>(name: string, fn: (ws: TenantWorkspace) => Promise<T>, c
 type Behaviour = { throwBeforeClaim?: boolean; throwAfterReply?: boolean; pendingClaim?: boolean };
 
 /** `xai`: shots whose engine settles on what the provider states (worst case 3 × the quote), as an approximate engine does. */
-function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set()) {
+/** `adminShots`: shots over the workspace's per-shot rule: a member's preparation is refused with needsAdmin, as admission does. */
+function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
   const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined; prompt: string }[] = [];
   const behaviour: Behaviour = {};
   /* The price the admission would compute now, per shot: a moved price refuses an old approval. */
@@ -81,6 +84,8 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: Read
   const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) => {
     const { billCredits } = await import("../../lib/creditTerms");
     const shot = shotOf(body);
+    if (adminShots.has(shot) && actor.user.role !== "admin")
+      return { ok: false as const, status: 403, body: { error: `Shot ${shot} is over the 50 cr a shot may take. An admin has to press this one.`, needsAdmin: true } };
     const usd = priceNow.get(shot) ?? usdOf(shot);
     const credits = billCredits(usd, "mock");
     /* The compile covers the prompt, as a real one does: an edited shot is a different quote fingerprint. */
@@ -182,9 +187,9 @@ const credits = async (usd: number) => (await import("../../lib/creditTerms")).b
 const ATOMIK = (runId: string) => `agent:${runId}`;
 
 /** A run at its plan gate: built, every render priced by the server, waiting for the one approval. */
-async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2, xai: ReadonlySet<string> = new Set()) {
+async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
   const agent = await import("../../lib/workbench/rig-agent");
-  const r = renders(ws, usdOf, xai);
+  const r = renders(ws, usdOf, xai, adminShots);
   const deps = await depsFor(ws, r);
   const runId = await approvedRun(deps, { limit: 500, shots });
   expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
@@ -531,6 +536,100 @@ test("a render the plan approved is held to the approval when it resumes (review
   });
 });
 
+test("a render that failed with nothing billed retries free under the same approval (owner decision L4): same price, a new key, no fix used; a charged failure is a fix", async () => {
+  await inRun("retry", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
+    const a = await credits(0.3);
+    const fingerprint = run.plan!.quote!.fingerprint;
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint, userId: OWNER });
+    const [first, second] = takeSteps(run);
+    await agent.advanceRigAgentRun(runId, deps);
+    /* The provider refused shot 1 and charged nothing. */
+    await settleTake((await renderRows())[0].id, "failed", 0);
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(takeSteps(await view())[0]).toMatchObject({ state: "failed", outcome: "not_billed" });
+    expect(r.calls).toHaveLength(2);
+    /* Only the person who asked; never an agent. */
+    await expect(agent.retryRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, userId: ATOMIK(runId) })).rejects.toMatchObject({ status: 403 });
+    await expect(agent.retryRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, userId: TEAMMATE })).rejects.toMatchObject({ status: 403 });
+    /* Retry: free, under the same approval. A Fix pressed on it does the same, and uses no fix. */
+    await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: first.seq, userId: OWNER });
+    let shown = await view();
+    expect(takeSteps(shown)[0]).toMatchObject({ state: "waiting", seq: first.seq });
+    expect(shown.paid.filter((p) => p.fixOf != null)).toEqual([]);
+    expect(shown.plan!.approval!.fixes).toEqual({});
+    await agent.advanceRigAgentRun(runId, deps);
+    /* Sent again at the same price with a new request key, approved by the same plan approval. */
+    expect(r.calls).toHaveLength(3);
+    expect(r.calls[2].key).not.toBe(r.calls[0].key);
+    expect(r.calls[2].key.endsWith(":take:2")).toBe(true);
+    const { db } = await import("../../lib/db");
+    const row = (await db().execute({ sql: "SELECT approval_id,approved_fingerprint,attempt FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, first.seq] })).rows[0];
+    expect(String(row.approval_id)).toMatch(/^rpa_/);
+    expect(row.approved_fingerprint).toBe(first.fingerprint);
+    /* Shot 2: the provider kept a charge. That is not retried here; a re-render of it is a fix. */
+    await settleTake((await renderRows())[1].id, "failed", 0.2);
+    await settleTake((await renderRows())[2].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    shown = await view();
+    expect(takeSteps(shown)[1]).toMatchObject({ state: "failed", outcome: "charged" });
+    await expect(agent.retryRigAgentStep({ productionId: "prod-1", runId, seq: second.seq, userId: OWNER })).rejects.toMatchObject({ status: 409, message: agent.RETRY_CHARGED });
+    await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: second.seq, userId: OWNER });
+    shown = await view();
+    expect(shown.plan!.approval!.fixes).toEqual({ [String(second.seq)]: 1 });
+    /* The refused attempt used none of the plan's room: shot 1's render and shot 2's charge only. */
+    expect(shown.plan!.approval!.used).toBe(a + (await credits(0.2)));
+  });
+});
+
+test("a step that needs an admin asks on its own and holds up nothing (owner decision L5): the other two are approved and render; it waits in the queue; the plan's room leaves it out", async () => {
+  MEMBERS.add(OWNER);
+  try {
+    await inRun("admin", async (ws) => {
+      const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3, 3, new Set(), new Set(["2"]));
+      const a = await credits(0.3);
+      const [s1, s2, s3] = takeSteps(run);
+      /* At the gate: shot 2 is listed to ask on its own, at its own price; T and 2T cover the other two. */
+      expect(s2).toMatchObject({ state: "paused", pause: "admin", quote: a, fingerprint: null });
+      expect(run.plan!.quote).toMatchObject({ total: 2 * a, ceiling: 4 * a, covered: [s1.seq, s3.seq], asks: [s2.seq] });
+      const { planModel } = await import("../../components/graphite/board/cards/plan/model");
+      const card = planModel({ run, enabled: true, balance: 1000, rule: null, readOnly: null })!;
+      expect(card.title).toBe(`Make 3 shots · ${creditFigure(2 * a)} cr · at most ${creditFigure(4 * a)} cr`);
+      expect(card.primary).toMatchObject({ kind: "plan", label: `Approve the rest · ${creditFigure(2 * a)} cr` });
+      expect(card.steps.map((s) => s.asksAlone)).toEqual([null, "Asks on its own · needs an admin", null]);
+      expect(card.steps[1].price).toEqual({ kind: "exact", credits: a });
+      const planned = (await meterRow(agent.planEventId(runId)))!.credits;
+      const approved = await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+      /* The room: planning plus 2 × the other two, never shot 2's own price. */
+      expect(approved.money!.limit).toBeCloseTo(planned + 4 * a, 5);
+      const { db } = await import("../../lib/db");
+      const listed = JSON.parse(String((await db().execute({ sql: "SELECT steps FROM rig_plan_approvals WHERE run_id=?", args: [runId] })).rows[0].steps)) as { seq: number }[];
+      expect(listed.map((x) => x.seq)).toEqual([s1.seq, s3.seq]);
+      const { readApprovals } = await import("../../lib/control-room/approvals.server");
+      const queued = async () => (await readApprovals({ id: OWNER, role: "member" })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
+      /* Shot 1 renders; while it does, shot 2 is in the queue for an admin, at its own price, not the member's to press. */
+      await agent.advanceRigAgentRun(runId, deps);
+      expect(r.calls).toHaveLength(1);
+      expect((await queued()).map((i) => [i.id, i.price, i.needsAdmin, i.canApprove])).toEqual([[`board-render:${runId}:${s2.seq}`, { kind: "exact", credits: a }, true, false]]);
+      await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+      /* Shot 3 goes next, past shot 2, with no tap. */
+      await agent.advanceRigAgentRun(runId, deps);
+      expect(r.calls).toHaveLength(2);
+      await settleTake((await renderRows())[1].id, "succeeded", 0.3);
+      expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+      const shown = await view();
+      expect(takeSteps(shown).map((p) => [p.state, p.inPlan])).toEqual([["done", true], ["paused", false], ["done", true]]);
+      expect(shown.reason).toContain("waits for an admin");
+      expect(shown.plan!.approval).toMatchObject({ used: 2 * a, ceiling: 4 * a });
+      expect((await queued()).map((i) => [i.id, i.needsAdmin])).toEqual([[`board-render:${runId}:${s2.seq}`, true]]);
+      /* Nothing for shot 2 was ever sent: it has no admission, only its own price to show. */
+      expect(r.calls.map((c) => c.prompt).some((p) => /Shot 2 of/.test(p))).toBe(false);
+    });
+  } finally {
+    MEMBERS.delete(OWNER);
+  }
+});
+
 test("a moved price asks again: the render is priced afresh and waits for a tap at its new price, never adopted under the plan", async () => {
   await inRun("moved", async (ws) => {
     const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
@@ -629,13 +728,14 @@ test("refunds return to the approval: a failed render the provider refunded uses
     /* Only the second render counts: the refund gave its room back. */
     expect(shown.plan!.approval!.used).toBe(a);
     expect(await balance(ws)).toBe(before - a);
-    /* A re-render of the failed shot is a fix, inside the plan. */
+    /* The failed shot charged nothing, so it is retried free under the same approval, not fixed (owner decision L4). */
     await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: takeSteps(shown)[0].seq, userId: OWNER });
+    expect(takeSteps(await view())[0]).toMatchObject({ state: "waiting" });
     /* Stop: what is not sent is let go, and the approval closes; nothing more is drawn on it. */
     await agent.stopRigAgent({ productionId: "prod-1", runId, userId: OWNER });
     shown = await view();
-    expect(shown.plan!.approval).toMatchObject({ open: false });
-    expect(shown.paid.at(-1)).toMatchObject({ state: "skipped" });
+    expect(shown.plan!.approval).toMatchObject({ open: false, fixes: {} });
+    expect(takeSteps(shown)[0]).toMatchObject({ state: "skipped" });
     await expect(agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: takeSteps(shown)[1].seq, userId: OWNER })).rejects.toMatchObject({ status: 409 });
   });
 });

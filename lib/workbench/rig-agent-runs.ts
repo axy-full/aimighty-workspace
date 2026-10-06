@@ -177,6 +177,8 @@ async function needsYou(run: RunRow, reason: string): Promise<Moved> {
 
 async function pause(run: RunRow, step: StepRow, reason: string, kind: PauseKind, from: readonly RigAgentStepState[]): Promise<Moved> {
   if (!(await patchStep(db(), step.id, { state: "paused", reason, pause: kind }, from))) return CONTINUE;
+  /* Under the plan's approval, one that needs an admin waits on its own and the run carries on (owner decision L5). */
+  if (kind === "admin" && step.purpose === "take" && (await planApprovalOf(db(), run.id))) return CONTINUE;
   return needsYou(run, reason);
 }
 
@@ -219,7 +221,8 @@ function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | 
 
 /* ── Pricing a render: the body the Rig's own Generate sends ─────────── */
 
-type Priced = { ok: true; admission: PreparedAdmission; quote: number; band: number } | { ok: false; reason: string; pause: PauseKind };
+/** `shown`: for a render that needs an admin, its own price as an admin is quoted it: for the card and the queue only, never sent. */
+type Priced = { ok: true; admission: PreparedAdmission; quote: number; band: number } | { ok: false; reason: string; pause: PauseKind; shown?: { quote: number; band: number } };
 
 export async function priceRender(run: RunRow, step: StepRow, deps: PaidDeps = {}): Promise<Priced> {
   try { return await priceRenderOnce(run, step, deps); }
@@ -259,6 +262,19 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
   const prepared = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) => (deps.prepare ?? defaultPrepare)(body, actor));
   if (!prepared.ok) {
     const said = typeof prepared.body.error === "string" && prepared.body.error ? prepared.body.error : "This shot could not be priced.";
+    if (prepared.status === 403 && prepared.body.needsAdmin === true) {
+      /* It needs an admin (owner decision L5): it asks on its own, with its own price, read the way an admin is quoted it.
+         A free read: nothing from it is stored that could be sent, and only an admin's own admission can send it. */
+      const shown = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) => (deps.prepare ?? defaultPrepare)(body, { ...actor, user: { ...actor.user, role: "admin" } }))
+        .catch(() => null);
+      const credits = shown?.ok ? shown.value.quote.estimatedCredits : null;
+      const provider = shown?.ok ? String((shown.value.compiled.model as { provider?: unknown } | undefined)?.provider ?? "") : "";
+      return {
+        ok: false, reason: said, pause: "admin",
+        ...(shown?.ok && credits != null && Number.isFinite(credits) && credits > 0
+          ? { shown: { quote: credits, band: jobBand({ approximate: !!shown.value.quote.approximate, statesCharge: provider === "xai" }) } } : {}),
+      };
+    }
     return fail(said, prepared.status === 403 ? "admin" : "unpriced");
   }
   const quote = prepared.value.quote.estimatedCredits;
@@ -302,7 +318,15 @@ export async function advancePaidSteps(runId: string, ctx: PaidContext, deps: Pa
       return { state: "paused", more: false };
     }
     await ctx.renew();
-    const step = run.capCredits == null ? null : currentPaidStep(await stepsOf(db(), run.id));
+    const all = run.capCredits == null ? [] : await stepsOf(db(), run.id);
+    /* Under the plan's approval, a render that waits for an admin asks on its own and holds up nothing else (owner decision L5). */
+    await rigAgentReady();
+    const planned = all.length ? await planApprovalOf(db(), run.id) : null;
+    const forAdmin = planned ? all.filter((s) => s.purpose === "take" && s.state === "paused" && s.pause === "admin") : [];
+    const step = run.capCredits == null ? null : currentPaidStep(forAdmin.length ? all.filter((s) => !forAdmin.includes(s)) : all);
+    if (!step && forAdmin.length) {
+      return (await needsYou(run, `${forAdmin.map((s) => stepTitle(run, s)).join(", ")} ${forAdmin.length === 1 ? "waits" : "wait"} for an admin. The rest of the plan is done.`) as { kind: "stop"; tick: PaidTick }).tick;
+    }
     if (!step) {
       const finished = await patchRun(db(), run.id, { state: "done", reason: null, finished_at: now(), wake_at: null }, ["running"]);
       return { state: finished ? "done" : (await getRun(db(), run.id))?.state ?? null, more: false };
@@ -328,9 +352,20 @@ async function advanceStep(run: RunRow, step: StepRow, ctx: PaidContext, deps: P
   }
 }
 
+/** A render that needs an admin keeps its own price on its step (never an admission): the card and the queue show it. */
+async function holdForAdmin(step: StepRow, priced: Extract<Priced, { ok: false }>, from: readonly RigAgentStepState[]) {
+  if (priced.pause !== "admin" || !priced.shown) return;
+  await patchStep(db(), step.id, { quote_credits: priced.shown.quote, band: priced.shown.band, admission: null }, from);
+}
+
 async function price(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> {
   const priced = await priceRender(run, step, deps);
-  if (!priced.ok) return pause(run, step, priced.reason, priced.pause, ["next"]);
+  if (!priced.ok) {
+    await holdForAdmin(step, priced, ["next"]);
+    /* One that needs an admin does not hold up the plan's quote: the rest are priced now, as at any gate. */
+    if (priced.pause === "admin" && run.mode !== "auto" && step.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, step, deps);
+    return pause(run, step, priced.reason, priced.pause, ["next"]);
+  }
   await patchStep(db(), step.id, {
     state: "waiting", admission: priced.admission, quote_credits: priced.quote, band: priced.band, reason: null, pause: null,
   }, ["next"]);
@@ -345,7 +380,11 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   /* Its turn: priced again from the board as it is now (review M1). A shot edited since it was priced (its prompt,
      references or engine) is a new fingerprint, so no earlier tap or plan approval covers it: it asks again. */
   const fresh = await priceRender(run, waiting, deps);
-  if (!fresh.ok) return pause(run, waiting, fresh.reason, fresh.pause, ["waiting"]);
+  if (!fresh.ok) {
+    await holdForAdmin(waiting, fresh, ["waiting"]);
+    if (fresh.pause === "admin" && run.mode !== "auto" && waiting.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, waiting, deps);
+    return pause(run, waiting, fresh.reason, fresh.pause, ["waiting"]);
+  }
   let step = waiting;
   if (fresh.admission.quote.fingerprint !== waiting.admission.quote.fingerprint) {
     if (!(await patchStep(db(), waiting.id, { admission: fresh.admission, quote_credits: fresh.quote, band: fresh.band, approval_id: null }, ["waiting"]))) return CONTINUE;
@@ -411,6 +450,7 @@ async function priceAhead(run: RunRow, current: StepRow, deps: PaidDeps): Promis
     if (priced.ok) {
       await patchStep(db(), other.id, { state: "waiting", admission: priced.admission, quote_credits: priced.quote, band: priced.band, reason: null, pause: null }, ["next"]);
     } else {
+      await holdForAdmin(other, priced, ["next"]);
       await patchStep(db(), other.id, { state: "paused", reason: priced.reason, pause: priced.pause }, ["next"]);
     }
   }
