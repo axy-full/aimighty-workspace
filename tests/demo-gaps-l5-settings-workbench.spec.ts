@@ -53,7 +53,7 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   await shot(page, "token-shown", info);
   await shown.getByTestId("settings-token-done").click();
   const row = page.getByTestId("settings-token").filter({ hasText: "A script on the studio computer" });
-  await expect(row).toContainText("Prepares jobs · a person approves each");
+  await expect(row).toContainText("Prepares jobs only · a person approves each");
   /* Shown once: a reload never shows the secret again. */
   await page.reload();
   await expect(page.locator("body")).not.toContainText(secret);

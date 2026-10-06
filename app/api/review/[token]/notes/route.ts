@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { runInTenant } from "@/lib/tenant";
 import { resolveShare } from "@/lib/shares";
 import { db, ready, now, id as newId } from "@/lib/db";
-import { scopeOf, takeInSet, underLimit } from "@/lib/security/review-link";
+import { clientKey, takeInSet, underLimit } from "@/lib/security/review-link";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -24,16 +24,17 @@ export const POST = async function POST(req: Request, { params }: Ctx) {
 
   const ok = await runInTenant(found.workspace, async (): Promise<boolean | "limited"> => {
     await ready();
-    if (!(await underLimit(found.share.id, "write"))) return "limited";
-    /* The take must be in this link's own set: Approved takes, or for a Crew review link its review set too. */
-    if (!(await takeInSet(await scopeOf(found.share.id), found.share.projectId, genId))) return false;
+    /* The take must be in this link's own set: Approved takes, or for a Crew review link its review set too. A Crew
+       review link's comments count against its client's limit (older links keep no limit, as before). */
+    if (!(await takeInSet(found.review ? "review" : "approved", found.share.projectId, genId))) return false;
+    if (found.review && !(await underLimit(found.share.id, clientKey(req, found.share.id)))) return "limited";
     await db().execute({
       sql: `INSERT INTO review_notes (id, gen_id, share_id, guest, text, created_at) VALUES (?,?,?,?,?,?)`,
       args: [newId("rnote"), genId, found.share.id, guest, text, now()],
     });
     return true;
   });
-  if (ok === "limited") return NextResponse.json({ error: "Too many comments from this link. Wait a few minutes and try again." }, { status: 429 });
+  if (ok === "limited") return NextResponse.json({ error: "Too many comments from here. Wait a few minutes and try again." }, { status: 429 });
   if (!ok) return NextResponse.json({ error: "Not part of this review." }, { status: 404 });
   return NextResponse.json({ ok: true, author: guest }, { status: 201 });
 };

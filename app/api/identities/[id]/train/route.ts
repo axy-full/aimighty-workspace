@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { startTraining, trainCostUsd, identityForBrowser } from "@/lib/identities";
+import { startTraining, trainCostUsd, identityForBrowser, getIdentity } from "@/lib/identities";
+import { consentForTraining, projectKeysFor } from "@/lib/security/consent";
+import { ConsentError } from "@/lib/security/consent-words";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { billCredits } from "@/lib/creditTerms";
@@ -41,6 +43,19 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (got.response) return got.response;
   /* `consent: true` below is recorded as the person's consent (consent_by): people only, never a token or an agent. */
   if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+  /* Every training cites a live consent record for this identity's production and cast member, allowing identity
+     training (review of #558, M1): checked, and refused in words, before anything is claimed or sent. */
+  {
+    const peek = await req.clone().json().catch(() => ({})) as { consentId?: unknown; subjectKey?: unknown };
+    const identity = await getIdentity((await params).id);
+    if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    try {
+      await consentForTraining(peek.consentId, await projectKeysFor(identity.projectId, got.user.id), peek.subjectKey);
+    } catch (error) {
+      if (error instanceof ConsentError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  }
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));

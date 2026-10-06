@@ -99,8 +99,8 @@ test("The client's view, signed out: the review set only, approve or ask for cha
   await expect(page.getByTestId("client-take").nth(0)).toContainText("Shot 1 · v1Approved");
   await expect(page.getByTestId("client-take").nth(1)).toContainText("Shot 3 · v1Needs your review");
   await expect(page.getByTestId("client-take-name")).toHaveText("Shot 3 · v1");
-  await expect(view).toContainText("The production");
-  await expect(view).toContainText("Is the walk speed right for you?");
+  /* The team's own notes stay inside the workspace (review of #558, L2). */
+  await expect(view).not.toContainText("Is the walk speed right for you?");
   await expect(page.getByTestId("client-expiry")).toHaveText(/^Shared by the production · expires \d{1,2} \w{3} \d{4}$/);
   /* Nothing else: no other production, no prompts, no person's name, no balance, no app chrome. */
   const text = await page.locator("body").innerText();

@@ -12,28 +12,30 @@ const A = workspace(dir, "ws_consenta"), B = workspace(dir, "ws_consentb");
 const DAY = 86_400_000;
 const future = (days: number) => new Date(Date.now() + days * DAY).toISOString().slice(0, 10);
 
-async function upload(ws: typeof A, id: string, mime: string) {
+/** A consent recording row (its own table, never an upload: review of #558, M2), made by `by`. */
+async function upload(ws: typeof A, id: string, mime: string, by = "member") {
   const { runInTenant } = await import("../../lib/tenant");
-  const { db, ready } = await import("../../lib/db");
+  const { db } = await import("../../lib/db");
+  const { consentsReady } = await import("../../lib/security/consent");
   await runInTenant(ws, async () => {
-    await ready();
-    await db().execute({ sql: "INSERT OR IGNORE INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at) VALUES(?,?,?,?,1,'x','local',0)", args: [id, `${id}.webm`, mime, "webm"] });
+    await consentsReady();
+    await db().execute({ sql: "INSERT OR IGNORE INTO consent_recordings(id,mime,ext,bytes,sha256,stored_url,created_by,created_at) VALUES(?,?,'webm',1,'x','local',?,0)", args: [id, mime, by] });
   });
 }
 
 const draft = (over: Record<string, unknown> = {}) => ({
   projectId: "prod_one", subjectKey: "node-lead", subjectLabel: "Lead", personName: "A Person", face: true, voice: true,
-  uses: ["production", "ads"], otherUse: "", until: future(365), recordingUploadId: "upl_voice", attested: true, ...over,
+  uses: ["production", "identity", "ads"], otherUse: "", until: future(365), recordingId: "upl_voice", attested: true, ...over,
 });
 
 test("the pure rules: what a record needs, how it reads, and when it holds", async () => {
   const { cleanConsent, consentSummary, consentLive, endOfDay, ConsentError } = await import("../../lib/security/consent-words");
   const at = Date.UTC(2026, 9, 6, 12);
-  expect(cleanConsent(draft({ until: "2027-09-30" }), at)).toMatchObject({ personName: "A Person", face: true, voice: true, uses: ["production", "ads"], untilAt: endOfDay("2027-09-30") });
+  expect(cleanConsent(draft({ until: "2027-09-30" }), at)).toMatchObject({ personName: "A Person", face: true, voice: true, uses: ["production", "identity", "ads"], untilAt: endOfDay("2027-09-30") });
   const refusals: [Record<string, unknown>, RegExp][] = [
     [{ personName: " " }, /full name/], [{ face: false, voice: false }, /what it covers/], [{ uses: [], otherUse: "" }, /at least one use/],
     [{ until: "2026-10-01" }, /future/], [{ until: "2040-01-01" }, /ten years/], [{ until: "2027-02-30" }, /last day/],
-    [{ recordingUploadId: "" }, /recording/], [{ attested: false }, /Tick the statement/], [{ projectId: "../x" }, /production/],
+    [{ recordingId: "" }, /recording/], [{ attested: false }, /Tick the statement/], [{ projectId: "../x" }, /production/],
     [{ uses: ["everything"], otherUse: "" }, /at least one use/],
   ];
   for (const [over, words] of refusals) expect(() => cleanConsent(draft(over), at), JSON.stringify(over)).toThrow(words);
@@ -46,12 +48,15 @@ test("the pure rules: what a record needs, how it reads, and when it holds", asy
 
 test("the Cast card's states come from the records: not recorded, recorded, training, ready, failed and what was billed", async () => {
   const { identityCardView, billedWords } = await import("../../lib/security/identity-card");
-  const live = { id: "c1", projectId: "p", subjectKey: "lead", subjectLabel: "Lead", personName: "A Person", face: true, voice: false, uses: ["production" as const], otherUse: "", untilAt: Date.now() + DAY, hasRecording: true, recordingUrl: null, recordedAt: Date.now(), recordedBy: "You", revokedAt: null, identityId: null };
+  const live = { id: "c1", projectId: "p", subjectKey: "lead", subjectLabel: "Lead", personName: "A Person", face: true, voice: false, uses: ["production" as const, "identity" as const], otherUse: "", untilAt: Date.now() + DAY, hasRecording: true, recordingUrl: null, recordedAt: Date.now(), recordedBy: "You", revokedAt: null, identityId: null };
   expect(identityCardView({ consents: [], subjectKey: "lead", bound: null, identities: [] })).toMatchObject({ stage: "no-consent", text: "Consent not recorded", consentId: null });
   /* Another cast member's record says nothing about this one. */
   expect(identityCardView({ consents: [{ ...live, subjectKey: "other" }], subjectKey: "lead", bound: null, identities: [] }).stage).toBe("no-consent");
   expect(identityCardView({ consents: [{ ...live, revokedAt: Date.now() }], subjectKey: "lead", bound: null, identities: [] })).toMatchObject({ stage: "no-consent", consentId: null });
   expect(identityCardView({ consents: [live], subjectKey: "lead", bound: null, identities: [] })).toMatchObject({ stage: "recorded", consentId: "c1" });
+  /* A live record that doesn't allow identity training, or covers the voice only, arms nothing (the server refuses the same). */
+  expect(identityCardView({ consents: [{ ...live, uses: ["ads"] }], subjectKey: "lead", bound: null, identities: [] })).toMatchObject({ stage: "no-consent", consentId: null, text: "Consent doesn't allow identity training" });
+  expect(identityCardView({ consents: [{ ...live, face: false, voice: true }], subjectKey: "lead", bound: null, identities: [] })).toMatchObject({ consentId: null });
   const identity = (status: "training" | "ready" | "failed", creditsBilled: number | null, error: string | null = null) => ({ id: "soul_1", name: "Lead v1", status, creditsBilled, error, createdAt: 1 });
   const started = { ...live, identityId: "soul_1" };
   expect(identityCardView({ consents: [started], subjectKey: "lead", bound: null, identities: [identity("training", null)] })).toMatchObject({ stage: "training", text: "Training" });
@@ -71,7 +76,7 @@ test("only a person records or withdraws consent: tokens, agents and disabled pe
   const { PeopleOnlyError } = await import("../../lib/security/people-only");
   await seedPeople(A, [{ id: "owner", name: "You" }, { id: "member", name: "Member" }, { id: "other", name: "Other member" }]);
   await upload(A, "upl_voice", "audio/webm");
-  await upload(A, "upl_still", "image/png");
+  await upload(A, "upl_still", "audio/webm", "other");
   await runInTenant(A, async () => {
     for (const caller of [
       { user: { id: "member" }, token: { id: "tok", scope: "render" } },
@@ -83,10 +88,10 @@ test("only a person records or withdraws consent: tokens, agents and disabled pe
     await consent.consentsReady();
     expect((await db().execute("SELECT COUNT(*) AS n FROM identity_consents")).rows[0].n).toBe(0);
 
-    await expect(consent.recordConsent(draft({ recordingUploadId: "upl_still" }), { user: { id: "member" } })).rejects.toThrow(/sound or video/);
-    await expect(consent.recordConsent(draft({ recordingUploadId: "upl_missing" }), { user: { id: "member" } })).rejects.toThrow(/could not be found/);
+    await expect(consent.recordConsent(draft({ recordingId: "upl_still" }), { user: { id: "member" } })).rejects.toThrow(/recording you made/);
+    await expect(consent.recordConsent(draft({ recordingId: "upl_missing" }), { user: { id: "member" } })).rejects.toThrow(/could not be found/);
     const made = await consent.recordConsent(draft(), { user: { id: "member" } });
-    expect(made).toMatchObject({ personName: "A Person", recordedBy: "Member", hasRecording: true, revokedAt: null, recordingUrl: "/api/uploads/upl_voice" });
+    expect(made).toMatchObject({ personName: "A Person", recordedBy: "Member", hasRecording: true, revokedAt: null, recordingUrl: expect.stringMatching(/^\/api\/identity-consents\/cns_[a-z0-9]+\/recording$/) });
     const audit = await db().execute({ sql: "SELECT action, actor_id, details FROM security_audit WHERE target_id = ?", args: [made.id] });
     expect(audit.rows.map((r) => r.action)).toEqual(["identity_consent.recorded"]);
     expect(String(audit.rows[0].details)).not.toContain("A Person");
@@ -114,19 +119,19 @@ test("training cites only a live record of this production that covers the face"
   await upload(A, "upl_voice", "audio/webm");
   await runInTenant(A, async () => {
     const live = await consent.recordConsent(draft({ subjectKey: "node-two" }), { user: { id: "member" } });
-    expect((await consent.consentForTraining(live.id, ["draft_x", "prod_one"])).id).toBe(live.id);
-    await expect(consent.consentForTraining(live.id, ["draft_x", "prod_other"])).rejects.toThrow(/another production/);
-    await expect(consent.consentForTraining("cns_nope", ["prod_one"])).rejects.toThrow(/not in this workspace/);
-    await expect(consent.consentForTraining(undefined, ["prod_one"])).rejects.toThrow(/Record the person's consent first/);
-    await expect(consent.consentForTraining(live.id, ["prod_one"], Date.now() + 400 * DAY)).rejects.toThrow(/ended/);
+    expect((await consent.consentForTraining(live.id, ["draft_x", "prod_one"], "node-two")).id).toBe(live.id);
+    await expect(consent.consentForTraining(live.id, ["draft_x", "prod_other"], "node-two")).rejects.toThrow(/another production/);
+    await expect(consent.consentForTraining("cns_nope", ["prod_one"], "node-two")).rejects.toThrow(/not in this workspace/);
+    await expect(consent.consentForTraining(undefined, ["prod_one"], "node-two")).rejects.toThrow(/consent on record/);
+    await expect(consent.consentForTraining(live.id, ["prod_one"], "node-two", Date.now() + 400 * DAY)).rejects.toThrow(/ended/);
     const voice = await consent.recordConsent(draft({ subjectKey: "node-three", face: false }), { user: { id: "member" } });
-    await expect(consent.consentForTraining(voice.id, ["prod_one"])).rejects.toThrow(/voice only/);
+    await expect(consent.consentForTraining(voice.id, ["prod_one"], "node-three")).rejects.toThrow(/voice only/);
     await consent.withdrawConsent(live.id, { user: { id: "member", role: "member" } });
-    await expect(consent.consentForTraining(live.id, ["prod_one"])).rejects.toThrow(/withdrawn/);
+    await expect(consent.consentForTraining(live.id, ["prod_one"], "node-two")).rejects.toThrow(/withdrawn/);
   });
   /* A record id from workspace A means nothing in workspace B. */
   const [{ id }] = await runInTenant(A, () => consent.listConsents("prod_one", "node-three"));
-  await runInTenant(B, async () => { await expect(consent.consentForTraining(id, ["prod_one"])).rejects.toThrow(/not in this workspace/); });
+  await runInTenant(B, async () => { await expect(consent.consentForTraining(id, ["prod_one"], "node-three")).rejects.toThrow(/not in this workspace/); });
 });
 
 function people(ws: typeof A): Who { return { mode: "session", ws, userId: "member", name: "Member", role: "member", bearer: "" }; }
@@ -196,7 +201,7 @@ test("identity training refuses every token and agent before anything is sent, a
   const tokens = [{ id: "tok_train", userId: "member", scope: "render", raw: rawToken(A, "7") }];
   await seedPeople(A, [{ id: "member", name: "Member" }], tokens);
   await upload(A, "upl_voice", "audio/webm");
-  const body = (over: Record<string, unknown> = {}) => JSON.stringify({ projectId: "prod_one", name: "Lead", subjectType: "character", references: [{ uploadId: "upl_x" }], consent: true, ...over });
+  const body = (over: Record<string, unknown> = {}) => JSON.stringify({ projectId: "prod_one", subjectKey: "node-train", name: "Lead", subjectType: "character", references: [{ uploadId: "upl_x" }], consent: true, ...over });
 
   Object.assign(who, { mode: "token", bearer: tokens[0].raw });
   const byToken = await route.POST(scoped(who, "http://localhost/api/soul/identities", { method: "POST", body: body() }), undefined as never);

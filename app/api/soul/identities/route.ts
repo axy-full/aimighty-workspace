@@ -61,15 +61,22 @@ export const POST = withTenant(
        an API or MCP token, of any scope, and Atomik's agent identities are refused (lib/security/people-only.ts). */
     if (!isPerson({ user: got.user, token: got.token }))
       return Response.json({ error: PEOPLE_ONLY }, { status: 403, headers });
+    /* Every training cites a live consent record (review of #558, M1): for the production the request names, the same
+       cast member, allowing identity training. Checked, and refused in words, before anything is claimed or sent. */
+    const peek = (await request.clone().json().catch(() => null)) as (CreateSoulIdentityInput & { consentId?: unknown; subjectKey?: unknown }) | null;
+    if (!peek || typeof peek !== "object") return Response.json({ error: "Send a valid identity request." }, { status: 400, headers });
+    let consentId: string;
+    try {
+      consentId = (await consentForTraining(peek.consentId, await projectKeysFor(peek.projectId, got.user.id), peek.subjectKey)).id;
+    } catch (error) {
+      if (error instanceof ConsentError) return Response.json({ error: error.message }, { status: error.status, headers });
+      throw error;
+    }
     return withGenerationRequest(request, got.user.id, async (claim) => {
       try {
-        const body = (await request.json()) as CreateSoulIdentityInput & { consentId?: unknown };
-        /* The Cast card's consent step: a training request may cite a recorded consent, which must be live, this
-           workspace's, for this production and cover the face. It is checked before anything paid is sent. */
-        const consent = body.consentId === undefined ? null
-          : await consentForTraining(body.consentId, await projectKeysFor(body.projectId, got.user.id));
+        const body = (await request.json()) as CreateSoulIdentityInput;
         const identity = await createSoulIdentity(body, claim);
-        if (consent) await linkConsentIdentity(consent.id, identity.id);
+        await linkConsentIdentity(consentId, identity.id);
         return Response.json({ identity }, { status: 202, headers });
       } catch (error) {
         if (

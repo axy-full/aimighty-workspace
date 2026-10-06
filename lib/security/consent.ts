@@ -32,7 +32,7 @@ const SCHEMA = [
     uses_json TEXT NOT NULL,
     other_use TEXT NOT NULL DEFAULT '',
     until_at INTEGER NOT NULL,
-    recording_upload_id TEXT NOT NULL,
+    recording_id TEXT NOT NULL,
     attested INTEGER NOT NULL,
     recorded_by TEXT NOT NULL,
     recorded_at INTEGER NOT NULL,
@@ -41,6 +41,11 @@ const SCHEMA = [
     identity_id TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS identity_consents_subject ON identity_consents(project_id, subject_key, recorded_at DESC)`,
+  /* The recordings: never uploads (review of #558, M2). Not in the library, not a reference, not a token's to read. */
+  `CREATE TABLE IF NOT EXISTS consent_recordings (
+    id TEXT PRIMARY KEY, mime TEXT NOT NULL, ext TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
+    stored_url TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL
+  )`,
 ];
 
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -68,7 +73,7 @@ function toRecord(r: Row, who: Map<string, string>): ConsentRecord {
   return {
     id: String(r.id), projectId: String(r.project_id), subjectKey: String(r.subject_key), subjectLabel: String(r.subject_label ?? ""),
     personName: String(r.person_name), face: Number(r.covers_face) === 1, voice: Number(r.covers_voice) === 1, uses, otherUse: String(r.other_use ?? ""),
-    untilAt: Number(r.until_at), hasRecording: Boolean(r.recording_upload_id), recordingUrl: r.recording_upload_id ? `/api/uploads/${encodeURIComponent(String(r.recording_upload_id))}` : null, recordedAt: Number(r.recorded_at),
+    untilAt: Number(r.until_at), hasRecording: Boolean(r.recording_id), recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
     recordedBy: who.get(String(r.recorded_by)) ?? null,
     revokedAt: r.revoked_at == null ? null : Number(r.revoked_at), identityId: r.identity_id == null ? null : String(r.identity_id),
   };
@@ -93,12 +98,60 @@ export async function getConsent(id: string): Promise<ConsentRecord | null> {
   return toRecord(row, await names([String(row.recorded_by)]));
 }
 
-/** The recording has to be a sound or video file this workspace holds. */
-async function recordingProblem(uploadId: string): Promise<string | null> {
-  const rs = await db().execute({ sql: `SELECT mime FROM uploads WHERE id = ? LIMIT 1`, args: [uploadId] });
-  const mime = String(rs.rows[0]?.mime ?? "");
+/* ── The recording ──────────────────────────────────────────────────────── */
+
+/** A recording travels in one request: about a minute of voice, or a short clip. */
+export const MAX_RECORDING_BYTES = 4 * 1024 * 1024;
+const RECORDING_TYPES: Record<string, string> = {
+  "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+  "video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov",
+};
+
+/**
+ * Stores the recording of a person agreeing, by the person recording the consent. It is not an upload: it has its own
+ * table and storage path, so it never appears in the library, a picker or an engine's references, and only the
+ * consent route serves it. People only.
+ */
+export async function storeConsentRecording(input: { bytes: Buffer; mime: string }, caller: Caller & { user: { id: string } }, at = now()): Promise<{ id: string; seconds: null }> {
+  assertPerson(caller);
+  const mime = input.mime.split(";")[0].trim().toLowerCase();
+  const ext = RECORDING_TYPES[mime];
+  if (!ext) throw new ConsentError("The recording has to be sound or video of the person agreeing.");
+  if (!input.bytes.length) throw new ConsentError("Nothing was recorded. Try again.");
+  if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the recording under 4 MB: about a minute of the person agreeing.", 413);
+  await consentsReady();
+  const { createHash } = await import("node:crypto");
+  const { storeConsentRecordingBytes } = await import("../storage");
+  const id = newId("crec").replace(/[^A-Za-z0-9_-]/g, "");
+  const stored = await storeConsentRecordingBytes(id, ext, input.bytes, mime);
+  await db().execute({
+    sql: `INSERT INTO consent_recordings (id, mime, ext, bytes, sha256, stored_url, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    args: [id, mime, ext, input.bytes.length, createHash("sha256").update(input.bytes).digest("hex"), stored, caller.user.id, at],
+  });
+  return { id, seconds: null };
+}
+
+/** A record's recording, for the recorder, an owner or an admin, by session; nobody else and never a token. */
+export async function readConsentRecording(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }): Promise<{ bytes: Buffer; mime: string }> {
+  assertPerson(caller);
+  await consentsReady();
+  const rs = await db().execute({
+    sql: `SELECT c.recorded_by, r.id, r.mime, r.ext FROM identity_consents c JOIN consent_recordings r ON r.id = c.recording_id WHERE c.id = ? LIMIT 1`,
+    args: [consentId],
+  });
+  const row = rs.rows[0];
+  if (!row) throw new ConsentError("That recording is not in this workspace.", 404);
+  const admin = caller.user.owner === true || caller.user.role === "admin";
+  if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who recorded it, or an owner or admin, can play it.", 403);
+  const { readConsentRecordingBytes } = await import("../storage");
+  return { bytes: await readConsentRecordingBytes(String(row.id), String(row.ext)), mime: String(row.mime) };
+}
+
+/** The recording has to be one this person made for it, in this workspace. */
+async function recordingProblem(recordingId: string, recorder: string): Promise<string | null> {
+  const rs = await db().execute({ sql: `SELECT created_by FROM consent_recordings WHERE id = ? LIMIT 1`, args: [recordingId] });
   if (!rs.rows.length) return "The recording could not be found. Record it again.";
-  if (!/^(audio|video)\//.test(mime)) return "The recording has to be sound or video of the person agreeing.";
+  if (String(rs.rows[0].created_by) !== recorder) return "Use a recording you made for this consent.";
   return null;
 }
 
@@ -107,14 +160,14 @@ export async function recordConsent(input: ConsentInput, caller: Caller & { user
   assertPerson(caller);
   const clean = cleanConsent(input, at);
   await consentsReady();
-  const problem = await recordingProblem(clean.recordingUploadId);
+  const problem = await recordingProblem(clean.recordingId, caller.user.id);
   if (problem) throw new ConsentError(problem);
   const cid = newId("cns");
   await db().batch([
     {
-      sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_upload_id, attested, recorded_by, recorded_at)
+      sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
-      args: [cid, clean.projectId, clean.subjectKey, clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt, clean.recordingUploadId, caller.user.id, at],
+      args: [cid, clean.projectId, clean.subjectKey, clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt, clean.recordingId, caller.user.id, at],
     },
     securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.recorded", targetType: "identity_consent", targetId: cid, details: { expiresAt: clean.untilAt } }),
   ], "write");
@@ -142,15 +195,21 @@ export async function withdrawConsent(consentId: string, caller: Caller & { user
 }
 
 /**
- * The live record a training request cites, or a refusal in words. It has to be this workspace's, for this
- * production, not withdrawn, not ended, and cover the face (an identity is trained on stills of a face).
+ * The live record a training request cites, or a refusal in words. Every identity training needs one (review of #558,
+ * M1): this workspace's, for the production the request names (a request that names none is refused), for the same
+ * cast member, allowing identity training, not withdrawn, not ended, and covering the face.
  */
-export async function consentForTraining(consentId: unknown, projectIds: (string | null | undefined)[], at = now()): Promise<ConsentRecord> {
-  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId)) throw new ConsentError("Record the person's consent first.");
+export async function consentForTraining(consentId: unknown, projectIds: (string | null | undefined)[], subjectKey: unknown, at = now()): Promise<ConsentRecord> {
+  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId))
+    throw new ConsentError("Training an identity needs the person's consent on record. Record it on the Cast card first.");
+  const ids = projectIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (!ids.length) throw new ConsentError("Training an identity needs the production it is for. Open it from the production's Cast card.");
   const record = await getConsent(consentId);
   if (!record) throw new ConsentError("That consent record is not in this workspace.", 404);
-  const ids = projectIds.filter((v): v is string => typeof v === "string" && v.length > 0);
-  if (ids.length && !ids.includes(record.projectId)) throw new ConsentError("That consent was recorded for another production.", 409);
+  if (!ids.includes(record.projectId)) throw new ConsentError("That consent was recorded for another production.", 409);
+  if (typeof subjectKey !== "string" || !subjectKey) throw new ConsentError("Say which cast member this identity is for.");
+  if (subjectKey !== record.subjectKey) throw new ConsentError("That consent was recorded for another cast member.", 409);
+  if (!record.uses.includes("identity")) throw new ConsentError("That consent doesn't allow training an identity. Record a consent that allows it.", 409);
   if (!consentLive(record, at)) throw new ConsentError(record.revokedAt != null ? "That consent was withdrawn. Record it again before training." : "That consent has ended. Record it again before training.", 409);
   if (!record.face) throw new ConsentError("That consent covers the voice only; training an identity needs the face too.", 409);
   return record;

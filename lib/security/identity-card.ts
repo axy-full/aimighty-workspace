@@ -57,7 +57,9 @@ export function identityCardView(input: {
 }): IdentityCardView {
   const at = input.at ?? Date.now();
   const consent = currentConsent(input.consents, input.subjectKey, at);
-  const live = consent && consentLive(consent, at) ? consent : null;
+  const holding = consent && consentLive(consent, at) ? consent : null;
+  /* Training cites only a record that covers the face and allows identity training (the server checks the same). */
+  const live = holding && holding.face && holding.uses.includes("identity") ? holding : null;
   const started = consent?.identityId ? input.identities?.find((i) => i.id === consent.identityId) ?? null : null;
   const identity = input.bound ?? started;
   const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not recorded yet. Only a person records it.";
@@ -72,5 +74,6 @@ export function identityCardView(input: {
     };
   }
   if (live) return { ...base, stage: "recorded", text: "Consent recorded · ready to train", tone: "idle" };
+  if (holding) return { ...base, stage: "no-consent", text: "Consent doesn't allow identity training", tone: "waiting" };
   return { ...base, stage: "no-consent", text: "Consent not recorded", tone: "waiting" };
 }

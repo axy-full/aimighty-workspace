@@ -44,7 +44,7 @@ function familyOf(identity: SoulIdentity): string {
 export function CastIdentities({ scope, projectId, items, save, consent = null, defaultName = "", onTrained }: {
   scope: string; projectId: string; items: LibraryEntry[]; save: () => Promise<boolean>;
   /** A recorded consent (the board's Cast card, Gaps A): it stands in for the rights box and is cited by the request. */
-  consent?: { id: string; line: string } | null;
+  consent?: { id: string; line: string; subjectKey: string } | null;
   defaultName?: string;
   onTrained?: () => void;
 }) {
@@ -55,7 +55,6 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
   const [name, setName] = useState(defaultName);
   const [chosen, setChosen] = useState<SoulVersion>("v1");
   const [picked, setPicked] = useState<string[]>([]);
-  const [ticked, setTicked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<{ error: boolean; text: string } | null>(null);
 
@@ -75,7 +74,8 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
     : !version || !price ? "No identity version has a training price yet."
     : !name.trim() ? "Name the identity."
     : picked.length < min || picked.length > max ? `Pick ${min}–${max} stills of the same person (${picked.length} picked).`
-    : !consent && !ticked ? "Confirm you have the rights and consent to train this likeness."
+    /* Every training cites a person's consent record (review of #558, M1): the tick-box alone no longer trains. */
+    : !consent ? "Record the person's consent on the board's Cast card first; training needs it."
     : null;
 
   const train = async () => {
@@ -93,7 +93,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];
         });
-        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: true, ...(consent ? { consentId: consent.id } : {}), modelVersion: version.version,
+        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: true, ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : {}), modelVersion: version.version,
           ...(typeof version.trainingCredits === "number" ? { maxCredits: version.trainingCredits } : { maxUsd: version.trainingCostUsd }) };
       }
       const { data: reply } = await paid.run<{ identity: SoulIdentity }>(ENDPOINT, body);
@@ -103,7 +103,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
         setOutcome({ error: false, text: `${identity.name} is training for ${familyOf(identity)}. It is listed below; characters can render with it once it is ready.` });
         toast(`${identity.name} is training`);
       }
-      setName(""); setPicked([]); setTicked(false);
+      setName(""); setPicked([]);
       onTrained?.();
     } catch (error) {
       /* A dropped connection is not a refusal: the request is saved, and Recover asks about it. */
@@ -169,13 +169,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
               <span className="gx-eyebrow" data-functional-label="">Consent on file</span>
               <p className="gx-hint">{consent.line}</p>
             </div>
-          ) : (
-            <label className="pd-consent">
-              <input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} data-testid="soul-consent" />
-              <span className="pd-check" aria-hidden="true" />
-              <span className="gx-hint">I have the rights and consent to train this likeness. The stills show one person or fictional character.</span>
-            </label>
-          )}
+          ) : null}
           <p className="gx-hint" data-testid="soul-terms">Charged once the trainer accepts it, even if training then fails.</p>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-primary pd-go" disabled={Boolean(blocked) || busy} aria-describedby={blocked ? "soul-blocked" : undefined} onClick={() => void train()} data-testid="soul-build">

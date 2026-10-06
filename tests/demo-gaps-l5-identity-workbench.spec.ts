@@ -118,7 +118,7 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
 
   /* Consent on file: the record in words, and Train Identity · 54 cr opens the build form armed with it. */
   await expect(card.getByTestId("cast-status")).toHaveText("Consent recorded · ready to train");
-  await expect(card.getByTestId("identity-consent")).toContainText(/^Face and voice · this production, ads · until \d{1,2} \w{3} \d{4} · recorded \d{1,2} \w{3} \d{4} by Identity Tester$/);
+  await expect(card.getByTestId("identity-consent")).toContainText(/^Face and voice · this production, identity training, ads · until \d{1,2} \w{3} \d{4} · recorded \d{1,2} \w{3} \d{4} by Identity Tester$/);
   await expect(train).toBeEnabled();
   await expect(train).toHaveAttribute("data-spend", /.+/);
   await notClipped(card, "recorded");

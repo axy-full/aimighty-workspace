@@ -46,7 +46,7 @@ async function load(scope: string, projectId: string): Promise<void> {
 
 export type ConsentDraft = {
   projectId: string; subjectKey: string; subjectLabel: string; personName: string;
-  face: boolean; voice: boolean; uses: string[]; otherUse: string; until: string; recordingUploadId: string; attested: boolean;
+  face: boolean; voice: boolean; uses: string[]; otherUse: string; until: string; recordingId: string; attested: boolean;
 };
 
 export function useConsents(scope: string | null, projectId: string | null) {

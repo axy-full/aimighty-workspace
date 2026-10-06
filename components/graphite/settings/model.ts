@@ -133,7 +133,7 @@ const agoWords = (at: number, now: number): string => {
  */
 export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): string {
   if (unit === "credits") return tokenFacts(t, unit, now);
-  return [scopeWords(t.scope), t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].join(" · ");
+  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null, t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
 }
 
 /* ── Advanced › Tools ───────────────────────────────────────────────── */

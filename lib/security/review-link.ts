@@ -1,5 +1,7 @@
 import type { Client } from "@libsql/client";
+import { createHash } from "node:crypto";
 import { db, ready, now, id as newId } from "../db";
+import { mintShare, type Share } from "../shares";
 
 /**
  * The Crew review client link (Gaps A, "Copy client link" and the client's view): one production's review set,
@@ -28,7 +30,7 @@ const SCHEMA = [
     verdict TEXT NOT NULL, created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS review_verdicts_gen ON review_verdicts(gen_id, created_at)`,
-  `CREATE TABLE IF NOT EXISTS review_link_hits (share_id TEXT NOT NULL, bucket INTEGER NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(share_id, bucket, kind))`,
+  `CREATE TABLE IF NOT EXISTS review_link_hits (share_id TEXT NOT NULL, bucket INTEGER NOT NULL, client TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(share_id, bucket, client))`,
 ];
 
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -41,10 +43,22 @@ export async function reviewLinksReady(): Promise<void> {
   await initialized.get(client);
 }
 
-/** Marks a freshly minted link as opening the review set. */
+/** Marks a link as a Crew review link, for the team's list (what it opens is fixed by the link itself: lib/shares.ts). */
 export async function markReviewLink(shareId: string): Promise<void> {
   await reviewLinksReady();
   await db().execute({ sql: `INSERT OR IGNORE INTO review_link_scopes (share_id, scope, created_at) VALUES (?, 'review', ?)`, args: [shareId, now()] });
+}
+
+/**
+ * Makes a Crew review client link (review of #558, L4). What it opens is decided by the one write that makes it (the
+ * secret's hash is namespaced, lib/shares.ts), so it can never open as an older link, here or on an older build. The
+ * team's list entry is written first, under the id the link will have; if the link's write then fails, that entry
+ * names no link and lists nothing.
+ */
+export async function mintReviewLink(input: { workspaceId: string; projectId: string; by: string; actorId?: string; days?: number }): Promise<{ share: Share; token: string }> {
+  const id = newId("shr");
+  await markReviewLink(id);
+  return mintShare({ ...input, label: "Crew review", neutral: true, id });
 }
 
 export async function scopeOf(shareId: string): Promise<LinkScope> {
@@ -55,20 +69,33 @@ export async function scopeOf(shareId: string): Promise<LinkScope> {
 
 /* ── Rate limits ─────────────────────────────────────────────────────────── */
 
-/** Per link, per ten minutes: reads of the review, and writes (comments and decisions). */
+/**
+ * Writes (decisions and comments) per Crew review link, per client, per ten minutes (review of #558, L3). Counted per
+ * client, so a copy of a leaked link can't use up the real client's allowance; reads are never limited, so nobody is
+ * locked out of looking. Older links are not counted at all, as before (L1). Old windows are pruned as new ones fill.
+ */
 export const WINDOW_MS = 10 * 60_000;
-export const LIMITS = { read: 300, write: 30 } as const;
+export const LIMITS = { write: 30 } as const;
 
-/** Counts one use; false when the link is over its limit for this window. */
-export async function underLimit(shareId: string, kind: keyof typeof LIMITS, at = now()): Promise<boolean> {
+/** A client, as a link sees them: a one-way digest of where they connect from, never stored in the clear. */
+export function clientKey(req: { headers: Headers }, shareId: string): string {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
+  return createHash("sha256").update(`${shareId}:${ip}`).digest("hex").slice(0, 24);
+}
+
+/** Counts one write by this client; false when they are over the limit for this window. */
+export async function underLimit(shareId: string, client: string, at = now()): Promise<boolean> {
   await reviewLinksReady();
   const bucket = Math.floor(at / WINDOW_MS);
-  const rs = await db().execute({
-    sql: `INSERT INTO review_link_hits (share_id, bucket, kind, count) VALUES (?, ?, ?, 1)
-          ON CONFLICT(share_id, bucket, kind) DO UPDATE SET count = count + 1 RETURNING count`,
-    args: [shareId, bucket, kind],
-  });
-  return Number(rs.rows[0]?.count ?? 1) <= LIMITS[kind];
+  const [, counted] = await db().batch([
+    { sql: `DELETE FROM review_link_hits WHERE bucket < ?`, args: [bucket - 1] },
+    {
+      sql: `INSERT INTO review_link_hits (share_id, bucket, client, count) VALUES (?, ?, ?, 1)
+            ON CONFLICT(share_id, bucket, client) DO UPDATE SET count = count + 1 RETURNING count`,
+      args: [shareId, bucket, client],
+    },
+  ], "write");
+  return Number(counted.rows[0]?.count ?? 1) <= LIMITS.write;
 }
 
 /* ── The set ─────────────────────────────────────────────────────────────── */
@@ -110,21 +137,16 @@ export async function reviewSet(token: string, shareId: string, projectId: strin
   });
   const ids = takes.rows.map((r) => String(r.id));
   const marks = ids.map(() => "?").join(",");
+  /* What this link's client sees (review of #558, L2): their own link's comments and decisions, and the team's
+     decisions (each take's state). Never another client's words or name, and never the team's own notes. */
   const [notes, verdicts] = ids.length ? await Promise.all([
-    db().execute({
-      sql: `SELECT n.gen_id, n.text, n.created_at, 0 AS guest, '' AS author FROM notes n WHERE n.gen_id IN (${marks})
-            UNION ALL
-            SELECT r.gen_id, r.text, r.created_at, 1 AS guest, r.guest AS author FROM review_notes r WHERE r.gen_id IN (${marks})
-            ORDER BY created_at LIMIT 2000`,
-      args: [...ids, ...ids],
-    }),
-    db().execute({ sql: `SELECT gen_id, verdict, guest, created_at FROM review_verdicts WHERE gen_id IN (${marks}) ORDER BY created_at`, args: ids }),
+    db().execute({ sql: `SELECT gen_id, text, created_at, guest FROM review_notes WHERE share_id = ? AND gen_id IN (${marks}) ORDER BY created_at LIMIT 2000`, args: [shareId, ...ids] }),
+    db().execute({ sql: `SELECT gen_id, verdict, guest, created_at FROM review_verdicts WHERE share_id = ? AND gen_id IN (${marks}) ORDER BY created_at`, args: [shareId, ...ids] }),
   ]) : [{ rows: [] }, { rows: [] }];
   const byGen = new Map<string, ClientNote[]>();
   for (const n of notes.rows) {
     const list = byGen.get(String(n.gen_id)) ?? [];
-    const guest = Number(n.guest) === 1;
-    list.push({ text: String(n.text), author: guest ? String(n.author || "The client") : "The production", guest, at: Number(n.created_at) });
+    list.push({ text: String(n.text), author: String(n.guest || "The client"), guest: true, at: Number(n.created_at) });
     byGen.set(String(n.gen_id), list);
   }
   const lastVerdict = new Map<string, ClientTake["verdict"]>();
@@ -143,9 +165,10 @@ export async function reviewSet(token: string, shareId: string, projectId: strin
 const cleanName = (value: unknown) => (typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 60) : "") || "The client";
 
 /** A client's decision on a take in the link's set, with an optional comment. False when the take is not in the set. */
-export async function recordVerdict(input: { shareId: string; projectId: string; genId: string; verdict: unknown; name: unknown; text: unknown }): Promise<{ ok: true; guest: string } | { ok: false; status: number; error: string }> {
+export async function recordVerdict(input: { shareId: string; projectId: string; genId: string; verdict: unknown; name: unknown; text: unknown; client?: string }): Promise<{ ok: true; guest: string } | { ok: false; status: number; error: string }> {
   if (input.verdict !== "approved" && input.verdict !== "changes") return { ok: false, status: 400, error: "Approve, or ask for changes." };
   await reviewLinksReady();
+  if (input.client && !(await underLimit(input.shareId, input.client))) return { ok: false, status: 429, error: "Too many changes from here. Wait a few minutes and try again." };
   if (!(await takeInSet("review", input.projectId, input.genId))) return { ok: false, status: 404, error: "Not part of this review." };
   const guest = cleanName(input.name);
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 2000) : "";

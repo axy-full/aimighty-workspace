@@ -1,8 +1,8 @@
 import { requireSession, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
-import { listShares, mintShare, revokeShare, shareLive, SHARE_DAYS } from "@/lib/shares";
-import { clientResponses, markReviewLink, reviewLinksReady, scopeOf } from "@/lib/security/review-link";
+import { listShares, revokeShare, shareLive, SHARE_DAYS } from "@/lib/shares";
+import { clientResponses, mintReviewLink, reviewLinksReady, scopeOf } from "@/lib/security/review-link";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -50,8 +50,7 @@ export const POST = withTenant(async (req: Request) => {
   const body = await req.json().catch(() => ({}));
   const projectId = await production(typeof body?.projectId === "string" ? body.projectId : null);
   if (!projectId) return Response.json({ error: "Save the production first; a client link opens a saved production." }, { status: 404, headers });
-  const { share, token } = await mintShare({ workspaceId: requireTenant().id, projectId, label: "Crew review", days: SHARE_DAYS, by: got.user.name, actorId: got.user.id, neutral: true });
-  await markReviewLink(share.id);
+  const { share, token } = await mintReviewLink({ workspaceId: requireTenant().id, projectId, days: SHARE_DAYS, by: got.user.name, actorId: got.user.id });
   return Response.json({
     link: { id: share.id, live: true, createdAt: share.createdAt, expiresAt: share.expiresAt, revokedAt: null },
     url: `${new URL(req.url).origin}/review/${token}`,

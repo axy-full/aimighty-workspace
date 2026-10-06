@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { useUploadFile } from "@/lib/useUploadFile";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { ATTEST_LINE, CONSENT_USES, USE_LABEL, dayOf, type ConsentRecord } from "@/lib/security/consent-words";
 import { useConsents, type ConsentDraft } from "@/lib/security/use-consents";
 import "./security.css";
@@ -11,8 +11,9 @@ import "./security.css";
  * agree, and the attest box. Record consent is a person's press in a signed-in browser; the route refuses tokens and
  * agents, so Atomik can't do this.
  *
- * The recording is made here with the microphone (or a sound or video file the person already has) and stored as an
- * ordinary upload of this workspace; nothing is sent anywhere else. Nothing here spends.
+ * The recording is made here with the microphone (or a sound or video file the person already has) and stored apart
+ * from uploads, where only the recorder, an owner or an admin can play it; nothing is sent anywhere else. Nothing
+ * here spends.
  */
 
 type Rec = { state: "none" } | { state: "recording"; started: number } | { state: "uploading" } | { state: "done"; uploadId: string; url: string | null; seconds: number | null; when: string };
@@ -25,11 +26,11 @@ export function ConsentForm({ scope, projectId, subjectKey, subjectLabel, onDone
   onDone: (consent: ConsentRecord) => void; onCancel: () => void; layout: "dialog" | "phone";
 }) {
   const { record } = useConsents(scope, projectId);
-  const upload = useUploadFile();
+  const scoped = useScopedFetch(scope);
   const [personName, setPersonName] = useState("");
   const [face, setFace] = useState(true);
   const [voice, setVoice] = useState(true);
-  const [uses, setUses] = useState<string[]>(["production"]);
+  const [uses, setUses] = useState<string[]>(["production", "identity"]);
   const [other, setOther] = useState<string | null>(null);
   const [until, setUntil] = useState(() => dayOf(Date.now() + ONE_YEAR));
   const [earliest] = useState(() => dayOf(Date.now() + 86_400_000));
@@ -51,8 +52,12 @@ export function ConsentForm({ scope, projectId, subjectKey, subjectLabel, onDone
   const store = async (blob: Blob, name: string, seconds: number | null) => {
     setRec({ state: "uploading" }); setProblem(null);
     try {
-      const stored = await upload(new File([blob], name, { type: blob.type || "audio/webm" }), "chat");
-      if (stored.kind !== "audio" && stored.kind !== "video") throw new Error("The recording has to be sound or video of the person agreeing.");
+      /* Its own store, never an upload (review of #558, M2): not in the library, not a reference, not a token's. */
+      const type = (blob.type || (/\.wav$/i.test(name) ? "audio/wav" : "audio/webm")).split(";")[0];
+      const response = await scoped("/api/identity-consents/recording", { method: "POST", headers: { "Content-Type": type }, body: blob });
+      const body = await response.json().catch(() => null) as { recording?: { id: string }; error?: string } | null;
+      if (!response.ok || !body?.recording) throw new Error(body?.error ?? "The recording could not be saved. Try again.");
+      const stored = { id: body.recording.id, durationS: null as number | null };
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = URL.createObjectURL(blob);
       setRec({ state: "done", uploadId: stored.id, url: objectUrl.current, seconds: seconds ?? stored.durationS, when: "recorded just now" });
@@ -105,7 +110,7 @@ export function ConsentForm({ scope, projectId, subjectKey, subjectLabel, onDone
     setBusy(true); setProblem(null);
     const draft: ConsentDraft = {
       projectId, subjectKey, subjectLabel, personName: personName.trim(), face, voice,
-      uses, otherUse: (other ?? "").trim(), until, recordingUploadId: rec.uploadId, attested,
+      uses, otherUse: (other ?? "").trim(), until, recordingId: rec.uploadId, attested,
     };
     const out = await record(draft);
     setBusy(false);

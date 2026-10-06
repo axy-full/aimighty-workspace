@@ -80,7 +80,7 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
         <section data-testid="insp-build">
           <div className="pxw gx-legacy pxw-embed">
             <CastIdentities scope={ctx.scope} projectId={ctx.project.id} items={items} save={ctx.rig.save}
-              consent={{ id: idView.consentId, line: idView.consent }} defaultName={data.title.trim()} onTrained={() => void consents.refresh()} />
+              consent={{ id: idView.consentId, line: idView.consent, subjectKey: card.id }} defaultName={data.title.trim()} onTrained={() => void consents.refresh()} />
           </div>
         </section>
       ) : null}

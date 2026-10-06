@@ -171,8 +171,8 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
-      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, u.*
-            FROM api_tokens t JOIN users u ON u.id = t.user_id
+      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, g.kind AS grant_kind, u.*
+            FROM api_tokens t JOIN users u ON u.id = t.user_id LEFT JOIN api_token_grants g ON g.token_id = t.id
             WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
       args: [hashToken(raw)],
@@ -202,8 +202,9 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
       workspace: ws, user,
       token: {
         id: String(row.tid), name: String(row.tname),
-        /* An unknown scope is never read as "render": only the word itself grants spending. */
-        scope: row.scope === "render" ? "render" : row.scope === "prepare" ? "prepare" : "read",
+        /* An unknown scope is never read as "render": only the word itself grants spending. A prepare token is
+           stored "read" with its grant apart (lib/security/token-grants.ts), so an older build reads it read-only. */
+        scope: row.scope === "render" ? "render" : row.scope === "read" && row.grant_kind === "prepare" ? "prepare" : "read",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
         capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },

@@ -87,7 +87,11 @@ export async function seedPeople(ws: TenantWorkspace, people: { id: string; name
   await runInTenant(ws, async () => {
     await ready();
     for (const p of people) await db().execute({ sql: "INSERT OR IGNORE INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,'x',0)", args: [p.id, `${p.id}@example.invalid`, p.name] });
-    for (const t of tokens) await db().execute({ sql: "INSERT OR IGNORE INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES(?,?,?,?,?,0)", args: [t.id, tokenHash(t.raw), `token ${t.scope}`, t.userId, t.scope] });
+    for (const t of tokens) {
+      /* A prepare token is stored as POST /api/tokens stores it: "read", with its grant apart (review of #558, H1). */
+      await db().execute({ sql: "INSERT OR IGNORE INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES(?,?,?,?,?,0)", args: [t.id, tokenHash(t.raw), `token ${t.scope}`, t.userId, t.scope === "prepare" ? "read" : t.scope] });
+      if (t.scope === "prepare") await db().execute({ sql: "INSERT OR IGNORE INTO api_token_grants(token_id,kind,created_at) VALUES(?,'prepare',0)", args: [t.id] });
+    }
   });
 }
 

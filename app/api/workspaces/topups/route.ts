@@ -8,6 +8,7 @@ import { checkoutReady, paymentProvider, startCheckout } from "@/lib/payments";
 import { listTopups, requestTopup, cancelTopup, OPEN_LIMIT } from "@/lib/topups";
 import { listGrants, SUPER_ADMIN_EMAIL } from "@/lib/platform";
 import { sendMail, mailConfigured, inviteOrigin } from "@/lib/mail";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export const GET = withTenant(async function GET() {
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Top-ups are people-only (owner rule; review of #558, L8): an API or MCP token, even an admin's, files no request,
+     starts no checkout and withdraws none. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   const ws = requireTenant();
   if (!creditsApply(ws)) return NextResponse.json({ error: "The house workspace is never billed in credits; there is nothing to top up." }, { status: 400 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin asks for credits." }, { status: 403 });
@@ -76,6 +80,9 @@ export const POST = withTenant(async function POST(req: Request) {
 export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Top-ups are people-only (owner rule; review of #558, L8): an API or MCP token, even an admin's, files no request,
+     starts no checkout and withdraws none. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   const ws = requireTenant();
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin withdraws a request." }, { status: 403 });
   const id = new URL(req.url).searchParams.get("id") ?? "";

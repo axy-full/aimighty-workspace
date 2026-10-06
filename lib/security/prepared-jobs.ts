@@ -62,14 +62,15 @@ export async function prepareJob(input: PreparedInput, token: { id: string; scop
   if (!token || token.scope !== "prepare") throw new PreparedError("Only a token made to prepare jobs files one; a person uses Make.", 403);
   const clean = cleanPrepared(input);
   await preparedReady();
-  const waiting = await db().execute({ sql: `SELECT COUNT(*) AS n FROM prepared_jobs WHERE token_id = ? AND state = 'waiting'`, args: [token.id] });
-  if (Number(waiting.rows[0]?.n ?? 0) >= WAITING_LIMIT) throw new PreparedError(`This token already has ${WAITING_LIMIT} jobs waiting for a person. Wait for them to be approved or dismissed.`, 429);
   const id = newId("prep");
   const { prompt, project, ...settings } = clean;
-  await db().execute({
-    sql: `INSERT INTO prepared_jobs (id, token_id, prompt, settings_json, project, state, created_at) VALUES (?,?,?,?,?,'waiting',?)`,
-    args: [id, token.id, prompt, JSON.stringify(settings), project, at],
+  /* The cap and the insert are one statement (review of #558, L6): many calls at once still leave at most the cap. */
+  const rs = await db().execute({
+    sql: `INSERT INTO prepared_jobs (id, token_id, prompt, settings_json, project, state, created_at)
+          SELECT ?,?,?,?,?,'waiting',? WHERE (SELECT COUNT(*) FROM prepared_jobs WHERE token_id = ? AND state = 'waiting') < ?`,
+    args: [id, token.id, prompt, JSON.stringify(settings), project, at, token.id, WAITING_LIMIT],
   });
+  if ((rs.rowsAffected ?? 0) < 1) throw new PreparedError(`This token already has ${WAITING_LIMIT} jobs waiting for a person. Wait for them to be approved or dismissed.`, 429);
   return (await preparedJobs({ id }))[0];
 }
 

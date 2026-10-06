@@ -4,7 +4,7 @@ import { resolveShare } from "@/lib/shares";
 import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
-import { reviewSet, scopeOf, underLimit } from "@/lib/security/review-link";
+import { reviewSet } from "@/lib/security/review-link";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -24,9 +24,8 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
   const out = await runInTenant(workspace, async () => {
     await ready();
     /* A Crew review link (lib/security/review-link.ts) opens its production's review set; an older link, the
-       Approved takes below, unchanged. Both are limited per link. */
-    if (!(await underLimit(share.id, "read"))) return { limited: true as const };
-    if ((await scopeOf(share.id)) === "review") {
+       Approved takes below, exactly as before. Reading is never limited. */
+    if (found.review) {
       const set = await reviewSet(token, share.id, share.projectId);
       if (!set) return null;
       const logo = (await getSetting("brandLogoUploadId")) || null;
@@ -82,6 +81,5 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
   });
 
   if (!out) return NextResponse.json({ error: "This production is no longer here." }, { status: 404 });
-  if ("limited" in out) return NextResponse.json({ error: "This link was opened too many times in a few minutes. Wait a moment and try again." }, { status: 429, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json(out, { headers: { "Cache-Control": "no-store" } });
 };

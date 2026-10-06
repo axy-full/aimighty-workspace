@@ -139,7 +139,8 @@ test("the client sees this production's review set and nothing else: no other ta
     expect(text, leak).not.toContain(leak);
   }
   /* The team's note is signed by the production, never by a person. */
-  expect(body.takes[1].notes).toEqual([{ text: "Is the walk speed right for you?", author: "The production", guest: false, at: 5 }]);
+  /* The team's own notes stay inside the workspace (review of #558, L2): the client sees their own words only. */
+  expect(body.takes[1].notes).toEqual([]);
 
   /* Media: the set only. A take outside it, another production's, or another workspace's is not found, and nothing is read. */
   for (const genId of ["g_unjudged", "g_other", "g_deleted", "g_b", "../g_review"]) {
@@ -223,23 +224,19 @@ test("a withdrawn link stops at once, an expired one is gone, a guessed one open
   expect(await callerFromToken(expired)).toBeNull();
 });
 
-test("a link is limited: too many decisions or reads in ten minutes are refused", async () => {
+test("a link is limited per client: too many decisions from one place are refused, another client still writes, and reading never locks out", async () => {
   const who: Who = { mode: "session", ws: A, userId: "owner", name: "Owner Person", role: "owner", bearer: "" };
   const r = await routes(who);
   const { url } = await (await r.team.POST(scoped(who, `${ORIGIN}/api/review-links`, { method: "POST", body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never)).json();
   const token = url.split("/review/")[1];
-  const { LIMITS, underLimit } = await import("../../lib/security/review-link");
+  const { LIMITS } = await import("../../lib/security/review-link");
+  const from = (ip: string, path: string, body: unknown) => new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": ip }, body: JSON.stringify(body) });
   const statuses: number[] = [];
-  for (let i = 0; i <= LIMITS.write; i++) statuses.push((await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId: "g_review", verdict: "changes" }), ctx(token))).status);
+  for (let i = 0; i <= LIMITS.write; i++) statuses.push((await r.verdict.POST(from("203.0.113.9", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "changes" }), ctx(token))).status);
   expect(statuses.slice(0, LIMITS.write).every((s) => s === 201)).toBe(true);
   expect(statuses.at(-1)).toBe(429);
-  expect((await r.notes.POST(post(`${ORIGIN}/api/review/${token}/notes`, { genId: "g_review", text: "x" }), ctx(token))).status).toBe(429);
-  /* Reads: the same counter shape, its own limit; the next window starts fresh. */
-  const { runInTenant } = await import("../../lib/tenant");
-  const shareId = (await (await r.team.GET(scoped(who, `${ORIGIN}/api/review-links?projectId=prod_one`), undefined as never)).json()).links[0].id;
-  const at = Date.UTC(2026, 9, 6, 12, 0, 0);
-  const results = await runInTenant(A, async () => { const out: boolean[] = []; for (let i = 0; i <= LIMITS.read; i++) out.push(await underLimit(`read-${shareId}`, "read", at)); return out; });
-  expect(results.filter(Boolean)).toHaveLength(LIMITS.read);
-  expect(results.at(-1)).toBe(false);
-  expect(await runInTenant(A, () => underLimit(`read-${shareId}`, "read", at + 10 * 60_000))).toBe(true);
+  expect((await r.notes.POST(from("203.0.113.9", `/api/review/${token}/notes`, { genId: "g_review", text: "x" }), ctx(token))).status).toBe(429);
+  /* The real client, elsewhere, is not locked out by a flood from a leaked copy; and anyone can still read. */
+  expect((await r.verdict.POST(from("198.51.100.7", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "approved" }), ctx(token))).status).toBe(201);
+  for (let i = 0; i < 50; i++) expect((await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).status).toBe(200);
 });

@@ -9,10 +9,11 @@
  * this person, or I hold their signed release"). Only a person records one (lib/security/people-only.ts).
  */
 
-export const CONSENT_USES = ["production", "ads", "social"] as const;
+export const CONSENT_USES = ["production", "identity", "ads", "social"] as const;
 export type ConsentUse = (typeof CONSENT_USES)[number];
-export const USE_LABEL: Record<ConsentUse, string> = { production: "This production", ads: "Ads", social: "Social posts" };
-const USE_WORDS: Record<ConsentUse, string> = { production: "this production", ads: "ads", social: "social posts" };
+/* "identity": training an identity of their face (review of #558, M1); every training needs it. */
+export const USE_LABEL: Record<ConsentUse, string> = { production: "This production", identity: "Identity training", ads: "Ads", social: "Social posts" };
+const USE_WORDS: Record<ConsentUse, string> = { production: "this production", identity: "identity training", ads: "ads", social: "social posts" };
 
 /** The longest a record may run: ten years. */
 export const MAX_CONSENT_DAYS = 3653;
@@ -29,7 +30,8 @@ export type ConsentInput = {
   otherUse?: unknown;
   /** The last day it holds, as YYYY-MM-DD (the date field), or a time in ms. */
   until?: unknown;
-  recordingUploadId?: unknown;
+  /** The recording's id (POST /api/identity-consents/recording): never an upload. */
+  recordingId?: unknown;
   attested?: unknown;
 };
 
@@ -43,7 +45,7 @@ export type CleanConsent = {
   uses: ConsentUse[];
   otherUse: string;
   untilAt: number;
-  recordingUploadId: string;
+  recordingId: string;
 };
 
 /** A stored record, as the routes return it. Never carries the recording's bytes or an address. */
@@ -59,7 +61,7 @@ export type ConsentRecord = {
   otherUse: string;
   untilAt: number;
   hasRecording: boolean;
-  /** The recording, served by the workspace's own upload route (signed in, this workspace only). */
+  /** The recording, served by the consent route only: the recorder, an owner or an admin, signed in. */
   recordingUrl: string | null;
   recordedAt: number;
   recordedBy: string | null;
@@ -106,10 +108,10 @@ export function cleanConsent(input: ConsentInput, at = Date.now()): CleanConsent
   if (untilAt == null) throw new ConsentError("Choose the last day this consent holds.");
   if (untilAt <= at) throw new ConsentError("The end date has to be in the future.");
   if (untilAt > at + MAX_CONSENT_DAYS * 86_400_000) throw new ConsentError("A consent record runs for ten years at most.");
-  const recordingUploadId = typeof input.recordingUploadId === "string" ? input.recordingUploadId : "";
-  if (!ID.test(recordingUploadId)) throw new ConsentError("Add the recording of the person saying they agree.");
+  const recordingId = typeof input.recordingId === "string" ? input.recordingId : "";
+  if (!ID.test(recordingId)) throw new ConsentError("Add the recording of the person saying they agree.");
   if (input.attested !== true) throw new ConsentError("Tick the statement first.");
-  return { projectId, subjectKey, subjectLabel, personName, face, voice, uses, otherUse, untilAt, recordingUploadId };
+  return { projectId, subjectKey, subjectLabel, personName, face, voice, uses, otherUse, untilAt, recordingId };
 }
 
 /** A record holds now: not withdrawn and not past its end date. */

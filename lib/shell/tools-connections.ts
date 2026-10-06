@@ -180,12 +180,13 @@ function ago(at: number, now: number): string {
 
 /** What a token may do, in words: a prepare token spends nothing itself; a person approves each job it prepares. */
 export function scopeWords(scope: ApiToken["scope"]): string {
-  return scope === "read" ? "Read-only" : scope === "prepare" ? "Prepares jobs · a person approves each" : "Can generate";
+  return scope === "read" ? "Read-only" : scope === "prepare" ? "Prepares jobs only" : "Can generate";
 }
 
 /** The facts under a token's name: what it can do, this month's spend against its ceiling, when it was last used. */
 export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): string {
   const parts = [scopeWords(token.scope)];
+  if (token.scope === "prepare") parts.push("a person approves each");
   if (token.scope === "render") {
     if (unit === "credits") {
       const spent = token.spendThisMonth;
