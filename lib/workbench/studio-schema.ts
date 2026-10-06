@@ -1,5 +1,6 @@
 import { PROJECT_LIMITS } from "./project-limits";
 import { astraNativeSchema, astraNativeProposalSchema, validateAstraNativeBindings } from '../astra-blender/native';
+import { scriptVersionsSchema } from '../production/script-versions';
 import { blockingSchema } from '../production/blocking-schema';
 import { astraSceneSchema } from '../astra-blender/scene';
 import { astraProposalSchema, validateAstraBindings } from '../astra-blender/proposal';
@@ -351,6 +352,8 @@ export const projectSchema = z.object({
     .max(64)
     .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
+  /* Earlier scripts (lib/production/script-versions.ts): additive and optional, so a draft from before it parses as it did. */
+  scriptVersions: scriptVersionsSchema.optional(),
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
   /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
