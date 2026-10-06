@@ -73,6 +73,6 @@ test("the guard knows the copy it replaced, and lets the replacements through", 
     "Ads presets for image variants, read live.",
     "Social accounts and posting providers are not connected; Publish leads to review and delivery.",
     "with interface, data, sign-in and generation models wired in",
-    "One source of 4 to 30 seconds, ordered references, 480p to 1080p.",
+    "One source of 4 to 8 seconds, ordered references, 480p to 1080p.",
   ]) expect(retiredFindings(line), line).toEqual([]);
 });

@@ -6,7 +6,7 @@ import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
   title: "Social",
-  description: "Recast motion and swap elements in footage you own: one 4–30 s source, ordered references, 480p to 1080p.",
+  description: "Recast motion and swap elements in footage you own: one 4–8 s source, ordered references, 480p to 1080p.",
 };
 
 /* Copy and limits from lib/workspace/spec-cards.ts, lib/shell/viral.ts,
@@ -29,7 +29,7 @@ const TILES: { tag: string; name: string; body: string }[] = [
 ];
 
 const FACTS: [string, string][] = [
-  ["Source", "4–30 s"],
+  ["Source", "4–8 s"],
   ["References", "Ordered stills"],
   ["Resolution", "480p · 720p · 1080p"],
 ];
@@ -42,7 +42,7 @@ export default function ViralPage() {
       <SuiteHeader
         eyebrow="04 · Social"
         title="Recast motion and swap elements in footage you own."
-        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 30 seconds, ordered references, 480p to 1080p."
+        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 8 seconds, ordered references, 480p to 1080p."
         pages={viral.pages}
         cta={(
           <>
