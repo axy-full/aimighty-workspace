@@ -151,7 +151,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   ).toBeDisabled();
   await panel.getByRole("button", { name: "Load more presets" }).click();
   await panel.getByRole("button", { name: /Studio product portrait/ }).click();
-  await panel.getByLabel("Product image").selectOption("product-b");
+  await panel.getByLabel("Product image", { exact: true }).selectOption("product-b");
   await panel.getByLabel("Cast reference").selectOption("cast-image");
   await expect(panel.getByLabel("Image quality")).toBeDisabled();
   await expect.poll(() => project.moleculr?.marketing?.presetId).toBe(presetId);
@@ -194,7 +194,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   await expect.poll(() => project.moleculr?.marketing).toMatchObject({ variant: "flare", quality: "max", enhancePrompt: true, presetId });
   await panel.getByLabel("Product image build").scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("moleculr-image-presets-25.png") });
-  await panel.getByLabel("Product image").selectOption("product-b");
+  await panel.getByLabel("Product image", { exact: true }).selectOption("product-b");
   await panel.getByRole("button", { name: "Review campaign image" }).click();
   const review = page.getByRole("dialog");
   await expect(review.getByRole("button", { name: "Generate · about 3 cr", exact: true })).toBeEnabled();
