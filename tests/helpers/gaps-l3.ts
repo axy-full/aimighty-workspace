@@ -62,7 +62,7 @@ export type Seeded = { project: Project; scope: string; workspaceId: string; sho
  * Three shots on the board: the first two approved takes sit in the edit's sequence (5 s each), the third waits for review.
  * With `music`, a 5 s music clip (a real WAV served by the spec at `musicDbfs`) sits on the Music lane.
  */
-export async function seedCut(page: Page, name: string, options: { music?: boolean; musicDbfs?: number } = {}): Promise<Seeded> {
+export async function seedCut(page: Page, name: string, options: { music?: boolean; musicDbfs?: number; /** The second take of the cut waits for a person. */ pending?: boolean } = {}): Promise<Seeded> {
   const workspaceId = (await signInLocally(page.request, name)).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
@@ -104,7 +104,7 @@ export async function seedCut(page: Page, name: string, options: { music?: boole
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
   const generations: Gen[] = [
     take("tk-s1", shotIds[0], { reviewState: "approved", approvedBy: "Tester", approvedAt: Date.now() - 500_000 }),
-    take("tk-s2", shotIds[1], { reviewState: "approved", approvedBy: "Tester", approvedAt: Date.now() - 400_000 }),
+    take("tk-s2", shotIds[1], options.pending ? {} : { reviewState: "approved", approvedBy: "Tester", approvedAt: Date.now() - 400_000 }),
     take("tk-s3", shotIds[2]),
   ];
   const paid = watchPaid(page);

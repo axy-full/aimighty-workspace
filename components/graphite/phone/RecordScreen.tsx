@@ -43,7 +43,7 @@ function useProjectMoney(scope: string, productionId: string | null): { money: P
  * Left out because the code has no such thing (DECISIONS 9, 13): a "held" figure, and the pause at 80% (the bar marks
  * the line and says no pause is set). Pressing Open on a plan goes to the plan screen; Review goes to the review.
  */
-export function RecordScreen({ scope, project, items, queue, now, onPlan, onReview }: {
+export function RecordScreen({ scope, project, items, queue, now, onPlan, onReview, onCut }: {
   scope: string;
   project: Project | null;
   items: readonly LibraryEntry[];
@@ -51,6 +51,8 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
   now: number;
   onPlan: (item: QueueItem) => void;
   onReview: () => void;
+  /** Opens the cut: watch it and approve it (Gaps A, `screen=cut`). */
+  onCut?: () => void;
 }) {
   const productionId = project?.productionProjectId ?? null;
   const activity = useActivity(productionId, { enabled: Boolean(productionId) });
@@ -111,6 +113,13 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
         {!rows.length && activity.status === "ready" ? <p className="ph-quiet" data-testid="phone-record-empty">Atomik has not worked on this project yet.</p> : null}
         {!rows.length && activity.status === "loading" ? <p className="ph-quiet" role="status">Reading the record…</p> : null}
       </section>
+
+      {onCut && project.shots.length ? (
+        <section className="ph-section" aria-label="The cut">
+          <Eyebrow>The cut</Eyebrow>
+          <div className="ph-row" data-testid="phone-record-cut"><span className="ph-row-text"><span className="ph-row-title">Watch the cut</span><span className="ph-row-line">The takes in order. Approve it from here.</span></span><button type="button" className="ph-btn" onClick={onCut} data-testid="phone-record-cut-open">Watch</button></div>
+        </section>
+      ) : null}
 
       <section className="ph-section" aria-label="Open decisions">
         <Eyebrow aside={decisions ? decisionsLine(decisions) : null}>Open decisions</Eyebrow>

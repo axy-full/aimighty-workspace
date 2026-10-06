@@ -14,17 +14,17 @@ import type { ReviewState } from "@/lib/workspace/takes";
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** The design's phone screens (README § 1.1). */
-export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states"] as const;
+export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut"] as const;
 export type PhoneScreen = (typeof PHONE_SCREENS)[number];
 
 /** The URL params the phone owns (the shell keeps them, with the switch on only). */
 export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const;
 
 /**
- * The screens this build draws: all eight of the design's. An address for one this build does not draw opens Home,
+ * The screens this build draws: all nine of the design's (Cut is Gaps A's). An address for one this build does not draw opens Home,
  * never an empty screen.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 
