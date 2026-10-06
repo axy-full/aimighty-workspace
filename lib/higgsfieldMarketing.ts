@@ -8,6 +8,7 @@ import { engineMock } from "./mock";
 import { paidByPlatform } from "./platformSpend";
 import { MARKETING_IMAGE_25_TOKEN_USD } from "./vendorRates";
 import type { PricingWatch } from "./higgsfieldPricingWatch";
+import { PRODUCT_IMAGE_NAME } from "./uiNames";
 
 export const MARKETING_PATH = "marketing-studio/image";
 export const MARKETING_ORIGIN = "https://api.higgsfield.ai";
@@ -416,7 +417,7 @@ export async function marketingReferenceUrls(
     );
   if (!engineMock() && references.length && !usingBlob())
     throw new MarketingError(
-      "Marketing image references require configured private media storage.",
+      `${PRODUCT_IMAGE_NAME} references require configured private media storage.`,
       503,
       "storage_unavailable",
     );

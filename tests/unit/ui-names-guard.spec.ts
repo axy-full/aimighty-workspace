@@ -102,6 +102,37 @@ test("the matcher leaves code alone: identifiers, comments, comparisons, keys, i
   expect(names(`const m = "Topaz ${ASTRA} 2 and ${ASTRA} 3D";`)).toEqual([ASTRA]);
 });
 
+const HIGGSFIELD = ["Higgs", "field"].join("");
+
+test("Soul and Higgsfield are caught wherever a person reads them, and Topaz Astra 2 is still allowed", () => {
+  /* a button, a tooltip, a toast, a ledger line, a ⌘K row, a settings row, an error message */
+  expect(names(`const a = <button>Train ${SOUL} Character · 54 cr</button>;`)).toEqual([SOUL]);
+  expect(names(`const a = <p title="Powered by ${HIGGSFIELD}">x</p>;`)).toEqual([HIGGSFIELD]);
+  expect(names(`toast("${SOUL} identity training finished");`)).toEqual([SOUL]);
+  expect(names(`const row = { group: "MODEL", label: "${HIGGSFIELD} Cinema" };`)).toEqual([HIGGSFIELD]);
+  expect(names(`const e = new Error(\`Your ${HIGGSFIELD} credits ran out for \${n} ${SOUL} renders\`);`)).toEqual([HIGGSFIELD, SOUL]);
+  expect(names(`const g = "${SOUL.toUpperCase()} RENDERS";`)).toEqual([SOUL.toUpperCase()]);
+  expect(names(`const a = "${HIGGSFIELD}'s account";`)).toEqual([HIGGSFIELD]);
+  /* a sample string that must fail the check is the proof the check can fail */
+  expect(bannedNamesIn("probe.tsx", `export const label = "${SOUL} renders";`).length).toBeGreaterThan(0);
+  /* code names stay: ids, routes, env names, class names, and the lower-case code spelling */
+  expect(names(`const id = "hf-${SOUL.toLowerCase()}-character"; const r = "/api/${HIGGSFIELD.toLowerCase()}/consumer"; const e = "HF_CREDENTIALS";`)).toEqual([]);
+  expect(names(`const m = "Topaz ${ASTRA} 2";`)).toEqual([]);
+});
+
+test("Soul and Higgsfield appear in no UI string anywhere (the ban list and one planner prompt are the only exceptions)", () => {
+  /* Not a ratchet and not dated: unlike the old page names, these two never come back. A string that must name them
+     (the list of banned vendor words, a prompt sent to a model) goes here with the reason. */
+  const NOT_SHOWN = new Set([
+    "lib/vendorNames.ts", /* the list of names that must never be shown, and the renames that scrub them from provider text */
+    "lib/workbench/development-plan.ts", /* a prompt sent to the planning model, never printed */
+  ]);
+  const s = scanned();
+  const all = [...Object.values(s.strict).flat(), ...Object.values(s.ratchet).flat()];
+  const bad = all.filter((hit) => [SOUL, SOUL.toUpperCase(), HIGGSFIELD, HIGGSFIELD.toUpperCase()].includes(hit.word) && !NOT_SHOWN.has(hit.path));
+  expect(list(bad), `"${SOUL}" and "${HIGGSFIELD}" must not be readable anywhere: use Identity, the model's own name, or "the engine"`).toEqual([]);
+});
+
 /* ---------------------------------------------------------------------------------------------- */
 /* STRICT surfaces: zero allowed, except what the D0 pull requests still have to remove.          */
 /* ---------------------------------------------------------------------------------------------- */

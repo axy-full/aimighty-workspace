@@ -229,7 +229,7 @@ test("the planner reads the library as fenced data by handle, with the library s
   expect(keyStepInputsLine({ model: SEEDANCE, params: {} })).toBeNull();
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: MOTION })).toEqual([]);
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: SEEDANCE })).toEqual([{ kind: "video", id: SEEDANCE }]);
-  expect([keyStepLabel(MOTION), keyStepLabel(SWAP), keyStepLabel(MARKETING), keyStepLabel(SEEDANCE)]).toEqual(["Motion Transfer", "Object Swap", "Marketing Studio Image", null]);
+  expect([keyStepLabel(MOTION), keyStepLabel(SWAP), keyStepLabel(MARKETING), keyStepLabel(SEEDANCE)]).toEqual(["Motion Transfer", "Object Swap", "Product image", null]);
 });
 
 /* ── A workspace with a library ──────────────────────────────────────── */

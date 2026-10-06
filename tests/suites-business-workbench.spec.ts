@@ -224,7 +224,7 @@ test("The image-ad card runs Marketing Studio Image on the API key: the product 
   const s = await openImageAdCard(page, playwright, "owner");
   const ad = page.getByTestId("ads-image-ad");
   /* Only the key's engine: no DTC engine, no account template library, no connect line, no old page. */
-  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Marketing Studio Image · 2.0 Alpha · 1:1 · 2K");
+  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Product image · 2.0 Alpha · 1:1 · 2K");
   for (const gone of ["dtc-engine", "ad-formats", "dtc-connect", "owner-run-business", "image-ads-view"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   /* Before the product's image is in, nothing is priced and nothing can be sent. */
   await expect(ad).toContainText("Add the product's image first");
@@ -246,7 +246,7 @@ test("The image-ad card runs Marketing Studio Image on the API key: the product 
   await expect(make).toHaveText(/^Make the image ad · \d[\d.,]* cr$/, { timeout: 60_000 });
   await expect(make).toHaveAttribute("data-spend", "priced");
   await expect(make).toHaveAttribute("data-spend-price", /^[\d.,]+ cr$/);
-  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Marketing Studio Image · 2.0 Alpha · 3:4 · 1K");
+  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Product image · 2.0 Alpha · 3:4 · 1K");
   const quote = s.quotes.at(-1)!;
   expect(quote).toMatchObject({ model: "higgsfield/marketing-studio-image", prompt: "Bold hero shot on marble", ratio: "3:4", resolution: "1k", refine: false, marketing: { quality: "high", enhancePrompt: false } });
   expect(quote).not.toHaveProperty("shotId");

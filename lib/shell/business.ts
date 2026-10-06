@@ -5,6 +5,8 @@
  * (design/particl-graphite/README.md › What this design removes); its model
  * id stays, because past jobs and the account's records still name it.
  */
+import { PRODUCT_IMAGE_NAME } from "../uiNames";
+
 export const ADS_MODEL = "marketing_studio_video";
 export const IMAGE_ADS_MODEL = "marketing_studio_image";
 
@@ -23,7 +25,7 @@ export const IMAGE_AD_RESOLUTIONS = ["1k", "2k", "4k"] as const;
  * products and a batch of 1–20 images per job.
  */
 export const DTC_ADS_MODEL = "ms_image";
-export const IMAGE_AD_ENGINES = [[IMAGE_ADS_MODEL, "Marketing Studio Image"], [DTC_ADS_MODEL, "DTC Ads"]] as const;
+export const IMAGE_AD_ENGINES = [[IMAGE_ADS_MODEL, PRODUCT_IMAGE_NAME], [DTC_ADS_MODEL, "DTC Ads"]] as const;
 export const DTC_QUALITIES = ["low", "medium", "high"] as const;
 export const DTC_BATCH = { min: 1, max: 20 } as const;
 export const DTC_PRODUCTS_MAX = 4;
@@ -155,7 +157,7 @@ export type CatalogueStatus = "idle" | "loading" | "ready" | "error";
 /** What each composer calls its catalogue model when the account does not offer it. */
 export const CATALOGUE_LABEL: Record<string, string> = {
   [ADS_MODEL]: "Marketing Studio video",
-  [IMAGE_ADS_MODEL]: "Marketing Studio Image",
+  [IMAGE_ADS_MODEL]: PRODUCT_IMAGE_NAME,
   [DTC_ADS_MODEL]: "DTC Ads",
 };
 /**

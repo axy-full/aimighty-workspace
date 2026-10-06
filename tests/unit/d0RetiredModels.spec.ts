@@ -104,7 +104,7 @@ test("connected-catalogue ids on stored rows read as what they made, from the ea
   const cases: [string, string][] = [
     ["soul_2", "Identity still (earlier account)"], ["soul_v2", "Identity still (earlier account)"],
     ["text2image_soul_v2", "Identity still (earlier account)"], ["soul_cinematic", "Identity still (earlier account)"],
-    ["marketing_studio_image", "Marketing image (earlier account)"], ["ms_image", "Marketing image (earlier account)"],
+    ["marketing_studio_image", "Product image (earlier account)"], ["ms_image", "Product image (earlier account)"],
     ["gpt_image_2_5", "Image (earlier account)"], ["cinematic_studio_2_5", "Image (earlier account)"],
     ["veo3_1", "Video (earlier account)"], ["veo3_1_lite", "Video (earlier account)"], ["cinematic_studio_video", "Video (earlier account)"],
     ["cinematic_studio_3_0", "Video (earlier account)"], ["seed_audio", "Audio (earlier account)"],
