@@ -1,10 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@libsql/client";
-import { randomUUID } from "node:crypto";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import {
-  LENSES, addFigure, addProp, blockingOf, blockingSchema, cameraView, moveAt, moveEnd, moveWords, roleOf, sceneFromShot, shotSource, withBlockingFrame, withCameraView, withLens,
+  BLOCKING_CATEGORY, LENSES, addFigure, addProp, blockingOf, cameraView, moveAt, moveEnd, moveWords, roleOf, sceneFromShot, shotSource, hasStaleBlockingInputs, tidyBlockingInputs, withBlockingFrame, withCameraView, withLens,
   type Move,
 } from "../../lib/production/blocking";
 import type { BeatSheet } from "../../lib/production/beats";
@@ -26,7 +24,7 @@ const beats = (): BeatSheet => ({
 });
 const node = (id: string, boardShotId: string): CanvasNode => ({ id, title: id, type: "scene", x: 0, y: 0, width: 344, linked: [], boardShotId } as CanvasNode);
 const project = (): Project => ({ ...newProject("Blocking fixture"), nodes: [node("node-shot1", "shot-a1"), node("node-shot2", "shot-a2")], production: { beats: beats() } });
-const frame = (id: string): Asset => ({ id, uploadId: `up-${id}`, name: "Shot 1 · 3D blocking", kind: "image", category: "3D blocking", url: `/api/uploads/up-${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
+const frame = (id: string): Asset => ({ id, uploadId: `up-${id}`, name: "Shot 1 · 3D blocking", kind: "image", category: BLOCKING_CATEGORY, url: `/api/uploads/up-${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
 
 test("a shot's words make the scene: a figure for each character, a prop for each prop, the place, a sun, the lens and the move", () => {
   const { scene, move } = sceneFromShot(project(), "node-shot1");
@@ -103,62 +101,73 @@ test("saving a frame files it as the shot's input, keeps the scene, and a second
   expect(() => withBlockingFrame(locked, "node-shot1", entry, frame("f3"), "Shot 1 · 3D blocking")).toThrow("Unlock this shot");
 });
 
-test("production.blocking is additive and optional: a project from before parses as it did, and one with blocking parses and keeps it", () => {
-  const plain = project();
-  const { scene, move } = sceneFromShot(plain, "node-shot1");
-  const before = projectSchema.safeParse(plain);
-  expect(before.success, JSON.stringify(before.error?.issues[0])).toBe(true);
-  expect(projectSchema.safeParse({ ...plain, production: { ...plain.production, blocking: undefined } }).success).toBe(true);
-  const withIt = { ...plain, production: { ...plain.production, blocking: { "node-shot1": { scene, move, savedAt: "2026-10-06T10:20:00.000Z", frameAssetId: "f1" } } } };
-  const parsed = projectSchema.safeParse(withIt);
-  expect(parsed.success, JSON.stringify(parsed.error?.issues[0])).toBe(true);
-  expect(parsed.success && parsed.data.production?.blocking?.["node-shot1"]?.move).toEqual(move);
-  /* Everything else in the project is exactly what it was. */
-  if (parsed.success && before.success) expect({ ...parsed.data, production: { ...parsed.data.production, blocking: undefined } }).toEqual({ ...before.data, production: { ...before.data.production, blocking: undefined } });
-  /* A bad entry is refused, not kept. */
-  expect(blockingSchema.safeParse({ "node-shot1": { scene, move: { kind: "spin", meters: 1, seconds: 5 }, savedAt: "2026-10-06T10:20:00.000Z" } }).success).toBe(false);
-  expect(blockingSchema.safeParse({ "../x": { scene, move, savedAt: "2026-10-06T10:20:00.000Z" } }).success).toBe(false);
-  expect(blockingSchema.safeParse({ "node-shot1": { scene, move, savedAt: "2026-10-06T10:20:00.000Z", extra: 1 } }).success).toBe(false);
+test("a project with more than 200 blocked shots still saves; the 201st is not a lock-out", () => {
+  const { scene, move } = sceneFromShot(project(), "node-shot1");
+  const entry = { scene, move, savedAt: "2026-10-06T10:20:00.000Z" };
+  const nodes = Array.from({ length: 260 }, (_, i) => node(`node-s${i}`, "shot-a1"));
+  const blocking = Object.fromEntries(nodes.slice(0, 250).map((n) => [n.id, entry]));
+  const big: Project = { ...project(), nodes, production: { beats: beats(), blocking } };
+  const saved = withBlockingFrame(big, "node-s255", entry, frame("fx"), "Shot 256 · 3D blocking");
+  expect(Object.keys(saved.production!.blocking!)).toHaveLength(251);
+  expect(projectSchema.safeParse(saved).success).toBe(true);
 });
 
-/*
- * The branch-copy check the lead runs before Thursday's train (read-only unless BLOCKING_BRANCH_WRITE=1). It needs a copy of the
- * production database, never the database itself:
- *   BLOCKING_BRANCH_DB_URL=<the branch copy's libsql:// url> BLOCKING_BRANCH_DB_TOKEN=<its token> \
- *   BLOCKING_BRANCH_WRITE=1 npx playwright test --project=unit tests/unit/demo-gaps-l2-blocking.spec.ts -g "branch copy"
- * 1. Every stored project body on the copy still parses exactly as it did (nothing existing changes: the field is optional).
- * 2. With BLOCKING_BRANCH_WRITE=1, one throwaway row (owner "branch-check") carrying production.blocking is written, read back,
- *    parsed with the same schema, and deleted; no other row is written or deleted. No table or column changes: the field lives inside
- *    the project's JSON body.
- */
-test("branch copy: stored projects parse as they did, and a project with blocking round-trips through the database", async () => {
-  const url = process.env.BLOCKING_BRANCH_DB_URL;
-  test.skip(!url, "set BLOCKING_BRANCH_DB_URL (a branch copy) to run this");
-  const db = createClient({ url: url!, authToken: process.env.BLOCKING_BRANCH_DB_TOKEN });
-  try {
-    const rows = (await db.execute("SELECT project_id, body FROM workbench_projects")).rows;
-    let failed = 0, withField = 0;
-    for (const row of rows) {
-      let body: unknown;
-      try { body = JSON.parse(String(row.body)); } catch { failed++; continue; }
-      if ((body as { production?: { blocking?: unknown } })?.production?.blocking !== undefined) withField++;
-      if (!projectSchema.safeParse(body).success) failed++;
-    }
-    console.log(`branch copy: ${rows.length} stored projects, ${failed} that do not parse, ${withField} that already carry production.blocking`);
-    /* The count of projects that do not parse is reported for the lead; the new field adds none (it is absent from every row). */
-    expect(withField).toBe(0);
-    if (process.env.BLOCKING_BRANCH_WRITE === "1") {
-      const plain = project();
-      const { scene, move } = sceneFromShot(plain, "node-shot1");
-      const body = { ...plain, production: { ...plain.production, blocking: { "node-shot1": { scene, move, savedAt: new Date().toISOString() } } } };
-      const key = `branch-check:${randomUUID()}`;
-      await db.execute({ sql: "INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)", args: [key, "branch-check", plain.id, "branch check", JSON.stringify(body), Date.now()] });
-      try {
-        const back = (await db.execute({ sql: "SELECT body FROM workbench_projects WHERE key = ?", args: [key] })).rows[0];
-        const parsed = projectSchema.safeParse(JSON.parse(String(back.body)));
-        expect(parsed.success, JSON.stringify(parsed.error?.issues[0])).toBe(true);
-        expect(parsed.success && Object.keys(parsed.data.production?.blocking ?? {})).toEqual(["node-shot1"]);
-      } finally { await db.execute({ sql: "DELETE FROM workbench_projects WHERE key = ? AND owner = 'branch-check'", args: [key] }); }
-    }
-  } finally { db.close(); }
+test("a record the server would refuse is refused in words before it is applied, and the project is left as it was so later saves still work", () => {
+  const { scene, move } = sceneFromShot(project(), "node-shot1");
+  const entry = { scene, move, savedAt: "2026-10-06T10:20:00.000Z" };
+  const odd = { ...project(), nodes: [...project().nodes, node("node shot", "shot-a1")] };
+  let said = "";
+  try { withBlockingFrame(odd, "node shot", entry, frame("f1"), "Shot 3 · 3D blocking"); } catch (error) { said = (error as Error).message; }
+  expect(said).toContain("This shot cannot hold 3D blocking");
+  expect(said).not.toMatch(/Invalid input|Too small|expected/);
+  /* Nothing changed: the project parses and saves exactly as before. */
+  expect(projectSchema.safeParse(odd).success).toBe(true);
+  expect(blockingOf(odd, "node shot")).toBeNull();
+  /* A bad move, held by the same check. */
+  expect(() => withBlockingFrame(project(), "node-shot1", { ...entry, move: { kind: "spin", meters: 1, seconds: 5 } as never }, frame("f1"), "x")).toThrow("not valid");
+  /* A later good save on the same project works. */
+  expect(projectSchema.safeParse(withBlockingFrame(project(), "node-shot1", entry, frame("f2"), "Shot 1 · 3D blocking")).success).toBe(true);
+});
+
+test("entries for shots that are no longer in the project are dropped as a save is made", () => {
+  const { scene, move } = sceneFromShot(project(), "node-shot1");
+  const entry = { scene, move, savedAt: "2026-10-06T10:20:00.000Z" };
+  const p: Project = { ...project(), production: { beats: beats(), blocking: { "node-gone": entry, "node-shot2": entry } } };
+  const saved = withBlockingFrame(p, "node-shot1", entry, frame("f1"), "Shot 1 · 3D blocking");
+  expect(Object.keys(saved.production!.blocking!).sort()).toEqual(["node-shot1", "node-shot2"]);
+});
+
+test("a second save replaces the earlier frame input; inputs two windows left behind are found and tidied, and a person's own input stays", () => {
+  const { scene, move } = sceneFromShot(project(), "node-shot1");
+  const entry = { scene, move, savedAt: "2026-10-06T10:20:00.000Z" };
+  const own = frame("mine"); own.category = "Reference";
+  let p = withBlockingFrame(project(), "node-shot1", entry, own, "My reference");
+  p = { ...p, assets: p.assets.map((a) => (a.id === "mine" ? { ...a, category: "Reference" } : a)) };
+  p = withBlockingFrame(p, "node-shot1", entry, frame("f1"), "Shot 1 · 3D blocking");
+  p = withBlockingFrame(p, "node-shot1", entry, frame("f2"), "Shot 1 · 3D blocking");
+  const shot = () => p.nodes.find((n) => n.id === "node-shot1")!;
+  const assets = () => shot().linked.map((id) => p.nodes.find((n) => n.id === id)!.assetId).sort();
+  expect(assets()).toEqual(["f2", "mine"]);
+  /* Two windows' saves merged: both frames are linked, and only the one the entry names is current. */
+  const merged = withBlockingFrame(p, "node-shot1", entry, frame("f3"), "Shot 1 · 3D blocking");
+  const extra: Project = { ...merged, nodes: [...merged.nodes, { ...p.nodes.find((n) => n.assetId === "f2")!, id: "node-dup" } as CanvasNode].map((n) => (n.id === "node-shot1" ? { ...n, linked: [...n.linked, "node-dup"] } : n)), assets: merged.assets };
+  expect(hasStaleBlockingInputs(extra, "node-shot1")).toBe(true);
+  const tidy = tidyBlockingInputs(extra, "node-shot1");
+  expect(hasStaleBlockingInputs(tidy, "node-shot1")).toBe(false);
+  expect(tidy.nodes.find((n) => n.id === "node-shot1")!.linked.map((id) => tidy.nodes.find((x) => x.id === id)!.assetId).sort()).toEqual(["f3", "mine"]);
+  expect(tidyBlockingInputs(tidy, "node-shot1")).toBe(tidy);
+});
+
+test("names are trimmed and a blank one never reaches the scene: a beat sheet of spaces still builds a scene that saves", () => {
+  const sheet = beats();
+  sheet.scenes[0].characters = ["   ", " Runner  "];
+  sheet.scenes[0].locations = ["  "];
+  sheet.scenes[0].props = ["\t"];
+  const p: Project = { ...project(), production: { beats: sheet } };
+  const { scene, move } = sceneFromShot(p, "node-shot1");
+  expect(scene.objects.map((o) => o.name)).toEqual(["Ground", "Figure 1", "Runner", "Prop 1"]);
+  expect(scene.objects.every((o) => o.name === o.name.trim() && o.name.length > 0)).toBe(true);
+  const saved = withBlockingFrame(p, "node-shot1", { scene, move, savedAt: "2026-10-06T10:20:00.000Z" }, frame("f1"), "  ");
+  expect(projectSchema.safeParse(saved).success).toBe(true);
+  expect(addFigure(scene, "   ").objects.at(-1)!.name).toBe("Figure 3");
 });

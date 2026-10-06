@@ -5,6 +5,7 @@ import { SHOTS, desktop, emptyLibrary, gotoBoard, seedBoard, watchPaid } from ".
 import type { CanvasNode, Project } from "../lib/workbench/studio";
 import type { BeatSheet } from "../lib/production/beats";
 import { sceneFromShot } from "../lib/production/blocking";
+import { newProject } from "../lib/workbench/studio";
 
 /*
  * Gap screens, lane 2 · 3D blocking (a card in the Storyboard and Shots regions that opens a full-screen overlay). Empty scene, then
@@ -115,8 +116,8 @@ test("Add from the shot builds the scene from the beat sheet; the camera, lens a
     const body = (await r.json()) as { project: Project };
     const entry = body.project.production?.blocking?.["node-shot0001"];
     const input = body.project.nodes.find((n) => n.id === "node-shot0001")?.linked.length ?? 0;
-    return entry ? { lens: entry.scene.camera.focalLength, move: entry.move.kind, objects: entry.scene.objects.length, frame: Boolean(entry.frameAssetId), input } : null;
-  }, { timeout: 20_000 }).toMatchObject({ lens: 85, move: "push", frame: true, input: 1 });
+    return entry ? { lens: entry.scene.camera.focalLength, move: entry.move.kind, objects: entry.scene.objects.length, frame: Boolean(entry.frameAssetId), input, start: entry.scene.camera.position } : null;
+  }, { timeout: 20_000 }).toMatchObject({ lens: 85, move: "push", frame: true, input: 1, start: sceneFromShot(build({ ...newProject("x") }), "node-shot0001").scene.camera.position });
   /* A reload keeps it, and the overlay opens on what was saved. */
   await page.reload();
   await expect(page.getByTestId("board")).toBeVisible();
@@ -125,6 +126,55 @@ test("Add from the shot builds the scene from the beat sheet; the camera, lens a
   await page.locator('[data-card-id="node-shot0001"]').getByTestId("blocking-reopen").click();
   await expect(page.getByTestId("blocking-objects")).toContainText("Runner");
   await expect(page.getByTestId("blocking-lens-85")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a save says Saved only after the project saved; a failed save says so and keeps the overlay; a second save leaves one blocking input", async ({ page }, info) => {
+  test.skip(!desktop(page), "the canvas is the desktop's; phone widths open the project's Record");
+  const { project, scope } = await open(page);
+  await page.locator('[data-card-id="blocking:shots"]').getByTestId("blocking-open").click();
+  await page.getByTestId("blocking-from-shot").click();
+  await expect(page.getByTestId("blocking-play")).toBeEnabled({ timeout: 30_000 });
+  /* The server refuses the save: nothing says Saved, the overlay stays, and the words say what happened. */
+  let refuse = true;
+  await page.route("**/api/workbench/projects", (route) => (refuse && route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Down for a moment." }) }) : route.continue()));
+  await page.getByTestId("blocking-save").click();
+  await expect(page.getByText(/could not be saved just now/)).toBeVisible({ timeout: 30_000 });
+  await expect(overlay(page)).toBeVisible();
+  await expect(page.getByText(/Saved to Shot 1 as its reference/)).toHaveCount(0);
+  /* Pressed again once the server answers: now it is saved, and says so. */
+  refuse = false;
+  await page.getByTestId("blocking-save").click();
+  await expect(overlay(page)).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText(/Saved to Shot 1 as its reference/)).toBeVisible();
+  /* Open it again and save once more: the shot still has one blocking input. */
+  await page.locator('[data-card-id="node-shot0001"]').getByTestId("blocking-reopen").click();
+  await page.getByTestId("blocking-save").click();
+  await expect(overlay(page)).toHaveCount(0, { timeout: 30_000 });
+  await expect.poll(async () => {
+    const r = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
+    const body = (await r.json()) as { project: Project };
+    const linked = body.project.nodes.find((n) => n.id === "node-shot0001")?.linked ?? [];
+    return body.project.nodes.filter((n) => linked.includes(n.id) && body.project.assets.find((a) => a.id === n.assetId)?.category === "3D blocking").length;
+  }, { timeout: 20_000 }).toBe(1);
+  await shoot(page, info.project.name, "l2-blocking-saved-twice");
+});
+
+test("a locked shot is refused in words before anything is uploaded", async ({ page }) => {
+  test.skip(!desktop(page), "the canvas is the desktop's; phone widths open the project's Record");
+  const workspaceId = await signedInWarm(page, "Blocking Locked");
+  const { project } = await seedBoard(page, workspaceId, (p) => ({ ...build(p), nodes: build(p).nodes.map((n) => (n.id === "node-shot0001" ? { ...n, locked: true } : n)) }));
+  await emptyLibrary(page);
+  const uploads: string[] = [];
+  page.on("request", (r) => { if (r.method() === "POST" && /\/api\/uploads/.test(new URL(r.url()).pathname)) uploads.push(r.url()); });
+  await gotoBoard(page, project.id);
+  await page.locator('[data-region="shots"]').click();
+  await page.waitForTimeout(700);
+  await page.locator('[data-card-id="blocking:shots"]').getByTestId("blocking-open").click();
+  await page.getByTestId("blocking-from-shot").click();
+  await expect(page.getByTestId("blocking-play")).toBeEnabled({ timeout: 30_000 });
+  await page.getByTestId("blocking-save").click();
+  await expect(page.getByText(/Unlock this shot/)).toBeVisible();
+  expect(uploads, "nothing was uploaded").toEqual([]);
 });
 
 test("on a phone the saved 3D blocking is shown on the Record, view only: its lens, its move and what is in the scene, with no way to change it", async ({ page }, info) => {

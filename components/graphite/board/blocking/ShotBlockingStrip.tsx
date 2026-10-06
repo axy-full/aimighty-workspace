@@ -1,8 +1,10 @@
 "use client";
+import { useEffect } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { usePriceTitle } from "@/components/graphite/Price";
 import { exact, priceWords } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
+import { hasStaleBlockingInputs, tidyBlockingInputs } from "@/lib/production/blocking";
 import { useShell } from "@/lib/shell/state";
 import { useShotEstimate } from "@/lib/workspace/use-shot-estimate";
 import type { BoardCtx } from "../cards/types";
@@ -25,6 +27,15 @@ export function ShotBlockingStrip({ ctx, nodeId, index, view }: { ctx: BoardCtx;
   const words = priceWords(price);
   const blocked = ctx.readOnly ?? ctx.exploreOnly ?? (ctx.offline ? "Needs a connection" : null);
   const node = ctx.project.nodes.find((n) => n.id === nodeId);
+  /* Two windows saving a frame to this shot at once leave two blocking inputs after the merge: the older one is taken off (the Library file stays). */
+  const stale = hasStaleBlockingInputs(ctx.project, nodeId);
+  const apply = ctx.rig.apply, save = ctx.rig.save;
+  useEffect(() => {
+    if (!stale || ctx.offline || ctx.readOnly || ctx.exploreOnly) return;
+    if (!apply((p) => tidyBlockingInputs(p, nodeId))) void save();
+    // The extra inputs are what the check reads; this runs once per time they appear.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stale, nodeId]);
   const remake = () => {
     if (!shot || !node) return;
     const asset = ctx.project.production?.blocking?.[nodeId]?.frameAssetId;

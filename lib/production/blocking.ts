@@ -1,37 +1,18 @@
-import { z } from "zod";
-import { astraSceneSchema, type AstraObject, type AstraScene, type AstraVector3 } from "../astra-blender/scene";
+import { type AstraObject, type AstraScene, type AstraVector3 } from "../astra-blender/scene";
 import type { BeatShot } from "./beats";
 import { boardShots } from "./boards";
+import { BLOCKING_TOO_MANY, blockingSchema, type Blocking, type BlockingEntry, type Move, type MoveKind } from "./blocking-schema";
 import type { Asset, Project } from "../workbench/studio";
-import { addInput } from "./rig-build";
+import { RigBuildError, addInput } from "./rig-build";
 
 /*
  * 3D blocking, per shot (gap screens): a rough 3D scene of one shot, a camera with a lens and a simple move, and the frame saved from it
- * as that shot's reference. The scene is the existing 3D scene model (lib/astra-blender/scene.ts: metres, Z up); this file is what
- * the board keeps beside it. Pure and server-safe: no React, no fetch. Nothing here prices or sends anything.
- *
- * `production.blocking` is additive and optional: a project saved before it parses as it did, and nothing else in a project reads it.
+ * as that shot's reference. The record's shape and its limits are lib/production/blocking-schema.ts (the part a build needs to accept
+ * the field); this file is what the board does with it. Pure and server-safe: no React, no fetch. Nothing here prices or sends anything.
  */
-
+export { blockingSchema, type Blocking, type BlockingEntry, type Move, type MoveKind };
 export const LENSES = [24, 35, 50, 85] as const;
 export type Lens = (typeof LENSES)[number];
-
-export const MOVE_KINDS = ["hold", "push", "pull"] as const;
-export type MoveKind = (typeof MOVE_KINDS)[number];
-export type Move = { kind: MoveKind; meters: number; seconds: number };
-
-export const blockingMoveSchema = z.object({ kind: z.enum(MOVE_KINDS), meters: z.number().finite().min(0).max(100), seconds: z.number().finite().min(0.5).max(600) }).strict();
-export const blockingEntrySchema = z.object({
-  scene: astraSceneSchema,
-  move: blockingMoveSchema,
-  savedAt: z.string().datetime(),
-  /** The project asset holding the frame saved from the scene: the shot's reference. */
-  frameAssetId: z.string().max(100).optional(),
-}).strict();
-export const blockingSchema = z.record(z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/), blockingEntrySchema).refine((value) => Object.keys(value).length <= 200);
-
-export type BlockingEntry = z.infer<typeof blockingEntrySchema>;
-export type Blocking = Record<string, BlockingEntry>;
 
 export const blockingOf = (project: Pick<Project, "production">, nodeId: string): BlockingEntry | null =>
   (project.production?.blocking as Blocking | undefined)?.[nodeId] ?? null;
@@ -47,8 +28,10 @@ const nextId = (scene: AstraScene, role: ObjectRole) => {
   for (let n = scene.objects.length + 1; n < 10_000; n++) { const id = `${PREFIX[role]}-${n}`; if (!scene.objects.some((o) => o.id === id)) return id; }
   return `${PREFIX[role]}-${Date.now()}`;
 };
+/** A name as the scene keeps it: trimmed and cut to 100, so a beat-sheet name of spaces is never one. */
+export const cleanName = (name: string | undefined): string => (name ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
 const base = (id: string, name: string, type: AstraObject["type"], position: AstraVector3, scale: AstraVector3, color: string): AstraObject => ({
-  id, name: name.slice(0, 100) || id, type, position, rotation: [0, 0, 0], scale, visible: true, locked: false, material: { color, metalness: 0, roughness: 0.6 }, keyframes: [],
+  id, name: cleanName(name) || id, type, position, rotation: [0, 0, 0], scale, visible: true, locked: false, material: { color, metalness: 0, roughness: 0.6 }, keyframes: [],
 });
 
 /** A standing figure: a 1.7 m pillar on its mark. */
@@ -56,13 +39,13 @@ export function addFigure(scene: AstraScene, name?: string): AstraScene {
   const n = scene.objects.filter((o) => roleOf(o) === "figure").length + 1;
   const id = nextId(scene, "figure");
   const x = Math.round(((n - 1) * 1.4 - 0.7) * 10) / 10;
-  return { ...scene, objects: [...scene.objects, base(id, name ?? `Figure ${n}`, "cylinder", [x, 0, 0.85], [0.45, 0.45, 1.7], "#c9ccd4")] };
+  return { ...scene, objects: [...scene.objects, base(id, cleanName(name) || `Figure ${n}`, "cylinder", [x, 0, 0.85], [0.45, 0.45, 1.7], "#c9ccd4")] };
 }
 /** A prop: a 1 m block you can drag and resize. */
 export function addProp(scene: AstraScene, name?: string): AstraScene {
   const n = scene.objects.filter((o) => roleOf(o) === "prop").length + 1;
   const id = nextId(scene, "prop");
-  return { ...scene, objects: [...scene.objects, base(id, name ?? `Prop ${n}`, "box", [2 + (n - 1) * 1.2, 1, 0.5], [1, 1, 1], "#b9a98c")] };
+  return { ...scene, objects: [...scene.objects, base(id, cleanName(name) || `Prop ${n}`, "box", [2 + (n - 1) * 1.2, 1, 0.5], [1, 1, 1], "#b9a98c")] };
 }
 
 /* ── The camera, in the words a director uses ────────────────────────────────────── */
@@ -143,7 +126,7 @@ export function sceneFromShot(project: Project, nodeId: string): { scene: AstraS
     camera: { position: [0, -distance, 1.6], target: [0, 0, 1.3], focalLength: lens },
     world: { color: "#23262c", strength: 0.6 }, timeline: { start: 1, end: 120, fps: 24 }, render: { width: 1280, height: 720, samples: 32, transparent: false },
   };
-  const ground = base("set-1", source?.locations[0] ?? "Ground", "plane", [0, 0, 0], [40, 40, 1], "#4a4d56");
+  const ground = base("set-1", cleanName(source?.locations.find((l) => cleanName(l))) || "Ground", "plane", [0, 0, 0], [40, 40, 1], "#4a4d56");
   scene = { ...scene, objects: [ground] };
   for (const name of (source?.characters ?? []).slice(0, 4)) scene = addFigure(scene, name);
   for (const name of (source?.props ?? []).slice(0, 6)) scene = addProp(scene, name);
@@ -154,23 +137,57 @@ export function sceneFromShot(project: Project, nodeId: string): { scene: AstraS
 
 /* ── Saving a frame to the shot ──────────────────────────────────────────────────── */
 
+/** The category a saved blocking frame is filed under, so its inputs can be told from a person's own. */
+export const BLOCKING_CATEGORY = "3D blocking";
+const isBlockingInput = (project: Project, node: Project["nodes"][number]) =>
+  node.type === "media" && [...project.assets, ...(project.sharedAssets ?? [])].some((a) => a.id === node.assetId && a.category === BLOCKING_CATEGORY);
+
+/** The blocking-frame inputs linked into a shot that are not its current frame, and used by no other card: what a second save, or two windows saving at once, leaves behind. */
+function staleInputs(project: Project, nodeId: string, currentAssetId: string | undefined): string[] {
+  const shot = project.nodes.find((n) => n.id === nodeId);
+  if (!shot) return [];
+  return project.nodes
+    .filter((n) => shot.linked.includes(n.id) && isBlockingInput(project, n) && n.assetId !== currentAssetId && !project.nodes.some((o) => o.id !== nodeId && o.linked.includes(n.id)))
+    .map((n) => n.id);
+}
+const without = (project: Project, gone: Set<string>): Project => ({
+  ...project,
+  nodes: project.nodes.filter((n) => !gone.has(n.id)).map((n) => (n.linked.some((id) => gone.has(id)) ? { ...n, linked: n.linked.filter((id) => !gone.has(id)), ...(n.activeInput && gone.has(n.activeInput) ? { activeInput: undefined } : {}) } : n)),
+});
+
+/** Whether a shot has blocking-frame inputs besides its current one (two windows saved at once): the board tidies them away. */
+export const hasStaleBlockingInputs = (project: Project, nodeId: string): boolean => staleInputs(project, nodeId, blockingOf(project, nodeId)?.frameAssetId).length > 0;
+/** The project without those extra inputs; the same project when there are none. */
+export function tidyBlockingInputs(project: Project, nodeId: string): Project {
+  const stale = staleInputs(project, nodeId, blockingOf(project, nodeId)?.frameAssetId);
+  return stale.length ? without(project, new Set(stale)) : project;
+}
+
+/** Plain words for the first thing wrong with a record, never the raw validator text. */
+function blockingProblem(issue: { path: PropertyKey[]; message: string } | undefined): string {
+  if (!issue) return "This 3D blocking could not be saved.";
+  if (issue.message === BLOCKING_TOO_MANY) return issue.message;
+  const key = typeof issue.path[0] === "string" ? issue.path[0] : "";
+  if (key && issue.path.length === 1) return `This shot cannot hold 3D blocking: ${issue.message.replace(/\.$/, "")}. Nothing was saved.`;
+  return "This 3D blocking is not valid, so it was not saved. Nothing was changed.";
+}
+
 /**
  * The project once a frame is saved to a shot: the entry kept under the shot, the frame filed as an asset and linked into the shot as an
- * input (rig-build's addInput, as a Library file dropped on a shot is), and the input an earlier save made taken out, so a shot has one
- * blocking frame. Throws RigBuildError when the shot is locked or gone: the caller shows its words.
+ * input (rig-build's addInput, as a Library file dropped on a shot is), and any input an earlier save made taken out, so a shot has one
+ * blocking frame. Entries for shots that are no longer in the project are dropped as it saves. The whole record is checked with the
+ * same schema the server saves with BEFORE it is applied: a record the server would refuse is refused here in words and the project is
+ * left exactly as it was, so a later autosave is never held up by it.
+ * Throws RigBuildError (a locked or missing shot, or a record that would not save): the caller shows its words.
  */
 export function withBlockingFrame(project: Project, nodeId: string, entry: Omit<BlockingEntry, "frameAssetId">, asset: Asset, title: string): Project {
-  const previous = blockingOf(project, nodeId)?.frameAssetId;
-  let next = project;
-  if (previous) {
-    const shot = next.nodes.find((n) => n.id === nodeId);
-    const inputs = next.nodes.filter((n) => n.type === "media" && n.assetId === previous && shot?.linked.includes(n.id) && !next.nodes.some((o) => o.id !== nodeId && o.linked.includes(n.id)));
-    if (inputs.length) {
-      const gone = new Set(inputs.map((n) => n.id));
-      next = { ...next, nodes: next.nodes.filter((n) => !gone.has(n.id)).map((n) => (n.linked.some((id) => gone.has(id)) ? { ...n, linked: n.linked.filter((id) => !gone.has(id)) } : n)) };
-    }
-  }
-  next = addInput(next, nodeId, asset, title);
-  const blocking: Blocking = { ...(next.production?.blocking as Blocking | undefined), [nodeId]: { ...entry, frameAssetId: asset.id } };
+  const cleaned = cleanName(title) || "3D blocking";
+  const cleared = without(project, new Set(staleInputs(project, nodeId, undefined)));
+  const next = addInput(cleared, nodeId, { ...asset, name: cleanName(asset.name) || cleaned }, cleaned);
+  const live = new Set(next.nodes.map((n) => n.id));
+  const kept = Object.fromEntries(Object.entries((next.production?.blocking as Blocking | undefined) ?? {}).filter(([id]) => live.has(id)));
+  const blocking: Blocking = { ...kept, [nodeId]: { ...entry, frameAssetId: asset.id } };
+  const checked = blockingSchema.safeParse(blocking);
+  if (!checked.success) throw new RigBuildError(blockingProblem(checked.error.issues[0]));
   return { ...next, production: { ...next.production, blocking } };
 }

@@ -5,12 +5,13 @@ import { Price } from "@/components/graphite/Price";
 import type { AstraViewportActions } from "@/components/astra-blender/types";
 import { astraSceneSchema, type AstraScene } from "@/lib/astra-blender/scene";
 import {
-  LENSES, ROLE_LABEL, addFigure, addProp, blockingOf, cameraView, moveAt, moveWords, roleOf, sceneFromShot, shotSource, withBlockingFrame, withCameraView, withLens,
+  BLOCKING_CATEGORY, LENSES, ROLE_LABEL, addFigure, addProp, blockingOf, cameraView, moveAt, moveWords, roleOf, sceneFromShot, shotSource, withBlockingFrame, withCameraView, withLens,
   type Move, type MoveKind,
 } from "@/lib/production/blocking";
 import { FREE } from "@/lib/shell/price-words";
 import { uploadFile } from "@/lib/uploadClient";
 import type { Asset } from "@/lib/workbench/studio";
+import { RigBuildError } from "@/lib/production/rig-build";
 import { typingIn } from "../review/review-model";
 import type { BoardCtx } from "../cards/types";
 import { closeBlocking, openBlocking, useOpenBlocking } from "./blocking-store";
@@ -26,6 +27,14 @@ const Viewport = dynamic(() => import("@/components/astra-blender/AstraViewport"
  */
 
 const EMPTY_PREVIEWS = {};
+/** The first thing wrong with a scene, in words a person can act on (never the validator's own text). */
+function sceneProblem(issue: { path: PropertyKey[]; message: string } | undefined): string {
+  const path = issue?.path ?? [];
+  if (path[0] === "objects" && path.includes("name")) return "An object in this scene has no name. Remove it and add it again. Nothing was saved.";
+  if (path[0] === "objects") return "An object in this scene is not valid, so nothing was saved. Remove it or change it.";
+  if (path[0] === "camera") return "The camera is not in a place that can be saved (its position and what it looks at must differ). Nothing was saved.";
+  return "This scene is not valid, so nothing was saved.";
+}
 /** The viewport reports its lens as a float (84.99999999999999): a lens is read to a hundredth, so 85mm stays 85mm. */
 const tidy = (camera: AstraScene["camera"]): AstraScene["camera"] => ({ ...camera, focalLength: Math.round(camera.focalLength * 100) / 100 });
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -80,9 +89,20 @@ function Overlay({ ctx, nodeId }: { ctx: BoardCtx; nodeId: string }) {
 
   /* What the camera shows after a drag or a scroll in the viewport is the scene's camera, so the fields below always say where it stands. */
   const sync = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneRef = useRef(scene), moveRef = useRef(move), tRef = useRef(t);
+  useEffect(() => { sceneRef.current = scene; moveRef.current = move; tRef.current = t; });
   const settle = () => {
     if (sync.current) clearTimeout(sync.current);
-    sync.current = setTimeout(() => { const cam = actions.current?.getCamera(); if (cam) setScene((s) => ({ ...s, camera: tidy(cam) })); }, 250);
+    sync.current = setTimeout(() => {
+      const cam = actions.current?.getCamera();
+      if (!cam) return;
+      /* Only a camera that was really moved by hand is taken (a click that only picks an object is not): it becomes the start of the move, and the move rewinds to it. */
+      const shown = moveAt(sceneRef.current, moveRef.current, tRef.current).position;
+      const moved = Math.hypot(cam.position[0] - shown[0], cam.position[1] - shown[1], cam.position[2] - shown[2]) > 0.01;
+      if (!moved && tRef.current > 0) return;
+      setScene((s) => ({ ...s, camera: tidy(cam) }));
+      if (moved) setT(0);
+    }, 250);
   };
   useEffect(() => () => { if (sync.current) clearTimeout(sync.current); }, []);
 
@@ -113,23 +133,29 @@ function Overlay({ ctx, nodeId }: { ctx: BoardCtx; nodeId: string }) {
 
   async function saveAsReference() {
     if (busy || blocked || !shot) return;
-    const parsed = astraSceneSchema.safeParse({ ...scene, camera: tidy(actions.current?.getCamera() ?? scene.camera) });
-    if (!parsed.success) { setProblem(parsed.error.issues[0]?.message ?? "This scene could not be saved."); return; }
+    /* The start pose is the scene's camera. At the start of the move the viewport is the truth (an orbit may not have settled yet); while the move is scrubbed or
+       played, the viewport shows a point along it, which is the frame to capture and is never kept as the start. */
+    const start = tidy(t === 0 ? actions.current?.getCamera() ?? scene.camera : scene.camera);
+    const parsed = astraSceneSchema.safeParse({ ...scene, camera: start });
+    if (!parsed.success) { setProblem(sceneProblem(parsed.error.issues[0])); return; }
+    const entry = { scene: parsed.data, move, savedAt: new Date().toISOString() };
+    /* The shot, the canvas and the record are checked before anything is uploaded: a locked shot or a record the server would refuse stops here, in words. */
+    try { withBlockingFrame(ctx.project, nodeId, entry, { id: "blocking-check", name: "3D blocking", kind: "image", category: BLOCKING_CATEGORY, url: "/api/uploads/check", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] }, "3D blocking"); }
+    catch (error) { if (error instanceof RigBuildError) { setProblem(error.message); return; } throw error; }
     setBusy(true); setProblem(null);
     try {
-      actions.current?.setCamera(parsed.data.camera);
       const blob = await actions.current?.capturePng();
       if (!blob) throw new Error("The browser could not export this view. Nothing was saved.");
       const file = new File([blob], `shot-${shot.index}-3d-blocking.png`, { type: "image/png" });
       const up = await uploadFile(file, "reference", undefined, { scope: ctx.scope });
       const asset: Asset = {
-        id: `blocking-${up.id}`.slice(0, 100), uploadId: up.id, name: `Shot ${shot.index} · 3D blocking`, kind: "image", category: "3D blocking", url: up.url, mime: up.mime,
+        id: `blocking-${up.id}`.slice(0, 100), uploadId: up.id, name: `Shot ${shot.index} · 3D blocking`, kind: "image", category: BLOCKING_CATEGORY, url: up.url, mime: up.mime,
         description: "A frame from the 3D blocking of this shot.", prompt: "", status: "Draft", locked: false, version: 1, refs: [],
       };
-      /* A locked shot or a full canvas is refused in its own words (rig-build's RigBuildError), and nothing changes. */
-      const refused = ctx.rig.apply((p) => withBlockingFrame(p, nodeId, { scene: parsed.data, move, savedAt: new Date().toISOString() }, asset, asset.name));
+      const refused = ctx.rig.apply((p) => withBlockingFrame(p, nodeId, entry, asset, asset.name));
       if (refused) { setProblem(refused); return; }
-      void ctx.rig.save();
+      /* Saved is said only once the save has gone through. */
+      if (!(await ctx.rig.save())) { setProblem("The frame is on the shot, but the project could not be saved just now. Saving is tried again by itself; press this again once it says Saved."); return; }
       ctx.toast(`Saved to ${label} as its reference · free`);
       closeBlocking();
     } catch (error) {
