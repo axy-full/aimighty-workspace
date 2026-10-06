@@ -8,6 +8,7 @@ import { isVerifyCard } from "@/lib/workbench/verify";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { takeChip } from "@/lib/workspace/takes";
 import type { BoardCard } from "@/lib/board/types";
+import { shotReferenceDrop } from "../accepts";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
 import type { TakeCardData } from "./shots-derive";
 import {
@@ -221,6 +222,8 @@ export const takeDef = defineCard<TakeCardData>({
   kind: "take",
   size: (data, at) => ({ w: 340, h: wellHeight(340, at.aspect) + FOOT + (hasStatus(data.row.shown) ? STATUS : 0) }),
   Card: TakeCard,
+  /* A Library file dropped on a shot becomes its reference. The board's plain take card had this; this definition replaces it, so it carries the rule. */
+  accepts: shotReferenceDrop,
   onOpen: (card: BoardCard<TakeCardData>, ctx: BoardCtx) => {
     const v = card.data.row.shown;
     if (v && judgeable(v)) ctx.openReview(v.id); else ctx.openInspector(card.id);
