@@ -244,6 +244,27 @@ test("the Inspector opens on a selected take: price paid, prompt, versions, the 
   expect(paid).toEqual([]);
 });
 
+test("the Inspector's Copy link copies the link the old Inspector copied (workspace, production and take, no draft) and says so in a toast", async ({ page, baseURL }) => {
+  test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL! });
+  const { project, paid } = await seed(page);
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await shot(page, "node-shot0001").getByTestId("take-card").click();
+  const insp = page.getByTestId("board-inspector");
+  await expect(insp).toBeVisible();
+  await insp.getByTestId("insp-copy-link").click();
+  await expect(page.getByTestId("toast")).toContainText("Link copied");
+  const copied = new URL(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(copied.pathname).toBe("/suites");
+  expect(Object.fromEntries(copied.searchParams)).toMatchObject({ view: "board", region: "shots", asset: "generation:tk-s1-v2" });
+  expect(copied.searchParams.get("ws")).toMatch(/^[A-Za-z0-9_-]+$/);
+  expect(copied.searchParams.get("production")).toMatch(/^[A-Za-z0-9_-]+$/);
+  /* No private draft and no media address in it. */
+  expect(copied.searchParams.has("project")).toBe(false);
+  expect(copied.href).not.toContain("/api/media");
+  expect(paid).toEqual([]);
+});
+
 test("Change with words on a clip carries the free quote's price, and opening it sends nothing paid", async ({ page }) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid, generations, shotIds } = await seed(page);
