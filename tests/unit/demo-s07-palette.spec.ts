@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PALETTE_ROWS, newPaletteIndex, paletteIndex, searchNewPalette, searchPalette } from "../../lib/shell/palette";
+import { PALETTE_ROWS, newPaletteIndex, searchNewPalette } from "../../lib/shell/palette";
 import { askButton, atomikIntent, isHowQuestion, matchPlace, thinkingLine } from "../../lib/shell/atomik-panel";
 import { selectBatch, type QueueItem } from "../../lib/control-room/queue";
 
@@ -17,8 +17,8 @@ const index = newPaletteIndex({ rail: RAIL, models: [{ id: "m1", name: "Engine o
 test("the empty palette lists Home, the board's places, Make and Atomik first, as the master does", () => {
   const first = searchNewPalette(index, "");
   expect(first).toHaveLength(PALETTE_ROWS);
-  expect(first.map((r) => `${r.group}:${r.label}`).slice(0, 10)).toEqual([
-    "Home:Home", "Board:Brief", "Board:Looks", "Board:Storyboard", "Board:Shots", "Board:Cast", "Board:Cut", "Board:Deliver", "Make:Make", "Atomik:Atomik",
+  expect(first.map((r) => `${r.group}:${r.label}`).slice(0, 12)).toEqual([
+    "Home:Home", "Board:Brief", "Board:Looks", "Board:Storyboard", "Board:Shots", "Board:Cast", "Board:Cut", "Board:Deliver", "Board:Ads", "Board:Social", "Make:Make", "Atomik:Atomik",
   ]);
   expect(first.find((r) => r.label === "Atomik")?.hint).toBe("Approvals · Activity · Skills · Memory");
   expect(first[0].hint).toBe("What needs you");
@@ -48,12 +48,6 @@ test("go to <place> pins its place first, on the board it names", () => {
   expect(rows[0]).toEqual({ group: "Board", label: "Go to Cast", hint: "On the Studio board", run: { type: "region", region: "cast" } });
   expect(matchPlace("the moon", RAIL)).toBeNull();
   expect(matchPlace("storyboards", RAIL)?.id).toBe("storyboard");
-});
-
-test("switched off, today's palette is unchanged: its last row hands the words to the Agent", () => {
-  const rows = searchPalette(paletteIndex({ models: [], assets: [] }), "zzzz");
-  expect(rows).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "")).toHaveLength(PALETTE_ROWS);
 });
 
 test("what a typed line is: commands, then questions, then requests", () => {

@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { setNewInterface, signInWithNewInterface } from "./helpers/newInterface";
+import { signInWithNewInterface } from "./helpers/newInterface";
 import { joinLocallyAsMember } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
@@ -17,7 +17,7 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-settings", productionProjectId: "prod-settings", shotMappings: {} });
 
 async function open(page: Page, path: string, opts: { on?: boolean; member?: APIRequestContext } = {}) {
-  if (opts.member) { const { workspace } = await joinLocallyAsMember(opts.member, page.request); await setNewInterface(workspace.id, true); }
+  if (opts.member) { await joinLocallyAsMember(opts.member, page.request); }
   else if (opts.on !== false) await signInWithNewInterface(page.request); else await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);

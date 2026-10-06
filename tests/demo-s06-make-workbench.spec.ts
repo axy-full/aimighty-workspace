@@ -3,7 +3,6 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
-import { setNewInterface } from "./helpers/newInterface";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 
@@ -20,10 +19,8 @@ const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "
 
 const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
 
-async function seed(page: Page, opts: { credits?: number; on?: boolean } = {}) {
+async function seed(page: Page, opts: { credits?: number } = {}) {
   const workspaceId = (await signInLocally(page.request)).workspace.id;
-  /* The per-workspace switch (lib/shell/new-interface.ts): on for this workspace's next page load, or off. */
-  await setNewInterface(workspaceId, opts.on !== false);
   if (opts.credits) {
     const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
     try {
@@ -278,10 +275,10 @@ test("Recent: the master's chips, and an empty project teaches by doing", async 
   expect(errors).toEqual([]);
 });
 
-test("the quick tools open over the new panel, and with the switch off Make is today's panel", async ({ page }, info) => {
+test("the quick tools open over the panel", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(120_000);
-  const { errors, sends, workspaceId } = await seed(page, { credits: 5000 });
+  const { errors, sends } = await seed(page, { credits: 5000 });
   await page.goto("/suites?make=video");
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-ui", "new");
@@ -293,13 +290,10 @@ test("the quick tools open over the new panel, and with the switch off Make is t
   await page.getByTestId("make-close").click();
   await expect(panel).toHaveCount(0);
 
-  /* Switch off: today's panel, untouched (its Edit tab is the sign). */
-  await setNewInterface(workspaceId, false);
+  /* There is one Make: the Edit tab is gone. */
   await page.goto("/suites?make=video");
   await expect(panel).toBeVisible();
-  await expect(panel).not.toHaveAttribute("data-ui", "new");
-  await expect(page.getByTestId("gen-tab-edit")).toBeVisible();
-  await shot(page, info.project.name, "make-switch-off");
+  await expect(page.getByTestId("gen-tab-edit")).toHaveCount(0);
   expect(sends, "nothing is sent").toEqual([]);
   expect(errors).toEqual([]);
 });

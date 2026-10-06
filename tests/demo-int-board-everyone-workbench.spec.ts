@@ -49,7 +49,6 @@ test("switch OFF: the old Studio stages, Crew and Ads pages open the one board, 
   ];
   for (const [path, want] of cases) {
     await page.goto(path);
-    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old", { timeout: 60_000 });
     await expect(page.locator(".gx")).toHaveAttribute("data-screen", want.kind === "ads" ? "board-ads" : "board", { timeout: 60_000 });
     await expect.poll(() => { const now = here(page); return Object.entries(want).every(([k, v]) => now[k] === v); }, { message: path }).toBe(true);
     await expect(page.getByTestId("board-rail")).toBeVisible();
@@ -66,7 +65,6 @@ test("switch OFF: Home and the rest stay today's; the project segment opens the 
   const { project, problems } = await seed(page);
   /* Home is behind the switch: a bare landing is today's Studio overview. */
   await page.goto(`/suites?project=${project.id}`);
-  await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old", { timeout: 60_000 });
   await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
   await expect.poll(() => here(page).view ?? "suite").toBe("suite");
   await page.goto(`/suites?project=${project.id}&view=board&make=video`);

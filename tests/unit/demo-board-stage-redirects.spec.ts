@@ -39,36 +39,36 @@ test("the redirect table, row by row: the app's address opens its region with th
   for (const stage of STAGE_REDIRECTS) {
     expect(stage.to, stage.id).toBe(expected[stage.id]);
     for (const on of [false, true]) {
-      expect(sameSearch(route(stage.from, on), stage.to), `${stage.id} (switch ${on ? "on" : "off"})`).toBe(true);
+      expect(sameSearch(route(stage.from), stage.to), `${stage.id} (switch ${on ? "on" : "off"})`).toBe(true);
       /* The project, a selected take, Make and Atomik's panel ride along; the shell's own `sp` for the page leaves with it. */
-      const kept = route(`${stage.from}&sp=${stage.id}&project=ws-9&asset=generation:g1&make=image&atomik=1`, on);
+      const kept = route(`${stage.from}&sp=${stage.id}&project=ws-9&asset=generation:g1&make=image&atomik=1`);
       expect(params(kept), `${stage.id} keeps its project`).toMatchObject({ view: "board", project: "ws-9", asset: "generation:g1", make: "image", atomik: "1" });
       expect(params(kept).page, stage.id).toBeUndefined();
       expect(params(kept).suite, stage.id).toBeUndefined();
-      expect(screenAt(route(stage.from, on), on), stage.id).toBe("board");
+      expect(screenAt(route(stage.from)), stage.id).toBe("board");
     }
   }
   /* The two sub-views with a board form of their own. */
-  expect(sameSearch(route("?suite=particl&page=rig&rig=list", false), "?view=board&list=1")).toBe(true);
-  expect(sameSearch(route("?suite=particl&page=brief&sp=beats&beats=graph", false), "?view=board")).toBe(true);
+  expect(sameSearch(route("?suite=particl&page=rig&rig=list"), "?view=board&list=1")).toBe(true);
+  expect(sameSearch(route("?suite=particl&page=brief&sp=beats&beats=graph"), "?view=board")).toBe(true);
   expect(STAGE_ROWS).toHaveLength(24);
 });
 
 test("a copied take link never named its suite, and still opens the board's Shots region with the take", () => {
   /* Links teammates copied before the Takes page was deleted: `?page=takes&sp=takes&ws=…&production=…&asset=…`. */
   for (const on of [false, true]) {
-    const out = params(route("?page=takes&sp=takes&ws=ws_1&production=prj_9&asset=generation%3Agen_1", on));
+    const out = params(route("?page=takes&sp=takes&ws=ws_1&production=prj_9&asset=generation%3Agen_1"));
     expect(out, `switch ${on ? "on" : "off"}`).toEqual({ view: "board", region: "shots", ws: "ws_1", production: "prj_9", asset: "generation:gen_1" });
   }
   /* The same without a suite for every stage; `suite` leaves with the page when it is named. */
   for (const stage of STAGE_REDIRECTS) {
     const bare = stage.from.replace("?suite=particl&", "?");
-    expect(sameSearch(route(`${bare}&project=p1`, false), `${stage.to}&project=p1`), stage.id).toBe(true);
+    expect(sameSearch(route(`${bare}&project=p1`), `${stage.to}&project=p1`), stage.id).toBe(true);
   }
-  expect(params(route("?suite=particl&page=takes&sp=takes", false)).suite).toBeUndefined();
+  expect(params(route("?suite=particl&page=takes&sp=takes")).suite).toBeUndefined();
   /* A page of another suite is not a stage: Atomik's Agent is `page=agent`, Business's is `page=marketing`. */
-  expect(params(route("?page=agent&sp=agent", false)).view).toBeUndefined();
-  expect(params(route("?suite=moleculr&page=marketing&sp=hooks", false)).view).toBe("board");
+  expect(params(route("?page=agent&sp=agent")).view).toBeUndefined();
+  expect(params(route("?suite=moleculr&page=marketing&sp=hooks")).view).toBe("board");
 });
 
 test("the design file's spellings of the stages open the same regions", () => {
@@ -81,14 +81,14 @@ test("the design file's spellings of the stages open the same regions", () => {
     ["?suite=studio&page=deliver", "?view=board&region=deliver"], ["?suite=studio&page=rig&rig=list", "?view=board&list=1"],
     ["?suite=studio&page=beats&beats=graph", "?view=board"],
   ];
-  for (const [from, to] of spellings) for (const on of [false, true]) expect(sameSearch(route(`${from}&project=p1`, on), `${to}&project=p1`), `${from} (${on})`).toBe(true);
+  for (const [from, to] of spellings) for (const on of [false, true]) expect(sameSearch(route(`${from}&project=p1`), `${to}&project=p1`), `${from} (${on})`).toBe(true);
 });
 
 test("every old Studio address the README, the redirect rows or the pending list ever named lands on the board, never on a page", () => {
   const old = [...OLD_TO_NEW.map((r) => r.from), ...PENDING.map((p) => p.from)].filter((from) => from.startsWith("?") && /suite=(studio|particl)/.test(from) && !/sp=(stages|home)/.test(from) && !/page=stages/.test(from));
   expect(old.length).toBeGreaterThanOrEqual(10);
   for (const from of old) for (const on of [false, true]) {
-    const out = route(from, on);
+    const out = route(from);
     expect(params(out).view, `${from} (${on}) → ${out}`).toBe("board");
     expect(params(out).page, from).toBeUndefined();
   }
@@ -97,11 +97,11 @@ test("every old Studio address the README, the redirect rows or the pending list
 test("the board's own address is left alone, even with the state layer's suite and page beside it", () => {
   /* The shell's state layer writes `suite` and `page` on every landing: they are not a second place to go. */
   for (const on of [false, true]) {
-    expect(sameSearch(route("?view=board&region=cut&suite=particl&page=brief&project=p1", on), "?view=board&region=cut&suite=particl&page=brief&project=p1")).toBe(true);
-    expect(params(route("?view=board&suite=particl&page=rig", on)).region).toBeUndefined();
+    expect(sameSearch(route("?view=board&region=cut&suite=particl&page=brief&project=p1"), "?view=board&region=cut&suite=particl&page=brief&project=p1")).toBe(true);
+    expect(params(route("?view=board&suite=particl&page=rig")).region).toBeUndefined();
   }
-  expect(params(route("?view=workspace&tab=team&suite=particl&page=brief", true)).view).toBe("workspace");
-  expect(params(route("?view=home&suite=particl&page=brief", true)).view).toBe("home");
+  expect(params(route("?view=workspace&tab=team&suite=particl&page=brief")).view).toBe("workspace");
+  expect(params(route("?view=home&suite=particl&page=brief")).view).toBe("home");
 });
 
 test("Studio has no stage pages left: the ten ids are not pages, and only Home's two remain", () => {

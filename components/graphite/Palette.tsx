@@ -57,6 +57,7 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
     switch (r.type) {
       case "home": places.home(); return;
       case "region": places.region(r.region); return;
+      case "board": shell.goBoard({ kind: r.kind }); return;
       case "atomik": shell.openAtomik("panel"); return;
       case "control": places.control(r.page); return;
       case "settings": places.settings(r.section); return;

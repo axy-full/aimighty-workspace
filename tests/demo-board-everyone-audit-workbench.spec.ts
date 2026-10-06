@@ -60,7 +60,6 @@ for (const { kind, query } of KINDS) {
     test.setTimeout(240_000);
     const { project, paid, problems } = await seed(page, kind);
     await page.goto(`/suites?project=${project.id}&view=board${query}`);
-    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old", { timeout: 90_000 });
     await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("board")).toHaveAttribute("data-board-kind", kind, { timeout: 60_000 });
     const phone = await compact(page);

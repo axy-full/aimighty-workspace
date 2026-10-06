@@ -20,6 +20,8 @@ export type PaletteRun =
   /* The screens' places: README § 1.1. */
   | { type: "home" }
   | { type: "region"; region: string }
+  /* The Ads and Social boards. */
+  | { type: "board"; kind: "ads" | "social" }
   | { type: "atomik" }
   | { type: "control"; page: ControlPage }
   | { type: "settings"; section: SettingsSection };
@@ -71,6 +73,8 @@ export function newPaletteIndex(input: {
   return [
     { group: "Home", label: "Home", hint: "What needs you", run: { type: "home" } },
     ...input.rail.map((r): PaletteRow => ({ group: "Board", label: r.label, hint: "", run: { type: "region", region: r.id } })),
+    { group: "Board", label: "Ads", hint: "", run: { type: "board", kind: "ads" } },
+    { group: "Board", label: "Social", hint: "", run: { type: "board", kind: "social" } },
     { group: "Make", label: "Make", hint: "", run: { type: "gen" } },
     { group: "Atomik", label: "Atomik", hint: CONTROL_PLACES.map((p) => p.label).join(" · "), run: { type: "atomik" } },
     { group: "Make", label: "Motion transfer", hint: "One source video and references", run: { type: "gen", tool: "motion" } },

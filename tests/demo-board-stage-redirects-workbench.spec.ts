@@ -2,7 +2,6 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
-import { setNewInterface } from "./helpers/newInterface";
 import { newProject } from "../lib/workbench/studio";
 import { node } from "./helpers/s03-board";
 
@@ -30,9 +29,8 @@ const ADDRESSES: { from: string; want: Record<string, string>; name: string }[] 
   { name: "with the page's sp", from: "suite=particl&page=edit&sp=edit", want: { view: "board", region: "cut" } },
 ];
 
-async function seed(page: Page, on = false) {
+async function seed(page: Page) {
   const workspaceId = (await signInLocally(page.request, "Stage Redirects")).workspace.id;
-  if (on) await setNewInterface(workspaceId, true);
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = {
@@ -62,8 +60,8 @@ const compact = (page: Page) => page.evaluate(() => window.matchMedia("(max-widt
 /** The board is up: its root, and on a desktop its side rail and its bottom tool row (Select, Frame, Note, Text, Image, Video, Audio, Upload). */
 async function boardIsUp(page: Page) {
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board", { timeout: 90_000 });
-  /* With the switch on, a phone mounts the phone app's own screens (stream 10) for the board's address; the board's root is the desktop's and the switch-off phone's. */
-  if ((await compact(page)) && (await page.locator(".gx").getAttribute("data-interface")) === "new") return;
+  /* A phone mounts the phone app's own screens (stream 10) for the board's address; the board's root is the desktop's. */
+  if (await compact(page)) return;
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
   if (!(await compact(page))) {
     await expect(page.getByTestId("board-rail")).toBeVisible();
@@ -80,7 +78,6 @@ test("every old Studio stage address opens the board on its region, and a reload
   const { project, problems, paid } = await seed(page);
   for (const { from, want, name } of ADDRESSES) {
     await page.goto(`/suites?project=${project.id}&${from}`);
-    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old", { timeout: 90_000 });
     await boardIsUp(page);
     await expect.poll(() => { const now = here(page); return Object.entries(want).every(([k, v]) => now[k] === v) && now.project === project.id; }, { message: `${name}: ${page.url()}` }).toBe(true);
     /* The address is a board address, never a stage page: no `page=` the shell would read again as an old page. */
@@ -93,35 +90,4 @@ test("every old Studio stage address opens the board on its region, and a reload
   }
   expect(problems).toEqual([]);
   expect(paid, "no paid request was made").toEqual([]);
-});
-
-test("with the switch on the same addresses open the same regions", async ({ page }) => {
-  test.setTimeout(300_000);
-  const { project, problems } = await seed(page, true);
-  for (const { from, want, name } of ADDRESSES.filter((a) => ["Brief", "Takes", "Edit & Sound", "Deliver", "Rig", "design: env"].includes(a.name))) {
-    await page.goto(`/suites?project=${project.id}&${from}`);
-    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "new", { timeout: 90_000 });
-    await boardIsUp(page);
-    await expect.poll(() => { const now = here(page); return Object.entries(want).every(([k, v]) => now[k] === v); }, { message: `${name} (switch on): ${page.url()}` }).toBe(true);
-  }
-  expect(problems).toEqual([]);
-});
-
-test("Studio's overview (Home until the switch flips) opens a region from each stage card; the strip has no stage tabs", async ({ page }) => {
-  test.setTimeout(300_000);
-  const { project, problems } = await seed(page);
-  const cards: [string, Record<string, string>][] = [["brief", { region: "brief" }], ["takes", { region: "shots" }], ["edit", { region: "cut" }], ["deliver", { region: "deliver" }], ["rig", {}]];
-  for (const [id, want] of cards) {
-    await page.goto(`/suites?project=${project.id}&suite=particl&page=brief&sp=stages`);
-    await expect(page.locator(".gx")).toHaveAttribute("data-interface", "old", { timeout: 90_000 });
-    /* Home is the overview here: ten cards, no stage page behind them, and no strip of stage tabs. */
-    await expect(page.getByTestId("studio-home")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".gx-strip")).toHaveCount(0);
-    await expect(page.locator('[data-testid^="home-stage-"]')).toHaveCount(10);
-    await page.getByTestId(`home-stage-${id}`).click();
-    await boardIsUp(page);
-    await expect.poll(() => { const now = here(page); return now.view === "board" && Object.entries(want).every(([k, v]) => now[k] === v); }, { message: `${id}: ${page.url()}` }).toBe(true);
-    if (Object.keys(want).length === 0) expect(here(page).region).toBeUndefined();
-  }
-  expect(problems).toEqual([]);
 });

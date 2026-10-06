@@ -6,7 +6,7 @@ import {
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, inSelectionSurface, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
-import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
+import { PALETTE_ROWS } from "../../lib/shell/palette";
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
@@ -33,7 +33,6 @@ test("Atomik › Memory is the shell's own page on Agent's backing page, told ap
   expect(shellPage("atomik", "memory")).toMatchObject({ title: "Memory", own: true, legacy: { suite: "atomik", page: "agent" } });
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "memory")?.id).toBe("memory");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
 });
 
 test("Atomik › Skills is the shell's own page beside Memory, on Agent's backing page; `skills` still means Tools & connections", () => {
@@ -41,7 +40,6 @@ test("Atomik › Skills is the shell's own page beside Memory, on Agent's backin
   expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "skills")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
@@ -248,43 +246,3 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
   }
 });
 
-/* ── ⌘K ─────────────────────────────────────────────────────────────────── */
-
-const rows = paletteIndex({
-  models: [],
-  assets: [{ id: "tk_1", name: "Board diagram", kind: "image" }],
-});
-
-test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
-  expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
-  /* Make's quick tools are found by name and open Make on them. */
-  expect(searchPalette(rows, "motion transfer")[0].run).toEqual({ type: "gen", tool: "motion" });
-  expect(searchPalette(rows, "object swap")[0].run).toEqual({ type: "gen", tool: "swap" });
-  expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
-  /* Studio's regions are the board's: one row each, under STUDIO. */
-  expect(rows.filter((r) => r.run.type === "region").map((r) => r.label)).toEqual(["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver"]);
-  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages: no " Where to?" rows. */
-  expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);
-  expect(rows.some((r) => r.run.type === "page" && (r.run.page === "home" || r.run.page === "stages"))).toBe(false);
-  expect(rows.some((r) => r.label.trim() === "Where to?" || r.label.trim() === "Studio" && r.run.type === "page")).toBe(false);
-  expect(rows.filter((r) => r.run.type === "page").every((r) => /^\d{2} \S/.test(r.label))).toBe(true);
-  expect(rows.filter((r) => r.run.type === "workspace")).toHaveLength(WORKSPACE_TABS.length);
-  expect(rows.some((r) => r.run.type === "model")).toBe(true);
-  expect(rows.some((r) => r.run.type === "asset")).toBe(true);
-});
-
-test("search ranks a page's own name first and always ends with Ask Atomik", () => {
-  const hits = searchPalette(rows, "shots");
-  /* The Studio stage pages are gone: the board's regions are found by name, and open the board there. */
-  expect(hits[0].run).toEqual({ type: "region", region: "shots" });
-  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: shots", run: { type: "ask", text: "shots" } });
-  /* The asset "Rigging diagram" is an asset row, found by its own words. */
-  expect(searchPalette(rows, "rigging").some((r) => r.run.type === "asset")).toBe(true);
-  expect(searchPalette(rows, "zzzz")).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
-  expect(searchPalette(rows, "")).toHaveLength(PALETTE_ROWS);
-  expect(searchPalette(rows, "a").length).toBeLessThanOrEqual(PALETTE_ROWS);
-  /* The retired names find nothing but the agent. */
-  for (const old of ["viral", "business", "generate", "rig", "astra", "moleculr", "genjutsu", "soul", "higgsfield"]) expect(searchPalette(rows, old).map((r) => r.run.type), old).toEqual(["ask"]);
-  expect(searchPalette(rows, "motion transfer")[0].run).toEqual({ type: "make", mode: "motion" });
-  expect(searchPalette(rows, "spending")[0].run).toEqual({ type: "settings", section: "rules" });
-});

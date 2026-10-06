@@ -13,8 +13,8 @@ test("both boards have landed, and own the frame and card params", () => {
 });
 
 test("every old Business address opens the Ads board on its card, with the switch on or off (the board is for everyone)", () => {
-  const on = (search: string) => route(search, true);
-  const off = (search: string) => route(search, false);
+  const on = (search: string) => route(search);
+  const off = (search: string) => route(search);
   const target = (sp: string) => `?suite=moleculr&page=marketing&sp=${sp}`;
   expect(new URLSearchParams(on(target("brand"))).toString()).toBe("view=board&kind=ads&frame=1&card=brand");
   expect(new URLSearchParams(on(target("hooks"))).toString()).toBe("view=board&kind=ads&frame=2&card=hooks");

@@ -141,7 +141,7 @@ test("STRICT · ⌘K lists exactly the design's items: no Generate, Business or 
   const OWNER_REQUIRED = ["Motion transfer", "Object swap", "Approvals", "Activity", "Skills", "Memory"];
   const OWNER_OPTIONAL = ["Video", "Images", "Audio", "Recent"];
   const palette = await import("../../lib/shell/palette");
-  const rows = (palette.paletteIndex as (input: unknown) => { group: string; label: string }[])({ models: [], assets: [] }).filter((row) => !["MODEL", "ASSET", "ATOMIK ASK"].includes(row.group.toUpperCase()));
+  const rows = (palette.newPaletteIndex as (input: unknown) => { group: string; label: string }[])({ rail: (await import("../../lib/board/regions")).STUDIO_RAIL, models: [], assets: [] }).filter((row) => !["MODEL", "ASSET", "ATOMIK ASK"].includes(row.group.toUpperCase()));
   /* "Make › Video" and "Atomik › Memory" are the row for Video and Memory under Make and Atomik. */
   const labels = rows.map((row) => row.label.split(/\s*[›:]\s*/).pop()!.trim());
   const missing = [...DESIGN, ...OWNER_REQUIRED].filter((label) => !labels.includes(label));
