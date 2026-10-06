@@ -259,7 +259,8 @@ test("Change with words on a clip carries the free quote's price, and opening it
   const insp = page.getByTestId("board-inspector");
   await expect(insp).toContainText("Shot 2");
   await expect(insp.getByTestId("insp-change-price")).toHaveText("up to 12 cr");
-  expect(asked[0]).toMatchObject({ task: "edit", sourceGenId: "tk-s2-v2", model: "dreamina-seedance-2-5-260628" });
+  /* Other quotes (the shot's own still, Make's) reach the route too: the edit quote is the one that asked for an edit. */
+  await expect.poll(() => asked.find((q) => q.task === "edit")).toMatchObject({ task: "edit", sourceGenId: "tk-s2-v2", model: "dreamina-seedance-2-5-260628" });
   await insp.getByTestId("insp-change-words").click();
   await expect(insp.getByTestId("insp-change")).toBeVisible();
   expect(paid).toEqual([]);

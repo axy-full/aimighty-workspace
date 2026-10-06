@@ -16,9 +16,9 @@ test("a production opens as a board: rail, regions in bands, groups, free notes"
   const { project, paid } = await seedBoard(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
   if (!desktop(page)) {
-    /* Phones open the project's Record (stream 10); until it lands, the board's List view, never the canvas. */
-    const list = page.getByTestId("board-list");
-    await expect(list.getByRole("button", { name: /Wide on the empty market/ })).toBeVisible();
+    /* Phones open the project's Record (stream 10), never the canvas: its brief is the board's, nothing is wider than the screen. */
+    await expect(page.getByTestId("phone-record")).toBeVisible();
+    await expect(page.getByTestId("phone-record-brief")).toContainText("A short film about a morning market opening");
     await expect(page.locator(".react-flow")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     mkdirSync(SHOTS, { recursive: true });
@@ -54,15 +54,18 @@ test("a production opens as a board: rail, regions in bands, groups, free notes"
 
 test("the board's controls: glide, zoom, Board | List, a note placed and typed, lasso", async ({ page }) => {
   test.skip(!desktop(page), "the canvas is desktop only");
-  const { project, paid } = await seedBoard(page);
+  const { project, paid } = await seedBoard(page, [], { beats: true });
   await page.goto(`/suites?project=${project.id}&view=board`);
   await expect(page.locator('[data-card-id="group:shots"]')).toBeVisible();
   const rail = page.getByTestId("board-rail");
 
-  /* A rail entry glides the board there and lights it. */
-  await rail.getByRole("button", { name: /^Cast/ }).click();
-  await expect(rail.getByRole("button", { name: /^Cast/ })).toHaveAttribute("aria-current", "location");
-  await expect(page.locator('[data-card-id="group:cast"]')).toBeInViewport();
+  /* A rail entry glides the board there and lights it. The lit section is the one with most of the view (README § 1.1:
+     "the section in view is highlighted"), and on a tall screen the band below the one pressed can fill more of it than
+     the one pressed does, so this presses the last band, which nothing follows. */
+  await rail.getByRole("button", { name: /^Cut/ }).click();
+  await expect(rail.getByRole("button", { name: /^Cut/ })).toHaveAttribute("aria-current", "location");
+  await expect(rail.locator('[aria-current="location"]')).toHaveCount(1);
+  await expect(page.locator('[data-card-id="group:cut"]')).toBeInViewport();
 
   /* The cluster: zoom out by 10 %, back to 100 %. */
   const zoom = page.getByTestId("board-zoom");
@@ -72,11 +75,13 @@ test("the board's controls: glide, zoom, Board | List, a note placed and typed, 
   await zoom.click();
   await expect(zoom).toHaveText("100%");
 
-  /* Board | List: the same board as an ordered shot list; L goes back. */
+  /* Board | List: the production's shot list (one row per shot of its beat sheet); L goes back. */
   await page.getByTestId("board-list-toggle").click();
-  const list = page.getByTestId("board-list");
+  const list = page.getByTestId("board-shotlist");
   await expect(list).toBeVisible();
-  await expect(list.getByRole("button", { name: /Opening wide|Wide on the empty market/ })).toBeVisible();
+  await expect(list.getByTestId("board-shotlist-row")).toHaveCount(2);
+  await expect(list.getByRole("textbox", { name: "Shot 1 action" })).toHaveValue("Wide on the empty market at first light.");
+  await expect(list.getByTestId("board-shotlist-empty")).toHaveCount(0);
   await page.keyboard.press("l");
   await expect(list).toHaveCount(0);
 
@@ -93,7 +98,11 @@ test("the board's controls: glide, zoom, Board | List, a note placed and typed, 
 
   /* Lasso: a drag on the empty canvas picks the cards it touches. */
   await rail.getByRole("button", { name: /^Shots/ }).click();
-  await page.mouse.move(box.x + 20, box.y + 40);
+  await expect(page.locator('[data-card-id="group:shots"]')).toBeInViewport();
+  await page.waitForTimeout(700);
+  /* The pane runs under the rail (it floats over the canvas), so the press starts just right of it, on the canvas's own space. */
+  const railBox = (await rail.boundingBox())!;
+  await page.mouse.move(railBox.x + railBox.width + 30, box.y + 40);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.6, { steps: 8 });
   await page.mouse.up();
@@ -113,8 +122,9 @@ test("an empty production opens on 'What are we making?'", async ({ page }, info
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
   await page.goto(`/suites?project=${project.id}&view=board`);
   if (!desktop(page)) {
-    /* Phones: the board's List view until stream 10's Record lands; nothing wider than the screen. */
-    await expect(page.getByTestId("board-list")).toBeVisible();
+    /* Phones: the project's Record (stream 10), not the canvas; nothing wider than the screen. */
+    await expect(page.getByTestId("phone-record")).toBeVisible();
+    await expect(page.locator(".react-flow")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/board-empty-${info.project.name.replace("workbench-", "")}.png` });
