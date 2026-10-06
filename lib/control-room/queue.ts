@@ -42,7 +42,8 @@ export type QueueProject = { productionId: string | null; draftId: string | null
 /** How an item is approved: its own existing person-only path, with its own price or fingerprint. */
 export type ApproveRef =
   | { kind: "release"; genId: string; credits: number }
-  | { kind: "board-approve"; productionId: string; runId: string; fingerprint: string }
+  /* A proposed build (free), or with `plan` the plan's one approval at the server's total (its quote fingerprint). */
+  | { kind: "board-approve"; productionId: string; runId: string; fingerprint: string; plan?: boolean }
   | { kind: "board-render"; productionId: string; runId: string; seq: number; fingerprint: string }
   /* A plan's step: approved by the plan's own Continue, at its live price (ThreadCheckpoint). */
   | { kind: "thread"; chatId: string; stepId: string; productionId: string | null };

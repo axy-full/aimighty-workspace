@@ -11,13 +11,15 @@ import { planModel, type PlanModel, type PlanPrimary, type StepEstimate } from "
 import { AGENT_CHANGED } from "./use-run";
 
 /*
- * The plan card's data and actions on today's backend (lead decision 27):
- *  - the run is Atomik's on this production (the board's `agent`, read by the team-canvas GET);
- *  - its renders not yet priced by the run are quoted now on the request the run will price (./estimates.ts);
+ * The plan card's data and actions (CLAUDE.md rule 14: a plan is approved once):
+ *  - the run is Atomik's on this production (the board's `agent`, read by the team-canvas GET), with the server's
+ *    plan quote at the gate and the approval's record after it;
+ *  - before the build, renders not yet priced are pre-quoted on the request the run will price (./estimates.ts);
  *  - the balance is the session's; the approval rule is the workspace's (GET /api/engines, as the composer reads it);
  *  - every action is the run's own, through POST /api/workbench/team-canvas, which takes a person's session only
- *    and only the person who asked: `agent.limit` then `agent.approve`; `agent.render`; `agent.limit` alone.
- * Nothing here spends by itself: Approve sets the run's limit and starts its free build, and each render then asks.
+ *    and only the person who asked: `agent.approve` (build, free); `agent.approvePlan` (the plan once, at the
+ *    server's quote fingerprint); `agent.render` (a render outside the plan); `agent.limit`.
+ * Nothing here works out a figure to spend: the plan's total and its ceiling are the server's.
  */
 
 const API = "/api/workbench/team-canvas";
@@ -44,7 +46,8 @@ export type PlanState = {
   problem: string | null;
   held: boolean;
   setHeld: (held: boolean) => void;
-  act: (primary: PlanPrimary) => Promise<void>;
+  /** Sends the press; answers whether the server took it (false: refused, or not sent). */
+  act: (primary: PlanPrimary) => Promise<boolean>;
 };
 
 export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: string | null): PlanState {
@@ -98,21 +101,24 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
   }, [ctx.scope, ctx.productionId]);
 
   const act = useCallback(async (primary: PlanPrimary) => {
-    if (!run || busy || primary.blocked) return;
+    if (!run || busy || primary.blocked) return false;
     setBusy(true);
     setProblem(null);
     try {
       if (primary.kind === "approve") {
-        if (primary.raiseTo != null) await post({ action: "agent.limit", runId: run.id, limit: primary.raiseTo });
         await post({ action: "agent.approve", runId: run.id, fingerprint: primary.fingerprint });
+      } else if (primary.kind === "plan") {
+        await post({ action: "agent.approvePlan", runId: run.id, fingerprint: primary.fingerprint });
       } else if (primary.kind === "render") {
         await post({ action: "agent.render", runId: run.id, seq: primary.seq, ...(primary.fingerprint ? { fingerprint: primary.fingerprint } : {}) });
       } else {
         await post({ action: "agent.limit", runId: run.id, limit: primary.raiseTo });
       }
+      return true;
     } catch (error) {
       /* The run's own refusal words for a request it answered (as the Rig's run card shows them); otherwise a plain retry line. */
       setProblem(error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 ? error.message : "Atomik could not do that just now. Try again.");
+      return false;
     } finally {
       setBusy(false);
       /* Whoever reads the run for the board (Atomik's panel) reads it again now. */

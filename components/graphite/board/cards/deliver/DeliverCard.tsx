@@ -12,7 +12,7 @@ import { useLoudnessInput } from "../../edit/loudness-store";
 import "./deliver.css";
 
 /*
- * Frame i's Deliver card (README § 3.1): what the cut is delivered as, the checks, and Export the cut · free (the browser export, not the final render), which
+ * Frame i's Deliver card (README § 3.1): what the cut is delivered as, the checks, and Export the cut · free (the browser export), which
  * opens the Inspector where the existing on-device renderer (with its progress and Download) lives. The checks read
  * "pending" until the cut is complete; a rate or a length is never ticked that nothing was checked against; loudness
  * reads "Not checked" and the deliverable's target until Edit & Sound has measured the sound the cut holds now.
@@ -39,7 +39,7 @@ export function DeliverCard({ card, data, ctx }: CardProps<CutCardData>) {
       <div className="gx-deliver-rows">{rows.map((r) => <SpecRowView key={r.key} row={r} />)}</div>
       {act ? (
         <div className="gx-deliver-acts">
-          <Btn disabled={cut.clips.length === 0} title={cut.clips.length === 0 ? "Add takes to the cut first" : "Encodes the cut into a video file in your browser. The final render comes with server rendering."}
+          <Btn disabled={cut.clips.length === 0} title={cut.clips.length === 0 ? "Add takes to the cut first" : "Encodes the cut into a video file in your browser. Free: nothing is charged."}
             onClick={(e) => { e.stopPropagation(); ctx.openInspector(card.id); }} data-testid="deliver-render">Export the cut · <Price value={FREE} /></Btn>
         </div>
       ) : null}

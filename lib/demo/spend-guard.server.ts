@@ -1,0 +1,24 @@
+import { db, ready } from "../db";
+import { parseSampleMark, SAMPLE_LINE, SAMPLE_SETTING_KEY } from "./sample";
+
+/**
+ * S12.4: nothing paid is ever made on the sample production, whoever asks (a person, Atomik, an outside agent, a
+ * token) and whichever door it comes in by. A job filed under the production the workspace marked as the sample
+ * (lib/demo/mark.server.ts), by its project or by one of its shots, is refused in the sample's own words. It is asked
+ * where a render is admitted (before it can be held, so nothing waits to start when credits arrive) and where every
+ * platform-paid job is reserved (lib/generationRequests.ts reserveGenerationSpend), so a door that skips admission
+ * still stops at the reservation. A quote is not a job: prices keep working. Free actions are untouched.
+ */
+export async function sampleSpendRefusal(projectId: string | null | undefined, shotId?: string | null): Promise<string | null> {
+  await ready();
+  /* Read straight from the workspace's settings, so this file pulls in nothing heavy: it sits under every reservation. */
+  const stored = (await db().execute({ sql: `SELECT value FROM settings WHERE key = ?`, args: [SAMPLE_SETTING_KEY] })).rows[0];
+  const mark = stored ? parseSampleMark(String(stored.value)) : null;
+  if (!mark) return null;
+  if (projectId && projectId === mark.projectId) return SAMPLE_LINE;
+  if (shotId) {
+    const row = (await db().execute({ sql: `SELECT project_id FROM shots WHERE id = ?`, args: [shotId] })).rows[0];
+    if (row && String(row.project_id) === mark.projectId) return SAMPLE_LINE;
+  }
+  return null;
+}

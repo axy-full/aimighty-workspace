@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
+import { expectLargerScreen } from "./helpers/largerScreen";
 import { smallTargets } from "./phoneFloors";
 
 /**
@@ -19,13 +20,11 @@ const SHOT_SIZES = ["workbench-1440x900", "workbench-390x844"];
 
 /**
  * The viewports where the shell mounts the phone app (lib/shell/use-compact.ts: narrower than 768 px, or a touch screen no taller than
- * 500 px, so 844x390 is a phone). The phone draws Home (with its Needs you queue), the Record, plan approval, review, Make and Atomik's
- * sheet, and Settings as a page; it has no screen for the control room's Activity, Memory or Skills, and `?suite=atomik&page=…` for those
- * opens Home. Whether it should is the owner's question (SOW § 2.8 lists none), so those tests are fixme there, not skipped as done.
+ * 500 px, so 844x390 is a phone). The phone has no screen for the control room's Activity, Memory or Skills until after the demo: their
+ * addresses show one plain "Open this on a larger screen" page (tests/helpers/largerScreen.ts), which these tests assert there instead.
  */
 const COMPACT = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
-const NO_PHONE_SCREEN = "owner decision pending: phone screens for Activity/Memory/Skills";
 
 async function floors(page: Page, phone: boolean) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "horizontal overflow").toBeLessThanOrEqual(0);
@@ -80,7 +79,7 @@ async function fixtures(page: Page, previews: unknown[]) {
 }
 
 test("skills: search, a skill's steps priced from the free preview, Edit and versions; running waits for a project", async ({ page }, info) => {
-  test.fixme(isCompact(info), NO_PHONE_SCREEN);
+  if (isCompact(info)) { await expectLargerScreen(page, PAGE, "Skills"); return; }
   test.setTimeout(180_000);
   await signInWithNewInterface(page.request);
   const previews: { dryRun?: boolean; values?: Record<string, string> }[] = [];
