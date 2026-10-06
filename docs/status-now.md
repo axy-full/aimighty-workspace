@@ -1,6 +1,6 @@
-# Status now: 6 October 2026, 10:42 IST, PAUSED by the owner
+# Status now: 6 October 2026, 10:59 IST, resumed
 
-**Paused by the owner.** Agents are stopping at a safe point (work in progress committed and pushed, slots released, resume notes kept). Nothing merges and nothing deploys while paused. main is `e3fb0c98`. New drafts this morning: #543 (sample production), #544 (sample no-spend guard, owner decision: money).
+**Resumed.** D0 is finishing the complete set of previews (top priority); the board continues. No UI merges until the owner's preview check; no money merge without the owner's yes. main is `e3fb0c98`. New drafts this morning: #543 (sample production), #544 (sample no-spend guard, owner decision: money).
 
 ## Done today
 - The US$0.10 switch: #524 merged; production reads `creditUsd 0.1`. Step 6 green.
