@@ -176,9 +176,9 @@ test.describe("changing the rules (9.2)", () => {
     expect(settingProblem("approvalRule", "always")).not.toBeNull();
   });
   test("each production reads as spent against its cap, in credits", () => {
-    expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left" });
-    expect(productionLine({ id: "p", name: "A", credits: 200, capCredits: 200 }, creditsText)).toEqual({ value: "200 of 200 cr", sub: "at the cap" });
-    expect(productionLine({ id: "p", name: "A", credits: 210, capCredits: 200, capUnlocked: true }, creditsText).sub).toBe("unlocked past the cap");
+    expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left of its own cap" });
+    expect(productionLine({ id: "p", name: "A", credits: 200, capCredits: 200 }, creditsText)).toEqual({ value: "200 of 200 cr", sub: "at its own cap" });
+    expect(productionLine({ id: "p", name: "A", credits: 210, capCredits: 200, capUnlocked: true }, creditsText).sub).toBe("unlocked past its own cap by an admin");
     expect(productionLine({ id: "p", name: "A", credits: 12, capCredits: null }, creditsText).value).toBe("12 cr");
   });
 });

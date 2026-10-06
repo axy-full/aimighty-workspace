@@ -15,7 +15,7 @@ import type { PlanModel, PlanStep } from "./model";
  *  - failed:      a render of the run failed. "Nothing billed" only where the ledger says the provider billed
  *                 nothing; otherwise what it charged, or that it isn't known yet. The take's own card carries Retry.
  *  - paused:      the next render reaches the pause at a share of the production's budget (Settings › Spending
- *                 rules: 80 % unless an admin changed it). "Continue · N cr" is that render's own tap at its price,
+ *                 rules: 80 % unless an admin changed it). An admin's unlock lets it past the cap, never past the ask. "Continue · N cr" is that render's own tap at its price,
  *                 or Stop.
  *
  * Every figure is the server's (the plan model's prices, the budget read, the pack list); this only adds them up
@@ -92,7 +92,7 @@ export function planMoneyState(input: MoneyInput): MoneyState | null {
     return null;
   }
 
-  if (model.phase === "needs-you" && model.primary?.kind === "render" && model.primary.price && input.budget && !input.budget.unlocked) {
+  if (model.phase === "needs-you" && model.primary?.kind === "render" && model.primary.price && input.budget && !(input.budget.unlocked && input.budget.used >= input.budget.cap)) {
     const b = input.budget;
     const price = model.primary.price;
     const next = model.steps.find((s) => s.seq === (model.primary as { seq: number }).seq);

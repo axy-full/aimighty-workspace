@@ -199,8 +199,36 @@ export async function checkCap(projectId: string | null, needsUsd: number, engin
 export async function budgetAsk(projectId: string | null, needsCredits: number): Promise<{ pause: BudgetPause; line: string } | null> {
   if (!projectId) return null;
   const row = await projectCapSpent(projectId);
-  if (!row || row.unit !== "cr" || row.cap == null || row.unlocked) return null;
+  /* An admin's unlock lets a production past its cap; below the cap the ask still stands (an unlock is never a
+     standing exemption from the pause, and any change to the cap or the budget re-locks it: resetCapLocks). */
+  if (!row || row.unit !== "cr" || row.cap == null || (row.unlocked && row.spent >= row.cap)) return null;
   const pause = budgetPause({ cap: row.cap, spent: row.spent, needs: needsCredits, warnPct: cleanWarnPct(await getSetting("capWarnPct")) });
   if (!pause || !pause.reached) return null;
   return { pause, line: budgetPauseLine(pause) };
+}
+
+/**
+ * An unlock (and the once-per-cap warning) belongs to the cap it was given for. When a production's own cap changes,
+ * its row is re-locked and its warning re-armed; when the workspace's budget per production changes, every production
+ * that follows it (no cap of its own) is. Never unlocks anything.
+ */
+export async function resetCapLocks(scope: { projectId: string } | { budget: true }): Promise<void> {
+  await ready();
+  if ("projectId" in scope) {
+    await db().execute({ sql: "UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE id = ?", args: [scope.projectId] });
+  } else {
+    await db().execute("UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL");
+  }
+}
+
+/**
+ * A production's cap as every screen shows it, from its own row and the workspace's budget: the effective cap the
+ * gate enforces (`capCredits`), whose it is (`capFrom`), and the production's own (`ownCapCredits`, what an admin
+ * edits). Credits workspaces only; a dollars row is returned as it was.
+ */
+export function effectiveCapRow<R extends { capCredits: number | null }>(row: R, budget: number | null, inCredits: boolean):
+  R & { capFrom: "production" | "workspace" | null; ownCapCredits: number | null } {
+  if (!inCredits) return { ...row, capFrom: row.capCredits != null ? "production" : null, ownCapCredits: row.capCredits };
+  const own = row.capCredits;
+  return { ...row, capCredits: own ?? budget, capFrom: own != null ? "production" : budget != null ? "workspace" : null, ownCapCredits: own };
 }

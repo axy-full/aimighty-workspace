@@ -67,12 +67,21 @@ export function capInput(raw: string, zero = false): number | null {
   return n >= (zero ? 0 : 1) ? n : null;
 }
 
-/** GET /api/projects, as a workspace billed in credits is answered (app/api/projects/route.ts). */
-export type ProductionBudget = { id: string; name: string; credits?: number; capCredits: number | null; capUnlocked?: boolean };
-/** "184 of 200 cr" and its sub-line: what the production has spent against its cap, and where it stands. */
+/**
+ * GET /api/projects, as a workspace billed in credits is answered (app/api/projects/route.ts): `capCredits` is the cap
+ * the gate enforces (its own, else the workspace's budget per production), `capFrom` whose it is, `ownCapCredits` its own.
+ */
+export type ProductionBudget = {
+  id: string; name: string; credits?: number; capCredits: number | null; capUnlocked?: boolean;
+  capFrom?: "production" | "workspace" | null; ownCapCredits?: number | null;
+};
+/** Whether the gate can refuse this production at its cap now: an admin's Unlock is offered exactly then. */
+export const atItsCap = (p: ProductionBudget) => p.capCredits != null && (p.credits ?? 0) >= p.capCredits;
+/** "184 of 200 cr" and its sub-line: what the production has spent against its cap, whose cap it is, and where it stands. */
 export function productionLine(p: ProductionBudget, cr: (n: number) => string): { value: string; sub: string } {
   const spent = p.credits ?? 0;
-  if (p.capCredits == null) return { value: cr(spent), sub: "No cap · new work follows the workspace rules" };
-  const state = p.capUnlocked ? "unlocked past the cap" : spent >= p.capCredits ? "at the cap" : `${cr(Math.max(0, p.capCredits - spent))} left`;
+  if (p.capCredits == null) return { value: cr(spent), sub: "No cap · no budget per production is set" };
+  const whose = p.capFrom === "workspace" ? "the workspace budget" : "its own cap";
+  const state = p.capUnlocked ? `unlocked past ${whose} by an admin` : atItsCap(p) ? `at ${whose}` : `${cr(Math.max(0, p.capCredits - spent))} left of ${whose}`;
   return { value: `${spent.toLocaleString("en-US")} of ${cr(p.capCredits)}`, sub: state };
 }

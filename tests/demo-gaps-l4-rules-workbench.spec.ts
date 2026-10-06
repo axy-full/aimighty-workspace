@@ -7,8 +7,8 @@ import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
 /*
  * Gap screens, lane 4 · Settings › Spending rules › Budget and cap (design Gaps B: ?view=workspace&ws=rules&edit=rules,
  * and &role=member), on the real routes of the local ENGINE_MOCK=1 server, nothing answered by the browser:
- *  - an admin edits the budget per production and the per-shot cap; each change saves as it is typed (PATCH
- *    /api/settings), "Undo changes" puts back what was there, "Done" closes;
+ *  - an admin edits the budget per production and the per-shot cap; a field saves when it is left or on Enter (PATCH
+ *    /api/settings), never a figure still being typed; "Undo changes" puts back what was there, "Done" closes;
  *  - a member reads the same figures, can't change them (the route refuses them too), and "Ask an admin" tells the owner.
  * Owner values (6 Oct): budget 400 cr with the pause at 320 cr; the per-shot cap 50 cr; the ask line 200 cr.
  */
@@ -42,7 +42,7 @@ async function panelFloors(page: Page) {
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 }
 
-test("an admin edits the budget per production and the per-shot cap; each change saves as it is typed; Undo changes puts them back; Done closes", async ({ page }, info) => {
+test("an admin edits the budget per production and the per-shot cap; a field saves on Enter or when left, never mid-figure; Undo changes puts them back; Done closes", async ({ page }, info) => {
   const { workspace } = await signInLocally(page.request, "Rules Admin");
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const errors: string[] = [];
@@ -57,18 +57,24 @@ test("an admin edits the budget per production and the per-shot cap; each change
   await page.getByTestId("settings-budget-open").click();
   const panel = page.getByTestId("settings-budget-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("Admins only. Every change is logged with who made it.");
+  await expect(panel).toContainText("Admins only. A field saves when you leave it or press Enter.");
   await expect(page.getByTestId("settings-line-field")).toBeDisabled();
   await expect(page.getByTestId("settings-line-field")).toHaveValue("200");
   await expect(panel).toContainText("Any job over 200 cr needs a person’s approval, even under Auto. Fixed.");
   await expect(page.getByTestId("settings-budget-undo")).toBeDisabled();
 
-  /* Typed, not submitted: it saves itself. */
-  await page.getByTestId("settings-budget-field").pressSequentially("400");
-  await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · logged with your name");
+  /* A figure still being typed is never saved: "4" on the way to "400" stays unsaved however long it waits. */
+  await page.getByTestId("settings-budget-field").pressSequentially("4");
+  await page.waitForTimeout(1500);
+  expect((await settingsOf(page.request)).productionBudgetCredits ?? "").toBe("");
+  await page.getByTestId("settings-budget-field").pressSequentially("00");
+  await page.getByTestId("settings-budget-field").press("Enter");
+  await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · last changed by you");
   await expect.poll(async () => (await settingsOf(page.request)).productionBudgetCredits).toBe("400");
   await expect(panel).toContainText("Particl pauses at 80 % (320 cr) and asks whether to continue.");
+  /* Leaving the field saves it. */
   await page.getByTestId("settings-cap-field").pressSequentially("50");
+  await page.getByTestId("settings-budget-field").focus();
   await expect.poll(async () => { const s = await settingsOf(page.request); return [s.approvalRule, s.shotCapCredits]; }).toEqual(["cap", "50"]);
   await expect(panel).toContainText("A step over this needs an admin’s approval.");
   await expect(page.getByTestId("settings-budget-value")).toContainText("the 80 % pause asks at 320 cr");
@@ -76,10 +82,12 @@ test("an admin edits the budget per production and the per-shot cap; each change
   await expect(page.getByTestId("settings-cap-value").locator(".gs-row-v")).toHaveText("50 cr");
   /* A figure the route would refuse is said, and not saved. */
   await page.getByTestId("settings-budget-field").fill("0");
+  await page.getByTestId("settings-budget-field").press("Enter");
   await expect(page.getByTestId("settings-budget-state")).toHaveText(/whole number of credits/);
   expect((await settingsOf(page.request)).productionBudgetCredits).toBe("400");
   await page.getByTestId("settings-budget-field").fill("400");
-  await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · logged with your name");
+  await page.getByTestId("settings-budget-field").press("Enter");
+  await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · last changed by you");
   await panelFloors(page);
   await shoot(page, "rules-admin", info.project.name);
 

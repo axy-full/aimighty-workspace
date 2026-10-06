@@ -9,6 +9,14 @@ import { getPlatformLayer, planOf } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { ceilingFor, wouldExceed, ceilingMessage } from "@/lib/planLimits";
+import { effectiveCapRow, workspaceBudget } from "@/lib/caps";
+
+/* Every row's cap as the gate enforces it, read fresh (the memo holds each row's own): its own, else the workspace's
+   budget per production, with whose it is and the production's own (lib/caps.ts effectiveCapRow). */
+async function withCaps<B extends { projects: { capCredits: number | null }[] }>(body: B, inCredits: boolean): Promise<B> {
+  const budget = inCredits ? await workspaceBudget() : null;
+  return { ...body, projects: body.projects.map((p) => effectiveCapRow(p, budget, inCredits)) };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +42,8 @@ export const GET = withTenant(async function GET() {
   await syncCreditReceipts();
   const inCredits = creditsApply(requireTenant());
   const unit = inCredits ? "cr" : "usd";
-  const hit = cached<{ unit?: "cr" | "usd" }>(PROJECTS_KEY, TTL_MS);
-  if (hit?.unit === unit) return NextResponse.json(hit);
+  const hit = cached<{ unit?: "cr" | "usd"; projects: { capCredits: number | null }[] }>(PROJECTS_KEY, TTL_MS);
+  if (hit?.unit === unit) return NextResponse.json(await withCaps(hit, inCredits));
 
   /* One grouped pass over generations for the counts and the money, then a
      handful of correlated subqueries for the shot-level facts the Projects
@@ -128,7 +136,7 @@ export const GET = withTenant(async function GET() {
     })),
   };
   putCache(PROJECTS_KEY, body);
-  return NextResponse.json(body);
+  return NextResponse.json(await withCaps(body, inCredits));
 });
 
 export const POST = withTenant(async function POST(req: Request) {

@@ -10,7 +10,7 @@ import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { BudgetSection } from "./BudgetSection";
-import { capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
+import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
 
 /**
  * Settings › Spending rules (README § 3.5, § 4 "Ask / Auto", "Spending rules"): the one place the workspace's
@@ -133,13 +133,13 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
         <Row name="Every paid step waits for a person." line={rules.autoLine ?? undefined} value="Ask" accent testId="settings-mode" />
       </Section>
 
-      {inCredits ? <Productions canChange={canChange} /> : null}
+      {inCredits ? <Productions canChange={canChange} budget={rules.budget} /> : null}
     </>
   );
 }
 
 /** Each production's own cap, as Atomik › Budget had it: a number of credits, and the unlock past it. An admin's, on the same route. */
-function Productions({ canChange }: { canChange: boolean }) {
+function Productions({ canChange, budget: rulesBudget }: { canChange: boolean; budget: number | null }) {
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();
@@ -165,7 +165,8 @@ function Productions({ canChange }: { canChange: boolean }) {
     const raw = (edit?.value ?? "").trim();
     const n = raw === "" ? null : capInput(raw, true);
     if (raw !== "" && n === null) { setNote({ ok: false, text: "A cap is a whole number of credits, or none." }); return; }
-    void patch(p, { capCredits: n }, { capCredits: p.capCredits ?? null }, n === null ? `${p.name}: no cap.` : `${p.name}: capped at ${creditsText(n)}.`);
+    void patch(p, { capCredits: n }, { capCredits: p.ownCapCredits ?? (p.capFrom === "workspace" ? null : p.capCredits) ?? null },
+      n === null ? `${p.name}: no cap of its own${p.capFrom === "workspace" || rulesBudget != null ? "; it follows the workspace budget" : ""}.` : `${p.name}: capped at ${creditsText(n)}.`);
   };
 
   return (
@@ -174,18 +175,22 @@ function Productions({ canChange }: { canChange: boolean }) {
       {rows.map((p) => {
         const line = productionLine(p, creditsText);
         const editing = edit?.id === p.id;
-        const atCap = p.capCredits != null && (p.credits ?? 0) >= p.capCredits;
+        const own = p.ownCapCredits !== undefined ? p.ownCapCredits : p.capCredits;
         return (
           <div key={p.id} data-testid="settings-production">
             <Row name={p.name} line={line.sub} value={line.value} valueTitle={p.capCredits != null ? creditsUsd(p.capCredits, rate) : null}>
-              {canChange ? <Btn disabled={busy != null} pressed={editing} onClick={() => setEdit(editing ? null : { id: p.id, value: p.capCredits == null ? "" : String(p.capCredits) })} testId="settings-production-change">Change</Btn> : null}
-              {canChange && atCap && !p.capUnlocked ? (
+              {canChange ? <Btn disabled={busy != null} pressed={editing} onClick={() => setEdit(editing ? null : { id: p.id, value: own == null ? "" : String(own) })} testId="settings-production-change">{own == null && p.capFrom === "workspace" ? "Set own cap" : "Change"}</Btn> : null}
+              {/* Unlock wherever the gate can refuse at the cap, its own or the workspace budget; Lock again takes it back. */}
+              {canChange && atItsCap(p) && !p.capUnlocked ? (
                 <Btn hot disabled={busy != null} onClick={() => void patch(p, { capUnlocked: true }, { capUnlocked: false }, `${p.name} is unlocked past its cap.`)} testId="settings-production-unlock">Unlock</Btn>
+              ) : null}
+              {canChange && p.capUnlocked ? (
+                <Btn disabled={busy != null} onClick={() => void patch(p, { capUnlocked: false }, { capUnlocked: true }, `${p.name} is locked at its cap again.`)} testId="settings-production-lock">Lock again</Btn>
               ) : null}
             </Row>
             {editing ? (
               <form className="gs-capform" onSubmit={(e) => { e.preventDefault(); setCap(p); }} data-testid="settings-production-edit">
-                <label className="gs-label"><span className="gs-eyebrow">Cap (cr), empty for none</span>
+                <label className="gs-label"><span className="gs-eyebrow">{rulesBudget != null ? "Own cap (cr), empty to follow the workspace budget" : "Cap (cr), empty for none"}</span>
                   <input className="gs-field" inputMode="numeric" value={edit.value} onChange={(e) => setEdit({ id: p.id, value: e.target.value.replace(/[^0-9]/g, "") })} data-testid="settings-production-cap" />
                 </label>
                 <button type="submit" className="gs-btn" data-hot disabled={busy != null} data-testid="settings-production-save">Save cap</button>

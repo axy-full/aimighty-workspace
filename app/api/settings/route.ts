@@ -1,10 +1,12 @@
 import { isEnhancerProvider } from "@/lib/shell/enhancer";
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
-import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
+import { allSettings, getSetting, setSetting, DEFAULTS } from "@/lib/settings";
 import { getPlatformLayer } from "@/lib/platform";
 import { resolveModels, modelOfKind } from "@/lib/platformLayer";
 import { settingProblem } from "@/lib/settingValues";
+import { cleanBudget, resetCapLocks } from "@/lib/caps";
+import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +40,15 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
     const problem = settingProblem(k, v);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
   }
+  /* The budget per production before the change: a new budget re-locks every production that follows it. */
+  const budgetBefore = entries.some(([k]) => k === "productionBudgetCredits") ? cleanBudget(await getSetting("productionBudgetCredits")) : undefined;
   for (const [k, v] of entries) {
     await setSetting(k, String(v).slice(0, 400), got.user.id);
     changed.push(k);
+  }
+  if (budgetBefore !== undefined && cleanBudget(await getSetting("productionBudgetCredits")) !== budgetBefore) {
+    await resetCapLocks({ budget: true });
+    invalidate(PROJECTS_KEY);
   }
   if (!changed.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   return NextResponse.json({ settings: await allSettings(), changed });

@@ -134,8 +134,9 @@ test("paused: 320 of a 400 cr budget used; the next render waits; Continue is it
   /* The next render would reach the pause: 313 + 7 = 320. One short of it does not. */
   expect(money(plan, { budget: budget({ used: 313 }) })).toMatchObject({ kind: "paused" });
   expect(money(plan, { budget: budget({ used: 312 }) })).toBeNull();
-  /* Unlocked past its cap by an admin, or no budget at all: no pause. */
-  expect(money(plan, { budget: budget({ unlocked: true }) })).toBeNull();
+  /* An admin's unlock lets it past the cap, not past the ask: below the cap it still pauses; at or over it, no pause. */
+  expect(money(plan, { budget: budget({ unlocked: true }) })).toMatchObject({ kind: "paused" });
+  expect(money(plan, { budget: budget({ unlocked: true, used: 400 }) })).toBeNull();
   expect(money(plan, { budget: null })).toBeNull();
 });
 

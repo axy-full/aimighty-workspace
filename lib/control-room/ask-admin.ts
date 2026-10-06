@@ -1,11 +1,11 @@
-import { cleanRule } from "../approvalRule";
+import { cleanRule, cleanShotCap } from "../approvalRule";
 import { db } from "../db";
 import { workspaceAdmins } from "../platform";
 import { notify } from "../push";
 import { getSetting } from "../settings";
 import { requireTenant } from "../tenant";
-import { stepTitle } from "../workbench/rig-agent-runs";
-import { rigAgentExists, runOfProduction, stepsOf } from "../workbench/rig-agent-store";
+import { priceRender, stepTitle } from "../workbench/rig-agent-runs";
+import { rigAgentExists, runOfProduction, stepsOf, type RunRow, type StepRow } from "../workbench/rig-agent-store";
 
 /*
  * "Ask an admin" (design Gaps B: a step over the per-shot cap; Settings › Spending rules for a member). A person who
@@ -36,10 +36,33 @@ export const ASK_NOT_A_PERSON = "Only a person asks an admin. Atomik and outside
 export const ASK_ADMIN_ALREADY = "You are an admin: you can change this yourself.";
 export const ASK_NO_CAP = "This workspace has no per-shot cap: anyone on the team may approve this.";
 export const ASK_NO_STEP = "That step is not on this board's plan.";
+export const ASK_NOT_OVER = "That step is not over the per-shot cap: it needs no admin.";
+export const ASK_AGAIN_MS = 10 * 60_000;
+export const askedRecently = (minutes: number) => `Already asked ${minutes <= 1 ? "a minute" : `${minutes} minutes`} ago. The owner and admins were told; ask again later.`;
+
+/*
+ * One ask per person and subject (a step, or the rules) every ten minutes. Kept on this server instance: asking
+ * spends nothing and changes nothing, so a lost count only lets one more notice through.
+ */
+const asked = new Map<string, number>();
+
+/**
+ * Whether this render is over the workspace's per-shot cap, from the server's own price: the run's price for it when it
+ * has one (its worst case), else a fresh, free pricing of the exact request the run will send (lib/workbench/
+ * rig-agent-runs.ts priceRender), where admission's own refusal for a member over the cap also says so.
+ */
+async function overCap(run: RunRow, step: StepRow, cap: number): Promise<boolean> {
+  if (step.quoteCredits != null) return step.quoteCredits * (step.band ?? 1) > cap;
+  const priced = await priceRender(run, step);
+  return priced.ok ? priced.quote * priced.band > cap : priced.pause === "admin";
+}
 
 export type AskDeps = {
   admins?: (workspaceId: string) => Promise<{ id: string }[]>;
   tell?: (ids: string[], payload: { title: string; body: string; url: string }) => Promise<void>;
+  /** Whether a render is over the per-shot cap (default: the server's price, `overCap`). */
+  over?: (run: RunRow, step: StepRow, cap: number) => Promise<boolean>;
+  now?: () => number;
 };
 
 /** Tells the workspace's owner and admins what this person asks them to look at. Returns how many were asked. */
@@ -47,6 +70,10 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   if (!isPersonId(actor.id)) throw new AskAdminError(ASK_NOT_A_PERSON, 403);
   if (actor.admin) throw new AskAdminError(ASK_ADMIN_ALREADY, 409);
   const ws = requireTenant();
+  const at = (deps.now ?? Date.now)();
+  const key = [ws.id, actor.id, ask.about, ask.about === "step" ? `${ask.productionId}:${ask.runId}:${ask.seq}` : ""].join("|");
+  const last = asked.get(key);
+  if (last != null && at - last < ASK_AGAIN_MS) throw new AskAdminError(askedRecently(Math.max(1, Math.round((at - last) / 60_000))), 429);
   let title: string, body: string, url: string;
   if (ask.about === "step") {
     if (cleanRule(await getSetting("approvalRule")) !== "cap") throw new AskAdminError(ASK_NO_CAP, 409);
@@ -54,6 +81,7 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
     const run = await runOfProduction(db(), ask.productionId, ask.runId);
     const step = run ? (await stepsOf(db(), run.id)).find((s) => s.seq === ask.seq && s.purpose === "take") : undefined;
     if (!run || !step) throw new AskAdminError(ASK_NO_STEP, 404);
+    if (!(await (deps.over ?? overCap)(run, step, cleanShotCap(await getSetting("shotCapCredits"))))) throw new AskAdminError(ASK_NOT_OVER, 409);
     title = `${clip(actor.name) || "A teammate"} asks an admin`;
     body = `${clip(stepTitle(run, step), 80)} is over the per-shot cap. It waits in Approvals, marked for an admin.`;
     url = "/suites?suite=atomik&page=approvals";
@@ -64,6 +92,7 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   }
   const admins = (await (deps.admins ?? workspaceAdmins)(ws.id)).map((a) => a.id).filter((id) => id !== actor.id);
   if (admins.length) await (deps.tell ?? ((ids, payload) => notify("approvalNeeded", ids, payload)))(admins, { title, body, url });
+  asked.set(key, at);
   return { asked: admins.length, line: admins.length ? "Asked. The owner and admins were told; nothing was spent." : "No admin to ask in this workspace yet." };
 }
 
