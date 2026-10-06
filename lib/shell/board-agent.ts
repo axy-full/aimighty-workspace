@@ -62,7 +62,8 @@ export function agentAsk(input: { read: boolean; enabled: boolean; run: RigAgent
   const price = upTo(input.planning);
   const label = priceWords(price) ? `Ask · ${priceWords(price)}` : "Ask";
   const off = (reason: string): AgentAsk => ({ label, price, disabled: true, reason });
-  if (input.sample) return off(SAMPLE_LINE);
+  /* Nothing spends here: disabled with the sample's line, and no price on it. */
+  if (input.sample) return { label: "Ask", price: null, disabled: true, reason: SAMPLE_LINE };
   if (input.offline) return off("Needs a connection");
   if (!input.read) return off("Reading Atomik…");
   if (!input.enabled) return off(AGENT_OFF);

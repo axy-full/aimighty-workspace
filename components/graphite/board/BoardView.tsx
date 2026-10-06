@@ -47,7 +47,7 @@ import { PeerCursors, WhoIsHere } from "./Presence";
 import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
 import { addInput } from "@/lib/production/rig-build";
 import { entryAsset } from "@/lib/production/sequence";
-import { useSampleBoard } from "@/lib/demo/use-sample";
+import { useSampleBoard, useSampleWorkspace } from "@/lib/demo/use-sample";
 import { sampleGate } from "@/lib/demo/sample";
 import "./board.css";
 
@@ -120,8 +120,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const agent = useBoardAgent().run;
   /* The explore-only sample (stream 12): its recorded prices, and the line every paid control carries. */
   const { board: sampleBoard } = useSampleBoard();
-  const gate = useMemo(() => sampleGate(project, sampleBoard?.sample ?? null), [project, sampleBoard]);
-  const sample = gate.exploreOnly ? sampleBoard : null;
+  const onSample = useMemo(() => sampleGate(project, sampleBoard?.sample ?? null), [project, sampleBoard]);
+  /* In the sample workspace nothing spends on any board (the owner's switch): every paid control carries the line. */
+  const spendOff = useSampleWorkspace();
+  const gate = useMemo(() => ({ exploreOnly: onSample.exploreOnly ?? spendOff, readOnly: onSample.readOnly }), [onSample, spendOff]);
+  const sample = onSample.exploreOnly ? sampleBoard : null;
 
   /* An Ads or Social board's own session data (stream 11): pending site reads, the agent's runs. */
   const extra = useKindExtra(kind, project);

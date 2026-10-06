@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApi } from "../useApi";
 import { useSession } from "../session";
 import { useScopedFetch } from "../useScopedFetch";
@@ -25,6 +25,38 @@ export function useSampleGate(project: SampleSubject | null | undefined): Sample
   const { board } = useSampleBoard();
   const id = project?.id ?? null, production = project?.productionProjectId ?? null;
   return useMemo(() => sampleGate({ id, productionProjectId: production }, board?.sample ?? null), [board, id, production]);
+}
+
+/*
+ * Is this the sample workspace (the owner's switch, 6 Oct)? The server refuses every paid job there
+ * (lib/demo/spend-guard.server.ts); the screens then offer no paid control: Enhance, Atomik's ask and Start are not
+ * offered or are disabled with the sample's line, with no price. One read of GET /api/demo/sample per workspace scope,
+ * shared by every screen that asks, kept for a short while.
+ */
+const SHARED_MS = 15_000;
+const shared = new Map<string, { at: number; answer: Promise<boolean> }>();
+function readSampleWorkspace(scope: string | null): Promise<boolean> {
+  const key = scope ?? "";
+  const hit = shared.get(key);
+  if (hit && Date.now() - hit.at < SHARED_MS) return hit.answer;
+  const answer = fetch("/api/demo/sample", { cache: "no-store", ...(scope != null ? { headers: { "X-Workbench-Scope": scope } } : {}) })
+    .then(async (res) => (res.ok ? Boolean(((await res.json()) as { sampleWorkspace?: unknown }).sampleWorkspace) : false))
+    .catch(() => false);
+  shared.set(key, { at: Date.now(), answer });
+  return answer;
+}
+
+/** The sample's line when this workspace is the sample workspace (nothing here spends), else null. Null while it loads. */
+export function useSampleWorkspace(): string | null {
+  const { requestScope, signedIn } = useSession();
+  const [off, setOff] = useState(false);
+  useEffect(() => {
+    if (!signedIn) { setOff(false); return; }
+    let live = true;
+    void readSampleWorkspace(requestScope ?? null).then((on) => { if (live) setOff(on); });
+    return () => { live = false; };
+  }, [requestScope, signedIn]);
+  return off ? SAMPLE_LINE : null;
 }
 
 export type OpenedSample = { draftId: string } | { error: string };

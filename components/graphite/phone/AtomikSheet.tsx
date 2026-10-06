@@ -8,6 +8,7 @@ import { sendGenPreset } from "@/lib/shell/gen-preset";
 import type { SettingsSection } from "@/lib/shell/palette";
 import type { MakeTool } from "@/lib/shell/make";
 import { useShell } from "@/lib/shell/state";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import type { Project } from "@/lib/workbench/studio";
 import { useHowFacts } from "../atomik/panel/use-atomik-panel";
 import { usePriceTitle } from "../Price";
@@ -56,7 +57,9 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
   const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const intent = useMemo(() => atomikIntent(text), [text]);
-  const asking = intent.kind === "ask" && ready && online;
+  /* The sample workspace spends nothing (the owner's switch): no ask box there, only the free how-to answers. */
+  const spendOff = useSampleWorkspace();
+  const asking = intent.kind === "ask" && ready && online && !spendOff;
   const { setDraftText } = a;
   useEffect(() => { setDraftText(asking ? text : ""); }, [asking, text, setDraftText]);
 
@@ -99,18 +102,20 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
         setText("");
         return;
       case "ask":
+        if (spendOff) { setNote(spendOff); return; }
         if (!online) { setNote("Needs a connection"); return; }
         if (!a.quote) { setNote("Wait for the price before sending."); return; }
         void a.send(now.text).then(() => setText(""));
         return;
     }
-  }, [a, add, online, places, shell]);
+  }, [a, add, online, places, shell, spendOff]);
 
   /* Words in the address (`&q=`): into the box once, so a reload does not type them again. */
   const { setScreenParams } = shell;
   useEffect(() => { if (query) setScreenParams({ q: null }, "replace"); }, [query, setScreenParams]);
 
   const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, loading: a.quoting, error: a.quoteError });
+  const hints = spendOff ? HOW_HINTS.filter((hint) => atomikIntent(hint).kind === "how") : HOW_HINTS;
   const blocked = intent.kind === "ask" && !online ? "Needs a connection" : intent.kind === "ask" && !ready ? "Opening this project’s Atomik…" : null;
   const title = usePriceTitle(button.price);
   const thread = ready && (a.messages.length > 0 || a.current.kind !== "idle");
@@ -118,17 +123,17 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
   useEffect(() => { body.current?.scrollTo?.({ top: body.current.scrollHeight }); }, [lines.length, a.messages.length]);
   const empty = !thread && !lines.length;
   const cost = thinkingLine(intent, a.quote?.estimateCredits ?? null);
-  const why = note ?? blocked ?? button.reason ?? a.error;
+  const why = spendOff ?? note ?? blocked ?? button.reason ?? a.error;
 
   return (
     <PhoneSheet title="Atomik" onClose={onClose} testId="phone-atomik"
       footer={(
         <>
-          <p className="ph-row-line" data-testid="phone-atomik-cost">{intent.kind === "ask" || text.trim() ? cost : "How-to answers are free"}</p>
-          <textarea className="ph-make-text ph-atomik-box" aria-label="Ask Atomik" rows={2} value={text} placeholder="How do I…? Or tell Atomik what to do."
-            onChange={(e) => { setText(e.target.value); setNote(null); }} data-testid="phone-atomik-input" />
-          <button type="button" className="ph-btn ph-btn--primary" disabled={button.disabled || Boolean(blocked) || a.busy} title={title ?? undefined}
-            onClick={() => say(text)} data-testid="phone-atomik-send">{a.busy ? "Sending…" : button.label}</button>
+          <p className="ph-row-line" data-testid="phone-atomik-cost">{!spendOff && (intent.kind === "ask" || text.trim()) ? cost : "How-to answers are free"}</p>
+          <textarea className="ph-make-text ph-atomik-box" aria-label="Ask Atomik" rows={2} value={spendOff ? "" : text} placeholder={spendOff ? "Ask Atomik how, above." : "How do I…? Or tell Atomik what to do."}
+            disabled={Boolean(spendOff)} onChange={(e) => { setText(e.target.value); setNote(null); }} data-testid="phone-atomik-input" />
+          <button type="button" className="ph-btn ph-btn--primary" disabled={Boolean(spendOff) || button.disabled || Boolean(blocked) || a.busy} title={spendOff ?? title ?? undefined}
+            onClick={() => say(text)} data-testid="phone-atomik-send">{spendOff ? "Ask" : a.busy ? "Sending…" : button.label}</button>
           {why ? <p className="ph-row-line ph-plan-why" role="status" data-testid="phone-atomik-note">{why}</p> : null}
         </>
       )}>
@@ -136,7 +141,7 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
         {empty ? (
           <div className="ph-atomik-hints" data-testid="phone-atomik-hints">
             <span className="ph-eyebrow">Ask Atomik how</span>
-            {HOW_HINTS.map((hint) => <button key={hint} type="button" className="ph-btn ph-atomik-hint" onClick={() => say(hint)}>{hint}</button>)}
+            {hints.map((hint) => <button key={hint} type="button" className="ph-btn ph-atomik-hint" onClick={() => say(hint)}>{hint}</button>)}
           </div>
         ) : null}
         {thread ? a.messages.map((m) => (

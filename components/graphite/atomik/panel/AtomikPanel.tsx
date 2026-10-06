@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ProjectProvider, useProject } from "@/lib/projectContext";
 import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
 import { useShell } from "@/lib/shell/state";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { STUDIO_RAIL } from "@/lib/board/regions";
 import {
   ATOMIK_PANEL_EVENT, askButton, atomikIntent, handAtomik, matchPlace, takeHanded,
@@ -69,6 +70,9 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
   useEffect(() => { const want = productionId ?? ""; if (selection !== want) setSelection(want); }, [productionId, selection, setSelection]);
   const ready = productionId ? current?.id === productionId : !current;
   const a = useAtomik();
+  /* The sample workspace spends nothing (the owner's switch): no ask box there, only the free how-to answers. */
+  const spendOff = useSampleWorkspace();
+  const hints = useMemo(() => (spendOff ? HOW_HINTS.filter((hint) => atomikIntent(hint).kind === "how") : HOW_HINTS), [spendOff]);
 
   const [text, setText] = useState("");
   const intent = useMemo(() => atomikIntent(text), [text]);
@@ -88,7 +92,7 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
   const [autoSend, setAutoSend] = useState<number | null>(null);
 
   /* The composer's words are the thread's draft only for a request, so only a request is quoted. */
-  const asking = intent.kind === "ask" && ready;
+  const asking = intent.kind === "ask" && ready && !spendOff;
   const { setDraftText } = a;
   useEffect(() => { setDraftText(asking ? text : ""); }, [asking, text, setDraftText]);
 
@@ -116,11 +120,12 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
       }
       case "memory": setMemory({ verb: now.verb, subject: now.subject }); return;
       case "ask":
+        if (spendOff) { setNote(spendOff); return; }
         if (!a.quote) { setNote("Wait for the price before sending."); return; }
         void a.send(now.text).then(() => setText(""));
         return;
     }
-  }, [a, answerHow, line, places]);
+  }, [a, answerHow, line, places, spendOff]);
 
   /* Words handed over from ⌘K, Settings or a card: into the box; asked at once when the person already pressed. */
   useEffect(() => {
@@ -193,7 +198,7 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
         {empty ? (
           <div className="ak-hints" data-testid="atomik-hints">
             <span className="ak-eyebrow">Ask Atomik how</span>
-            {HOW_HINTS.map((hint) => <button key={hint} type="button" className="ak-hint" onClick={() => say(hint)}>{hint}</button>)}
+            {hints.map((hint) => <button key={hint} type="button" className="ak-hint" onClick={() => say(hint)}>{hint}</button>)}
           </div>
         ) : null}
         {thread ? <ThreadLines onPick={setText} /> : null}
@@ -219,16 +224,16 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
           <p className="ak-note" role="status">A request didn’t finish. <button type="button" className="ak-link" disabled={a.busy} onClick={() => void a.send(a.recoveryText ?? "")}>Recover it</button></p>
         ) : null}
         <div className="ak-box">
-          <textarea aria-label="Ask Atomik" value={text} placeholder="How do I…? Or tell Atomik what to do." rows={2}
-            onChange={(e) => { setText(e.target.value); setNote(null); }}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!button.disabled && !blocked && !a.busy) say(text); } }}
+          <textarea aria-label="Ask Atomik" value={spendOff ? "" : text} placeholder={spendOff ? "Ask Atomik how, above." : "How do I…? Or tell Atomik what to do."} rows={2}
+            disabled={Boolean(spendOff)} onChange={(e) => { setText(e.target.value); setNote(null); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!spendOff && !button.disabled && !blocked && !a.busy) say(text); } }}
             data-testid="atomik-input" />
-          <button type="button" className="ak-btn ak-btn-primary ak-send" disabled={button.disabled || !!blocked || a.busy}
-            title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)} onClick={() => say(text)} data-testid="atomik-send">
-            {a.busy ? "Sending…" : button.label}
+          <button type="button" className="ak-btn ak-btn-primary ak-send" disabled={Boolean(spendOff) || button.disabled || !!blocked || a.busy}
+            title={spendOff ?? title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)} onClick={() => say(text)} data-testid="atomik-send">
+            {spendOff ? "Ask" : a.busy ? "Sending…" : button.label}
           </button>
         </div>
-        {note ?? blocked ?? button.reason ?? a.error ? <p className="ak-note" role="status" data-testid="atomik-note">{note ?? blocked ?? button.reason ?? a.error}</p> : null}
+        {spendOff ?? note ?? blocked ?? button.reason ?? a.error ? <p className="ak-note" role="status" data-testid="atomik-note">{spendOff ?? note ?? blocked ?? button.reason ?? a.error}</p> : null}
       </div>
     </aside>
   );
