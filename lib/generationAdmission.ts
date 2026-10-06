@@ -1206,7 +1206,7 @@ export async function executeGenerationAdmission(
     /* THE CEILING IS COUNTED AFTER THE CAST, because the cast attaches too.
      References were validated at the point they arrived from the browser —
      which is before `expandCast` pushes a still for every cited name. So
-     attaching two images to a two-image model and then citing @Mara and
+     attaching two images to a two-image model and then citing @Courier and
      @Mule passed the check with two and left with four, and nothing said
      so. The still path already counts them (see the identical check on the
      image branch below, and its comment); the video path never did.

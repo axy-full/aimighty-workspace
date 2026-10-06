@@ -18,7 +18,7 @@ import { createSuiteAgent, suiteAgentMessages } from '../../lib/workbench/suite-
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
-const validReply = { intent: 'shots', summary: 'Mira enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Mira’s ivory scarf consistent.'] };
+const validReply = { intent: 'shots', summary: 'Wren enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Wren’s ivory scarf consistent.'] };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,
@@ -46,7 +46,7 @@ async function fixture() {
   project.id = 'production-' + randomUUID();
   project.productionProjectId = 'real-project-' + randomUUID();
   await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: ['owner:' + project.id, 'owner', project.id, project.name, JSON.stringify(project), Date.now()] });
-  const input = atomikRequestSchema.parse({ projectId: project.id, requestId: randomUUID(), request: 'Make a shot proposal from the Mira brief', model: 'auto', depth: 'Quick', refs: ['hero', 'character'] });
+  const input = atomikRequestSchema.parse({ projectId: project.id, requestId: randomUUID(), request: 'Make a shot proposal from the Wren brief', model: 'auto', depth: 'Quick', refs: ['hero', 'character'] });
   return { project, input };
 }
 
@@ -77,10 +77,10 @@ test('an unapproved catalog model cannot quote or reserve Atomik work', async ()
 
 test('context is tied to supplied references and never pretends to inspect pictures', async () => {
   const project = seedProject();
-  project.script = 'EXT. MIRRORED DUNES - DAY\nMira turns away from her reflection.';
+  project.script = 'EXT. MIRRORED DUNES - DAY\nWren turns away from her reflection.';
   const input = atomikRequestSchema.parse({ projectId: project.id, requestId: 'request-123', request: 'Check continuity', refs: ['hero'] });
   const context = JSON.parse(atomikContext(project, input, { hero: 'User supplied continuity notes' }));
-  expect(context.project.screenplay).toContain('Mira turns');
+  expect(context.project.screenplay).toContain('Wren turns');
   expect(context.selectedReferences).toHaveLength(1);
   expect(context.selectedReferences[0].uploadedText).toContain('continuity notes');
   expect(JSON.parse(atomikContext(project, input)).selectedReferences[0].evidence).toContain('has not been viewed');
@@ -205,7 +205,7 @@ test('a quote states how much of a long screenplay this depth reads instead of s
     const h = harness();
     const short = await quoteAtomikJob(input, 'owner', h.deps);
     expect(short.screenplay).toEqual({ chars: project.script?.length ?? 0, includedChars: project.script?.length ?? 0, truncated: false });
-    const long = { ...project, script: 'INT. CORRIDOR - NIGHT\nMira counts the doors.\n'.repeat(400) };
+    const long = { ...project, script: 'INT. CORRIDOR - NIGHT\nWren counts the doors.\n'.repeat(400) };
     await db().execute({ sql: 'UPDATE workbench_projects SET body=? WHERE key=?', args: [JSON.stringify(long), 'owner:' + project.id] });
     const quote = await quoteAtomikJob(input, 'owner', h.deps);
     expect(long.script.length).toBeGreaterThan(8000);

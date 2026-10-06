@@ -75,7 +75,7 @@ async function fixture() {
         "",
         "A distant train crosses the empty platform.",
         "",
-        "MARA",
+        "KEEPER",
         "We have one more chance.",
         "",
         `Original scan marker ${page}.`,
@@ -146,7 +146,7 @@ test("real local OCR recognizes scan-only PDF, requires individual page review a
   await review
     .getByLabel("Recognized text page 1", { exact: true })
     .fill(
-      "1 INT. STATION - NIGHT 1\n\nCorrected line from the original scan.\n\nMARA\nWe have one more chance.",
+      "1 INT. STATION - NIGHT 1\n\nCorrected line from the original scan.\n\nKEEPER\nWe have one more chance.",
     );
   const firstCheck = review.getByRole("checkbox", {
     name: "I reviewed page 1 against the original and corrected its text.",

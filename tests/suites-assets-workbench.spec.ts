@@ -18,7 +18,7 @@ async function open(page: Page) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
-  await mockProjects(page, { current: fixture(), list: [{ id: "ws-assets", name: "Coastal light study" }, { id: "ws-other", name: "Northline" }] });
+  await mockProjects(page, { current: fixture(), list: [{ id: "ws-assets", name: "Coastal light study" }, { id: "ws-other", name: "Granite" }] });
   await mockLibrary(page, {
     uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" }), upload({ id: "up_tone", filename: "room-tone.mp3", mime: "audio/mpeg", kind: "audio", width: 0, height: 0 })],
     generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water", params: { rawPrompt: "wide on the water, raw", enhancedPrompt: "Wide on the water at dusk, 35mm, low sun" } })],
@@ -117,12 +117,12 @@ test("cut here, paste in another project: the upload moves; Move to… does the 
   await expect(page.getByTestId("toast")).toHaveText("harbour-plate.webp is already in Coastal light study.");
   expect(calls).toEqual([]);
 
-  /* Move to… → Northline files it there and unfiles it here. */
+  /* Move to… → Granite files it there and unfiles it here. */
   if (!wide) await page.getByTestId("toggle-library").click();
   await plate.locator(".gx-asset-thumb").click({ button: "right" });
   await page.getByTestId("context-menu").getByRole("menuitem", { name: /^Move to/ }).click();
-  await page.getByRole("dialog", { name: "Move harbour-plate.webp to" }).getByRole("option", { name: "Northline" }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Moved harbour-plate.webp to Northline");
+  await page.getByRole("dialog", { name: "Move harbour-plate.webp to" }).getByRole("option", { name: "Granite" }).click();
+  await expect(page.getByTestId("toast")).toHaveText("Moved harbour-plate.webp to Granite");
   expect(calls).toEqual([
     { method: "POST", path: "/api/workbench/library", body: { projectId: "ws-other", uploadId: "up_plate" } },
     { method: "DELETE", path: "/api/workbench/library", body: { projectId: "ws-assets", uploadId: "up_plate" } },

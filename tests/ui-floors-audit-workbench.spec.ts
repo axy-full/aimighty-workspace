@@ -34,7 +34,7 @@ const SCRIPT = seedProject().script!;
 function fixture(): Project {
   const sha = createHash("sha256").update(SCRIPT).digest("hex");
   const scene = (n: number, heading: string) => ({
-    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["MIRA"], locations: [heading], props: [],
+    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["WREN"], locations: [heading], props: [],
     beats: [1, 2].map((b) => ({ id: `beat-${n}-${b}`, text: `Scene ${n}, beat ${b}.` })),
     shots: [1, 2].map((t) => ({ id: `shot-${n}-${t}`, description: `Scene ${n}, shot ${t}.`, framing: "Wide", movement: "Slow push-in", lighting: "Low sun", sound: "Wind" })),
   });

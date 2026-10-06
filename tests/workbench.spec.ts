@@ -238,7 +238,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   }
   await goStage(page, "brief");
-  await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
+  await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nWREN walks into the light.");
   await expect(page.getByRole("region", { name: "Screenplay scene breakdown" }).getByRole("checkbox")).toHaveCount(1);
   await page.getByRole("button", { name: "Select all scenes", exact: true }).click();
   await page.getByRole("button", { name: "Build 1 scene nodes", exact: true }).click();

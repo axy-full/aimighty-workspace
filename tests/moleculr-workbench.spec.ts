@@ -199,7 +199,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
   await page.screenshot({ path: info.outputPath("moleculr-product.png") });
   await page.getByRole("link", { name: "Cast", exact: true }).click();
   await page
-    .getByRole("button", { name: "Mira / character study", exact: true })
+    .getByRole("button", { name: "Lead / character study", exact: true })
     .click();
   await page.getByRole("link", { name: "Format", exact: true }).click();
   await page
@@ -796,7 +796,7 @@ test("Moleculr prepares quoted-later hook and cast drafts while single video can
     .click();
   await page.getByRole("link", { name: "Cast", exact: true }).click();
   await page
-    .getByRole("button", { name: "Mira / character study", exact: true })
+    .getByRole("button", { name: "Lead / character study", exact: true })
     .click();
   await page.getByRole("link", { name: "Format", exact: true }).click();
   await page

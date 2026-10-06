@@ -105,7 +105,7 @@ test("what Gen cannot recreate says so, and the menu and the Inspector block it"
     /* A dub (lib/dubbing.ts): the task column says "generate", params say "dub". */
     [made("audio", { task: "dub", dubbingStatus: "dubbed", dubbingJobId: "dub_1", sourceUploadId: "up_clip", targetLang: "fr" }, "generate", "eleven_dubbing_v1"), source],
     /* A trained identity's still (app/api/identities/[id]/render). */
-    [made("image", { ratio: "1:1", resolution: "1K", rawPrompt: "on the pier", identity: { id: "idn_1", name: "Mara" }, cast: ["Mara"] }), tool],
+    [made("image", { ratio: "1:1", resolution: "1K", rawPrompt: "on the pier", identity: { id: "idn_1", name: "Keeper" }, cast: ["Keeper"] }), tool],
     /* The account's marketing video (lib/higgsfield-consumer/original-identity.ts): no task, receipted in account credits. */
     [made("video", { resolution: "720p", aspectRatio: "9:16", ratio: "9:16", generateAudio: true, consumerJobId: "j", consumerCreditUnit: "higgsfield_credits", duration: 8.04 }, "generate", "marketing_studio_video"), business],
     [made("video", { ratio: "16:9" }, "generate", "marketing_studio_video"), business],
@@ -181,8 +181,8 @@ test("a connected recipe: named by the account's list, recreated on Studio engin
   /* With the account's list read, the model reads by the catalogue's own name. */
   expect(chipsFor({ preset, billing: "connected", owner: true, model: soul, settings: composerSettings(soul, undefined, preset.picks) })[0]).toMatchObject({ value: "Soul Cinematic", state: "kept" });
   expect(owner(null)).toMatchObject({ state: "reading" });
-  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "ready" }])).toMatchObject({ value: "Mara", state: "kept" });
-  expect(owner([{ soulId: "soul_abc", name: "Mara", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "Made on the connected account" });
+  expect(owner([{ soulId: "soul_abc", name: "Keeper", status: "ready" }])).toMatchObject({ value: "Keeper", state: "kept" });
+  expect(owner([{ soulId: "soul_abc", name: "Keeper", status: "training" }])).toMatchObject({ value: "Identity → none", state: "changed", why: "Made on the connected account" });
   expect(owner([])).toMatchObject({ state: "changed", why: "Made on the connected account" });
 });
 

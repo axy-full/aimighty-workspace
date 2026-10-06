@@ -228,14 +228,14 @@ test("a starter that could not be opened says so under the button, in view above
 /* Three projects of this person's; the library has a take still generating. Nothing is written. */
 const PROJECTS: Record<string, Project> = {
   "ws-home": { ...newProject("Coastal light study"), id: "ws-home", productionProjectId: "prod-home", shotMappings: {}, brief: "A fox crosses a frozen harbour at dusk", shots: [{ id: "s1", name: "The crossing", assetId: "", duration: 120, sourceIn: 0, note: "" }] },
-  "ws-market": { ...newProject("Night market"), id: "ws-market", productionProjectId: "prod-market", shotMappings: {} },
-  "ws-dunes": { ...newProject("Dune light tests"), id: "ws-dunes", productionProjectId: "prod-dunes", shotMappings: {} },
+  "ws-market": { ...newProject("Harbour market"), id: "ws-market", productionProjectId: "prod-market", shotMappings: {} },
+  "ws-dunes": { ...newProject("Harbour light tests"), id: "ws-dunes", productionProjectId: "prod-dunes", shotMappings: {} },
 };
 async function withProjects(page: Page) {
   const list = [
     { id: "ws-home", name: "Coastal light study", revision: 3, updatedAt: Date.now() - 60_000 },
-    { id: "ws-market", name: "Night market", revision: 1, updatedAt: Date.now() - 3 * 3_600_000 },
-    { id: "ws-dunes", name: "Dune light tests", revision: 1, updatedAt: Date.now() - 2 * 86_400_000 },
+    { id: "ws-market", name: "Harbour market", revision: 1, updatedAt: Date.now() - 3 * 3_600_000 },
+    { id: "ws-dunes", name: "Harbour light tests", revision: 1, updatedAt: Date.now() - 2 * 86_400_000 },
   ];
   await page.route("**/api/workbench/projects**", (route) => {
     if (route.request().method() !== "GET") return route.fulfill({ status: 400, json: { error: "Unexpected write in a read test." } });
@@ -269,7 +269,7 @@ test("desktop: the mark opens the Studio home — the next step, what is generat
   await expect(running.getByTestId("home-run")).toContainText("Generating");
   const others = home.getByTestId("recent-projects");
   await expect(others.getByTestId("recent-project")).toHaveCount(2);
-  expect(await others.locator(".gx-recent-name").allTextContents()).toEqual(["Night market", "Dune light tests"]);
+  expect(await others.locator(".gx-recent-name").allTextContents()).toEqual(["Harbour market", "Harbour light tests"]);
   await expect(others.locator(".gx-recent-age").first()).toHaveText("3 hr");
   /* The stage pages are deleted, so the strip has no stage tabs; the Inspector has no stage spec to show here. */
   await expect(page.locator(".gx-strip")).toHaveCount(0);
@@ -279,9 +279,9 @@ test("desktop: the mark opens the Studio home — the next step, what is generat
   await running.getByTestId("home-run").click();
   await expect(page.getByTestId("inspector")).toBeVisible();
   /* A recent project opens in one click. */
-  await others.getByRole("button", { name: /Night market/ }).click();
-  await expect(page.getByTestId("project-name")).toHaveText("Night market");
-  await expect(page.getByTestId("page-title")).toHaveText("Night market");
+  await others.getByRole("button", { name: /Harbour market/ }).click();
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour market");
+  await expect(page.getByTestId("page-title")).toHaveText("Harbour market");
   /* An empty project's next step is its brief. */
   await expect(page.getByTestId("home-up-next")).toContainText("Up next · the brief");
   await page.getByTestId("home-open-brief").click();
@@ -307,7 +307,7 @@ test("phone: with a project, the Studio home lists what is generating and the ot
   await floors(page, home, info);
   await clearsTabBar(page, others.getByTestId("recent-project").last());
   await others.getByTestId("recent-project").last().click();
-  await expect(page.getByTestId("project-name")).toHaveText("Dune light tests");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour light tests");
   expect(errors).toEqual([]);
 });
 

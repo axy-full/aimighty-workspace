@@ -71,18 +71,18 @@ test("a reference element create carries the {id, url} media pair the recorded s
 
 test("a create whose answer is lost after it was sent is uncertain, never 'nothing was sent'; a refused admission sends nothing", async () => {
   const lost = account((p) => (p.params.arguments?.action === "create" ? new Error("socket closed") : undefined));
-  expect(await createConsumerCharacter(lost.token, { name: "Mira", type: "soul_2" }, stills, { fetch: lost.fetch, admit: async () => {} })).toEqual({ state: "uncertain" });
+  expect(await createConsumerCharacter(lost.token, { name: "Wren", type: "soul_2" }, stills, { fetch: lost.fetch, admit: async () => {} })).toEqual({ state: "uncertain" });
   expect(creates(lost, "show_characters")).toHaveLength(1);
   const lostElement = account((p) => (p.params.arguments?.action === "create" ? new Error("socket closed") : undefined));
   expect(await createConsumerElement(lostElement.token, { name: "Fox", category: "prop", description: "" }, stills.slice(0, 1), { fetch: lostElement.fetch, admit: async () => {} })).toEqual({ state: "uncertain" });
   // The durable claim refused (the same build is already open): nothing paid goes out, and the caller's error arrives unchanged.
   const refused = account();
   const claimError = new Error("already open");
-  await expect(createConsumerCharacter(refused.token, { name: "Mira", type: "soul_2" }, stills, { fetch: refused.fetch, admit: async () => { throw claimError; } })).rejects.toBe(claimError);
+  await expect(createConsumerCharacter(refused.token, { name: "Wren", type: "soul_2" }, stills, { fetch: refused.fetch, admit: async () => { throw claimError; } })).rejects.toBe(claimError);
   expect(creates(refused, "show_characters")).toHaveLength(0);
   // A failure before the create (an import) is still "nothing was sent".
   const early = account((p) => (p.params.name === "media_import_url" ? new Error("import down") : undefined));
-  await expect(createConsumerCharacter(early.token, { name: "Mira", type: "soul_2" }, stills, { fetch: early.fetch, admit: async () => {} })).rejects.toMatchObject({ code: "preflight_unavailable" });
+  await expect(createConsumerCharacter(early.token, { name: "Wren", type: "soul_2" }, stills, { fetch: early.fetch, admit: async () => {} })).rejects.toMatchObject({ code: "preflight_unavailable" });
   expect(creates(early, "show_characters")).toHaveLength(0);
   // Creates carry twenty stills and get a longer per-call limit than a submission.
   expect(QUALIFICATION_LIMITS.createCallTimeoutMs).toBeGreaterThan(QUALIFICATION_LIMITS.callTimeoutMs);
@@ -102,7 +102,7 @@ test("the libraries are read past the first page until every recorded id is foun
   // A reply that names no next page stops the paging; a recorded Soul ID still
   // missing is then read by its soul_id, and kept only if the reply is that one.
   const single = account((p) => (p.params.name !== "show_characters" ? undefined
-    : p.params.arguments.action === "get" ? (p.params.arguments.soul_id === "soul_900" ? { character: { soul_id: "soul_900", name: "Mira", status: "ready" } } : { items: page(0, 3) })
+    : p.params.arguments.action === "get" ? (p.params.arguments.soul_id === "soul_900" ? { character: { soul_id: "soul_900", name: "Wren", status: "ready" } } : { items: page(0, 3) })
     : { items: page(0, 3) }));
   const beyond = await listConsumerCharacters(single.token, new Set(["soul_900", "soul_901"]), { fetch: single.fetch });
   expect(single.named("show_characters").map((p) => p.params.arguments)).toEqual([{ action: "list", size: 100 }, characterGetArgs("soul_900"), characterGetArgs("soul_901")]);
@@ -130,20 +130,20 @@ test("a create reply that is a list is the new element only when it holds exactl
 
 test("an accepted build without an id is matched only to one unrecorded entry of the same name and type made just after it was sent", () => {
   const sent = Date.parse("2026-09-25T10:00:00Z");
-  const build = { name: "Mira", type: "soul_2", createdAt: sent };
+  const build = { name: "Wren", type: "soul_2", createdAt: sent };
   const at = (minutes: number) => sent + minutes * 60_000;
   expect(accountCreatedAt({ created_at: "2026-09-25T10:03:00Z" })).toBe(at(3));
   expect(accountCreatedAt({ createdAt: Math.floor(at(3) / 1000) })).toBe(at(3));
   expect(accountCreatedAt({ created: at(3) })).toBe(at(3));
   expect(accountCreatedAt({ name: "no time" })).toBeNull();
-  expect(matchBuild(build, [{ id: "soul_new", name: "Mira", type: "soul_2", createdAt: at(3) }])).toBe("soul_new");
+  expect(matchBuild(build, [{ id: "soul_new", name: "Wren", type: "soul_2", createdAt: at(3) }])).toBe("soul_new");
   // The owner's own identity with the same name, made before the send, is never adopted.
-  expect(matchBuild(build, [{ id: "soul_site", name: "Mira", type: "soul_2", createdAt: at(-60) }])).toBeNull();
-  expect(matchBuild(build, [{ id: "soul_late", name: "Mira", type: "soul_2", createdAt: sent + BUILD_MATCH_WINDOW.afterMs + 1 }])).toBeNull();
-  expect(matchBuild(build, [{ id: "soul_x", name: "Mira", type: "soul_cinematic", createdAt: at(3) }])).toBeNull();
-  expect(matchBuild(build, [{ id: "soul_x", name: "Mira", type: "soul_2", createdAt: null }])).toBeNull();
+  expect(matchBuild(build, [{ id: "soul_site", name: "Wren", type: "soul_2", createdAt: at(-60) }])).toBeNull();
+  expect(matchBuild(build, [{ id: "soul_late", name: "Wren", type: "soul_2", createdAt: sent + BUILD_MATCH_WINDOW.afterMs + 1 }])).toBeNull();
+  expect(matchBuild(build, [{ id: "soul_x", name: "Wren", type: "soul_cinematic", createdAt: at(3) }])).toBeNull();
+  expect(matchBuild(build, [{ id: "soul_x", name: "Wren", type: "soul_2", createdAt: null }])).toBeNull();
   // Two candidates: no guess.
-  expect(matchBuild(build, [{ id: "a", name: "Mira", type: "soul_2", createdAt: at(2) }, { id: "b", name: "Mira", type: null, createdAt: at(4) }])).toBeNull();
+  expect(matchBuild(build, [{ id: "a", name: "Wren", type: "soul_2", createdAt: at(2) }, { id: "b", name: "Wren", type: null, createdAt: at(4) }])).toBeNull();
 });
 
 let sequence = 0;
@@ -160,17 +160,17 @@ test("a build is claimed durably before it is sent; the same build is refused wh
   const tenant = await import("../../lib/tenant");
   const database = await import("../../lib/db");
   await tenant.runInTenant(workspace(), async () => {
-    const identity = { userId: "owner", kind: "character" as const, fingerprint: records.buildFingerprint("character", "Mira", "soul_2", [{ uploadId: "a" }]) };
-    const claim = { ...identity, projectId: "ws-1", name: "Mira", type: "soul_2" };
+    const identity = { userId: "owner", kind: "character" as const, fingerprint: records.buildFingerprint("character", "Wren", "soul_2", [{ uploadId: "a" }]) };
+    const claim = { ...identity, projectId: "ws-1", name: "Wren", type: "soul_2" };
     const first = await records.claimBuild(claim);
     await expect(records.claimBuild(claim)).rejects.toMatchObject({ code: "build_in_flight", status: 409 });
     await expect(records.assertNoOpenBuild(identity)).rejects.toBeInstanceOf(records.BuildInFlightError);
     // Another owner, or another request, is not blocked.
     await records.assertNoOpenBuild({ ...identity, userId: "someone-else" });
-    await records.assertNoOpenBuild({ ...identity, fingerprint: records.buildFingerprint("character", "Mira", "soul_2", [{ uploadId: "b" }]) });
+    await records.assertNoOpenBuild({ ...identity, fingerprint: records.buildFingerprint("character", "Wren", "soul_2", [{ uploadId: "b" }]) });
     await records.settleBuild(first, "uncertain");
     await expect(records.claimBuild(claim)).rejects.toMatchObject({ code: "build_in_flight" });
-    expect((await records.openBuilds("character", "owner")).map((b) => [b.name, b.state, b.stale])).toEqual([["Mira", "uncertain", false]]);
+    expect((await records.openBuilds("character", "owner")).map((b) => [b.name, b.state, b.stale])).toEqual([["Wren", "uncertain", false]]);
     expect(await records.openBuilds("character", "someone-else")).toEqual([]);
     // A day later the account never named it: closed as unmatched (kept), and the request may be sent again.
     await database.db().execute({ sql: "UPDATE higgsfield_consumer_builds SET created_at=? WHERE id=?", args: [Date.now() - records.BUILD_MATCH_GIVE_UP_MS - 1, first] });
@@ -187,7 +187,7 @@ test("a build is claimed durably before it is sent; the same build is refused wh
 
 test("while a build waits to be named, the list is paged until it is matched or the pages reach entries older than its window", async () => {
   const sent = Date.now() - 5 * 60_000;
-  const builds = [{ name: "Mira", type: "soul_2", createdAt: sent, stale: false }];
+  const builds = [{ name: "Wren", type: "soul_2", createdAt: sent, stale: false }];
   const entry = (id: string, name: string, minutes: number) => ({ soul_id: id, name, type: "soul_2", created_at: new Date(sent + minutes * 60_000).toISOString() });
   const candidates = (entries: readonly unknown[]) => entries.map((e) => e as { soul_id: string; name: string; type: string; created_at: string })
     .map((e) => ({ id: e.soul_id, name: e.name, type: e.type, createdAt: accountCreatedAt(e) }));
@@ -197,10 +197,10 @@ test("while a build waits to be named, the list is paged until it is matched or 
   expect(pagingForOpenBuilds([{ ...builds[0], stale: true }], candidates)).toBeUndefined();
   // Newer entries only, no match yet: keep paging. A match, or entries older than the window: stop.
   expect(more([entry("a", "Other", 30), entry("b", "Else", 20)])).toBe(true);
-  expect(more([entry("a", "Other", 30), entry("new", "Mira", 3)])).toBe(false);
+  expect(more([entry("a", "Other", 30), entry("new", "Wren", 3)])).toBe(false);
   expect(more([entry("a", "Other", 30), entry("old", "Old", -60)])).toBe(false);
   // Through the reader: page two holds the build, so the read goes that far and no further.
-  const pages = [[entry("p1", "Other", 40)], [entry("new", "Mira", 3)], [entry("p3", "Older", -90)]];
+  const pages = [[entry("p1", "Other", 40)], [entry("new", "Wren", 3)], [entry("p3", "Older", -90)]];
   const a = account((p) => {
     if (p.params.name !== "show_characters") return undefined;
     const cursor = Number(p.params.arguments.cursor ?? 0);
@@ -248,7 +248,7 @@ async function buildServices() {
     "./mcp": {
       CONNECTED_LIBRARY_GETS: 20, CONNECTED_LIBRARY_PAGES: 5,
       readConnectedPlannerReads: async () => [],
-      createConsumerCharacter: create({ soul_id: "soul_made", name: "Mira", type: "soul_2", status: "training" }),
+      createConsumerCharacter: create({ soul_id: "soul_made", name: "Wren", type: "soul_2", status: "training" }),
       createConsumerElement: create({ element_id: "el_made", name: "Harbour", category: "environment" }),
       listConsumerCharacters: listing,
       listConsumerElements: listing,
@@ -277,7 +277,7 @@ const soulSources = [{ uploadId: "a" }, { uploadId: "b" }, { uploadId: "c" }, { 
 test("managed workspaces refuse provider-wallet builds before access, media or paid submission", async () => {
   const f = await buildServices();
   await f.tenant.runInTenant({ ...workspace(), usesPlatformKeys: true }, async () => {
-    await expect(f.characters.buildConnectedCharacter("owner", { name: "Mira", type: "soul_2", sources: soulSources }))
+    await expect(f.characters.buildConnectedCharacter("owner", { name: "Wren", type: "soul_2", sources: soulSources }))
       .rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
     await expect(f.elements.buildConnectedElement("owner", { name: "Harbour", category: "environment", description: "", sources: [{ uploadId: "a" }] }))
       .rejects.toMatchObject({ code: "particl_quote_unavailable", status: 409 });
@@ -291,15 +291,15 @@ test("every way a Soul ID build ends is kept in the ledger; one accepted without
     const build = (name: string) => f.characters.buildConnectedCharacter("owner", { name, type: "soul_2", sources: soulSources, projectId: "ws-1" });
     // Stopped before the create went out: closed as not_sent, and free to try again.
     f.state.mode = "not_sent";
-    await expect(build("Mira")).rejects.toThrow("Stopped before the create was sent");
+    await expect(build("Wren")).rejects.toThrow("Stopped before the create was sent");
     // The account said no: closed as refused.
     f.state.mode = "refused";
-    expect(await build("Mira")).toEqual({ state: "refused", reason: "Not on this plan." });
+    expect(await build("Wren")).toEqual({ state: "refused", reason: "Not on this plan." });
     // The answer was lost: kept open, and the same build is refused before anything is sent.
     f.state.mode = "uncertain";
-    expect(await build("Mira")).toEqual({ state: "uncertain" });
+    expect(await build("Wren")).toEqual({ state: "uncertain" });
     const sends = f.state.creates;
-    await expect(build("Mira")).rejects.toMatchObject({ code: "build_in_flight", status: 409 });
+    await expect(build("Wren")).rejects.toMatchObject({ code: "build_in_flight", status: 409 });
     expect(f.state.creates).toBe(sends);
     // Accepted without an id: pending until the account lists it.
     f.state.mode = "pending";
@@ -308,7 +308,7 @@ test("every way a Soul ID build ends is kept in the ledger; one accepted without
     f.state.mode = "created";
     expect(await build("Ada")).toMatchObject({ state: "training", character: { soulId: "soul_made" } });
     expect(await f.ledger()).toEqual([
-      ["character", "Mira", "not_sent", null], ["character", "Mira", "refused", null], ["character", "Mira", "uncertain", null],
+      ["character", "Wren", "not_sent", null], ["character", "Wren", "refused", null], ["character", "Wren", "uncertain", null],
       ["character", "Nova", "pending", null], ["character", "Ada", "recorded", "soul_made"],
     ]);
     // The account now lists a "Nova" made just after the send (and an older one of its own).
@@ -320,7 +320,7 @@ test("every way a Soul ID build ends is kept in the ledger; one accepted without
     ];
     const listed = await f.characters.connectedCharacters("owner");
     expect(listed.characters.map((c) => c.soulId).sort()).toEqual(["soul_made", "soul_nova"]);
-    expect(listed.pending?.map((b) => [b.name, b.state])).toEqual([["Mira", "uncertain"]]);
+    expect(listed.pending?.map((b) => [b.name, b.state])).toEqual([["Wren", "uncertain"]]);
     // Builds still open page the list further.
     expect(f.state.reads.at(-1)).toMatchObject({ paging: true });
     expect((await f.ledger()).find((row) => row[1] === "Nova")).toEqual(["character", "Nova", "recorded", "soul_nova"]);

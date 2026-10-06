@@ -11,14 +11,14 @@ const s = (id: string, num: number, inputs: string[] = [], position = num): Stag
   ({ id, num, name: id, inputs, position });
 
 /** The handoff's own recipe: a chain, a branch off the shot list, and a join. */
-const NORTHLINE: StageIn[] = [
+const GRANITE: StageIn[] = [
   s("brief", 1), s("scene", 2, ["brief"]), s("shotlist", 3, ["scene"]),
   s("keyframe", 4, ["shotlist"]), s("motion", 5, ["keyframe"]), s("post", 6, ["motion"]),
   s("audio", 7, ["shotlist"]), s("assembly", 8, ["post", "audio"]),
 ];
 
 test("a stage sits one column right of the furthest thing feeding it", () => {
-  const d = depths(NORTHLINE);
+  const d = depths(GRANITE);
   expect(d.get("brief")).toBe(0);
   expect(d.get("scene")).toBe(1);
   expect(d.get("shotlist")).toBe(2);
@@ -31,7 +31,7 @@ test("a stage sits one column right of the furthest thing feeding it", () => {
 });
 
 test("a wire never points backwards", () => {
-  const placed = layout(NORTHLINE);
+  const placed = layout(GRANITE);
   const at = new Map(placed.map((p) => [p.id, p]));
   for (const p of placed) {
     for (const input of p.inputs) {
@@ -41,7 +41,7 @@ test("a wire never points backwards", () => {
 });
 
 test("two stages wanting the same column stack, in the author's order", () => {
-  const placed = layout(NORTHLINE);
+  const placed = layout(GRANITE);
   const at = new Map(placed.map((p) => [p.id, p]));
   // Nothing shares a column with a chain member here except by branching.
   expect(at.get("brief")!.y).toBe(MAIN_Y);
@@ -49,7 +49,7 @@ test("two stages wanting the same column stack, in the author's order", () => {
   expect(at.get("scene")!.x).toBe(PAD_X + COL);
 
   // Force a collision: a second stage off the shot list.
-  const withTwo = [...NORTHLINE, s("stills", 9, ["shotlist"], 9)];
+  const withTwo = [...GRANITE, s("stills", 9, ["shotlist"], 9)];
   const two = layout(withTwo);
   const audio = two.find((p) => p.id === "audio")!;
   const stills = two.find((p) => p.id === "stills")!;
@@ -67,7 +67,7 @@ test("a recipe that feeds itself lays out instead of hanging", () => {
 });
 
 test("wires are drawn only between stages that both exist", () => {
-  const placed = layout(NORTHLINE);
+  const placed = layout(GRANITE);
   const wires = wiresOf(placed);
   expect(wires).toHaveLength(8);   // one per input edge across the recipe
   expect(wires.every((w) => w.d.startsWith("M "))).toBe(true);
@@ -78,7 +78,7 @@ test("wires are drawn only between stages that both exist", () => {
 });
 
 test("the graph is big enough to hold what was put on it", () => {
-  const placed = layout(NORTHLINE);
+  const placed = layout(GRANITE);
   const band = bandLayout(3);
   const { w, h } = extent(placed, band);
   for (const p of placed) {
@@ -89,7 +89,7 @@ test("the graph is big enough to hold what was put on it", () => {
 });
 
 test("the toolbar counts what is actually there", () => {
-  const placed = layout(NORTHLINE);
+  const placed = layout(GRANITE);
   expect(shapeLine(placed, 3)).toBe("8 STAGES · 3 LOCKED · 1 BRANCH");
   expect(shapeLine(layout([s("a", 1)]), 0)).toBe("1 STAGE · 0 BRANCHES");
 });

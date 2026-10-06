@@ -32,14 +32,14 @@ const section = (id: string, name: string, x: number, y: number): CanvasNode => 
 function fixture(name: string, id: string): Project {
   return {
     ...newProject(name), id,
-    assets: [still("face", "Mira study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("frame", "Harbour still", "Reference", "hero")],
+    assets: [still("face", "Wren study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("frame", "Harbour still", "Reference", "hero")],
     nodes: [
-      card("mira", "Mira", "character", 0, 0, { assetId: "face" }),
+      card("wren", "Wren", "character", 0, 0, { assetId: "face" }),
       card("dunes", "The mirrored dunes", "element", 0, 320, { assetId: "plate" }),
       card("board", "Harbour board", "media", 300, 0, { assetId: "frame" }),
       card("empty", "Pickup plate", "media", 300, 320),
       card("say", "Director's note", "note", 600, 320, { width: 254, role: "Director", text: "Hold the frame.\nLet the fabric move." }),
-      shot("open", "The opening", 600, 0, ["mira", "dunes", "board"]),
+      shot("open", "The opening", 600, 0, ["wren", "dunes", "board"]),
       card("tone", "Warm grade", "grade", 900, 0, { width: 254, linked: ["open"] }),
     ],
   };
@@ -115,7 +115,7 @@ test("on the phone's flow the board's section titles read as headings, each abov
   /* The scene and its inputs first; then the colour card it feeds; then the rest under their titles. Cast's only card
      is read with the scene, so its title is not repeated with nothing under it. */
   const read = await flow.locator("[data-node-id]").evaluateAll((els) => els.map((el) => (el.hasAttribute("data-section") ? `# ${el.querySelector(".pxm-flow-section-name")!.textContent}` : (el as HTMLElement).dataset.nodeId)));
-  expect(read).toEqual(["mira", "dunes", "board", "open", "tone", "# Pickups", "empty", "# Notes", "say"]);
+  expect(read).toEqual(["wren", "dunes", "board", "open", "tone", "# Pickups", "empty", "# Notes", "say"]);
   await expect(flow.locator(".pxm-flow-section")).toHaveCount(2);
   await expect(flow.locator('.pxm-flow-section:has-text("Pickups") .pxm-flow-section-count')).toHaveText("1 card");
   expect(await smallTextIn(flow), "flow text under 12px").toEqual([]);

@@ -17,7 +17,7 @@ const primary = { ...newProject("Coastal light study"), id: "ws-shell-a", descri
 const list = [
   { id: primary.id, name: primary.name, revision: 3, updatedAt: "2026-09-18T10:00:00Z" },
   { id: "ws-shell-b", name: "Harbour", revision: 1, updatedAt: "2026-09-12T10:00:00Z" },
-  { id: "ws-shell-c", name: "Night market", revision: 5, updatedAt: "2026-09-02T10:00:00Z" },
+  { id: "ws-shell-c", name: "Harbour market", revision: 5, updatedAt: "2026-09-02T10:00:00Z" },
 ];
 
 async function signedInWithProjects(page: Page) {

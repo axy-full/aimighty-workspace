@@ -32,10 +32,10 @@ const project = (nodes: CanvasNode[], assets: Asset[] = [], extra: Partial<Proje
 const future = (id: string, extra: Partial<CanvasNode> = {}) => node(id, { type: "verify" as NodeType, ...extra });
 /** Everything the agentic Rig's later steps may write on a card. */
 const reserved = {
-  elementId: "el_mira01",
+  elementId: "el_wren01",
   master: { lockedAt: "2026-09-28T10:00:00.000Z", lockedBy: "user-1", snapshot: { face: { versionId: "ver_1", sha256: "a".repeat(64) } } },
   verify: { rubric: 1, checks: ["identity", "wardrobe"], frames: { videoAt: [0.1, 0.5, 0.9], everySeconds: 2, max: 8 }, last: { id: "v1", takeId: "t1", verdict: "pass", at: 1 } },
-  agent: { runId: "run-1", key: "cast:mira" },
+  agent: { runId: "run-1", key: "cast:wren" },
 };
 
 test("refKindOf: a stored kind wins; otherwise a character is Cast, an element an Environment or an Element, a media input a Ref", () => {
@@ -109,7 +109,7 @@ test("a person sets a card's kind: only on a reference, never on a locked card, 
 });
 
 test("the node schema declares the new fields: kind, element, and the reserved master, verify and agent (loose and bounded)", () => {
-  const card = { ...node("mira", { type: "character", refKind: "cast" }), ...reserved };
+  const card = { ...node("wren", { type: "character", refKind: "cast" }), ...reserved };
   const parsed = canvasNodeSchema.parse(card);
   expect(parsed).toEqual(card);
   /* Reserved fields are loose: a key a later release adds to them rides through this one. */
@@ -129,7 +129,7 @@ test("the node schema declares the new fields: kind, element, and the reserved m
 });
 
 test("a draft save and a team canvas patch keep the new fields; the canvas read back keeps them", async () => {
-  const card = { ...node("mira", { type: "character", refKind: "cast" as const }), ...reserved };
+  const card = { ...node("wren", { type: "character", refKind: "cast" as const }), ...reserved };
   const draft = project([card], [], { sharedNodes: [card] });
   const saved = saveSchema.parse({ project: draft, revision: 0 });
   expect(saved.project.nodes[0]).toEqual(card);
@@ -143,19 +143,19 @@ test("a draft save and a team canvas patch keep the new fields; the canvas read 
     await ready();
     await db().execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES('prod-kinds','Kinds',0)", args: [] });
     /* Exactly the route's path: the body is parsed, then what it parsed is folded in. */
-    const body = store.teamPatchSchema.parse({ productionId: "prod-kinds", upsertNodes: [card, node("plate")], removeNodes: [], upsertAssets: [], order: ["mira", "plate"], expect: { plate: null } });
+    const body = store.teamPatchSchema.parse({ productionId: "prod-kinds", upsertNodes: [card, node("plate")], removeNodes: [], upsertAssets: [], order: ["wren", "plate"], expect: { plate: null } });
     expect(body.upsertNodes[0]).toEqual(card);
     const { productionId, ...patch } = body;
     await store.patchTeamCanvas(productionId, patch, "ana");
     /* A teammate's later edit to another field of the card leaves the kind as it is. */
-    await store.patchTeamCanvas(productionId, store.teamPatchSchema.parse({ productionId, upsertNodes: [{ ...node("mira", { type: "character" }), x: 90 }], fields: { mira: ["x"] }, removeNodes: [], upsertAssets: [], order: null }), "bo");
+    await store.patchTeamCanvas(productionId, store.teamPatchSchema.parse({ productionId, upsertNodes: [{ ...node("wren", { type: "character" }), x: 90 }], fields: { wren: ["x"] }, removeNodes: [], upsertAssets: [], order: null }), "bo");
     const read = (await store.readTeamCanvas("prod-kinds"))!;
-    expect(read.canvas.nodes.mira).toEqual({ ...card, x: 90 });
+    expect(read.canvas.nodes.wren).toEqual({ ...card, x: 90 });
     expect(read.canvas.nodes.plate.refKind).toBeUndefined();
   });
   /* The saved body read back defensively keeps them too. */
-  const canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [card], removeNodes: [], upsertAssets: [], order: ["mira"], at: 1 });
-  expect(parseTeamCanvas(JSON.parse(JSON.stringify(canvas))).nodes.mira).toEqual(card);
+  const canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: [card], removeNodes: [], upsertAssets: [], order: ["wren"], at: 1 });
+  expect(parseTeamCanvas(JSON.parse(JSON.stringify(canvas))).nodes.wren).toEqual(card);
 });
 
 test("merges keep a kind: a teammate's move and my kind both land, a stale window never takes it off, and dropping it goes back to the reading", () => {

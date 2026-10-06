@@ -22,7 +22,7 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const CLIP = { url: "/fixtures/clip.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
-  { url: "/campaign/character.webp", name: "mira.webp", type: "image/webp" },
+  { url: "/campaign/character.webp", name: "wren.webp", type: "image/webp" },
   { url: "/campaign/environment.webp", name: "dunes.webp", type: "image/webp" },
 ];
 
@@ -123,8 +123,8 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   expect(quote).not.toHaveProperty("shotId");
   expect((quote.references as { role: string }[]).map((r) => r.role)).toEqual(["reference_image", "reference_image"]);
   expect(quote.sourceUploadId).toEqual(expect.any(String));
-  const [dunes, mira] = quote.references as { uploadId: string }[];
-  expect(dunes.uploadId).not.toBe(mira.uploadId);
+  const [dunes, wren] = quote.references as { uploadId: string }[];
+  expect(dunes.uploadId).not.toBe(wren.uploadId);
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="viral-view"]'), "44px targets").toEqual([]);
   await noSideScroll(page);
 

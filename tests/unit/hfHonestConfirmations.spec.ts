@@ -115,11 +115,11 @@ test("a toast shown where its result already is carries no Open", () => {
 
 test("Cast counts what the agent's list added, not what it proposed", () => {
   const p = (name: string, kind: CastProposal["kind"] = "character"): CastProposal => ({ kind, name, description: "", prompt: `${name}, reference` });
-  const cast = { entries: [newEntry("character", "Mira"), newEntry("element", "Chrome sphere")] };
-  const merged = mergeAgentCast(cast, [p("Mira"), p(" mira "), p("Idris"), p("Idris"), p("Kettle", "element"), p("Chrome Sphere", "element"), p("  ")], "job-1");
+  const cast = { entries: [newEntry("character", "Wren"), newEntry("element", "Chrome sphere")] };
+  const merged = mergeAgentCast(cast, [p("Wren"), p(" wren "), p("Idris"), p("Idris"), p("Kettle", "element"), p("Chrome Sphere", "element"), p("  ")], "job-1");
   expect(merged).toMatchObject({ added: 2, known: 2, overLimit: 0 });
   expect(merged.cast.agentJobId).toBe("job-1");
-  expect(merged.cast.entries.map((e) => e.name)).toEqual(["Mira", "Chrome sphere", "Idris", "Kettle"]);
+  expect(merged.cast.entries.map((e) => e.name)).toEqual(["Wren", "Chrome sphere", "Idris", "Kettle"]);
   expect(merged.cast.entries[2]).toMatchObject({ kind: "character", prompt: "Idris, reference" });
   /* Each entry's id comes from the run and its name: another tab taking the same run holds it once, even renamed since. */
   expect(merged.cast.entries[2].id).toBe(sourcedCastId("job-1", "Idris"));

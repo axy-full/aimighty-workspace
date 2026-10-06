@@ -49,7 +49,7 @@ test("delete says what really happens to each kind of asset", () => {
   expect(SAY.deleted(gen)).toBe("Moved Wide on the water to trash");
   expect(SAY.deleted(up)).toBe("Removed Harbour plate from this project. The original stays in All assets.");
   expect(SAY.cut("X")).toBe("Cut X — paste to move it.");
-  expect(SAY.pasted("X", "Northline")).toBe("Pasted X into Northline");
+  expect(SAY.pasted("X", "Granite")).toBe("Pasted X into Granite");
 });
 
 /* A take as the library holds it: a plain Studio generation unless the fields say otherwise. */

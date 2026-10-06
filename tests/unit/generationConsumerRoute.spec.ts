@@ -81,9 +81,9 @@ async function fixture() {
       checkConsumerGenerationBatch: service("check-batch", { state: "absent", jobs: [job, job] }),
     },
     "@/lib/higgsfield-consumer/characters": {
-      connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Mira", type: "soul_2", status: "ready", previewUrl: null }] }),
+      connectedCharacters: service("characters", { connected: true, available: true, characters: [{ soulId: "soul_9f2a", name: "Wren", type: "soul_2", status: "ready", previewUrl: null }] }),
       connectedPlan: service("plan", { connected: true, available: true, plan: "Pro", paid: true }),
-      buildConnectedCharacter: service("build", { state: "training", character: { soulId: "soul_new", name: "Mira", type: "soul_2", status: "training", previewUrl: null } }),
+      buildConnectedCharacter: service("build", { state: "training", character: { soulId: "soul_new", name: "Wren", type: "soul_2", status: "training", previewUrl: null } }),
       SOUL_BUILD_STILLS: { min: 5, max: 20 },
       SOUL_BUILD_TYPES: ["soul_2", "soul_cinematic"],
     },
@@ -160,7 +160,7 @@ const retiredBodies = [
   { action: "submit-batch", draftId: "draft-1", ids: [key, second], workspaceId: wallet, credits: 18 },
   { action: "explainer-presets" }, { action: "explainer-presets", refresh: true },
   { action: "characters" }, { action: "characters-plan" },
-  { action: "characters-create", name: "Mira", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { genId: "gen_3" }, { genId: "gen_4" }, { uploadId: "up_5" }] },
+  { action: "characters-create", name: "Wren", type: "soul_cinematic", sources: [{ uploadId: "up_1" }, { uploadId: "up_2" }, { genId: "gen_3" }, { genId: "gen_4" }, { uploadId: "up_5" }] },
   { action: "elements" }, { action: "elements-create", name: "Harbour", category: "environment", description: "The frozen harbour", sources: [{ genId: "gen_1" }], projectId: "ws-1" },
 ];
 async function expectRetired(response: Response) {
@@ -195,7 +195,7 @@ test("a stale tab's retired request gets the plain answer even when its body no 
   /* Retired actions: whatever else the body holds, the answer is the retirement, never "review the request". */
   const staleRetired = [{ ...quote, userId: "other" }, { ...quote, idempotencyKey: "bad" }, { ...quote, input: { ...input, model: "../x" } },
     { ...submit, credits: -1 }, { ...submit, input }, { ...listing, type: "gif" }, { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" },
-    { action: "characters", refresh: true }, { action: "characters-create", name: "Mira", type: "soul_2", sources: [] }, { action: "elements-create", name: "x".repeat(33), category: "prop", sources: [{ genId: "g" }] },
+    { action: "characters", refresh: true }, { action: "characters-create", name: "Wren", type: "soul_2", sources: [] }, { action: "elements-create", name: "x".repeat(33), category: "prop", sources: [{ genId: "g" }] },
     { action: "quote-batch", draftId: "draft-1", input, idempotencyKeys: [key] }, { action: "submit-batch", draftId: "draft-1", ids: [key], workspaceId: wallet, credits: 0 }];
   for (const body of staleRetired) await expectRetired(await f.request("POST", body));
   const malformed = [null, [], {}, { ...quote, action: "generate" }, { ...quote, action: "cancel" }, { action: "resolve-explainer-preset" },

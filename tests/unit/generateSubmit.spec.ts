@@ -171,7 +171,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
 
 /* The rate-table Rig (the phone board's Apply, the canvas's Run node) prices its own request and sends
    that price as its ceiling, under a stored Idempotency-Key (sendClaimedGeneration). */
-const RERENDER = { prompt: "Iver crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
+const RERENDER = { prompt: "Rowan crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
 const SLOT = pendingGenerationKey(SCOPE, "prj_1", "rig-apply:sh1");
 const LOST_SEND = { key: "lost-send-00001", body: JSON.stringify(RERENDER), credits: 19, endpoint: "/api/generate" as const };
 

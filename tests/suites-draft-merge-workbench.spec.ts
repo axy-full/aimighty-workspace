@@ -96,7 +96,7 @@ test.beforeEach(({}, info) => {
 test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and the storyboard", async ({ page }) => {
   const { project, errors, read, elsewhere } = await setup(page, (p) => {
     p.nodes = [scene("n1", { title: "Opening" })];
-    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
     p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", hooks: ["Quiet mornings"], creative: { path: "template", category: "ugc", templateId: "ugc-faceless", direction: "", aspect: "9:16", seconds: 15 } };
   });
   const saves = watchSaves(page);
@@ -110,7 +110,7 @@ test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and
     p.assets.push(input);
     p.nodes.push({ id: "rig-input", title: "blocking.png", type: "media", assetId: input.id, x: -300, y: 0, width: 220, linked: [] } as Node);
     p.nodes = p.nodes.map((n) => (n.id === "n1" ? { ...n, linked: ["rig-input"] } : n));
-    p.production!.cast!.entries[0].name = "Mara Vey";
+    p.production!.cast!.entries[0].name = "Keeper Vey";
   });
   const toggle = tool.getByRole("button", { name: /Find the right expression/ });
   await toggle.scrollIntoViewIfNeeded();
@@ -127,7 +127,7 @@ test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and
   expect(saved.nodes.find((n) => n.id === "n1")?.linked).toEqual(["rig-input"]);
   expect(saved.nodes.some((n) => n.id === "rig-input")).toBe(true);
   expect(saved.assets.some((a) => a.id === input.id)).toBe(true);
-  expect(saved.production?.cast?.entries[0]?.name).toBe("Mara Vey");
+  expect(saved.production?.cast?.entries[0]?.name).toBe("Keeper Vey");
   for (const variant of saved.moleculr!.variants) expect(saved.nodes.some((n) => n.id === variant.nodeId), `variant ${variant.nodeId} has its node`).toBe(true);
   expect(repeated(ids(saved.nodes))).toEqual([]);
   expect(errors).toEqual([]);

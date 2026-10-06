@@ -56,11 +56,8 @@ export const SEGMENT_LOOK: Record<"home" | "make" | "atomik", { glyph: GlyphName
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
 /** Kind dots on the asset filter chips; All has none of its own. */
 export const KIND_DOT: Record<string, string> = { Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" };
-/** A project's poster swatch, the two stops of its tile: the sample palette for the sample names, a stable pick otherwise. */
+/** A project's poster swatch, the two stops of its tile: a stable pick from its name, neutral grey for no name. */
 export function posterOf(name: string): { from: string; to: string } {
-  const sample: Record<string, [string, string]> = { "dune studies": ["#7A5A34", "#1A120B"], northline: ["#2E4A6A", "#0B1420"] };
-  const known = sample[name.trim().toLowerCase()];
-  if (known) return { from: known[0], to: known[1] };
   if (!name.trim()) return { from: "#3A3A40", to: "#141416" };
   const hue = [...name].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 7);
   return { from: `hsl(${hue} 38% 34%)`, to: `hsl(${hue} 30% 9%)` };
