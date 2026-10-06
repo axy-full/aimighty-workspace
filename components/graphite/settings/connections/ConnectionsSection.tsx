@@ -4,7 +4,6 @@ import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { CLIENTS, DEFAULT_CEILING, mcpEndpoint, mcpTools, parseTokens, readCeiling, setupGuide, tokenBody, type ApiToken, type ClientId, type TokenUnit } from "@/lib/shell/tools-connections";
 import type { SettingsFold } from "@/lib/shell/settings";
-import { ConnectedAccountRow } from "../../ConnectedAccountRow";
 import { Btn, CopyBlock, Folded, Note, Problem, Row, Section } from "../parts";
 import { PUBLISHING_ACCOUNTS, tokenLine, tokenValue } from "../model";
 import { useRead, useWrite } from "../use-settings";
@@ -22,7 +21,6 @@ const readOrigin = () => window.location.origin;
 const serverOrigin = () => "";
 
 export function ConnectionsSection({ open }: { open: SettingsFold | null }) {
-  const session = useSession();
   const [secret, setSecret] = useState("");
   return (
     <>
@@ -32,7 +30,7 @@ export function ConnectionsSection({ open }: { open: SettingsFold | null }) {
       <Section label="Publishing accounts" meta="every post is approved by a person" testId="settings-publishing">
         {PUBLISHING_ACCOUNTS.map((name) => <Row key={name} name={name} line="Not connected · posting is not in Particl yet" value="—" testId="settings-publishing-row" />)}
       </Section>
-      {session.owner ? <div className="gs-embed" data-testid="settings-earlier-account"><ConnectedAccountRow owner /></div> : null}
+      {/* No connected Higgsfield account row: off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */}
     </>
   );
 }

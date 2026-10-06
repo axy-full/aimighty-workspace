@@ -4,7 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
-import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
 import { smallTextIn } from "./helpers/s07Floors";
 import { newProject } from "../lib/workbench/studio";
 
@@ -13,15 +13,16 @@ import { newProject } from "../lib/workbench/studio";
  * frames f and p). Real local ENGINE_MOCK=1 server: a question is answered free from the table (no request reaches
  * Atomik's paid routes), its offer does the thing, commands never spend, and a request is a turn in the project's
  * Atomik thread sent with the very figure its button showed as its ceiling (the mocked planner answers; no provider).
- * Nothing renders: forbidPaidWork. Below 768 px the phone's sheet (stream 10) answers the address, so the panel is
- * not drawn there. Neutral names only.
+ * Nothing renders: forbidPaidWork. From compact widths (tests/helpers/shellMode.ts: below 768 px, and 844x390) the shell mounts
+ * the phone app, whose Atomik is the sheet, so the panel is not drawn there; each test says which phone spec covers it
+ * (demo-s10-phone-make-workbench.spec.ts). Neutral names only.
  */
 const SHOTS = process.env.S07_SHOTS || join(tmpdir(), "claude-s07-shots");
 const shot = async (page: Page, name: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });
 };
-const wide = (page: Page) => (page.viewportSize()?.width ?? 0) >= 768;
+const SHEET = "at compact widths the shell mounts the phone app, whose Atomik is the sheet, not this panel; ";
 
 async function setUp(page: Page) {
   const workspaceId = (await signInWithNewInterface(page.request, "Panel Tester")).workspace.id;
@@ -49,15 +50,11 @@ async function noSideways(page: Page) {
 }
 
 test("the panel over a page: the control room's places, Ask Atomik how, and Ask · free", async ({ page }, info) => {
+  test.skip(isCompact(info), SHEET + "the sheet's own places, hints and \"Ask · free\" are demo-s10-phone-make-workbench \"the Atomik sheet: a how-to is answered free with an offer\"");
   const { project } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&atomik=1`);
   const panel = page.getByTestId("atomik-panel-global");
   await expect(panel).toBeVisible();
-  if (!wide(page)) {
-    /* Until stream 10's phone sheet lands, the same panel fills the width under the header. */
-    const box = await panel.boundingBox();
-    expect(Math.round(box!.width)).toBe(page.viewportSize()!.width);
-  }
   await expect(panel.getByRole("navigation", { name: "Control room" }).getByRole("button")).toHaveText(["Approvals", "Activity", "Skills", "Memory"]);
   const hints = panel.getByTestId("atomik-hints");
   await expect(hints).toContainText("Ask Atomik how");
@@ -66,7 +63,6 @@ test("the panel over a page: the control room's places, Ask Atomik how, and Ask 
   await expect(panel.getByTestId("atomik-send")).toHaveText("Ask · free");
   await expect(panel.getByTestId("atomik-send")).toHaveAttribute("title", "How-to answers are free");
   expect(await smallTextIn(page, ".ak-panel"), "text under 12 px").toEqual([]);
-  if (!wide(page)) expect(await smallTargets(page, ".ak-panel"), "targets under 44 px").toEqual([]);
   await noSideways(page);
   await shot(page, "panel", info);
   /* Esc closes it, and the address forgets it. */
@@ -76,7 +72,7 @@ test("the panel over a page: the control room's places, Ask Atomik how, and Ask 
 });
 
 test("Ask Atomik how: answered free, and the offer does the thing", async ({ page }, info) => {
-  test.skip(!wide(page), "phones answer with stream 10's sheet");
+  test.skip(isCompact(info), SHEET + "its free how-to answer and the offer under it are demo-s10-phone-make-workbench \"the Atomik sheet: a how-to is answered free with an offer\" (the offer opens Make there)");
   const { project, paid } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&atomik=how`);
   const panel = page.getByTestId("atomik-panel-global");
@@ -85,7 +81,8 @@ test("Ask Atomik how: answered free, and the offer does the thing", async ({ pag
   await expect(lines.nth(1)).toContainText("Drag anything from the Library onto the shot, or press + in Make’s references tray. I can open the Library for you.");
   await shot(page, "panel-how", info);
   await panel.getByTestId("atomik-offer").click();
-  await expect(page.getByTestId("library")).toBeVisible();
+  /* The Library is the board's rail drawer: Home and the control room have none, so the offer opens the board with it out. */
+  await expect(page.getByTestId("board-library")).toBeVisible();
 
   /* Another question, typed: free, and its offer goes where the screen's own control goes. */
   await panel.getByTestId("atomik-input").fill("how do I see what each run cost?");
@@ -99,8 +96,8 @@ test("Ask Atomik how: answered free, and the offer does the thing", async ({ pag
   expect(paid, "no paid Atomik request").toEqual([]);
 });
 
-test("commands never spend: approve opens ⌘K's list, remember keeps a line once a person confirms", async ({ page }) => {
-  test.skip(!wide(page), "phones answer with stream 10's sheet");
+test("commands never spend: approve opens ⌘K's list, remember keeps a line once a person confirms", async ({ page }, info) => {
+  test.skip(isCompact(info), SHEET + "approve and remember never spend or write there either: demo-s10-phone-make-workbench \"the Atomik sheet, commands and how-to are free: nothing is sent, approved or remembered by Atomik\"");
   const { project, paid } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&atomik=1`);
   const panel = page.getByTestId("atomik-panel-global");
@@ -123,7 +120,7 @@ test("commands never spend: approve opens ⌘K's list, remember keeps a line onc
 });
 
 test("a request: Ask · up to N cr from the server, sent with N as its ceiling, answered in the project's thread", async ({ page }, info) => {
-  test.skip(!wide(page), "phones answer with stream 10's sheet");
+  test.skip(isCompact(info), SHEET + "the sheet's \"Ask · up to N cr\", the ceiling it is sent with and the thread are demo-s10-phone-make-workbench \"the Atomik sheet, a request: Ask · up to N cr from the server, sent with N as its ceiling, answered in the thread\"");
   const { project, paid } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&atomik=1`);
   const panel = page.getByTestId("atomik-panel-global");
@@ -143,8 +140,8 @@ test("a request: Ask · up to N cr from the server, sent with N as its ceiling, 
   await shot(page, "panel-thread", info);
 });
 
-test("the header's Atomik opens and closes the panel; × closes it", async ({ page }) => {
-  test.skip(!wide(page) || (page.viewportSize()?.width ?? 0) < 1280, "the header's segment is a desktop control");
+test("the header's Atomik opens and closes the panel; × closes it", async ({ page }, info) => {
+  test.skip(isCompact(info) || (page.viewportSize()?.width ?? 0) < 1280, "the header's segment is a desktop control; the phone's own bar opens the sheet (demo-s10-phone-make-workbench)");
   const { project } = await setUp(page);
   await page.goto(`/suites?project=${project.id}`);
   const panel = page.getByTestId("atomik-panel-global");

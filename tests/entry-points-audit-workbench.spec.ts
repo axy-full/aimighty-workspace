@@ -63,13 +63,14 @@ test("Suites Workspace › Engines links the token page; the platform desk is fo
 test("on a phone, the tokens row is the last card on Engines and ends above the tab bar", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones with a pinned tab bar");
   await signInLocally(page.request);
-  /* The Higgsfield account's row reads its status once; with no grant and nothing running it shows nothing. */
-  const accountRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/higgsfield/consumer/connection");
+  /* The Higgsfield sign-in is off for Release 1: Engines has no connected-account row and never reads the account. */
+  const accountReads: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) accountReads.push(request.url()); });
   await page.goto("/suites?view=workspace&tab=engines");
   /* Everything above it has loaded, so nothing moves it after the measure. */
   await expect(page.getByTestId("ws-engine").first()).toBeVisible();
-  await accountRead;
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
+  expect(accountReads).toEqual([]);
   /* The developer-API check went with the Higgsfield sign-in. */
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   await expect(page.getByTestId("workspace-connect-link")).toContainText(/token/);

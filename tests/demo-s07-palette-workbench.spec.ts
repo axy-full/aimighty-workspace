@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
 import { smallTextIn } from "./helpers/s07Floors";
 import { newProject } from "../lib/workbench/studio";
 import type { ApprovalsReply, QueueItem } from "../lib/control-room/queue";
@@ -93,8 +94,9 @@ test("make …: Make opens filled with the words; nothing is made", async ({ pag
   await floors(page, "⌘K make");
   await shot(page, "palette-make", info);
   await card.getByTestId("palette-open-make").click();
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("a slow push on the first stall");
-  expect(posts).toEqual([]);
+  /* Make opens filled with the words, and a person presses it: the panel's box on a desktop, the phone's own Make (its box is phone-make-prompt) at compact widths. */
+  await expect(page.getByTestId(isCompact(info) ? "phone-make-prompt" : "gen-prompt")).toHaveValue("a slow push on the first stall");
+  expect(posts, "nothing is made or asked").toEqual([]);
 });
 
 const item = (id: string, title: string, credits: number, more: Partial<QueueItem> = {}): QueueItem => ({

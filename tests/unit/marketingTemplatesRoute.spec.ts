@@ -61,7 +61,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-service": { ConsumerVideoServiceError },
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/marketing-templates": templates,
-    "@/lib/higgsfield-consumer/retired": retired,
+    /* The handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...retired, signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/marketing-template-service": {

@@ -684,7 +684,7 @@ test("queued cancellation remains pending until the existing job confirms it", a
   expect(f.errors).toEqual([]);
 });
 
-test("the page always bills the Particl workspace: the owner's account is never read, there is no connect prompt, no toggle and no account link; an old account link and Shorts say so", async ({
+test("the page always bills the Particl workspace: the owner's account is never read, there is no connect prompt, no toggle and no account link; an old account link bills the workspace and Shorts is no page", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -700,9 +700,13 @@ test("the page always bills the Particl workspace: the owner's account is never 
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=higgsfield"));
   await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Connected account transform", exact: true })).toHaveCount(0);
-  /* Shorts ran only on the account: the page says it is retired, and asks nothing. */
+  /* Shorts ran only on the account and is off for Release 1: its old address lands on the suite's first page, for the same project, and asks nothing. */
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=shorts"));
-  await expect(page.getByTestId("subatomik-shorts-retired")).toContainText("Shorts is retired. The connected account is no longer used. Past results stay in your Library.");
+  await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("motion-transfer");
+  expect(new URL(page.url()).searchParams.get("project")).toBe("viral-draft");
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeVisible();
+  await expect(page.getByTestId("subatomik-shorts-retired")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Shorts", exact: true })).toHaveCount(0);
   expect(f.consumerPosts).toEqual([]);
   expect(f.unexpected).toEqual([]);
   expect(f.errors).toEqual([]);
