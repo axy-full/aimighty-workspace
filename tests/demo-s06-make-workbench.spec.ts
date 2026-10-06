@@ -62,6 +62,8 @@ async function faintText(page: Page) {
 }
 
 async function floors(page: Page) {
+  /* The panel fades in over 0.2 s (make.css gx-in): measure the colours it settles on, not one frame of the fade. */
+  await page.getByTestId("make-panel").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined))));
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
   expect(await page.getByTestId("make-panel").evaluate((el) => el.scrollWidth - el.clientWidth), "nothing wider than the panel").toBeLessThanOrEqual(1);
   expect(await faintText(page), "the text floor").toEqual([]);
