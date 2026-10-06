@@ -95,7 +95,7 @@ function load<T>(file: string, overrides: Record<string, unknown>): T {
   return target.exports as T;
 }
 
-async function cron(failing: string | null) {
+async function cron(failing: string | null, signInOff = true) {
   const ran: string[] = [];
   const settings: Record<string, string> = {};
   const step = (name: string, value: unknown = {}) => async () => { ran.push(name); if (name === failing) throw new Error("stage failed"); return value; };
@@ -118,6 +118,8 @@ async function cron(failing: string | null) {
     "@/lib/uploadReservations": { cleanupExpiredUploads: step("expired_uploads", {}) },
     "@/lib/pipeline/executor": { drainPipelineWakeups: step("pipelines", { failed: 0 }) },
     "@/lib/higgsfield-consumer/sweep": { sweepConsumerJobs: step("connected_jobs", { deferred: false }) },
+    /* Release 1: the connected account's collection is off (lib/higgsfield-consumer/retired.ts). */
+    "@/lib/higgsfield-consumer/retired": { SIGN_IN_OFF: signInOff },
     "@/lib/workbench/canvas-push": { drainCanvasPushes: step("canvas_pushes") },
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: step("rig_agents") },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: step("cinema_unanswered", { expired: [] }) },
@@ -127,7 +129,7 @@ async function cron(failing: string | null) {
 }
 
 test("the cron sync runs the time limit as a stage of its own, before held takes, and every other stage still runs", async () => {
-  const all = ["generations", "pipelines", "training", "soul_training", "connected_jobs", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
+  const all = ["generations", "pipelines", "training", "soul_training", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
   const ok = await cron(null);
   expect(ok.ran).toEqual(all);
   expect(ok.status).toBe(200);
@@ -138,4 +140,6 @@ test("the cron sync runs the time limit as a stage of its own, before held takes
   expect(failing.settings.lastCronStatus).toBe("failed");
   /* Nor does an earlier stage failing stop the new one. */
   expect((await cron("generations")).ran).toEqual(all);
+  /* With the connected account's collection switched back on, it runs in its old place, and the new stage still runs. */
+  expect((await cron(null, false)).ran).toEqual([...all.slice(0, 4), "connected_jobs", ...all.slice(4)]);
 });
