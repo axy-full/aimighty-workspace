@@ -92,7 +92,9 @@ export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, fi
   if (status === "running") return { cost: null, overrunUsd: null };
   const running = row.status === "running";
   if (status === "failed" && running) {
-    if (figure == null || !(figure > 0)) return { cost: 0, overrunUsd: null, ...(figure == null ? { unreported: true as const } : {}) };
+    /* Nothing reported (no figure, or 0): charged nothing, and flagged so that, when no provider outcome came with it
+       (its read failed, or there was none), the admin desk still counts the take (meter() writes a no-answer outcome). */
+    if (figure == null || !(figure > 0)) return { cost: 0, overrunUsd: null, unreported: true };
     return figure > basis ? { cost: basis, overrunUsd: figure - basis } : { cost: figure, overrunUsd: null };
   }
   const cap = running ? basis * band : basis;
@@ -434,24 +436,29 @@ export async function providerFailuresSince(sinceMs: number, recent = 20): Promi
   return { summary: [...byEngine.values()].sort((a, b) => b.failed - a.failed), recent: rows.slice(0, recent) };
 }
 
-export type HoldOverrunRow = { engine: string; model: string; takes: number; absorbedUsd: number };
+/** `ended`: a finished take is charged at most its hold (3N); a failed one at most its quote (N). Past that, the platform's. */
+export type HoldOverrunRow = { engine: string; model: string; ended: "finished" | "failed"; takes: number; absorbedUsd: number };
 
 /**
  * PLATFORM ADMIN DESK ONLY (the route requires the super admin): per engine
  * and model, since a moment and across every workspace, the takes whose
- * engine charged past the hold a person approved (lib/cinemaHold.ts), and the
- * dollars the platform absorbed for them. So the owner can see whether the
+ * engine charged past what the take may be charged, and the dollars the platform
+ * absorbed for them, finished and failed apart: a finished take is charged at
+ * most the hold a person approved (lib/cinemaHold.ts), a failed one at most its
+ * quote (owner's decision, 6 October 2026). So the owner can see whether the
  * band is too narrow. Never read by a workspace route: no customer sees a
  * vendor dollar.
  */
 export async function holdOverrunsSince(sinceMs: number): Promise<HoldOverrunRow[]> {
   await platformReady();
   const rs = await platformDb().execute({
-    sql: `SELECT engine, model, COUNT(*) AS takes, COALESCE(SUM(overrun_usd), 0) AS absorbed FROM meter_events
-          WHERE overrun_usd > 0 AND updated_at >= ? GROUP BY engine, model ORDER BY absorbed DESC, takes DESC`,
+    sql: `SELECT engine, model, CASE WHEN status='failed' THEN 'failed' ELSE 'finished' END AS ended, COUNT(*) AS takes,
+            COALESCE(SUM(overrun_usd), 0) AS absorbed FROM meter_events
+          WHERE overrun_usd > 0 AND updated_at >= ? GROUP BY engine, model, ended ORDER BY absorbed DESC, takes DESC`,
     args: [sinceMs],
   });
   return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
-    engine: String(r.engine), model: String(r.model), takes: Number(r.takes ?? 0), absorbedUsd: Number(r.absorbed ?? 0),
+    engine: String(r.engine), model: String(r.model), ended: r.ended === "failed" ? "failed" as const : "finished" as const,
+    takes: Number(r.takes ?? 0), absorbedUsd: Number(r.absorbed ?? 0),
   }));
 }

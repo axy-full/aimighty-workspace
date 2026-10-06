@@ -136,7 +136,7 @@ test("the settlement rule: finished, its cost up to the hold and the quote with 
   expect(heldSettlement(running, "succeeded", null)).toEqual({ cost: 2, overrunUsd: null });
   /* Failed (owner's decision, 6 October 2026): nothing with no figure, flagged for the admin; a reported cost up to N. */
   expect(heldSettlement(running, "failed", null)).toEqual({ cost: 0, overrunUsd: null, unreported: true });
-  expect(heldSettlement(running, "failed", 0)).toEqual({ cost: 0, overrunUsd: null });
+  expect(heldSettlement(running, "failed", 0)).toEqual({ cost: 0, overrunUsd: null, unreported: true });
   expect(heldSettlement(running, "failed", 1.5)).toEqual({ cost: 1.5, overrunUsd: null });
   expect(heldSettlement(running, "failed", 5)).toEqual({ cost: 2, overrunUsd: 3 });
   expect(heldSettlement(running, "running", 2)).toEqual({ cost: null, overrunUsd: null });
@@ -238,6 +238,18 @@ test("a take settles at its actual cost and the rest of the hold comes back at o
   const { providerFailuresSince } = await import("../../lib/meter");
   const desk = await providerFailuresSince(0, 100);
   expect(desk.recent.find((r) => r.id === "hold_failed_silent")).toMatchObject({ engine: "higgsfield", kind: "no_answer", message: expect.stringContaining("nothing was charged") });
+  /* Failed at 0 with no outcome (the collector's read of its provider's outcome failed): still nothing, and still on the desk. */
+  before = await take("hold_failed_unread");
+  await end("hold_failed_unread", "failed", 0);
+  expect(await f.balance()).toBe(before);
+  expect(await f.meterRow("hold_failed_unread")).toMatchObject({ status: "failed", billed_credits: 0 });
+  expect((await providerFailuresSince(0, 100)).recent.find((r) => r.id === "hold_failed_unread")).toMatchObject({ engine: "higgsfield", kind: "no_answer" });
+  /* A provider outcome that did come is the one recorded, never replaced by "no answer". */
+  before = await take("hold_failed_said");
+  await meter({ id: "hold_failed_said", kind: "video", engine: "higgsfield", model: CINEMA, status: "failed", engineCostUsd: 0,
+    providerOutcome: (await import("../../lib/providerOutcome")).silentOutcome("higgsfield", "run", "failed", "The provider declined the request.") });
+  expect(await f.balance()).toBe(before);
+  expect((await providerFailuresSince(0, 100)).recent.find((r) => r.id === "hold_failed_said")).toMatchObject({ engine: "higgsfield", message: "The provider declined the request." });
   /* Failed with a reported cost: that, never past N; past N the rest is the platform's. */
   before = await take("hold_failed_cost");
   await end("hold_failed_cost", "failed", 1);
@@ -319,7 +331,7 @@ test("an overrun end to end: the finished take is shown, charged the hold, marke
     const row = (await platformDb().execute({ sql: "SELECT engine_cost_usd,overrun_usd FROM meter_events WHERE id=?", args: [id] })).rows[0];
     expect(Number(row.engine_cost_usd)).toBeCloseTo(usd * 3, 10);
     expect(Number(row.overrun_usd)).toBeCloseTo(usd * 2, 10);
-    const desk = (await holdOverrunsSince(Date.now() - 30 * 86_400_000)).find((r) => r.engine === "higgsfield" && r.model === CINEMA);
+    const desk = (await holdOverrunsSince(Date.now() - 30 * 86_400_000)).find((r) => r.engine === "higgsfield" && r.model === CINEMA && r.ended === "finished");
     expect(desk?.takes).toBeGreaterThanOrEqual(1);
     expect(desk!.absorbedUsd).toBeGreaterThanOrEqual(usd * 2 - 1e-9);
   } finally { engine.render = render; engine.poll = poll; await unlink(path.resolve(".data/generations", `${id}.mp4`)).catch(() => {}); }
@@ -356,20 +368,23 @@ test("the admin desk counts takes past their hold and the dollars absorbed, per 
   const { holdOverrunsSince } = await import("../../lib/meter");
   await platformReady();
   const at = Date.now();
-  const insert = (id: string, model: string, overrun: number | null, updatedAt: number) => platformDb().execute({
+  const insert = (id: string, model: string, overrun: number | null, updatedAt: number, status = "succeeded") => platformDb().execute({
     sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at,hold_band,overrun_usd)
-          VALUES(?,'ws_desk','video','desk-engine',?,'succeeded',1,30,1,?,?,3,?)`,
-    args: [id, model, updatedAt, updatedAt, overrun],
+          VALUES(?,'ws_desk','video','desk-engine',?,?,1,30,1,?,?,3,?)`,
+    args: [id, model, status, updatedAt, updatedAt, overrun],
   });
   await insert("desk_a", "desk-model", 1.5, at - 1_000);
   await insert("desk_b", "desk-model", 2.5, at - 86_400_000);
   await insert("desk_old", "desk-model", 9, at - 31 * 86_400_000);
   await insert("desk_none", "desk-model", null, at - 1_000);
   await insert("desk_c", "desk-other", 0.25, at - 1_000);
+  /* A failed take reported past its quote (N): its own row, as it was charged N, not the hold. */
+  await insert("desk_failed", "desk-model", 0.75, at - 1_000, "failed");
   const rows = (await holdOverrunsSince(at - 30 * 86_400_000)).filter((r) => r.engine === "desk-engine");
   expect(rows).toEqual([
-    { engine: "desk-engine", model: "desk-model", takes: 2, absorbedUsd: 4 },
-    { engine: "desk-engine", model: "desk-other", takes: 1, absorbedUsd: 0.25 },
+    { engine: "desk-engine", model: "desk-model", ended: "finished", takes: 2, absorbedUsd: 4 },
+    { engine: "desk-engine", model: "desk-model", ended: "failed", takes: 1, absorbedUsd: 0.75 },
+    { engine: "desk-engine", model: "desk-other", ended: "finished", takes: 1, absorbedUsd: 0.25 },
   ]);
   const route = (requireSuperAdmin: () => Promise<unknown>) => load<{ GET(): Promise<Response> }>("app/api/admin/engines/route.ts", {
     "@/lib/recovery": { recoveryRoute: (h: unknown) => h },
