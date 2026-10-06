@@ -105,7 +105,7 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   await expect(deliver.getByTestId("deliver-duration")).toContainText("00:10");
   await expect(deliver.getByTestId("deliver-loudness")).toHaveText(/Loudness\s*Not measured/);
   await expect(deliver.getByRole("button", { name: /Measure loudness/ })).toHaveCount(0);
-  await expect(deliver.getByTestId("deliver-render")).toContainText("Render master · free");
+  await expect(deliver.getByTestId("deliver-render")).toContainText("Export the cut · free");
   await expect(page.locator("body")).not.toContainText(/Dune|Mira\b|Northline/);
 
   /* Cards are draggable: every control inside one opts out of the drag and the pan, or a press starts a drag. */
@@ -119,7 +119,7 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   expect(paid).toEqual([]);
 });
 
-test("Open Edit & Sound opens the existing editor over the board, and Close brings the board back; Render master opens the on-device renderer", async ({ page }, info) => {
+test("Open Edit & Sound opens the existing editor over the board, and Close brings the board back; Export the cut opens the browser export", async ({ page }, info) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
@@ -142,7 +142,7 @@ test("Open Edit & Sound opens the existing editor over the board, and Close brin
   await page.keyboard.press("Escape");
   await expect(edit).toHaveCount(0);
 
-  /* Render master is free and on this device: the Inspector holds the existing renderer, and the exports sit under Advanced. */
+  /* Export the cut is free and runs in the browser: the Inspector holds the existing renderer, and the exports sit under Advanced. */
   await page.getByTestId("deliver-render").click();
   const insp = page.getByTestId("board-inspector");
   await expect(insp.getByTestId("insp-deliver")).toBeVisible();

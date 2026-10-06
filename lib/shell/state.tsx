@@ -279,6 +279,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const liveRef = useRef<Shell | null>(null);
   const live = useCallback(() => liveRef.current!, []);
 
+  /* A link to a take (lib/shell/asset-link.ts), read once from the URL the page opened with. */
+  const [link, setLink] = useState<AssetLink | null>(() => readAssetLink(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
+
   /* The selected take, as the URL carries it: the Workspace selection is the one source, `asset` (and `sel`) follow it. */
   const take = ws.state.selKind === "take" ? validAssetId(ws.state.selId) : null;
   /* The Workspace's own latest state, not the rendered one: a child's effect in the same commit (a link landing) must see the
@@ -294,13 +297,13 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     /* Exactly this take, or none: a malformed or repeated `asset` is rewritten too, never left in the address bar. */
     const named = new URLSearchParams(window.location.search).getAll(ASSET_PARAM);
     if (take ? named.length === 1 && named[0] === take : named.length === 0) return;
+    /* A link to a take still being checked holds its `asset` in the address: nothing is selected until it resolves, and a reload (Switch
+       workspace) must still carry it. The link's own end (endLink) removes it, or selectAsset writes it as the selection. */
+    if (!take && link && named.length === 1 && named[0] === link.asset) return;
     writeSearch(withAsset(window.location.search, take), mode);
     /* The state layer's own `sel` follows in the same entry, so the two never disagree. */
     latestWs.current.syncUrl();
-  }, [take]);
-
-  /* A link to a take (lib/shell/asset-link.ts), read once from the URL the page opened with. */
-  const [link, setLink] = useState<AssetLink | null>(() => readAssetLink(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
+  }, [take, link]);
 
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
