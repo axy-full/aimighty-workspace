@@ -106,7 +106,7 @@ export function Steps({ model }: { model: PlanModel }) {
             {s.unavailable ? <span className="gx-plan-step-flag">{s.unavailable}</span> : null}
             {s.needsAdmin ? <span className="gx-plan-step-flag" data-testid="board-plan-admin">{model.adminLine}</span> : null}
           </span>
-          {s.state === "failed" && s.price?.kind === "free" ? <span className="gx-plan-step-later">nothing billed</span>
+          {s.state === "failed" && s.status === "Failed · nothing billed" ? <span className="gx-plan-step-later">nothing billed</span>
             : s.price ? <Price value={s.price} className="gx-plan-step-price" /> : <span className="gx-plan-step-later">{s.unavailable ? "" : "priced when it runs"}</span>}
         </div>
       ))}

@@ -147,7 +147,8 @@ test("short: Approve waits, Top up beside it opens Settings › Plan & credits, 
   await expect(card.getByTestId("board-plan-primary")).toBeDisabled();
   await expect(card.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   const topUp = card.getByTestId("board-plan-topup");
-  await expect(topUp).toHaveText(/^Top up( · [\d,]+ cr · \$[\d.,]+)?$/);
+  /* The platform's smallest pack, read from the server (the local deployment sells the Starter pack). */
+  await expect(topUp).toHaveText(/^Top up · [\d,]+ cr · \$[\d.,]+$/);
   await expect(card).toContainText("Top up, then approve. Nothing is spent until you do.");
   expect(await smallText(page)).toEqual([]);
   await shoot(page, "money-short", info.project.name);
@@ -257,7 +258,8 @@ test("a take failed: Nothing billed only where the provider's outcome says so; t
   await expect(card.getByTestId("board-plan-money")).toHaveText("Shot 2 failed · Nothing billed");
   await expect(card.getByTestId("board-plan-step").nth(1)).toContainText("Failed · nothing billed");
   expect(await smallText(page)).toEqual([]);
-  await expect(card.getByTestId("board-plan-step").nth(1)).toContainText("nothing billed");
+  await expect(card.getByTestId("board-plan-step").nth(1).locator(".gx-plan-step-later")).toHaveText("nothing billed");
+  await expect(card.getByTestId("board-plan-step").nth(1)).not.toContainText("free");
   await shoot(page, "money-failed", info.project.name);
   await page.getByTestId("board-rail").getByText("Shots", { exact: true }).click();
   await shoot(page, "money-failed-take", info.project.name);
