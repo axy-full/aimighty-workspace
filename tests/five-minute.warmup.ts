@@ -1,6 +1,5 @@
 import { chromium, type FullConfig } from "@playwright/test";
 import { mockInvitation, PASSPHRASE, scopeFor, startAtomikOnApi } from "./helpers/fiveMinute";
-import { setNewInterfaceEveryone } from "./helpers/newInterface";
 
 /**
  * Not timed, not asserted. One throwaway person walks the same path first, so a cold dev server has compiled the
@@ -13,7 +12,6 @@ export default async function warmUp(config: FullConfig) {
   if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(base)) throw new Error("The five-minute test runs only against a local server.");
   const health = await fetch(`${base}/api/health`).then((r) => r.json()).catch(() => null) as { mock?: boolean } | null;
   if (!health?.mock) throw new Error("The five-minute test needs a local server started with ENGINE_MOCK=1 (no real generation).");
-  await setNewInterfaceEveryone(true);
   const browser = await chromium.launch({ channel: use.channel, executablePath: use.launchOptions?.executablePath });
   try {
     for (const phone of [false, true]) {

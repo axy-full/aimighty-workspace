@@ -3,7 +3,6 @@ import {
   balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, startAtomikOnApi, unpricedSpendButtons, visibleText,
   watchSpending, type SpendLedger,
 } from "./helpers/fiveMinute";
-import { setNewInterfaceEveryone } from "./helpers/newInterface";
 import { expectFloors } from "./phoneFloors";
 
 /**
@@ -54,8 +53,6 @@ async function open(browser: Browser, viewport: { width: number; height: number 
   test.skip(!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(base), "runs only against a local server");
   const health = await fetch(`${base}/api/health`).then((r) => r.json()).catch(() => null) as { mock?: boolean } | null;
   test.skip(!health?.mock, "runs only against a local server started with ENGINE_MOCK=1");
-  /* The owner's switch, as it is once Release 1 is on for everyone. */
-  await setNewInterfaceEveryone(true);
   const context = await browser.newContext({ baseURL: base, viewport, isMobile: phone, hasTouch: phone });
   const page = await context.newPage();
   const errors: string[] = [];
