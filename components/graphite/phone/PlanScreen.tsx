@@ -44,15 +44,14 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
   const ctx = { scope, project, productionId: project?.productionProjectId ?? null } as unknown as BoardCtx;
   const plan = usePlan(ctx, project ? run : null, online ? null : NEEDS_CONNECTION);
   const model = plan.model;
-  const pressed = useRef<"approve" | "plan" | false>(false);
+  /* What was pressed, with the plan's figures as the server quoted them at the press (they are not re-read after it). */
+  const pressed = useRef<{ kind: "approve" } | { kind: "plan"; words: string } | false>(false);
   /* Approving moves the run past its proposal (or its plan gate): say so once, and go Home. */
   useEffect(() => {
     if (pressed.current && model && model.phase !== "proposal") {
-      const kind = pressed.current;
+      const press = pressed.current;
       pressed.current = false;
-      toast(kind === "plan" && model.ceiling != null && model.total
-        ? `Approved · ${priceWords(model.total)}, at most ${creditsText(model.ceiling)} with fixes`
-        : "Building the board · free");
+      toast(press.kind === "plan" ? press.words : "Building the board · free");
       onHome();
     }
   }, [model, toast, onHome]);
@@ -111,7 +110,12 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
           </div>
         ) : null}
         {approve ? (
-          <Primary primary={approve} busy={plan.busy} online={online} onPress={() => { pressed.current = approve.kind === "approve" || approve.kind === "plan" ? approve.kind : false; void plan.act(approve); }} />
+          <Primary primary={approve} busy={plan.busy} online={online} onPress={() => {
+            pressed.current = approve.kind === "approve" ? { kind: "approve" }
+              : approve.kind === "plan" && model.total && model.ceiling != null ? { kind: "plan", words: `Approved · ${priceWords(model.total)}, at most ${creditsText(model.ceiling)} with fixes` }
+              : approve.kind === "plan" ? { kind: "plan", words: "Plan approved" } : false;
+            void plan.act(approve);
+          }} />
         ) : null}
         {approve?.blocked && !short && approve.blocked !== NEEDS_CONNECTION ? <p className="ph-row-line ph-plan-why" role="status">{approve.blocked}</p> : null}
         {plan.problem ? <p className="ph-row-line ph-row-line--warn ph-plan-why" role="alert">{plan.problem}</p> : null}
