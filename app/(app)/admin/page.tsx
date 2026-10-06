@@ -566,9 +566,10 @@ function ProviderChargesCard() {
 }
 
 /**
- * Takes whose engine charged past the hold a person approved (Cinema Studio holds
- * "about N cr, at most 3N cr", lib/cinemaHold.ts): each was kept, shown and
- * charged the hold, never more; the platform absorbed the rest. Per engine over
+ * Takes whose engine charged past what they may be charged (Cinema Studio holds
+ * "about N cr, at most 3N cr", lib/cinemaHold.ts): a finished take was kept,
+ * shown and charged the hold, never more; a failed one was charged its quote, N,
+ * never more. The platform absorbed the rest. Per engine, finished and failed apart, over
  * thirty days, in the engines' dollars, so the owner can see whether the band is
  * too narrow. The platform owner's desk only: no customer sees these dollars.
  */
@@ -578,15 +579,16 @@ function HoldOverrunsCard() {
   if (!overruns) return null;
   return (
     <section className="scard" data-testid="admin-hold-overruns">
-      <div className="scard-h"><span>Over the hold · absorbed</span><span>Takes in the last 30 days whose engine charged more than the person approved. Each was charged the hold and nothing above it; the platform absorbed the rest.</span></div>
+      <div className="scard-h"><span>Over the hold · absorbed</span><span>Takes in the last 30 days whose engine charged more than Particl may charge for them. A finished take was charged its hold (the most the person approved) and a failed take its quote (N), nothing above either; the platform absorbed the rest.</span></div>
       {overruns.length === 0 ? <span className="rail-help">No take went past its hold in the last 30 days.</span> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px] text-[13px]">
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine · model</th><th className="pb-2 text-right font-medium">Takes</th><th className="pb-2 text-right font-medium">Absorbed</th></tr></thead>
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine · model</th><th className="pb-2 font-medium">Ended</th><th className="pb-2 text-right font-medium">Takes</th><th className="pb-2 text-right font-medium">Absorbed</th></tr></thead>
             <tbody>
               {overruns.map((o) => (
-                <tr key={`${o.engine}:${o.model}`} className="border-t border-hair" data-testid="admin-hold-overrun">
+                <tr key={`${o.engine}:${o.model}:${o.ended}`} className="border-t border-hair" data-testid="admin-hold-overrun" data-ended={o.ended}>
                   <td className="py-2 pr-3">{o.engine} · <span className="text-dim">{o.model}</span></td>
+                  <td className="py-2 pr-3" title={o.ended === "failed" ? "Charged its quote (N), nothing above it" : "Charged its hold, nothing above it"}>{o.ended === "failed" ? "Failed · charged its quote" : "Finished · charged the hold"}</td>
                   <td className="py-2 text-right tabular-nums">{o.takes}</td>
                   <td className="py-2 text-right tabular-nums text-lift">{usd(o.absorbedUsd, 2)}</td>
                 </tr>
