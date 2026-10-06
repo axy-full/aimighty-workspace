@@ -7,6 +7,7 @@ import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { legacyShell } from "./helpers/legacyShell";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /* Make does not offer Cinema Studio 4.0 until #523 (its 3N hold) is merged: lib/shell/make-price.ts › MAKE_SHOWS_CINEMA. */
 test.skip(!MAKE_SHOWS_CINEMA, "Cinema Studio 4.0 is not offered in Make until its hold (#523) is merged");
@@ -122,7 +123,7 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
+  await expect(projectName(page)).toHaveText("Lighthouse study");
   await expect(page.getByTestId("gen-model")).toContainText("Seedance");
   return { errors, priced, reads };
 }

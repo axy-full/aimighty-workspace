@@ -4,6 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { screenplayPdf } from "./helpers/screenplayPdf";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Owner, 25 September: "wherever there is an asset shown, there should be a
@@ -35,7 +36,7 @@ async function open(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return { errors };
 }
 const openAssets = async (page: Page, wide: boolean) => {
@@ -182,7 +183,7 @@ async function openBig(page: Page, info: { project: { name: string } }) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   await openAssets(page, WIDE.includes(info.project.name));
   await expect(page.getByTestId("library").getByRole("tab", { name: /Assets/ })).toContainText(String(BIG + 2));
   return { errors, sent };
@@ -333,7 +334,7 @@ test("a second preview opened while one is up starts at its own take, and a boun
     ? route.fulfill({ json: { projects: [{ id: "ws-preview", name: "Coastal light study", revision: 1 }, { id: "ws-other", name: "Other study", revision: 1 }], productions: [], project: { ...newProject("Other study"), id: "ws-other", productionProjectId: "prod-other", shotMappings: {} }, revision: 1, shared: null } })
     : route.fallback());
   await page.evaluate(() => { const q = new URLSearchParams(location.search); q.set("project", "ws-other"); history.pushState(null, "", location.pathname + "?" + q); dispatchEvent(new PopStateEvent("popstate")); });
-  await expect(page.getByTestId("project-name")).toHaveText("Other study");
+  await expect(projectName(page)).toHaveText("Other study");
   await expect(page.getByTestId("preview-dialog")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The connected account's workflows on the Studio pages — Edit's Dub and
@@ -33,7 +34,7 @@ async function open(page: Page, path: string) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return { errors, consumer };
 }
 async function noSideScroll(page: Page) {

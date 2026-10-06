@@ -4,6 +4,8 @@ import { newProject } from "../lib/workbench/studio";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { seedFinishedProduction, watchPaidRequests } from "./helpers/s12-sample";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /*
  * The explore-only sample on the board (lead decisions 12, 38 and 41), on a fixture production in a local ENGINE_MOCK
@@ -12,7 +14,7 @@ import { seedFinishedProduction, watchPaidRequests } from "./helpers/s12-sample"
  * page. A production that is not the sample is untouched. At each viewport: no sideways scroll, text at least 12 px.
  */
 const LINE = "Sample production · nothing here spends credits";
-const SHOTS = process.env.S12_SHOTS || "/private/tmp/claude-s12-shots";
+const SHOTS = process.env.S12_SHOTS || join(tmpdir(), "claude-s12-shots");
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 

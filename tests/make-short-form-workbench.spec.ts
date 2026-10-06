@@ -2,11 +2,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject } from "../lib/workbench/studio";
+import { projectName } from "./helpers/projectName";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /* Make's short form: the output tabs, the words, the references, the aspect and the length, the engine line with its price and
    the priced Make button — then ONE folded Advanced, closed every time. Nothing here presses Make, and no Edit tab is left. */
 
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-1440x900"];
+/* Release 1: below the compact line the shell mounts the phone's own Make (phone-make-*; demo-s10-phone-make-workbench: its engine line with Change, References, the type, and Make at its price); this spec is the desktop panel's short form. */
+const SIZES = ["workbench-1440x900", "workbench-1920x1080"];
 const PRICE = 18;
 const ENGINES = [
   { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion" },
@@ -31,13 +35,13 @@ async function open(page: Page) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Short form study");
+  await expect(projectName(page)).toHaveText("Short form study");
   await expect(page.getByTestId("gen-model")).toContainText("Seedance");
   return { errors, reads };
 }
 
 test("the short form: the essentials, a priced Make, and one folded Advanced", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "the three sizes this spec covers");
+  test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors } = await open(page);
   const panel = page.getByTestId("make-panel");
   /* Output tabs: Video, Images, Audio, and no Edit. */
@@ -64,7 +68,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   await expect(page.getByTestId("make-engine-price")).toBeVisible();
   await expect(page.getByTestId("gen-generate")).toBeVisible();
 
-  await page.screenshot({ path: `/private/tmp/claude-make-short-shots/closed-${info.project.name}.png` });
+  await page.screenshot({ path: join(tmpdir(), "claude-make-short-shots", `closed-${info.project.name}.png`) });
 
   /* Opening it shows the rest; the toggle says it is open. */
   await toggle.click();
@@ -78,7 +82,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   await expect(page.getByTestId("make-engine-price")).toBeVisible();
   await expect(page.getByTestId("gen-generate")).toContainText("cr");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: `/private/tmp/claude-make-short-shots/open-${info.project.name}.png` });
+  await page.screenshot({ path: join(tmpdir(), "claude-make-short-shots", `open-${info.project.name}.png`) });
 
   /* Folding it again hides them and keeps the prices. */
   await toggle.click();
@@ -89,7 +93,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
 });
 
 test("a value changed in Advanced moves the price, and the fold never hides it", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "the three sizes this spec covers");
+  test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors, reads } = await open(page);
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
@@ -111,7 +115,7 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
 });
 
 test("Make opens with Advanced closed every time, and the Edit tab is not an address either", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "the three sizes this spec covers");
+  test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors } = await open(page);
   await page.getByTestId("make-advanced-toggle").click();
   await expect(page.getByTestId("make-more")).toBeVisible();

@@ -6,6 +6,7 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt } from "../lib/studio";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Recreate (idea 7): a take's whole recipe — the words as typed, the model,
@@ -99,7 +100,7 @@ async function open(page: Page, options: Options = {}) {
   await page.goto(options.url ?? "/suites?make=video");
   if (!options.url) await expect(page.getByTestId("gen-view")).toBeVisible();
   if (!options.url) await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour recreate study");
+  await expect(projectName(page)).toHaveText("Harbour recreate study");
   return { errors, quotes, priced, release: () => release() };
 }
 

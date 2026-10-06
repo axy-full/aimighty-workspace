@@ -4,6 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import type { Generation } from "../lib/jobs";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * One card contract for every grid of takes — Gen › Results, Library ›
@@ -79,7 +80,7 @@ async function open(page: Page, url: string, mode: Mode = "ok", opts: Parameters
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour takes");
+  await expect(projectName(page)).toHaveText("Harbour takes");
   return { errors, ...library };
 }
 
@@ -218,7 +219,7 @@ test("a project list that will not load says so once, with one Try again, and Tr
   await shot(page, info, "projects-error");
   fail = false;
   await banner.getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour takes");
+  await expect(projectName(page)).toHaveText("Harbour takes");
   await expect(banner).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Results" }).getByTestId("take-tile")).toHaveCount(8);
   expect(errors).toEqual([]);

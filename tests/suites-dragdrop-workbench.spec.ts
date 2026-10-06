@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Owner, 25 September: "anything should be draggable and droppable across the
@@ -47,7 +48,7 @@ test("Gen's well takes a picture straight from the desktop as a reference", asyn
   const { project, errors } = await setup(page);
   await page.goto(`/suites?make=video&project=${project.id}`);
   /* The composer settles on the project first (it starts that project's own composer state). */
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   await expect(page.getByTestId("gen-well")).toBeVisible();
   await dropFiles(page.getByTestId("gen-well"), [{ name: "look.png", type: "image/png", b64: await png("#7a4a2b") }]);
   await expect(page.getByTestId("gen-well")).toContainText("look.png", { timeout: 30_000 });

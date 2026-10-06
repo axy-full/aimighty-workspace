@@ -7,6 +7,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets } from "./phoneFloors";
 import { monthLabel } from "../lib/usageLedgerTerms";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Idea 25 — Workspace › Usage lists every job under the bars: when, who,
@@ -291,7 +292,7 @@ test("the Inspector's Settled fact is the ledger's own row — never a take's do
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour ledger");
+  await expect(projectName(page)).toHaveText("Harbour ledger");
   if (!wide) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   const facts = page.getByTestId("asset-facts");

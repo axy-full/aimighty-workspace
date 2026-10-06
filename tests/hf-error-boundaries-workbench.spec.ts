@@ -4,6 +4,8 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -22,6 +24,11 @@ import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
  * makes the boundary named "library" throw on its next render; an entry can
  * also name the error (`{ name, message, errorName }`). Nothing is generated;
  * paid routes fail the test.
+ *
+ * Release 1: the stage pages, the Library column and the Inspector column of the old layout are not mounted by any address (Home, the board, the
+ * control room and Settings fill the body; compact widths mount the phone's own app, boundary "phone"). The vehicle for "a screen that
+ * throws" is therefore Home (boundary "home"; the phone app's own is "phone"), Atomik's panel is "atomik-panel", Settings is "settings".
+ * The Library and Inspector column faults went with those columns; a take that throws keeps its tile is the Make test below.
  */
 
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
@@ -115,26 +122,34 @@ async function withinOneLoad(page: Page, step: () => Promise<void>) {
   }
 }
 
-test("a stage that throws keeps the shell: its own card, the strip still moves, and Try again is Next's retry", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["stage:agent"]);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+/** The boundary that wraps what the viewport mounts as its screen: Home on a desktop, the phone's own app below the compact line. */
+const screenProbe = (info: { project: { name: string } }) => (isCompact(info) ? { probe: "phone", what: "The phone" } : { probe: "home", what: "Home" });
 
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:agent"]');
+/** The shell is up: a desktop's header names the project; the phone app has its own header. */
+async function shellIsUp(page: Page, info: { project: { name: string } }) {
+  if (isCompact(info)) await expect(page.getByTestId("phone-app")).toBeVisible();
+  else await expect(projectName(page)).toHaveText("Coastal light study");
+}
+
+test("a screen that throws keeps the shell: its own card, the header still moves, and Try again is Next's retry", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { probe, what } = screenProbe(info);
+  const errors = await open(page, "/suites?view=home", [probe]);
+  const fault = page.locator(`[data-testid="panel-fault"][data-fault="${probe}"]`);
   await expect(fault).toBeVisible();
-  await expect(fault).toContainText("Agent stopped");
+  await expect(fault).toContainText(`${what} stopped`);
   await expect(fault).toContainText("Takes in progress keep generating.");
   await expect(fault.getByTestId("fault-copy")).toHaveText("Copy details");
   await refIsReadable(fault.getByTestId("fault-ref"));
 
-  /* The chrome is untouched: header, page title, strip. */
-  await openSuitesMenu(page);
-  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
-  await closeSuitesMenu(page);
-  await expect(page.getByTestId("page-title")).toHaveText("Agent");
-  const strip = page.getByRole("navigation", { name: "Pages" });
+  /* The chrome is untouched: a desktop keeps its header (the suites, Search, the credits); the phone's app is the whole of what threw. */
+  if (!isCompact(info)) {
+    await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
+    await expect(page.getByTestId("header-search")).toBeVisible();
+    await expect(page.getByTestId("workspace-credits")).toBeVisible();
+  }
   await settled(page);
-  /* Try again is above the fold at every size — at 360×640 and 844×390 too, where the stage under the page head is short. */
+  /* Try again is above the fold at every size — at 360×640 and 844×390 too, where the screen is short. */
   await reachable(page, fault.getByTestId("fault-retry"));
   if (PHONE.includes(info.project.name)) {
     expect(await smallText(page), "text under 12px").toEqual([]);
@@ -142,15 +157,17 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
   }
   await noHorizontalScroll(page);
 
-  /* Moving on is a fresh go; the next stage renders. */
-  await strip.getByRole("button", { name: /Runs/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Runs");
-  await expect(page.getByTestId("panel-fault")).toHaveCount(0);
+  /* Moving on is a fresh go (a desktop's header goes to the project's board); the next screen renders. */
+  if (!isCompact(info)) {
+    await page.locator('[data-suite-tab="project"]').click();
+    await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+    await expect(page.locator('[data-testid="panel-fault"][data-fault="home"]')).toHaveCount(0);
+    /* Back on the broken screen. */
+    await page.locator('[data-suite-tab="home"]').click();
+  }
 
-  /* Back on the broken stage, Try again fetches the route again (Next's retry): while the refresh is on its way
-     the button says so and ignores presses; when it fails again the attempt is counted, Reload is offered and
-     focus is on the new Try again. */
-  await strip.getByRole("button", { name: /Agent/ }).click();
+  /* Try again fetches the route again (Next's retry): while the refresh is on its way the button says so and ignores presses;
+     when it fails again the attempt is counted, Reload is offered and focus is on the new Try again. */
   await withinOneLoad(page, async () => {
     await expect(fault).toBeVisible();
     let release!: () => void;
@@ -182,106 +199,37 @@ test("a stage that throws keeps the shell: its own card, the strip still moves, 
     }
   });
 
-  /* Fixed underneath: Try again renders the stage. */
+  /* Fixed underneath: Try again renders the screen. */
   await withinOneLoad(page, async () => {
     await arm(page, []);
     await fault.getByTestId("fault-retry").click();
     await expect(page.getByTestId("panel-fault")).toHaveCount(0);
-    await expect(page.getByTestId("page-title")).toHaveText("Agent");
+    await expect(page.getByTestId(isCompact(info) ? "phone-home" : "home")).toBeVisible();
   });
   expect(errors, "a caught throw never reaches the window").toEqual([]);
 });
 
 test("a stale build asks for Reload, and a long message stays inside its card", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const { probe } = screenProbe(info);
   const long = "TypeError: Cannot read properties of undefined (reading 'shots') while laying out beat 14 of the second act, where the note carries an_unbroken_identifier_that_never_wraps_on_its_own_and_keeps_going";
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", [{ name: "stage:agent", errorName: "ChunkLoadError", message: "Loading chunk 812 failed." }]);
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:agent"]');
+  const errors = await open(page, "/suites?view=home", [{ name: probe, errorName: "ChunkLoadError", message: "Loading chunk 812 failed." }]);
+  const fault = page.locator(`[data-testid="panel-fault"][data-fault="${probe}"]`);
   await expect(fault).toContainText("Particl was updated. Reload to carry on.");
   await expect(fault.getByTestId("fault-reload")).toBeVisible();
   await expect(fault.getByTestId("fault-retry")).toHaveCount(0);
 
-  await arm(page, [{ name: "stage:runs", message: long }]);
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Runs/ }).click();
-  const beats = page.locator('[data-testid="panel-fault"][data-fault="stage:runs"]');
+  /* A long message on the next screen: the board (a desktop's project segment; the phone's Record is the board's address). */
+  await arm(page, [{ name: isCompact(info) ? "phone" : "board", message: long }]);
+  if (isCompact(info)) await page.goto("/suites?screen=record");
+  else await page.locator('[data-suite-tab="project"]').click();
+  const beats = page.locator(`[data-testid="panel-fault"][data-fault="${isCompact(info) ? "phone" : "board"}"]`);
   await expect(beats.getByTestId("fault-ref")).toContainText("…");
   await settled(page);
   const card = (await beats.boundingBox())!;
   const ref = (await beats.getByTestId("fault-ref").boundingBox())!;
   expect(ref.x + ref.width, "the message wraps inside the card").toBeLessThanOrEqual(card.x + card.width + 1);
   await reachable(page, beats.getByTestId("fault-retry"));
-  await noHorizontalScroll(page);
-  expect(errors).toEqual([]);
-});
-
-test("desktop: the Library and the Inspector fail inside their own columns and the grid does not move", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "the three-column shell");
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["library", "inspector"]);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-
-  const body = page.getByTestId("shell-body");
-  await expect(body).toHaveAttribute("data-columns", "280px minmax(0,1fr) 320px");
-  const library = page.getByTestId("library");
-  const inspector = page.getByTestId("inspector");
-  await expect(library).toHaveAttribute("data-faulted", "true");
-  await expect(inspector).toHaveAttribute("data-faulted", "true");
-  expect(Math.round((await library.boundingBox())!.width)).toBe(280);
-  expect(Math.round((await inspector.boundingBox())!.width)).toBe(320);
-  await expect(library.getByTestId("panel-fault")).toContainText("The Library stopped");
-  await expect(inspector.getByTestId("panel-fault")).toContainText("The Inspector stopped");
-  await refIsReadable(library.getByTestId("fault-ref"));
-
-  /* The stage between them works. */
-  await expect(page.getByTestId("page-title")).toHaveText("Agent");
-  await expect(page.locator('[data-testid="content"] [data-testid="panel-fault"]')).toHaveCount(0);
-
-  /* Copy details puts the ref on the clipboard. */
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await library.getByTestId("fault-copy").click();
-  await expect(library.getByTestId("fault-copy")).toHaveText("Copied");
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toMatch(/^Particl · The Library stopped\nref P-[0-9A-Z]{7}\nmessage Crash probe: library\nwhere \/suites/);
-
-  /* Fixed underneath: Try again restores the Library; hiding and showing the Inspector gives it a fresh go. */
-  await arm(page, []);
-  await library.getByTestId("fault-retry").click();
-  await expect(library).not.toHaveAttribute("data-faulted", "true");
-  await expect(library.getByRole("tablist", { name: "Library view" })).toBeVisible();
-  await inspector.getByTestId("close-inspector").click();
-  await expect(page.getByTestId("inspector")).toHaveCount(0);
-  await page.keyboard.press("ControlOrMeta+j");
-  await expect(page.getByTestId("inspector")).toBeVisible();
-  await expect(page.getByTestId("inspector")).not.toHaveAttribute("data-faulted", "true");
-  expect(errors).toEqual([]);
-});
-
-test("phones: a Library overlay that throws still closes, and its card meets the floors", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "the overlay panels");
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["library", "inspector"]);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  await page.getByTestId("toggle-library").click();
-  const library = page.getByTestId("library");
-  await expect(library).toHaveAttribute("data-faulted", "true");
-  await expect(library.getByTestId("panel-fault")).toContainText("The Library stopped");
-  await settled(page);
-  /* The Atomik page behind the overlay is measured by its own spec; the card and the overlay are measured here. */
-  expect(await smallText(page, '[class*="suite-agent"], [data-testid="atomik-composer"]'), "text under 12px").toEqual([]);
-  expect(await smallTargets(page, '[data-testid="library"]'), "targets under 44×44").toEqual([]);
-  const box = (await library.boundingBox())!;
-  expect(box.x + box.width, "the overlay stays on screen").toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
-  await reachable(page, library.getByTestId("fault-retry"));
-  await library.getByTestId("close-library").click();
-  await expect(page.getByTestId("library")).toHaveCount(0);
-
-  /* The Inspector overlay the same way. */
-  await page.getByTestId("toggle-inspector").click();
-  const inspector = page.getByTestId("inspector");
-  await expect(inspector.getByTestId("panel-fault")).toContainText("The Inspector stopped");
-  await settled(page);
-  expect(await smallTargets(page, '[data-testid="inspector"]'), "targets under 44×44").toEqual([]);
-  await inspector.getByTestId("close-inspector").click();
-  await expect(page.getByTestId("inspector")).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await noHorizontalScroll(page);
   expect(errors).toEqual([]);
 });
@@ -352,28 +300,26 @@ test("Make: one bad take costs its tile, a failing Recent keeps the composer and
   expect(errors).toEqual([]);
 });
 
-test("search and a whole view fail on their own: the sheet takes focus and still closes, Workspace comes back", async ({ page }, info) => {
+test("search and a whole view fail on their own: the sheet takes focus and still closes, Settings comes back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["palette", "composer"]);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  test.skip(isCompact(info), "the phone app has no Search sheet, no header and no avatar menu; what throws there is the phone's own boundary (first test) and Settings under the phone header (demo-s10-phone-workbench)");
+  const errors = await open(page, "/suites?view=home", ["palette", "composer"]);
+  await shellIsUp(page, info);
   /* The composer is closed, so its failure shows nothing and costs nothing. */
   await expect(page.locator('[data-fault="composer"]')).toHaveCount(0);
 
   /* Search throws as it opens: its card is the dialog, it takes focus, and Close (or Esc) still works. */
-  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   const sheet = page.getByRole("dialog", { name: "Search" });
   await expect(sheet.getByTestId("panel-fault")).toContainText("Search stopped");
   await expect(sheet).toHaveAttribute("aria-modal", "true");
   await expect(sheet.getByTestId("fault-retry")).toBeFocused();
   await settled(page);
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="palette"]'), "targets under 44×44").toEqual([]);
   const dialog = (await sheet.boundingBox())!;
   expect(dialog.y + dialog.height, "the card fits above the fold").toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1);
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByTestId("palette-veil")).toHaveCount(0);
-  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   await expect(sheet.getByTestId("panel-fault")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -381,19 +327,16 @@ test("search and a whole view fail on their own: the sheet takes focus and still
 
   /* Fixed underneath: opening search again is a fresh go. */
   await arm(page, []);
-  await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
   await expect(page.getByRole("textbox", { name: "Search" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   /* A whole view that throws keeps the header, so every suite is one tap away. (The later init script wins on load.) */
-  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["workspace"]; });
+  await page.addInitScript(() => { (window as unknown as { __particlCrash?: string[] }).__particlCrash = ["settings"]; });
   await page.goto("/suites?view=workspace");
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="workspace"]');
-  await expect(fault).toContainText("Workspace stopped");
-  await openSuitesMenu(page);
+  const fault = page.locator('[data-testid="panel-fault"][data-fault="settings"]');
+  await expect(fault).toContainText("Settings stopped");
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
-  await closeSuitesMenu(page);
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
   /* Fixed underneath: Try again brings the view back. */
@@ -401,43 +344,34 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await fault.getByTestId("fault-retry").click();
   await expect(fault).toHaveCount(0);
 
-  /* The avatar opens Settings; Team is Workspace's People until Settings ships (D1). */
+  /* The avatar opens Settings; Team is its first section. */
   await page.getByTestId("workspace-avatar").click();
   await page.getByTestId("settings-team").click();
-  await expect(page.getByTestId("workspace-view")).toBeVisible();
-  await expect(page.locator('[data-fault="workspace"]')).toHaveCount(0);
+  await expect(page.getByTestId("settings-view")).toBeVisible();
+  await expect(page.locator('[data-fault="settings"]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test("Atomik: the gate row and the plan sheet fail on their own, and the sheet still closes", async ({ page }, info) => {
+test("Atomik: the gate row and the panel fail on their own, and the panel still closes", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent", ["atomik-gate", "atomik-sheet", "strip"]);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  test.skip(isCompact(info), "the phone's Atomik is its sheet inside the phone app (boundary \"phone\"; demo-s10-phone-make covers the sheet, its Esc and its scrim); the gate row is the desktop shell's");
+  const errors = await open(page, "/suites?view=home", ["atomik-gate", "atomik-panel"]);
+  await shellIsUp(page, info);
 
-  /* The gate row and the run strip fail in their own rows; the stage between them works. */
+  /* The gate row fails in its own row; Home between the header and the panel works. */
   const gate = page.locator('[data-testid="panel-fault"][data-fault="atomik-gate"]');
   await expect(gate).toContainText("The Atomik gate stopped");
-  await expect(page.locator('[data-fault="strip"]')).toContainText("The run strip stopped");
-  await expect(page.getByTestId("page-title")).toHaveText("Agent");
+  await expect(page.getByTestId("home")).toBeVisible();
   await settled(page);
   await reachable(page, gate.getByTestId("fault-retry"));
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="atomik-gate"]'), "targets under 44×44").toEqual([]);
 
-  /* The plan sheet throws as it opens: its card is the dialog, and Esc closes it. Nothing is priced or run. */
-  if (!DESKTOP.includes(info.project.name)) await page.getByTestId("toggle-inspector").click();
-  await page.getByRole("button", { name: "Run with Atomik" }).click();
-  const sheet = page.getByRole("dialog", { name: "Atomik" });
-  await expect(sheet.getByTestId("panel-fault")).toContainText("Atomik stopped");
-  await expect(sheet.getByTestId("fault-retry")).toBeFocused();
+  /* The panel throws as it opens: its card keeps the panel's frame with Close, and Esc closes it. Nothing is priced or run. */
+  await page.locator('[data-suite-tab="atomik"]').click();
+  const panel = page.locator('[data-testid="panel-fault"][data-fault="atomik-panel"]');
+  await expect(panel).toContainText("Atomik stopped");
   await settled(page);
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="atomik-sheet"]'), "targets under 44×44").toEqual([]);
   await page.keyboard.press("Escape");
-  await expect(sheet).toHaveCount(0);
-  /* On a phone the Inspector overlay is still open over the page: Esc again closes it. */
-  if (!DESKTOP.includes(info.project.name)) {
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("inspector")).toHaveCount(0);
-  }
+  await expect(panel).toHaveCount(0);
 
   /* Fixed underneath: the gate's Try again brings the row back to what it would say. */
   await arm(page, []);
@@ -456,7 +390,7 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await expect(screen).toContainText("Your work is safe. Takes in progress keep generating.");
   const suites = screen.getByRole("navigation", { name: "Suites" });
   await expect(suites.getByRole("link")).toHaveText(["Home", "Project", "Make", "Atomik"]);
-  await expect(suites.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/suites?suite=particl&page=brief&sp=stages");
+  await expect(suites.getByRole("link", { name: "Home" })).toHaveAttribute("href", /^\/suites\?/);
   await expect(suites.getByRole("link", { name: "Make" })).toHaveAttribute("href", "/suites?make=video");
   await expect(screen.getByTestId("fault-studio")).toHaveAttribute("href", "/suites");
   await expect(screen.getByTestId("header-search")).toHaveAttribute("href", "/suites?find=1");
@@ -470,14 +404,14 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   /* Fixed underneath: Try again (Next's retry) re-renders the shell in place. */
   await arm(page, []);
   await screen.getByTestId("fault-retry").click();
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await shellIsUp(page, info);
   await expect(page.getByTestId("suites-error")).toHaveCount(0);
 });
 
 test("a link to nothing: the 404 keeps the header and offers Studio, Shots and ⌘K search", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page, "/suites");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await shellIsUp(page, info);
 
   const me = page.waitForResponse((reply) => new URL(reply.url()).pathname === "/api/me");
   const response = await page.goto("/productions/no-such-thing-here");

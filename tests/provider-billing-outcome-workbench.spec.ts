@@ -4,6 +4,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
 import type { TakeFailure } from "../lib/providerOutcome";
+import { projectName } from "./helpers/projectName";
 
 /**
  * A failed take on the shared card (TakeTile) says what happened and — only
@@ -46,7 +47,7 @@ async function open(page: Page, url: string) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
-  await expect(page.getByTestId("project-name")).toHaveText("Outcome review");
+  await expect(projectName(page)).toHaveText("Outcome review");
   return errors;
 }
 

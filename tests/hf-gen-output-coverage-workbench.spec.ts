@@ -6,6 +6,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Idea 23 — Gen's Audio output is whole: a line has a voice picker whose list
@@ -94,7 +95,7 @@ async function open(page: Page) {
   await page.goto(`/suites?make=video&project=${DRAFT}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour sound study");
+  await expect(projectName(page)).toHaveText("Harbour sound study");
   return { quotes, charges, mismatched, errors, store };
 }
 

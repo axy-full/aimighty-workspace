@@ -7,6 +7,7 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt, craftModules } from "../lib/studio";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Gen's film vocabulary (idea 13): under Direction, six chips — Shot · Angle ·
@@ -77,7 +78,7 @@ async function open(page: Page, options: Options = {}) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour film study");
+  await expect(projectName(page)).toHaveText("Harbour film study");
   /* Hydrated: the composer has read its engines and priced itself once words arrive. */
   await expect(page.getByTestId("gen-model")).toContainText("Seedance");
   return { errors, priced, lists, clips };

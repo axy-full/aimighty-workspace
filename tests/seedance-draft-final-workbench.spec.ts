@@ -7,6 +7,7 @@ import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Seedance 2.5 draft mode in Gen (lib/draftFinal.ts): "Draft first · 480p",
@@ -65,7 +66,7 @@ async function openGen(page: Page, project: Project) {
   await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 30_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 30_000 });
 }
 
 /** What the server quotes for a request right now, in credits (POST /api/generate/quote). */

@@ -3,6 +3,7 @@ import { newProject } from "../lib/workbench/studio";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
 
 const project = { ...newProject("Harbour recovery"), id: "ws-recovery", productionProjectId: "prod-ws", shotMappings: {} };
 const OFFLINE = "The library is unavailable right now.";
@@ -65,7 +66,7 @@ test("Gen waits for the project list to recover before creating or generating an
   expect(sends).toEqual([]);
   mode = "ready";
   release();
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   await expect(banner).toHaveCount(0);
   await expect(generate).toBeEnabled();
   await expect(generate).toHaveText("Make · 3 cr");

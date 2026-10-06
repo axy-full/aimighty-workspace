@@ -5,6 +5,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { moreTakes } from "./helpers/genTakes";
 import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
+import { projectName } from "./helpers/projectName";
 
 /**
  * One project draft, several editors at once (the Rig, the Studio stages, Edit &
@@ -149,7 +150,7 @@ test("Gen: a batch of two takes after a Brief edit elsewhere keeps the Brief edi
   const paid: { batchId?: string; variation?: number; shotId?: string }[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) paid.push(request.postDataJSON() as (typeof paid)[number]); });
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   await expect(page.getByTestId("gen-view")).toBeVisible();
   /* The page holds the project as it opened; the Brief is then written elsewhere. */
   await elsewhere((p) => { p.brief = "Written in Brief after Gen opened."; p.script = "EXT. HARBOUR - DUSK\n\nA fox crosses the ice.\n"; });
@@ -244,7 +245,7 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     const press = async (open: boolean) => {
       if (open) {
         await page.goto(`/suites?make=video&project=${project.id}`);
-        await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+        await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
       }
       const box = page.getByTestId("gen-prompt");
       await hydrated(box);
@@ -299,7 +300,7 @@ test("Gen sound: a new prompt at a new price is what is sent, never the lane's e
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const submits = await mockAudio(page);
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -334,7 +335,7 @@ test("Gen sound: when Edit & Sound makes the sound lane while Gen's save is out,
     return route.continue();
   });
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -362,7 +363,7 @@ test("Gen, two takes: take 2's request cut off stops the batch; the next Generat
   });
   const checks = checkedKeys(page);
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("A red fox crosses the frozen harbour at dusk.");
@@ -420,7 +421,7 @@ test("Gen: a batch's shot saved while other saves land before and on top of it â
   const paid: string[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/generate") paid.push(request.headers()["idempotency-key"] ?? ""); });
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("A red fox crosses the frozen harbour at dusk.");
@@ -506,7 +507,7 @@ test("Marketing: preparing the same hook variants in two windows prepares each o
 const FOX = "A red fox crosses the frozen harbour at dusk.";
 async function openGen(page: Page, project: Project) {
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   return { box, go: page.getByTestId("gen-generate") };

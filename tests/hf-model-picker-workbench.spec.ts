@@ -8,6 +8,7 @@ import { moreTakes } from "./helpers/genTakes";
 import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -65,7 +66,7 @@ async function open(page: Page, options: Options = {}) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour picker study");
+  await expect(projectName(page)).toHaveText("Harbour picker study");
   return { errors, quotes, consumer, priced };
 }
 
