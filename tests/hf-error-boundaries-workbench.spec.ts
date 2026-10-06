@@ -264,7 +264,8 @@ test("phones: a Library overlay that throws still closes, and its card meets the
   await expect(library).toHaveAttribute("data-faulted", "true");
   await expect(library.getByTestId("panel-fault")).toContainText("The Library stopped");
   await settled(page);
-  expect(await smallText(page), "text under 12px").toEqual([]);
+  /* The Atomik page behind the overlay is measured by its own spec; the card and the overlay are measured here. */
+  expect(await smallText(page, '[class*="suite-agent-module"], [data-testid="atomik-composer"]'), "text under 12px").toEqual([]);
   expect(await smallTargets(page, '[data-testid="library"]'), "targets under 44×44").toEqual([]);
   const box = (await library.boundingBox())!;
   expect(box.x + box.width, "the overlay stays on screen").toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);

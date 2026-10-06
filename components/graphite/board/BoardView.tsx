@@ -489,10 +489,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     ws.toast(refusal ?? `${entry.take.name} is a reference for ${shot?.title ?? "the shot"}`);
   };
   const internals: BoardInternals = { placed, defs: registry.defs, ctx, watchers, atomik, seams, editing, finishEdit, takesDrops, dropOn, lit };
+  /* A rail drawer: the Library, or History (Viral's History page opens here, on a phone too, where it covers the list). */
+  const drawerEl = drawer === "library" ? <LibraryDrawer items={items} project={project} onClose={() => setDrawer(null)} />
+          : drawer === "history" && board.HistoryDrawer ? <board.HistoryDrawer ctx={ctx} items={items} onClose={() => setDrawer(null)} />
+          : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} /> : null;
   if (compact) {
     return (
       <BoardInternalsProvider value={internals}>
-        <div className="bd bd--compact" data-testid="board" data-board-kind={kind}><List ctx={ctx} cards={placed.cards} /></div>
+        <div className="bd bd--compact" data-testid="board" data-board-kind={kind}><List ctx={ctx} cards={placed.cards} />{drawerEl}</div>
       </BoardInternalsProvider>
     );
   }
@@ -523,9 +527,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {live ? <WhoIsHere peers={peers} /> : null}
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
         </div>
-        {drawer === "library" ? <LibraryDrawer items={items} project={project} onClose={() => setDrawer(null)} />
-          : drawer === "history" && board.HistoryDrawer ? <board.HistoryDrawer ctx={ctx} items={items} onClose={() => setDrawer(null)} />
-          : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} /> : null}
+        {drawerEl}
         <BoardAgentDock ctx={ctx} open={dockOpen} onOpenChange={setDockOpen} />
         <BoardInspector ctx={ctx} card={primary} def={primary ? registry.defs.get(primary.kind) ?? null : null} right={dockWidth} onClose={() => select(null)} />
         <BoardReview ctx={ctx} />

@@ -62,6 +62,8 @@ const compact = (page: Page) => page.evaluate(() => window.matchMedia("(max-widt
 /** The board is up: its root, and on a desktop its side rail and its bottom tool row (Select, Frame, Note, Text, Image, Video, Audio, Upload). */
 async function boardIsUp(page: Page) {
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board", { timeout: 90_000 });
+  /* With the switch on, a phone mounts the phone app's own screens (stream 10) for the board's address; the board's root is the desktop's and the switch-off phone's. */
+  if ((await compact(page)) && (await page.locator(".gx").getAttribute("data-interface")) === "new") return;
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
   if (!(await compact(page))) {
     await expect(page.getByTestId("board-rail")).toBeVisible();

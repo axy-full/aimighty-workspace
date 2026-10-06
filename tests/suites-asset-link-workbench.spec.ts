@@ -87,7 +87,8 @@ async function copyLink(sender: Person, draftId: string, asset: string, info: Te
   if (!wide) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   await page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${asset}']`).click();
-  if (!wide) await page.getByTestId("toggle-inspector").click();
+  /* On a phone, picking the asset opens the Inspector over the Library by itself. */
+  if (!wide && !(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click();
   await page.getByTestId("inspector-copy-link").click();
   await expect(page.getByTestId("toast")).toHaveText(/^Link copied/);
   return new URL(await page.evaluate(() => navigator.clipboard.readText()));

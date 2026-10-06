@@ -203,6 +203,9 @@ button.bd-list-row:focus-visible { outline: 2px solid var(--gx-accent); outline-
 .bd--compact .bd-list { position: static; padding: 16px 16px var(--ph-clear, 96px); overflow: visible; }
 .bd--compact .bd-list-row { grid-template-columns: 40px minmax(0, 1fr) auto; min-height: 44px; }
 .bd--compact .bd-list-row > :nth-child(2), .bd--compact .bd-list-row > :nth-child(4), .bd--compact .bd-list-row > :nth-child(5) { display: none; }
+/* A drawer on a phone (Viral's History link) covers the list under the header and the phone bar, and under Make's panel (z 28). */
+.bd--compact .bd-drawer, .bd--compact .bd-drawer.sb-history { position: fixed; left: 0; right: 0; top: var(--make-top, 56px); bottom: var(--ph-clear, 0px); width: auto; border-right: 0; z-index: 20; }
+.bd--compact .bd-drawer .bd-drawer-close { min-width: 44px; height: 44px; }
 
 /* ── The rail's drawers: 280 px beside the rail, over the canvas ── */
 .bd-drawer {

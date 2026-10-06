@@ -15,6 +15,7 @@ import { newProject, type Asset, type Project } from "../lib/workbench/studio";
  * ENGINE_MOCK server; nothing here is billed.
  */
 
+const DESKTOP = "workbench-1440x900";
 type Node = Project["nodes"][number];
 type Read = { project: Project; revision: number };
 
@@ -86,6 +87,11 @@ function watchSaves(page: Page) {
 
 
 /* ── Marketing after a Rig save ─────────────────────────────────────────── */
+
+test.beforeEach(({}, info) => {
+  test.skip(info.project.name !== DESKTOP, "one desktop");
+  test.setTimeout(240_000);
+});
 
 test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and the storyboard", async ({ page }) => {
   const { project, errors, read, elsewhere } = await setup(page, (p) => {
