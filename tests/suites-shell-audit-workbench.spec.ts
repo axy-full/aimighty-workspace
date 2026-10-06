@@ -146,7 +146,7 @@ test("Library › Tools: a Deliver row opens its tool; Business and Viral offer 
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
 
   /* Viral left the header (option B): ⌘K reaches its pages. */
-  await goViaSearch(page, "motion transfer", /01 Motion transfer/);
+  await goViaSearch(page, "motion transfer", /Make › Motion transfer/);
   await expect(page.getByTestId("page-title")).toHaveText("Motion transfer");
   await expect(library.getByRole("tab", { name: /Tools/ })).toHaveCount(0);
   await expect(library.getByTestId("library-assets")).toBeVisible();
