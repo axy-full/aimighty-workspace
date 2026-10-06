@@ -92,7 +92,7 @@ async function tenantDb(workspaceId: string) {
   } finally { platform.close(); }
 }
 
-export type StateKind = "review" | "failed" | "rendering" | "held";
+export type StateKind = "review" | "failed" | "rendering" | "held" | "still";
 export type SeededStates = { project: Project; workspaceId: string; takes: Record<StateKind, string> };
 
 /**
@@ -124,12 +124,13 @@ export async function seedPhoneStates(page: Page, options: { credits?: number; k
               VALUES (?,?,?,?,?,?,'open',?,?,?,?,5,'{}','[]','render',1)`,
         args: [shot, productionId, "", `SH0${i + 1}`, `Shot ${i + 1}`, "", i, me.id, at, at],
       });
-      const status = kind === "review" ? "succeeded" : kind === "failed" ? "failed" : kind === "rendering" ? "running" : "held";
+      const status = kind === "review" || kind === "still" ? "succeeded" : kind === "failed" ? "failed" : kind === "rendering" ? "running" : "held";
+      const media = kind === "still" ? "image" : "video";
       const params = { duration: 5, resolution: options.resolution ?? "720p", ratio: "16:9", ...(kind === "held" ? { held: { why: "credits", needs: options.heldNeeds ?? 43 } } : {}) };
       await db.execute({
         sql: `INSERT INTO generations (id,project_id,shot_id,kind,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,version,provider,task,review_state,review_by,reviewed_at,deleted,error)
-              VALUES (?,?,?,'video','dreamina-seedance-2-5-260628',?,?,?,?,0,?,?,?,1,'byteplus','generate','',NULL,NULL,0,?)`,
-        args: [take, productionId, shot, `Take ${i + 1}`, JSON.stringify(params), status, kind === "review" ? "/fixtures/clip.mp4" : null, me.id, at + i * 1000, at + i * 1000, kind === "failed" ? "The engine returned no frames." : null],
+              VALUES (?,?,?,?,'dreamina-seedance-2-5-260628',?,?,?,?,0,?,?,?,1,'byteplus','generate','',NULL,NULL,0,?)`,
+        args: [take, productionId, shot, media, `Take ${i + 1}`, JSON.stringify(params), status, kind === "review" ? "/fixtures/clip.mp4" : kind === "still" ? "/campaign/hero.webp" : null, me.id, at + i * 1000, at + i * 1000, kind === "failed" ? "The engine returned no frames." : null],
       });
       takes[kind] = take;
     }

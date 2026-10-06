@@ -10,7 +10,8 @@ import { useLegacyRecovery } from "@/lib/useRecoverySurface";
 import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useToast } from "@/components/ui/Toast";
-import { ASTRA_MODEL, DEFAULT_ASTRA, type AstraSettings } from "@/lib/astra";
+import { DEFAULT_ASTRA, type AstraSettings } from "@/lib/astra";
+import { videoUpscaleBody } from "@/lib/shell/upscale";
 import type { Generation } from "@/lib/jobs";
 import type { UploadedFile } from "@/lib/uploadClient";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
@@ -99,19 +100,7 @@ export default function AstraUpscale({
       ? (JSON.parse(paid.pending.body) as Record<string, unknown>)
       : null;
   const displayed = (saved?.astra as AstraSettings | undefined) || settings;
-  const body = {
-    projectId: project?.productionProjectId ?? null,
-    model: ASTRA_MODEL,
-    task: "upscale",
-    prompt: "",
-    refine: false,
-    sourceGenId: source?.origin === "generation" ? source.id : undefined,
-    sourceUploadId: source?.origin === "upload" ? source.id : undefined,
-    resolution: "4k",
-    fps60: settings.fps === 60,
-    astra: settings,
-    references: [],
-  };
+  const body = videoUpscaleBody(source ? { origin: source.origin, sourceId: source.id } : null, project?.productionProjectId ?? null, settings);
   const bodyKey = JSON.stringify(body),
     quote = reviewed?.body === bodyKey ? reviewed.quote : null;
   const inputLocked = busy || !!paid.pending || !!paid.error;
