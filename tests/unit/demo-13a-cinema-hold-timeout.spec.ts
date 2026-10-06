@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import ts from "typescript";
 
 /**
@@ -84,7 +83,6 @@ test("a take with no answer for 24 hours: failed, charged nothing, its hold back
 });
 
 /* ── The cron sync: the new stage runs among the others, and a failing stage stops none of them ── */
-const nodeRequire = createRequire(path.resolve("package.json"));
 function load<T>(file: string, overrides: Record<string, unknown>): T {
   const source = ts.transpileModule(readFileSync(file, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
