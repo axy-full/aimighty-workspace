@@ -8,6 +8,10 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { openAdvanced } from "./helpers/makeAdvanced";
 import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Seedance 2.5 draft mode in Gen (lib/draftFinal.ts): "Draft first · 480p",

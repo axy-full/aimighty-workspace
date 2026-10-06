@@ -5,6 +5,10 @@ import { smallTargets } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
 import type { TakeFailure } from "../lib/providerOutcome";
 import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * A failed take on the shared card (TakeTile) says what happened and — only

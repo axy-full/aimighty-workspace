@@ -220,9 +220,14 @@ test("a stale build asks for Reload, and a long message stays inside its card", 
   await expect(fault.getByTestId("fault-retry")).toHaveCount(0);
 
   /* A long message on the next screen: the board (a desktop's project segment; the phone's Record is the board's address). */
-  await arm(page, [{ name: isCompact(info) ? "phone" : "board", message: long }]);
-  if (isCompact(info)) await page.goto("/suites?screen=record");
-  else await page.locator('[data-suite-tab="project"]').click();
+  if (isCompact(info)) {
+    /* A new page load: the throw is armed before it (the later init script wins on load). */
+    await page.addInitScript((message) => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = [{ name: "phone", message }]; }, long);
+    await page.goto("/suites?screen=record");
+  } else {
+    await arm(page, [{ name: "board", message: long }]);
+    await page.locator('[data-suite-tab="project"]').click();
+  }
   const beats = page.locator(`[data-testid="panel-fault"][data-fault="${isCompact(info) ? "phone" : "board"}"]`);
   await expect(beats.getByTestId("fault-ref")).toContainText("…");
   await settled(page);

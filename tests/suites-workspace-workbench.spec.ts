@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * Release 1: the old Workspace tabs (General, People, Plans & credits, Usage, Engines, Security) and Atomik's Tools & connections page are
@@ -145,7 +146,7 @@ test("Settings are Graphite over the real routes and speak their vocabulary; the
   /* Plan & credits: the plan as billing holds it, the packs the request flow sells (priced), and Request queues one for the platform. */
   await page.goto("/suites?view=workspace&tab=credits&open=packs");
   await expect(page.getByTestId("settings-plan")).toContainText("Studio");
-  await expect(page.getByTestId("settings-plan-renews")).toContainText("Oct 1");
+  await expect(page.getByTestId("settings-plan-renews")).toContainText("1 Oct 2026");
   await expect(page.getByTestId("settings-pack")).toHaveCount(2);
   await expect(page.getByTestId("settings-pack").nth(1)).toContainText("2,200 cr");
   await expect(page.getByTestId("settings-pack").nth(1)).toContainText("$200");
@@ -268,11 +269,13 @@ test("a rename holds across sections and reaches the header; Engines has no conn
   await page.getByTestId("settings-ws-name-save").click();
   await expect(page.getByTestId("settings-ws-note")).toHaveText("Renamed.");
   expect(writes).toEqual([{ url: "/api/workspaces", method: "PATCH", body: { name: "Harbour Studio" } }]);
-  /* The header reads /api/me again at once, not on its 30s poll. */
-  await expect(page.getByTestId("workspace-avatar")).toHaveAttribute("aria-label", "Workspace and account: Harbour Studio");
-  await page.goto("/suites?view=workspace&tab=people");
+  /* The header reads /api/me again at once, not on its 30s poll (a phone has no header avatar: its Settings page is under the phone header). */
+  if (!isCompact(info)) await expect(page.getByTestId("workspace-avatar")).toHaveAttribute("aria-label", "Workspace and account: Harbour Studio");
+  /* Moving between sections in the app (a reload reads the server's own name, and the rename here is answered by a stand-in). */
+  await page.getByTestId("settings-section-team").click();
   await expect(page.getByTestId("settings-title")).toHaveText("Team");
-  await page.goto("/suites?view=workspace&tab=general");
+  await page.getByTestId("settings-section-advanced").click();
+  await page.getByTestId("settings-fold-workspace-toggle").click();
   await expect(page.getByTestId("settings-ws-name-field")).toHaveValue("Harbour Studio");
   await expect(page.getByTestId("settings-ws-name-save")).toBeDisabled();
 

@@ -4,6 +4,10 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 const project = { ...newProject("Harbour recovery"), id: "ws-recovery", productionProjectId: "prod-ws", shotMappings: {} };
 const OFFLINE = "The library is unavailable right now.";

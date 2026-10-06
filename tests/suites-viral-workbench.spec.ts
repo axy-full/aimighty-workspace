@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws no quick tool: Make there is the simple form and ?make=motion|swap shows Home (the same gap demo-s10-phone-make-workbench records as a fixme twin); the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws no quick tool: Make there is the simple form and ?make=motion|swap shows Home (the same gap demo-s10-phone-make-workbench records as a fixme twin); the desktop keeps every assertion here"); });
 
 /**
  * Viral = Genjutsu on Particl's API key, in the

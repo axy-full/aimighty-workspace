@@ -13,5 +13,5 @@ export async function openAdvanced(page: Page) {
   const toggle = page.getByTestId("make-advanced-toggle");
   await expect(toggle).toBeVisible();
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
-  await expect(page.getByTestId("make-more")).toBeVisible();
+  await expect(page.getByTestId("make-advanced")).toBeVisible();
 }

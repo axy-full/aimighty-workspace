@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { newProject } from "../lib/workbench/studio";
 import { projectName } from "./helpers/projectName";
+import { openAdvanced } from "./helpers/makeAdvanced";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -36,7 +37,7 @@ async function open(page: Page) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(projectName(page)).toHaveText("Short form study");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, reads };
 }
 
@@ -44,23 +45,23 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors } = await open(page);
   const panel = page.getByTestId("make-panel");
-  /* Output tabs: Video, Images, Audio, and no Edit. */
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
+  /* The type: Video, Image, Audio, and no Edit. */
+  await expect(panel.getByRole("radiogroup", { name: "Type" }).getByRole("radio")).toHaveText(["Video", "Image", "Audio"]);
   await expect(page.getByTestId("gen-tab-edit")).toHaveCount(0);
   await expect(panel.getByRole("tab", { name: "Edit" })).toHaveCount(0);
-  /* The essentials. */
+  /* The essentials: the words, the references, the engine line with its price, and Make. */
   await expect(page.getByTestId("gen-prompt")).toBeVisible();
-  await expect(page.getByTestId("gen-well")).toBeVisible();
-  await expect(panel.getByRole("group", { name: "Aspect" })).toBeVisible();
-  await expect(page.getByTestId("gen-length")).toBeVisible();
+  await expect(page.getByTestId("make-add-reference")).toBeVisible();
   await expect(page.getByTestId("gen-model")).toBeVisible();
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 30_000 });
-  /* Advanced is folded: its controls are not on the screen. */
+  /* Advanced sits under Change and is folded: its controls are not on the screen. */
+  await expect(page.getByTestId("make-advanced-toggle")).toHaveCount(0);
+  await page.getByTestId("gen-model").click();
   const toggle = page.getByTestId("make-advanced-toggle");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByTestId("make-more")).toHaveCount(0);
+  await expect(page.getByTestId("make-advanced")).toHaveCount(0);
   for (const id of ["enhance", "gen-takes", "gen-film"]) await expect(page.getByTestId(id)).toHaveCount(0);
   await expect(panel.getByRole("group", { name: "Resolution" })).toHaveCount(0);
   /* One Advanced, and the price stays where the person can see it. */
@@ -73,7 +74,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   /* Opening it shows the rest; the toggle says it is open. */
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByTestId("make-more")).toBeVisible();
+  await expect(page.getByTestId("make-advanced")).toBeVisible();
   await expect(panel.getByRole("group", { name: "Resolution" })).toBeVisible();
   await expect(page.getByTestId("enhance")).toBeVisible();
   await expect(page.getByTestId("gen-takes")).toBeVisible();
@@ -87,7 +88,7 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   /* Folding it again hides them and keeps the prices. */
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByTestId("make-more")).toHaveCount(0);
+  await expect(page.getByTestId("make-advanced")).toHaveCount(0);
   await expect(page.getByTestId("gen-generate")).toContainText("cr");
   expect(errors).toEqual([]);
 });
@@ -97,8 +98,8 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
   const { errors, reads } = await open(page);
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
+  await openAdvanced(page);
   const toggle = page.getByTestId("make-advanced-toggle");
-  await toggle.click();
   await page.getByTestId("make-panel").getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE + 10} cr`, { timeout: 30_000 });
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE + 10} cr`, { timeout: 30_000 });
@@ -107,7 +108,7 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
   await page.getByTestId("gen-takes-2").click();
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`, { timeout: 30_000 });
   await toggle.click();
-  await expect(page.getByTestId("make-more")).toHaveCount(0);
+  await expect(page.getByTestId("make-advanced")).toHaveCount(0);
   await expect(page.getByTestId("make-advanced-notes")).toHaveText("2 takes");
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`);
   await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE + 10} cr`);
@@ -117,12 +118,14 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
 test("Make opens with Advanced closed every time, and the Edit tab is not an address either", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors } = await open(page);
-  await page.getByTestId("make-advanced-toggle").click();
-  await expect(page.getByTestId("make-more")).toBeVisible();
+  await openAdvanced(page);
+  await expect(page.getByTestId("make-advanced")).toBeVisible();
   await page.getByTestId("make-close").click();
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("make-advanced-toggle")).toHaveAttribute("aria-expanded", "false");
+  /* Closed again, and Change (which holds it) is closed too. */
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("make-advanced-toggle")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

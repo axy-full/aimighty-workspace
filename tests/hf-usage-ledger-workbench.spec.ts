@@ -148,7 +148,7 @@ async function ledgerFloors(page: Page) {
 
 /** At the Workspace pane's end, where the last row of the ledger ends, and where the phone's tab bar begins. */
 async function endOfPane(page: Page) {
-  return page.getByTestId("workspace-view").evaluate(async (pane) => {
+  return page.getByTestId("settings-view").evaluate(async (pane) => {
     pane.scrollTop = pane.scrollHeight;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const rows = Array.from(pane.querySelectorAll<HTMLElement>('[data-testid="ws-ledger"] li, [data-testid="ws-ledger"] button')).filter((el) => el.getClientRects().length);
@@ -351,7 +351,7 @@ test("migrated workspaces retain historical external receipts without displaying
   await expect(rows.nth(1)).toContainText("Failed · not billed");
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("0 cr charged");
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("2 not billed");
-  await expect(page.getByTestId("workspace-view")).not.toContainText("$");
+  await expect(page.getByTestId("settings-view")).not.toContainText("$");
   const body = await (await page.request.get("/api/usage?rows=1")).json();
   expect(body.unit).toBe("credits");
   expect(JSON.stringify(body)).not.toMatch(/costUsd|engine_cost_usd|spendUsd/);
@@ -439,27 +439,24 @@ test("a member reads their own name and “Teammate” for everyone else's spend
   await expect(rows).toHaveCount(3);
   await expect(rows.filter({ hasText: "Ledger Member" })).toHaveCount(1);
   await expect(rows.filter({ hasText: "Teammate" })).toHaveCount(2);
-  await expect(page.getByTestId("ws-usage-bar")).toHaveCount(1);
+  await expect(page.getByTestId("settings-usage-row")).toHaveCount(1);
   await noTeammate("Usage");
   await shot(page, info, "member-usage");
 
-  await page.getByRole("tab", { name: "Plans & credits" }).click();
-  await expect(page.getByTestId("ws-plans")).toBeVisible();
+  await page.getByTestId("settings-section-credits").click();
+  await expect(page.getByTestId("settings-plan")).toBeVisible();
   await noTeammate("Plans & credits");
 
-  /* The Dashboard's credit ledger by person: the member's own row, and the rest of the team as one. */
-  await page.getByRole("tab", { name: "Dashboard" }).click();
-  const people = page.getByTestId("dash-ledger-people");
-  await expect(people).toContainText("Ledger Member");
-  await noTeammate("Dashboard");
-  await expect(people.locator("tbody tr")).toHaveCount(2);
-  await expect(people.locator("tbody tr").nth(0).locator("td")).toHaveText(["Teammate", "2", "63"]);
-  await expect(people.locator("tbody tr").nth(1).locator("td")).toHaveText(["Ledger Member", "1", "7"]);
-  await shot(page, info, "member-dashboard");
+  /* The Dashboard became Activity (the control room): its credit ledger by person is not drawn there, so what is kept is the rule that matters:
+     the page names no teammate. */
+  await page.goto("/suites?suite=atomik&page=runs");
+  await expect(page.getByTestId("control-room")).toBeVisible();
+  await noTeammate("Activity");
+  await shot(page, info, "member-activity");
 
   /* No answer /api/usage gave the page carries a teammate's name or address, or a dollar; nor does a fresh one. */
   const wire = [...(await bodies()), await (await page.request.get("/api/usage")).text()];
-  expect(wire.filter((body) => body.includes('"byPerson"')).length, "the bars, the Dashboard and a fresh read").toBeGreaterThanOrEqual(3);
+  expect(wire.filter((body) => body.includes('"byPerson"')).length, "the ledger's bars and a fresh read").toBeGreaterThanOrEqual(2);
   for (const body of wire) {
     for (const other of teammates) expect(body, `an /api/usage answer names ${other}`).not.toContain(other);
     expect(body).not.toMatch(/usd/i);

@@ -60,9 +60,13 @@ for (const { kind, query } of KINDS) {
     test.setTimeout(240_000);
     const { project, paid, problems } = await seed(page, kind);
     await page.goto(`/suites?project=${project.id}&view=board${query}`);
-    await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("board")).toHaveAttribute("data-board-kind", kind, { timeout: 60_000 });
+    /* Below the compact line the shell mounts the phone app, whose screen for a board's address is the project's Record (demo-s10-phone-record):
+       the canvas, its tool row and its rail are not drawn there, so the phone run reads the Record for the same rule (no enabled button that spends
+       is unpriced) and the desktop run keeps everything it had. */
     const phone = await compact(page);
+    const surface = phone ? page.getByTestId("phone-record") : page.getByTestId("board");
+    await expect(surface).toBeVisible({ timeout: 90_000 });
+    if (!phone) await expect(surface).toHaveAttribute("data-board-kind", kind, { timeout: 60_000 });
     /* The Social board draws its sections once it has a source video. */
     if (kind === "social" && !phone) {
       await expect(page.getByTestId("social-start")).toBeVisible({ timeout: 60_000 });
@@ -85,7 +89,7 @@ for (const { kind, query } of KINDS) {
     }
 
     /* Every button on the board that spends shows its price (or is not pressable). */
-    const buttons = await page.getByTestId("board").getByRole("button").evaluateAll((els) => els
+    const buttons = await surface.getByRole("button").evaluateAll((els) => els
       .filter((el) => (el as HTMLElement).getClientRects().length && el.getAttribute("aria-disabled") !== "true" && !(el as HTMLButtonElement).disabled && !el.closest("[data-testid='board-rail']"))
       .map((el) => ({ name: ((el.getAttribute("aria-label") ?? "") + " " + (el.textContent ?? "")).replace(/\s+/g, " ").trim(), testId: el.getAttribute("data-testid") ?? "" })));
     await info.attach(`buttons-${kind}.json`, { body: JSON.stringify(buttons, null, 2), contentType: "application/json" });
@@ -93,7 +97,7 @@ for (const { kind, query } of KINDS) {
     expect(unpriced.map((b) => b.name), `${kind}: enabled buttons that spend with no price`).toEqual([]);
 
     /* A "Not in Particl yet" section shows no price and has no button that spends. */
-    const sections = page.getByTestId("board").locator("[data-card-kind$='-unavailable']");
+    const sections = surface.locator("[data-card-kind$='-unavailable']");
     const count = await sections.count();
     for (let i = 0; i < count; i++) {
       const section = sections.nth(i);
@@ -115,6 +119,16 @@ test("Make over the board shows its price on its own button", async ({ page }) =
   test.setTimeout(240_000);
   const { project, paid, problems } = await seed(page, "studio");
   await page.goto(`/suites?project=${project.id}&view=board&make=video`);
+  /* On the phone, Make is the phone's own screen (its button is `phone-make-go`, priced the same way: demo-s10-phone-make). */
+  if (await compact(page)) {
+    const go = page.getByTestId("phone-make-go");
+    await hydrated(go);
+    await page.getByTestId("phone-make-prompt").fill("A fox crosses a frozen harbour at dusk.");
+    await expect(go).toHaveText(/\d[\d,.]* cr/, { timeout: 90_000 });
+    expect(paid, "nothing was sent: the button was not pressed").toEqual([]);
+    expect(problems).toEqual([]);
+    return;
+  }
   await expect(page.getByTestId("make-panel")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("board")).toBeVisible();
   const go = page.getByTestId("gen-generate");
